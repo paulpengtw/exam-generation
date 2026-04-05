@@ -52,6 +52,7 @@ exam-generation/
 │   ├── schemas.py                 # Pydantic data models
 │   └── data_loader.py             # Curriculum data loading & indexing
 ├── output/                        # Generated questions (gitignored)
+├── IMPLEMENTATION_PLAN.md         # Planned refactors and known tech debt
 ├── CLAUDE.md                      # AI assistant conventions
 ├── README.md
 ├── pyproject.toml
@@ -175,6 +176,22 @@ Each generated question produces a JSON file following this schema:
 ```
 
 For image-based questions, a corresponding PNG file is generated in the same output directory.
+
+### Image Rendering
+
+The renderer (`src/renderer.py`) supports these chart types:
+
+| Type | Renderer | Method |
+|---|---|---|
+| `histogram` | Hardcoded matplotlib | Direct bar chart |
+| `boxplot` | Hardcoded matplotlib | Five-number summary boxes |
+| `line_chart` | Hardcoded matplotlib | Data points or function plot |
+| `pie_chart` | Hardcoded matplotlib | Pie/spinner with angle labels |
+| `geometry` | **LLM-assisted** | Sonnet generates matplotlib code from `description` + `data`, then `exec()`'d |
+
+For geometry diagrams, the LLM writes a self-contained matplotlib code snippet based on the `chart_spec.description` and `chart_spec.data` fields. This handles arbitrary geometry (L-shapes, triangles, coordinate planes, etc.) without needing hardcoded patterns for each type.
+
+> **Note:** Two legacy hardcoded geometry patterns (courtyard, shadow) still exist in the code. These are marked for removal in `IMPLEMENTATION_PLAN.md` — they will be replaced by the LLM-assisted path in a future refactor.
 
 ## Data Sources
 

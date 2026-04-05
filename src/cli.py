@@ -262,7 +262,7 @@ def main(argv: list[str] | None = None) -> None:
         if question.chart_spec:
             img_path = config.output_dir / f"{question_id}.png"
             print(f"  Rendering chart: {img_path}", file=sys.stderr)
-            rendered = render_chart(question.chart_spec.model_dump(), img_path)
+            rendered = render_chart(question.chart_spec.model_dump(), img_path, llm_client=client)
             if rendered:
                 question.圖片 = f"{question_id}.png"
 

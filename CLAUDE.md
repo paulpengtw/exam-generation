@@ -35,7 +35,8 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 | `src/context_builder.py` | Prompt assembly with few-shot injection |
 | `src/llm_client.py` | OpenAI-compatible API client with model routing |
 | `src/verifier.py` | Two-pass answer verification |
-| `src/renderer.py` | matplotlib chart/diagram PNG generation |
+| `src/renderer.py` | matplotlib chart/diagram PNG generation (geometry uses LLM-assisted code gen) |
+| `IMPLEMENTATION_PLAN.md` | Planned refactors and known tech debt |
 | `src/data_loader.py` | Curriculum data loading and grade filtering |
 | `src/config.py` | Environment variable configuration |
 | `src/cli.py` | CLI entry point (argparse) |
@@ -98,6 +99,18 @@ When randomly selecting parameters, respect these rules:
 - **數學思考**: pick 1 to 3 (can repeat: 形成, 運用, 詮釋評估)
 - **學習內容**: pick 1 or more from the selected grade (can cross grades 7-9 for integrated questions)
 - **Question style**: pick one of [text_only, with_chart, with_image, creative_scenario] — determines which few-shot examples to inject and whether to generate images
+
+## Geometry Rendering Architecture
+
+`src/renderer.py` handles geometry diagrams (`chart_type: "geometry"`) with a 3-tier approach:
+
+1. **Hardcoded patterns** — two legacy matchers check for specific `data` keys:
+   - `"rectangle" in data and "triangle" in data` -> courtyard diagram
+   - `"lamp_height" in data` -> shadow diagram
+2. **LLM-assisted code generation** (primary path) — Sonnet generates a matplotlib code snippet from `chart_spec.description` + `chart_spec.data`, which is `exec()`'d with `fig, ax, plt, np, patches, FONT_PROP` in scope
+3. **Text fallback** — renders `description` as centered text (only if no LLM client)
+
+**Planned change:** The hardcoded patterns in tier 1 are marked for removal in `IMPLEMENTATION_PLAN.md`. The LLM-assisted path handles all geometry types generically and should become the sole renderer. When modifying `_render_geometry()`, do not add new hardcoded pattern branches — let the LLM path handle it.
 
 ## Common Commands
 

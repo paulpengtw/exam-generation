@@ -47,20 +47,24 @@ def _setup_chinese_font() -> None:
 _setup_chinese_font()
 
 
-def render_chart(chart_spec: dict, output_path: str | Path) -> str | None:
+def render_chart(chart_spec: dict, output_path: str | Path, llm_client=None) -> str | None:
     """Render a chart from a chart_spec dict and save as PNG.
 
     Returns the output path on success, or None if chart_type is unknown.
+    llm_client: optional LLMClient for LLM-assisted geometry rendering.
     """
     output_path = Path(output_path)
     chart_type = chart_spec.get("chart_type", "")
+
+    if chart_type == "geometry":
+        _render_geometry(chart_spec, output_path, llm_client)
+        return str(output_path)
 
     renderers = {
         "histogram": _render_histogram,
         "boxplot": _render_boxplot,
         "line_chart": _render_line_chart,
         "pie_chart": _render_pie_chart,
-        "geometry": _render_geometry,
     }
 
     renderer = renderers.get(chart_type)
@@ -268,97 +272,193 @@ def _render_pie_chart(spec: dict, output_path: Path) -> None:
     plt.close(fig)
 
 
-def _render_geometry(spec: dict, output_path: Path) -> None:
-    """Render a simple geometry diagram. This is a basic fallback renderer."""
+def _render_geometry(spec: dict, output_path: Path, llm_client=None) -> None:
+    """Render a geometry diagram. Tries hardcoded patterns first, then LLM fallback."""
     title = spec.get("title", "")
     description = spec.get("description", "")
     data = spec.get("data", {})
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-
-    # For geometry, we create a basic labeled diagram based on available data
-    shapes = data.get("shapes", [])
-
+    # Try hardcoded patterns
     if "rectangle" in data and "triangle" in data:
-        # Community courtyard style diagram
-        rect = data["rectangle"]
-        tri = data["triangle"]
+        _render_geometry_courtyard(spec, output_path)
+        return
+    if "lamp_height" in data:
+        _render_geometry_shadow(spec, output_path)
+        return
 
-        # Draw rectangle
-        rect_patch = patches.Rectangle(
-            (0, 0), rect["width"], rect["height"],
-            linewidth=2, edgecolor="black", facecolor="lightyellow", linestyle="--"
-        )
-        ax.add_patch(rect_patch)
+    # Fallback: LLM-assisted rendering
+    if llm_client is not None:
+        success = _render_geometry_via_llm(spec, output_path, llm_client)
+        if success:
+            return
 
-        # Draw triangle if coordinates provided
-        if "A" in tri and "B" in tri and "C" in tri:
-            triangle = plt.Polygon(
-                [tri["A"], tri["B"], tri["C"]],
-                fill=False, edgecolor="blue", linewidth=2
-            )
-            ax.add_patch(triangle)
-            for label, coord in [("A", tri["A"]), ("B", tri["B"]), ("C", tri["C"])]:
-                ax.annotate(label, coord, fontsize=14, fontweight="bold", color="blue",
-                            textcoords="offset points", xytext=(5, 5))
-
-        # Draw circle if specified
-        if "circle" in data:
-            circle_data = data["circle"]
-            if circle_data.get("center") == "inside_triangle" and "A" in tri and "B" in tri and "C" in tri:
-                cx = (tri["A"][0] + tri["B"][0] + tri["C"][0]) / 3
-                cy = (tri["A"][1] + tri["B"][1] + tri["C"][1]) / 3
-                circle = plt.Circle((cx, cy), 2, fill=True, facecolor="lightgreen",
-                                    edgecolor="green", linewidth=2, alpha=0.5)
-                ax.add_patch(circle)
-                ax.annotate("r", (cx + 1, cy), fontsize=12, color="green")
-
-        ax.set_xlim(-3, rect["width"] + 3)
-        ax.set_ylim(-3, rect["height"] + 3)
-    elif "lamp_height" in data:
-        # Shadow diagram
-        lamp_h = data["lamp_height"]
-        person_h = data["person_height"]
-        dist = data["distance"]
-        shadow_len = (person_h * dist) / (lamp_h - person_h)
-
-        # Ground line
-        ax.plot([-1, dist + shadow_len + 1], [0, 0], "k-", linewidth=2)
-
-        # Lamp
-        ax.plot([0, 0], [0, lamp_h], "k-", linewidth=3)
-        ax.plot(0, lamp_h, "yo", markersize=15)
-        ax.annotate(f"路燈\n{lamp_h}m", (0, lamp_h), textcoords="offset points", xytext=(-30, 10), fontsize=10)
-
-        # Person
-        ax.plot([dist, dist], [0, person_h], "b-", linewidth=3)
-        ax.annotate(f"人\n{person_h}m", (dist, person_h), textcoords="offset points", xytext=(10, 5), fontsize=10)
-
-        # Light ray
-        ax.plot([0, dist + shadow_len], [lamp_h, 0], "r--", linewidth=1, alpha=0.6)
-
-        # Shadow
-        ax.plot([dist, dist + shadow_len], [0, 0], color="gray", linewidth=6, alpha=0.4)
-        ax.annotate("影子", (dist + shadow_len / 2, -0.3), ha="center", fontsize=10, color="gray")
-
-        # Distance label
-        ax.annotate("", xy=(dist, -0.5), xytext=(0, -0.5),
-                     arrowprops=dict(arrowstyle="<->", color="red"))
-        ax.text(dist / 2, -0.8, f"{dist}m", ha="center", fontsize=10, color="red")
-
-        ax.set_xlim(-2, dist + shadow_len + 2)
-        ax.set_ylim(-1.5, lamp_h + 1.5)
-    else:
-        # Generic: just display the description
-        ax.text(0.5, 0.5, description or title, transform=ax.transAxes,
-                ha="center", va="center", fontsize=14, wrap=True)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-
-    ax.set_aspect("equal")
+    # Final fallback: render description as text (should not normally reach here)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.text(0.5, 0.5, description or title, transform=ax.transAxes,
+            ha="center", va="center", fontsize=14, wrap=True)
     ax.set_title(title, fontsize=14, fontweight="bold")
     ax.axis("off")
-
     plt.tight_layout()
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+
+
+def _render_geometry_courtyard(spec: dict, output_path: Path) -> None:
+    """Render courtyard-style diagram: rectangle + triangle + optional circle."""
+    data = spec.get("data", {})
+    title = spec.get("title", "")
+    rect = data["rectangle"]
+    tri = data["triangle"]
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    rect_patch = patches.Rectangle(
+        (0, 0), rect["width"], rect["height"],
+        linewidth=2, edgecolor="black", facecolor="lightyellow", linestyle="--"
+    )
+    ax.add_patch(rect_patch)
+
+    if "A" in tri and "B" in tri and "C" in tri:
+        triangle = plt.Polygon(
+            [tri["A"], tri["B"], tri["C"]],
+            fill=False, edgecolor="blue", linewidth=2
+        )
+        ax.add_patch(triangle)
+        for label, coord in [("A", tri["A"]), ("B", tri["B"]), ("C", tri["C"])]:
+            ax.annotate(label, coord, fontsize=14, fontweight="bold", color="blue",
+                        textcoords="offset points", xytext=(5, 5))
+
+    if "circle" in data:
+        circle_data = data["circle"]
+        if circle_data.get("center") == "inside_triangle" and "A" in tri and "B" in tri and "C" in tri:
+            cx = (tri["A"][0] + tri["B"][0] + tri["C"][0]) / 3
+            cy = (tri["A"][1] + tri["B"][1] + tri["C"][1]) / 3
+            circle = plt.Circle((cx, cy), 2, fill=True, facecolor="lightgreen",
+                                edgecolor="green", linewidth=2, alpha=0.5)
+            ax.add_patch(circle)
+            ax.annotate("r", (cx + 1, cy), fontsize=12, color="green")
+
+    ax.set_xlim(-3, rect["width"] + 3)
+    ax.set_ylim(-3, rect["height"] + 3)
+    ax.set_aspect("equal")
+    ax.set_title(title, fontsize=14, fontweight="bold")
+    ax.axis("off")
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _render_geometry_shadow(spec: dict, output_path: Path) -> None:
+    """Render lamp/shadow diagram."""
+    data = spec.get("data", {})
+    title = spec.get("title", "")
+    lamp_h = data["lamp_height"]
+    person_h = data["person_height"]
+    dist = data["distance"]
+    shadow_len = (person_h * dist) / (lamp_h - person_h)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    ax.plot([-1, dist + shadow_len + 1], [0, 0], "k-", linewidth=2)
+    ax.plot([0, 0], [0, lamp_h], "k-", linewidth=3)
+    ax.plot(0, lamp_h, "yo", markersize=15)
+    ax.annotate(f"路燈\n{lamp_h}m", (0, lamp_h), textcoords="offset points", xytext=(-30, 10), fontsize=10)
+    ax.plot([dist, dist], [0, person_h], "b-", linewidth=3)
+    ax.annotate(f"人\n{person_h}m", (dist, person_h), textcoords="offset points", xytext=(10, 5), fontsize=10)
+    ax.plot([0, dist + shadow_len], [lamp_h, 0], "r--", linewidth=1, alpha=0.6)
+    ax.plot([dist, dist + shadow_len], [0, 0], color="gray", linewidth=6, alpha=0.4)
+    ax.annotate("影子", (dist + shadow_len / 2, -0.3), ha="center", fontsize=10, color="gray")
+    ax.annotate("", xy=(dist, -0.5), xytext=(0, -0.5), arrowprops=dict(arrowstyle="<->", color="red"))
+    ax.text(dist / 2, -0.8, f"{dist}m", ha="center", fontsize=10, color="red")
+
+    ax.set_xlim(-2, dist + shadow_len + 2)
+    ax.set_ylim(-1.5, lamp_h + 1.5)
+    ax.set_aspect("equal")
+    ax.set_title(title, fontsize=14, fontweight="bold")
+    ax.axis("off")
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+_GEOMETRY_CODE_PROMPT = """\
+You are a matplotlib code generator. Given a geometry diagram description, output ONLY a Python code block that draws the diagram using matplotlib.
+
+Rules:
+- The code will be exec()'d with these variables already in scope: `fig`, `ax`, `plt`, `np`, `patches`, `Path` (matplotlib.path.Path), `FONT_PROP` (a FontProperties object for CJK text)
+- fig and ax are already created (fig, ax = plt.subplots(figsize=(8, 6)))
+- Do NOT call plt.show(), fig.savefig(), or plt.close() — that's handled externally
+- Use ax.set_aspect("equal") and ax.axis("off")
+- Set ax.set_title() with the provided title
+- Use clear labels, annotations, and dimension markers
+- IMPORTANT: For ALL text that contains Chinese characters, pass `fontproperties=FONT_PROP` to ax.text(), ax.annotate(), ax.set_title(), etc. For pure ASCII text (numbers, "x+4"), fontproperties is optional.
+- Keep the code simple and self-contained
+- Output ONLY the code block, nothing else
+
+Diagram to render:
+Title: {title}
+Description: {description}
+Data: {data}
+"""
+
+
+def _render_geometry_via_llm(spec: dict, output_path: Path, llm_client) -> bool:
+    """Use LLM to generate matplotlib code for arbitrary geometry diagrams.
+
+    Returns True if rendering succeeded, False otherwise.
+    """
+    import json
+    import re
+    import sys
+
+    title = spec.get("title", "")
+    description = spec.get("description", "")
+    data = spec.get("data", {})
+
+    prompt = _GEOMETRY_CODE_PROMPT.format(
+        title=title,
+        description=description,
+        data=json.dumps(data, ensure_ascii=False, indent=2),
+    )
+
+    try:
+        print("  Generating geometry diagram via LLM...", file=sys.stderr)
+        raw = llm_client.generate(
+            "You are a matplotlib code generator. Output only Python code.",
+            prompt,
+        )
+
+        # Extract code from response
+        code_match = re.search(r"```(?:python)?\s*\n(.*?)\n```", raw, re.DOTALL)
+        if code_match:
+            code = code_match.group(1)
+        else:
+            code = raw.strip()
+
+        # Execute in sandboxed namespace
+        fig, ax = plt.subplots(figsize=(8, 6))
+        from matplotlib.path import Path as MplPath
+        from matplotlib.font_manager import FontProperties
+        # Build a FontProperties object for CJK text using the configured font
+        cjk_font_name = plt.rcParams["font.sans-serif"][0] if plt.rcParams["font.sans-serif"] else "sans-serif"
+        font_prop = FontProperties(family=cjk_font_name, size=12)
+        namespace = {
+            "fig": fig,
+            "ax": ax,
+            "plt": plt,
+            "np": np,
+            "patches": patches,
+            "Path": MplPath,
+            "FONT_PROP": font_prop,
+        }
+        exec(code, namespace)
+
+        plt.tight_layout()
+        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        return True
+
+    except Exception as e:
+        print(f"  Warning: LLM geometry rendering failed: {e}", file=sys.stderr)
+        plt.close("all")  # Clean up any open figures
+        return False
