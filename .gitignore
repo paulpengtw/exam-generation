@@ -1,2 +1,12 @@
 .DS_Store
 node_modules/
+__pycache__/
+*.pyc
+.env
+output/
+.venv/
+*.egg-info/
+dist/
+build/
+.ruff_cache/
+.pytest_cache/

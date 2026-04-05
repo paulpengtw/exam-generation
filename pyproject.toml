@@ -1,0 +1,28 @@
+[project]
+name = "exam-generation"
+version = "0.1.0"
+description = "CLI tool for generating Taiwan junior high school math exam questions using LLMs"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.0",
+    "pydantic>=2.0",
+    "matplotlib>=3.8",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
