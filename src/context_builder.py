@@ -7,7 +7,10 @@ import random
 from pathlib import Path
 
 from src.data_loader import load_few_shot_examples
-from src.schemas import QuestionStyle, SampledParams
+from src.schema_loader import build_style_instructions, load_schemas
+from src.schemas import SampledParams
+
+_STYLE_INSTRUCTIONS: dict[str, str] = build_style_instructions(load_schemas())
 
 SYSTEM_PROMPT_TEMPLATE = """\
 你是一位資深的台灣國中數學命題教師，專門為第四學習階段（7年級、8年級、9年級）的學生設計考試題目。
@@ -97,12 +100,6 @@ USER_PROMPT_TEMPLATE = """\
 5. 只輸出 JSON 格式的結果。
 """
 
-STYLE_INSTRUCTIONS = {
-    QuestionStyle.TEXT_ONLY: "這是純文字題目，不需要任何圖表或圖片。題目僅透過文字描述情境與數學問題。",
-    QuestionStyle.WITH_CHART: "這道題目必須搭配統計圖表（如直方圖、折線圖、圓形圖等）。請在 chart_spec 中提供完整的圖表數據規格，以便程式生成圖表。題目文字中應引導學生「根據圖表」作答。",
-    QuestionStyle.WITH_IMAGE: "這道題目必須搭配幾何圖形或示意圖（如盒狀圖、三角形、座標圖等）。請在 chart_spec 中提供圖形的規格數據。題目文字中應引用「如圖所示」。",
-    QuestionStyle.CREATIVE_SCENARIO: "這道題目必須使用創意的生活情境（如餐廳菜單、股價走勢、外送方案比較、建築設計圖等），讓學生在真實感的情境中運用數學概念。如果情境需要圖表或圖示，請提供 chart_spec。",
-}
 
 
 def build_system_prompt(
@@ -137,7 +134,7 @@ def build_user_prompt(
     thinking = "、".join(t.value for t in params.數學思考)
 
     # Style instruction
-    style_instruction = STYLE_INSTRUCTIONS[params.style]
+    style_instruction = _STYLE_INSTRUCTIONS[params.style.value]
 
     # Load and format few-shot examples
     examples = load_few_shot_examples(few_shot_dir, params.style.value)

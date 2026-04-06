@@ -48,7 +48,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument(
         "--style",
         type=str,
-        choices=[s.value for s in QuestionStyle],
+        choices=[s.value for s in QuestionStyle],  # type: ignore[attr-defined]
         help="Question visual style",
     )
     gen.add_argument("--context", type=str, help="情境 (e.g. 個人, 社會時事)")

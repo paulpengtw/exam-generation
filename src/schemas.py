@@ -3,49 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.schema_loader import build_enums, load_schemas
 
-class QuestionContext(str, Enum):
-    """情境 options."""
-    PERSONAL = "個人"
-    SOCIAL = "社會時事"
-    SCIENCE = "科學"
-    CAREER = "職業"
-    ARCHITECTURE_ART = "建築與藝術"
-    MATH_TEXT = "數學文字情境"
-
-
-class QuestionSetType(str, Enum):
-    """題型種類 options."""
-    SINGLE = "單一題"
-    GROUP = "題組題"
-
-
-class QuestionType(str, Enum):
-    """題型 options."""
-    MULTIPLE_CHOICE = "選擇題"
-    TRUE_FALSE = "是非題"
-    CLOSED_CONSTRUCTED = "封閉式建構反應題"
-    OPEN_CONSTRUCTED = "開放式建構反應題"
-
-
-class MathThinking(str, Enum):
-    """數學思考 options."""
-    FORMULATE = "形成"
-    APPLY = "運用"
-    INTERPRET_EVALUATE = "詮釋評估"
-
-
-class QuestionStyle(str, Enum):
-    """Question visual style."""
-    TEXT_ONLY = "text_only"
-    WITH_CHART = "with_chart"
-    WITH_IMAGE = "with_image"
-    CREATIVE_SCENARIO = "creative_scenario"
+# Load enum values from question_schemas.json at import time
+_schemas = load_schemas()
+QuestionContext, QuestionSetType, QuestionType, MathThinking, QuestionStyle = build_enums(_schemas)
 
 
 class LearningContentItem(BaseModel):
@@ -73,7 +39,7 @@ class VerificationResult(BaseModel):
 class QuestionMetadata(BaseModel):
     """Metadata about the generation process."""
     grade: int
-    style: QuestionStyle
+    style: QuestionStyle  # type: ignore[valid-type]
     model: str
     generated_at: datetime = Field(default_factory=datetime.now)
     seed: int | None = None
@@ -82,10 +48,10 @@ class QuestionMetadata(BaseModel):
 class ExamQuestion(BaseModel):
     """A complete generated exam question."""
     id: str = ""
-    情境: QuestionContext
-    題型種類: QuestionSetType
-    題型: QuestionType
-    數學思考: list[MathThinking]
+    情境: QuestionContext  # type: ignore[valid-type]
+    題型種類: QuestionSetType  # type: ignore[valid-type]
+    題型: QuestionType  # type: ignore[valid-type]
+    數學思考: list[MathThinking]  # type: ignore[valid-type]
     學習內容: list[LearningContentItem]
     題目: list[str]
     正確解題分析: list[str]
@@ -98,9 +64,9 @@ class ExamQuestion(BaseModel):
 class SampledParams(BaseModel):
     """Parameters selected by the sampler for question generation."""
     grade: int = Field(ge=7, le=9)
-    情境: QuestionContext
-    題型種類: QuestionSetType
-    題型: QuestionType
-    數學思考: list[MathThinking]
+    情境: QuestionContext  # type: ignore[valid-type]
+    題型種類: QuestionSetType  # type: ignore[valid-type]
+    題型: QuestionType  # type: ignore[valid-type]
+    數學思考: list[MathThinking]  # type: ignore[valid-type]
     學習內容: list[LearningContentItem]
-    style: QuestionStyle
+    style: QuestionStyle  # type: ignore[valid-type]
