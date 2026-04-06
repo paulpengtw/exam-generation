@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.0",
     "matplotlib>=3.8",
     "python-dotenv>=1.0",
+    "pdfplumber>=0.11.9",
 ]
 
 [project.optional-dependencies]

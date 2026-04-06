@@ -4,7 +4,12 @@
       "Bash(python3:*)",
       "Bash(uv sync:*)",
       "Bash(uv run:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(uv add:*)",
+      "Bash(pdftoppm -v)",
+      "Bash(pdftoppm -r 150 -png data/example_exams/112P_Math.pdf /tmp/112P_page)",
+      "Read(//private/tmp/**)",
+      "Bash(brew list:*)"
     ]
   }
 }
