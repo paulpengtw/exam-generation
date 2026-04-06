@@ -10,6 +10,9 @@ from datetime import datetime
 from pathlib import Path
 
 from src.config import Config
+from src.schema_loader import load_grades, load_schemas
+
+_GRADES: list[int] = load_grades(load_schemas())
 from src.context_builder import build_system_prompt, build_user_prompt
 from src.data_loader import (
     get_full_curriculum_text,
@@ -44,14 +47,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     sub = parser.add_subparsers(dest="command", required=True)
 
     gen = sub.add_parser("generate", help="Generate exam questions")
-    gen.add_argument("--grade", type=int, choices=[7, 8, 9], help="Target grade level")
+    gen.add_argument("--grade", type=int, choices=_GRADES, help="Target grade level")
     gen.add_argument(
         "--style",
         type=str,
         choices=[s.value for s in QuestionStyle],  # type: ignore[attr-defined]
         help="Question visual style",
     )
-    gen.add_argument("--context", type=str, help="情境 (e.g. 個人, 社會時事)")
+    gen.add_argument("--context", type=str, nargs="+", help="情境 (e.g. 個人 社會時事) — one or more values")
     gen.add_argument("--set-type", type=str, help="題型種類 (單一題 or 題組題)")
     gen.add_argument("--q-type", type=str, help="題型 (選擇題, 是非題, etc.)")
     gen.add_argument("--count", type=int, default=1, help="Number of questions to generate")
@@ -161,7 +164,7 @@ def _parse_question(
 
     return ExamQuestion(
         id=question_id,
-        情境=raw.get("情境", params.情境.value),
+        情境=raw.get("情境", [c.value for c in params.情境]),
         題型種類=raw.get("題型種類", params.題型種類.value),
         題型=raw.get("題型", params.題型.value),
         數學思考=raw_thinking,
@@ -201,14 +204,17 @@ def main(argv: list[str] | None = None) -> None:
     intro_text = load_intro_text(Path("Introduction to \"學習表現\" and \"學習階段\".md"))
 
     # Build grade content index
-    grade_content = {g: get_grade_content(curriculum, g) for g in (7, 8, 9)}
+    grade_content = {g: get_grade_content(curriculum, g) for g in _GRADES}
 
     # Initialize LLM client (skip for dry-run)
     client = None if args.dry_run else LLMClient(config)
 
     # Resolve optional overrides
     style_override = QuestionStyle(args.style) if args.style else None
-    context_override = _resolve_enum(args.context, QuestionContext)
+    context_override = (
+        [_resolve_enum(v, QuestionContext) for v in args.context]
+        if args.context else None
+    )
     set_type_override = _resolve_enum(args.set_type, QuestionSetType)
     q_type_override = _resolve_enum(args.q_type, QuestionType)
 
@@ -234,7 +240,7 @@ def main(argv: list[str] | None = None) -> None:
         question_id = f"q_{timestamp}_{i+1:03d}"
 
         print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
-              f"style={params.style.value}, 情境={params.情境.value}, "
+              f"style={params.style.value}, 情境={'、'.join(c.value for c in params.情境)}, "
               f"題型={params.題型.value}", file=sys.stderr)
         print(f"  學習內容: {', '.join(c.編碼 for c in params.學習內容)}", file=sys.stderr)
 

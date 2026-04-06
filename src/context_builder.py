@@ -7,18 +7,26 @@ import random
 from pathlib import Path
 
 from src.data_loader import load_few_shot_examples
-from src.schema_loader import build_instructions, load_schemas
+from src.schema_loader import build_instructions, load_grades, load_learning_stage, load_schemas
 from src.schemas import SampledParams
 
-_INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(load_schemas())
+_schemas = load_schemas()
+_INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
+_GRADES: list[int] = load_grades(_schemas)
+_LEARNING_STAGE: str = load_learning_stage(_schemas)
+
+
+def _grade_description(grades: list[int]) -> str:
+    names = "、".join(f"{g}年級" for g in grades)
+    return f"{min(grades)}-{max(grades)}年級（{names}）"
 
 SYSTEM_PROMPT_TEMPLATE = """\
-你是一位資深的台灣國中數學命題教師，專門為第四學習階段（7年級、8年級、9年級）的學生設計考試題目。
+你是一位資深的台灣國中數學命題教師，專門為{learning_stage}（{grade_names}）的學生設計考試題目。
 
 ## 命題原則
 
 1. 題目必須符合十二年國民基本教育數學領域課程綱要的學習內容。
-2. 題目應確保 7-9 年級學生具備足夠先備知識可以作答，但也要有適當的挑戰性。
+2. 題目應確保 {grade_range} 學生具備足夠先備知識可以作答，但也要有適當的挑戰性。
 3. 你必須了解國小（1-6年級）的學習內容作為先備知識基礎，也要了解高中（10-12年級）的學習內容以確保不超出範圍。
 4. 選項設計應包含合理的誘答選項，針對學生常見的錯誤概念。
 5. 解題分析必須完整、正確，包含逐步推導過程。
@@ -43,7 +51,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 
 ```json
 {{
-  "情境": "（從指定選項中選一個）",
+  "情境": ["（可為多個選項）"],
   "題型種類": "（從指定選項中選一個）",
   "題型": "（從指定選項中選一個）",
   "數學思考": ["（1-3個）"],
@@ -95,7 +103,7 @@ USER_PROMPT_TEMPLATE = """\
 
 1. 不要複製範例題目，必須原創。
 2. 確保答案正確，解題過程完整。
-3. 學習內容可以跨年級整合（7-9年級範圍內），但核心考點應以指定的學習內容為主。
+3. 學習內容可以跨年級整合（{grade_range}範圍內），但核心考點應以指定的學習內容為主。
 4. 選項的誘答設計應針對常見錯誤概念。
 5. 只輸出 JSON 格式的結果。
 """
@@ -106,12 +114,21 @@ def build_system_prompt(
     curriculum_json: str,
     performance_json: str,
     intro_text: str,
+    grades: list[int] | None = None,
+    learning_stage: str | None = None,
 ) -> str:
     """Build the system prompt with full curriculum context."""
+    g = grades if grades is not None else _GRADES
+    stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
+    grade_range = f"{min(g)}-{max(g)}年級"
+    grade_names = "、".join(f"{x}年級" for x in g)
     return SYSTEM_PROMPT_TEMPLATE.format(
         curriculum_json=curriculum_json,
         performance_json=performance_json,
         intro_text=intro_text,
+        grade_range=grade_range,
+        grade_names=grade_names,
+        learning_stage=stage,
     )
 
 
@@ -135,8 +152,11 @@ def build_user_prompt(
 
     # Collect per-param instructions (only non-empty ones)
     param_instruction_lines = []
+    for c in params.情境:
+        instr = _INSTRUCTIONS.get("情境", {}).get(c.value)
+        if instr:
+            param_instruction_lines.append(f"  - **情境（{c.value}）補充**：{instr}")
     for category, key in (
-        ("情境", params.情境.value),
         ("題型種類", params.題型種類.value),
         ("題型", params.題型.value),
     ):
@@ -177,9 +197,11 @@ def build_user_prompt(
     else:
         few_shot_text = "（此風格暫無範例，請根據指定條件自行設計。）"
 
+    grade_range = f"{min(_GRADES)}-{max(_GRADES)}年級"
     return USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
-        context=params.情境.value,
+        grade_range=grade_range,
+        context="、".join(c.value for c in params.情境),
         set_type=params.題型種類.value,
         q_type=params.題型.value,
         thinking=thinking,

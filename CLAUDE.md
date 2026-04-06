@@ -58,7 +58,7 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 The output JSON follows this structure (Chinese keys are required):
 
 ```
-情境: one of [個人, 社會時事, 科學, 職業, 建築與藝術, 數學文字情境]
+情境: 1+ of [個人, 社會時事, 科學, 職業, 建築與藝術, 數學文字情境]
 題型種類: one of [單一題, 題組題]
 題型: one of [選擇題, 是非題, 封閉式建構反應題, 開放式建構反應題]
 數學思考: 1-3 of [形成, 運用, 詮釋評估]
@@ -98,7 +98,7 @@ Content codes follow the pattern `{Category}-{Grade}-{Number}`:
 Allowed values for all parameters come from `question_schemas.json` at the project root. Edit that file to add or remove options — no Python changes required. Override the path with `QUESTION_SCHEMAS_PATH` env var.
 
 When randomly selecting parameters, respect these rules:
-- **情境**: pick exactly one (from `question_schemas.json["情境"]`)
+- **情境**: pick 1 to N (from `question_schemas.json["情境"]`) — multi-select, same pattern as 數學思考
 - **題型種類**: pick exactly one (from `question_schemas.json["題型種類"]`)
 - **題型**: pick exactly one (from `question_schemas.json["題型"]`)
 - **數學思考**: pick 1 to 3 (from `question_schemas.json["數學思考"]`)
@@ -198,4 +198,4 @@ LLM call #2: `verify_question()` sends question + solution, Sonnet independently
 
 ### Randomness Summary
 
-All RNG is `random.Random(seed)` per question. Points: grade (sampler.py:35), 情境 (38), 題型種類 (41), 題型 (44), 數學思考 (47-49), 學習內容 (52-56), style (59), few-shot pick (context_builder.py:154-155).
+All RNG is `random.Random(seed)` per question. Points: grade (sampler.py:35), 情境 (38-41), 題型種類 (42), 題型 (45), 數學思考 (48-50), 學習內容 (53-57), style (60), few-shot pick (context_builder.py:154-155).

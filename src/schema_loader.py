@@ -48,6 +48,16 @@ def build_enums(schemas: dict) -> tuple:
     return QuestionContext, QuestionSetType, QuestionType, MathThinking, QuestionStyle
 
 
+def load_grades(schemas: dict) -> list[int]:
+    """Return the list of target grades from question_schemas.json."""
+    return schemas["grades"]
+
+
+def load_learning_stage(schemas: dict) -> str:
+    """Return the 學習階段 name from question_schemas.json."""
+    return schemas["學習階段"]
+
+
 def build_instructions(schemas: dict) -> dict[str, dict[str, str]]:
     """Return {category: {value: instruction}} for all categories.
 

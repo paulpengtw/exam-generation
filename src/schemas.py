@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from src.schema_loader import build_enums, load_schemas
+from src.schema_loader import build_enums, load_grades, load_schemas
 
 # Load enum values from question_schemas.json at import time
 _schemas = load_schemas()
 QuestionContext, QuestionSetType, QuestionType, MathThinking, QuestionStyle = build_enums(_schemas)
+_GRADES: list[int] = load_grades(_schemas)
 
 
 class LearningContentItem(BaseModel):
@@ -48,7 +49,7 @@ class QuestionMetadata(BaseModel):
 class ExamQuestion(BaseModel):
     """A complete generated exam question."""
     id: str = ""
-    情境: QuestionContext  # type: ignore[valid-type]
+    情境: list[QuestionContext]  # type: ignore[valid-type]
     題型種類: QuestionSetType  # type: ignore[valid-type]
     題型: QuestionType  # type: ignore[valid-type]
     數學思考: list[MathThinking]  # type: ignore[valid-type]
@@ -63,8 +64,15 @@ class ExamQuestion(BaseModel):
 
 class SampledParams(BaseModel):
     """Parameters selected by the sampler for question generation."""
-    grade: int = Field(ge=7, le=9)
-    情境: QuestionContext  # type: ignore[valid-type]
+    grade: int
+
+    @field_validator("grade")
+    @classmethod
+    def grade_must_be_allowed(cls, v: int) -> int:
+        if v not in _GRADES:
+            raise ValueError(f"grade must be one of {_GRADES}, got {v}")
+        return v
+    情境: list[QuestionContext]  # type: ignore[valid-type]
     題型種類: QuestionSetType  # type: ignore[valid-type]
     題型: QuestionType  # type: ignore[valid-type]
     數學思考: list[MathThinking]  # type: ignore[valid-type]

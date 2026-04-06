@@ -151,7 +151,7 @@ Each generated question produces a JSON file following this schema:
 ```json
 {
   "id": "q_20260405_001",
-  "情境": "社會時事",
+  "情境": ["社會時事", "科學"],
   "題型種類": "單一題",
   "題型": "選擇題",
   "數學思考": ["運用", "詮釋評估"],
@@ -335,7 +335,7 @@ For each question `i` in `range(args.count)`:
 
 14. `sample_params()` randomly selects (or uses CLI overrides for) each parameter (lines 18-69):
     - **grade**: `rng.choice([7, 8, 9])` (line 35)
-    - **情境**: `rng.choice(list(QuestionContext))` — one of 6 options (line 38)
+    - **情境**: `rng.randint(1, len(all_contexts))` → `rng.sample(all_contexts, count)` — 1-N of 6 options (lines 38-41)
     - **題型種類**: `rng.choice(list(QuestionSetType))` — 單一題 or 題組題 (line 41)
     - **題型**: `rng.choice(list(QuestionType))` — one of 4 options (line 44)
     - **數學思考**: `rng.sample(all_thinking, randint(1,3))` — 1-3 of [形成, 運用, 詮釋評估] (lines 47-49)
@@ -464,7 +464,7 @@ For each question `i` in `range(args.count)`:
 | What | How | File | Line |
 |---|---|---|---|
 | Grade (7/8/9) | `rng.choice([7,8,9])` | sampler.py | 35 |
-| 情境 | `rng.choice(list(QuestionContext))` | sampler.py | 38 |
+| 情境 | `rng.sample(all, randint(1, len))` | sampler.py | 38-41 |
 | 題型種類 | `rng.choice(list(QuestionSetType))` | sampler.py | 41 |
 | 題型 | `rng.choice(list(QuestionType))` | sampler.py | 44 |
 | 數學思考 | `rng.sample(all, randint(1,3))` | sampler.py | 47-49 |

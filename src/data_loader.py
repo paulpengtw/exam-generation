@@ -35,10 +35,13 @@ def get_grade_content(curriculum: list[dict], grade: int) -> list[LearningConten
     return []
 
 
-def get_target_grade_content(curriculum: list[dict]) -> list[LearningContentItem]:
-    """Get all learning content for grades 7-9 (第四學習階段)."""
+def get_target_grade_content(curriculum: list[dict], grades: list[int] | None = None) -> list[LearningContentItem]:
+    """Get all learning content for the configured target grades."""
+    if grades is None:
+        from src.schema_loader import load_grades, load_schemas
+        grades = load_grades(load_schemas())
     items = []
-    for grade in (7, 8, 9):
+    for grade in grades:
         items.extend(get_grade_content(curriculum, grade))
     return items
 
