@@ -51,12 +51,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument(
         "--style",
         type=str,
+        nargs="+",
         choices=[s.value for s in QuestionStyle],  # type: ignore[attr-defined]
-        help="Question visual style",
+        help="Question visual style(s) — randomly picked from given values if multiple",
     )
     gen.add_argument("--context", type=str, nargs="+", help="情境 (e.g. 個人 社會時事) — one or more values")
     gen.add_argument("--set-type", type=str, help="題型種類 (單一題 or 題組題)")
-    gen.add_argument("--q-type", type=str, help="題型 (選擇題, 是非題, etc.)")
+    gen.add_argument("--q-type", type=str, nargs="+", help="題型 (one or more of: 選擇題, 是非題, etc.) — randomly picked if multiple")
     gen.add_argument("--count", type=int, default=1, help="Number of questions to generate")
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
@@ -210,13 +211,13 @@ def main(argv: list[str] | None = None) -> None:
     client = None if args.dry_run else LLMClient(config)
 
     # Resolve optional overrides
-    style_override = QuestionStyle(args.style) if args.style else None
+    style_override = [QuestionStyle(v) for v in args.style] if args.style else None
     context_override = (
         [_resolve_enum(v, QuestionContext) for v in args.context]
         if args.context else None
     )
     set_type_override = _resolve_enum(args.set_type, QuestionSetType)
-    q_type_override = _resolve_enum(args.q_type, QuestionType)
+    q_type_override = [_resolve_enum(v, QuestionType) for v in args.q_type] if args.q_type else None
 
     # Generate questions
     results = []

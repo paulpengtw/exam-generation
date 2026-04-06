@@ -21,10 +21,10 @@ _GRADES: list[int] = load_grades(load_schemas())
 def sample_params(
     grade_content: dict[int, list[LearningContentItem]],
     grade: int | None = None,
-    style: QuestionStyle | None = None,
+    style: list[QuestionStyle] | None = None,
     context: list[QuestionContext] | None = None,
     set_type: QuestionSetType | None = None,
-    q_type: QuestionType | None = None,
+    q_type: list[QuestionType] | None = None,
     seed: int | None = None,
 ) -> SampledParams:
     """Sample random question parameters.
@@ -49,7 +49,7 @@ def sample_params(
     selected_set_type = set_type if set_type is not None else rng.choice(list(QuestionSetType))
 
     # 題型
-    selected_q_type = q_type if q_type is not None else rng.choice(list(QuestionType))
+    selected_q_type = rng.choice(q_type) if q_type is not None else rng.choice(list(QuestionType))
 
     # 數學思考 (1-3 items)
     all_thinking = list(MathThinking)
@@ -64,7 +64,7 @@ def sample_params(
     selected_content = rng.sample(available_content, content_count)
 
     # Question style
-    selected_style = style if style is not None else rng.choice(list(QuestionStyle))
+    selected_style = rng.choice(style) if style is not None else rng.choice(list(QuestionStyle))
 
     return SampledParams(
         grade=selected_grade,

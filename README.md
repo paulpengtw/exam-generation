@@ -1,6 +1,6 @@
 # exam-generation
 
-CLI tool for generating Taiwan junior high school (7-9 grade) math exam questions using LLMs.
+CLI tool for generating Taiwan math exam questions using LLMs. Target grade range and 學習階段 are configurable in `question_schemas.json` (default: grades 7-9, 第四學習階段).
 
 The system randomly samples question parameters (grade, type, context, learning content), assembles a structured prompt with few-shot examples, calls an LLM to generate the question, then runs a second verification pass. Output is JSON per question, with optional PNG images for chart/diagram-based questions.
 
@@ -53,7 +53,7 @@ exam-generation/
 │   ├── schema_loader.py           # Loads question_schemas.json and builds dynamic enums
 │   └── data_loader.py             # Curriculum data loading & indexing
 ├── output/                        # Generated questions (gitignored)
-├── question_schemas.json          # User-editable: allowed values for all question parameters
+├── question_schemas.json          # User-editable: 學習階段, grades, and allowed values for all question parameters
 ├── IMPLEMENTATION_PLAN.md         # Planned refactors and known tech debt
 ├── CLAUDE.md                      # AI assistant conventions
 ├── README.md
@@ -94,6 +94,7 @@ Environment variables (set in `.env` or export directly):
 | `LLM_BASE_URL` | Base URL for the API endpoint | `https://api.anthropic.com/v1` |
 | `LLM_MODEL_PLAN` | Model for planning tasks | `claude-opus-4-6` |
 | `LLM_MODEL_EXECUTE` | Model for generation & verification | `claude-sonnet-4-6` |
+| `LLM_RATE_LIMIT_DELAY` | Seconds to wait before each API call (prevents 429 errors) | `0` |
 | `OUTPUT_DIR` | Directory for generated output | `./output` |
 | `QUESTION_SCHEMAS_PATH` | Path to question parameter config JSON | `./question_schemas.json` |
 
@@ -111,11 +112,18 @@ uv run python -m src.cli generate
 # Specify grade
 uv run python -m src.cli generate --grade 8
 
-# Specify question style
+# Specify question style (single value forces it)
 uv run python -m src.cli generate --style with_chart
 
-# Specify question type
-uv run python -m src.cli generate --題型 選擇題
+# Specify question type (single value forces it)
+uv run python -m src.cli generate --q-type 選擇題
+
+# Restrict to a subset — sampler picks randomly from the given values
+uv run python -m src.cli generate --q-type 選擇題 封閉式建構反應題
+uv run python -m src.cli generate --style chart_only text_only
+
+# Combine both
+uv run python -m src.cli generate --q-type 選擇題 是非題 --style with_chart creative_scenario
 ```
 
 ### Batch generation
@@ -200,7 +208,17 @@ For geometry diagrams, the LLM writes a self-contained matplotlib code snippet b
 
 All allowed values for question parameters are defined in `question_schemas.json` at the project root. Edit this file to add, remove, or rename options — no Python changes required.
 
-All 5 categories use the same `{value, instruction}` object format:
+The file also specifies the target 學習階段 and grades:
+
+```json
+{
+  "學習階段": "第四學習階段",
+  "grades": [7, 8, 9],
+  ...
+}
+```
+
+All 5 question parameter categories use the same `{value, instruction}` object format:
 
 ```json
 {
@@ -234,7 +252,7 @@ Complete grades 1-12 math curriculum from Taiwan's 十二年國民基本教育 c
 - `備註`: teaching notes
 - `對應學習表現`: mapped performance standards
 
-The full file is injected as LLM context so the model understands prerequisite knowledge (grades 1-6), target difficulty (grades 7-9), and what lies beyond (grades 10-12).
+The full file is injected as LLM context so the model understands prerequisite knowledge, target difficulty, and what lies beyond — the exact range is driven by `question_schemas.json`.
 
 ### Learning Performance Standards (學習表現.json)
 
@@ -282,7 +300,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 **File: `src/cli.py`**
 
 1. `main()` is called (line 181)
-2. `parse_args()` parses CLI flags: `--grade`, `--style`, `--context`, `--set-type`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--batch`, `--output`, `--dry-run`, `--env-file` (lines 39-65)
+2. `parse_args()` parses CLI flags: `--grade`, `--style`, `--context`, `--set-type`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--batch`, `--output`, `--dry-run`, `--env-file` (lines 39-65). `--style` and `--q-type` each accept one or more values (`nargs="+"`) — multiple values define a random selection pool.
 3. `Config.from_env(args.env_file)` loads configuration (line 188)
 
 **File: `src/config.py`**
@@ -290,6 +308,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 4. `Config.from_env()` reads `.env` file via `dotenv`, then pulls env vars (lines 22-36):
    - `LLM_API_KEY`, `LLM_BASE_URL` (endpoint)
    - `LLM_MODEL_PLAN` (default: `claude-opus-4-6`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
+   - `LLM_RATE_LIMIT_DELAY` (default: `0`) — seconds slept before every `generate()` call to avoid 429 errors
    - `OUTPUT_DIR` (default: `./output`), `DATA_DIR` (default: `./data`)
 5. `config.validate()` ensures `LLM_API_KEY` is set (line 193 -> config.py:38-41)
 
@@ -306,7 +325,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 7. `load_curriculum(data_dir / "curriculum" / "學習內容.json")` -> reads full K-12 curriculum JSON array (14 grade objects) (data_loader.py:11-14)
 8. `load_performance_standards(data_dir / "curriculum" / "學習表現.json")` -> reads learning performance standards (data_loader.py:17-19)
 9. `load_intro_text(Path("Introduction to \"學習表現\" and \"學習階段\".md"))` -> reads curriculum intro markdown (data_loader.py:56-60)
-10. Build grade content index: for each grade in (7, 8, 9), `get_grade_content(curriculum, grade)` extracts `LearningContentItem` objects (編碼 + 說明) (data_loader.py:23-35). Result: `{7: [...], 8: [...], 9: [...]}` (cli.py:204)
+10. Build grade content index: for each grade in `question_schemas.json["grades"]`, `get_grade_content(curriculum, grade)` extracts `LearningContentItem` objects (編碼 + 說明) (data_loader.py:23-35). Result: `{7: [...], 8: [...], 9: [...]}` (cli.py:204)
 
 ---
 
@@ -334,7 +353,7 @@ For each question `i` in `range(args.count)`:
 **File: `src/sampler.py`**
 
 14. `sample_params()` randomly selects (or uses CLI overrides for) each parameter (lines 18-69):
-    - **grade**: `rng.choice([7, 8, 9])` (line 35)
+    - **grade**: `rng.choice(_GRADES)` — values from `question_schemas.json["grades"]` (line 35)
     - **情境**: `rng.randint(1, len(all_contexts))` → `rng.sample(all_contexts, count)` — 1-N of 6 options (lines 38-41)
     - **題型種類**: `rng.choice(list(QuestionSetType))` — 單一題 or 題組題 (line 41)
     - **題型**: `rng.choice(list(QuestionType))` — one of 4 options (line 44)
@@ -463,7 +482,7 @@ For each question `i` in `range(args.count)`:
 
 | What | How | File | Line |
 |---|---|---|---|
-| Grade (7/8/9) | `rng.choice([7,8,9])` | sampler.py | 35 |
+| Grade | `rng.choice(_GRADES)` from `question_schemas.json` | sampler.py | 35 |
 | 情境 | `rng.sample(all, randint(1, len))` | sampler.py | 38-41 |
 | 題型種類 | `rng.choice(list(QuestionSetType))` | sampler.py | 41 |
 | 題型 | `rng.choice(list(QuestionType))` | sampler.py | 44 |

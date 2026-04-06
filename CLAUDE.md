@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is a CLI-based exam question generator for Taiwan's junior high school math (grades 7-9, 第四學習階段). It uses LLMs via OpenAI-compatible endpoints to generate structured exam questions with optional chart/image output.
+This is a CLI-based exam question generator for Taiwan math (default: grades 7-9, 第四學習階段). Target 學習階段 and grade list are configurable in `question_schemas.json`. It uses LLMs via OpenAI-compatible endpoints to generate structured exam questions with optional chart/image output.
 
 ## Architecture Decisions
 
@@ -30,8 +30,8 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 | `data/curriculum/學習表現.json` | Learning performance standards by stage |
 | `data/few_shot/` | Structured few-shot examples by question style |
 | `data/example_exams/` | Past national exam PDFs (112-114) for reference |
-| `question_schemas.json` | User-editable config: all 5 categories use `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
-| `src/schema_loader.py` | Loads `question_schemas.json`, builds dynamic str-enums via `build_enums()`, and builds `{category: {value: instruction}}` lookup via `build_instructions()` |
+| `question_schemas.json` | User-editable config: `"學習階段"` (string), `"grades"` (int array), and all 5 question parameter categories using `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
+| `src/schema_loader.py` | Loads `question_schemas.json`, exposes `load_grades()` / `load_learning_stage()`, builds dynamic str-enums via `build_enums()`, and builds `{category: {value: instruction}}` lookup via `build_instructions()` |
 | `src/schemas.py` | Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time) |
 | `src/sampler.py` | Random parameter selection logic |
 | `src/context_builder.py` | Prompt assembly with few-shot injection |
@@ -97,12 +97,17 @@ Content codes follow the pattern `{Category}-{Grade}-{Number}`:
 
 Allowed values for all parameters come from `question_schemas.json` at the project root. Edit that file to add or remove options — no Python changes required. Override the path with `QUESTION_SCHEMAS_PATH` env var.
 
+The file has two top-level scalar/array fields:
+- **`學習階段`**: string injected into the system prompt (e.g. `"第四學習階段"`)
+- **`grades`**: integer array of allowed grade levels (e.g. `[7, 8, 9]`) — drives CLI `--grade` choices, sampler selection, grade content index, and system prompt grade range text
+
 When randomly selecting parameters, respect these rules:
+- **grade**: pick one from `question_schemas.json["grades"]`
 - **情境**: pick 1 to N (from `question_schemas.json["情境"]`) — multi-select, same pattern as 數學思考
 - **題型種類**: pick exactly one (from `question_schemas.json["題型種類"]`)
 - **題型**: pick exactly one (from `question_schemas.json["題型"]`)
 - **數學思考**: pick 1 to 3 (from `question_schemas.json["數學思考"]`)
-- **學習內容**: pick 1 or more from the selected grade (can cross grades 7-9 for integrated questions)
+- **學習內容**: pick 1 or more from the selected grade (can cross configured grades for integrated questions)
 - **Question style**: pick one from `question_schemas.json["question_style"][*].value` — determines which few-shot examples to inject and whether to generate images.
 
 All 5 categories share the same `{value, instruction}` object format. A non-empty `instruction` on any entry is injected into the LLM user prompt: style instructions land under `## 題目風格`; instructions for 情境, 題型種類, 題型, and 數學思考 land under `## 條件補充說明` (section omitted if all instructions are empty).
@@ -141,7 +146,7 @@ Complete waterfall trace of `uv run python -m src.cli generate`. Full reference:
 
 ### Phase 1: Bootstrap & Configuration (`src/cli.py`, `src/config.py`)
 1. `main()` → `parse_args()` (cli.py:181, 39-65)
-2. `Config.from_env()` reads `.env` + env vars: `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_PLAN/EXECUTE`, `OUTPUT_DIR`, `DATA_DIR` (config.py:22-36)
+2. `Config.from_env()` reads `.env` + env vars: `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_PLAN/EXECUTE`, `LLM_RATE_LIMIT_DELAY`, `OUTPUT_DIR`, `DATA_DIR` (config.py:22-36)
 3. `config.validate()` ensures `LLM_API_KEY` present (cli.py:193)
 4. `output_dir.mkdir()` (cli.py:196)
 
@@ -149,7 +154,7 @@ Complete waterfall trace of `uv run python -m src.cli generate`. Full reference:
 5. `load_curriculum()` — full K-12 JSON array (data_loader.py:11-14)
 6. `load_performance_standards()` — performance standards (data_loader.py:17-19)
 7. `load_intro_text()` — curriculum intro markdown (data_loader.py:56-60)
-8. Build `{7: [...], 8: [...], 9: [...]}` grade content index via `get_grade_content()` (data_loader.py:23-35)
+8. Build grade content index `{g: [...] for g in _GRADES}` via `get_grade_content()` (data_loader.py:23-35); `_GRADES` from `question_schemas.json["grades"]`
 
 ### Phase 3: LLM Client Init (`src/llm_client.py`, cli.py:207)
 9. `LLMClient(config)` wraps `OpenAI(api_key, base_url)` (llm_client.py:16-21). Skipped if `--dry-run`.
@@ -160,7 +165,7 @@ For each question:
 
 **4A. Seed** — `rng = random.Random(seed)` (cli.py:221-222)
 
-**4B. Sampling** (`src/sampler.py:18-69`) — `sample_params()` randomly picks grade, 情境, 題型種類, 題型, 數學思考 (1-3), 學習內容 (1-3), style. Enum values come from `question_schemas.json` via `src/schema_loader.py`. All overridable via CLI.
+**4B. Sampling** (`src/sampler.py:18-69`) — `sample_params()` randomly picks grade, 情境, 題型種類, 題型, 數學思考 (1-3), 學習內容 (1-3), style. Enum values come from `question_schemas.json` via `src/schema_loader.py`. All overridable via CLI. `--q-type` and `--style` each accept one or more values (`nargs="+"`): a single value forces it; multiple values define a pool and the sampler picks one randomly per question.
 
 **4C. Prompt build** (`src/context_builder.py`) —
 - `build_system_prompt()`: injects full curriculum JSON + performance JSON + intro text (lines 108-118)
@@ -198,4 +203,4 @@ LLM call #2: `verify_question()` sends question + solution, Sonnet independently
 
 ### Randomness Summary
 
-All RNG is `random.Random(seed)` per question. Points: grade (sampler.py:35), 情境 (38-41), 題型種類 (42), 題型 (45), 數學思考 (48-50), 學習內容 (53-57), style (60), few-shot pick (context_builder.py:154-155).
+All RNG is `random.Random(seed)` per question. Points: grade from `_GRADES` (sampler.py:35), 情境 (38-41), 題型種類 (42), 題型 (45), 數學思考 (48-50), 學習內容 (53-57), style (60), few-shot pick (context_builder.py:154-155).

@@ -10,12 +10,15 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 
 1. `main()` is called (line 181)
 2. `parse_args()` parses CLI flags: `--grade`, `--style`, `--context`, `--set-type`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--batch`, `--output`, `--dry-run`, `--env-file` (lines 39-65)
-   - `--style` choices are built dynamically from `question_schemas.json` at import time (via `QuestionStyle` enum)
+   - `--style` choices are built dynamically from `question_schemas.json` at import time (via `QuestionStyle` enum); accepts `nargs="+"` — multiple values define a random selection pool
+   - `--q-type` accepts `nargs="+"` — multiple values define a random selection pool; single value forces that type
 3. `Config.from_env(args.env_file)` loads configuration (line 188)
 
 **File: `src/schema_loader.py`** (triggered at import of `src/schemas.py`)
 
 - `load_schemas()` reads `question_schemas.json` (path from `QUESTION_SCHEMAS_PATH` env var, default: project root)
+- `load_grades()` extracts `schemas["grades"]` — the integer list of allowed grades (e.g. `[7, 8, 9]`)
+- `load_learning_stage()` extracts `schemas["學習階段"]` — the stage name injected into the system prompt (e.g. `"第四學習階段"`)
 - `build_enums()` creates `QuestionContext`, `QuestionSetType`, `QuestionType`, `MathThinking`, `QuestionStyle` as dynamic `str`-mixin enums from the JSON values
 - `build_instructions()` builds `{category: {value: instruction}}` dict for all 5 categories, used by `context_builder.py`. Only entries with non-empty `instruction` are included.
 
@@ -24,6 +27,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 4. `Config.from_env()` reads `.env` file via `dotenv`, then pulls env vars (lines 22-36):
    - `LLM_API_KEY`, `LLM_BASE_URL` (endpoint)
    - `LLM_MODEL_PLAN` (default: `claude-opus-4-6`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
+   - `LLM_RATE_LIMIT_DELAY` (default: `0`) — float seconds; if > 0, `llm_client.generate()` sleeps this long before every API call to avoid 429 rate-limit errors (llm_client.py:24-25)
    - `OUTPUT_DIR` (default: `./output`), `DATA_DIR` (default: `./data`)
 5. `config.validate()` ensures `LLM_API_KEY` is set (line 193 -> config.py:38-41)
 
@@ -40,7 +44,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 7. `load_curriculum(data_dir / "curriculum" / "學習內容.json")` -> reads full K-12 curriculum JSON array (14 grade objects) (data_loader.py:11-14)
 8. `load_performance_standards(data_dir / "curriculum" / "學習表現.json")` -> reads learning performance standards (data_loader.py:17-19)
 9. `load_intro_text(Path("Introduction to \"學習表現\" and \"學習階段\".md"))` -> reads curriculum intro markdown (data_loader.py:56-60)
-10. Build grade content index: for each grade in (7, 8, 9), `get_grade_content(curriculum, grade)` extracts `LearningContentItem` objects (編碼 + 說明) from the curriculum (data_loader.py:23-35). Result: `{7: [...], 8: [...], 9: [...]}` (cli.py:204)
+10. Build grade content index: for each grade in `_GRADES` (loaded from `question_schemas.json["grades"]` at import), `get_grade_content(curriculum, grade)` extracts `LearningContentItem` objects (編碼 + 說明) from the curriculum (data_loader.py:23-35). Result: `{7: [...], 8: [...], 9: [...]}` by default (cli.py:204)
 
 ---
 
@@ -68,23 +72,26 @@ For each question `i` in `range(args.count)`:
 **File: `src/sampler.py`**
 
 14. `sample_params()` randomly selects (or uses CLI overrides for) each parameter (lines 18-69). All enum values are loaded from `question_schemas.json` at startup:
-    - **grade**: `rng.choice([7, 8, 9])` (line 35)
+    - **grade**: `rng.choice(_GRADES)` — values from `question_schemas.json["grades"]` (line 35)
     - **情境**: `rng.randint(1, len(all_contexts))` → `rng.sample(all_contexts, count)` — 1-N items from `question_schemas.json["情境"]` (lines 38-41)
     - **題型種類**: `rng.choice(list(QuestionSetType))` — values from `question_schemas.json["題型種類"]` (line 41)
-    - **題型**: `rng.choice(list(QuestionType))` — values from `question_schemas.json["題型"]` (line 44)
+    - **題型**: `rng.choice(q_type)` if pool provided (via `--q-type`), else `rng.choice(list(QuestionType))` — pool accepts 1+ values; single value forces that type (line 52)
     - **數學思考**: `rng.sample(all_thinking, randint(1,3))` — values from `question_schemas.json["數學思考"]` (lines 47-49)
     - **學習內容**: `rng.sample(available_content, randint(1,3))` — 1-3 items from selected grade's curriculum (lines 52-56)
-    - **style**: `rng.choice(list(QuestionStyle))` — values from `question_schemas.json["question_style"][*].value` (line 59)
+    - **style**: `rng.choice(style)` if pool provided (via `--style`), else `rng.choice(list(QuestionStyle))` — pool accepts 1+ values (line 67)
 15. Returns `SampledParams` Pydantic model (lines 61-69)
 
 ### 4C. Prompt Construction (cli.py:241 -> generate_one lines 78-119)
 
 **File: `src/context_builder.py`**
 
-16. `build_system_prompt()` (lines 108-118) fills `SYSTEM_PROMPT_TEMPLATE` (lines 12-66) with:
+16. `build_system_prompt()` (lines 112-128) fills `SYSTEM_PROMPT_TEMPLATE` with:
     - `{curriculum_json}` — full K-12 curriculum as JSON string (via `get_full_curriculum_text`, data_loader.py:46-48)
     - `{performance_json}` — full performance standards as JSON string (via `get_full_performance_text`, data_loader.py:51-53)
     - `{intro_text}` — curriculum introduction markdown
+    - `{learning_stage}` — from `question_schemas.json["學習階段"]` (e.g. `"第四學習階段"`)
+    - `{grade_names}` — e.g. `"7年級、8年級、9年級"` built from `question_schemas.json["grades"]`
+    - `{grade_range}` — e.g. `"7-9年級"` built from min/max of `question_schemas.json["grades"]`
 
 17. `build_user_prompt()` fills `USER_PROMPT_TEMPLATE` with:
     - Sampled parameters (grade, 情境, 題型種類, 題型, 數學思考, 學習內容)
@@ -198,7 +205,7 @@ For each question `i` in `range(args.count)`:
 
 | What | How | File | Line |
 |---|---|---|---|
-| Grade (7/8/9) | `rng.choice([7,8,9])` | sampler.py | 35 |
+| Grade | `rng.choice(_GRADES)` from `question_schemas.json["grades"]` | sampler.py | 35 |
 | 情境 | `rng.sample(all, randint(1, len))` | sampler.py | 38-41 |
 | 題型種類 | `rng.choice(list(QuestionSetType))` | sampler.py | 41 |
 | 題型 | `rng.choice(list(QuestionType))` | sampler.py | 44 |

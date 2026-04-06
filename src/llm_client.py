@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 from openai import OpenAI
 
@@ -22,6 +23,8 @@ class LLMClient:
 
     def generate(self, system: str, user: str, model: str | None = None) -> str:
         """Call the execution model (default: Sonnet) and return raw text response."""
+        if self.config.rate_limit_delay > 0:
+            time.sleep(self.config.rate_limit_delay)
         model = model or self.config.model_execute
         response = self.client.chat.completions.create(
             model=model,

@@ -17,6 +17,7 @@ class Config:
     model_execute: str = "claude-sonnet-4-6"
     output_dir: Path = field(default_factory=lambda: Path("./output"))
     data_dir: Path = field(default_factory=lambda: Path("./data"))
+    rate_limit_delay: float = 0.0  # seconds between API calls
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> Config:
@@ -33,6 +34,7 @@ class Config:
             model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
             output_dir=Path(os.environ.get("OUTPUT_DIR", "./output")),
             data_dir=Path(os.environ.get("DATA_DIR", "./data")),
+            rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),
         )
 
     def validate(self) -> None:
