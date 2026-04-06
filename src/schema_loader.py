@@ -9,6 +9,9 @@ from pathlib import Path
 
 _DEFAULT_PATH = Path(__file__).parent.parent / "question_schemas.json"
 
+# All categories that use the {value, instruction?} object format.
+_CATEGORIES = ("情境", "題型種類", "題型", "數學思考", "question_style")
+
 
 def _resolve_path(path: Path | None = None) -> Path:
     if path is not None:
@@ -24,6 +27,11 @@ def load_schemas(path: Path | None = None) -> dict:
         return json.load(f)
 
 
+def _extract_values(entries: list[dict]) -> list[str]:
+    """Extract the 'value' field from a list of {value, instruction?} objects."""
+    return [entry["value"] for entry in entries]
+
+
 def _build_str_enum(name: str, values: list[str]) -> type:
     """Create a str-mixin enum from a list of string values."""
     members = {f"ITEM_{i}": v for i, v in enumerate(values)}
@@ -32,16 +40,24 @@ def _build_str_enum(name: str, values: list[str]) -> type:
 
 def build_enums(schemas: dict) -> tuple:
     """Build (QuestionContext, QuestionSetType, QuestionType, MathThinking, QuestionStyle)."""
-    QuestionContext = _build_str_enum("QuestionContext", schemas["情境"])
-    QuestionSetType = _build_str_enum("QuestionSetType", schemas["題型種類"])
-    QuestionType = _build_str_enum("QuestionType", schemas["題型"])
-    MathThinking = _build_str_enum("MathThinking", schemas["數學思考"])
-    QuestionStyle = _build_str_enum(
-        "QuestionStyle", [entry["value"] for entry in schemas["question_style"]]
-    )
+    QuestionContext = _build_str_enum("QuestionContext", _extract_values(schemas["情境"]))
+    QuestionSetType = _build_str_enum("QuestionSetType", _extract_values(schemas["題型種類"]))
+    QuestionType = _build_str_enum("QuestionType", _extract_values(schemas["題型"]))
+    MathThinking = _build_str_enum("MathThinking", _extract_values(schemas["數學思考"]))
+    QuestionStyle = _build_str_enum("QuestionStyle", _extract_values(schemas["question_style"]))
     return QuestionContext, QuestionSetType, QuestionType, MathThinking, QuestionStyle
 
 
-def build_style_instructions(schemas: dict) -> dict[str, str]:
-    """Return {style_value: instruction} mapping from question_style entries."""
-    return {entry["value"]: entry["instruction"] for entry in schemas["question_style"]}
+def build_instructions(schemas: dict) -> dict[str, dict[str, str]]:
+    """Return {category: {value: instruction}} for all categories.
+
+    Only entries with a non-empty instruction are included in each inner dict.
+    """
+    result: dict[str, dict[str, str]] = {}
+    for category in _CATEGORIES:
+        mapping = {}
+        for entry in schemas[category]:
+            if entry.get("instruction"):
+                mapping[entry["value"]] = entry["instruction"]
+        result[category] = mapping
+    return result

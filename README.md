@@ -200,23 +200,27 @@ For geometry diagrams, the LLM writes a self-contained matplotlib code snippet b
 
 All allowed values for question parameters are defined in `question_schemas.json` at the project root. Edit this file to add, remove, or rename options — no Python changes required.
 
+All 5 categories use the same `{value, instruction}` object format:
+
 ```json
 {
-  "情境": ["個人", "社會時事", "科學", "職業", "建築與藝術", "數學文字情境"],
-  "題型種類": ["單一題", "題組題"],
-  "題型": ["選擇題", "是非題", "封閉式建構反應題", "開放式建構反應題"],
-  "數學思考": ["形成", "運用", "詮釋評估"],
+  "情境": [
+    {"value": "個人", "instruction": ""},
+    {"value": "社會時事", "instruction": "以近期新聞或社會議題為背景..."}
+  ],
+  "題型種類": [{"value": "單一題", "instruction": ""}, ...],
+  "題型": [{"value": "選擇題", "instruction": ""}, ...],
+  "數學思考": [{"value": "形成", "instruction": ""}, ...],
   "question_style": [
-    {
-      "value": "text_only",
-      "instruction": "這是純文字題目..."
-    }
+    {"value": "text_only", "instruction": "這是純文字題目..."},
+    ...
   ]
 }
 ```
 
-- **Plain arrays** (`情境`, `題型種類`, `題型`, `數學思考`): add/remove string values freely.
-- **`question_style`**: each entry needs a `value` (used as the style identifier and for matching `data/few_shot/{value}/`) and an `instruction` (injected into the LLM prompt). When adding a new style, also create the corresponding `data/few_shot/{value}/` directory with example JSON files.
+- **`value`**: the parameter value used for sampling and CLI overrides.
+- **`instruction`**: optional guidance injected into the LLM prompt when this value is selected. Leave empty (`""`) to omit. Style instructions land under `## 題目風格`; instructions for the other four categories land under `## 條件補充說明` (section omitted entirely if all are empty).
+- **Adding a new `question_style`**: also create `data/few_shot/{value}/` with example JSON files.
 
 To use an alternate config file: `QUESTION_SCHEMAS_PATH=/path/to/config.json uv run python -m src.cli generate`
 

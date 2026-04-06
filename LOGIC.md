@@ -17,7 +17,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 
 - `load_schemas()` reads `question_schemas.json` (path from `QUESTION_SCHEMAS_PATH` env var, default: project root)
 - `build_enums()` creates `QuestionContext`, `QuestionSetType`, `QuestionType`, `MathThinking`, `QuestionStyle` as dynamic `str`-mixin enums from the JSON values
-- `build_style_instructions()` builds `{style_value: instruction}` dict used by `context_builder.py`
+- `build_instructions()` builds `{category: {value: instruction}}` dict for all 5 categories, used by `context_builder.py`. Only entries with non-empty `instruction` are included.
 
 **File: `src/config.py`**
 
@@ -86,9 +86,10 @@ For each question `i` in `range(args.count)`:
     - `{performance_json}` — full performance standards as JSON string (via `get_full_performance_text`, data_loader.py:51-53)
     - `{intro_text}` — curriculum introduction markdown
 
-17. `build_user_prompt()` (lines 121-173) fills `USER_PROMPT_TEMPLATE` (lines 68-98) with:
+17. `build_user_prompt()` fills `USER_PROMPT_TEMPLATE` with:
     - Sampled parameters (grade, 情境, 題型種類, 題型, 數學思考, 學習內容)
-    - `{style_instruction}` — looked up from `_STYLE_INSTRUCTIONS[params.style.value]`; this dict is built from `question_schemas.json["question_style"]` at module import time
+    - `{param_instructions}` — optional `## 條件補充說明` block. For each selected value of 情境, 題型種類, 題型, and each 數學思考 item, `_INSTRUCTIONS[category][value]` is looked up from the module-level dict (built via `schema_loader.build_instructions()` from `question_schemas.json`). Only non-empty instructions are emitted; if none exist the block is omitted entirely.
+    - `{style_instruction}` — `_INSTRUCTIONS["question_style"][params.style.value]` → injected under `## 題目風格` heading. Full data flow: `question_schemas.json["question_style"][*].instruction` → `build_instructions()` → `_INSTRUCTIONS` dict → lookup by style value → LLM payload.
     - `{few_shot_examples}` — assembled via steps 18-20 below
 
 ### 4D. Few-Shot Example Injection (context_builder.py:142-162)

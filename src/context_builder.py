@@ -7,10 +7,10 @@ import random
 from pathlib import Path
 
 from src.data_loader import load_few_shot_examples
-from src.schema_loader import build_style_instructions, load_schemas
+from src.schema_loader import build_instructions, load_schemas
 from src.schemas import SampledParams
 
-_STYLE_INSTRUCTIONS: dict[str, str] = build_style_instructions(load_schemas())
+_INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(load_schemas())
 
 SYSTEM_PROMPT_TEMPLATE = """\
 你是一位資深的台灣國中數學命題教師，專門為第四學習階段（7年級、8年級、9年級）的學生設計考試題目。
@@ -80,7 +80,7 @@ USER_PROMPT_TEMPLATE = """\
 - **數學思考**：{thinking}
 - **必須涵蓋的學習內容**：
 {content_list}
-
+{param_instructions}
 ## 題目風格
 
 {style_instruction}
@@ -133,8 +133,27 @@ def build_user_prompt(
     # Format math thinking
     thinking = "、".join(t.value for t in params.數學思考)
 
+    # Collect per-param instructions (only non-empty ones)
+    param_instruction_lines = []
+    for category, key in (
+        ("情境", params.情境.value),
+        ("題型種類", params.題型種類.value),
+        ("題型", params.題型.value),
+    ):
+        instr = _INSTRUCTIONS.get(category, {}).get(key)
+        if instr:
+            param_instruction_lines.append(f"  - **{category}（{key}）補充**：{instr}")
+    for t in params.數學思考:
+        instr = _INSTRUCTIONS.get("數學思考", {}).get(t.value)
+        if instr:
+            param_instruction_lines.append(f"  - **數學思考（{t.value}）補充**：{instr}")
+    param_instructions = (
+        "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
+        if param_instruction_lines else ""
+    )
+
     # Style instruction
-    style_instruction = _STYLE_INSTRUCTIONS[params.style.value]
+    style_instruction = _INSTRUCTIONS.get("question_style", {}).get(params.style.value, "")
 
     # Load and format few-shot examples
     examples = load_few_shot_examples(few_shot_dir, params.style.value)
@@ -165,6 +184,7 @@ def build_user_prompt(
         q_type=params.題型.value,
         thinking=thinking,
         content_list=content_list,
+        param_instructions=param_instructions,
         style_instruction=style_instruction,
         few_shot_examples=few_shot_text,
     )

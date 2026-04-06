@@ -30,8 +30,8 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 | `data/curriculum/學習表現.json` | Learning performance standards by stage |
 | `data/few_shot/` | Structured few-shot examples by question style |
 | `data/example_exams/` | Past national exam PDFs (112-114) for reference |
-| `question_schemas.json` | User-editable config: allowed values for 情境, 題型種類, 題型, 數學思考, question_style (with prompt instructions) |
-| `src/schema_loader.py` | Loads `question_schemas.json` and builds dynamic str-enums; exposes `build_style_instructions()` |
+| `question_schemas.json` | User-editable config: all 5 categories use `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
+| `src/schema_loader.py` | Loads `question_schemas.json`, builds dynamic str-enums via `build_enums()`, and builds `{category: {value: instruction}}` lookup via `build_instructions()` |
 | `src/schemas.py` | Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time) |
 | `src/sampler.py` | Random parameter selection logic |
 | `src/context_builder.py` | Prompt assembly with few-shot injection |
@@ -103,7 +103,9 @@ When randomly selecting parameters, respect these rules:
 - **題型**: pick exactly one (from `question_schemas.json["題型"]`)
 - **數學思考**: pick 1 to 3 (from `question_schemas.json["數學思考"]`)
 - **學習內容**: pick 1 or more from the selected grade (can cross grades 7-9 for integrated questions)
-- **Question style**: pick one from `question_schemas.json["question_style"][*].value` — determines which few-shot examples to inject and whether to generate images. Each style entry also carries an `instruction` string injected into the user prompt.
+- **Question style**: pick one from `question_schemas.json["question_style"][*].value` — determines which few-shot examples to inject and whether to generate images.
+
+All 5 categories share the same `{value, instruction}` object format. A non-empty `instruction` on any entry is injected into the LLM user prompt: style instructions land under `## 題目風格`; instructions for 情境, 題型種類, 題型, and 數學思考 land under `## 條件補充說明` (section omitted if all instructions are empty).
 
 ## Geometry Rendering Architecture
 
@@ -162,7 +164,7 @@ For each question:
 
 **4C. Prompt build** (`src/context_builder.py`) —
 - `build_system_prompt()`: injects full curriculum JSON + performance JSON + intro text (lines 108-118)
-- `build_user_prompt()`: injects sampled params + style instruction + few-shot examples (lines 121-173). Style instruction looked up from `_STYLE_INSTRUCTIONS` (built from `question_schemas.json["question_style"]` at import time)
+- `build_user_prompt()`: injects sampled params + per-param instructions + style instruction + few-shot examples. All instructions come from `_INSTRUCTIONS` (built via `schema_loader.build_instructions()` at module import). Non-empty instructions for 情境/題型種類/題型/數學思考 appear under `## 條件補充說明`; style instruction appears under `## 題目風格`. Both sections are omitted if empty.
 
 **4D. Few-shot injection** —
 - `load_few_shot_examples(few_shot_dir, style)` loads ALL `*.json` from `data/few_shot/{style}/` alphabetically (data_loader.py:63-72)

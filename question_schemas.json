@@ -1,26 +1,71 @@
 {
   "情境": [
-    "個人",
-    "社會時事",
-    "科學",
-    "職業",
-    "建築與藝術",
-    "數學文字情境"
+    {
+      "value": "個人",
+      "instruction": ""
+    },
+    {
+      "value": "社會時事",
+      "instruction": ""
+    },
+    {
+      "value": "科學",
+      "instruction": ""
+    },
+    {
+      "value": "職業",
+      "instruction": ""
+    },
+    {
+      "value": "建築與藝術",
+      "instruction": ""
+    },
+    {
+      "value": "數學文字情境",
+      "instruction": ""
+    }
   ],
   "題型種類": [
-    "單一題",
-    "題組題"
+    {
+      "value": "單一題",
+      "instruction": ""
+    },
+    {
+      "value": "題組題",
+      "instruction": ""
+    }
   ],
   "題型": [
-    "選擇題",
-    "是非題",
-    "封閉式建構反應題",
-    "開放式建構反應題"
+    {
+      "value": "選擇題",
+      "instruction": ""
+    },
+    {
+      "value": "是非題",
+      "instruction": ""
+    },
+    {
+      "value": "封閉式建構反應題",
+      "instruction": ""
+    },
+    {
+      "value": "開放式建構反應題",
+      "instruction": ""
+    }
   ],
   "數學思考": [
-    "形成",
-    "運用",
-    "詮釋評估"
+    {
+      "value": "形成",
+      "instruction": ""
+    },
+    {
+      "value": "運用",
+      "instruction": ""
+    },
+    {
+      "value": "詮釋評估",
+      "instruction": ""
+    }
   ],
   "question_style": [
     {
