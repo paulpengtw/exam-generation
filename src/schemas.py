@@ -21,13 +21,26 @@ class LearningContentItem(BaseModel):
     說明: str
 
 
-class ChartSpec(BaseModel):
-    """Specification for generating a chart image."""
-    chart_type: Literal["histogram", "boxplot", "line_chart", "pie_chart", "geometry"]
+class ImageSpec(BaseModel):
+    """Specification for generating a question image.
+
+    Two render modes:
+    - render_mode="chart": structured data rendered by matplotlib (histogram, boxplot, etc.)
+    - render_mode="html": LLM generates HTML/CSS/SVG, rendered to PNG via Playwright
+    """
+    render_mode: Literal["chart", "html"] = "chart"
+    # chart mode fields
+    chart_type: Literal["histogram", "boxplot", "line_chart", "pie_chart"] | None = None
     title: str = ""
     data: dict = Field(default_factory=dict)
     labels: dict = Field(default_factory=dict)
+    # html mode fields
+    html: str = ""
     description: str = ""
+
+
+# Backward-compatible alias
+ChartSpec = ImageSpec
 
 
 class ChartVerificationResult(BaseModel):

@@ -69,15 +69,15 @@
         "【步驟 3：交叉相乘解方程式】6x = 1.6 × (4 + x) → 6x = 6.4 + 1.6x → 4.4x = 6.4 → x = 64/44 = 16/11"
       ],
       "chart_spec": {
-        "chart_type": "geometry",
+        "render_mode": "html",
         "title": "路燈與影子示意圖",
+        "description": "路燈與影子幾何示意圖（使用 SVG）。左側：路燈柱（垂直線）頂端有圓形燈泡，旁標藍色雙箭頭標示「6 m」。地面：水平線橫貫全圖。右側：小明（垂直線代表人）站在距路燈 4m 處，旁標綠色雙箭頭「1.6 m」，距離標紅色「4 m」。影子繼續延伸至更右方，標紫色「? m」。從燈頂到影子尖端有黃色虛線（光線路徑）。各垂直線底部有直角符號。整體為黑白線條，箭頭用不同顏色區分。",
         "data": {
-          "shapes": ["line_lamp", "line_person", "line_shadow", "line_light"],
           "lamp_height": 6,
           "person_height": 1.6,
-          "distance": 4
-        },
-        "description": "路燈在左，人在右，影子延伸至更右方，光線從燈頂到影子尖端"
+          "lamp_to_person": 4,
+          "shadow_length": "?"
+        }
       }
     }
   },

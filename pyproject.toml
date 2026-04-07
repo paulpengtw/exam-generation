@@ -10,6 +10,7 @@ dependencies = [
     "matplotlib>=3.8",
     "python-dotenv>=1.0",
     "pdfplumber>=0.11.9",
+    "playwright>=1.40",
 ]
 
 [project.optional-dependencies]

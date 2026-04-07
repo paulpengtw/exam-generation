@@ -32,10 +32,14 @@
         "(2) 套餐花費 $390，設加點 n 份：390 + 60n ≤ 500 → 60n ≤ 110 → n ≤ 1.83…。n 最大為 1。答案 (A)。"
       ],
       "chart_spec": {
-        "chart_type": "geometry",
+        "render_mode": "html",
         "title": "晨光早午餐菜單",
-        "description": "餐廳菜單圖，需特殊排版渲染",
-        "data": {"type": "menu"}
+        "description": "精緻餐廳菜單。飲品區：經典美式咖啡 $45、鮮奶拿鐵 $65、蜂蜜柚子茶 $55。餐點區：火腿蛋吐司 $40、燻雞帕尼尼 $75、凱撒沙拉 $60。超值組合：A 套餐（美式＋火腿蛋吐司）$75、B 套餐（拿鐵＋帕尼尼）$120。風格：典雅咖啡館，有裝飾邊框和區域分隔線。",
+        "data": {
+          "sections": ["飲品", "餐點", "套餐"],
+          "combo_A": 75,
+          "combo_B": 120
+        }
       }
     }
   },
@@ -132,13 +136,13 @@
         "(3) πr² = (1/4) × 18√19 = (9√19)/2。r = 3√(√19/(2π)) 公尺。"
       ],
       "chart_spec": {
-        "chart_type": "geometry",
+        "render_mode": "html",
         "title": "社區中庭改建設計圖",
+        "description": "社區中庭設計圖（比例尺 1:200）。中庭為 30m × 20m 的長方形（灰色虛線邊框）。內有三角形步道 △ABC，∠C = 90°（右下角），AB = 20m（斜邊，頂部），AC = 18m（左邊），BC ≈ 8.72m（底部）；各邊標示長度，直角符號標於 C 點。三角形中央有圓形噴水池（綠色填充，標示半徑 r）。需有圖例：噴水池、三角步道、中庭邊界。",
         "data": {
-          "shapes": ["rectangle", "triangle", "circle"],
           "rectangle": {"width": 30, "height": 20},
-          "triangle": {"A": [0, 0], "B": [18, 0], "C": [0, 8.72]},
-          "circle": {"center": "inside_triangle", "radius": "r"}
+          "triangle": {"AB": 20, "AC": 18, "BC": "2√19", "angle_C": 90},
+          "circle": {"label": "噴水池", "radius": "r"}
         }
       }
     }

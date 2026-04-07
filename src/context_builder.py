@@ -64,12 +64,30 @@ SYSTEM_PROMPT_TEMPLATE = """\
 }}
 ```
 
-如果題目需要圖表或圖片，請在 JSON 中加入 `chart_spec` 欄位，包含：
-- `chart_type`: "histogram" | "boxplot" | "line_chart" | "pie_chart" | "geometry"
-- `title`: 圖表標題
-- `data`: 圖表所需的數據（具體格式依圖表類型而定）
-- `labels`: 座標軸標籤
-- `description`: 圖表的文字描述
+如果題目需要圖表或圖片，請在 JSON 中加入 `chart_spec` 欄位，依需求選擇以下兩種模式之一：
+
+**統計圖表（`render_mode: "chart"`）** — 適用於有明確數值資料的圖表：
+```json
+{{
+  "render_mode": "chart",
+  "chart_type": "histogram" | "boxplot" | "line_chart" | "pie_chart",
+  "title": "圖表標題",
+  "data": {{ ... }},
+  "labels": {{"x": "x軸標籤", "y": "y軸標籤"}}
+}}
+```
+
+**HTML 示意圖（`render_mode: "html"`）** — 適用於幾何圖形、示意圖、菜單、比較表格、情境圖等一切無法用統計圖表表達的視覺內容：
+```json
+{{
+  "render_mode": "html",
+  "description": "詳細描述圖片內容，包含形狀、尺寸、標籤、顏色、文字等，讓 AI 能正確生成圖片",
+  "title": "圖片標題（選填）",
+  "data": {{ "key": "value" }}
+}}
+```
+
+`render_mode: "html"` 的 `description` 請盡量詳細，例如：「三角形 △ABC，∠C = 90°，AB = 20m（斜邊），AC = 18m，標示各邊長度和直角符號」或「餐廳菜單，包含飲品區（美式咖啡 $45、拿鐵 $65）和套餐區（A套餐 $75）」。
 
 如果題目不需要圖表，則不要包含 `chart_spec` 欄位。
 

@@ -22,11 +22,12 @@ from src.data_loader import (
     load_intro_text,
     load_performance_standards,
 )
+from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient
-from src.renderer import render_chart
+from src.renderer import render_image
 from src.sampler import sample_params
 from src.schemas import (
-    ChartSpec,
+    ImageSpec,
     ExamQuestion,
     LearningContentItem,
     QuestionContext,
@@ -90,6 +91,7 @@ def generate_one(
     question_id: str,
     dry_run: bool = False,
     skip_verify: bool = False,
+    html_renderer: PlaywrightRenderer | None = None,
 ) -> ExamQuestion | str:
     """Generate a single exam question.
 
@@ -112,12 +114,19 @@ def generate_one(
     # Parse into ExamQuestion
     question = _parse_question(raw_json, question_id, params, config.model_execute)
 
-    # Render chart before verification so verifier can see the image
+    # Render image before verification so verifier can see the PNG
     chart_image_path: str | None = None
     if question.chart_spec:
         img_path = config.output_dir / f"{question_id}.png"
-        print(f"  Rendering chart: {img_path}", file=sys.stderr)
-        rendered = render_chart(question.chart_spec.model_dump(), img_path, llm_client=client)
+        print(f"  Rendering image: {img_path}", file=sys.stderr)
+        question_text = "\n".join(question.題目)
+        rendered = render_image(
+            question.chart_spec.model_dump(),
+            img_path,
+            question_text=question_text,
+            html_renderer=html_renderer,
+            llm_client=client,
+        )
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
@@ -159,19 +168,30 @@ def _parse_question(
     # Handle 數學思考
     raw_thinking = raw.get("數學思考", [])
 
-    # Handle chart_spec
+    # Handle image_spec (new) or chart_spec (legacy field name) from LLM output
     chart_spec = None
-    if "chart_spec" in raw and raw["chart_spec"]:
+    raw_spec = raw.get("image_spec") or raw.get("chart_spec")
+    if raw_spec:
         try:
-            chart_spec = ChartSpec(**raw["chart_spec"])
+            chart_spec = ImageSpec(**raw_spec)
         except Exception:
-            chart_spec = ChartSpec(
-                chart_type=raw["chart_spec"].get("chart_type", "geometry"),
-                data=raw["chart_spec"].get("data", {}),
-                labels=raw["chart_spec"].get("labels", {}),
-                title=raw["chart_spec"].get("title", ""),
-                description=raw["chart_spec"].get("description", ""),
-            )
+            # Fallback: infer render_mode from presence of chart_type
+            if raw_spec.get("chart_type"):
+                chart_spec = ImageSpec(
+                    render_mode="chart",
+                    chart_type=raw_spec.get("chart_type"),
+                    data=raw_spec.get("data", {}),
+                    labels=raw_spec.get("labels", {}),
+                    title=raw_spec.get("title", ""),
+                    description=raw_spec.get("description", ""),
+                )
+            else:
+                chart_spec = ImageSpec(
+                    render_mode="html",
+                    description=raw_spec.get("description", raw_spec.get("title", "")),
+                    title=raw_spec.get("title", ""),
+                    data=raw_spec.get("data", {}),
+                )
 
     return ExamQuestion(
         id=question_id,
@@ -220,6 +240,18 @@ def main(argv: list[str] | None = None) -> None:
     # Initialize LLM client (skip for dry-run)
     client = None if args.dry_run else LLMClient(config)
 
+    # Initialize Playwright renderer (skip for dry-run)
+    # Started once here and reused across all questions to amortize ~1-2s startup cost
+    html_renderer = None
+    if not args.dry_run:
+        try:
+            html_renderer = PlaywrightRenderer()
+            html_renderer.start()
+            print("  Playwright browser started.", file=sys.stderr)
+        except Exception as e:
+            print(f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.", file=sys.stderr)
+            html_renderer = None
+
     # Resolve optional overrides
     style_override = [QuestionStyle(v) for v in args.style] if args.style else None
     context_override = (
@@ -233,70 +265,75 @@ def main(argv: list[str] | None = None) -> None:
     results = []
     base_seed = args.seed
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    try:
+        for i in range(args.count):
+            seed = (base_seed + i) if base_seed is not None else None
+            rng = random.Random(seed)
 
-    for i in range(args.count):
-        seed = (base_seed + i) if base_seed is not None else None
-        rng = random.Random(seed)
+            params = sample_params(
+                grade_content=grade_content,
+                grade=args.grade,
+                style=style_override,
+                context=context_override,
+                set_type=set_type_override,
+                q_type=q_type_override,
+                seed=seed,
+            )
 
-        params = sample_params(
-            grade_content=grade_content,
-            grade=args.grade,
-            style=style_override,
-            context=context_override,
-            set_type=set_type_override,
-            q_type=q_type_override,
-            seed=seed,
-        )
+            question_id = f"q_{timestamp}_{i+1:03d}"
 
-        question_id = f"q_{timestamp}_{i+1:03d}"
+            print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
+                  f"style={params.style.value}, 情境={'、'.join(c.value for c in params.情境)}, "
+                  f"題型={params.題型.value}", file=sys.stderr)
+            print(f"  學習內容: {', '.join(c.編碼 for c in params.學習內容)}", file=sys.stderr)
 
-        print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
-              f"style={params.style.value}, 情境={'、'.join(c.value for c in params.情境)}, "
-              f"題型={params.題型.value}", file=sys.stderr)
-        print(f"  學習內容: {', '.join(c.編碼 for c in params.學習內容)}", file=sys.stderr)
+            result = generate_one(
+                config=config,
+                client=client,
+                curriculum=curriculum,
+                performance=performance,
+                intro_text=intro_text,
+                grade_content=grade_content,
+                params=params,
+                question_id=question_id,
+                dry_run=args.dry_run,
+                skip_verify=args.no_verify,
+                html_renderer=html_renderer,
+            )
 
-        result = generate_one(
-            config=config,
-            client=client,
-            curriculum=curriculum,
-            performance=performance,
-            intro_text=intro_text,
-            grade_content=grade_content,
-            params=params,
-            question_id=question_id,
-            dry_run=args.dry_run,
-            skip_verify=args.no_verify,
-        )
+            if args.dry_run:
+                print(result)
+                return
 
-        if args.dry_run:
-            print(result)
-            return
+            question = result
+            assert isinstance(question, ExamQuestion)
 
-        question = result
-        assert isinstance(question, ExamQuestion)
+            results.append(question)
 
-        results.append(question)
+            # Write individual JSON (unless batch mode)
+            if not args.batch:
+                out_path = config.output_dir / f"{question_id}.json"
+                out_path.write_text(
+                    question.model_dump_json(indent=2, exclude_none=True),
+                    encoding="utf-8",
+                )
+                print(f"  Saved: {out_path}", file=sys.stderr)
 
-        # Write individual JSON (unless batch mode)
-        if not args.batch:
-            out_path = config.output_dir / f"{question_id}.json"
-            out_path.write_text(
-                question.model_dump_json(indent=2, exclude_none=True),
+        # Batch output
+        if args.batch and results:
+            batch_path = config.output_dir / f"batch_{timestamp}.json"
+            batch_data = [json.loads(q.model_dump_json(exclude_none=True)) for q in results]
+            batch_path.write_text(
+                json.dumps(batch_data, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            print(f"  Saved: {out_path}", file=sys.stderr)
+            print(f"\nBatch saved: {batch_path}", file=sys.stderr)
 
-    # Batch output
-    if args.batch and results:
-        batch_path = config.output_dir / f"batch_{timestamp}.json"
-        batch_data = [json.loads(q.model_dump_json(exclude_none=True)) for q in results]
-        batch_path.write_text(
-            json.dumps(batch_data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        print(f"\nBatch saved: {batch_path}", file=sys.stderr)
+        print(f"\nDone. Generated {len(results)} question(s).", file=sys.stderr)
 
-    print(f"\nDone. Generated {len(results)} question(s).", file=sys.stderr)
+    finally:
+        if html_renderer is not None:
+            html_renderer.stop()
 
 
 if __name__ == "__main__":
