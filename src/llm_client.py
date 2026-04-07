@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import time
+from pathlib import Path
 
 from openai import OpenAI
 
@@ -31,6 +33,30 @@ class LLMClient:
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
+            ],
+            max_tokens=8192,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content
+
+    def generate_with_image(
+        self, system: str, user: str, image_path: str | Path | None = None, model: str | None = None
+    ) -> str:
+        """Call the execution model with an optional image attachment."""
+        if image_path is None:
+            return self.generate(system, user, model)
+        if self.config.rate_limit_delay > 0:
+            time.sleep(self.config.rate_limit_delay)
+        model = model or self.config.model_execute
+        b64_data = base64.b64encode(Path(image_path).read_bytes()).decode("utf-8")
+        response = self.client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": [
+                    {"type": "text", "text": user},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_data}"}},  # noqa: E501
+                ]},
             ],
             max_tokens=8192,
             temperature=0.7,

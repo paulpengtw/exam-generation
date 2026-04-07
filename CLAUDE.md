@@ -14,7 +14,8 @@ The Python code handles all random selection (grade, 情境, 題型種類, 題�
 
 ### Two-pass verification
 1. First call (Sonnet): generates the question and solution
-2. Second call (Sonnet): independently solves the question and flags any discrepancies
+2. Chart is rendered to PNG (if `chart_spec` present) — before verification so the verifier can see it
+3. Second call (Sonnet): independently solves the question, inspects the chart image (multimodal), and flags any discrepancies. Returns structured `VerificationResult` with an optional nested `ChartVerificationResult`.
 
 ### OpenAI-compatible endpoint
 Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-opus-4-6` for planning, `claude-sonnet-4-6` for generation and verification.
@@ -32,10 +33,10 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 | `data/example_exams/` | Past national exam PDFs (112-114) for reference |
 | `question_schemas.json` | User-editable config: `"學習階段"` (string), `"grades"` (int array), and all 5 question parameter categories using `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
 | `src/schema_loader.py` | Loads `question_schemas.json`, exposes `load_grades()` / `load_learning_stage()`, builds dynamic str-enums via `build_enums()`, and builds `{category: {value: instruction}}` lookup via `build_instructions()` |
-| `src/schemas.py` | Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time) |
+| `src/schemas.py` | Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time); includes `ChartVerificationResult` nested in `VerificationResult` |
 | `src/sampler.py` | Random parameter selection logic |
 | `src/context_builder.py` | Prompt assembly with few-shot injection |
-| `src/llm_client.py` | OpenAI-compatible API client with model routing |
+| `src/llm_client.py` | OpenAI-compatible API client with model routing; `generate_with_image()` for multimodal (text + PNG) calls |
 | `src/verifier.py` | Two-pass answer verification |
 | `src/renderer.py` | matplotlib chart/diagram PNG generation (geometry uses LLM-assisted code gen) |
 | `IMPLEMENTATION_PLAN.md` | Planned refactors and known tech debt |
@@ -181,13 +182,12 @@ For each question:
 
 **4G. Parse** — `_parse_question()` builds `ExamQuestion` + `QuestionMetadata` (cli.py:122-178)
 
-### Phase 5: Verification (`src/verifier.py`, cli.py:112-117)
-LLM call #2: `verify_question()` sends question + solution, Sonnet independently solves and returns `VerificationResult{passed, answer_match, details}` (verifier.py:50-74)
+### Phase 5: Chart Rendering + Verification (`src/renderer.py`, `src/verifier.py`, cli.py inside `generate_one`)
+Chart rendering now happens **before** verification so the verifier can see the image.
 
-### Phase 6: Chart Rendering (`src/renderer.py`, cli.py:262-267)
-`render_chart()` dispatches by `chart_type` (lines 50-75):
-- `histogram/boxplot/line_chart/pie_chart` — hardcoded matplotlib
-- `geometry` — 3-tier: hardcoded patterns (lines 282-287) → LLM call #3 `exec()`'d matplotlib code (lines 290-293, 405-464) → text fallback (lines 296-303)
+1. If `question.chart_spec` exists: `render_chart()` saves PNG and returns its path as `chart_image_path`
+   - `render_chart()` dispatches by `chart_type` (renderer.py:50-75): `histogram/boxplot/line_chart/pie_chart` → hardcoded matplotlib; `geometry` → 3-tier: hardcoded patterns → LLM call #3 `exec()`'d matplotlib code → text fallback
+2. LLM call #2: `verify_question(client, question, chart_image_path)` — sends question + solution + optional PNG via `client.generate_with_image()` (multimodal). Returns `VerificationResult{passed, answer_match, details, chart_verification}` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}` (verifier.py)
 
 ### Phase 7: Output (cli.py:269-290)
 - Default: `{question_id}.json` per question (`model_dump_json`, cli.py:272-278)
@@ -198,8 +198,8 @@ LLM call #2: `verify_question()` sends question + solution, Sonnet independently
 | # | Purpose | Model | File:Line |
 |---|---|---|---|
 | 1 | Generate question | Sonnet | llm_client.py:26-35 |
-| 2 | Verify answer | Sonnet | verifier.py:62 |
-| 3 | Geometry code gen (conditional) | Sonnet | renderer.py:426-429 |
+| 2 | Chart render (conditional) | Sonnet | renderer.py:426-429 (geometry only) |
+| 3 | Verify answer + chart image | Sonnet | verifier.py (`generate_with_image`) |
 
 ### Randomness Summary
 

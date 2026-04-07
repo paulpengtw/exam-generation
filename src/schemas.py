@@ -30,11 +30,19 @@ class ChartSpec(BaseModel):
     description: str = ""
 
 
+class ChartVerificationResult(BaseModel):
+    """Result of chart/diagram verification."""
+    chart_data_match: bool
+    chart_labels_correct: bool
+    chart_details: str
+
+
 class VerificationResult(BaseModel):
     """Result of the two-pass verification."""
     passed: bool
     answer_match: bool
     details: str
+    chart_verification: ChartVerificationResult | None = None
 
 
 class QuestionMetadata(BaseModel):

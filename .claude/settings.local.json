@@ -9,7 +9,10 @@
       "Bash(pdftoppm -v)",
       "Bash(pdftoppm -r 150 -png data/example_exams/112P_Math.pdf /tmp/112P_page)",
       "Read(//private/tmp/**)",
-      "Bash(brew list:*)"
+      "Bash(brew list:*)",
+      "Bash(~/.local/bin/uv run:*)",
+      "Bash(command -v uv)",
+      "Read(//home/cheng/**)"
     ]
   }
 }

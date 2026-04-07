@@ -136,25 +136,15 @@ For each question `i` in `range(args.count)`:
 
 ---
 
-## Phase 5: Verification (Two-Pass)
+## Phase 5: Chart Rendering + Verification (Two-Pass)
 
-**File: `src/cli.py` lines 112-117, `src/verifier.py`**
+Chart rendering now happens **before** verification (both inside `generate_one()`), so the verifier can inspect the rendered image via a multimodal LLM call.
 
-24. If `--no-verify` not set, `verify_question(client, question)` is called (verifier.py:50-74):
-    - Formats question text and solution into `VERIFICATION_USER_TEMPLATE` (lines 37-47)
-    - Sends to LLM with `VERIFICATION_SYSTEM_PROMPT` (lines 10-35) — asks model to independently solve, then compare
-    - Uses `client.generate()` (same Sonnet model) — **this is the second LLM call** (line 62)
-    - Parses JSON response into `VerificationResult` (passed, answer_match, details) (lines 64-68)
-    - On parse failure: returns `VerificationResult(passed=False)` (lines 69-74)
-25. Result attached to `question.verification` (cli.py:115)
+### 5A. Chart Rendering
 
----
+**File: `src/cli.py` inside `generate_one()`, `src/renderer.py`**
 
-## Phase 6: Chart/Image Rendering
-
-**File: `src/cli.py` lines 262-267, `src/renderer.py`**
-
-26. If `question.chart_spec` exists, `render_chart(spec, img_path, llm_client)` is called (cli.py:265)
+24. If `question.chart_spec` exists, `render_chart(spec, img_path, llm_client)` is called:
 
 **File: `src/renderer.py`**
 
@@ -170,26 +160,39 @@ For each question `i` in `range(args.count)`:
 
 28. For `"geometry"`, `_render_geometry()` uses a 3-tier approach (lines 275-303):
     - **Tier 1 — Hardcoded patterns** (lines 282-287): checks `data` keys for `"rectangle"+"triangle"` or `"lamp_height"` -> calls `_render_geometry_courtyard()` or `_render_geometry_shadow()`
-    - **Tier 2 — LLM-assisted** (lines 290-293): `_render_geometry_via_llm()` (lines 405-464) sends geometry description to Sonnet, gets matplotlib code back, `exec()`s it — **this is a potential third LLM call**
+    - **Tier 2 — LLM-assisted** (lines 290-293): `_render_geometry_via_llm()` (lines 405-464) sends geometry description to Sonnet, gets matplotlib code back, `exec()`s it — **this is the second LLM call (geometry only)**
     - **Tier 3 — Text fallback** (lines 296-303): renders description as centered text on blank canvas
 
 29. All renderers save PNG via `fig.savefig(output_path, dpi=150)` and `plt.close(fig)`
-30. On success, `question.圖片 = "{question_id}.png"` (cli.py:267)
+30. On success: `question.圖片 = "{question_id}.png"`, `chart_image_path` = absolute path string
+
+### 5B. Verification
+
+**File: `src/cli.py` inside `generate_one()`, `src/verifier.py`**
+
+31. If `--no-verify` not set, `verify_question(client, question, chart_image_path)` is called:
+    - Formats question text and solution into `VERIFICATION_USER_TEMPLATE`
+    - If `chart_image_path` is set, appends chart-check instruction to user prompt
+    - Calls `client.generate_with_image(VERIFICATION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path)` — **this is the third LLM call** (second if no chart). When image is provided, the user message is a multimodal content list: `[{type: text, text: ...}, {type: image_url, image_url: {url: "data:image/png;base64,..."}}]`
+    - Parses JSON response into `VerificationResult(passed, answer_match, details, chart_verification)`:
+      - `chart_verification: ChartVerificationResult | None` — present only when chart image was sent; holds `{chart_data_match, chart_labels_correct, chart_details}`
+    - On parse failure: returns `VerificationResult(passed=False)`
+32. Result attached to `question.verification`
 
 ---
 
-## Phase 7: Output
+## Phase 6: Output
 
 **File: `src/cli.py` lines 269-290**
 
 ### Single mode (default):
 
-31. For each question: write `{question_id}.json` to output dir (lines 272-278)
+33. For each question: write `{question_id}.json` to output dir
     - `question.model_dump_json(indent=2, exclude_none=True)` serializes the Pydantic model
 
 ### Batch mode (`--batch`):
 
-32. After all questions: write `batch_{timestamp}.json` containing a JSON array of all questions (lines 281-288)
+34. After all questions: write `batch_{timestamp}.json` containing a JSON array of all questions
 
 ---
 
@@ -198,8 +201,8 @@ For each question `i` in `range(args.count)`:
 | # | Purpose | Model | File | Line |
 |---|---|---|---|---|
 | 1 | Generate question JSON | Sonnet (`model_execute`) | llm_client.py | 26-35 |
-| 2 | Verify question (independent solve) | Sonnet (`model_execute`) | verifier.py | 62 |
-| 3 | Generate geometry matplotlib code (only if `chart_type="geometry"` and no hardcoded match) | Sonnet (`model_execute`) | renderer.py | 426-429 |
+| 2 | Generate geometry matplotlib code (only if `chart_type="geometry"` and no hardcoded match) | Sonnet (`model_execute`) | renderer.py | 426-429 |
+| 3 | Verify question + chart image (multimodal when chart present) | Sonnet (`model_execute`) | verifier.py, `generate_with_image()` | — |
 
 ## Summary: Randomness Points
 

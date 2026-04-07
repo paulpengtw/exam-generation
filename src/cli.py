@@ -112,10 +112,20 @@ def generate_one(
     # Parse into ExamQuestion
     question = _parse_question(raw_json, question_id, params, config.model_execute)
 
+    # Render chart before verification so verifier can see the image
+    chart_image_path: str | None = None
+    if question.chart_spec:
+        img_path = config.output_dir / f"{question_id}.png"
+        print(f"  Rendering chart: {img_path}", file=sys.stderr)
+        rendered = render_chart(question.chart_spec.model_dump(), img_path, llm_client=client)
+        if rendered:
+            question.圖片 = f"{question_id}.png"
+            chart_image_path = rendered
+
     # Verify if requested
     if not skip_verify:
         print(f"  Verifying question {question_id}...", file=sys.stderr)
-        result = verify_question(client, question)
+        result = verify_question(client, question, chart_image_path=chart_image_path)
         question.verification = result
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
@@ -264,14 +274,6 @@ def main(argv: list[str] | None = None) -> None:
 
         question = result
         assert isinstance(question, ExamQuestion)
-
-        # Render chart if needed
-        if question.chart_spec:
-            img_path = config.output_dir / f"{question_id}.png"
-            print(f"  Rendering chart: {img_path}", file=sys.stderr)
-            rendered = render_chart(question.chart_spec.model_dump(), img_path, llm_client=client)
-            if rendered:
-                question.圖片 = f"{question_id}.png"
 
         results.append(question)
 
