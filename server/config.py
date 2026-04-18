@@ -13,7 +13,7 @@ from src.config import Config
 
 @dataclass
 class ServerConfig(Config):
-    database_url: str = ""
+    database_url: str = "sqlite+aiosqlite:///./dev.db"
     jwt_secret: str = ""
     jwt_expire_days: int = 7
     aws_region: str = ""
@@ -37,7 +37,7 @@ class ServerConfig(Config):
             output_dir=Path(os.environ.get("OUTPUT_DIR", "./output")),
             data_dir=Path(os.environ.get("DATA_DIR", "./data")),
             rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),
-            database_url=os.environ.get("DATABASE_URL", ""),
+            database_url=os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db"),
             jwt_secret=os.environ.get("JWT_SECRET", ""),
             jwt_expire_days=int(os.environ.get("JWT_EXPIRE_DAYS", "7")),
             aws_region=os.environ.get("AWS_REGION", ""),
@@ -50,4 +50,6 @@ class ServerConfig(Config):
         """Check that required server config values are present."""
         super().validate()
         if not self.jwt_secret:
-            raise ValueError("JWT_SECRET is required. Set it in .env or as an environment variable.")
+            raise ValueError(
+                "JWT_SECRET is required. Set it in .env or as an environment variable."
+            )
