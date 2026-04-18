@@ -18,6 +18,17 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
 ]
+web = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sse-starlette",
+    "sqlalchemy[asyncio]",
+    "aiosqlite",
+    "asyncpg",
+    "alembic",
+    "python-jose[cryptography]",
+    "boto3",
+]
 
 [tool.ruff]
 target-version = "py311"
