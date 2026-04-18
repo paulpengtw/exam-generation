@@ -96,6 +96,7 @@ Environment variables (set in `.env` or export directly):
 | `LLM_MODEL_EXECUTE` | Model for generation & verification | `claude-sonnet-4-6` |
 | `LLM_RATE_LIMIT_DELAY` | Seconds to wait before each API call (prevents 429 errors) | `0` |
 | `OUTPUT_DIR` | Directory for generated output | `./output` |
+| `DATABASE_URL` | Async SQLAlchemy database URL (server) | `sqlite+aiosqlite:///./dev.db` |
 | `QUESTION_SCHEMAS_PATH` | Path to question parameter config JSON | `./question_schemas.json` |
 
 ## Usage
