@@ -7,13 +7,17 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from server.auth.dependencies import get_config
 from server.auth.routes import router as auth_router
 from server.config import ServerConfig
 from server.generate.routes import router as generate_router
+from server.rate_limit import limiter
 from server.utility.routes import router as utility_router
 from src.data_loader import (
     get_grade_content,
@@ -80,6 +84,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Exam Generation API", lifespan=lifespan)
+
+    app.state.limiter = limiter
+
+    def _rate_limit_handler(_request: Request, exc: RateLimitExceeded) -> JSONResponse:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": f"Rate limit exceeded: {exc.detail}"},
+        )
+
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+    app.add_middleware(SlowAPIMiddleware)
 
     config = get_config()
     allow_origins = [config.frontend_url] if config.frontend_url else ["*"]

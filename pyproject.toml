@@ -28,6 +28,7 @@ web = [
     "alembic",
     "python-jose[cryptography]",
     "boto3",
+    "slowapi",
 ]
 
 [tool.ruff]
