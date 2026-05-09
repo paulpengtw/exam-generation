@@ -7,7 +7,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from server.auth.tokens import create_jwt, generate_magic_token
 from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import MagicLinkToken, User
+from server.rate_limit import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -56,7 +57,9 @@ def _email_sender_dep(config: ServerConfig = Depends(get_config)) -> EmailSender
 
 
 @router.post("/magic-link", response_model=MagicLinkResponse)
+@limiter.limit("5/hour")
 async def request_magic_link(
+    request: Request,
     payload: MagicLinkRequest,
     session: AsyncSession = Depends(get_async_session),
     sender: EmailSender = Depends(_email_sender_dep),

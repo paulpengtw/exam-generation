@@ -18,6 +18,7 @@ from server.db import AsyncSessionLocal, get_async_session
 from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
 from server.models import GenerationLog, User
+from server.rate_limit import jwt_user_key, limiter
 
 router = APIRouter(prefix="/api", tags=["generate"])
 
@@ -31,6 +32,7 @@ def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/generate")
+@limiter.limit("10/hour", key_func=jwt_user_key)
 async def generate_endpoint(
     request: Request,
     grade: int | None = Query(default=None),
