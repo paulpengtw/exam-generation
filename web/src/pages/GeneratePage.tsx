@@ -53,10 +53,14 @@ export default function GeneratePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <h1 className="text-lg font-semibold">Exam Generator</h1>
-          <div className="flex items-center gap-3 text-sm">
-            {user && <span className="text-gray-700">{user.email}</span>}
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
+          <h1 className="text-base font-semibold sm:text-lg">Exam Generator</h1>
+          <div className="flex min-w-0 items-center gap-2 text-sm sm:gap-3">
+            {user && (
+              <span className="hidden max-w-[12rem] truncate text-gray-700 sm:inline">
+                {user.email}
+              </span>
+            )}
             <button
               type="button"
               onClick={handleLogout}
@@ -68,8 +72,8 @@ export default function GeneratePage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl space-y-6 px-4 py-6">
-        <section className="rounded-lg border bg-white p-4 shadow-sm">
+      <main className="mx-auto max-w-5xl space-y-6 px-3 py-4 sm:px-4 sm:py-6">
+        <section className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
           <ParamForm onSubmit={handleSubmit} disabled={status === "generating"} />
         </section>
 

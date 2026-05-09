@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -94,6 +95,15 @@ def create_app() -> FastAPI:
         )
 
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+
+    def _unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+        traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+        )
+
+    app.add_exception_handler(Exception, _unhandled_exception_handler)
     app.add_middleware(SlowAPIMiddleware)
 
     config = get_config()
