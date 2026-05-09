@@ -69,7 +69,31 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
   }
 
   if (!schemas) {
-    return <div>Loading…</div>;
+    return (
+      <div className="space-y-4 animate-pulse" aria-busy="true" aria-label="Loading form">
+        <div>
+          <div className="h-3 w-16 rounded bg-gray-200" />
+          <div className="mt-2 h-9 w-full rounded bg-gray-100" />
+        </div>
+        <div>
+          <div className="h-3 w-16 rounded bg-gray-200" />
+          <div className="mt-2 h-9 w-full rounded bg-gray-100" />
+        </div>
+        <div>
+          <div className="h-3 w-32 rounded bg-gray-200" />
+          <div className="mt-2 space-y-1.5">
+            <div className="h-4 w-2/3 rounded bg-gray-100" />
+            <div className="h-4 w-1/2 rounded bg-gray-100" />
+            <div className="h-4 w-3/5 rounded bg-gray-100" />
+          </div>
+        </div>
+        <div>
+          <div className="h-3 w-24 rounded bg-gray-200" />
+          <div className="mt-2 h-9 w-full rounded bg-gray-100" />
+        </div>
+        <div className="h-9 w-28 rounded bg-gray-200" />
+      </div>
+    );
   }
 
   return (
@@ -106,7 +130,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
 
       <fieldset>
         <legend className="text-sm font-medium">情境 (context)</legend>
-        <div className="mt-1 space-y-1">
+        <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
           {schemas.情境.map((s) => (
             <label key={s.value} className="flex items-center gap-2">
               <input
@@ -137,7 +161,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
 
       <fieldset>
         <legend className="text-sm font-medium">題型 (q_type)</legend>
-        <div className="mt-1 space-y-1">
+        <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
           {schemas.題型.map((s) => (
             <label key={s.value} className="flex items-center gap-2">
               <input
@@ -175,9 +199,25 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       <button
         type="submit"
         disabled={disabled}
-        className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+        className="inline-flex w-full items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
-        Generate
+        {disabled && (
+          <svg
+            className="h-4 w-4 animate-spin"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+            />
+          </svg>
+        )}
+        {disabled ? "Generating…" : "Generate"}
       </button>
     </form>
   );
