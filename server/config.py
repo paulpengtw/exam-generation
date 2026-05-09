@@ -20,6 +20,7 @@ class ServerConfig(Config):
     ses_from_email: str = ""
     frontend_url: str = ""
     email_backend: str = "console"
+    question_schemas_path: Path = Path(__file__).resolve().parent.parent / "question_schemas.json"
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -44,6 +45,12 @@ class ServerConfig(Config):
             ses_from_email=os.environ.get("SES_FROM_EMAIL", ""),
             frontend_url=os.environ.get("FRONTEND_URL", ""),
             email_backend=os.environ.get("EMAIL_BACKEND", "console"),
+            question_schemas_path=Path(
+                os.environ.get(
+                    "QUESTION_SCHEMAS_PATH",
+                    str(Path(__file__).resolve().parent.parent / "question_schemas.json"),
+                )
+            ),
         )
 
     def validate(self) -> None:
