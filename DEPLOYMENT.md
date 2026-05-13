@@ -111,7 +111,7 @@ The service Railway created in 7.1 will be the **backend**.
    - Set **Dockerfile Path** to `Dockerfile.backend`.
    - Leave **Root Directory** blank.
 5. Click **Save** / wait for the auto-redeploy to start.
-6. Under **Networking**, click **Generate Domain**. Railway will give you a URL like `backend-production-xxxx.up.railway.app`. **Copy this URL** — you will need it.
+6. Under **Networking**, click **Generate Domain**. Railway will give you a URL like `backend-production-xxxx.up.railway.app`. **Copy this URL** — you will need it. Choose Port `8000`.
 
 ### 7.3 Add the frontend service
 
