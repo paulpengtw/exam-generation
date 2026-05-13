@@ -121,7 +121,7 @@ The service Railway created in 7.1 will be the **backend**.
    - Set **Builder** to **Dockerfile**.
    - Set **Dockerfile Path** to `web/Dockerfile`.
    - Leave **Root Directory** blank.
-4. Under **Networking**, click **Generate Domain**. Railway gives you a URL like `frontend-production-yyyy.up.railway.app`. **Copy this URL** — this is the website your teachers will visit.
+4. Under **Networking**, click **Generate Domain**. Railway gives you a URL like `frontend-production-yyyy.up.railway.app`. **Copy this URL** — this is the website your teachers will visit. Choose Port `80`.
 
 ---
 
@@ -142,7 +142,7 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `LLM_RATE_LIMIT_DELAY` | `2` | Wait 2 seconds between Claude calls (avoids rate-limit errors) |
 | `JWT_SECRET` | A long random string (see below) | Used to sign login tokens |
 | `FRONTEND_URL` | The frontend URL you copied in Step 7.3, with `https://` in front | Tells the backend which website is allowed to call it |
-| `EMAIL_BACKEND` | `console` | Where to send emails (just print them for now) |
+| `EMAIL_BACKEND` | `console` | `console` prints magic-link login emails to backend logs — fine for your own first login; switch to `ses` after following **Step 13** so other teachers receive real emails |
 
 **How to generate `JWT_SECRET`:** open `https://passwordsgenerator.net` in a new tab, set length to 64, click **Generate**, and paste the result.
 
@@ -211,6 +211,8 @@ If you see an `alembic upgrade failed` line, see **Troubleshooting** below.
 
 🎉 **You are live on the internet.** Share the URL with other teachers at your school.
 
+> Until you complete **Step 13** (AWS SES), the backend only prints magic-link login emails to its logs. That means only you — as the person who can open Railway logs — can sign in. Other teachers cannot receive a login email until SES is set up.
+
 > Your Railway project dashboard should show exactly **three tiles**: `Postgres`, `backend`, and `frontend`. If you see a fourth tile named after your GitHub repo (e.g. `exam-generation`) left over from Step 7.1, you can delete it: click that tile → **Settings** → scroll to the bottom → **Delete service**.
 
 ---
@@ -264,7 +266,84 @@ Render's free tier puts services to sleep after 15 minutes of inactivity. The fi
 
 ---
 
-## 13. Maintaining your deployment
+## 13. Step 9 — Switch email delivery to AWS SES
+
+By default the backend only prints sign-in links to its logs (`EMAIL_BACKEND=console`). Teachers who were not given that link cannot sign in. This step wires up **AWS Simple Email Service (SES)** so the backend emails every teacher a real magic-link.
+
+**Cost:** ~US$0.10 per 1,000 emails. AWS offers 3,000 free messages per month for the first 12 months.
+
+### 13.1 Create an AWS account
+
+1. Open `https://aws.amazon.com` and click **Create an AWS Account**.
+2. Follow the sign-up flow (email, password, credit card). You land on the **AWS Management Console**.
+
+### 13.2 Verify your sender address (or domain) in SES
+
+1. In the AWS Console search bar, type **SES** and click **Amazon Simple Email Service**.
+2. In the top-right corner, choose a region close to your users — `ap-northeast-1` (Tokyo) works well for Taiwan.
+3. In the left menu, click **Verified identities** → **Create identity**.
+4. Choose **Email address**, type the address you want emails to come from (e.g. `noreply@yourschool.tw`), then click **Create identity**.
+5. AWS sends a verification email to that address. Open it and click the link.
+
+> **Better deliverability (optional):** Instead of verifying a single address, verify the whole domain. Choose **Domain** in step 4, then copy the DKIM **CNAME** records AWS shows you into your domain registrar's DNS panel (the same panel you used in Step 11.2). AWS verifies the domain automatically once the records propagate (5–30 minutes).
+
+### 13.3 Request production access (so you can email anyone)
+
+AWS puts new SES accounts in a **sandbox** — you can only send to addresses you have individually verified. To email real teachers:
+
+1. In SES, click **Account dashboard** in the left menu.
+2. Under **Production access**, click **Request production access**.
+3. Fill in the form:
+   - **Mail type:** Transactional
+   - **Website URL:** paste your frontend URL
+   - **Use case description:** "Magic-link sign-in emails for a school exam tool. Recipients are teachers who created their own accounts. Volume: under 100 emails per day."
+4. Submit. AWS typically approves within 24 hours.
+
+> While waiting for approval, you can verify each teacher's email address individually under **Verified identities** so they can log in during the sandbox period.
+
+### 13.4 Create an IAM user with SES-send permissions
+
+Railway does not have an AWS IAM role, so you must supply an access key.
+
+1. In the AWS Console, search for **IAM** and open it.
+2. Click **Users** → **Create user**. Name it `examgen-ses`. Click **Next**.
+3. Choose **Attach policies directly**. Search for `AmazonSESFullAccess` and tick it. Click **Next** → **Create user**.
+4. Click the new `examgen-ses` user → **Security credentials** tab → **Create access key**.
+5. Choose **Application running outside AWS**. Click **Next** → **Create access key**.
+6. **Copy both values** — the **Access key ID** and the **Secret access key**. The secret is shown only once.
+
+### 13.5 Add the five variables on Railway
+
+Open the **backend** service → **Variables** tab.
+
+| Variable name | Value to set |
+|---|---|
+| `EMAIL_BACKEND` | Change `console` → `ses` |
+| `AWS_REGION` | The region you chose in §13.2, e.g. `ap-northeast-1` |
+| `SES_FROM_EMAIL` | The verified sender address, e.g. `noreply@yourschool.tw` |
+| `AWS_ACCESS_KEY_ID` | The Access key ID from §13.4 |
+| `AWS_SECRET_ACCESS_KEY` | The Secret access key from §13.4 |
+
+Railway redeploys the backend automatically. Wait 1–2 minutes.
+
+### 13.6 Test it
+
+1. Open the frontend → click **Sign up** → enter your email → submit.
+2. A sign-in email should arrive within 5–30 seconds. Check your spam folder if it doesn't.
+3. If nothing arrives, open Railway → **backend** service → **Deployments** → latest → **Logs** and look for `botocore` or `ClientError`. The table below lists common errors.
+
+**SES-specific errors:**
+
+| What you see in the logs | Likely cause | What to do |
+|---|---|---|
+| `MessageRejected: Email address is not verified` | SES sandbox: recipient not yet verified | §13.3 — request production access, or verify each recipient under **Verified identities** |
+| `InvalidClientTokenId` / `SignatureDoesNotMatch` | Wrong `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` | Re-paste both from §13.4; no leading or trailing spaces |
+| `Could not connect to the endpoint URL` | Wrong `AWS_REGION` | Match the region where you verified the sender |
+| Login email never arrives, no errors in logs | `EMAIL_BACKEND` is still `console` | §13.5 — change to `ses` and save; wait for redeploy |
+
+---
+
+## 14. Maintaining your deployment
 
 ### Update to a newer version
 
@@ -296,7 +375,7 @@ If you suspect your `LLM_API_KEY` has leaked:
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 | What you see | Likely cause | What to do |
 |---|---|---|
@@ -310,10 +389,12 @@ If you suspect your `LLM_API_KEY` has leaked:
 | `alembic upgrade failed` in logs | The database wasn't reachable when the backend started | Click **Redeploy** on the backend service after Postgres is fully up |
 | Logs only show `PostgreSQL 18.3 ...` / `database system is ready to accept connections` | You opened the **Postgres** service tile, not the backend | Go back to the project page and click the tile you renamed `backend` in Step 7.2 |
 | Build log shows `Railpack` / `Detected Python` / `No start command detected` | Builder is still set to Railpack, not Dockerfile | Service → **Settings → Build** → set **Builder = Dockerfile** and **Dockerfile Path** = `Dockerfile.backend` (backend) or `web/Dockerfile` (frontend). Click **Save** and redeploy. |
+| Frontend URL times out / shows "Application failed to respond" but nginx logs look healthy | Generated domain points at wrong port | Frontend → **Settings → Networking** → click the pencil icon next to your domain → set target port to `80`. |
+| Clicking **Send magic link** shows `Request failed with status 508` | The frontend is forwarding API calls back to itself, usually because `BACKEND_HOST` is wrong or the frontend was not redeployed after changing it | Frontend → **Variables** → set `BACKEND_HOST` to the backend hostname only, such as `backend-production-xxxx.up.railway.app` — no `https://`, no trailing slash, and not the frontend hostname. Keep `BACKEND_SCHEME=https`, then redeploy the frontend. |
 
 ---
 
-## 15. Glossary
+## 16. Glossary
 
 | Word | What it means |
 |---|---|
@@ -325,12 +406,15 @@ If you suspect your `LLM_API_KEY` has leaked:
 | **HTTPS** | The "secure" version of HTTP — shown in the browser as a padlock. Railway sets this up for you automatically. |
 | **CNAME** | A type of DNS record that points one website name at another. You use one to point `examgen.yourschool.tw` at Railway. |
 | **Migration** | A change to the database structure. The backend runs these automatically on startup, so you don't have to. |
+| **SES** | Amazon Simple Email Service — AWS's service for sending emails from applications. Used here to deliver magic-link sign-in emails to teachers. |
+| **IAM** | AWS Identity and Access Management — the system that controls who is allowed to use which AWS services. You create an IAM user so the backend can call SES on your behalf. |
+| **DKIM** | DomainKeys Identified Mail — a set of DNS records that prove your domain is authorised to send email, improving deliverability and avoiding spam filters. |
 | **Backend** | The program on the server that does the actual work (calls Claude, stores users in the database). |
 | **Frontend** | The website that teachers see in their browser. |
 
 ---
 
-## 16. Where to ask for help
+## 17. Where to ask for help
 
 If you get stuck on a step in this guide, open an issue on the project's GitHub repository:
 
