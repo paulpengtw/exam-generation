@@ -95,7 +95,7 @@ You will create **four** services inside one Railway project:
 1. On the Railway dashboard, click **New Project**.
 2. Choose **Deploy from GitHub repo**.
 3. Pick your fork: `YOUR-USERNAME/exam-generation`.
-4. Railway will create one service automatically and start trying to build it. **Don't worry if it fails for now** — it needs configuration first. We'll fix it in Step 5.
+4. Railway will create one service automatically and start trying to build it. **Don't worry if it fails now** — it will likely show a "Railpack / No start command detected" error. That's expected; we override the builder in step 7.2.
 5. Inside the project, click **+ New** (top right) → **Database** → **Add PostgreSQL**.
 6. Wait about 30 seconds for Postgres to finish starting up.
 
@@ -106,14 +106,21 @@ The service Railway created in 7.1 will be the **backend**.
 1. Click the service Railway auto-created.
 2. Go to the **Settings** tab.
 3. Rename it to `backend`.
-4. Under **Build**, set **Dockerfile Path** to `Dockerfile.backend`.
-5. Under **Networking**, click **Generate Domain**. Railway will give you a URL like `backend-production-xxxx.up.railway.app`. **Copy this URL** — you will need it.
+4. Under **Build**:
+   - Set **Builder** to **Dockerfile** (not Railpack or Nixpacks).
+   - Set **Dockerfile Path** to `Dockerfile.backend`.
+   - Leave **Root Directory** blank.
+5. Click **Save** / wait for the auto-redeploy to start.
+6. Under **Networking**, click **Generate Domain**. Railway will give you a URL like `backend-production-xxxx.up.railway.app`. **Copy this URL** — you will need it.
 
 ### 7.3 Add the frontend service
 
 1. Back on the project page, click **+ New** → **GitHub Repo** → pick the same fork.
 2. Rename the new service to `frontend`.
-3. Go to **Settings** → **Build** → set **Dockerfile Path** to `web/Dockerfile`.
+3. Go to **Settings** → **Build**:
+   - Set **Builder** to **Dockerfile**.
+   - Set **Dockerfile Path** to `web/Dockerfile`.
+   - Leave **Root Directory** blank.
 4. Under **Networking**, click **Generate Domain**. Railway gives you a URL like `frontend-production-yyyy.up.railway.app`. **Copy this URL** — this is the website your teachers will visit.
 
 ---
@@ -287,6 +294,7 @@ If you suspect your `LLM_API_KEY` has leaked:
 | Custom domain shows certificate warning | DNS hasn't propagated yet | Wait 15-30 minutes and refresh |
 | Frontend shows blank page | `VITE_API_BASE_URL` not set, or pointed to wrong URL | Step 8.2 — make sure it's the backend's full `https://` URL |
 | `alembic upgrade failed` in logs | The database wasn't reachable when the backend started | Click **Redeploy** on the backend service after Postgres is fully up |
+| Build log shows `Railpack` / `Detected Python` / `No start command detected` | Builder is still set to Railpack, not Dockerfile | Service → **Settings → Build** → set **Builder = Dockerfile** and **Dockerfile Path** = `Dockerfile.backend` (backend) or `web/Dockerfile` (frontend). Click **Save** and redeploy. |
 
 ---
 
