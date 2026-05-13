@@ -1,0 +1,319 @@
+# Deployment Guide for Teachers
+
+This guide takes you from **"I have nothing"** to **"my school has a working exam-generation website on the internet, with HTTPS, that other teachers can log into."**
+
+It is written for teachers who have never used a command line. Everything in this guide happens inside a web browser. You will not install anything on your own computer.
+
+If at any point a step is unclear, the **Glossary** at the bottom defines every technical word.
+
+---
+
+## 1. What you will have at the end
+
+When you finish this guide:
+
+- A public website URL (for example, `https://examgen-yourschool.up.railway.app` or your own domain `https://examgen.yourschool.tw`).
+- A login screen where you and other teachers can sign up.
+- A working "Generate Question" page in the browser that creates new Taiwan math exam questions.
+
+> _Screenshot of the finished UI — add here once your deployment is live._
+
+---
+
+## 2. What you will pay
+
+You are paying for two separate things:
+
+| Service | Cost | What it does |
+|---|---|---|
+| Railway (hosting) | About **US$5 per month** (Hobby plan) | Runs the website and the database |
+| Anthropic API | **Pay-as-you-go**, around **US$0.05–0.15 per generated question** | Each question generation makes 2-3 calls to Claude |
+| Custom domain (optional) | About **US$10–15 per year** | A nicer URL like `examgen.yourschool.tw` |
+
+You can stop and delete everything at any time.
+
+---
+
+## 3. What you need before you start
+
+- A credit or debit card (for Railway and Anthropic billing).
+- An email address.
+- About **60 minutes** the first time.
+- A web browser. That's it.
+
+---
+
+## 4. Step 1 — Get an Anthropic API key
+
+An **API key** is a password that lets your website talk to Claude (the AI that generates the questions).
+
+1. Open `https://console.anthropic.com` in your browser.
+2. Click **Sign up** and create an account with your email.
+3. After signing in, click **Billing** in the left menu and add a credit card.
+   - You can start with as little as US$5 of credit. Money is only spent when questions are generated.
+4. In the left menu, click **API Keys**.
+5. Click **Create Key**. Give it a name like `examgen-railway` and click **Create**.
+6. **Copy the key immediately** — it looks like `sk-ant-api03-XXXXXXXXX...`. Paste it into a safe place (Notes app, password manager). Anthropic will only show it to you once.
+
+> ⚠️ Treat this key like a credit card number. Anyone who has it can spend your Anthropic credit.
+
+---
+
+## 5. Step 2 — Make your own copy of the project on GitHub
+
+**GitHub** is where the project source code lives. To deploy it, Railway needs your own copy of the code (called a **fork**).
+
+1. Open `https://github.com` and click **Sign up**. Create a free account.
+2. Open the project page (the link you were given to this guide).
+3. In the top-right corner, click the **Fork** button.
+4. On the next screen, leave the defaults and click **Create fork**.
+5. You now have a copy of the project at `https://github.com/YOUR-USERNAME/exam-generation`.
+
+---
+
+## 6. Step 3 — Sign up for Railway
+
+**Railway** is the hosting service that will run your website.
+
+1. Open `https://railway.com` in your browser.
+2. Click **Login** and choose **Login with GitHub**.
+3. When asked, **Authorize Railway** to read your GitHub repositories.
+4. Click **Subscribe to Hobby Plan** (US$5/month). You will be asked for a credit card.
+
+---
+
+## 7. Step 4 — Create your project on Railway
+
+You will create **four** services inside one Railway project:
+
+1. A **Postgres database** (stores users and generation history).
+2. A **backend** service (the API that talks to Claude).
+3. A **frontend** service (the website teachers see).
+
+### 7.1 Create the project and add Postgres
+
+1. On the Railway dashboard, click **New Project**.
+2. Choose **Deploy from GitHub repo**.
+3. Pick your fork: `YOUR-USERNAME/exam-generation`.
+4. Railway will create one service automatically and start trying to build it. **Don't worry if it fails for now** — it needs configuration first. We'll fix it in Step 5.
+5. Inside the project, click **+ New** (top right) → **Database** → **Add PostgreSQL**.
+6. Wait about 30 seconds for Postgres to finish starting up.
+
+### 7.2 Set up the backend service
+
+The service Railway created in 7.1 will be the **backend**.
+
+1. Click the service Railway auto-created.
+2. Go to the **Settings** tab.
+3. Rename it to `backend`.
+4. Under **Build**, set **Dockerfile Path** to `Dockerfile.backend`.
+5. Under **Networking**, click **Generate Domain**. Railway will give you a URL like `backend-production-xxxx.up.railway.app`. **Copy this URL** — you will need it.
+
+### 7.3 Add the frontend service
+
+1. Back on the project page, click **+ New** → **GitHub Repo** → pick the same fork.
+2. Rename the new service to `frontend`.
+3. Go to **Settings** → **Build** → set **Dockerfile Path** to `web/Dockerfile`.
+4. Under **Networking**, click **Generate Domain**. Railway gives you a URL like `frontend-production-yyyy.up.railway.app`. **Copy this URL** — this is the website your teachers will visit.
+
+---
+
+## 8. Step 5 — Fill in the secret settings
+
+Each service needs configuration values called **environment variables**. Think of them as labelled boxes the program reads when it starts up.
+
+### 8.1 Settings for the backend service
+
+Open the **backend** service, click the **Variables** tab, and add the following one by one. Click **+ New Variable** for each row.
+
+| Variable name | Value to type | What it is |
+|---|---|---|
+| `LLM_API_KEY` | The `sk-ant-api03-...` key from Step 1 | Lets the backend call Claude |
+| `LLM_BASE_URL` | `https://api.anthropic.com/v1` | Which AI service to use |
+| `LLM_MODEL_PLAN` | `claude-opus-4-6` | Which Claude model handles planning |
+| `LLM_MODEL_EXECUTE` | `claude-sonnet-4-6` | Which Claude model generates questions |
+| `LLM_RATE_LIMIT_DELAY` | `2` | Wait 2 seconds between Claude calls (avoids rate-limit errors) |
+| `JWT_SECRET` | A long random string (see below) | Used to sign login tokens |
+| `FRONTEND_URL` | The frontend URL you copied in Step 7.3, with `https://` in front | Tells the backend which website is allowed to call it |
+| `EMAIL_BACKEND` | `console` | Where to send emails (just print them for now) |
+
+**How to generate `JWT_SECRET`:** open `https://passwordsgenerator.net` in a new tab, set length to 64, click **Generate**, and paste the result.
+
+#### Connecting the database
+
+You also need to tell the backend how to reach the Postgres database you added in 7.1.
+
+1. Still on the **backend** Variables tab, click **+ New Variable**.
+2. Type `DATABASE_URL` for the name.
+3. For the value, click the small **Reference** dropdown next to the value box.
+4. Pick **Postgres → DATABASE_URL** from the list. Railway will automatically wire the two services together.
+5. Click **Add**.
+
+After Postgres connects, Railway will tell you the URL starts with `postgres://...`. The backend code expects `postgresql+asyncpg://...`, so:
+
+6. Click the pencil icon next to `DATABASE_URL` you just added.
+7. At the start of the value, change `postgres://` to `postgresql+asyncpg://`.
+8. Click **Save**.
+
+The backend service should automatically redeploy. Wait about 1-2 minutes.
+
+### 8.2 Settings for the frontend service
+
+Open the **frontend** service, click **Variables**, and add:
+
+| Variable name | Value to type | What it is |
+|---|---|---|
+| `VITE_API_BASE_URL` | The backend URL from Step 7.2, with `https://` in front | Tells the website where its API lives |
+
+The frontend will redeploy. Wait 1-2 minutes.
+
+---
+
+## 9. Step 6 — Database setup (already automatic!)
+
+Good news: this backend creates its own database tables automatically when it starts up. You do not need to run any commands.
+
+You can confirm it worked by clicking the **backend** service → **Deployments** tab → click the latest deployment → look at the logs. You should see a line like:
+
+```
+Curriculum loaded: 14 grade entries, target grades [7, 8, 9]
+```
+
+If you see an `alembic upgrade failed` line, see **Troubleshooting** below.
+
+---
+
+## 10. Step 7 — Open your website
+
+1. Click the **frontend** service.
+2. Click the public URL (the one ending in `.up.railway.app`).
+3. The login screen should appear.
+4. Click **Sign up** and create your account.
+5. Try generating a question.
+
+🎉 **You are live on the internet.** Share the URL with other teachers at your school.
+
+---
+
+## 11. Step 8 — Add a custom domain (optional)
+
+A custom domain (like `examgen.yourschool.tw`) is more professional than a `.up.railway.app` URL.
+
+### 11.1 Buy a domain
+
+If your school doesn't already have a domain, the easiest place to buy one is **Cloudflare Registrar** (`https://www.cloudflare.com/products/registrar/`) or **Namecheap** (`https://www.namecheap.com`). A `.com` or `.tw` domain costs about US$10-15 per year.
+
+### 11.2 Point the domain to Railway
+
+1. In Railway, open the **frontend** service → **Settings** → **Networking** → **Custom Domain**.
+2. Type the subdomain you want, for example `examgen.yourschool.tw`.
+3. Railway shows you a **CNAME target** that looks like `xxxx.up.railway.app`. Copy it.
+4. Open your domain registrar's DNS panel (Cloudflare, Namecheap, etc.).
+5. Add a new **CNAME** record:
+   - **Type:** CNAME
+   - **Name:** the subdomain (e.g. `examgen`)
+   - **Value / Target:** paste the Railway target from step 3.
+6. Save. Wait 5-15 minutes for the new DNS record to spread across the internet.
+
+### 11.3 HTTPS is automatic
+
+Railway gives you a free HTTPS certificate (via Let's Encrypt) the moment the domain is verified. You don't need to do anything — just wait. After a few minutes, `https://examgen.yourschool.tw` will work.
+
+### 11.4 Update the `FRONTEND_URL`
+
+Now that the frontend has a new address, the backend needs to be told.
+
+1. Open the **backend** service → **Variables**.
+2. Edit `FRONTEND_URL` to be the new custom domain (e.g. `https://examgen.yourschool.tw`).
+3. Save. The backend will redeploy automatically.
+
+---
+
+## 12. Alternative: deploy on Render instead
+
+If you prefer **Render** (`https://render.com`) over Railway, the flow is very similar:
+
+1. Sign up at Render with GitHub.
+2. **New → Web Service** → pick your fork → set the Dockerfile to `Dockerfile.backend`. This becomes the **backend**.
+3. **New → Web Service** → pick your fork again → set the Dockerfile to `web/Dockerfile`. This becomes the **frontend**.
+4. **New → PostgreSQL** → create a free Postgres instance. Copy the **Internal Database URL** Render gives you, prefix it with `postgresql+asyncpg://`, and add it as `DATABASE_URL` on the backend service.
+5. Add the same environment variables as Step 8 to the backend service. Set `VITE_API_BASE_URL` on the frontend.
+6. Custom domain + free HTTPS work the same way as Railway: **Settings → Custom Domains → Add → follow the CNAME instructions.**
+
+Render's free tier puts services to sleep after 15 minutes of inactivity. The first request after a sleep takes ~30 seconds to wake up. The paid tier (US$7/month per service) keeps services running 24/7.
+
+---
+
+## 13. Maintaining your deployment
+
+### Update to a newer version
+
+When the project gets updates:
+
+1. Open your fork on GitHub.
+2. Near the top, click **Sync fork** → **Update branch**.
+3. Railway automatically detects the new code and redeploys both services. No further action.
+
+### Check the logs
+
+If something looks broken:
+
+1. Railway → the service that looks unhappy → **Deployments** tab → click the latest deployment.
+2. Read the logs. Search for the word `Error` or `Warning`.
+
+### Back up the database
+
+1. Railway → Postgres service → **Backups** tab.
+2. Railway takes daily backups automatically on the Hobby plan.
+
+### Rotate the API key
+
+If you suspect your `LLM_API_KEY` has leaked:
+
+1. Open `https://console.anthropic.com` → **API Keys** → **Disable** the old key.
+2. Create a new key.
+3. In Railway, backend service → **Variables** → edit `LLM_API_KEY` → paste the new key → **Save**. The backend redeploys with the new key.
+
+---
+
+## 14. Troubleshooting
+
+| What you see | Likely cause | What to do |
+|---|---|---|
+| Frontend loads but login fails | `FRONTEND_URL` on the backend doesn't match the actual frontend URL | Fix the value (Step 8.1) and let the backend redeploy |
+| "Invalid API key" when generating | `LLM_API_KEY` is wrong, or Anthropic billing isn't set up | Double-check the key. Open `console.anthropic.com` → Billing |
+| Backend deployment crashes on startup | Wrong `DATABASE_URL` format | Make sure the value starts with `postgresql+asyncpg://` (not `postgres://`) |
+| Generation fails with "Rate limit exceeded" / 429 | You're calling Claude too fast | Raise `LLM_RATE_LIMIT_DELAY` from `2` to `5` |
+| Custom domain shows certificate warning | DNS hasn't propagated yet | Wait 15-30 minutes and refresh |
+| Frontend shows blank page | `VITE_API_BASE_URL` not set, or pointed to wrong URL | Step 8.2 — make sure it's the backend's full `https://` URL |
+| `alembic upgrade failed` in logs | The database wasn't reachable when the backend started | Click **Redeploy** on the backend service after Postgres is fully up |
+
+---
+
+## 15. Glossary
+
+| Word | What it means |
+|---|---|
+| **API key** | A password that lets one program use another program. The Anthropic API key lets your backend use Claude. |
+| **Environment variable** | A labelled setting that a program reads when it starts (e.g. `LLM_API_KEY = sk-ant-...`). |
+| **Fork** | Your personal copy of someone else's GitHub repository. You need a fork because Railway can only deploy from a repository you own. |
+| **Deploy** | Take the code and run it on a server connected to the internet. |
+| **Container** | A self-contained package that includes the code plus everything it needs to run. Railway runs your backend and frontend as containers. |
+| **HTTPS** | The "secure" version of HTTP — shown in the browser as a padlock. Railway sets this up for you automatically. |
+| **CNAME** | A type of DNS record that points one website name at another. You use one to point `examgen.yourschool.tw` at Railway. |
+| **Migration** | A change to the database structure. The backend runs these automatically on startup, so you don't have to. |
+| **Backend** | The program on the server that does the actual work (calls Claude, stores users in the database). |
+| **Frontend** | The website that teachers see in their browser. |
+
+---
+
+## 16. Where to ask for help
+
+If you get stuck on a step in this guide, open an issue on the project's GitHub repository:
+
+`https://github.com/YOUR-USERNAME/exam-generation/issues` → **New issue**.
+
+When asking for help, include:
+1. Which step number you're stuck on.
+2. The exact error message you see.
+3. A screenshot if possible.
