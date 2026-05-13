@@ -84,7 +84,7 @@ An **API key** is a password that lets your website talk to Claude (the AI that 
 
 ## 7. Step 4 — Create your project on Railway
 
-You will create **four** services inside one Railway project:
+You will create **three** services inside one Railway project:
 
 1. A **Postgres database** (stores users and generation history).
 2. A **backend** service (the API that talks to Claude).
@@ -210,6 +210,8 @@ If you see an `alembic upgrade failed` line, see **Troubleshooting** below.
 5. Try generating a question.
 
 🎉 **You are live on the internet.** Share the URL with other teachers at your school.
+
+> Your Railway project dashboard should show exactly **three tiles**: `Postgres`, `backend`, and `frontend`. If you see a fourth tile named after your GitHub repo (e.g. `exam-generation`) left over from Step 7.1, you can delete it: click that tile → **Settings** → scroll to the bottom → **Delete service**.
 
 ---
 
