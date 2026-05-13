@@ -180,11 +180,21 @@ The frontend will redeploy. Wait 1-2 minutes.
 
 Good news: this backend creates its own database tables automatically when it starts up. You do not need to run any commands.
 
-You can confirm it worked by clicking the **backend** service → **Deployments** tab → click the latest deployment → look at the logs. You should see a line like:
+> ⚠️ **Which service to click:** Railway shows tiles for every service — make sure you click the tile you renamed **`backend`** in Step 7.2, not the **Postgres** tile. The Postgres tile has its own logs that look completely different (see below).
+
+You can confirm it worked by clicking the **backend** service → **Deployments** tab → click the latest deployment → look at the logs. You should see lines like:
 
 ```
 Curriculum loaded: 14 grade entries, target grades [7, 8, 9]
+Playwright renderer started
 ```
+
+**How to tell backend logs apart from Postgres logs:**
+
+| What you see in the logs | Which service you opened |
+|---|---|
+| `PostgreSQL 18.3 ...` / `listening on IPv4 address` / `database system is ready to accept connections` | ❌ You opened the **Postgres** tile — go back and click **backend** |
+| `Curriculum loaded: 14 grade entries, target grades [7, 8, 9]` / `Application startup complete` | ✅ Correct — this is the backend |
 
 If you see an `alembic upgrade failed` line, see **Troubleshooting** below.
 
@@ -294,6 +304,7 @@ If you suspect your `LLM_API_KEY` has leaked:
 | Custom domain shows certificate warning | DNS hasn't propagated yet | Wait 15-30 minutes and refresh |
 | Frontend shows blank page | `VITE_API_BASE_URL` not set, or pointed to wrong URL | Step 8.2 — make sure it's the backend's full `https://` URL |
 | `alembic upgrade failed` in logs | The database wasn't reachable when the backend started | Click **Redeploy** on the backend service after Postgres is fully up |
+| Logs only show `PostgreSQL 18.3 ...` / `database system is ready to accept connections` | You opened the **Postgres** service tile, not the backend | Go back to the project page and click the tile you renamed `backend` in Step 7.2 |
 | Build log shows `Railpack` / `Detected Python` / `No start command detected` | Builder is still set to Railpack, not Dockerfile | Service → **Settings → Build** → set **Builder = Dockerfile** and **Dockerfile Path** = `Dockerfile.backend` (backend) or `web/Dockerfile` (frontend). Click **Save** and redeploy. |
 
 ---
