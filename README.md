@@ -1,8 +1,11 @@
 # exam-generation
 
-CLI tool for generating Taiwan math exam questions using LLMs. Target grade range and 學習階段 are configurable in `question_schemas.json` (default: grades 7-9, 第四學習階段).
+LLM-driven generator for Taiwan math exam questions (default: grades 7-9, 第四學習階段; configurable via `question_schemas.json`). Ships with a CLI for local generation **and** a full web stack (FastAPI backend + React frontend + Postgres) for multi-user, browser-based use.
 
 The system randomly samples question parameters (grade, type, context, learning content), assembles a structured prompt with few-shot examples, calls an LLM to generate the question, then runs a second verification pass. Output is JSON per question, with optional PNG images for chart/diagram-based questions.
+
+> **Are you a teacher who just wants to deploy this so your school can use it?**
+> Skip the rest of this README and follow **[DEPLOYMENT.md](DEPLOYMENT.md)** — a non-technical, browser-only walkthrough that takes you from zero to a live public URL with HTTPS.
 
 ## Architecture
 
@@ -13,8 +16,18 @@ graph TD
     D[Few-shot Example DB] -->|matching examples| C
     C -->|assembled prompt| E[LLM: claude-sonnet-4-6 via OpenAI endpoint]
     E -->|generated question JSON| F[Verifier: independent solve pass]
-    F -->|validated JSON| G[CLI Output: JSON + optional PNG]
+    F -->|validated JSON| G[Output: JSON + optional PNG]
 ```
+
+### Runnable surfaces
+
+The same core modules (`src/sampler.py`, `src/context_builder.py`, `src/llm_client.py`, `src/verifier.py`, `src/renderer.py`) are reused by three entry points:
+
+| Surface | Code | Use case |
+|---|---|---|
+| **CLI** | `src/cli.py` | Local batch generation, scripted pipelines, debugging prompts |
+| **FastAPI backend** | `server/app.py` (port 8000) | HTTP API: auth, generation, SSE streaming, history |
+| **React frontend** | `web/` (Vite + React 19, port 3000) | Browser UI for teachers; talks to the FastAPI backend |
 
 ### Key Principles
 
@@ -40,8 +53,7 @@ exam-generation/
 │       ├── 112P_Math.pdf          # Past exam: year 112
 │       ├── 113P_Math.pdf          # Past exam: year 113
 │       └── 114P_Math.pdf          # Past exam: year 114
-├── src/
-│   ├── __init__.py
+├── src/                           # Core engine (used by CLI + server)
 │   ├── cli.py                     # CLI entry point
 │   ├── config.py                  # Configuration & env management
 │   ├── sampler.py                 # Random parameter selection
@@ -49,13 +61,34 @@ exam-generation/
 │   ├── llm_client.py              # OpenAI-compatible LLM client
 │   ├── verifier.py                # Two-pass answer verification
 │   ├── renderer.py                # matplotlib image generation
+│   ├── html_renderer.py           # Playwright HTML→PNG renderer
 │   ├── schemas.py                 # Pydantic data models (enums loaded from question_schemas.json)
 │   ├── schema_loader.py           # Loads question_schemas.json and builds dynamic enums
 │   └── data_loader.py             # Curriculum data loading & indexing
-├── output/                        # Generated questions (gitignored)
+├── server/                        # FastAPI backend
+│   ├── app.py                     # Application factory (uvicorn entry: server.app:create_app)
+│   ├── config.py                  # Server-only config (JWT, DB, CORS)
+│   ├── db.py                      # Async SQLAlchemy session
+│   ├── models.py                  # ORM models (users, generations, etc.)
+│   ├── rate_limit.py              # slowapi limiter
+│   ├── auth/                      # Sign-up, login, JWT
+│   ├── generate/                  # Generation endpoints + SSE streaming
+│   └── utility/                   # Health, schema, misc routes
+├── web/                           # React + Vite + TypeScript frontend
+│   ├── src/                       # Components, pages, stores
+│   ├── nginx.conf                 # Static asset + API proxy config
+│   └── Dockerfile                 # Multi-stage build → nginx:alpine
+├── alembic/                       # Database migrations
+├── tests/                         # Pytest suite
+├── scripts/                       # One-off utility scripts
+├── output/                        # CLI-generated questions (gitignored)
 ├── question_schemas.json          # User-editable: 學習階段, grades, and allowed values for all question parameters
+├── docker-compose.yml             # db + backend + frontend for local full-stack run
+├── Dockerfile.backend             # Backend image (Python 3.11 + Playwright)
 ├── IMPLEMENTATION_PLAN.md         # Planned refactors and known tech debt
+├── DEPLOYMENT.md                  # Teacher-facing deployment walkthrough
 ├── CLAUDE.md                      # AI assistant conventions
+├── LOGIC.md                       # Full execution trace
 ├── README.md
 ├── pyproject.toml
 └── .env.example
@@ -63,43 +96,67 @@ exam-generation/
 
 ## Setup
 
-### Prerequisites
+### Option A: CLI only
 
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/) for dependency management
-- An API key for an OpenAI-compatible endpoint serving Claude models
-
-### Install
+Use this if you want to generate questions locally without running the web stack.
 
 ```bash
-# Clone the repo
+# Prerequisites: Python 3.11+ and uv (https://docs.astral.sh/uv/)
+
 git clone <repo-url>
 cd exam-generation
 
-# Install dependencies with uv
 uv sync
-
-# Copy and configure environment
 cp .env.example .env
-# Edit .env with your API key and endpoint
+# Edit .env — at minimum, set LLM_API_KEY
+
+uv run python -m src.cli generate
 ```
+
+### Option B: Full stack with docker-compose
+
+Use this if you want the browser UI locally. Brings up Postgres, the FastAPI backend, and the React frontend.
+
+```bash
+# Prerequisites: Docker + docker-compose
+
+cp .env.example .env
+# Edit .env — set LLM_API_KEY, DB_PASSWORD, JWT_SECRET at minimum
+
+docker-compose up --build
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:8000
+# Postgres: localhost:5432
+```
+
+The backend runs `alembic upgrade head` automatically on startup (see `server/app.py` lifespan), so no manual migration step is needed locally.
+
+### Option C: Deploy to the public internet
+
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for a step-by-step guide aimed at non-technical users (Railway and Render, with custom domain + HTTPS).
 
 ### Configuration
 
 Environment variables (set in `.env` or export directly):
 
-| Variable | Description | Default |
-|---|---|---|
-| `LLM_API_KEY` | API key for the OpenAI-compatible endpoint | (required) |
-| `LLM_BASE_URL` | Base URL for the API endpoint | `https://api.anthropic.com/v1` |
-| `LLM_MODEL_PLAN` | Model for planning tasks | `claude-opus-4-6` |
-| `LLM_MODEL_EXECUTE` | Model for generation & verification | `claude-sonnet-4-6` |
-| `LLM_RATE_LIMIT_DELAY` | Seconds to wait before each API call (prevents 429 errors) | `0` |
-| `OUTPUT_DIR` | Directory for generated output | `./output` |
-| `DATABASE_URL` | Async SQLAlchemy database URL (server) | `sqlite+aiosqlite:///./dev.db` |
-| `QUESTION_SCHEMAS_PATH` | Path to question parameter config JSON | `./question_schemas.json` |
+| Variable | Used by | Description | Default |
+|---|---|---|---|
+| `LLM_API_KEY` | CLI + server | API key for the OpenAI-compatible endpoint | **(required)** |
+| `LLM_BASE_URL` | CLI + server | Base URL for the API endpoint | `https://api.anthropic.com/v1` |
+| `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-opus-4-6` |
+| `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `claude-sonnet-4-6` |
+| `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
+| `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |
+| `QUESTION_SCHEMAS_PATH` | CLI + server | Path to question parameter config JSON | `./question_schemas.json` |
+| `DATABASE_URL` | server | Async SQLAlchemy database URL | `sqlite+aiosqlite:///./dev.db` |
+| `DB_PASSWORD` | docker-compose | Password for the bundled Postgres service | `changeme` |
+| `JWT_SECRET` | server | Secret used to sign auth tokens — must be a long random string | **(required for server)** |
+| `FRONTEND_URL` | server | Frontend origin; controls CORS allowlist | `http://localhost:3000` |
+| `EMAIL_BACKEND` | server | `ses` for AWS SES, `console` to log emails to stdout | `console` |
+| `AWS_REGION` | server (if `EMAIL_BACKEND=ses`) | AWS region for SES | `us-east-1` |
+| `SES_FROM_EMAIL` | server (if `EMAIL_BACKEND=ses`) | Verified SES sender address | — |
 
-## Usage
+## CLI Usage
 
 ### Generate a single question
 
@@ -152,6 +209,37 @@ uv run python -m src.cli generate --output ./my_output
 # Dry run: show assembled prompt without calling LLM
 uv run python -m src.cli generate --dry-run
 ```
+
+## Running the server and web app
+
+### Backend only
+
+```bash
+uv sync --extra web
+uv run uvicorn server.app:create_app --factory --reload --port 8000
+```
+
+Routes live in:
+- `server/auth/routes.py` — sign-up, login, password reset
+- `server/generate/routes.py` — question generation, SSE streaming
+- `server/utility/routes.py` — health, schema introspection
+
+Migrations run automatically on app startup via the FastAPI lifespan handler. To run them manually:
+
+```bash
+uv run alembic upgrade head
+```
+
+### Frontend only
+
+```bash
+cd web
+npm install
+npm run dev     # Vite dev server, default http://localhost:5173
+npm run build   # Production build → web/dist
+```
+
+The production image (`web/Dockerfile`) builds the static bundle and serves it with `nginx:alpine` on port 80 (mapped to host `3000` by docker-compose). See `web/nginx.conf` for the backend proxy rules.
 
 ## Question Output Format
 
@@ -292,9 +380,19 @@ uv run ruff check src/
 uv run ruff format src/
 ```
 
-### Future: Web hosting
+## Deployment
 
-The project is designed with modular components (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) that can be imported directly by a web framework (FastAPI, Flask). The CLI is a thin wrapper around these components. Configuration loads from environment variables, making it container/cloud-ready.
+For step-by-step instructions aimed at non-technical users, follow **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
+For developers, the short version:
+
+| Target | Notes |
+|---|---|
+| **Railway** | Recommended for non-technical users. GitHub-connected, managed Postgres, automatic HTTPS, ~US$5/mo hobby plan. Auto-detects `Dockerfile.backend` and `web/Dockerfile`. |
+| **Render** | Same model as Railway — GitHub-connected web services, free HTTPS. Add one Web Service per Dockerfile + a Postgres add-on. |
+| **Self-hosted (VPS / school server)** | `docker-compose up -d` on any host with Docker. Put a reverse proxy (Caddy/Traefik) in front for TLS. |
+
+In all cases the runtime configuration is identical to the env var table above. The backend exposes port `8000`; the frontend image exposes port `80` (proxies `/api` to the backend via `web/nginx.conf`).
 
 ## Execution Logic
 
