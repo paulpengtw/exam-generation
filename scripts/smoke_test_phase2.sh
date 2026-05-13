@@ -53,7 +53,7 @@ curl -fsS -X POST "$BASE_URL/auth/magic-link" \
 pass "magic-link request accepted"
 echo
 echo "  Look at the server log for a line like:"
-echo "    [ConsoleEmailSender] Magic link for $EMAIL: .../auth/verify?token=<TOKEN>"
+echo "    [ConsoleEmailSender] Magic link for $EMAIL: .../verify?token=<TOKEN>&email=..."
 read -r -p "  Paste the raw token here: " TOKEN
 [[ -n "$TOKEN" ]] || fail "no token provided"
 

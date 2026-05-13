@@ -74,7 +74,7 @@ def test_console_email_sender_prints_link() -> None:
         sender.send("user@example.com", "raw-token-abc")
     out = buf.getvalue()
     assert "user@example.com" in out
-    assert "https://example.com/auth/verify?token=raw-token-abc" in out
+    assert "https://example.com/verify?token=raw-token-abc&email=user%40example.com" in out
 
 
 def test_ses_email_sender_calls_boto3() -> None:
@@ -91,7 +91,7 @@ def test_ses_email_sender_calls_boto3() -> None:
     assert kwargs["Source"] == "noreply@example.com"
     assert kwargs["Destination"] == {"ToAddresses": ["user@example.com"]}
     html = kwargs["Message"]["Body"]["Html"]["Data"]
-    assert "https://example.com/auth/verify?token=raw-token-xyz" in html
+    assert "https://example.com/verify?token=raw-token-xyz&email=user%40example.com" in html
 
 
 def test_get_email_sender_factory() -> None:

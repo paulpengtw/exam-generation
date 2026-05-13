@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from typing import Protocol
+from urllib.parse import urlencode
 
 from server.config import ServerConfig
 
 
-def _magic_link_url(frontend_url: str, raw_token: str) -> str:
+def _magic_link_url(frontend_url: str, raw_token: str, email: str) -> str:
     base = frontend_url.rstrip("/") if frontend_url else ""
-    return f"{base}/auth/verify?token={raw_token}"
+    query = urlencode({"token": raw_token, "email": email})
+    return f"{base}/verify?{query}"
 
 
 def _html_body(link: str) -> str:
@@ -35,7 +37,7 @@ class ConsoleEmailSender:
         self.frontend_url = frontend_url
 
     def send(self, to_email: str, raw_token: str) -> None:
-        link = _magic_link_url(self.frontend_url, raw_token)
+        link = _magic_link_url(self.frontend_url, raw_token, to_email)
         print(f"[ConsoleEmailSender] Magic link for {to_email}: {link}")
 
 
@@ -60,7 +62,7 @@ class SESEmailSender:
         self.client = client
 
     def send(self, to_email: str, raw_token: str) -> None:
-        link = _magic_link_url(self.frontend_url, raw_token)
+        link = _magic_link_url(self.frontend_url, raw_token, to_email)
         self.client.send_email(
             Source=self.from_email,
             Destination={"ToAddresses": [to_email]},

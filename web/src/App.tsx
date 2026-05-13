@@ -9,7 +9,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LoginPage />} />
-        <Route path="/auth/verify" element={<VerifyPage />} />
+        <Route path="/verify" element={<VerifyPage />} />
         <Route
           path="/generate"
           element={
