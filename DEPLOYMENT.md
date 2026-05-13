@@ -170,7 +170,8 @@ Open the **frontend** service, click **Variables**, and add:
 
 | Variable name | Value to type | What it is |
 |---|---|---|
-| `VITE_API_BASE_URL` | The backend URL from Step 7.2, with `https://` in front | Tells the website where its API lives |
+| `BACKEND_HOST` | The backend hostname from Step 7.2 — **no** `https://`, **no** trailing slash (e.g. `backend-production-xxxx.up.railway.app`) | Tells the frontend's web server where to forward API calls |
+| `BACKEND_SCHEME` | `https` | Use HTTPS when forwarding to the backend |
 
 The frontend will redeploy. Wait 1-2 minutes.
 
@@ -302,7 +303,8 @@ If you suspect your `LLM_API_KEY` has leaked:
 | Backend deployment crashes on startup | Wrong `DATABASE_URL` format | Make sure the value starts with `postgresql+asyncpg://` (not `postgres://`) |
 | Generation fails with "Rate limit exceeded" / 429 | You're calling Claude too fast | Raise `LLM_RATE_LIMIT_DELAY` from `2` to `5` |
 | Custom domain shows certificate warning | DNS hasn't propagated yet | Wait 15-30 minutes and refresh |
-| Frontend shows blank page | `VITE_API_BASE_URL` not set, or pointed to wrong URL | Step 8.2 — make sure it's the backend's full `https://` URL |
+| Frontend shows blank page | `BACKEND_HOST` or `BACKEND_SCHEME` not set on the frontend service | Step 8.2 — add both variables to the frontend **Variables** tab |
+| Frontend logs show `host not found in upstream "backend"` | `BACKEND_HOST` env var missing | Step 8.2 — add `BACKEND_HOST` (hostname only, no `https://`) and `BACKEND_SCHEME=https` |
 | `alembic upgrade failed` in logs | The database wasn't reachable when the backend started | Click **Redeploy** on the backend service after Postgres is fully up |
 | Logs only show `PostgreSQL 18.3 ...` / `database system is ready to accept connections` | You opened the **Postgres** service tile, not the backend | Go back to the project page and click the tile you renamed `backend` in Step 7.2 |
 | Build log shows `Railpack` / `Detected Python` / `No start command detected` | Builder is still set to Railpack, not Dockerfile | Service → **Settings → Build** → set **Builder = Dockerfile** and **Dockerfile Path** = `Dockerfile.backend` (backend) or `web/Dockerfile` (frontend). Click **Save** and redeploy. |
