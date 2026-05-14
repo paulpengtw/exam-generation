@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -62,6 +65,7 @@ async def generate_endpoint(
         skip_verify=skip_verify,
         seed=seed,
     )
+    logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 
     log = GenerationLog(
         user_id=user.id,
@@ -87,6 +91,7 @@ async def generate_endpoint(
         except Exception as exc:
             status = "failed"
             error_msg = f"{type(exc).__name__}: {exc}"
+            logger.exception("generate_endpoint stream error: %s", error_msg)
             yield {"event": "error", "data": error_msg}
             yield {"event": "done", "data": ""}
         finally:
