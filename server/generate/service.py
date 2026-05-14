@@ -5,8 +5,13 @@ the legacy GUI): stderr is redirected to a queue while `generate_one()` runs in
 a worker thread, and the async generator drains the queue and emits SSE event
 dicts.
 
-A module-level `asyncio.Semaphore(1)` serializes concurrent generation requests
-because `sys.stderr` redirection is process-global.
+A module-level `_GEN_LOCK` serializes concurrent generation requests because
+`sys.stderr` redirection is process-global. `_QUEUE_DEPTH` tracks how many
+requests are waiting or active so callers receive a `queued` event with a
+`jobs_ahead` count before the lock is acquired.
+
+Note: the counter and lock are in-process only. Multi-worker deployments need a
+shared counter (e.g. Redis) for accurate queue depth across workers.
 """
 
 from __future__ import annotations
@@ -33,7 +38,10 @@ from src.schemas import (
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
 
-_GENERATION_LOCK = asyncio.Semaphore(1)
+_GEN_LOCK = asyncio.Lock()
+_QUEUE_TOTAL = 0   # monotonically increasing; each request claims the next number
+_QUEUE_DONE = 0    # how many requests have fully completed
+_QUEUE_CHANGED = asyncio.Event()  # set() when _QUEUE_DONE increments
 
 
 class _QueueWriter:
@@ -85,96 +93,117 @@ async def generate_question_stream(
     """Async generator yielding SSE event dicts for one or more questions.
 
     Event shapes:
+      - {"event": "queued",   "data": {"jobs_ahead": int}}  (only when waiting)
+      - {"event": "started",  "data": ""}
       - {"event": "progress", "data": str}
       - {"event": "result",   "data": dict}
       - {"event": "error",    "data": str}
       - {"event": "done",     "data": ""}
     """
-    async with _GENERATION_LOCK:
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    global _QUEUE_TOTAL, _QUEUE_DONE
+    _QUEUE_TOTAL += 1
+    my_order = _QUEUE_TOTAL  # fixed ordinal for this request; never changes
 
-        client = LLMClient(config)
-        curriculum = app_state.curriculum
-        performance = app_state.performance
-        intro_text = app_state.intro_text
-        grade_content = app_state.grade_content
-        html_renderer = getattr(app_state, "html_renderer", None)
+    try:
+        # Notify waiting clients of their position and update as others finish.
+        while True:
+            jobs_ahead = my_order - 1 - _QUEUE_DONE
+            if jobs_ahead <= 0:
+                break
+            yield {"event": "queued", "data": {"jobs_ahead": jobs_ahead}}
+            _QUEUE_CHANGED.clear()
+            await _QUEUE_CHANGED.wait()
 
-        style_override = (
-            [QuestionStyle(v) for v in params.style] if params.style else None
-        )
-        context_override = (
-            [_resolve_enum(v, QuestionContext) for v in params.context]
-            if params.context else None
-        )
-        set_type_override = _resolve_enum(params.set_type, QuestionSetType)
-        q_type_override = (
-            [_resolve_enum(v, QuestionType) for v in params.q_type]
-            if params.q_type else None
-        )
+        async with _GEN_LOCK:
+            yield {"event": "started", "data": ""}
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_seed = params.seed
-        count = max(1, params.count)
+            loop = asyncio.get_running_loop()
+            queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        config.output_dir.mkdir(parents=True, exist_ok=True)
+            client = LLMClient(config)
+            curriculum = app_state.curriculum
+            performance = app_state.performance
+            intro_text = app_state.intro_text
+            grade_content = app_state.grade_content
+            html_renderer = getattr(app_state, "html_renderer", None)
 
-        def worker() -> None:
-            saved_stderr = sys.stderr
-            sys.stderr = _QueueWriter(loop, queue)
-            try:
-                for i in range(count):
-                    seed = (base_seed + i) if base_seed is not None else None
-                    rng_params = sample_params(
-                        grade_content=grade_content,
-                        grade=params.grade,
-                        style=style_override,
-                        context=context_override,
-                        set_type=set_type_override,
-                        q_type=q_type_override,
-                        seed=seed,
-                    )
-                    question_id = f"q_{timestamp}_{i+1:03d}"
-                    try:
-                        question = generate_one(
-                            config=config,
-                            client=client,
-                            curriculum=curriculum,
-                            performance=performance,
-                            intro_text=intro_text,
+            style_override = (
+                [QuestionStyle(v) for v in params.style] if params.style else None
+            )
+            context_override = (
+                [_resolve_enum(v, QuestionContext) for v in params.context]
+                if params.context else None
+            )
+            set_type_override = _resolve_enum(params.set_type, QuestionSetType)
+            q_type_override = (
+                [_resolve_enum(v, QuestionType) for v in params.q_type]
+                if params.q_type else None
+            )
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            base_seed = params.seed
+            count = max(1, params.count)
+
+            config.output_dir.mkdir(parents=True, exist_ok=True)
+
+            def worker() -> None:
+                saved_stderr = sys.stderr
+                sys.stderr = _QueueWriter(loop, queue)
+                try:
+                    for i in range(count):
+                        seed = (base_seed + i) if base_seed is not None else None
+                        rng_params = sample_params(
                             grade_content=grade_content,
-                            params=rng_params,
-                            question_id=question_id,
-                            dry_run=False,
-                            skip_verify=params.skip_verify,
-                            html_renderer=html_renderer,
+                            grade=params.grade,
+                            style=style_override,
+                            context=context_override,
+                            set_type=set_type_override,
+                            q_type=q_type_override,
+                            seed=seed,
                         )
-                    except Exception as exc:  # surface worker failures via SSE
+                        question_id = f"q_{timestamp}_{i+1:03d}"
+                        try:
+                            question = generate_one(
+                                config=config,
+                                client=client,
+                                curriculum=curriculum,
+                                performance=performance,
+                                intro_text=intro_text,
+                                grade_content=grade_content,
+                                params=rng_params,
+                                question_id=question_id,
+                                dry_run=False,
+                                skip_verify=params.skip_verify,
+                                html_renderer=html_renderer,
+                            )
+                        except Exception as exc:  # surface worker failures via SSE
+                            loop.call_soon_threadsafe(
+                                queue.put_nowait,
+                                {"event": "error", "data": f"{type(exc).__name__}: {exc}"},
+                            )
+                            return
+
+                        assert isinstance(question, ExamQuestion)
+                        payload = _question_to_event(question, config)
                         loop.call_soon_threadsafe(
-                            queue.put_nowait,
-                            {"event": "error", "data": f"{type(exc).__name__}: {exc}"},
+                            queue.put_nowait, {"event": "result", "data": payload}
                         )
-                        return
-
-                    assert isinstance(question, ExamQuestion)
-                    payload = _question_to_event(question, config)
+                finally:
+                    sys.stderr = saved_stderr
                     loop.call_soon_threadsafe(
-                        queue.put_nowait, {"event": "result", "data": payload}
+                        queue.put_nowait, {"event": "done", "data": ""}
                     )
+
+            future = loop.run_in_executor(None, worker)
+
+            try:
+                while True:
+                    event = await queue.get()
+                    yield event
+                    if event["event"] in ("done", "error"):
+                        break
             finally:
-                sys.stderr = saved_stderr
-                loop.call_soon_threadsafe(
-                    queue.put_nowait, {"event": "done", "data": ""}
-                )
-
-        future = loop.run_in_executor(None, worker)
-
-        try:
-            while True:
-                event = await queue.get()
-                yield event
-                if event["event"] in ("done", "error"):
-                    break
-        finally:
-            await future
+                await future
+    finally:
+        _QUEUE_DONE += 1
+        _QUEUE_CHANGED.set()

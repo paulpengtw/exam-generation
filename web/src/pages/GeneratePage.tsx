@@ -25,7 +25,7 @@ export default function GeneratePage() {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const { status, progressLines, results, generate, reset } = useGenerate();
+  const { status, jobsAhead, progressLines, results, generate, reset } = useGenerate();
 
   const handleLogout = () => {
     logout();
@@ -86,12 +86,12 @@ export default function GeneratePage() {
 
       <main className="mx-auto max-w-5xl space-y-6 px-3 py-4 sm:px-4 sm:py-6">
         <section className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
-          <ParamForm onSubmit={handleSubmit} disabled={status === "generating"} />
+          <ParamForm onSubmit={handleSubmit} disabled={status === "generating" || status === "queued"} />
         </section>
 
         {showProgress && (
           <section className="rounded-lg border bg-white p-4 shadow-sm">
-            <ProgressLog lines={progressLines} status={status} />
+            <ProgressLog lines={progressLines} status={status} jobsAhead={jobsAhead} />
           </section>
         )}
 

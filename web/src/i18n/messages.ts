@@ -35,6 +35,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.btn_generating": "Generating…",
     "form.error_schemas": "Failed to load schemas: ",
 
+    "progress.queued": "Queued",
+    "progress.queued_detail": "There are {n} jobs ahead of you. Please wait…",
     "progress.generating": "Generating…",
     "progress.done": "Done",
     "progress.error": "Error",
@@ -85,6 +87,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.btn_generating": "產生中…",
     "form.error_schemas": "無法載入設定：",
 
+    "progress.queued": "排隊中",
+    "progress.queued_detail": "目前有 {n} 個任務排在你前面，請稍候…",
     "progress.generating": "產生中…",
     "progress.done": "完成",
     "progress.error": "錯誤",
