@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { useT } from "../i18n/useT";
 
 type Status = "verifying" | "error";
 
@@ -8,6 +9,7 @@ export default function VerifyPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { verifyToken } = useAuth();
+  const t = useT();
   const [status, setStatus] = useState<Status>("verifying");
   const [error, setError] = useState<string | null>(null);
   const ranRef = useRef(false);
@@ -20,7 +22,7 @@ export default function VerifyPage() {
     const email = searchParams.get("email");
 
     if (!token || !email) {
-      setError("Link expired or invalid");
+      setError(t("verify.error_default"));
       setStatus("error");
       return;
     }
@@ -30,11 +32,11 @@ export default function VerifyPage() {
       if (result.success) {
         navigate("/generate", { replace: true });
       } else {
-        setError("Link expired or invalid");
+        setError(t("verify.error_default"));
         setStatus("error");
       }
     })();
-  }, [searchParams, verifyToken, navigate]);
+  }, [searchParams, verifyToken, navigate, t]);
 
   if (status === "verifying") {
     return (
@@ -44,7 +46,7 @@ export default function VerifyPage() {
             aria-hidden="true"
             className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent"
           />
-          <span>Verifying…</span>
+          <span>{t("verify.verifying")}</span>
         </div>
       </div>
     );
@@ -54,14 +56,14 @@ export default function VerifyPage() {
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-4 text-center">
         <p role="alert" className="text-red-600">
-          {error ?? "Link expired or invalid"}
+          {error ?? t("verify.error_default")}
         </p>
         <button
           type="button"
           onClick={() => navigate("/", { replace: true })}
           className="rounded bg-blue-600 px-4 py-2 text-white font-medium hover:bg-blue-700"
         >
-          Request new link
+          {t("verify.btn_request_new")}
         </button>
       </div>
     </div>

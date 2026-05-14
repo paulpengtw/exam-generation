@@ -1,0 +1,102 @@
+export type Lang = "zh-TW" | "en-US";
+
+export const DEFAULT_LANG: Lang = "en-US";
+
+export const MESSAGES: Record<Lang, Record<string, string>> = {
+  "en-US": {
+    "login.title": "Sign in",
+    "login.email_label": "Email",
+    "login.email_placeholder": "you@example.com",
+    "login.validation_email": "Please enter a valid email address.",
+    "login.btn_send": "Send magic link",
+    "login.btn_sending": "Sending…",
+    "login.sent": "Check your email for a login link.",
+    "login.error_default": "Failed to send magic link.",
+
+    "verify.verifying": "Verifying…",
+    "verify.error_default": "Link expired or invalid",
+    "verify.btn_request_new": "Request new link",
+
+    "generate.title": "Exam Generator",
+    "generate.btn_logout": "Logout",
+    "generate.results": "Results",
+    "generate.btn_download_all": "Download all as JSON",
+    "generate.btn_clear": "Clear results",
+
+    "form.grade": "Grade",
+    "form.style": "Style",
+    "form.context": "情境 (context)",
+    "form.set_type": "題型種類 (set type)",
+    "form.q_type": "題型 (q_type)",
+    "form.count": "Count",
+    "form.skip_verify": "Skip verify",
+    "form.btn_generate": "Generate",
+    "form.btn_generating": "Generating…",
+    "form.error_schemas": "Failed to load schemas: ",
+
+    "progress.generating": "Generating…",
+    "progress.done": "Done",
+    "progress.error": "Error",
+    "progress.empty": "Generate a question to see progress",
+
+    "card.hide_solution": "Hide Solution",
+    "card.show_solution": "Show Solution",
+    "card.download_json": "Download JSON",
+    "card.download_png": "Download PNG",
+    "card.verified": "✓ Verified",
+    "card.unverified": "? Unverified",
+
+    "error.title": "Something went wrong",
+    "error.desc": "An unexpected error occurred. Try reloading the page.",
+    "error.btn_reload": "Reload",
+    "error.btn_retry": "Try again",
+  },
+  "zh-TW": {
+    "login.title": "登入",
+    "login.email_label": "電子郵件",
+    "login.email_placeholder": "you@example.com",
+    "login.validation_email": "請輸入有效的電子郵件地址。",
+    "login.btn_send": "傳送登入連結",
+    "login.btn_sending": "傳送中…",
+    "login.sent": "請查看電子郵件中的登入連結。",
+    "login.error_default": "傳送登入連結失敗。",
+
+    "verify.verifying": "驗證中…",
+    "verify.error_default": "連結已過期或無效",
+    "verify.btn_request_new": "重新取得連結",
+
+    "generate.title": "題目產生器",
+    "generate.btn_logout": "登出",
+    "generate.results": "結果",
+    "generate.btn_download_all": "下載全部 JSON",
+    "generate.btn_clear": "清除結果",
+
+    "form.grade": "年級",
+    "form.style": "題目風格",
+    "form.context": "情境",
+    "form.set_type": "題型種類",
+    "form.q_type": "題型",
+    "form.count": "數量",
+    "form.skip_verify": "略過驗證",
+    "form.btn_generate": "產生",
+    "form.btn_generating": "產生中…",
+    "form.error_schemas": "無法載入設定：",
+
+    "progress.generating": "產生中…",
+    "progress.done": "完成",
+    "progress.error": "錯誤",
+    "progress.empty": "產生題目以查看進度",
+
+    "card.hide_solution": "隱藏解題過程",
+    "card.show_solution": "顯示解題過程",
+    "card.download_json": "下載 JSON",
+    "card.download_png": "下載 PNG",
+    "card.verified": "✓ 已驗證",
+    "card.unverified": "? 未驗證",
+
+    "error.title": "發生錯誤",
+    "error.desc": "發生意外錯誤，請重新載入頁面。",
+    "error.btn_reload": "重新載入",
+    "error.btn_retry": "再試一次",
+  },
+};

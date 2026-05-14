@@ -1,11 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { useT } from "../i18n/useT";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginPage() {
   const { isAuthenticated, sendMagicLink } = useAuth();
+  const t = useT();
   const [email, setEmail] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -23,7 +26,7 @@ export default function LoginPage() {
 
     const trimmed = email.trim();
     if (!EMAIL_RE.test(trimmed)) {
-      setValidationError("Please enter a valid email address.");
+      setValidationError(t("login.validation_email"));
       return;
     }
 
@@ -34,27 +37,30 @@ export default function LoginPage() {
     if (result.success) {
       setSent(true);
     } else {
-      setApiError(result.error ?? "Failed to send magic link.");
+      setApiError(result.error ?? t("login.error_default"));
     }
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-4">
-        <h1 className="text-2xl font-semibold text-center">Sign in</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">{t("login.title")}</h1>
+          <LanguageSwitcher />
+        </div>
 
         {sent ? (
           <div
             role="status"
             className="rounded border border-green-300 bg-green-50 p-4 text-green-800 text-sm text-center"
           >
-            Check your email for a login link.
+            {t("login.sent")}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3" noValidate>
             <div className="space-y-1">
               <label htmlFor="email" className="block text-sm font-medium">
-                Email
+                {t("login.email_label")}
               </label>
               <input
                 id="email"
@@ -64,7 +70,7 @@ export default function LoginPage() {
                 disabled={loading}
                 autoComplete="email"
                 className="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring focus:ring-blue-200"
-                placeholder="you@example.com"
+                placeholder={t("login.email_placeholder")}
               />
               {validationError && (
                 <p role="alert" className="text-sm text-red-600">
@@ -84,10 +90,10 @@ export default function LoginPage() {
                     aria-hidden="true"
                     className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
                   />
-                  Sending…
+                  {t("login.btn_sending")}
                 </span>
               ) : (
-                "Send magic link"
+                t("login.btn_send")
               )}
             </button>
 

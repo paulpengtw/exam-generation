@@ -37,10 +37,10 @@ def _config() -> ServerConfig:
 class _CapturingSender(ConsoleEmailSender):
     def __init__(self) -> None:
         super().__init__(frontend_url="https://example.com")
-        self.sent: list[tuple[str, str]] = []
+        self.sent: list[tuple[str, str, str]] = []
 
-    def send(self, to_email: str, raw_token: str) -> None:  # type: ignore[override]
-        self.sent.append((to_email, raw_token))
+    def send(self, to_email: str, raw_token: str, lang: str = "en-US") -> None:  # type: ignore[override]
+        self.sent.append((to_email, raw_token, lang))
 
 
 def _run(coro):
@@ -112,7 +112,7 @@ def test_verify_with_valid_token_creates_user_and_returns_jwt(app_ctx) -> None:
     app, SessionLocal, config, sender = app_ctx
     with TestClient(app) as client:
         client.post("/auth/magic-link", json={"email": "new@example.com"})
-        email, raw = sender.sent[0]
+        email, raw, _ = sender.sent[0]
         resp = client.get("/auth/verify", params={"token": raw, "email": email})
 
     assert resp.status_code == 200
@@ -151,7 +151,7 @@ def test_verify_reused_token_returns_401(app_ctx) -> None:
     app, _, _, sender = app_ctx
     with TestClient(app) as client:
         client.post("/auth/magic-link", json={"email": "u@example.com"})
-        email, raw = sender.sent[0]
+        email, raw, _ = sender.sent[0]
         first = client.get("/auth/verify", params={"token": raw, "email": email})
         assert first.status_code == 200
         second = client.get("/auth/verify", params={"token": raw, "email": email})
@@ -292,7 +292,7 @@ def test_verify_denied_for_non_whitelisted_email() -> None:
     try:
         with TestClient(app_open) as client:
             client.post("/auth/magic-link", json={"email": "blocked@evil.com"})
-        email, raw = sender_open.sent[0]
+        email, raw, _ = sender_open.sent[0]
     finally:
         asyncio.run(engine_open.dispose())
 
@@ -305,3 +305,32 @@ def test_verify_denied_for_non_whitelisted_email() -> None:
         assert resp.json()["detail"] == "Email not authorized"
     finally:
         asyncio.run(engine_strict.dispose())
+
+
+# ---------------------------------------------------------------------------
+# Lang field tests
+# ---------------------------------------------------------------------------
+
+
+def test_magic_link_sends_zh_tw_lang(app_ctx) -> None:
+    app, _, _, sender = app_ctx
+    with TestClient(app) as client:
+        resp = client.post("/auth/magic-link", json={"email": "u@example.com", "lang": "zh-TW"})
+    assert resp.status_code == 200
+    assert sender.sent and sender.sent[0][2] == "zh-TW"
+
+
+def test_magic_link_defaults_lang_to_en_us(app_ctx) -> None:
+    app, _, _, sender = app_ctx
+    with TestClient(app) as client:
+        resp = client.post("/auth/magic-link", json={"email": "u@example.com"})
+    assert resp.status_code == 200
+    assert sender.sent and sender.sent[0][2] == "en-US"
+
+
+def test_magic_link_unknown_lang_falls_back_to_en_us(app_ctx) -> None:
+    app, _, _, sender = app_ctx
+    with TestClient(app) as client:
+        resp = client.post("/auth/magic-link", json={"email": "u@example.com", "lang": "fr-FR"})
+    assert resp.status_code == 200
+    assert sender.sent and sender.sent[0][2] == "en-US"

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getSchemas, type Schemas } from "../api/client";
+import { useT } from "../i18n/useT";
 
 export interface GenerateParams {
   grade: number;
@@ -17,6 +18,7 @@ export interface ParamFormProps {
 }
 
 export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
+  const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,7 +67,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
   }
 
   if (error) {
-    return <div className="text-red-600">Failed to load schemas: {error}</div>;
+    return <div className="text-red-600">{t("form.error_schemas")}{error}</div>;
   }
 
   if (!schemas) {
@@ -99,7 +101,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium">Grade</label>
+        <label className="block text-sm font-medium">{t("form.grade")}</label>
         <select
           value={grade}
           onChange={(e) => setGrade(Number(e.target.value))}
@@ -114,7 +116,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium">Style</label>
+        <label className="block text-sm font-medium">{t("form.style")}</label>
         <select
           value={style}
           onChange={(e) => setStyle(e.target.value)}
@@ -129,7 +131,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </div>
 
       <fieldset>
-        <legend className="text-sm font-medium">情境 (context)</legend>
+        <legend className="text-sm font-medium">{t("form.context")}</legend>
         <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
           {schemas.情境.map((s) => (
             <label key={s.value} className="flex items-center gap-2">
@@ -145,7 +147,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </fieldset>
 
       <div>
-        <label className="block text-sm font-medium">題型種類 (set type)</label>
+        <label className="block text-sm font-medium">{t("form.set_type")}</label>
         <select
           value={setType}
           onChange={(e) => setSetType(e.target.value)}
@@ -160,7 +162,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </div>
 
       <fieldset>
-        <legend className="text-sm font-medium">題型 (q_type)</legend>
+        <legend className="text-sm font-medium">{t("form.q_type")}</legend>
         <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
           {schemas.題型.map((s) => (
             <label key={s.value} className="flex items-center gap-2">
@@ -176,7 +178,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </fieldset>
 
       <div>
-        <label className="block text-sm font-medium">Count</label>
+        <label className="block text-sm font-medium">{t("form.count")}</label>
         <input
           type="number"
           min={1}
@@ -193,7 +195,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
           checked={skipVerify}
           onChange={(e) => setSkipVerify(e.target.checked)}
         />
-        <span className="text-sm">Skip verify</span>
+        <span className="text-sm">{t("form.skip_verify")}</span>
       </label>
 
       <button
@@ -217,7 +219,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
             />
           </svg>
         )}
-        {disabled ? "Generating…" : "Generate"}
+        {disabled ? t("form.btn_generating") : t("form.btn_generate")}
       </button>
     </form>
   );

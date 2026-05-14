@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type { ExamQuestion } from "../hooks/useGenerate";
+import { useT } from "../i18n/useT";
 
 export interface QuestionCardProps {
   question: ExamQuestion;
@@ -35,6 +36,7 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 }
 
 export default function QuestionCard({ question }: QuestionCardProps) {
+  const t = useT();
   const [showSolution, setShowSolution] = useState(false);
 
   const verification = question.verification as VerificationShape | undefined;
@@ -74,7 +76,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
             <Chip key={`code-${code}`} label={code} tone="gray" />
           ))}
         </div>
-        <VerificationBadge passed={passed} />
+        <VerificationBadge passed={passed} verifiedLabel={t("card.verified")} unverifiedLabel={t("card.unverified")} />
       </div>
 
       {question.image_base64 && (
@@ -99,7 +101,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
           onClick={() => setShowSolution((v) => !v)}
           className="text-sm font-medium text-blue-600 hover:text-blue-700"
         >
-          {showSolution ? "Hide Solution" : "Show Solution"}
+          {showSolution ? t("card.hide_solution") : t("card.show_solution")}
         </button>
         {showSolution && (
           <div className="mt-2 space-y-1 rounded bg-gray-50 p-3 text-sm leading-relaxed">
@@ -118,7 +120,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
           onClick={handleDownloadJson}
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
-          Download JSON
+          {t("card.download_json")}
         </button>
         {question.image_base64 && (
           <button
@@ -126,7 +128,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
             onClick={handleDownloadPng}
             className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Download PNG
+            {t("card.download_png")}
           </button>
         )}
       </div>
@@ -151,17 +153,25 @@ function Chip({ label, tone }: { label: string; tone: ChipTone }) {
   );
 }
 
-function VerificationBadge({ passed }: { passed: boolean }) {
+function VerificationBadge({
+  passed,
+  verifiedLabel,
+  unverifiedLabel,
+}: {
+  passed: boolean;
+  verifiedLabel: string;
+  unverifiedLabel: string;
+}) {
   if (passed) {
     return (
       <span className="inline-flex shrink-0 items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-        ✓ Verified
+        {verifiedLabel}
       </span>
     );
   }
   return (
     <span className="inline-flex shrink-0 items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
-      ? Unverified
+      {unverifiedLabel}
     </span>
   );
 }

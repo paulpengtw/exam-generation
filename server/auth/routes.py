@@ -27,8 +27,12 @@ MAGIC_LINK_TTL_MINUTES = 15
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+_SUPPORTED_LANGS = frozenset({"zh-TW", "en-US"})
+
+
 class MagicLinkRequest(BaseModel):
     email: str
+    lang: str = "en-US"
 
     @field_validator("email")
     @classmethod
@@ -36,6 +40,11 @@ class MagicLinkRequest(BaseModel):
         if not _EMAIL_RE.match(v):
             raise ValueError("invalid email")
         return v
+
+    @field_validator("lang")
+    @classmethod
+    def _validate_lang(cls, v: str) -> str:
+        return v if v in _SUPPORTED_LANGS else "en-US"
 
 
 class MagicLinkResponse(BaseModel):
@@ -85,7 +94,7 @@ async def request_magic_link(
     await session.commit()
 
     try:
-        sender.send(email, raw_token)
+        sender.send(email, raw_token, lang=payload.lang)
     except Exception:
         # Swallow send failures so we never reveal whether an email exists.
         pass

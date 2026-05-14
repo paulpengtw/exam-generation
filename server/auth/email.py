@@ -7,6 +7,24 @@ from urllib.parse import urlencode
 
 from server.config import ServerConfig
 
+_TEMPLATES: dict[str, dict[str, str]] = {
+    "zh-TW": {
+        "subject": "您的登入連結",
+        "intro": "點擊下方按鈕登入：",
+        "button": "登入",
+        "or": "或開啟此連結：",
+        "text_prefix": "登入：",
+    },
+    "en-US": {
+        "subject": "Your sign-in link",
+        "intro": "Click the button below to sign in:",
+        "button": "Sign in",
+        "or": "Or open this link:",
+        "text_prefix": "Sign in:",
+    },
+}
+_DEFAULT_LANG = "en-US"
+
 
 def _magic_link_url(frontend_url: str, raw_token: str, email: str) -> str:
     base = frontend_url.rstrip("/") if frontend_url else ""
@@ -14,20 +32,21 @@ def _magic_link_url(frontend_url: str, raw_token: str, email: str) -> str:
     return f"{base}/verify?{query}"
 
 
-def _html_body(link: str) -> str:
+def _html_body(link: str, lang: str = _DEFAULT_LANG) -> str:
+    tpl = _TEMPLATES.get(lang, _TEMPLATES[_DEFAULT_LANG])
     return (
         "<html><body>"
-        "<p>Click the button below to sign in:</p>"
+        f"<p>{tpl['intro']}</p>"
         f'<p><a href="{link}" style="display:inline-block;padding:12px 24px;'
         'background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">'
-        "Sign in</a></p>"
-        f'<p>Or open this link: <a href="{link}">{link}</a></p>'
+        f"{tpl['button']}</a></p>"
+        f"<p>{tpl['or']} <a href=\"{link}\">{link}</a></p>"
         "</body></html>"
     )
 
 
 class EmailSender(Protocol):
-    def send(self, to_email: str, raw_token: str) -> None: ...
+    def send(self, to_email: str, raw_token: str, lang: str = _DEFAULT_LANG) -> None: ...
 
 
 class ConsoleEmailSender:
@@ -36,9 +55,9 @@ class ConsoleEmailSender:
     def __init__(self, frontend_url: str = "") -> None:
         self.frontend_url = frontend_url
 
-    def send(self, to_email: str, raw_token: str) -> None:
+    def send(self, to_email: str, raw_token: str, lang: str = _DEFAULT_LANG) -> None:
         link = _magic_link_url(self.frontend_url, raw_token, to_email)
-        print(f"[ConsoleEmailSender] Magic link for {to_email}: {link}")
+        print(f"[ConsoleEmailSender] Magic link for {to_email} (lang={lang}): {link}")
 
 
 class SESEmailSender:
@@ -61,16 +80,17 @@ class SESEmailSender:
             client = boto3.client("ses", region_name=region)
         self.client = client
 
-    def send(self, to_email: str, raw_token: str) -> None:
+    def send(self, to_email: str, raw_token: str, lang: str = _DEFAULT_LANG) -> None:
+        tpl = _TEMPLATES.get(lang, _TEMPLATES[_DEFAULT_LANG])
         link = _magic_link_url(self.frontend_url, raw_token, to_email)
         self.client.send_email(
             Source=self.from_email,
             Destination={"ToAddresses": [to_email]},
             Message={
-                "Subject": {"Data": "Your sign-in link", "Charset": "UTF-8"},
+                "Subject": {"Data": tpl["subject"], "Charset": "UTF-8"},
                 "Body": {
-                    "Html": {"Data": _html_body(link), "Charset": "UTF-8"},
-                    "Text": {"Data": f"Sign in: {link}", "Charset": "UTF-8"},
+                    "Html": {"Data": _html_body(link, lang), "Charset": "UTF-8"},
+                    "Text": {"Data": f"{tpl['text_prefix']} {link}", "Charset": "UTF-8"},
                 },
             },
         )

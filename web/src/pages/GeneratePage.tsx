@@ -5,6 +5,8 @@ import ProgressLog from "../components/ProgressLog";
 import QuestionCard from "../components/QuestionCard";
 import { useGenerate } from "../hooks/useGenerate";
 import { useAuthStore } from "../store/authStore";
+import { useT } from "../i18n/useT";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -19,6 +21,7 @@ function downloadBlob(blob: Blob, filename: string): void {
 
 export default function GeneratePage() {
   const navigate = useNavigate();
+  const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const { status, progressLines, results, generate, reset } = useGenerate();
@@ -54,8 +57,9 @@ export default function GeneratePage() {
     <div className="min-h-screen bg-gray-50">
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
-          <h1 className="text-base font-semibold sm:text-lg">Exam Generator</h1>
+          <h1 className="text-base font-semibold sm:text-lg">{t("generate.title")}</h1>
           <div className="flex min-w-0 items-center gap-2 text-sm sm:gap-3">
+            <LanguageSwitcher />
             {user && (
               <span className="hidden max-w-[12rem] truncate text-gray-700 sm:inline">
                 {user.email}
@@ -66,7 +70,7 @@ export default function GeneratePage() {
               onClick={handleLogout}
               className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
             >
-              Logout
+              {t("generate.btn_logout")}
             </button>
           </div>
         </div>
@@ -86,21 +90,21 @@ export default function GeneratePage() {
         {hasResults && (
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">Results ({results.length})</h2>
+              <h2 className="text-base font-semibold">{t("generate.results")} ({results.length})</h2>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={handleDownloadAll}
                   className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
                 >
-                  Download all as JSON
+                  {t("generate.btn_download_all")}
                 </button>
                 <button
                   type="button"
                   onClick={reset}
                   className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
-                  Clear results
+                  {t("generate.btn_clear")}
                 </button>
               </div>
             </div>

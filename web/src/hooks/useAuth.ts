@@ -1,4 +1,5 @@
 import { useAuthStore, type AuthUser } from "../store/authStore";
+import { useLangStore } from "../store/langStore";
 
 export interface AuthResult {
   success: boolean;
@@ -26,13 +27,14 @@ export function useAuth() {
   const login = useAuthStore((s) => s.login);
   const logout = useAuthStore((s) => s.logout);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const lang = useLangStore((s) => s.lang);
 
   async function sendMagicLink(email: string): Promise<AuthResult> {
     try {
       const res = await fetch("/auth/magic-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, lang }),
       });
       if (!res.ok) {
         return { success: false, error: await parseError(res) };

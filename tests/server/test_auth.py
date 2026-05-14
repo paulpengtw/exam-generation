@@ -94,6 +94,49 @@ def test_ses_email_sender_calls_boto3() -> None:
     assert "https://example.com/verify?token=raw-token-xyz&email=user%40example.com" in html
 
 
+def test_ses_email_sender_zh_tw_subject() -> None:
+    mock_client = MagicMock()
+    sender = SESEmailSender(
+        region="us-east-1",
+        from_email="noreply@example.com",
+        frontend_url="https://example.com",
+        client=mock_client,
+    )
+    sender.send("user@example.com", "raw-token-zh", lang="zh-TW")
+    kwargs = mock_client.send_email.call_args.kwargs
+    assert kwargs["Message"]["Subject"]["Data"] == "您的登入連結"
+    html = kwargs["Message"]["Body"]["Html"]["Data"]
+    assert "登入" in html
+
+
+def test_ses_email_sender_en_us_subject() -> None:
+    mock_client = MagicMock()
+    sender = SESEmailSender(
+        region="us-east-1",
+        from_email="noreply@example.com",
+        frontend_url="https://example.com",
+        client=mock_client,
+    )
+    sender.send("user@example.com", "raw-token-en", lang="en-US")
+    kwargs = mock_client.send_email.call_args.kwargs
+    assert kwargs["Message"]["Subject"]["Data"] == "Your sign-in link"
+    html = kwargs["Message"]["Body"]["Html"]["Data"]
+    assert "Sign in" in html
+
+
+def test_ses_email_sender_unknown_lang_falls_back_to_en() -> None:
+    mock_client = MagicMock()
+    sender = SESEmailSender(
+        region="us-east-1",
+        from_email="noreply@example.com",
+        frontend_url="https://example.com",
+        client=mock_client,
+    )
+    sender.send("user@example.com", "raw-token-fr", lang="fr-FR")
+    kwargs = mock_client.send_email.call_args.kwargs
+    assert kwargs["Message"]["Subject"]["Data"] == "Your sign-in link"
+
+
 def test_get_email_sender_factory() -> None:
     assert isinstance(get_email_sender(_config(email_backend="console")), ConsoleEmailSender)
     # SES path requires boto3; skip if unavailable
