@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useAuth } from "../hooks/useAuth";
 
 type Status = "verifying" | "error";
 
 export default function VerifyPage() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { verifyToken } = useAuth();
@@ -20,7 +23,7 @@ export default function VerifyPage() {
     const email = searchParams.get("email");
 
     if (!token || !email) {
-      setError("Link expired or invalid");
+      setError(t("verify.link_invalid"));
       setStatus("error");
       return;
     }
@@ -30,38 +33,40 @@ export default function VerifyPage() {
       if (result.success) {
         navigate("/generate", { replace: true });
       } else {
-        setError("Link expired or invalid");
+        setError(t("verify.link_invalid"));
         setStatus("error");
       }
     })();
-  }, [searchParams, verifyToken, navigate]);
+  }, [searchParams, verifyToken, navigate, t]);
 
   if (status === "verifying") {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="relative min-h-screen flex items-center justify-center p-4">
+        <LanguageSwitcher className="absolute top-3 right-3 rounded border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50" />
         <div role="status" className="inline-flex items-center gap-3 text-gray-700">
           <span
             aria-hidden="true"
             className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent"
           />
-          <span>Verifying…</span>
+          <span>{t("verify.verifying")}</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="relative min-h-screen flex items-center justify-center p-4">
+      <LanguageSwitcher className="absolute top-3 right-3 rounded border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50" />
       <div className="w-full max-w-sm space-y-4 text-center">
         <p role="alert" className="text-red-600">
-          {error ?? "Link expired or invalid"}
+          {error ?? t("verify.link_invalid")}
         </p>
         <button
           type="button"
           onClick={() => navigate("/", { replace: true })}
           className="rounded bg-blue-600 px-4 py-2 text-white font-medium hover:bg-blue-700"
         >
-          Request new link
+          {t("verify.request_new")}
         </button>
       </div>
     </div>
