@@ -9,8 +9,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request
-
-logger = logging.getLogger(__name__)
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -23,6 +21,7 @@ from server.generate.service import generate_question_stream
 from server.models import GenerationLog, User
 from server.rate_limit import jwt_user_key, limiter
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["generate"])
 
 
@@ -107,4 +106,7 @@ async def generate_endpoint(
                 )
                 await s.commit()
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(
+        event_generator(),
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
