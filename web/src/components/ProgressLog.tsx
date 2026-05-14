@@ -3,10 +3,11 @@ import { useT } from "../i18n/useT";
 
 export interface ProgressLogProps {
   lines: string[];
-  status: "idle" | "generating" | "error";
+  status: "idle" | "queued" | "generating" | "error";
+  jobsAhead?: number;
 }
 
-export default function ProgressLog({ lines, status }: ProgressLogProps) {
+export default function ProgressLog({ lines, status, jobsAhead = 0 }: ProgressLogProps) {
   const t = useT();
   const preRef = useRef<HTMLPreElement>(null);
 
@@ -26,6 +27,17 @@ export default function ProgressLog({ lines, status }: ProgressLogProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-sm">
+        {status === "queued" && (
+          <>
+            <span
+              className="inline-block h-3 w-3 animate-pulse rounded-full bg-yellow-400"
+              aria-label={t("progress.queued")}
+            />
+            <span className="text-yellow-700">
+              {t("progress.queued_detail").replace("{n}", String(jobsAhead))}
+            </span>
+          </>
+        )}
         {status === "generating" && (
           <>
             <span

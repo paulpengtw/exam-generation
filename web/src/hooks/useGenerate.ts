@@ -3,7 +3,7 @@ import { fetchEventSource } from "@microsoft/fetch-event-source";
 
 import { useAuthStore } from "../store/authStore";
 
-export type GenerateStatus = "idle" | "generating" | "error";
+export type GenerateStatus = "idle" | "queued" | "generating" | "error";
 
 export interface GenerateParams {
   grade?: number;
@@ -39,6 +39,7 @@ export interface ExamQuestion {
 
 export interface UseGenerateReturn {
   status: GenerateStatus;
+  jobsAhead: number;
   progressLines: string[];
   results: ExamQuestion[];
   generate: (params: GenerateParams) => void;
@@ -62,6 +63,7 @@ function buildQueryString(params: GenerateParams): string {
 
 export function useGenerate(): UseGenerateReturn {
   const [status, setStatus] = useState<GenerateStatus>("idle");
+  const [jobsAhead, setJobsAhead] = useState<number>(0);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [results, setResults] = useState<ExamQuestion[]>([]);
   const controllerRef = useRef<AbortController | null>(null);
@@ -78,6 +80,7 @@ export function useGenerate(): UseGenerateReturn {
     controllerRef.current = null;
     setProgressLines([]);
     setResults([]);
+    setJobsAhead(0);
     setStatus("idle");
   }, []);
 
@@ -93,6 +96,7 @@ export function useGenerate(): UseGenerateReturn {
     setStatus("generating");
     setProgressLines([]);
     setResults([]);
+    setJobsAhead(0);
 
     fetchEventSource(url, {
       signal: controller.signal,
@@ -105,6 +109,16 @@ export function useGenerate(): UseGenerateReturn {
       },
       onmessage(ev) {
         switch (ev.event) {
+          case "queued": {
+            const { jobs_ahead } = JSON.parse(ev.data) as { jobs_ahead: number };
+            setJobsAhead(jobs_ahead);
+            setStatus("queued");
+            break;
+          }
+          case "started":
+            setJobsAhead(0);
+            setStatus("generating");
+            break;
           case "progress":
             setProgressLines((prev) => [...prev, ev.data]);
             break;
@@ -135,5 +149,5 @@ export function useGenerate(): UseGenerateReturn {
     });
   }, []);
 
-  return { status, progressLines, results, generate, reset };
+  return { status, jobsAhead, progressLines, results, generate, reset };
 }
