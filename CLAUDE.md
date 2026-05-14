@@ -41,6 +41,7 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 | `src/renderer.py` | matplotlib PNG generation for statistical charts (`render_mode: "chart"`) |
 | `src/html_renderer.py` | Playwright HTML→PNG renderer (`render_mode: "html"`) |
 | `IMPLEMENTATION_PLAN.md` | Planned refactors and known tech debt |
+| `FLOW.md` | ASCII tree of web Generate request lifecycle (frontend click → SSE → queue → worker → result) |
 | `LOGIC.md` | Full waterfall execution trace with file + line references |
 | `src/data_loader.py` | Curriculum data loading and grade filtering |
 | `src/config.py` | Environment variable configuration |
@@ -142,7 +143,7 @@ uv run ruff check src/
 
 ## Execution Logic
 
-Complete waterfall trace of `uv run python -m src.cli generate`. Full reference: [`LOGIC.md`](LOGIC.md).
+Complete waterfall trace of `uv run python -m src.cli generate`. Full reference: [`LOGIC.md`](LOGIC.md). For the web request lifecycle (SSE queue, worker thread, DB logging), see [`FLOW.md`](FLOW.md).
 
 ### Phase 1: Bootstrap & Configuration (`src/cli.py`, `src/config.py`)
 1. `main()` → `parse_args()` (cli.py:215, 43-70)

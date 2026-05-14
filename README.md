@@ -21,7 +21,7 @@ graph TD
 
 ### Runnable surfaces
 
-The same core modules (`src/sampler.py`, `src/context_builder.py`, `src/llm_client.py`, `src/verifier.py`, `src/renderer.py`) are reused by three entry points:
+The same core modules (`src/sampler.py`, `src/context_builder.py`, `src/llm_client.py`, `src/verifier.py`, `src/renderer.py`) are reused by three entry points. For the full web request lifecycle (click → SSE → queue → worker → render), see [`FLOW.md`](FLOW.md).
 
 | Surface | Code | Use case |
 |---|---|---|
@@ -99,6 +99,7 @@ exam-generation/
 ├── IMPLEMENTATION_PLAN.md         # Planned refactors and known tech debt
 ├── DEPLOYMENT.md                  # Teacher-facing deployment walkthrough
 ├── CLAUDE.md                      # AI assistant conventions
+├── FLOW.md                        # ASCII flow chart: web Generate request lifecycle
 ├── LOGIC.md                       # Full execution trace
 ├── README.md
 ├── pyproject.toml
