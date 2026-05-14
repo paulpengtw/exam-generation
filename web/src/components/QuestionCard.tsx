@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import type { ExamQuestion } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
+import { buildExamOdt, formatTimestamp } from "../utils/odt";
 
 export interface QuestionCardProps {
   question: ExamQuestion;
@@ -58,6 +59,13 @@ export default function QuestionCard({ question }: QuestionCardProps) {
     if (!question.image_base64) return;
     const blob = base64ToBlob(question.image_base64, "image/png");
     downloadBlob(blob, `${questionId}.png`);
+  };
+
+  const handleDownloadOdt = () => {
+    const ts = formatTimestamp();
+    buildExamOdt(`exam_${ts}`, [question]).then((blob) => {
+      downloadBlob(blob, `exam_${ts}.odt`);
+    });
   };
 
   return (
@@ -131,6 +139,13 @@ export default function QuestionCard({ question }: QuestionCardProps) {
             {t("card.download_png")}
           </button>
         )}
+        <button
+          type="button"
+          onClick={handleDownloadOdt}
+          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          {t("card.download_odt")}
+        </button>
       </div>
     </div>
   );

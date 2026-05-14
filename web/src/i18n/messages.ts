@@ -21,6 +21,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "generate.btn_logout": "Logout",
     "generate.results": "Results",
     "generate.btn_download_all": "Download all as JSON",
+    "generate.btn_download_all_odt": "Download all as ODT",
     "generate.btn_clear": "Clear results",
 
     "form.grade": "Grade",
@@ -43,6 +44,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "card.show_solution": "Show Solution",
     "card.download_json": "Download JSON",
     "card.download_png": "Download PNG",
+    "card.download_odt": "Download ODT",
     "card.verified": "✓ Verified",
     "card.unverified": "? Unverified",
 
@@ -69,6 +71,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "generate.btn_logout": "登出",
     "generate.results": "結果",
     "generate.btn_download_all": "下載全部 JSON",
+    "generate.btn_download_all_odt": "下載全部 ODT",
     "generate.btn_clear": "清除結果",
 
     "form.grade": "年級",
@@ -91,6 +94,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "card.show_solution": "顯示解題過程",
     "card.download_json": "下載 JSON",
     "card.download_png": "下載 PNG",
+    "card.download_odt": "下載 ODT",
     "card.verified": "✓ 已驗證",
     "card.unverified": "? 未驗證",
 
