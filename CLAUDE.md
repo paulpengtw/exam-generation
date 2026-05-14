@@ -33,12 +33,13 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 | `data/example_exams/` | Past national exam PDFs (112-114) for reference |
 | `question_schemas.json` | User-editable config: `"學習階段"` (string), `"grades"` (int array), and all 5 question parameter categories using `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
 | `src/schema_loader.py` | Loads `question_schemas.json`, exposes `load_grades()` / `load_learning_stage()`, builds dynamic str-enums via `build_enums()`, and builds `{category: {value: instruction}}` lookup via `build_instructions()` |
-| `src/schemas.py` | Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time); includes `ChartVerificationResult` nested in `VerificationResult` |
+| `src/schemas.py` | Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time); `ImageSpec` describes the image (`render_mode`, `chart_type`, etc.); includes `ChartVerificationResult` nested in `VerificationResult` |
 | `src/sampler.py` | Random parameter selection logic |
 | `src/context_builder.py` | Prompt assembly with few-shot injection |
 | `src/llm_client.py` | OpenAI-compatible API client with model routing; `generate_with_image()` for multimodal (text + PNG) calls |
 | `src/verifier.py` | Two-pass answer verification |
-| `src/renderer.py` | matplotlib chart/diagram PNG generation (geometry uses LLM-assisted code gen) |
+| `src/renderer.py` | matplotlib PNG generation for statistical charts (`render_mode: "chart"`) |
+| `src/html_renderer.py` | Playwright HTML→PNG renderer (`render_mode: "html"`) |
 | `IMPLEMENTATION_PLAN.md` | Planned refactors and known tech debt |
 | `LOGIC.md` | Full waterfall execution trace with file + line references |
 | `src/data_loader.py` | Curriculum data loading and grade filtering |
@@ -113,17 +114,15 @@ When randomly selecting parameters, respect these rules:
 
 All 5 categories share the same `{value, instruction}` object format. A non-empty `instruction` on any entry is injected into the LLM user prompt: style instructions land under `## 題目風格`; instructions for 情境, 題型種類, 題型, and 數學思考 land under `## 條件補充說明` (section omitted if all instructions are empty).
 
-## Geometry Rendering Architecture
+## Image Rendering Architecture
 
-`src/renderer.py` handles geometry diagrams (`chart_type: "geometry"`) with a 3-tier approach:
+Images are described by `ImageSpec` (field `chart_spec` on `ExamQuestion`). The `render_mode` field determines the rendering path:
 
-1. **Hardcoded patterns** — two legacy matchers check for specific `data` keys:
-   - `"rectangle" in data and "triangle" in data` -> courtyard diagram
-   - `"lamp_height" in data` -> shadow diagram
-2. **LLM-assisted code generation** (primary path) — Sonnet generates a matplotlib code snippet from `chart_spec.description` + `chart_spec.data`, which is `exec()`'d with `fig, ax, plt, np, patches, FONT_PROP` in scope
-3. **Text fallback** — renders `description` as centered text (only if no LLM client)
+1. **`render_mode: "chart"`** — `render_chart()` in `src/renderer.py` dispatches to hardcoded matplotlib renderers for the 4 supported statistical chart types: `histogram`, `boxplot`, `line_chart`, `pie_chart`. Deterministic; no LLM call required.
 
-**Planned change:** The hardcoded patterns in tier 1 are marked for removal in `IMPLEMENTATION_PLAN.md`. The LLM-assisted path handles all geometry types generically and should become the sole renderer. When modifying `_render_geometry()`, do not add new hardcoded pattern branches — let the LLM path handle it.
+2. **`render_mode: "html"`** — `render_image()` calls `_generate_html_via_llm()` (Sonnet generates a self-contained HTML/CSS/SVG document from `description` + `data`), then `PlaywrightRenderer.render()` in `src/html_renderer.py` screenshots it to PNG. Used for geometry diagrams, tables, menus, and any non-chart visual.
+
+The entry point is always `render_image()` (`src/renderer.py:271`), called from `generate_one()` in `src/cli.py`.
 
 ## Common Commands
 
@@ -146,61 +145,63 @@ uv run ruff check src/
 Complete waterfall trace of `uv run python -m src.cli generate`. Full reference: [`LOGIC.md`](LOGIC.md).
 
 ### Phase 1: Bootstrap & Configuration (`src/cli.py`, `src/config.py`)
-1. `main()` → `parse_args()` (cli.py:181, 39-65)
+1. `main()` → `parse_args()` (cli.py:215, 43-70)
 2. `Config.from_env()` reads `.env` + env vars: `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_PLAN/EXECUTE`, `LLM_RATE_LIMIT_DELAY`, `OUTPUT_DIR`, `DATA_DIR` (config.py:22-36)
-3. `config.validate()` ensures `LLM_API_KEY` present (cli.py:193)
-4. `output_dir.mkdir()` (cli.py:196)
+3. `config.validate()` ensures `LLM_API_KEY` present (cli.py:227)
+4. `output_dir.mkdir()` (cli.py:230)
 
-### Phase 2: Data Loading (`src/data_loader.py`, cli.py:199-204)
+### Phase 2: Data Loading (`src/data_loader.py`, cli.py:233-238)
 5. `load_curriculum()` — full K-12 JSON array (data_loader.py:11-14)
-6. `load_performance_standards()` — performance standards (data_loader.py:17-19)
-7. `load_intro_text()` — curriculum intro markdown (data_loader.py:56-60)
+6. `load_performance_standards()` — performance standards (data_loader.py:17-20)
+7. `load_intro_text()` — curriculum intro markdown (data_loader.py:59-63)
 8. Build grade content index `{g: [...] for g in _GRADES}` via `get_grade_content()` (data_loader.py:23-35); `_GRADES` from `question_schemas.json["grades"]`
 
-### Phase 3: LLM Client Init (`src/llm_client.py`, cli.py:207)
-9. `LLMClient(config)` wraps `OpenAI(api_key, base_url)` (llm_client.py:16-21). Skipped if `--dry-run`.
+### Phase 3: LLM Client Init (`src/llm_client.py`, cli.py:241)
+9. `LLMClient(config)` wraps `OpenAI(api_key, base_url)` (llm_client.py:19-24). Skipped if `--dry-run`.
+   Playwright renderer also started here once and reused across questions (cli.py:245-253).
 
-### Phase 4: Generation Loop (`src/cli.py` lines 216-278)
+### Phase 4: Generation Loop (`src/cli.py` lines 269-310)
 
 For each question:
 
-**4A. Seed** — `rng = random.Random(seed)` (cli.py:221-222)
+**4A. Seed** — `seed = base_seed + i` if seeded; `rng` not used directly here (seed passed to `sample_params`)
 
-**4B. Sampling** (`src/sampler.py:18-69`) — `sample_params()` randomly picks grade, 情境, 題型種類, 題型, 數學思考 (1-3), 學習內容 (1-3), style. Enum values come from `question_schemas.json` via `src/schema_loader.py`. All overridable via CLI. `--q-type` and `--style` each accept one or more values (`nargs="+"`): a single value forces it; multiple values define a pool and the sampler picks one randomly per question.
+**4B. Sampling** (`src/sampler.py:21-77`) — `sample_params()` randomly picks grade (line 38), 情境 (41-46), 題型種類 (49), 題型 (52), 數學思考 1-3 (55-57), 學習內容 1-3 (60-64), style (67). Enum values come from `question_schemas.json` via `src/schema_loader.py`. All overridable via CLI. `--q-type` and `--style` each accept one or more values (`nargs="+"`): a single value forces it; multiple values define a pool and the sampler picks one randomly per question.
 
 **4C. Prompt build** (`src/context_builder.py`) —
-- `build_system_prompt()`: injects full curriculum JSON + performance JSON + intro text (lines 108-118)
-- `build_user_prompt()`: injects sampled params + per-param instructions + style instruction + few-shot examples. All instructions come from `_INSTRUCTIONS` (built via `schema_loader.build_instructions()` at module import). Non-empty instructions for 情境/題型種類/題型/數學思考 appear under `## 條件補充說明`; style instruction appears under `## 題目風格`. Both sections are omitted if empty.
+- `build_system_prompt()`: injects full curriculum JSON + performance JSON + intro text (lines 131-150)
+- `build_user_prompt()`: injects sampled params + per-param instructions + style instruction + few-shot examples (lines 153-230). All instructions come from `_INSTRUCTIONS` (built via `schema_loader.build_instructions()` at module import, line 14). Non-empty instructions for 情境/題型種類/題型/數學思考 appear under `## 條件補充說明`; style instruction appears under `## 題目風格`. Both sections are omitted if empty.
 
 **4D. Few-shot injection** —
-- `load_few_shot_examples(few_shot_dir, style)` loads ALL `*.json` from `data/few_shot/{style}/` alphabetically (data_loader.py:63-72)
-- Flatten arrays; `rng.sample(pool, min(2, len))` picks 1-2 examples (context_builder.py:144-155)
+- `load_few_shot_examples(few_shot_dir, style)` loads ALL `*.json` from `data/few_shot/{style}/` alphabetically (data_loader.py:66-75)
+- Flatten arrays; `rng.sample(pool, min(2, len))` picks 1-2 examples (context_builder.py:208-209)
 
-**4E. LLM call #1** — `client.generate_json()` → `openai.chat.completions.create()`, Sonnet, temp=0.7, max_tokens=8192 (llm_client.py:41-44, 23-35)
+**4E. LLM call #1** — `client.generate_json()` → `openai.chat.completions.create()`, Sonnet, temp=0.7, max_tokens=8192 (llm_client.py:70-73, 26-40)
 
-**4F. JSON extraction** — `extract_json()` tries: markdown code block → raw `{` → brute regex (llm_client.py:47-64)
+**4F. JSON extraction** — `extract_json()` tries: markdown code block → raw `{` → brute regex (llm_client.py:76-93)
 
-**4G. Parse** — `_parse_question()` builds `ExamQuestion` + `QuestionMetadata` (cli.py:122-178)
+**4G. Parse** — `_parse_question()` builds `ExamQuestion` + `QuestionMetadata` (cli.py:145-212); handles both `image_spec` (new) and `chart_spec` (legacy) field names from LLM output
 
-### Phase 5: Chart Rendering + Verification (`src/renderer.py`, `src/verifier.py`, cli.py inside `generate_one`)
-Chart rendering now happens **before** verification so the verifier can see the image.
+### Phase 5: Image Rendering + Verification (`src/renderer.py`, `src/html_renderer.py`, `src/verifier.py`, cli.py inside `generate_one`)
+Image rendering happens **before** verification so the verifier can see the PNG.
 
-1. If `question.chart_spec` exists: `render_chart()` saves PNG and returns its path as `chart_image_path`
-   - `render_chart()` dispatches by `chart_type` (renderer.py:50-75): `histogram/boxplot/line_chart/pie_chart` → hardcoded matplotlib; `geometry` → 3-tier: hardcoded patterns → LLM call #3 `exec()`'d matplotlib code → text fallback
-2. LLM call #2: `verify_question(client, question, chart_image_path)` — sends question + solution + optional PNG via `client.generate_with_image()` (multimodal). Returns `VerificationResult{passed, answer_match, details, chart_verification}` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}` (verifier.py)
+1. If `question.chart_spec` exists: `render_image(spec, path, question_text, html_renderer, llm_client)` (renderer.py:271) dispatches by `render_mode`:
+   - `"chart"` → `render_chart()` (renderer.py:50-71): `histogram/boxplot/line_chart/pie_chart` → hardcoded matplotlib
+   - `"html"` → LLM call #2: `_generate_html_via_llm()` (renderer.py:343) asks Sonnet to write HTML/CSS/SVG; then `html_renderer.render()` (html_renderer.py) screenshots via Playwright
+2. LLM call #3: `verify_question(client, question, chart_image_path)` — sends question + solution + optional PNG via `client.generate_with_image()` (multimodal). Returns `VerificationResult{passed, answer_match, details, chart_verification}` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}` (verifier.py)
 
-### Phase 7: Output (cli.py:269-290)
-- Default: `{question_id}.json` per question (`model_dump_json`, cli.py:272-278)
-- `--batch`: single `batch_{timestamp}.json` array (cli.py:281-288)
+### Phase 7: Output (cli.py:313-330)
+- Default: `{question_id}.json` per question (`model_dump_json`, cli.py:315-320)
+- `--batch`: single `batch_{timestamp}.json` array (cli.py:323-330)
 
 ### LLM Calls Summary
 
 | # | Purpose | Model | File:Line |
 |---|---|---|---|
-| 1 | Generate question | Sonnet | llm_client.py:26-35 |
-| 2 | Chart render (conditional) | Sonnet | renderer.py:426-429 (geometry only) |
-| 3 | Verify answer + chart image | Sonnet | verifier.py (`generate_with_image`) |
+| 1 | Generate question | Sonnet | llm_client.py:26-40 |
+| 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet | renderer.py:343 |
+| 3 | Verify answer + image (multimodal) | Sonnet | verifier.py (`generate_with_image`) |
 
 ### Randomness Summary
 
-All RNG is `random.Random(seed)` per question. Points: grade from `_GRADES` (sampler.py:35), 情境 (38-41), 題型種類 (42), 題型 (45), 數學思考 (48-50), 學習內容 (53-57), style (60), few-shot pick (context_builder.py:154-155).
+All RNG is `random.Random(seed)` per question. Points: grade from `_GRADES` (sampler.py:38), 情境 (41-46), 題型種類 (49), 題型 (52), 數學思考 (55-57), 學習內容 (60-64), style (67), few-shot pick (context_builder.py:208-209).

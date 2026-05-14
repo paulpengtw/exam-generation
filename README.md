@@ -29,6 +29,17 @@ The same core modules (`src/sampler.py`, `src/context_builder.py`, `src/llm_clie
 | **FastAPI backend** | `server/app.py` (port 8000) | HTTP API: auth, generation, SSE streaming, history |
 | **React frontend** | `web/` (Vite + React 19, port 3000) | Browser UI for teachers; talks to the FastAPI backend |
 
+### Image Rendering
+
+Questions can include images, described by an `ImageSpec` on the generated question. Two render paths:
+
+| `render_mode` | Renderer | Method |
+|---|---|---|
+| `"chart"` | `src/renderer.py` `render_chart()` | Deterministic matplotlib — `histogram`, `boxplot`, `line_chart`, `pie_chart` |
+| `"html"` | `src/html_renderer.py` `PlaywrightRenderer` | Sonnet writes HTML/CSS/SVG → Playwright screenshots to PNG |
+
+The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()` in `src/cli.py`.
+
 ### Key Principles
 
 - **No RAG.** All curriculum data and few-shot examples are injected directly as context.
@@ -60,8 +71,8 @@ exam-generation/
 │   ├── context_builder.py         # Prompt assembly with few-shot injection
 │   ├── llm_client.py              # OpenAI-compatible LLM client
 │   ├── verifier.py                # Two-pass answer verification
-│   ├── renderer.py                # matplotlib image generation
-│   ├── html_renderer.py           # Playwright HTML→PNG renderer
+│   ├── renderer.py                # matplotlib PNG for chart questions (render_mode="chart")
+│   ├── html_renderer.py           # Playwright HTML→PNG for image questions (render_mode="html")
 │   ├── schemas.py                 # Pydantic data models (enums loaded from question_schemas.json)
 │   ├── schema_loader.py           # Loads question_schemas.json and builds dynamic enums
 │   └── data_loader.py             # Curriculum data loading & indexing
@@ -155,6 +166,7 @@ Environment variables (set in `.env` or export directly):
 | `EMAIL_BACKEND` | server | `ses` for AWS SES, `console` to log emails to stdout | `console` |
 | `AWS_REGION` | server (if `EMAIL_BACKEND=ses`) | AWS region for SES | `us-east-1` |
 | `SES_FROM_EMAIL` | server (if `EMAIL_BACKEND=ses`) | Verified SES sender address | — |
+| `EMAIL_WHITELIST` | server | Comma-separated list of allowed magic-link recipients. Supports exact addresses and `*@domain` wildcards. Empty = allow all. | — (allow all) |
 
 ## CLI Usage
 
@@ -285,19 +297,18 @@ For image-based questions, a corresponding PNG file is generated in the same out
 
 ### Image Rendering
 
-The renderer (`src/renderer.py`) supports these chart types:
+Questions can specify an image via `image_spec` (or legacy `chart_spec`) in the LLM output. The `render_mode` field selects the renderer:
 
-| Type | Renderer | Method |
+**`render_mode: "chart"`** — `render_chart()` in `src/renderer.py`:
+
+| `chart_type` | Renderer | Output |
 |---|---|---|
-| `histogram` | Hardcoded matplotlib | Direct bar chart |
+| `histogram` | Hardcoded matplotlib | Bar chart |
 | `boxplot` | Hardcoded matplotlib | Five-number summary boxes |
 | `line_chart` | Hardcoded matplotlib | Data points or function plot |
-| `pie_chart` | Hardcoded matplotlib | Pie/spinner with angle labels |
-| `geometry` | **LLM-assisted** | Sonnet generates matplotlib code from `description` + `data`, then `exec()`'d |
+| `pie_chart` | Hardcoded matplotlib | Pie with angle labels |
 
-For geometry diagrams, the LLM writes a self-contained matplotlib code snippet based on the `chart_spec.description` and `chart_spec.data` fields. This handles arbitrary geometry (L-shapes, triangles, coordinate planes, etc.) without needing hardcoded patterns for each type.
-
-> **Note:** Two legacy hardcoded geometry patterns (courtyard, shadow) still exist in the code. These are marked for removal in `IMPLEMENTATION_PLAN.md` — they will be replaced by the LLM-assisted path in a future refactor.
+**`render_mode: "html"`** — `_generate_html_via_llm()` in `src/renderer.py` asks Sonnet to write a self-contained HTML/CSS/SVG document from `description` + `data`; then `PlaywrightRenderer` in `src/html_renderer.py` screenshots it to PNG. Used for geometry diagrams, coordinate planes, tables, menus, and any non-statistical visual.
 
 ## Customizing Question Parameters
 
@@ -404,9 +415,9 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 
 **File: `src/cli.py`**
 
-1. `main()` is called (line 181)
-2. `parse_args()` parses CLI flags: `--grade`, `--style`, `--context`, `--set-type`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--batch`, `--output`, `--dry-run`, `--env-file` (lines 39-65). `--style` and `--q-type` each accept one or more values (`nargs="+"`) — multiple values define a random selection pool.
-3. `Config.from_env(args.env_file)` loads configuration (line 188)
+1. `main()` is called (line 215)
+2. `parse_args()` parses CLI flags: `--grade`, `--style`, `--context`, `--set-type`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--batch`, `--output`, `--dry-run`, `--env-file` (lines 43-70). `--style` and `--q-type` each accept one or more values (`nargs="+"`) — multiple values define a random selection pool.
+3. `Config.from_env(args.env_file)` loads configuration (line 222)
 
 **File: `src/config.py`**
 
@@ -415,22 +426,22 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
    - `LLM_MODEL_PLAN` (default: `claude-opus-4-6`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
    - `LLM_RATE_LIMIT_DELAY` (default: `0`) — seconds slept before every `generate()` call to avoid 429 errors
    - `OUTPUT_DIR` (default: `./output`), `DATA_DIR` (default: `./data`)
-5. `config.validate()` ensures `LLM_API_KEY` is set (line 193 -> config.py:38-41)
+5. `config.validate()` ensures `LLM_API_KEY` is set (line 227 -> config.py:38-41)
 
 **File: `src/cli.py`**
 
-6. `config.output_dir.mkdir(parents=True, exist_ok=True)` ensures output directory exists (line 196)
+6. `config.output_dir.mkdir(parents=True, exist_ok=True)` ensures output directory exists (line 230)
 
 ---
 
 ### Phase 2: Data Loading
 
-**File: `src/cli.py` lines 199-204, calling into `src/data_loader.py`**
+**File: `src/cli.py` lines 233-238, calling into `src/data_loader.py`**
 
 7. `load_curriculum(data_dir / "curriculum" / "學習內容.json")` -> reads full K-12 curriculum JSON array (14 grade objects) (data_loader.py:11-14)
-8. `load_performance_standards(data_dir / "curriculum" / "學習表現.json")` -> reads learning performance standards (data_loader.py:17-19)
-9. `load_intro_text(Path("Introduction to \"學習表現\" and \"學習階段\".md"))` -> reads curriculum intro markdown (data_loader.py:56-60)
-10. Build grade content index: for each grade in `question_schemas.json["grades"]`, `get_grade_content(curriculum, grade)` extracts `LearningContentItem` objects (編碼 + 說明) (data_loader.py:23-35). Result: `{7: [...], 8: [...], 9: [...]}` (cli.py:204)
+8. `load_performance_standards(data_dir / "curriculum" / "學習表現.json")` -> reads learning performance standards (data_loader.py:17-20)
+9. `load_intro_text(Path("Introduction to \"學習表現\" and \"學習階段\".md"))` -> reads curriculum intro markdown (data_loader.py:59-63)
+10. Build grade content index: for each grade in `question_schemas.json["grades"]`, `get_grade_content(curriculum, grade)` extracts `LearningContentItem` objects (編碼 + 說明) (data_loader.py:23-35). Result: `{7: [...], 8: [...], 9: [...]}` (cli.py:238)
 
 ---
 
@@ -438,116 +449,109 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 
 **File: `src/cli.py` line 207, `src/llm_client.py`**
 
-11. `LLMClient(config)` creates an `OpenAI(api_key=..., base_url=...)` client (llm_client.py:16-21). Skipped if `--dry-run`.
+11. `LLMClient(config)` creates an `OpenAI(api_key=..., base_url=...)` client (llm_client.py:19-24). Skipped if `--dry-run`.
+    `PlaywrightRenderer` also started here once and reused across all questions (cli.py:245-253).
 
 ---
 
 ### Phase 4: Generation Loop
 
-**File: `src/cli.py` lines 216-278**
+**File: `src/cli.py` lines 269-310**
 
 For each question `i` in `range(args.count)`:
 
-#### 4A. Seed & RNG Setup (lines 221-222)
+#### 4A. Seed & RNG Setup (lines 270-271)
 
 12. If `--seed` provided: `seed = base_seed + i`, else `seed = None`
-13. `rng = random.Random(seed)` — deterministic if seeded
+13. Seed passed to `sample_params()` which creates its own `random.Random(seed)` — deterministic if seeded
 
-#### 4B. Parameter Sampling (lines 224-232)
+#### 4B. Parameter Sampling (lines 273-281)
 
 **File: `src/sampler.py`**
 
-14. `sample_params()` randomly selects (or uses CLI overrides for) each parameter (lines 18-69):
-    - **grade**: `rng.choice(_GRADES)` — values from `question_schemas.json["grades"]` (line 35)
-    - **情境**: `rng.randint(1, len(all_contexts))` → `rng.sample(all_contexts, count)` — 1-N of 6 options (lines 38-41)
-    - **題型種類**: `rng.choice(list(QuestionSetType))` — 單一題 or 題組題 (line 41)
-    - **題型**: `rng.choice(list(QuestionType))` — one of 4 options (line 44)
-    - **數學思考**: `rng.sample(all_thinking, randint(1,3))` — 1-3 of [形成, 運用, 詮釋評估] (lines 47-49)
-    - **學習內容**: `rng.sample(available_content, randint(1,3))` — 1-3 items from selected grade's curriculum (lines 52-56)
-    - **style**: `rng.choice(list(QuestionStyle))` — one of [text_only, with_chart, with_image, creative_scenario] (line 59)
-15. Returns `SampledParams` Pydantic model (lines 61-69)
+14. `sample_params()` randomly selects (or uses CLI overrides for) each parameter (lines 21-77):
+    - **grade**: `rng.choice(_GRADES)` — values from `question_schemas.json["grades"]` (line 38)
+    - **情境**: `rng.randint(1, len(all_contexts))` → `rng.sample(all_contexts, count)` — 1-N options (lines 41-46)
+    - **題型種類**: `rng.choice(list(QuestionSetType))` — 單一題 or 題組題 (line 49)
+    - **題型**: `rng.choice(list(QuestionType))` — one of 4 options (line 52)
+    - **數學思考**: `rng.sample(all_thinking, randint(1,3))` — 1-3 of [形成, 運用, 詮釋評估] (lines 55-57)
+    - **學習內容**: `rng.sample(available_content, randint(1,3))` — 1-3 items from selected grade's curriculum (lines 60-64)
+    - **style**: `rng.choice(list(QuestionStyle))` — one of [text_only, with_chart, with_image, creative_scenario] (line 67)
+15. Returns `SampledParams` Pydantic model (lines 69-77)
 
 #### 4C. Prompt Construction (cli.py:241 -> generate_one lines 78-119)
 
 **File: `src/context_builder.py`**
 
-16. `build_system_prompt()` (lines 108-118) fills `SYSTEM_PROMPT_TEMPLATE` (lines 12-66) with:
-    - `{curriculum_json}` — full K-12 curriculum as JSON string (via `get_full_curriculum_text`, data_loader.py:46-48)
-    - `{performance_json}` — full performance standards as JSON string (via `get_full_performance_text`, data_loader.py:51-53)
+16. `build_system_prompt()` (lines 131-150) fills `SYSTEM_PROMPT_TEMPLATE` (lines 23-130) with:
+    - `{curriculum_json}` — full K-12 curriculum as JSON string (via `get_full_curriculum_text`, data_loader.py:49-51)
+    - `{performance_json}` — full performance standards as JSON string (via `get_full_performance_text`, data_loader.py:54-56)
     - `{intro_text}` — curriculum introduction markdown
 
-17. `build_user_prompt()` (lines 121-173) fills `USER_PROMPT_TEMPLATE` (lines 68-98) with:
+17. `build_user_prompt()` (lines 153-230) fills `USER_PROMPT_TEMPLATE` with:
     - Sampled parameters (grade, 情境, 題型種類, 題型, 數學思考, 學習內容)
-    - `{style_instruction}` — looked up from `STYLE_INSTRUCTIONS` dict (lines 100-105)
+    - `{style_instruction}` — looked up from `_INSTRUCTIONS` dict (context_builder.py:14, schema-driven via `build_instructions()`)
     - `{few_shot_examples}` — assembled via steps 18-20 below
 
 #### 4D. Few-Shot Example Injection (context_builder.py:142-162)
 
 **File: `src/data_loader.py` lines 63-72, then `src/context_builder.py` lines 142-162**
 
-18. `load_few_shot_examples(few_shot_dir, style)` (data_loader.py:63-72):
+18. `load_few_shot_examples(few_shot_dir, style)` (data_loader.py:66-75):
     - Resolves path: `data/few_shot/{style}/` (e.g. `data/few_shot/with_chart/`)
     - `sorted(style_dir.glob("*.json"))` — loads ALL JSON files in alphabetical order
     - Each file is parsed as a JSON object or array and appended to the list
 
-19. Flatten (context_builder.py:146-151): if any loaded file is a JSON array, each element is extracted. Single objects kept as-is. This creates a flat pool of individual examples.
+19. Flatten (context_builder.py:199-205): if any loaded file is a JSON array, each element is extracted. Single objects kept as-is. This creates a flat pool of individual examples.
 
-20. Random selection (context_builder.py:154-155): `rng.sample(flat_examples, min(2, len(pool)))` picks 1-2 examples from the pool. Each is formatted as a markdown code block with `### 範例 {i}` header.
+20. Random selection (context_builder.py:208-209): `rng.sample(flat_examples, min(2, len(pool)))` picks 1-2 examples from the pool. Each is formatted as a markdown code block with `### 範例 {i}` header.
 
 #### 4E. LLM Generation Call (cli.py:106)
 
 **File: `src/llm_client.py`**
 
-21. `client.generate_json(system_prompt, user_prompt)` (llm_client.py:41-44):
-    - Calls `generate()` (lines 23-35): `openai.chat.completions.create()` with `model=model_execute` (Sonnet), `temperature=0.7`, `max_tokens=8192`
+21. `client.generate_json(system_prompt, user_prompt)` (llm_client.py:70-73):
+    - Calls `generate()` (lines 26-40): `openai.chat.completions.create()` with `model=model_execute` (Sonnet), `temperature=0.7`, `max_tokens=8192`
     - Messages: `[{"role": "system", ...}, {"role": "user", ...}]`
-22. `extract_json(raw)` (llm_client.py:47-64) parses LLM text response:
-    - First tries: regex for ` ```json ... ``` ` code block (line 50-52)
-    - Then tries: raw text starting with `{` or `[` (lines 55-57)
-    - Then tries: first `{...}` substring (lines 60-62)
+22. `extract_json(raw)` (llm_client.py:76-93) parses LLM text response:
+    - First tries: regex for ` ```json ... ``` ` code block (line 79-81)
+    - Then tries: raw text starting with `{` or `[` (lines 84-86)
+    - Then tries: first `{...}` substring (lines 88-91)
     - Raises `ValueError` if all fail
 
-#### 4F. Response Parsing (cli.py:109)
+#### 4F. Response Parsing (cli.py:115)
 
-**File: `src/cli.py` lines 122-178**
+**File: `src/cli.py` lines 145-212**
 
-23. `_parse_question(raw_json, question_id, params, model)` converts raw dict to `ExamQuestion`:
-    - **學習內容** (lines 130-143): handles both dict and string formats, splits on `：`
-    - **chart_spec** (lines 149-160): if present, parsed into `ChartSpec` Pydantic model
+23. `_parse_question(raw_json, question_id, params, model)` (cli.py:145-212) converts raw dict to `ExamQuestion`:
+    - **學習內容** (lines 153-166): handles both dict and string formats, splits on `：`
+    - **image_spec / chart_spec** (lines 171-194): handles both `image_spec` (new) and `chart_spec` (legacy) field names; parsed into `ImageSpec` Pydantic model
     - Returns `ExamQuestion` with all fields + `QuestionMetadata` (grade, style, model, seed)
 
 ---
 
-### Phase 5: Chart Rendering + Verification (Two-Pass)
+### Phase 5: Image Rendering + Verification (Two-Pass)
 
-Chart rendering now happens **before** verification inside `generate_one()` so the verifier can inspect the image.
+Image rendering happens **before** verification inside `generate_one()` so the verifier can inspect the image.
 
-**File: `src/cli.py` inside `generate_one()`, `src/renderer.py`**
+**File: `src/cli.py` inside `generate_one()` (lines 117-132), `src/renderer.py`**
 
-24. If `question.chart_spec` exists, `render_chart(spec, img_path, llm_client)` is called:
+24. If `question.chart_spec` exists, `render_image(spec, img_path, question_text, html_renderer, llm_client)` (renderer.py:271) is called. Dispatches by `render_mode`:
 
 **File: `src/renderer.py`**
 
-| chart_type | Handler | Lines |
+| `render_mode` | Path | Lines |
 |---|---|---|
-| `"histogram"` | `_render_histogram()` | 78-113 |
-| `"boxplot"` | `_render_boxplot()` | 116-182 |
-| `"line_chart"` | `_render_line_chart()` | 185-232 |
-| `"pie_chart"` | `_render_pie_chart()` | 235-272 |
-| `"geometry"` | `_render_geometry()` | 275-303 |
-
-For `"geometry"`, `_render_geometry()` uses a 3-tier approach:
-- **Tier 1 — Hardcoded patterns** (lines 282-287): checks `data` keys for `"rectangle"+"triangle"` or `"lamp_height"`
-- **Tier 2 — LLM-assisted** (lines 290-293): `_render_geometry_via_llm()` sends description to Sonnet, gets matplotlib code, `exec()`s it — **potential third LLM call**
-- **Tier 3 — Text fallback** (lines 296-303): renders description as centered text
+| `"chart"` | `render_chart()` → `_render_histogram/boxplot/line_chart/pie_chart()` | 50-71 |
+| `"html"` | `_generate_html_via_llm()` (LLM call #2) → `html_renderer.render()` | 271-308 |
 
 25. On render success: `question.圖片 = "{question_id}.png"`, `chart_image_path` = absolute PNG path
 
 **File: `src/cli.py` inside `generate_one()`, `src/verifier.py`**
 
-26. If `--no-verify` not set, `verify_question(client, question, chart_image_path)` is called (verifier.py):
+26. If `--no-verify` not set, `verify_question(client, question, chart_image_path)` is called (verifier.py) — **LLM call #3**:
     - Formats question text and solution into `VERIFICATION_USER_TEMPLATE`
-    - Sends to LLM via `client.generate_with_image()` — text + optional base64 PNG in a multimodal message — **this is the second LLM call**
+    - Sends to LLM via `client.generate_with_image()` — text + optional base64 PNG in a multimodal message
     - Parses JSON response into `VerificationResult(passed, answer_match, details, chart_verification)` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}`
     - On parse failure: returns `VerificationResult(passed=False)`
 27. Result attached to `question.verification`
@@ -556,16 +560,16 @@ For `"geometry"`, `_render_geometry()` uses a 3-tier approach:
 
 ### Phase 6: Output
 
-**File: `src/cli.py` lines 269-290**
+**File: `src/cli.py` lines 313-330**
 
 #### Single mode (default):
 
-31. For each question: write `{question_id}.json` to output dir (lines 272-278)
+31. For each question: write `{question_id}.json` to output dir (lines 315-320)
     - `question.model_dump_json(indent=2, exclude_none=True)` serializes the Pydantic model
 
 #### Batch mode (`--batch`):
 
-32. After all questions: write `batch_{timestamp}.json` containing a JSON array of all questions (lines 281-288)
+32. After all questions: write `batch_{timestamp}.json` containing a JSON array of all questions (lines 323-330)
 
 ---
 
@@ -573,22 +577,22 @@ For `"geometry"`, `_render_geometry()` uses a 3-tier approach:
 
 | # | Purpose | Model | File | Line |
 |---|---|---|---|---|
-| 1 | Generate question JSON | Sonnet (`model_execute`) | llm_client.py | 26-35 |
-| 2 | Generate geometry matplotlib code (only if `chart_type="geometry"` and no hardcoded match) | Sonnet (`model_execute`) | renderer.py | 426-429 |
-| 3 | Verify question + chart image (multimodal) | Sonnet (`model_execute`) | verifier.py (`generate_with_image`) | — |
+| 1 | Generate question JSON | Sonnet (`model_execute`) | llm_client.py | 26-40 |
+| 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet (`model_execute`) | renderer.py | 343 |
+| 3 | Verify question + image (multimodal) | Sonnet (`model_execute`) | verifier.py (`generate_with_image`) | — |
 
 ### Randomness Points
 
 | What | How | File | Line |
 |---|---|---|---|
-| Grade | `rng.choice(_GRADES)` from `question_schemas.json` | sampler.py | 35 |
-| 情境 | `rng.sample(all, randint(1, len))` | sampler.py | 38-41 |
-| 題型種類 | `rng.choice(list(QuestionSetType))` | sampler.py | 41 |
-| 題型 | `rng.choice(list(QuestionType))` | sampler.py | 44 |
-| 數學思考 | `rng.sample(all, randint(1,3))` | sampler.py | 47-49 |
-| 學習內容 | `rng.sample(grade_items, randint(1,3))` | sampler.py | 52-56 |
-| Style | `rng.choice(list(QuestionStyle))` | sampler.py | 59 |
-| Few-shot examples | `rng.sample(flat_pool, min(2,len))` | context_builder.py | 154-155 |
+| Grade | `rng.choice(_GRADES)` from `question_schemas.json` | sampler.py | 38 |
+| 情境 | `rng.sample(all, randint(1, len))` | sampler.py | 41-46 |
+| 題型種類 | `rng.choice(list(QuestionSetType))` | sampler.py | 49 |
+| 題型 | `rng.choice(list(QuestionType))` | sampler.py | 52 |
+| 數學思考 | `rng.sample(all, randint(1,3))` | sampler.py | 55-57 |
+| 學習內容 | `rng.sample(grade_items, randint(1,3))` | sampler.py | 60-64 |
+| Style | `rng.choice(list(QuestionStyle))` | sampler.py | 67 |
+| Few-shot examples | `rng.sample(flat_pool, min(2,len))` | context_builder.py | 208-209 |
 
 All randomness is seeded from a single `random.Random(seed)` per question — fully reproducible when `--seed` is provided.
 

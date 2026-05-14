@@ -143,6 +143,7 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `JWT_SECRET` | A long random string (see below) | Used to sign login tokens |
 | `FRONTEND_URL` | The frontend URL you copied in Step 7.3, with `https://` in front | Tells the backend which website is allowed to call it |
 | `EMAIL_BACKEND` | `console` | `console` prints magic-link login emails to backend logs — fine for your own first login; switch to `ses` after following **Step 13** so other teachers receive real emails |
+| `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |
 
 **How to generate `JWT_SECRET`:** open `https://passwordsgenerator.net` in a new tab, set length to 64, click **Generate**, and paste the result.
 
@@ -383,6 +384,7 @@ If you suspect your `LLM_API_KEY` has leaked:
 | "Invalid API key" when generating | `LLM_API_KEY` is wrong, or Anthropic billing isn't set up | Double-check the key. Open `console.anthropic.com` → Billing |
 | Backend deployment crashes on startup | Wrong `DATABASE_URL` format | Make sure the value starts with `postgresql+asyncpg://` (not `postgres://`) |
 | Generation fails with "Rate limit exceeded" / 429 | You're calling Claude too fast | Raise `LLM_RATE_LIMIT_DELAY` from `2` to `5` |
+| Magic link request returns `403 email not allowed` | `EMAIL_WHITELIST` is set and the address doesn't match any entry | Add the address (or `*@theirdomain`) to `EMAIL_WHITELIST` on the backend, then save and redeploy |
 | Custom domain shows certificate warning | DNS hasn't propagated yet | Wait 15-30 minutes and refresh |
 | Frontend shows blank page | `BACKEND_HOST` or `BACKEND_SCHEME` not set on the frontend service | Step 8.2 — add both variables to the frontend **Variables** tab |
 | Frontend logs show `host not found in upstream "backend"` | `BACKEND_HOST` env var missing | Step 8.2 — add `BACKEND_HOST` (hostname only, no `https://`) and `BACKEND_SCHEME=https` |
