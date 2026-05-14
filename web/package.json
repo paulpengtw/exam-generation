@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@microsoft/fetch-event-source": "^2.0.1",
+    "i18next": "^26.1.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-i18next": "^17.0.7",
     "react-router-dom": "^7.15.0",
     "zustand": "^5.0.13"
   },

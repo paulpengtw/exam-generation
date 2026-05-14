@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Navigate } from "react-router-dom";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useAuth } from "../hooks/useAuth";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const { isAuthenticated, sendMagicLink } = useAuth();
   const [email, setEmail] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -23,7 +26,7 @@ export default function LoginPage() {
 
     const trimmed = email.trim();
     if (!EMAIL_RE.test(trimmed)) {
-      setValidationError("Please enter a valid email address.");
+      setValidationError(t("login.invalid_email"));
       return;
     }
 
@@ -34,27 +37,28 @@ export default function LoginPage() {
     if (result.success) {
       setSent(true);
     } else {
-      setApiError(result.error ?? "Failed to send magic link.");
+      setApiError(result.error ?? t("login.send_failed"));
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="relative min-h-screen flex items-center justify-center p-4">
+      <LanguageSwitcher className="absolute top-3 right-3 rounded border border-gray-300 bg-white px-2 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50" />
       <div className="w-full max-w-sm space-y-4">
-        <h1 className="text-2xl font-semibold text-center">Sign in</h1>
+        <h1 className="text-2xl font-semibold text-center">{t("login.title")}</h1>
 
         {sent ? (
           <div
             role="status"
             className="rounded border border-green-300 bg-green-50 p-4 text-green-800 text-sm text-center"
           >
-            Check your email for a login link.
+            {t("login.sent_message")}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3" noValidate>
             <div className="space-y-1">
               <label htmlFor="email" className="block text-sm font-medium">
-                Email
+                {t("login.email")}
               </label>
               <input
                 id="email"
@@ -84,10 +88,10 @@ export default function LoginPage() {
                     aria-hidden="true"
                     className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
                   />
-                  Sending…
+                  {t("login.sending")}
                 </span>
               ) : (
-                "Send magic link"
+                t("login.send")
               )}
             </button>
 

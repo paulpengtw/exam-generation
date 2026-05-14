@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getSchemas, type Schemas } from "../api/client";
 
 export interface GenerateParams {
@@ -17,6 +18,7 @@ export interface ParamFormProps {
 }
 
 export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
+  const { t } = useTranslation();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,12 +67,12 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
   }
 
   if (error) {
-    return <div className="text-red-600">Failed to load schemas: {error}</div>;
+    return <div className="text-red-600">{t("paramForm.load_failed", { error })}</div>;
   }
 
   if (!schemas) {
     return (
-      <div className="space-y-4 animate-pulse" aria-busy="true" aria-label="Loading form">
+      <div className="space-y-4 animate-pulse" aria-busy="true" aria-label={t("paramForm.loading")}>
         <div>
           <div className="h-3 w-16 rounded bg-gray-200" />
           <div className="mt-2 h-9 w-full rounded bg-gray-100" />
@@ -99,7 +101,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-medium">Grade</label>
+        <label className="block text-sm font-medium">{t("paramForm.grade")}</label>
         <select
           value={grade}
           onChange={(e) => setGrade(Number(e.target.value))}
@@ -114,7 +116,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium">Style</label>
+        <label className="block text-sm font-medium">{t("paramForm.style")}</label>
         <select
           value={style}
           onChange={(e) => setStyle(e.target.value)}
@@ -129,7 +131,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </div>
 
       <fieldset>
-        <legend className="text-sm font-medium">情境 (context)</legend>
+        <legend className="text-sm font-medium">{t("paramForm.context_legend")}</legend>
         <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
           {schemas.情境.map((s) => (
             <label key={s.value} className="flex items-center gap-2">
@@ -145,7 +147,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </fieldset>
 
       <div>
-        <label className="block text-sm font-medium">題型種類 (set type)</label>
+        <label className="block text-sm font-medium">{t("paramForm.set_type")}</label>
         <select
           value={setType}
           onChange={(e) => setSetType(e.target.value)}
@@ -160,7 +162,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </div>
 
       <fieldset>
-        <legend className="text-sm font-medium">題型 (q_type)</legend>
+        <legend className="text-sm font-medium">{t("paramForm.q_type")}</legend>
         <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
           {schemas.題型.map((s) => (
             <label key={s.value} className="flex items-center gap-2">
@@ -176,7 +178,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
       </fieldset>
 
       <div>
-        <label className="block text-sm font-medium">Count</label>
+        <label className="block text-sm font-medium">{t("paramForm.count")}</label>
         <input
           type="number"
           min={1}
@@ -193,7 +195,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
           checked={skipVerify}
           onChange={(e) => setSkipVerify(e.target.checked)}
         />
-        <span className="text-sm">Skip verify</span>
+        <span className="text-sm">{t("paramForm.skip_verify")}</span>
       </label>
 
       <button
@@ -217,7 +219,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
             />
           </svg>
         )}
-        {disabled ? "Generating…" : "Generate"}
+        {disabled ? t("paramForm.generating") : t("paramForm.generate")}
       </button>
     </form>
   );

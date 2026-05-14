@@ -1,16 +1,19 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { withTranslation, type WithTranslation } from "react-i18next";
 
-interface ErrorBoundaryProps {
+interface ErrorBoundaryOwnProps {
   children: ReactNode;
   fallback?: ReactNode;
 }
+
+type ErrorBoundaryProps = ErrorBoundaryOwnProps & WithTranslation;
 
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
 }
 
-export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -26,14 +29,15 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
   };
 
   render(): ReactNode {
+    const { t } = this.props;
     if (this.state.hasError) {
       if (this.props.fallback) return this.props.fallback;
       return (
         <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
           <div className="w-full max-w-md rounded-lg border border-red-200 bg-white p-6 shadow-sm">
-            <h1 className="text-lg font-semibold text-red-700">Something went wrong</h1>
+            <h1 className="text-lg font-semibold text-red-700">{t("error.title")}</h1>
             <p className="mt-2 text-sm text-gray-700">
-              An unexpected error occurred. Try reloading the page.
+              {t("error.description")}
             </p>
             {this.state.error?.message && (
               <pre className="mt-3 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-600">
@@ -46,14 +50,14 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
                 onClick={() => window.location.reload()}
                 className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
               >
-                Reload
+                {t("error.reload")}
               </button>
               <button
                 type="button"
                 onClick={this.handleReset}
                 className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
-                Try again
+                {t("error.try_again")}
               </button>
             </div>
           </div>
@@ -63,3 +67,5 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     return this.props.children;
   }
 }
+
+export default withTranslation()(ErrorBoundary);

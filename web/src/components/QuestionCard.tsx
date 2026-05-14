@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { ExamQuestion } from "../hooks/useGenerate";
 
@@ -35,6 +36,7 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 }
 
 export default function QuestionCard({ question }: QuestionCardProps) {
+  const { t } = useTranslation();
   const [showSolution, setShowSolution] = useState(false);
 
   const verification = question.verification as VerificationShape | undefined;
@@ -80,7 +82,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
       {question.image_base64 && (
         <img
           src={`data:image/png;base64,${question.image_base64}`}
-          alt="Question diagram"
+          alt={t("questionCard.image_alt")}
           className="max-w-full rounded border border-gray-200"
         />
       )}
@@ -99,7 +101,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
           onClick={() => setShowSolution((v) => !v)}
           className="text-sm font-medium text-blue-600 hover:text-blue-700"
         >
-          {showSolution ? "Hide Solution" : "Show Solution"}
+          {showSolution ? t("questionCard.hide_solution") : t("questionCard.show_solution")}
         </button>
         {showSolution && (
           <div className="mt-2 space-y-1 rounded bg-gray-50 p-3 text-sm leading-relaxed">
@@ -118,7 +120,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
           onClick={handleDownloadJson}
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
-          Download JSON
+          {t("questionCard.download_json")}
         </button>
         {question.image_base64 && (
           <button
@@ -126,7 +128,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
             onClick={handleDownloadPng}
             className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Download PNG
+            {t("questionCard.download_png")}
           </button>
         )}
       </div>
@@ -152,16 +154,17 @@ function Chip({ label, tone }: { label: string; tone: ChipTone }) {
 }
 
 function VerificationBadge({ passed }: { passed: boolean }) {
+  const { t } = useTranslation();
   if (passed) {
     return (
       <span className="inline-flex shrink-0 items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-        ✓ Verified
+        {t("questionCard.verified")}
       </span>
     );
   }
   return (
     <span className="inline-flex shrink-0 items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
-      ? Unverified
+      {t("questionCard.unverified")}
     </span>
   );
 }
