@@ -21,6 +21,7 @@ from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import Base, MagicLinkToken, User
+from server.rate_limit import limiter
 
 
 def _config() -> ServerConfig:
@@ -191,3 +192,116 @@ def test_app_includes_auth_routes() -> None:
     assert "/auth/magic-link" in paths
     assert "/auth/verify" in paths
     assert "/auth/me" in paths
+
+
+# ---------------------------------------------------------------------------
+# Whitelist tests
+# ---------------------------------------------------------------------------
+
+
+def _app_with_whitelist(*entries: str):
+    """Build an app_ctx-style tuple with a whitelist configured."""
+    limiter.reset()
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def _init() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_init())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(
+        api_key="x",
+        jwt_secret="test-secret",
+        jwt_expire_days=7,
+        frontend_url="https://example.com",
+        email_backend="console",
+        email_whitelist=tuple(entries),
+    )
+    sender = _CapturingSender()
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    app.dependency_overrides[_email_sender_dep] = lambda: sender
+    return app, SessionLocal, config, sender, engine
+
+
+def test_magic_link_denied_for_non_whitelisted_email() -> None:
+    app, _, _, sender, engine = _app_with_whitelist("allowed@example.com")
+    try:
+        with TestClient(app) as client:
+            resp = client.post("/auth/magic-link", json={"email": "blocked@evil.com"})
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "Email not authorized"
+        assert sender.sent == []
+    finally:
+        asyncio.run(engine.dispose())
+
+
+def test_magic_link_allowed_for_exact_match() -> None:
+    app, _, _, sender, engine = _app_with_whitelist("allowed@example.com")
+    try:
+        with TestClient(app) as client:
+            resp = client.post("/auth/magic-link", json={"email": "allowed@example.com"})
+        assert resp.status_code == 200
+        assert sender.sent and sender.sent[0][0] == "allowed@example.com"
+    finally:
+        asyncio.run(engine.dispose())
+
+
+def test_magic_link_allowed_for_wildcard_domain() -> None:
+    app, _, _, sender, engine = _app_with_whitelist("*@school.edu")
+    try:
+        with TestClient(app) as client:
+            resp = client.post("/auth/magic-link", json={"email": "anyone@school.edu"})
+        assert resp.status_code == 200
+        assert sender.sent and sender.sent[0][0] == "anyone@school.edu"
+    finally:
+        asyncio.run(engine.dispose())
+
+
+def test_magic_link_wildcard_does_not_match_subdomain() -> None:
+    app, _, _, sender, engine = _app_with_whitelist("*@school.edu")
+    try:
+        with TestClient(app) as client:
+            resp = client.post("/auth/magic-link", json={"email": "x@sub.school.edu"})
+        assert resp.status_code == 403
+    finally:
+        asyncio.run(engine.dispose())
+
+
+def test_magic_link_empty_whitelist_allows_all() -> None:
+    app, _, _, sender, engine = _app_with_whitelist()
+    try:
+        with TestClient(app) as client:
+            resp = client.post("/auth/magic-link", json={"email": "anyone@anywhere.com"})
+        assert resp.status_code == 200
+    finally:
+        asyncio.run(engine.dispose())
+
+
+def test_verify_denied_for_non_whitelisted_email() -> None:
+    """Whitelist check on verify blocks stale tokens after whitelist shrinks."""
+    # First generate a token with no whitelist, then verify with one that excludes the email.
+    app_open, SessionLocal, _, sender_open, engine_open = _app_with_whitelist()
+    try:
+        with TestClient(app_open) as client:
+            client.post("/auth/magic-link", json={"email": "blocked@evil.com"})
+        email, raw = sender_open.sent[0]
+    finally:
+        asyncio.run(engine_open.dispose())
+
+    # Now build a restricted app and try to verify.
+    app_strict, _, _, _, engine_strict = _app_with_whitelist("allowed@example.com")
+    try:
+        with TestClient(app_strict) as client:
+            resp = client.get("/auth/verify", params={"token": raw, "email": email})
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "Email not authorized"
+    finally:
+        asyncio.run(engine_strict.dispose())

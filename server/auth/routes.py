@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth.dependencies import get_config, get_current_user
 from server.auth.email import EmailSender, get_email_sender
 from server.auth.tokens import create_jwt, generate_magic_token
+from server.auth.whitelist import is_email_allowed
 from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import MagicLinkToken, User
@@ -63,12 +64,15 @@ async def request_magic_link(
     payload: MagicLinkRequest,
     session: AsyncSession = Depends(get_async_session),
     sender: EmailSender = Depends(_email_sender_dep),
+    config: ServerConfig = Depends(get_config),
 ) -> MagicLinkResponse:
-    """Generate a magic link, store its hash, and email the raw token.
-
-    Always returns the same response to prevent email enumeration.
-    """
+    """Generate a magic link, store its hash, and email the raw token."""
     email = payload.email.lower()
+    if not is_email_allowed(email, config.email_whitelist):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not authorized",
+        )
     raw_token, token_hash = generate_magic_token()
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=MAGIC_LINK_TTL_MINUTES)
 
@@ -102,6 +106,11 @@ async def verify_magic_link(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
+        )
+    if not is_email_allowed(email_norm, config.email_whitelist):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not authorized",
         )
 
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
