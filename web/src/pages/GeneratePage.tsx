@@ -7,6 +7,7 @@ import { useGenerate } from "../hooks/useGenerate";
 import { useAuthStore } from "../store/authStore";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../components/LanguageSwitcher";
+import { buildExamOdt, formatTimestamp } from "../utils/odt";
 
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -48,6 +49,13 @@ export default function GeneratePage() {
     const blob = new Blob([json], { type: "application/json" });
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     downloadBlob(blob, `batch_${ts}.json`);
+  };
+
+  const handleDownloadAllOdt = () => {
+    const ts = formatTimestamp();
+    buildExamOdt(`exam_${ts}`, results).then((blob) => {
+      downloadBlob(blob, `exam_${ts}.odt`);
+    });
   };
 
   const showProgress = !(progressLines.length === 0 && status === "idle");
@@ -98,6 +106,13 @@ export default function GeneratePage() {
                   className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
                 >
                   {t("generate.btn_download_all")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadAllOdt}
+                  className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                >
+                  {t("generate.btn_download_all_odt")}
                 </button>
                 <button
                   type="button"
