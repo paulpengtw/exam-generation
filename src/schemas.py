@@ -55,6 +55,8 @@ class VerificationResult(BaseModel):
     passed: bool
     answer_match: bool
     details: str
+    my_answer: str = ""
+    provided_answer: str = ""
     chart_verification: ChartVerificationResult | None = None
 
 

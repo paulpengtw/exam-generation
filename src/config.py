@@ -18,6 +18,7 @@ class Config:
     output_dir: Path = field(default_factory=lambda: Path("./output"))
     data_dir: Path = field(default_factory=lambda: Path("./data"))
     rate_limit_delay: float = 0.0  # seconds between API calls
+    max_retries: int = 3  # retries when verification fails (0 = no retry)
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> Config:
@@ -35,6 +36,7 @@ class Config:
             output_dir=Path(os.environ.get("OUTPUT_DIR", "./output")),
             data_dir=Path(os.environ.get("DATA_DIR", "./data")),
             rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),
+            max_retries=int(os.environ.get("LLM_MAX_RETRIES", "3")),
         )
 
     def validate(self) -> None:

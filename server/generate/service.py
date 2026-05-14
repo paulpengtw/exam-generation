@@ -24,7 +24,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
-from src.cli import generate_one
+from src.cli import generate_with_corrections
 from src.llm_client import LLMClient
 from src.sampler import sample_params
 from src.schemas import (
@@ -143,6 +143,7 @@ async def generate_question_stream(
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_seed = params.seed
             count = max(1, params.count)
+            max_retries = params.max_retries
 
             config.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -163,7 +164,7 @@ async def generate_question_stream(
                         )
                         question_id = f"q_{timestamp}_{i+1:03d}"
                         try:
-                            question = generate_one(
+                            question = generate_with_corrections(
                                 config=config,
                                 client=client,
                                 curriculum=curriculum,
@@ -172,7 +173,7 @@ async def generate_question_stream(
                                 grade_content=grade_content,
                                 params=rng_params,
                                 question_id=question_id,
-                                dry_run=False,
+                                max_retries=max_retries,
                                 skip_verify=params.skip_verify,
                                 html_renderer=html_renderer,
                             )

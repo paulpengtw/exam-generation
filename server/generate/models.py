@@ -20,5 +20,6 @@ class GenerateParams(BaseModel):
     count: int = 1
     skip_verify: bool = False
     seed: int | None = None
+    max_retries: int = 3
 
     model_config = {"populate_by_name": True}
