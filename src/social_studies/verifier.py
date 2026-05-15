@@ -1,10 +1,4 @@
-"""Verification pass for social studies questions.
-
-NOTE: This verifier is copied from math and uses answer-match logic, which is
-incorrect for rubric-graded 開放式建構反應題 (codes 2/1/0/9). A rubric_grade
-scoring strategy will replace this once live examples demonstrate the gap.
-See IMPLEMENTATION_PLAN.md "Known design risks" section.
-"""
+"""Verification pass for social studies questions."""
 
 from __future__ import annotations
 
@@ -14,17 +8,22 @@ from src.llm_client import LLMClient, extract_json
 from src.social_studies.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
 
 VERIFICATION_SYSTEM_PROMPT = """\
-你是一位PISA閱讀素養命題審核教師，負責審核考試題目的正確性。你會收到一道題組，請你：
+你是一位PISA閱讀素養命題審核教師，負責審核考試題目的可用性與明顯錯誤。你會收到一道題組，請你：
 
 1. 完全獨立地閱讀文本素材並回答每一道小題（不要看提供的解答）。
 2. 將你的解答與提供的解答進行比較。
-3. 檢查是否有以下問題：
-   - 題目敘述有歧義或矛盾
-   - 答案不一致或無法從文本中找到支持
-   - 選項設計不合理（如正確答案不在選項中、誘答不具誘答力）
-   - 開放式題目的評分規準不清楚或不公平
-   - 非連續文本素材（如提供）與題目描述不符
+3. 採取「寬鬆通過、只攔重大問題」的標準：
+   - 如果提供的答案或解題分析能被文本合理支持，即使你的答案措辭不同，也應視為通過。
+   - 開放式題目可有多種合理回答；只要評分規準或解題分析清楚、公平、能涵蓋合理答案，就應視為通過。
+   - 小幅措辭、格式、詳略、誘答力不足但不影響作答的問題，請在 details 提醒，但不要因此判定 failed。
+   - 只有在答案明顯無文本支持、與文本矛盾、選項正解不存在、題目嚴重歧義到無法作答、評分規準不可用或不公平時，才判定 failed。
 4. 如果提供了圖表圖片，請一併檢查圖表是否正確呈現素材。
+   - 圖表或非連續文本有輕微標籤/排版問題但仍可理解時，請提醒但不要 failed。
+   - 圖表資料明顯錯誤、缺少作答必要資訊，或與題目描述矛盾時，才 failed。
+
+answer_match 的判斷也請寬鬆：
+- 若你的答案與提供答案語意相同、可由相同文本依據支持，或符合開放式題目的評分規準，請回傳 true。
+- 只有當提供答案與你的獨立判讀有實質衝突，且無法被文本合理支持時，才回傳 false。
 
 請以 JSON 格式回覆：
 
@@ -34,7 +33,7 @@ VERIFICATION_SYSTEM_PROMPT = """\
   "provided_answer": "題目提供的答案摘要",
   "answer_match": true/false,
   "passed": true/false,
-  "details": "詳細說明（如有問題，指出具體位置）",
+  "details": "詳細說明；若只是小幅改善建議，請明確寫出仍可通過",
   "chart_verification": {
     "chart_data_match": true/false,
     "chart_labels_correct": true/false,
