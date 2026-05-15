@@ -15,8 +15,10 @@ graph TD
     B -->|grade / 題型 / 情境 / 學習內容| C{Context Builder}
     D[Few-shot Example DB] -->|matching examples| C
     C -->|assembled prompt| E[LLM: claude-sonnet-4-6 via OpenAI endpoint]
-    E -->|generated question JSON| F[Verifier: independent solve pass]
-    F -->|validated JSON| G[Output: JSON + optional PNG]
+    E -->|generated question JSON| F[Verifier: independent solve + correction loop]
+    F -->|passed| G[Output: JSON + optional PNG]
+    F -->|failed| H[Corrector: targeted fix]
+    H --> F
 ```
 
 ### Runnable surfaces
@@ -44,7 +46,7 @@ The `"html"` path handles geometry diagrams, coordinate planes, tables, and any 
 
 - **No RAG.** All curriculum data and few-shot examples are injected directly as context.
 - **Randomness is script-side.** The program selects grade, question type, context, learning content — not the LLM.
-- **Two-pass verification.** Sonnet generates, then Sonnet independently solves and flags errors.
+- **Verify + correct loop.** Sonnet generates → Sonnet verifies → on failure, Sonnet applies a minimal targeted correction and re-verifies (up to `max_retries` times). Only the wrong field changes; classification, metadata, and correct fields are preserved.
 - **OpenAI-compatible endpoint.** Uses the `openai` SDK for endpoint diversity. Opus plans, Sonnet executes.
 
 ## Project Structure
@@ -70,7 +72,8 @@ exam-generation/
 │   ├── sampler.py                 # Random parameter selection
 │   ├── context_builder.py         # Prompt assembly with few-shot injection
 │   ├── llm_client.py              # OpenAI-compatible LLM client
-│   ├── verifier.py                # Two-pass answer verification
+│   ├── verifier.py                # Independent answer verification pass
+│   ├── corrector.py               # Targeted correction pass for failed-verification questions
 │   ├── renderer.py                # matplotlib PNG for chart questions (render_mode="chart")
 │   ├── html_renderer.py           # Playwright HTML→PNG for image questions (render_mode="html")
 │   ├── schemas.py                 # Pydantic data models (enums loaded from question_schemas.json)
@@ -158,6 +161,7 @@ Environment variables (set in `.env` or export directly):
 | `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-opus-4-6` |
 | `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `claude-sonnet-4-6` |
 | `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
+| `LLM_MAX_RETRIES` | CLI + server | Max correction attempts when verification fails | `3` |
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |
 | `QUESTION_SCHEMAS_PATH` | CLI + server | Path to question parameter config JSON | `./question_schemas.json` |
 | `DATABASE_URL` | server | Async SQLAlchemy database URL | `sqlite+aiosqlite:///./dev.db` |
@@ -221,6 +225,9 @@ uv run python -m src.cli generate --output ./my_output
 
 # Dry run: show assembled prompt without calling LLM
 uv run python -m src.cli generate --dry-run
+
+# Cap correction attempts when verification fails (default 3)
+uv run python -m src.cli generate --max-retries 2
 ```
 
 ## Running the server and web app
@@ -278,6 +285,8 @@ Each generated question produces a JSON file following this schema:
     "passed": true,
     "answer_match": true,
     "details": "...",
+    "my_answer": "...",
+    "provided_answer": "...",
     "chart_verification": {
       "chart_data_match": true,
       "chart_labels_correct": true,
@@ -531,7 +540,7 @@ For each question `i` in `range(args.count)`:
 
 ---
 
-### Phase 5: Image Rendering + Verification (Two-Pass)
+### Phase 5: Image Rendering + Verification + Correction Loop
 
 Image rendering happens **before** verification inside `generate_one()` so the verifier can inspect the image.
 
@@ -553,9 +562,15 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 26. If `--no-verify` not set, `verify_question(client, question, chart_image_path)` is called (verifier.py) — **LLM call #3**:
     - Formats question text and solution into `VERIFICATION_USER_TEMPLATE`
     - Sends to LLM via `client.generate_with_image()` — text + optional base64 PNG in a multimodal message
-    - Parses JSON response into `VerificationResult(passed, answer_match, details, chart_verification)` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}`
+    - Parses JSON response into `VerificationResult(passed, answer_match, details, my_answer, provided_answer, chart_verification)` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}`
     - On parse failure: returns `VerificationResult(passed=False)`
 27. Result attached to `question.verification`
+
+#### 5B. Correction loop (`src/cli.py` `generate_with_corrections()`, `src/corrector.py`)
+
+28. If `verification.passed=False` and retries remain, `correct_question(client, question, verification, chart_image_path)` (`src/corrector.py`) sends the failed question JSON + verifier's `details` (+ `my_answer`/`provided_answer` + optional `chart_verification`) back to Sonnet — multimodal if a PNG exists and chart verification failed. Returns a new `ExamQuestion` with only `題目`, `正確解題分析`, and `chart_spec` mutable; all classification and metadata fields are restored from the original.
+29. If `chart_spec` actually changed (`!=` compare), re-render the PNG. Otherwise reuse the existing PNG.
+30. Re-verify (**LLM call #3** again). Loop up to `max_retries` total correction passes (default 3, overridable via `--max-retries` / `LLM_MAX_RETRIES`).
 
 ---
 
@@ -581,6 +596,9 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 | 1 | Generate question JSON | Sonnet (`model_execute`) | llm_client.py | 26-40 |
 | 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet (`model_execute`) | renderer.py | 343 |
 | 3 | Verify question + image (multimodal) | Sonnet (`model_execute`) | verifier.py (`generate_with_image`) | — |
+| 4 | Correction (when verification fails; multimodal if chart was the issue) | Sonnet (`model_execute`) | corrector.py | — |
+
+Calls 3 + 4 may repeat up to `max_retries` times (default 3).
 
 ### Randomness Points
 

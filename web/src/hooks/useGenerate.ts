@@ -6,6 +6,7 @@ import { useAuthStore } from "../store/authStore";
 export type GenerateStatus = "idle" | "queued" | "generating" | "error";
 
 export interface GenerateParams {
+  subject?: string;
   grade?: number;
   style?: string[];
   context?: string[];
@@ -50,6 +51,7 @@ class FatalStreamError extends Error {}
 
 function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
+  if (params.subject !== undefined) qs.append("subject", params.subject);
   if (params.grade !== undefined) qs.append("grade", String(params.grade));
   if (params.set_type !== undefined) qs.append("set_type", params.set_type);
   if (params.count !== undefined) qs.append("count", String(params.count));

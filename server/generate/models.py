@@ -12,6 +12,7 @@ class GenerateParams(BaseModel):
     optional; missing fields fall back to random sampling in `sample_params()`.
     """
 
+    subject: str = "math"
     grade: int | None = None
     style: list[str] | None = None
     context: list[str] | None = None

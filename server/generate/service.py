@@ -24,15 +24,24 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
-from src.cli import generate_with_corrections
+from src.cli import generate_with_corrections as math_generate_with_corrections
 from src.llm_client import LLMClient
-from src.sampler import sample_params
+from src.sampler import sample_params as math_sample_params
 from src.schemas import (
-    ExamQuestion,
-    QuestionContext,
-    QuestionSetType,
-    QuestionStyle,
-    QuestionType,
+    ExamQuestion as MathExamQuestion,
+    QuestionContext as MathQuestionContext,
+    QuestionSetType as MathQuestionSetType,
+    QuestionStyle as MathQuestionStyle,
+    QuestionType as MathQuestionType,
+)
+from src.social_studies.cli import generate_with_corrections as ss_generate_with_corrections
+from src.social_studies.sampler import sample_params as ss_sample_params
+from src.social_studies.schemas import (
+    ExamQuestion as SSExamQuestion,
+    QuestionContext as SSQuestionContext,
+    QuestionSetType as SSQuestionSetType,
+    QuestionStyle as SSQuestionStyle,
+    QuestionType as SSQuestionType,
 )
 
 from server.config import ServerConfig
@@ -75,7 +84,10 @@ def _resolve_enum(value: str | None, enum_cls: type) -> Any:
     raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
 
 
-def _question_to_event(question: ExamQuestion, config: ServerConfig) -> dict[str, Any]:
+def _question_to_event(
+    question: MathExamQuestion | SSExamQuestion,
+    config: ServerConfig,
+) -> dict[str, Any]:
     """Serialize an ExamQuestion to a result-event payload, embedding PNG if present."""
     payload = json.loads(question.model_dump_json(exclude_none=True))
     if question.圖片:
@@ -121,24 +133,39 @@ async def generate_question_stream(
             queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
             client = LLMClient(config)
-            curriculum = app_state.curriculum
-            performance = app_state.performance
-            intro_text = app_state.intro_text
-            grade_content = app_state.grade_content
             html_renderer = getattr(app_state, "html_renderer", None)
+            is_social_studies = params.subject == "social_studies"
 
-            style_override = (
-                [QuestionStyle(v) for v in params.style] if params.style else None
-            )
-            context_override = (
-                [_resolve_enum(v, QuestionContext) for v in params.context]
-                if params.context else None
-            )
-            set_type_override = _resolve_enum(params.set_type, QuestionSetType)
-            q_type_override = (
-                [_resolve_enum(v, QuestionType) for v in params.q_type]
-                if params.q_type else None
-            )
+            if is_social_studies:
+                style_override = (
+                    [SSQuestionStyle(v) for v in params.style] if params.style else None
+                )
+                context_override = (
+                    [_resolve_enum(v, SSQuestionContext) for v in params.context]
+                    if params.context else None
+                )
+                set_type_override = _resolve_enum(params.set_type, SSQuestionSetType)
+                q_type_override = (
+                    [_resolve_enum(v, SSQuestionType) for v in params.q_type]
+                    if params.q_type else None
+                )
+            else:
+                curriculum = app_state.curriculum
+                performance = app_state.performance
+                intro_text = app_state.intro_text
+                grade_content = app_state.grade_content
+                style_override = (
+                    [MathQuestionStyle(v) for v in params.style] if params.style else None
+                )
+                context_override = (
+                    [_resolve_enum(v, MathQuestionContext) for v in params.context]
+                    if params.context else None
+                )
+                set_type_override = _resolve_enum(params.set_type, MathQuestionSetType)
+                q_type_override = (
+                    [_resolve_enum(v, MathQuestionType) for v in params.q_type]
+                    if params.q_type else None
+                )
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_seed = params.seed
@@ -153,38 +180,65 @@ async def generate_question_stream(
                 try:
                     for i in range(count):
                         seed = (base_seed + i) if base_seed is not None else None
-                        rng_params = sample_params(
-                            grade_content=grade_content,
-                            grade=params.grade,
-                            style=style_override,
-                            context=context_override,
-                            set_type=set_type_override,
-                            q_type=q_type_override,
-                            seed=seed,
-                        )
-                        question_id = f"q_{timestamp}_{i+1:03d}"
-                        try:
-                            question = generate_with_corrections(
-                                config=config,
-                                client=client,
-                                curriculum=curriculum,
-                                performance=performance,
-                                intro_text=intro_text,
+                        if is_social_studies:
+                            rng_params = ss_sample_params(
+                                grade=params.grade,
+                                style=style_override,
+                                context=context_override,
+                                set_type=set_type_override,
+                                q_type=q_type_override,
+                                seed=seed,
+                            )
+                            question_id = f"ss_{timestamp}_{i+1:03d}"
+                            try:
+                                question = ss_generate_with_corrections(
+                                    config=config,
+                                    client=client,
+                                    params=rng_params,
+                                    question_id=question_id,
+                                    max_retries=max_retries,
+                                    skip_verify=params.skip_verify,
+                                    html_renderer=html_renderer,
+                                )
+                            except Exception as exc:
+                                loop.call_soon_threadsafe(
+                                    queue.put_nowait,
+                                    {"event": "error", "data": f"{type(exc).__name__}: {exc}"},
+                                )
+                                return
+                        else:
+                            rng_params = math_sample_params(
                                 grade_content=grade_content,
-                                params=rng_params,
-                                question_id=question_id,
-                                max_retries=max_retries,
-                                skip_verify=params.skip_verify,
-                                html_renderer=html_renderer,
+                                grade=params.grade,
+                                style=style_override,
+                                context=context_override,
+                                set_type=set_type_override,
+                                q_type=q_type_override,
+                                seed=seed,
                             )
-                        except Exception as exc:  # surface worker failures via SSE
-                            loop.call_soon_threadsafe(
-                                queue.put_nowait,
-                                {"event": "error", "data": f"{type(exc).__name__}: {exc}"},
-                            )
-                            return
+                            question_id = f"q_{timestamp}_{i+1:03d}"
+                            try:
+                                question = math_generate_with_corrections(
+                                    config=config,
+                                    client=client,
+                                    curriculum=curriculum,
+                                    performance=performance,
+                                    intro_text=intro_text,
+                                    grade_content=grade_content,
+                                    params=rng_params,
+                                    question_id=question_id,
+                                    max_retries=max_retries,
+                                    skip_verify=params.skip_verify,
+                                    html_renderer=html_renderer,
+                                )
+                            except Exception as exc:
+                                loop.call_soon_threadsafe(
+                                    queue.put_nowait,
+                                    {"event": "error", "data": f"{type(exc).__name__}: {exc}"},
+                                )
+                                return
 
-                        assert isinstance(question, ExamQuestion)
+                        assert isinstance(question, (MathExamQuestion, SSExamQuestion))
                         payload = _question_to_event(question, config)
                         loop.call_soon_threadsafe(
                             queue.put_nowait, {"event": "result", "data": payload}

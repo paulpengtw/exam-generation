@@ -86,7 +86,7 @@ export async function getMe(): Promise<User> {
   return (await res.json()) as User;
 }
 
-export async function getSchemas(): Promise<Schemas> {
-  const res = await apiFetch("/api/schemas");
+export async function getSchemas(subject = "math"): Promise<Schemas> {
+  const res = await apiFetch(`/api/schemas?subject=${encodeURIComponent(subject)}`);
   return (await res.json()) as Schemas;
 }

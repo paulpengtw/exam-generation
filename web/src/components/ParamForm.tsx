@@ -13,11 +13,12 @@ export interface GenerateParams {
 }
 
 export interface ParamFormProps {
+  subject?: string;
   onSubmit: (params: GenerateParams) => void;
   disabled: boolean;
 }
 
-export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
+export default function ParamForm({ subject = "math", onSubmit, disabled }: ParamFormProps) {
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +33,11 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
 
   useEffect(() => {
     let cancelled = false;
-    getSchemas()
+    setSchemas(null);
+    setError(null);
+    setContext([]);
+    setQType([]);
+    getSchemas(subject)
       .then((s) => {
         if (cancelled) return;
         setSchemas(s);
@@ -46,7 +51,7 @@ export default function ParamForm({ onSubmit, disabled }: ParamFormProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [subject]);
 
   function toggleMulti(list: string[], value: string): string[] {
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];

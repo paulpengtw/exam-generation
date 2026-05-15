@@ -37,6 +37,7 @@ def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
 @limiter.limit("10/hour", key_func=jwt_user_key)
 async def generate_endpoint(
     request: Request,
+    subject: str = Query(default="math"),
     grade: int | None = Query(default=None),
     style: list[str] | None = Query(default=None),
     context: list[str] | None = Query(default=None),
@@ -55,6 +56,7 @@ async def generate_endpoint(
     `completed` or `failed` when the stream ends.
     """
     params = GenerateParams(
+        subject=subject,
         grade=grade,
         style=style,
         context=context,

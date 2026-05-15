@@ -12,10 +12,11 @@ All curriculum data (學習內容.json, 學習表現.json) is injected directly 
 ### Script-side randomness
 The Python code handles all random selection (grade, 情境, 題型種類, 題型, 數學思考, 學習內容, question style). The LLM receives deterministic instructions — it does not choose these parameters itself.
 
-### Two-pass verification
-1. First call (Sonnet): generates the question and solution
-2. Chart is rendered to PNG (if `chart_spec` present) — before verification so the verifier can see it
-3. Second call (Sonnet): independently solves the question, inspects the chart image (multimodal), and flags any discrepancies. Returns structured `VerificationResult` with an optional nested `ChartVerificationResult`.
+### Verify + correct loop
+1. First call (Sonnet): generates the question and solution.
+2. Chart is rendered to PNG (if `chart_spec` present) — before verification so the verifier can see it.
+3. Second call (Sonnet, multimodal): independently solves the question, inspects PNG, returns `VerificationResult` with `passed`, `answer_match`, `details`, `my_answer`, `provided_answer`, and optional `chart_verification`.
+4. If `passed=False`, a correction pass sends the failed question + verifier feedback back to Sonnet for a minimal targeted fix (`src/corrector.py`). PNG re-renders only when `chart_spec` actually changes. Re-verify and loop up to `max_retries` (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
 
 ### OpenAI-compatible endpoint
 Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-opus-4-6` for planning, `claude-sonnet-4-6` for generation and verification.
@@ -37,7 +38,8 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 | `src/sampler.py` | Random parameter selection logic |
 | `src/context_builder.py` | Prompt assembly with few-shot injection |
 | `src/llm_client.py` | OpenAI-compatible API client with model routing; `generate_with_image()` for multimodal (text + PNG) calls |
-| `src/verifier.py` | Two-pass answer verification |
+| `src/verifier.py` | Independent answer verification pass |
+| `src/corrector.py` | Minimal targeted correction pass for failed-verification questions |
 | `src/renderer.py` | matplotlib PNG generation for statistical charts (`render_mode: "chart"`) |
 | `src/html_renderer.py` | Playwright HTML→PNG renderer (`render_mode: "html"`) |
 | `IMPLEMENTATION_PLAN.md` | Planned refactors and known tech debt |
@@ -183,13 +185,14 @@ For each question:
 
 **4G. Parse** — `_parse_question()` builds `ExamQuestion` + `QuestionMetadata` (cli.py:145-212); handles both `image_spec` (new) and `chart_spec` (legacy) field names from LLM output
 
-### Phase 5: Image Rendering + Verification (`src/renderer.py`, `src/html_renderer.py`, `src/verifier.py`, cli.py inside `generate_one`)
+### Phase 5: Image Rendering + Verification + Correction Loop (`src/renderer.py`, `src/html_renderer.py`, `src/verifier.py`, `src/corrector.py`, cli.py inside `generate_with_corrections`)
 Image rendering happens **before** verification so the verifier can see the PNG.
 
 1. If `question.chart_spec` exists: `render_image(spec, path, question_text, html_renderer, llm_client)` (renderer.py:271) dispatches by `render_mode`:
    - `"chart"` → `render_chart()` (renderer.py:50-71): `histogram/boxplot/line_chart/pie_chart` → hardcoded matplotlib
    - `"html"` → LLM call #2: `_generate_html_via_llm()` (renderer.py:343) asks Sonnet to write HTML/CSS/SVG; then `html_renderer.render()` (html_renderer.py) screenshots via Playwright
-2. LLM call #3: `verify_question(client, question, chart_image_path)` — sends question + solution + optional PNG via `client.generate_with_image()` (multimodal). Returns `VerificationResult{passed, answer_match, details, chart_verification}` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}` (verifier.py)
+2. LLM call #3: `verify_question(client, question, chart_image_path)` — sends question + solution + optional PNG via `client.generate_with_image()` (multimodal). Returns `VerificationResult{passed, answer_match, details, my_answer, provided_answer, chart_verification}` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}` (verifier.py)
+3. If `passed=False` and retries remain: `correct_question(client, question, verification, chart_image_path)` (corrector.py) sends the failed question JSON + verifier feedback to Sonnet (multimodal if chart failed + PNG exists). Only `題目`, `正確解題分析`, and `chart_spec` are mutable; all other fields are restored from the original. Re-render PNG only if `chart_spec` changed. Re-verify and loop up to `max_retries` times.
 
 ### Phase 7: Output (cli.py:313-330)
 - Default: `{question_id}.json` per question (`model_dump_json`, cli.py:315-320)
@@ -202,6 +205,9 @@ Image rendering happens **before** verification so the verifier can see the PNG.
 | 1 | Generate question | Sonnet | llm_client.py:26-40 |
 | 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet | renderer.py:343 |
 | 3 | Verify answer + image (multimodal) | Sonnet | verifier.py (`generate_with_image`) |
+| 4 | Correction (when verification fails; multimodal if chart failed) | Sonnet | corrector.py |
+
+Calls 3 + 4 may repeat up to `max_retries` times (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
 
 ### Randomness Summary
 

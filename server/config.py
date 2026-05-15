@@ -21,6 +21,7 @@ class ServerConfig(Config):
     frontend_url: str = ""
     email_backend: str = "console"
     question_schemas_path: Path = Path(__file__).resolve().parent.parent / "question_schemas.json"
+    social_studies_schemas_path: Path = Path(__file__).resolve().parent.parent / "social_studies_schemas.json"
     email_whitelist: tuple[str, ...] = ()
 
     @classmethod
@@ -55,6 +56,12 @@ class ServerConfig(Config):
                 os.environ.get(
                     "QUESTION_SCHEMAS_PATH",
                     str(Path(__file__).resolve().parent.parent / "question_schemas.json"),
+                )
+            ),
+            social_studies_schemas_path=Path(
+                os.environ.get(
+                    "SOCIAL_STUDIES_SCHEMAS_PATH",
+                    str(Path(__file__).resolve().parent.parent / "social_studies_schemas.json"),
                 )
             ),
         )

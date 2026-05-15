@@ -7,7 +7,15 @@
 
 ---
 
-## Multi-subject architecture (planned)
+## Known design risks (math-shaped scaffolding)
+
+`src/verifier.py` and `src/corrector.py` assume answer-match correctness (`my_answer == provided_answer`). PISA reading 開放式建構反應題 is rubric-scored (codes 2/1/0/9) — there is no single correct answer to match. `src/corrector.py` rewrites toward a single answer; rubric items need rubric-conformance editing instead. `數學思考` / `學習內容` enums and curriculum JSON are math-specific; reading uses `閱讀歷程` / `文本形式` with different cardinality and no K-12 curriculum lookup.
+
+**Decision:** Ship 社會科 as a parallel forked codepath (`src/social_studies/`). Verifier/corrector reuse math code with the gap documented; fix with a `rubric_grade` scoring strategy once a live example fails. Defer the SubjectAdapter / tool-registry / two-LLM verifier refactor below until a third subject arrives (rule of three).
+
+---
+
+## Multi-subject architecture (deferred — see Known design risks above)
 
 **Why:** ~70% of current code is math-bound (persona prompts, `數學思考` enum, `MathThinking` Pydantic field, chart-type allowlist, curriculum N/S/G/A/F/D/R codes, verifier persona). Extending cleanly requires a subject plugin layer rather than forking.
 
@@ -77,7 +85,7 @@ Tool dispatch: `image_spec.tool: str` replaces `render_mode` + `chart_type`. Ada
 | Subject | Tools |
 |---|---|
 | math | `chart_matplotlib`, `geometry_html`, `data_table` |
-| social_studies | `source_quote`, `timeline`, `map`, `chart_matplotlib`, `passage`, `data_table` |
+| social_studies | `passage`, `chart_matplotlib`, `data_table`, `html_tool` (table/form/ad/map/diagram), `digital_reading_html` |
 | natural_science | `apparatus`, `circuit`, `bio_diagram`, `data_table`, `chart_matplotlib`, `geometry_html` |
 
 ### Two-LLM disagreement verifier
@@ -116,12 +124,17 @@ class ExamQuestion(BaseModel):
 
 ### New taxonomy files (seed content)
 
-**`schemas/social_studies.json`**
-- `學習階段`: 第四學習階段, `grades`: [7,8,9]
-- `領域`: [歷史, 地理, 公民]
-- `情境`: [個人, 社會時事, 全球議題, 在地文化, 歷史事件]
-- `探究能力`: [覺察說明, 蒐證解釋, 反思評價]
-- `question_style`: [text_only, with_source, with_map, with_timeline, with_chart]
+**`schemas/social_studies.json`** (PISA 閱讀素養 taxonomy)
+- `學習階段`: 第四學習階段, `grades`: [7, 8, 9]
+- `情境`: 個人 / 公共 / 職業 / 教育
+- `題型種類`: 題組題 (PISA 一律題組設計)
+- `題型`: 選擇題 / 封閉式建構反應題 / 開放式建構反應題
+- `文本形式`: 連續文本 (敘事/說明/記敘/論述/指南) + 非連續文本 (圖表/表格/圖解/地圖/表單/廣告)
+- `閱讀歷程`: 擷取訊息 / 形成廣泛理解 / 發展解釋 / 省思與評鑑文本內容 / 省思與評鑑文本形式
+- `question_style`: text_only, with_non_continuous_text, mixed_text, digital_reading
+- 試題比重: 擷取 25% / 統整解釋 50% / 省思評鑑 25%; 連續:非連續 ≈ 2:1
+- Sampler: 情境 1+, 文本形式 1 (or 1-2 for mixed_text), 閱讀歷程 1-2; 題型種類 forced to 題組題
+- Full per-value `instruction` strings stored in the JSON file itself (source: user-supplied spec)
 
 **`schemas/natural_science.json`**
 - `領域`: [物理, 化學, 生物, 地球科學]
@@ -134,7 +147,7 @@ class ExamQuestion(BaseModel):
 1. **Refactor (math unchanged)** — extract `core/pipeline.py`, introduce `SubjectAdapter`, wrap math. Verify same output for same seed.
 2. **Tool registry** — split `renderer.py`; convert `render_mode` → `tool`. Math unchanged.
 3. **Two-LLM verifier** — swap verifier; A/B test on math.
-4. **社會 adapter** — taxonomy + prompts + curriculum + 5-10 few-shot per style.
+4. **社會 adapter (PISA reading)** — taxonomy + prompts + 5-10 few-shot per style (text_only, with_non_continuous_text, mixed_text, digital_reading). Curriculum source: 國民中學閱讀素養指標 + PISA framework (no K-12 curriculum JSON like math).
 5. **自然 adapter** — same as phase 4.
 6. **Server** — thread `subject` through request schema.
 
