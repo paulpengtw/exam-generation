@@ -15,6 +15,7 @@ export interface GenerateParams {
   count?: number;
   skip_verify?: boolean;
   seed?: number;
+  image_generation_mode?: "html" | "gpt_image";
 }
 
 export interface LearningContentItem {
@@ -57,6 +58,9 @@ function buildQueryString(params: GenerateParams): string {
   if (params.count !== undefined) qs.append("count", String(params.count));
   if (params.skip_verify !== undefined) qs.append("skip_verify", String(params.skip_verify));
   if (params.seed !== undefined) qs.append("seed", String(params.seed));
+  if (params.image_generation_mode !== undefined) {
+    qs.append("image_generation_mode", params.image_generation_mode);
+  }
   for (const v of params.style ?? []) qs.append("style", v);
   for (const v of params.context ?? []) qs.append("context", v);
   for (const v of params.q_type ?? []) qs.append("q_type", v);

@@ -40,7 +40,7 @@ Questions can include images, described by an `ImageSpec` on the generated quest
 | `"chart"` | `src/renderer.py` `render_chart()` | Deterministic matplotlib — `histogram`, `boxplot`, `line_chart`, `pie_chart` |
 | `"html"` | `src/html_renderer.py` `PlaywrightRenderer` | Sonnet writes HTML/CSS/SVG → Playwright screenshots to PNG |
 
-The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()` in `src/cli.py`.
+The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. For social studies web generation, users can alternatively select GPT image generation, which sends the same image spec to `IMAGE_MODEL` (default `gpt-image2`) and writes the returned PNG directly. The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()` in `src/cli.py`.
 
 ### Key Principles
 
@@ -160,6 +160,9 @@ Environment variables (set in `.env` or export directly):
 | `LLM_BASE_URL` | CLI + server | Base URL for the API endpoint | `https://api.anthropic.com/v1` |
 | `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-opus-4-6` |
 | `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `claude-sonnet-4-6` |
+| `IMAGE_API_KEY` | CLI + server | API key for optional social-studies GPT image generation | — |
+| `IMAGE_BASE_URL` | CLI + server | Base URL for the image generation endpoint | `https://api.openai.com/v1` |
+| `IMAGE_MODEL` | CLI + server | Image generation model used when GPT image mode is selected | `gpt-image2` |
 | `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
 | `LLM_MAX_RETRIES` | CLI + server | Max correction attempts when verification fails | `3` |
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |

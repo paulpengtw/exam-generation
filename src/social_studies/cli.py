@@ -57,6 +57,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
     gen.add_argument("--max-retries", type=int, default=None,
                      help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)")
+    gen.add_argument(
+        "--image-generation-mode",
+        choices=["html", "gpt_image"],
+        default="html",
+        help="Image creation mode for HTML image specs",
+    )
     gen.add_argument("--output", type=str, help="Output directory")
     gen.add_argument("--dry-run", action="store_true", help="Show prompt without calling LLM")
     gen.add_argument("--env-file", type=str, help="Path to .env file")
@@ -130,6 +136,7 @@ def generate_one(
     dry_run: bool = False,
     skip_verify: bool = False,
     html_renderer: PlaywrightRenderer | None = None,
+    image_generation_mode: str = "html",
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     system_prompt = build_system_prompt()
@@ -156,6 +163,7 @@ def generate_one(
             question_text="\n".join(question.題目),
             html_renderer=html_renderer,
             llm_client=client,
+            image_generation_mode=image_generation_mode,
         )
         if rendered:
             question.圖片 = f"{question_id}.png"
@@ -179,6 +187,7 @@ def generate_with_corrections(
     max_retries: int = 3,
     skip_verify: bool = False,
     html_renderer: PlaywrightRenderer | None = None,
+    image_generation_mode: str = "html",
     dry_run: bool = False,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
@@ -190,6 +199,7 @@ def generate_with_corrections(
         dry_run=dry_run,
         skip_verify=skip_verify,
         html_renderer=html_renderer,
+        image_generation_mode=image_generation_mode,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -226,6 +236,7 @@ def generate_with_corrections(
                 question_text="\n".join(question.題目),
                 html_renderer=html_renderer,
                 llm_client=client,
+                image_generation_mode=image_generation_mode,
             )
             if rendered:
                 question.圖片 = f"{question_id}.png"
@@ -308,6 +319,7 @@ def main(argv: list[str] | None = None) -> None:
                 max_retries=max_retries,
                 skip_verify=args.no_verify,
                 html_renderer=html_renderer,
+                image_generation_mode=args.image_generation_mode,
                 dry_run=args.dry_run,
             )
 

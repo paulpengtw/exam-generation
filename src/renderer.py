@@ -274,6 +274,7 @@ def render_image(
     question_text: str = "",
     html_renderer=None,
     llm_client=None,
+    image_generation_mode: str = "html",
 ) -> str | None:
     """Render a question image from an ImageSpec dict and save as PNG.
 
@@ -290,6 +291,18 @@ def render_image(
         return render_chart(image_spec, output_path)
 
     if render_mode == "html":
+        if image_generation_mode == "gpt_image":
+            if llm_client is None:
+                print("  Warning: gpt_image mode requires LLMClient", file=sys.stderr)
+                return None
+            try:
+                prompt = _build_gpt_image_prompt(image_spec, question_text)
+                print("  Generating image via GPT image model...", file=sys.stderr)
+                return llm_client.generate_image(prompt, output_path)
+            except Exception as e:
+                print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
+                return None
+
         html = image_spec.get("html", "")
         if not html and llm_client is not None:
             html = _generate_html_via_llm(image_spec, question_text, llm_client)
@@ -307,6 +320,41 @@ def render_image(
 
     print(f"  Warning: unknown render_mode '{render_mode}'", file=sys.stderr)
     return None
+
+
+def _build_gpt_image_prompt(spec: dict, question_text: str) -> str:
+    """Build a direct image-generation prompt for an exam support image."""
+    import json
+
+    description = spec.get("description", spec.get("title", ""))
+    data = spec.get("data", {})
+    title = spec.get("title", "")
+    data_text = json.dumps(data, ensure_ascii=False, indent=2) if data else "（無）"
+
+    return f"""\
+Create a clean, exam-appropriate PNG support image for a Taiwanese junior high
+social studies / reading literacy question.
+
+Requirements:
+- Use Traditional Chinese text exactly where labels are needed.
+- Keep the style plain, readable, and suitable for a printed exam.
+- Use a white or very light background.
+- Do not add decorative elements that are not needed by the question.
+- If data is provided, preserve the values and labels exactly.
+- Do not include answer hints.
+
+Question context:
+{question_text[:800] if question_text else "（無）"}
+
+Image title:
+{title or "（無）"}
+
+Image description:
+{description or "（無）"}
+
+Numerical or structured data:
+{data_text}
+"""
 
 
 _HTML_SYSTEM_PROMPT = """\

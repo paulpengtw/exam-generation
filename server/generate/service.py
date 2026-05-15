@@ -199,6 +199,7 @@ async def generate_question_stream(
                                     max_retries=max_retries,
                                     skip_verify=params.skip_verify,
                                     html_renderer=html_renderer,
+                                    image_generation_mode=params.image_generation_mode,
                                 )
                             except Exception as exc:
                                 loop.call_soon_threadsafe(

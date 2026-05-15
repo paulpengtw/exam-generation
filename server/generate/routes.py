@@ -16,7 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
-from server.generate.models import GenerateParams
+from server.generate.models import GenerateParams, ImageGenerationMode
 from server.generate.service import generate_question_stream
 from server.models import GenerationLog, User
 from server.rate_limit import jwt_user_key, limiter
@@ -46,6 +46,7 @@ async def generate_endpoint(
     count: int = Query(default=1, ge=1),
     skip_verify: bool = Query(default=False),
     seed: int | None = Query(default=None),
+    image_generation_mode: ImageGenerationMode = Query(default="html"),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -65,6 +66,7 @@ async def generate_endpoint(
         count=count,
         skip_verify=skip_verify,
         seed=seed,
+        image_generation_mode=image_generation_mode,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 

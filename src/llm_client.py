@@ -22,6 +22,7 @@ class LLMClient:
             api_key=config.api_key,
             base_url=config.base_url,
         )
+        self._image_client: OpenAI | None = None
 
     def generate(self, system: str, user: str, model: str | None = None) -> str:
         """Call the execution model (default: Sonnet) and return raw text response."""
@@ -71,6 +72,34 @@ class LLMClient:
         """Call the execution model and parse the response as JSON."""
         raw = self.generate(system, user, model)
         return extract_json(raw)
+
+    def generate_image(self, prompt: str, output_path: str | Path) -> str:
+        """Generate a PNG image and write it to output_path."""
+        if not self.config.image_api_key:
+            raise ValueError("IMAGE_API_KEY is required for GPT image generation.")
+        if self.config.rate_limit_delay > 0:
+            time.sleep(self.config.rate_limit_delay)
+
+        if self._image_client is None:
+            self._image_client = OpenAI(
+                api_key=self.config.image_api_key,
+                base_url=self.config.image_base_url,
+            )
+
+        response = self._image_client.images.generate(
+            model=self.config.image_model,
+            prompt=prompt,
+            size="1024x1024",
+            n=1,
+        )
+        image_data = response.data[0]
+        b64_json = getattr(image_data, "b64_json", None)
+        if not b64_json:
+            raise ValueError("Image generation response did not include b64_json data.")
+
+        output = Path(output_path)
+        output.write_bytes(base64.b64decode(b64_json))
+        return str(output)
 
 
 def extract_json(text: str) -> dict:

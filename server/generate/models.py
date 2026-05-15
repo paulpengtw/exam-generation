@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+ImageGenerationMode = Literal["html", "gpt_image"]
 
 
 class GenerateParams(BaseModel):
@@ -22,5 +26,6 @@ class GenerateParams(BaseModel):
     skip_verify: bool = False
     seed: int | None = None
     max_retries: int = 3
+    image_generation_mode: ImageGenerationMode = "html"
 
     model_config = {"populate_by_name": True}

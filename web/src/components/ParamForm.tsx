@@ -10,6 +10,7 @@ export interface GenerateParams {
   q_type: string[];
   count: number;
   skip_verify: boolean;
+  image_generation_mode: "html" | "gpt_image";
 }
 
 export interface ParamFormProps {
@@ -30,6 +31,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [qType, setQType] = useState<string[]>([]);
   const [count, setCount] = useState<number>(1);
   const [skipVerify, setSkipVerify] = useState<boolean>(false);
+  const [imageGenerationMode, setImageGenerationMode] =
+    useState<"html" | "gpt_image">("html");
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +40,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     setError(null);
     setContext([]);
     setQType([]);
+    setImageGenerationMode("html");
     getSchemas(subject)
       .then((s) => {
         if (cancelled) return;
@@ -68,6 +72,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       q_type: qType,
       count,
       skip_verify: skipVerify,
+      image_generation_mode: imageGenerationMode,
     });
   }
 
@@ -202,6 +207,22 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         />
         <span className="text-sm">{t("form.skip_verify")}</span>
       </label>
+
+      {subject === "social_studies" && (
+        <div>
+          <label className="block text-sm font-medium">{t("form.image_generation_mode")}</label>
+          <select
+            value={imageGenerationMode}
+            onChange={(e) =>
+              setImageGenerationMode(e.target.value as "html" | "gpt_image")
+            }
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            <option value="html">{t("form.image_generation_mode_html")}</option>
+            <option value="gpt_image">{t("form.image_generation_mode_gpt")}</option>
+          </select>
+        </div>
+      )}
 
       <button
         type="submit"
