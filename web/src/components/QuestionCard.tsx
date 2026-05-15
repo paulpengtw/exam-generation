@@ -36,6 +36,10 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
   return new Blob([bytes], { type: mimeType });
 }
 
+function getLearningContentCodes(question: ExamQuestion): string[] {
+  return (question.學習內容 ?? []).map((item) => item.編碼).filter(Boolean);
+}
+
 export default function QuestionCard({ question }: QuestionCardProps) {
   const t = useT();
   const [showSolution, setShowSolution] = useState(false);
@@ -44,10 +48,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
   const passed = Boolean(verification?.passed);
   const questionId = getQuestionId(question);
 
-  const codes = useMemo(
-    () => question.學習內容.map((item) => item.編碼).filter(Boolean),
-    [question.學習內容],
-  );
+  const codes = useMemo(() => getLearningContentCodes(question), [question]);
 
   const handleDownloadJson = () => {
     const json = JSON.stringify(question, null, 2);
@@ -72,14 +73,18 @@ export default function QuestionCard({ question }: QuestionCardProps) {
     <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
-          {question.情境.map((c) => (
+          {(question.情境 ?? []).map((c) => (
             <Chip key={`ctx-${c}`} label={c} tone="blue" />
           ))}
           <Chip label={question.題型種類} tone="purple" />
           <Chip label={question.題型} tone="purple" />
-          {question.數學思考.map((m) => (
+          {(question.數學思考 ?? []).map((m) => (
             <Chip key={`mt-${m}`} label={m} tone="amber" />
           ))}
+          {(question.閱讀歷程 ?? []).map((process) => (
+            <Chip key={`rp-${process}`} label={process} tone="amber" />
+          ))}
+          {question.文本形式 && <Chip label={question.文本形式} tone="gray" />}
           {codes.map((code) => (
             <Chip key={`code-${code}`} label={code} tone="gray" />
           ))}

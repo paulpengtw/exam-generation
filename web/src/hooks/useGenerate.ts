@@ -28,8 +28,10 @@ export interface ExamQuestion {
   情境: string[];
   題型種類: string;
   題型: string;
-  數學思考: string[];
-  學習內容: LearningContentItem[];
+  數學思考?: string[];
+  學習內容?: LearningContentItem[];
+  閱讀歷程?: string[];
+  文本形式?: string;
   題目: string[];
   正確解題分析: string[];
   圖片?: string | null;

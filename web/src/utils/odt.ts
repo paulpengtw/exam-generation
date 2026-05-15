@@ -76,6 +76,18 @@ interface Section {
   imageRef?: string;
 }
 
+function buildMetadataItems(question: ExamQuestion): string[] {
+  return [
+    ...(question.情境 ?? []),
+    question.題型種類,
+    question.題型,
+    ...(question.數學思考 ?? []),
+    ...(question.閱讀歷程 ?? []),
+    question.文本形式,
+    ...(question.學習內容 ?? []).map((c) => c.編碼).filter(Boolean),
+  ].filter((item): item is string => Boolean(item));
+}
+
 function buildContentXml(title: string, sections: Section[], isMultiple: boolean): string {
   const paras: string[] = [];
 
@@ -92,14 +104,7 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
     }
 
     // Metadata chips line
-    const meta = [
-      ...question.情境,
-      question.題型種類,
-      question.題型,
-      ...question.數學思考,
-      ...question.學習內容.map((c) => c.編碼).filter(Boolean),
-    ]
-      .filter(Boolean)
+    const meta = buildMetadataItems(question)
       .map(xmlEscape)
       .join(" ｜ ");
     if (meta) {
