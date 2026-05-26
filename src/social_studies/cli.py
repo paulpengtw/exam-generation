@@ -10,7 +10,7 @@ from pathlib import Path
 
 from src.config import Config
 from src.html_renderer import PlaywrightRenderer
-from src.llm_client import LLMClient, make_stderr_observer
+from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
 from src.social_studies.context_builder import build_system_prompt, build_user_prompt
 from src.social_studies.corrector import correct_question
@@ -235,8 +235,12 @@ def generate_one(
             f"=== USER PROMPT ({len(user_prompt)} chars{img_note}) ===\n{user_prompt}"
         )
 
+    obs = client.get_observer() if client else None
+
     print(f"  Generating question {question_id}...", file=sys.stderr)
+    emit_stage(obs, "generator", "llm_generate", "start")
     raw_json = client.generate_json(system_prompt, user_prompt, images=few_shot_images or None)
+    emit_stage(obs, "generator", "llm_generate", "end")
 
     question = _parse_question(raw_json, question_id, params, config.model_execute)
 
@@ -244,6 +248,7 @@ def generate_one(
     if question.chart_spec:
         img_path = config.output_dir / f"{question_id}.png"
         print(f"  Rendering image: {img_path}", file=sys.stderr)
+        emit_stage(obs, "image_agent", "render_image", "start")
         rendered = render_image(
             question.chart_spec.model_dump(),
             img_path,
@@ -252,13 +257,16 @@ def generate_one(
             llm_client=client,
             image_generation_mode=image_generation_mode,
         )
+        emit_stage(obs, "image_agent", "render_image", "end")
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
 
     if not skip_verify:
         print(f"  Verifying question {question_id}...", file=sys.stderr)
+        emit_stage(obs, "verifier", "verify", "start")
         result = verify_question(client, question, chart_image_path=chart_image_path)
+        emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
@@ -298,6 +306,8 @@ def generate_with_corrections(
     if dry_run or not isinstance(question, ExamQuestion):
         return question
 
+    obs = client.get_observer() if client else None
+
     for attempt in range(max_retries):
         if skip_verify or question.verification is None or question.verification.passed:
             break
@@ -316,13 +326,16 @@ def generate_with_corrections(
             if p.exists():
                 chart_image_path = str(p)
 
+        emit_stage(obs, "corrector", "correct", "start", retry=attempt + 1)
         question = correct_question(client, question, question.verification,
                                     chart_image_path=chart_image_path)
+        emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
 
         new_chart_image_path: str | None = None
         if question.chart_spec and question.chart_spec != prior_chart_spec:
             img_path = config.output_dir / f"{question_id}.png"
             print(f"  Chart spec changed; re-rendering image: {img_path}", file=sys.stderr)
+            emit_stage(obs, "image_agent", "render_image", "start")
             rendered = render_image(
                 question.chart_spec.model_dump(),
                 img_path,
@@ -331,6 +344,7 @@ def generate_with_corrections(
                 llm_client=client,
                 image_generation_mode=image_generation_mode,
             )
+            emit_stage(obs, "image_agent", "render_image", "end")
             if rendered:
                 question.圖片 = f"{question_id}.png"
                 new_chart_image_path = rendered
@@ -339,7 +353,9 @@ def generate_with_corrections(
             new_chart_image_path = str(p) if p.exists() else None
 
         if not skip_verify:
+            emit_stage(obs, "verifier", "verify", "start", retry=attempt + 1)
             result = verify_question(client, question, chart_image_path=new_chart_image_path)
+            emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
             status = "PASSED" if result.passed else "FAILED"
             print(f"  Re-verification {status}: {result.details[:100]}", file=sys.stderr)

@@ -16,6 +16,32 @@ from src.config import Config
 
 LLMObserver = Callable[[dict], None]
 
+_PURPOSE_TO_AGENT: dict[str, str] = {
+    "generate": "generator",
+    "verify": "verifier",
+    "correct": "corrector",
+    "html_image": "image_agent",
+    "plan": "planner",
+}
+
+
+def emit_stage(
+    observer: LLMObserver | None,
+    agent: str,
+    stage: str,
+    status: str,
+    **extra: object,
+) -> None:
+    """Emit a stage lifecycle event to the observer (if any)."""
+    if observer is None:
+        return
+    event: dict = {"type": "stage", "agent": agent, "stage": stage, "status": status, "ts": time.time()}
+    event.update(extra)
+    try:
+        observer(event)
+    except Exception:
+        pass
+
 
 def make_stderr_observer(truncate: int | None = None) -> LLMObserver:
     """Return an observer that prints LLM events to stderr."""
@@ -99,6 +125,9 @@ class LLMClient:
     def clear_observer(self) -> None:
         self._observer = None
 
+    def get_observer(self) -> LLMObserver | None:
+        return self._observer
+
     def _emit(self, event: dict) -> None:
         if self._observer:
             try:
@@ -164,16 +193,17 @@ class LLMClient:
                         reasoning_text = inner.get("thinking", "")
             if reasoning_text:
                 reasoning_parts.append(reasoning_text)
-                self._emit({"type": "llm_reasoning_delta", "text": reasoning_text})
+                self._emit({"type": "llm_reasoning_delta", "purpose": purpose, "agent": _PURPOSE_TO_AGENT.get(purpose, purpose), "text": reasoning_text})
 
             if delta.content:
                 content_parts.append(delta.content)
-                self._emit({"type": "llm_content_delta", "text": delta.content})
+                self._emit({"type": "llm_content_delta", "purpose": purpose, "agent": _PURPOSE_TO_AGENT.get(purpose, purpose), "text": delta.content})
 
         content = "".join(content_parts)
         self._emit({
             "type": "llm_response",
             "purpose": purpose,
+            "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
             "model": model,
             "content": content,
             "reasoning": "".join(reasoning_parts) or None,
@@ -192,6 +222,7 @@ class LLMClient:
             self._emit({
                 "type": "llm_request",
                 "purpose": purpose,
+                "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
                 "model": model,
                 "messages": self._summarize_for_observer(messages),
                 "params": {"max_tokens": 8192, "temperature": 0.7},
@@ -217,6 +248,7 @@ class LLMClient:
             self._emit({
                 "type": "llm_response",
                 "purpose": purpose,
+                "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
                 "model": model,
                 "content": content,
                 "reasoning": None,

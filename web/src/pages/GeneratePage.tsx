@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 
+import AgentStatusPanel from "../components/AgentStatusPanel";
 import ParamForm, { type GenerateParams as FormParams } from "../components/ParamForm";
 import ProgressLog from "../components/ProgressLog";
 import QuestionCard from "../components/QuestionCard";
@@ -29,7 +30,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const { status, jobsAhead, progressLines, results, llmCalls, errorMessage, generate, reset } = useGenerate();
+  const { status, jobsAhead, progressLines, results, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
 
   const handleLogout = () => {
     logout();
@@ -111,6 +112,12 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         <section className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
           <ParamForm subject={subject} onSubmit={handleSubmit} disabled={status === "generating" || status === "queued"} />
         </section>
+
+        {agentLanes.length > 0 && (
+          <section className="rounded-lg border bg-white p-4 shadow-sm">
+            <AgentStatusPanel lanes={agentLanes} />
+          </section>
+        )}
 
         {showProgress && (
           <section className="rounded-lg border bg-white p-4 shadow-sm">

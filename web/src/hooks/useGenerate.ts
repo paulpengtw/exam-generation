@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 
 import { useAuthStore } from "../store/authStore";
@@ -71,10 +71,33 @@ export interface ExamQuestion {
 }
 
 export type LlmCallEvent =
-  | { type: "request"; purpose: string; model: string; messages: unknown[]; params?: unknown }
-  | { type: "thinking"; purpose: string; text: string }
-  | { type: "content"; purpose: string; text: string }
-  | { type: "response"; purpose: string; model: string; usage?: unknown };
+  | { type: "request"; purpose: string; agent: string; model: string; messages: unknown[]; params?: unknown }
+  | { type: "thinking"; purpose: string; agent: string; text: string }
+  | { type: "content"; purpose: string; agent: string; text: string }
+  | { type: "response"; purpose: string; agent: string; model: string; usage?: unknown }
+  | { type: "stage"; agent: string; stage: string; status: "start" | "end"; ts: number; retry?: number };
+
+export type AgentStatus = "idle" | "running" | "done";
+
+export interface AgentLane {
+  agent: string;
+  status: AgentStatus;
+  currentStage: string | null;
+  streamingThinking: string;
+  streamingContent: string;
+  stageHistory: Array<{ stage: string; startedAt: number; endedAt?: number; retry?: number }>;
+}
+
+function purposeToAgent(purpose: string): string {
+  const map: Record<string, string> = {
+    generate: "generator",
+    verify: "verifier",
+    correct: "corrector",
+    html_image: "image_agent",
+    plan: "planner",
+  };
+  return map[purpose] ?? purpose;
+}
 
 export interface UseGenerateReturn {
   status: GenerateStatus;
@@ -82,6 +105,7 @@ export interface UseGenerateReturn {
   progressLines: string[];
   results: ExamQuestion[];
   llmCalls: LlmCallEvent[];
+  agentLanes: AgentLane[];
   errorMessage: string | null;
   generate: (params: GenerateParams) => void;
   reset: () => void;
@@ -110,6 +134,67 @@ function buildQueryString(params: GenerateParams): string {
   return qs.toString();
 }
 
+const AGENT_ORDER = ["generator", "verifier", "corrector", "image_agent", "planner"];
+
+function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
+  const lanesMap = new Map<string, AgentLane>();
+
+  const getOrCreate = (agent: string): AgentLane => {
+    if (!lanesMap.has(agent)) {
+      lanesMap.set(agent, {
+        agent,
+        status: "idle",
+        currentStage: null,
+        streamingThinking: "",
+        streamingContent: "",
+        stageHistory: [],
+      });
+    }
+    return lanesMap.get(agent)!;
+  };
+
+  for (const ev of events) {
+    if (ev.type === "stage") {
+      const lane = getOrCreate(ev.agent);
+      if (ev.status === "start") {
+        lane.status = "running";
+        lane.currentStage = ev.stage;
+        lane.stageHistory.push({ stage: ev.stage, startedAt: ev.ts, retry: ev.retry });
+      } else {
+        lane.status = "done";
+        lane.currentStage = null;
+        const last = lane.stageHistory[lane.stageHistory.length - 1];
+        if (last && last.stage === ev.stage) last.endedAt = ev.ts;
+      }
+    } else if (ev.type === "request") {
+      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose));
+      lane.status = "running";
+      lane.streamingThinking = "";
+      lane.streamingContent = "";
+    } else if (ev.type === "thinking") {
+      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose));
+      lane.streamingThinking += ev.text;
+    } else if (ev.type === "content") {
+      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose));
+      lane.streamingContent += ev.text;
+    } else if (ev.type === "response") {
+      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose));
+      if (lane.status === "running" && !lane.currentStage) {
+        lane.status = "done";
+      }
+    }
+  }
+
+  const sorted: AgentLane[] = [];
+  for (const agent of AGENT_ORDER) {
+    if (lanesMap.has(agent)) sorted.push(lanesMap.get(agent)!);
+  }
+  for (const [agent, lane] of lanesMap.entries()) {
+    if (!AGENT_ORDER.includes(agent)) sorted.push(lane);
+  }
+  return sorted;
+}
+
 export function useGenerate(): UseGenerateReturn {
   const [status, setStatus] = useState<GenerateStatus>("idle");
   const [jobsAhead, setJobsAhead] = useState<number>(0);
@@ -118,6 +203,8 @@ export function useGenerate(): UseGenerateReturn {
   const [llmCalls, setLlmCalls] = useState<LlmCallEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+
+  const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
   useEffect(() => {
     return () => {
@@ -186,44 +273,58 @@ export function useGenerate(): UseGenerateReturn {
             break;
           case "llm_request": {
             try {
-              const d = JSON.parse(ev.data) as { purpose: string; model: string; messages: unknown[]; params?: unknown };
-              setLlmCalls((prev) => [...prev, { type: "request", purpose: d.purpose, model: d.model, messages: d.messages, params: d.params }]);
+              const d = JSON.parse(ev.data) as { purpose: string; agent?: string; model: string; messages: unknown[]; params?: unknown };
+              const agent = d.agent ?? purposeToAgent(d.purpose);
+              setLlmCalls((prev) => [...prev, { type: "request", purpose: d.purpose, agent, model: d.model, messages: d.messages, params: d.params }]);
             } catch { /* ignore */ }
             break;
           }
           case "llm_thinking": {
             try {
-              const d = JSON.parse(ev.data) as { purpose: string; text: string };
+              const d = JSON.parse(ev.data) as { purpose: string; agent?: string; text: string };
+              const agent = d.agent ?? purposeToAgent(d.purpose);
               setLlmCalls((prev) => {
                 const last = prev[prev.length - 1];
                 if (last && last.type === "thinking" && last.purpose === d.purpose) {
                   return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
                 }
-                return [...prev, { type: "thinking", purpose: d.purpose, text: d.text }];
+                return [...prev, { type: "thinking", purpose: d.purpose, agent, text: d.text }];
               });
             } catch { /* ignore */ }
             break;
           }
           case "llm_content": {
             try {
-              const d = JSON.parse(ev.data) as { purpose: string; text: string };
+              const d = JSON.parse(ev.data) as { purpose: string; agent?: string; text: string };
+              const agent = d.agent ?? purposeToAgent(d.purpose);
               setLlmCalls((prev) => {
                 const last = prev[prev.length - 1];
                 if (last && last.type === "content" && last.purpose === d.purpose) {
                   return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
                 }
-                return [...prev, { type: "content", purpose: d.purpose, text: d.text }];
+                return [...prev, { type: "content", purpose: d.purpose, agent, text: d.text }];
               });
             } catch { /* ignore */ }
             break;
           }
           case "llm_response": {
             try {
-              const d = JSON.parse(ev.data) as { purpose: string; model: string; usage?: unknown };
-              setLlmCalls((prev) => [...prev, { type: "response", purpose: d.purpose, model: d.model, usage: d.usage }]);
+              const d = JSON.parse(ev.data) as { purpose: string; agent?: string; model: string; usage?: unknown };
+              const agent = d.agent ?? purposeToAgent(d.purpose);
+              setLlmCalls((prev) => [...prev, { type: "response", purpose: d.purpose, agent, model: d.model, usage: d.usage }]);
             } catch { /* ignore */ }
             break;
           }
+          case "stage": {
+            try {
+              const d = JSON.parse(ev.data) as { agent: string; stage: string; status: "start" | "end"; ts: number; retry?: number };
+              setLlmCalls((prev) => [...prev, { type: "stage", agent: d.agent, stage: d.stage, status: d.status, ts: d.ts, retry: d.retry }]);
+            } catch { /* ignore */ }
+            break;
+          }
+          case "pipeline":
+            // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
+            break;
           case "result":
             try {
               const parsed = JSON.parse(ev.data) as ExamQuestion;
@@ -253,5 +354,5 @@ export function useGenerate(): UseGenerateReturn {
     });
   }, []);
 
-  return { status, jobsAhead, progressLines, results, llmCalls, errorMessage, generate, reset };
+  return { status, jobsAhead, progressLines, results, llmCalls, agentLanes, errorMessage, generate, reset };
 }

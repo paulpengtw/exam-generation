@@ -188,6 +188,7 @@ async def generate_question_stream(
                 "llm_reasoning_delta": "llm_thinking",
                 "llm_content_delta": "llm_content",
                 "llm_response": "llm_response",
+                "stage": "stage",
             }
 
             def _make_queue_observer(
@@ -206,9 +207,19 @@ async def generate_question_stream(
                 saved_stderr = sys.stderr
                 sys.stderr = _QueueWriter(loop, queue)
                 client.set_observer(_make_queue_observer(loop, queue))
+
+                def _emit_pipeline(event_name: str, **data: object) -> None:
+                    import time as _time
+                    payload = {"event_name": event_name, "ts": _time.time(), **data}
+                    loop.call_soon_threadsafe(
+                        queue.put_nowait, {"event": "pipeline", "data": payload}
+                    )
+
                 try:
+                    _emit_pipeline("pipeline_start", total=count)
                     for i in range(count):
                         seed = (base_seed + i) if base_seed is not None else None
+                        _emit_pipeline("question_start", index=i, total=count)
                         if is_social_studies:
                             rng_params = ss_sample_params(
                                 grade=params.grade,
@@ -277,10 +288,12 @@ async def generate_question_stream(
                                 return
 
                         assert isinstance(question, (MathExamQuestion, SSExamQuestion))
+                        _emit_pipeline("question_end", index=i, total=count)
                         payload = _question_to_event(question, config)
                         loop.call_soon_threadsafe(
                             queue.put_nowait, {"event": "result", "data": payload}
                         )
+                    _emit_pipeline("pipeline_end", total=count)
                 finally:
                     sys.stderr = saved_stderr
                     loop.call_soon_threadsafe(
