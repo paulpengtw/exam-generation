@@ -45,6 +45,21 @@ _CONTENT_TEXT: str = json.dumps(_CONTENT_DATA, ensure_ascii=False, indent=2) if 
 _LC_INSTRUCTIONS: dict[str, str] = content_instructions(_CONTENT_DATA)
 _LP_INSTRUCTIONS: dict[str, str] = performance_instructions(_PERFORMANCE_DATA)
 
+CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
+    "純文字": (
+        "本題組必須只使用純連續文本素材。不得輸出 `chart_spec`、`image_spec` 或任何需要渲染成圖片的資料；"
+        "題目與答案解析只能依據 `文本` 欄位中的文字內容。"
+    ),
+    "含圖片": (
+        "本題組必須包含圖片式或視覺式非連續素材，例如地圖、圖解、廣告、表單、海報或網頁畫面。"
+        "請輸出 `chart_spec`，優先使用 `render_mode: \"html\"`，並在 `description` 與 `data` 中完整描述版面與內容。"
+    ),
+    "graphs/charts/tables": (
+        "本題組必須包含圖表或表格素材。統計圖（直方圖、折線圖、圓餅圖等）請使用 `render_mode: \"chart\"`；"
+        "表格或複合資料表請使用 `render_mode: \"html\"`，並在 `data` 中提供完整欄列資料。"
+    ),
+}
+
 SYSTEM_PROMPT_TEMPLATE = """\
 你是一位資深的108課綱社會領域命題教師，專門為{learning_stage}（{grade_names}）設計「社會領域素養導向」考試題目。
 本題庫根據國家教育研究院 NAER-2019-041-A-1-1-E1-10 計畫之命題框架設計，涵蓋歷史、地理、公民與社會三科。
@@ -154,6 +169,7 @@ USER_PROMPT_TEMPLATE = """\
 - **題型**：{q_type}
 - **閱讀歷程（PISA）**：{reading_process}
 - **文本形式**：{text_form}
+- **題目內容類型**：{content_type}
 - **核心素養（限定使用）**：{core_competencies}
 {lc_pool_lines}{lp_pool_lines}{param_instructions}{user_materials}
 ## 參考範例
@@ -229,6 +245,7 @@ def build_user_prompt(
 
     reading_process = "、".join(p.value for p in params.閱讀歷程)
     topic_override = user_topic.strip() if user_topic else ""
+    content_type = params.題目內容類型 or "純文字"
 
     param_instruction_lines = []
     if not topic_override:
@@ -253,6 +270,11 @@ def build_user_prompt(
         instr = _CC_INSTRUCTIONS.get(c.value)
         if instr:
             param_instruction_lines.append(f"  - **核心素養（{c.value}）補充**：{instr}")
+    content_type_instr = CONTENT_TYPE_INSTRUCTIONS.get(
+        content_type,
+        f"請將題目內容類型視為「{content_type}」，依此設計文本、素材形式與題目，不得偏離此指定類型。",
+    )
+    param_instruction_lines.append(f"  - **題目內容類型（{content_type}）補充**：{content_type_instr}")
     param_instructions = (
         "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
         if param_instruction_lines else ""
@@ -343,6 +365,7 @@ def build_user_prompt(
         q_type=params.題型.value,
         reading_process=reading_process,
         text_form=params.文本形式.value,
+        content_type=content_type,
         core_competencies=core_competencies,
         lc_pool_lines=lc_pool_lines,
         lp_pool_lines=lp_pool_lines,

@@ -18,7 +18,7 @@ from server.models import Base, User
 from server.rate_limit import limiter
 
 
-def test_generate_route_forwards_image_generation_mode() -> None:
+def test_generate_route_forwards_social_studies_options() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 
     async def init_db() -> None:
@@ -61,7 +61,13 @@ def test_generate_route_forwards_image_generation_mode() -> None:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=social_studies&image_generation_mode=gpt_image&topic=%E6%B0%A3%E5%80%99%E8%AE%8A%E9%81%B7",
+                "/api/generate?"
+                "subject=social_studies"
+                "&image_generation_mode=gpt_image"
+                "&topic=%E6%B0%A3%E5%80%99%E8%AE%8A%E9%81%B7"
+                "&content_type=timeline"
+                "&passage=%E7%B4%A0%E6%9D%90"
+                "&options=A&options=B",
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -73,3 +79,6 @@ def test_generate_route_forwards_image_generation_mode() -> None:
     assert captured["params"].subject == "social_studies"
     assert captured["params"].image_generation_mode == "gpt_image"
     assert captured["params"].topic == "氣候變遷"
+    assert captured["params"].content_type == "timeline"
+    assert captured["params"].passage == "素材"
+    assert captured["params"].options == ["A", "B"]

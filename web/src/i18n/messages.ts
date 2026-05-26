@@ -37,6 +37,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
 
     "form.grade": "Grade",
     "form.style": "Style",
+    "form.content_type": "Question content type",
+    "form.content_type_customized": "Customized",
+    "form.content_type_custom_placeholder": "Enter a custom content type",
     "form.context": "情境 (context)",
     "form.set_type": "題型種類 (set type)",
     "form.q_type": "題型 (q_type)",
@@ -149,6 +152,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
 
     "form.grade": "年級",
     "form.style": "題目風格",
+    "form.content_type": "題目內容類型",
+    "form.content_type_customized": "自訂",
+    "form.content_type_custom_placeholder": "請輸入自訂內容類型",
     "form.context": "情境",
     "form.set_type": "題型種類",
     "form.q_type": "題型",

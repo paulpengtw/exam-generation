@@ -47,3 +47,12 @@ def test_schemas_missing_file(tmp_path: Path) -> None:
     with TestClient(app) as client:
         r = client.get("/api/schemas")
     assert r.status_code == 500
+
+
+def test_social_studies_schemas_include_content_types() -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        r = client.get("/api/schemas?subject=social_studies")
+    assert r.status_code == 200
+    values = [entry["value"] for entry in r.json()["題目內容類型"]]
+    assert values == ["純文字", "含圖片", "graphs/charts/tables", "customized"]

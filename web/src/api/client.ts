@@ -28,6 +28,7 @@ export interface Schemas {
   題型: SchemaEntry[];
   數學思考: SchemaEntry[];
   question_style?: SchemaEntry[];
+  題目內容類型?: SchemaEntry[];
   科目?: SchemaEntry[];
   [key: string]: unknown;
 }

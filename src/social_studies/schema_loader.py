@@ -10,7 +10,7 @@ from pathlib import Path
 _DEFAULT_DIR = Path(__file__).parent.parent.parent / "data" / "social_studies" / "curriculum"
 
 # Categories for social studies — includes 科目 for 108課綱 subject targeting.
-_CATEGORIES = ("情境", "題型種類", "題型", "閱讀歷程", "文本形式", "科目")
+_CATEGORIES = ("情境", "題型種類", "題型", "閱讀歷程", "文本形式", "科目", "題目內容類型")
 
 
 def _resolve_dir(path: Path | None = None) -> Path:

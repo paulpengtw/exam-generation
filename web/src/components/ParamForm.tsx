@@ -6,6 +6,7 @@ import CoreQuestionPicker from "./CoreQuestionPicker";
 export interface GenerateParams {
   grade: number;
   style?: string;
+  content_type?: string;
   context: string[];
   set_type: string;
   q_type: string[];
@@ -35,6 +36,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
   const [grade, setGrade] = useState<number | "">("");
   const [style, setStyle] = useState<string>("");
+  const [contentType, setContentType] = useState<string>("純文字");
+  const [customContentType, setCustomContentType] = useState<string>("");
   const [context, setContext] = useState<string[]>([]);
   const [setType, setSetType] = useState<string>("");
   const [qType, setQType] = useState<string[]>([]);
@@ -68,6 +71,13 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         } else {
           setStyle("");
         }
+        const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
+        setContentType(
+          subject === "social_studies" && Array.isArray(contentTypes) && contentTypes.length > 0
+            ? contentTypes[0].value
+            : "純文字",
+        );
+        setCustomContentType("");
         if (s.題型種類.length > 0) setSetType(s.題型種類[0].value);
       })
       .catch((e: Error) => {
@@ -88,9 +98,15 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     const cleanPassage = passage === TEXT_HINT ? undefined : passage;
     const cleanOptions = options.filter((o) => o && o !== OPTION_HINT);
     const cleanTopic = topic.trim();
+    const effectiveContentType =
+      subject === "social_studies"
+        ? (contentType === "customized" ? customContentType.trim() : contentType)
+        : undefined;
+    if (subject === "social_studies" && !effectiveContentType) return;
     onSubmit({
       grade,
       style: subject === "math" ? style : undefined,
+      content_type: effectiveContentType,
       context,
       set_type: setType,
       q_type: qType,
@@ -194,6 +210,33 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {subject === "social_studies" && Array.isArray(schemas.題目內容類型) && (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium">{t("form.content_type")}</label>
+          <select
+            value={contentType}
+            onChange={(e) => setContentType(e.target.value)}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            {schemas.題目內容類型.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.value === "customized" ? t("form.content_type_customized") : s.value}
+              </option>
+            ))}
+          </select>
+          {contentType === "customized" && (
+            <input
+              type="text"
+              value={customContentType}
+              onChange={(e) => setCustomContentType(e.target.value)}
+              placeholder={t("form.content_type_custom_placeholder")}
+              required
+              className="block w-full border rounded px-2 py-1"
+            />
+          )}
         </div>
       )}
 

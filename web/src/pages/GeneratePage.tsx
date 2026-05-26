@@ -42,6 +42,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       subject,
       grade: params.grade,
       style: subject === "math" && params.style ? [params.style] : [],
+      content_type:
+        subject === "social_studies" ? params.content_type : undefined,
       context: subject === "math" ? params.context : [],
       set_type: params.set_type,
       q_type: params.q_type,
@@ -55,6 +57,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         subject === "social_studies" ? params.topic : undefined,
       core_question:
         subject === "social_studies" ? params.core_question : undefined,
+      passage:
+        subject === "social_studies" ? params.passage : undefined,
+      options:
+        subject === "social_studies" ? params.options : undefined,
     });
   };
 

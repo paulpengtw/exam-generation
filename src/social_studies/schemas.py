@@ -100,6 +100,7 @@ class ExamQuestion(BaseModel):
     題型: QuestionType  # type: ignore[valid-type]
     閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
     文本形式: TextForm  # type: ignore[valid-type]
+    題目內容類型: str | None = None
 
     # Legacy flat arrays retained for backward compatibility with verifier / corrector
     題目: list[str] = Field(default_factory=list)
@@ -127,6 +128,7 @@ class SampledParams(BaseModel):
     題型: QuestionType  # type: ignore[valid-type]
     閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
     文本形式: TextForm  # type: ignore[valid-type]
+    題目內容類型: str = ""
     科目: QuestionSubject  # type: ignore[valid-type]
     核心素養: list[CoreCompetency] = Field(default_factory=list)  # type: ignore[valid-type]
     學習內容_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-3)

@@ -9,6 +9,7 @@ export interface GenerateParams {
   subject?: string;
   grade?: number;
   style?: string[];
+  content_type?: string;
   context?: string[];
   set_type?: string;
   q_type?: string[];
@@ -59,6 +60,7 @@ export interface ExamQuestion {
   學習內容?: LearningContentItem[];
   閱讀歷程?: string[];
   文本形式?: string;
+  題目內容類型?: string;
   核心問題?: string;
   文本?: string;
   subquestions?: SubQuestion[];
@@ -118,6 +120,7 @@ function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
   if (params.subject !== undefined) qs.append("subject", params.subject);
   if (params.grade !== undefined) qs.append("grade", String(params.grade));
+  if (params.content_type !== undefined) qs.append("content_type", params.content_type);
   if (params.set_type !== undefined) qs.append("set_type", params.set_type);
   if (params.count !== undefined) qs.append("count", String(params.count));
   if (params.skip_verify !== undefined) qs.append("skip_verify", String(params.skip_verify));

@@ -73,6 +73,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         nargs="+",
         help="指定學習表現 編碼 (e.g. 社1b-Ⅳ-1)；覆蓋隨機取樣",
     )
+    gen.add_argument(
+        "--content-type",
+        type=str,
+        help="題目內容類型 (純文字 / 含圖片 / graphs/charts/tables / 自訂文字)",
+    )
     gen.add_argument("--count", type=int, default=1, help="Number of question sets to generate")
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
@@ -184,6 +189,7 @@ def _parse_question(
         題型=params.題型.value,
         閱讀歷程=[p.value for p in params.閱讀歷程],
         文本形式=params.文本形式.value,
+        題目內容類型=params.題目內容類型,
         題目=raw.get("題目", []),
         正確解題分析=raw.get("正確解題分析", []),
         chart_spec=chart_spec,
@@ -395,6 +401,7 @@ def main(argv: list[str] | None = None) -> None:
     core_competency_override = [CoreCompetency(v) for v in args.core_competency] if args.core_competency else None
     learning_content_override = args.learning_content if args.learning_content else None
     learning_performance_override = args.learning_performance if args.learning_performance else None
+    content_type_override = args.content_type if args.content_type else None
 
     results = []
     base_seed = args.seed
@@ -414,6 +421,7 @@ def main(argv: list[str] | None = None) -> None:
                 core_competency=core_competency_override,
                 learning_content=learning_content_override,
                 learning_performance=learning_performance_override,
+                content_type=content_type_override,
                 seed=seed,
             )
 
@@ -422,6 +430,7 @@ def main(argv: list[str] | None = None) -> None:
                   f"情境={'、'.join(c.value for c in params.情境)}, "
                   f"題型={params.題型.value}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
                   f"文本形式={params.文本形式.value}, "
+                  f"題目內容類型={params.題目內容類型}, "
                   f"核心素養={'、'.join(c.value for c in params.核心素養)}", file=sys.stderr)
 
             result = generate_with_corrections(

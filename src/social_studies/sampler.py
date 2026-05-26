@@ -30,6 +30,12 @@ from src.social_studies.schemas import (
 _schemas = load_schemas()
 _GRADES: list[int] = load_grades(_schemas)
 _LEARNING_STAGE: str = load_learning_stage(_schemas)
+_CONTENT_TYPE_VALUES: list[str] = [
+    row["value"] for row in _schemas.get("題目內容類型", []) if row.get("value")
+]
+_RANDOM_CONTENT_TYPE_VALUES: list[str] = [
+    v for v in _CONTENT_TYPE_VALUES if v != "customized"
+]
 _CC_DATA: dict = load_core_competencies()
 _ALLOWED_COMPETENCY_VALUES: list[str] = allowed_competencies(_CC_DATA, _LEARNING_STAGE)
 _ALLOWED_COMPETENCIES: list[CoreCompetency] = [CoreCompetency(v) for v in _ALLOWED_COMPETENCY_VALUES]  # type: ignore[misc]
@@ -47,6 +53,7 @@ def sample_params(
     core_competency: list[CoreCompetency] | None = None,
     learning_content: list[str] | None = None,
     learning_performance: list[str] | None = None,
+    content_type: str | None = None,
     seed: int | None = None,
 ) -> SampledParams:
     """Sample random PISA-reading question parameters.
@@ -75,8 +82,29 @@ def sample_params(
     process_count = rng.randint(1, min(2, len(all_processes)))
     selected_process = rng.sample(all_processes, process_count)
 
-    # 文本形式: pick 1.
-    selected_text_form = rng.choice(list(TextForm))
+    selected_content_type = (
+        content_type.strip()
+        if content_type and content_type.strip()
+        else rng.choice(_RANDOM_CONTENT_TYPE_VALUES or _CONTENT_TYPE_VALUES or ["純文字"])
+    )
+
+    # 文本形式: align built-in content types with compatible text forms.
+    all_text_forms = list(TextForm)
+    if selected_content_type == "純文字":
+        text_form_pool = [f for f in all_text_forms if f.value.startswith("連續文本")]
+    elif selected_content_type == "graphs/charts/tables":
+        text_form_pool = [
+            f for f in all_text_forms
+            if f.value in {"非連續文本—圖表與圖形", "非連續文本—表格"}
+        ]
+    elif selected_content_type == "含圖片":
+        text_form_pool = [
+            f for f in all_text_forms
+            if f.value.startswith("非連續文本") and f.value not in {"非連續文本—圖表與圖形", "非連續文本—表格"}
+        ]
+    else:
+        text_form_pool = all_text_forms
+    selected_text_form = rng.choice(text_form_pool or all_text_forms)
 
     selected_subject = rng.choice(subject) if subject is not None else rng.choice(list(QuestionSubject))
 
@@ -109,6 +137,7 @@ def sample_params(
         題型=selected_q_type,
         閱讀歷程=selected_process,
         文本形式=selected_text_form,
+        題目內容類型=selected_content_type,
         科目=selected_subject,
         核心素養=selected_competency,
         學習內容_pool=selected_lc_pool,
