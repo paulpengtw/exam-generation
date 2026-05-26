@@ -62,6 +62,9 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   }
   const res = await fetch(path, { ...options, headers });
   if (!res.ok) {
+    if (res.status === 401) {
+      useAuthStore.getState().logout();
+    }
     throw new ApiError(res.status, await extractDetail(res));
   }
   return res;

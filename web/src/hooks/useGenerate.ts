@@ -118,7 +118,12 @@ export function useGenerate(): UseGenerateReturn {
       openWhenHidden: true,
       async onopen(res) {
         if (!res.ok) {
-          const msg = `Stream open failed: HTTP ${res.status}`;
+          if (res.status === 401) {
+            useAuthStore.getState().logout();
+          }
+          const msg = res.status === 401
+            ? "Session expired — please sign in again"
+            : `Stream open failed: HTTP ${res.status}`;
           setErrorMessage(msg);
           throw new FatalStreamError(msg);
         }
