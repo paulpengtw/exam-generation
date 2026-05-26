@@ -192,7 +192,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "stage.correct": "修正題目",
     "stage.html_render": "渲染 HTML",
 
-    "agent_panel.title": "代理狀態",
+    "agent_panel.title": "多 Agent 狀態",
     "agent_panel.idle": "閒置",
     "agent_panel.running": "執行中",
     "agent_panel.done": "完成",

@@ -1,4 +1,4 @@
-"""OpenAI-compatible LLM client with model routing."""
+"""LLM client with Anthropic SDK and automatic prompt caching."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from anthropic import Anthropic
 from openai import OpenAI
 
 from src.config import Config
@@ -35,7 +36,9 @@ def emit_stage(
     """Emit a stage lifecycle event to the observer (if any)."""
     if observer is None:
         return
-    event: dict = {"type": "stage", "agent": agent, "stage": stage, "status": status, "ts": time.time()}
+    event: dict = {
+        "type": "stage", "agent": agent, "stage": stage, "status": status, "ts": time.time(),
+    }
     event.update(extra)
     try:
         observer(event)
@@ -80,7 +83,8 @@ def make_stderr_observer(truncate: int | None = None) -> LLMObserver:
                                 parts.append(f"[image len={len(url)}]")
                     content = "\n".join(parts)
                 if truncate and len(content) > truncate:
-                    content = content[:truncate] + f"\n...(+{len(content) - truncate} chars truncated)"
+                    tail = f"\n...(+{len(content) - truncate} chars truncated)"
+                    content = content[:truncate] + tail
                 print(f"\n--- {role} ---", file=sys.stderr)
                 print(content, file=sys.stderr)
             print(f"{'='*60}", file=sys.stderr)
@@ -107,14 +111,42 @@ def make_stderr_observer(truncate: int | None = None) -> LLMObserver:
     return observer
 
 
+def _strip_v1(base_url: str) -> str:
+    """Remove trailing /v1 so the Anthropic SDK can append its own versioned paths."""
+    url = base_url.rstrip("/")
+    if url.endswith("/v1"):
+        url = url[:-3]
+    return url
+
+
+def _to_anthropic_content(content: str | list[dict]) -> str | list[dict]:
+    """Convert OpenAI-style content blocks to Anthropic format."""
+    if isinstance(content, str):
+        return content
+    result: list[dict] = []
+    for part in content:
+        if part.get("type") == "text":
+            result.append({"type": "text", "text": part["text"]})
+        elif part.get("type") == "image_url":
+            url: str = part["image_url"]["url"]
+            if url.startswith("data:"):
+                header, data = url.split(",", 1)
+                media_type = header.split(";")[0].replace("data:", "")
+                result.append({
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": data},
+                })
+    return result
+
+
 class LLMClient:
-    """Client for calling LLMs via OpenAI-compatible endpoints."""
+    """Client for calling Claude via the Anthropic SDK with automatic prompt caching."""
 
     def __init__(self, config: Config):
         self.config = config
-        self.client = OpenAI(
+        self.client = Anthropic(
             api_key=config.api_key,
-            base_url=config.base_url,
+            base_url=_strip_v1(config.base_url),
         )
         self._image_client: OpenAI | None = None
         self._observer: LLMObserver | None = None
@@ -145,8 +177,14 @@ class LLMClient:
                 for part in content:
                     if isinstance(part, dict) and part.get("type") == "image_url":
                         url = part.get("image_url", {}).get("url", "")
-                        mime = url.split(";")[0].replace("data:", "") if url.startswith("data:") else "unknown"
-                        new_parts.append({"type": "image_url", "image_url": {"url": f"{mime}; len={len(url)}"}})
+                        mime = (
+                            url.split(";")[0].replace("data:", "")
+                            if url.startswith("data:") else "unknown"
+                        )
+                        new_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"{mime}; len={len(url)}"},
+                        })
                     else:
                         new_parts.append(part)
                 result.append({"role": msg["role"], "content": new_parts})
@@ -154,50 +192,57 @@ class LLMClient:
                 result.append(msg)
         return result
 
-    def _generate_streaming(self, messages: list[dict], model: str, purpose: str) -> str:
-        """Stream response, emitting deltas to observer. Returns assembled content."""
+    def _generate_streaming(
+        self,
+        system: str,
+        messages: list[dict],
+        model: str,
+        purpose: str,
+    ) -> str:
+        """Stream via Anthropic SDK, emitting deltas to observer. Returns assembled content."""
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         usage: dict = {}
 
-        stream = self.client.chat.completions.create(
+        with self.client.messages.stream(
             model=model,
-            messages=messages,
             max_tokens=8192,
             temperature=0.7,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
+            cache_control={"type": "ephemeral"},
+            system=system,
+            messages=messages,  # type: ignore[arg-type]
+        ) as stream:
+            for event in stream:
+                if getattr(event, "type", None) == "content_block_delta":
+                    delta = event.delta
+                    dtype = getattr(delta, "type", None)
+                    if dtype == "text_delta":
+                        text = delta.text
+                        content_parts.append(text)
+                        self._emit({
+                            "type": "llm_content_delta",
+                            "purpose": purpose,
+                            "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
+                            "text": text,
+                        })
+                    elif dtype == "thinking_delta":
+                        thinking = delta.thinking
+                        reasoning_parts.append(thinking)
+                        self._emit({
+                            "type": "llm_reasoning_delta",
+                            "purpose": purpose,
+                            "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
+                            "text": thinking,
+                        })
 
-        for chunk in stream:
-            if hasattr(chunk, "usage") and chunk.usage:
-                usage = {
-                    "input": chunk.usage.prompt_tokens,
-                    "output": chunk.usage.completion_tokens,
-                }
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-
-            # Reasoning tokens: OpenAI/DeepSeek style
-            reasoning_text = (
-                getattr(delta, "reasoning_content", None)
-                or getattr(delta, "reasoning", None)
-            )
-            # Anthropic thinking_delta via raw chunk (some shims expose this)
-            if reasoning_text is None:
-                raw_chunk = getattr(chunk, "model_extra", None) or {}
-                if isinstance(raw_chunk, dict) and raw_chunk.get("type") == "content_block_delta":
-                    inner = raw_chunk.get("delta", {})
-                    if inner.get("type") == "thinking_delta":
-                        reasoning_text = inner.get("thinking", "")
-            if reasoning_text:
-                reasoning_parts.append(reasoning_text)
-                self._emit({"type": "llm_reasoning_delta", "purpose": purpose, "agent": _PURPOSE_TO_AGENT.get(purpose, purpose), "text": reasoning_text})
-
-            if delta.content:
-                content_parts.append(delta.content)
-                self._emit({"type": "llm_content_delta", "purpose": purpose, "agent": _PURPOSE_TO_AGENT.get(purpose, purpose), "text": delta.content})
+            final = stream.get_final_message()
+            u = final.usage
+            usage = {
+                "input": u.input_tokens,
+                "output": u.output_tokens,
+                "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0,
+                "cache_creation": getattr(u, "cache_creation_input_tokens", 0) or 0,
+            }
 
         content = "".join(content_parts)
         self._emit({
@@ -217,7 +262,16 @@ class LLMClient:
         model: str,
         purpose: str,
     ) -> str:
-        """Emit request event, call API (streaming or not), emit response event."""
+        """Emit request event, call Anthropic API (streaming or not), emit response event."""
+        # Separate system message from user/assistant turns
+        system = ""
+        user_messages_raw: list[dict] = []
+        for msg in messages:
+            if msg["role"] == "system":
+                system = msg["content"] if isinstance(msg["content"], str) else ""
+            else:
+                user_messages_raw.append(msg)
+
         if self._observer:
             self._emit({
                 "type": "llm_request",
@@ -228,23 +282,26 @@ class LLMClient:
                 "params": {"max_tokens": 8192, "temperature": 0.7},
             })
 
-        if self._observer and self.config.llm_stream:
-            return self._generate_streaming(messages, model, purpose)
+        # Convert image format to Anthropic style
+        anthropic_messages = [
+            {"role": msg["role"], "content": _to_anthropic_content(msg["content"])}
+            for msg in user_messages_raw
+        ]
 
-        response = self.client.chat.completions.create(
+        if self._observer and self.config.llm_stream:
+            return self._generate_streaming(system, anthropic_messages, model, purpose)
+
+        response = self.client.messages.create(
             model=model,
-            messages=messages,
             max_tokens=8192,
             temperature=0.7,
+            cache_control={"type": "ephemeral"},
+            system=system,
+            messages=anthropic_messages,  # type: ignore[arg-type]
         )
-        content = response.choices[0].message.content
+        content = response.content[0].text
         if self._observer:
-            usage: dict = {}
-            if response.usage:
-                usage = {
-                    "input": response.usage.prompt_tokens,
-                    "output": response.usage.completion_tokens,
-                }
+            u = response.usage
             self._emit({
                 "type": "llm_response",
                 "purpose": purpose,
@@ -252,7 +309,12 @@ class LLMClient:
                 "model": model,
                 "content": content,
                 "reasoning": None,
-                "usage": usage,
+                "usage": {
+                    "input": u.input_tokens,
+                    "output": u.output_tokens,
+                    "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0,
+                    "cache_creation": getattr(u, "cache_creation_input_tokens", 0) or 0,
+                },
             })
         return content
 
@@ -347,7 +409,7 @@ class LLMClient:
         raise last_err
 
     def generate_image(self, prompt: str, output_path: str | Path) -> str:
-        """Generate a PNG image and write it to output_path."""
+        """Generate a PNG image via OpenAI image API and write it to output_path."""
         if not self.config.image_api_key:
             raise ValueError("IMAGE_API_KEY is required for GPT image generation.")
         if self.config.rate_limit_delay > 0:
