@@ -12,6 +12,8 @@ export interface GenerateParams {
   skip_verify: boolean;
   image_generation_mode: "html" | "gpt_image";
   subject_filter?: string;
+  passage?: string;
+  options?: string[];
 }
 
 export interface ParamFormProps {
@@ -19,6 +21,9 @@ export interface ParamFormProps {
   onSubmit: (params: GenerateParams) => void;
   disabled: boolean;
 }
+
+const TEXT_HINT = "500 字";
+const OPTION_HINT = "50 字";
 
 export default function ParamForm({ subject = "math", onSubmit, disabled }: ParamFormProps) {
   const t = useT();
@@ -35,6 +40,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [imageGenerationMode, setImageGenerationMode] =
     useState<"html" | "gpt_image">("html");
   const [subjectFilter, setSubjectFilter] = useState<string>("");
+  const [passage, setPassage] = useState<string>(TEXT_HINT);
+  const [options, setOptions] = useState<string[]>([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +50,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     setContext([]);
     setQType([]);
     setImageGenerationMode("html");
+    setPassage(TEXT_HINT);
+    setOptions([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
     getSchemas(subject)
       .then((s) => {
         if (cancelled) return;
@@ -66,6 +75,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (grade === "") return;
+    const cleanPassage = passage === TEXT_HINT ? undefined : passage;
+    const cleanOptions = options.filter((o) => o && o !== OPTION_HINT);
     onSubmit({
       grade,
       style,
@@ -76,6 +87,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       skip_verify: skipVerify,
       image_generation_mode: imageGenerationMode,
       subject_filter: subjectFilter || undefined,
+      passage: cleanPassage,
+      options: cleanOptions.length ? cleanOptions : undefined,
     });
   }
 
@@ -201,6 +214,60 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           className="mt-1 block w-24 border rounded px-2 py-1"
         />
       </div>
+
+      <div>
+        <label className="block text-sm font-medium">文本</label>
+        <textarea
+          value={passage}
+          onFocus={() => { if (passage === TEXT_HINT) setPassage(""); }}
+          onBlur={() => { if (passage === "") setPassage(TEXT_HINT); }}
+          onChange={(e) => setPassage(e.target.value)}
+          rows={6}
+          className="mt-1 block w-full border rounded px-2 py-1"
+        />
+      </div>
+
+      <fieldset>
+        <legend className="text-sm font-medium">選項</legend>
+        <div className="mt-1 space-y-1.5">
+          {options.map((opt, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="w-5 text-sm text-gray-500">{String.fromCharCode(65 + i)}.</span>
+              <input
+                type="text"
+                value={opt}
+                onFocus={() => {
+                  if (opt === OPTION_HINT) {
+                    setOptions((prev) => prev.map((v, j) => j === i ? "" : v));
+                  }
+                }}
+                onBlur={() => {
+                  if (options[i] === "") {
+                    setOptions((prev) => prev.map((v, j) => j === i ? OPTION_HINT : v));
+                  }
+                }}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setOptions((prev) => prev.map((x, j) => j === i ? v : x));
+                }}
+                className="flex-1 border rounded px-2 py-1"
+              />
+              <button
+                type="button"
+                onClick={() => setOptions((prev) => prev.filter((_, j) => j !== i))}
+                className="text-sm text-red-600 hover:underline disabled:opacity-40"
+                disabled={options.length <= 2}
+              >−</button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setOptions((prev) => [...prev, OPTION_HINT])}
+            className="text-sm text-blue-600 hover:underline disabled:opacity-40"
+            disabled={options.length >= 8}
+          >+ 新增選項</button>
+        </div>
+      </fieldset>
 
       {subject === "social_studies" && schemas.科目 && schemas.科目.length > 0 && (
         <div>
