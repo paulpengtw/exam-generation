@@ -74,7 +74,8 @@ exam-generation/
 │   │   ├── few_shot/
 │   │   │   ├── few_shot_examples.csv        # Few-shot examples (long format, grouped by 範例編號)
 │   │   │   ├── 範例_few_shot_examples.csv   # Reference example (never loaded)
-│   │   │   └── {style}/                     # JSON few-shot by question style (text_only, with_non_continuous_text, …)
+│   │   │   ├── *.json                       # JSON few-shot examples filtered by embedded style
+│   │   │   └── images/                      # Images attached to CSV few-shot examples
 │   │   ├── example_exams/               # PISA/NAER reference exam PDFs
 │   │   └── csv_填寫指南.md              # zh-TW filler guide for JSON curriculum files + CSVs
 │   └── example_exams/
@@ -101,7 +102,7 @@ exam-generation/
 │       ├── core_competency_loader.py # JSON loader + allowed_core_competencies() for 核心素養 sampler pool
 │       ├── data_loader.py         # Loads few-shot CSV (learning content/performance now via curriculum_loader)
 │       ├── context_builder.py     # Prompt assembly; injects ## 課程綱要參考 + ## 指定條件 into prompts
-│       ├── sampler.py             # Picks grade, 科目, 學習內容_pool (1-3), 學習表現_pool (1-2), 核心素養, style, …
+│       ├── sampler.py             # Picks grade, 科目, 學習內容_pool (1-3), 學習表現_pool (1-2), 核心素養, …
 │       └── ...                    # verifier, corrector (reuse src/ equivalents)
 ├── server/                        # FastAPI backend
 │   ├── app.py                     # Application factory (uvicorn entry: server.app:create_app)
@@ -289,11 +290,11 @@ uv run python -m src.social_studies.cli generate --learning-performance 社1b-�
 # Override 核心素養 codes
 uv run python -m src.social_studies.cli generate --core-competency 社-J-A2
 
-# Batch, seeded, text-only style
-uv run python -m src.social_studies.cli generate --count 5 --seed 1 --style text_only --batch
+# Batch, seeded
+uv run python -m src.social_studies.cli generate --count 5 --seed 1 --batch
 ```
 
-All math flags (`--grade`, `--style`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--max-retries`, `--batch`, `--dry-run`, `--output`) work identically for social studies.
+Most math flags (`--grade`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--max-retries`, `--batch`, `--dry-run`, `--output`) work identically for social studies. Social studies does not use `--style`.
 
 ## Running the server and web app
 
@@ -430,7 +431,7 @@ For social studies exam generation, parameter schemas live in CSVs; curriculum d
 | File | Controls |
 |---|---|
 | `schema_meta.csv` | 學習階段 label, target grades |
-| `schema_parameters.csv` | Values + LLM instructions for 情境, 題型種類, 題型, 文本形式, 閱讀歷程, 科目 (歷史/地理/公民與社會/跨科), question_style. Rubric scoring uses `2/1/0/0X` convention (`0X` = 未作答). |
+| `schema_parameters.csv` | Values + LLM instructions for 情境, 題型種類, 題型, 文本形式, 閱讀歷程, 科目 (歷史/地理/公民與社會/跨科). Rubric scoring uses `2/1/0/0X` convention (`0X` = 未作答). |
 | `learning_content.json` | 108課綱 社會領域 學習內容 — 472 entries spanning 學習階段 二–五 (55 entries mapped at 第四學習階段; 57 shared entries have `科目=""` and appear in every subject's pool). `對應學習表現` cross-links populated from official NAER ODT 呼應表. Sampler draws 1–3 codes per 題組 filtered by 學習階段 + 科目; injected into `## 指定條件` (user prompt) and `## 課程綱要參考` (system prompt). |
 | `learning_performance.json` | 108課綱 社會領域 學習表現標準 — 26 codes (歷/地/公/社 prefixes); `對應學習內容` cross-links from ODT. Sampler draws 1–2 codes per 題組; same injection pattern as 學習內容. |
 | `learning_performance_intro.md` | Official NAER 學習表現 framework chapter (構面/項目/編碼規則 + full 條目 list) → injected as `### 學習表現架構說明` in system prompt. |
@@ -467,7 +468,7 @@ Performance standards organized by learning stage (第一~第五學習階段), d
 - **with_image**: Questions involving geometric diagrams or visual elements
 - **creative_scenario**: Real-world context questions (menus, stock prices, delivery plans)
 
-**Social studies** (`data/social_studies/few_shot/few_shot_examples.csv`): long-format CSV, one row per subquestion, grouped by `範例編號`. Key columns beyond the base set: `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準` (JSON-encoded rubric array with codes `2/1/0/0X`). Styles: `text_only`, `with_non_continuous_text`, `mixed_text`, `digital_reading`. Reference: `data/social_studies/csv_填寫指南.md`.
+**Social studies** (`data/social_studies/few_shot/`): each root-level JSON file is one few-shot sampling group; `few_shot_examples.csv` is a long-format CSV, one row per subquestion, grouped by `範例編號`. Key CSV columns beyond the base set: `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準` (JSON-encoded rubric array with codes `2/1/0/0X`). Reference: `data/social_studies/csv_填寫指南.md`.
 
 ### Past Exams
 

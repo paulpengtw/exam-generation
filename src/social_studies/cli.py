@@ -14,7 +14,6 @@ from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
 from src.social_studies.context_builder import build_system_prompt, build_user_prompt
 from src.social_studies.corrector import correct_question
-from src.social_studies.data_loader import load_few_shot_examples  # noqa: F401
 from src.social_studies.sampler import sample_params
 from src.social_studies.schema_loader import load_grades, load_schemas
 from src.social_studies.schemas import (
@@ -25,7 +24,6 @@ from src.social_studies.schemas import (
     QuestionContext,
     QuestionMetadata,
     QuestionSetType,
-    QuestionStyle,
     QuestionSubject,
     QuestionType,
     RubricEntry,
@@ -46,13 +44,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     gen = sub.add_parser("generate", help="Generate exam questions")
     gen.add_argument("--grade", type=int, choices=_GRADES, help="Target grade level")
-    gen.add_argument(
-        "--style",
-        type=str,
-        nargs="+",
-        choices=[s.value for s in QuestionStyle],  # type: ignore[attr-defined]
-        help="Question style(s) — randomly picked from given values if multiple",
-    )
     gen.add_argument("--context", type=str, nargs="+", help="情境 (e.g. 個人 公共)")
     gen.add_argument("--set-type", type=str, help="題型種類 (always 題組題 for PISA)")
     gen.add_argument("--q-type", type=str, nargs="+", help="題型 (one or more values)")
@@ -198,7 +189,6 @@ def _parse_question(
         chart_spec=chart_spec,
         metadata=QuestionMetadata(
             grade=params.grade,
-            style=params.style,
             model=model,
             seed=None,
         ),
@@ -391,7 +381,6 @@ def main(argv: list[str] | None = None) -> None:
         except Exception as e:
             print(f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.", file=sys.stderr)
 
-    style_override = [QuestionStyle(v) for v in args.style] if args.style else None
     context_override = (
         [_resolve_enum(v, QuestionContext) for v in args.context]
         if args.context else None
@@ -414,7 +403,6 @@ def main(argv: list[str] | None = None) -> None:
 
             params = sample_params(
                 grade=args.grade,
-                style=style_override,
                 context=context_override,
                 set_type=set_type_override,
                 q_type=q_type_override,
@@ -426,7 +414,7 @@ def main(argv: list[str] | None = None) -> None:
             )
 
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
-                  f"style={params.style.value}, 科目={params.科目.value}, "
+                  f"科目={params.科目.value}, "
                   f"情境={'、'.join(c.value for c in params.情境)}, "
                   f"題型={params.題型.value}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
                   f"文本形式={params.文本形式.value}, "

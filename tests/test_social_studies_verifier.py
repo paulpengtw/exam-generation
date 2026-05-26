@@ -34,7 +34,6 @@ def _question() -> ExamQuestion:
         正確解題分析=["作者在第二段明確支持擴大公共運輸。"],
         metadata=QuestionMetadata(
             grade=8,
-            style="text_only",
             model="fake-model",
         ),
     )

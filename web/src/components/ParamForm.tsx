@@ -5,7 +5,7 @@ import CoreQuestionPicker from "./CoreQuestionPicker";
 
 export interface GenerateParams {
   grade: number;
-  style: string;
+  style?: string;
   context: string[];
   set_type: string;
   q_type: string[];
@@ -61,7 +61,12 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         if (cancelled) return;
         setSchemas(s);
         if (s.grades.length > 0) setGrade(s.grades[0]);
-        if (s.question_style.length > 0) setStyle(s.question_style[0].value);
+        const questionStyles = s.question_style ?? [];
+        if (subject === "math" && questionStyles.length > 0) {
+          setStyle(questionStyles[0].value);
+        } else {
+          setStyle("");
+        }
         if (s.題型種類.length > 0) setSetType(s.題型種類[0].value);
       })
       .catch((e: Error) => {
@@ -83,7 +88,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     const cleanOptions = options.filter((o) => o && o !== OPTION_HINT);
     onSubmit({
       grade,
-      style,
+      style: subject === "math" ? style : undefined,
       context,
       set_type: setType,
       q_type: qType,
@@ -146,20 +151,22 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </select>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium">{t("form.style")}</label>
-        <select
-          value={style}
-          onChange={(e) => setStyle(e.target.value)}
-          className="mt-1 block w-full border rounded px-2 py-1"
-        >
-          {schemas.question_style.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.value}
-            </option>
-          ))}
-        </select>
-      </div>
+      {subject === "math" && (
+        <div>
+          <label className="block text-sm font-medium">{t("form.style")}</label>
+          <select
+            value={style}
+            onChange={(e) => setStyle(e.target.value)}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            {(schemas.question_style ?? []).map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.value}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <fieldset>
         <legend className="text-sm font-medium">{t("form.context")}</legend>

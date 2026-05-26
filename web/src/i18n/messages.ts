@@ -136,7 +136,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.ss_title": "社會領域",
     "subject_select.ss_desc": "7-9年級社會課綱，素養導向試題。",
 
-    "staging.banner": "⚠ 此為測試環境，資料可能隨時被重設。",
+    "staging.banner": "⚠ 此為測試環境，運作可能不穩定。",
 
     "generate.title": "數學題目產生器",
     "generate.title_ss": "社會領域題目產生器",

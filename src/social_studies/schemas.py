@@ -11,7 +11,7 @@ from src.social_studies.core_competency_loader import build_core_competency_enum
 from src.social_studies.schema_loader import build_enums, load_grades, load_schemas
 
 _schemas = load_schemas()
-QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionStyle, QuestionSubject = build_enums(_schemas)
+QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionSubject = build_enums(_schemas)
 CoreCompetency = build_core_competency_enum(load_core_competencies())
 _GRADES: list[int] = load_grades(_schemas)
 
@@ -79,7 +79,6 @@ class SubQuestion(BaseModel):
 
 class QuestionMetadata(BaseModel):
     grade: int
-    style: QuestionStyle  # type: ignore[valid-type]
     model: str
     generated_at: datetime = Field(default_factory=datetime.now)
     seed: int | None = None
@@ -128,7 +127,6 @@ class SampledParams(BaseModel):
     題型: QuestionType  # type: ignore[valid-type]
     閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
     文本形式: TextForm  # type: ignore[valid-type]
-    style: QuestionStyle  # type: ignore[valid-type]
     科目: QuestionSubject  # type: ignore[valid-type]
     核心素養: list[CoreCompetency] = Field(default_factory=list)  # type: ignore[valid-type]
     學習內容_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-3)

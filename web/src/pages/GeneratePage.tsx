@@ -41,7 +41,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     generate({
       subject,
       grade: params.grade,
-      style: params.style ? [params.style] : [],
+      style: subject === "math" && params.style ? [params.style] : [],
       context: params.context,
       set_type: params.set_type,
       q_type: params.q_type,

@@ -20,7 +20,6 @@ from src.social_studies.schemas import (
     CoreCompetency,
     QuestionContext,
     QuestionSetType,
-    QuestionStyle,
     QuestionSubject,
     QuestionType,
     ReadingProcess,
@@ -41,7 +40,6 @@ _LP_DATA: dict = load_learning_performance()
 
 def sample_params(
     grade: int | None = None,
-    style: list[QuestionStyle] | None = None,
     context: list[QuestionContext] | None = None,
     set_type: QuestionSetType | None = None,
     q_type: list[QuestionType] | None = None,
@@ -77,10 +75,8 @@ def sample_params(
     process_count = rng.randint(1, min(2, len(all_processes)))
     selected_process = rng.sample(all_processes, process_count)
 
-    # 文本形式: pick 1; for mixed_text style pick 1-2, but keep as single TextForm field
+    # 文本形式: pick 1.
     selected_text_form = rng.choice(list(TextForm))
-
-    selected_style = rng.choice(style) if style is not None else rng.choice(list(QuestionStyle))
 
     selected_subject = rng.choice(subject) if subject is not None else rng.choice(list(QuestionSubject))
 
@@ -113,7 +109,6 @@ def sample_params(
         題型=selected_q_type,
         閱讀歷程=selected_process,
         文本形式=selected_text_form,
-        style=selected_style,
         科目=selected_subject,
         核心素養=selected_competency,
         學習內容_pool=selected_lc_pool,

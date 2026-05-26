@@ -10,7 +10,7 @@ from pathlib import Path
 _DEFAULT_DIR = Path(__file__).parent.parent.parent / "data" / "social_studies" / "curriculum"
 
 # Categories for social studies — includes 科目 for 108課綱 subject targeting.
-_CATEGORIES = ("情境", "題型種類", "題型", "閱讀歷程", "文本形式", "question_style", "科目")
+_CATEGORIES = ("情境", "題型種類", "題型", "閱讀歷程", "文本形式", "科目")
 
 
 def _resolve_dir(path: Path | None = None) -> Path:
@@ -59,15 +59,14 @@ def _build_str_enum(name: str, values: list[str]) -> type:
 
 
 def build_enums(schemas: dict) -> tuple:
-    """Build (QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionStyle, QuestionSubject)."""
+    """Build (QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionSubject)."""
     QuestionContext = _build_str_enum("QuestionContext", _extract_values(schemas["情境"]))
     QuestionSetType = _build_str_enum("QuestionSetType", _extract_values(schemas["題型種類"]))
     QuestionType = _build_str_enum("QuestionType", _extract_values(schemas["題型"]))
     ReadingProcess = _build_str_enum("ReadingProcess", _extract_values(schemas["閱讀歷程"]))
     TextForm = _build_str_enum("TextForm", _extract_values(schemas["文本形式"]))
-    QuestionStyle = _build_str_enum("QuestionStyle", _extract_values(schemas["question_style"]))
     QuestionSubject = _build_str_enum("QuestionSubject", _extract_values(schemas.get("科目", [])))
-    return QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionStyle, QuestionSubject
+    return QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionSubject
 
 
 def load_grades(schemas: dict) -> list[int]:

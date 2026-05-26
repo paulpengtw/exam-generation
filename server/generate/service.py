@@ -42,7 +42,6 @@ from src.social_studies.schemas import (
     ExamQuestion as SSExamQuestion,
     QuestionContext as SSQuestionContext,
     QuestionSetType as SSQuestionSetType,
-    QuestionStyle as SSQuestionStyle,
     QuestionSubject as SSQuestionSubject,
     QuestionType as SSQuestionType,
 )
@@ -142,9 +141,6 @@ async def generate_question_stream(
             is_social_studies = params.subject == "social_studies"
 
             if is_social_studies:
-                style_override = (
-                    [SSQuestionStyle(v) for v in params.style] if params.style else None
-                )
                 context_override = (
                     [_resolve_enum(v, SSQuestionContext) for v in params.context]
                     if params.context else None
@@ -223,7 +219,6 @@ async def generate_question_stream(
                         if is_social_studies:
                             rng_params = ss_sample_params(
                                 grade=params.grade,
-                                style=style_override,
                                 context=context_override,
                                 set_type=set_type_override,
                                 q_type=q_type_override,

@@ -8,6 +8,13 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+_LEGACY_STYLES = {
+    "text_only",
+    "with_non_continuous_text",
+    "mixed_text",
+    "digital_reading",
+}
+
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
     if not path.exists():
@@ -73,15 +80,22 @@ def _parse_rubric_field(raw: str) -> list[dict]:
     return []
 
 
-def _parse_few_shot_csv(rows: list[dict[str, str]], style: str, images_dir: Path | None = None) -> list[dict]:
-    """Convert CSV rows filtered by style into {style, description, question} dicts.
+def _parse_few_shot_csv(
+    rows: list[dict[str, str]],
+    style: str | None = None,
+    images_dir: Path | None = None,
+) -> list[dict]:
+    """Convert CSV rows into {style, description, question} dicts.
 
     Supports both legacy columns and new 108課綱 per-subquestion columns:
     核心問題, 文本, 取材來源 (first row), and
     小題序號, 小題年級, 小題科目, 核心素養, 學習內容, 學習表現, 出題概念,
     小題題型, 答案, 答案解析, 評分規準 (per subquestion row).
     """
-    style_rows = [r for r in rows if r.get("style", "").strip() == style]
+    style_rows = [
+        r for r in rows
+        if style is None or r.get("style", "").strip() == style
+    ]
     if not style_rows:
         return []
 
@@ -155,7 +169,7 @@ def _parse_few_shot_csv(rows: list[dict[str, str]], style: str, images_dir: Path
                 pass
 
         example: dict = {
-            "style": style,
+            "style": first.get("style", "").strip(),
             "description": first.get("description", "").strip(),
             "question": question,
         }
@@ -167,21 +181,46 @@ def _parse_few_shot_csv(rows: list[dict[str, str]], style: str, images_dir: Path
     return examples
 
 
-def load_few_shot_examples(few_shot_dir: Path, style: str) -> list[dict]:
-    """Load few-shot examples matching a given question style.
+def load_few_shot_example_groups(few_shot_dir: Path, style: str | None = None) -> list[list[dict]]:
+    """Load few-shot examples as equal-odds sampling groups.
 
-    Combines JSON files from {few_shot_dir}/{style}/*.json with any matching
-    entries in {few_shot_dir}/few_shot_examples.csv.
+    Each root-level JSON file is one group. Each CSV 範例編號 is one group.
+    The optional style filter is retained for compatibility with older callers.
     """
-    style_dir = few_shot_dir / style
-    examples: list[dict] = []
-    if style_dir.exists():
-        for f in sorted(style_dir.glob("*.json")):
-            with open(f, encoding="utf-8") as fh:
-                examples.append(json.load(fh))
+    groups: list[list[dict]] = []
+    for f in sorted(few_shot_dir.glob("*.json")):
+        with open(f, encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        loaded_examples = loaded if isinstance(loaded, list) else [loaded]
+        group = [
+            ex for ex in loaded_examples
+            if isinstance(ex, dict) and ex.get("style", "").strip() == style
+        ] if style is not None else [
+            ex for ex in loaded_examples if isinstance(ex, dict)
+        ]
+        if group:
+            groups.append(group)
 
     images_dir = few_shot_dir / "images"
     csv_rows = _read_csv(few_shot_dir / "few_shot_examples.csv")
-    csv_examples = _parse_few_shot_csv(csv_rows, style, images_dir=images_dir if images_dir.exists() else None)
-    examples.extend(csv_examples)
-    return examples
+    image_root = images_dir if images_dir.exists() else None
+    if style is None:
+        legacy_styles = []
+        for row in csv_rows:
+            row_style = row.get("style", "").strip()
+            if row_style in _LEGACY_STYLES and row_style not in legacy_styles:
+                legacy_styles.append(row_style)
+        csv_examples = [
+            ex
+            for legacy_style in legacy_styles
+            for ex in _parse_few_shot_csv(csv_rows, legacy_style, images_dir=image_root)
+        ]
+    else:
+        csv_examples = _parse_few_shot_csv(csv_rows, style, images_dir=image_root)
+    groups.extend([ex] for ex in csv_examples)
+    return groups
+
+
+def load_few_shot_examples(few_shot_dir: Path, style: str | None = None) -> list[dict]:
+    """Load few-shot examples as a flat list for compatibility."""
+    return [ex for group in load_few_shot_example_groups(few_shot_dir, style) for ex in group]

@@ -13,7 +13,7 @@ from src.social_studies.curriculum_loader import (
     load_performance_intro,
     performance_instructions,
 )
-from src.social_studies.data_loader import load_few_shot_examples
+from src.social_studies.data_loader import load_few_shot_example_groups
 from src.social_studies.core_competency_loader import (
     competency_instructions,
     load_core_competencies,
@@ -156,10 +156,6 @@ USER_PROMPT_TEMPLATE = """\
 - **文本形式**：{text_form}
 - **核心素養（限定使用）**：{core_competencies}
 {lc_pool_lines}{lp_pool_lines}{param_instructions}{user_materials}
-## 題目風格
-
-{style_instruction}
-
 ## 參考範例
 
 {few_shot_examples}
@@ -259,19 +255,12 @@ def build_user_prompt(
         if param_instruction_lines else ""
     )
 
-    style_instruction = _INSTRUCTIONS.get("question_style", {}).get(params.style.value, "")
-
-    examples = load_few_shot_examples(few_shot_dir, params.style.value)
+    example_groups = load_few_shot_example_groups(few_shot_dir)
     all_image_paths: list[Path] = []
-    if examples:
-        flat_examples = []
-        for ex in examples:
-            if isinstance(ex, list):
-                flat_examples.extend(ex)
-            else:
-                flat_examples.append(ex)
-        sample_count = min(2, len(flat_examples))
-        selected = rng.sample(flat_examples, sample_count)
+    if example_groups:
+        sample_count = min(2, len(example_groups))
+        selected_groups = rng.sample(example_groups, sample_count)
+        selected = [rng.choice(group) for group in selected_groups]
         example_texts = []
         for i, ex in enumerate(selected, 1):
             q = ex.get("question", ex)
@@ -288,7 +277,7 @@ def build_user_prompt(
             )
         few_shot_text = "\n\n".join(example_texts)
     else:
-        few_shot_text = "（此風格暫無範例，請根據指定條件自行設計。）"
+        few_shot_text = "（目前暫無範例，請根據指定條件自行設計。）"
 
     core_competencies = "、".join(c.value for c in params.核心素養)
 
@@ -350,7 +339,6 @@ def build_user_prompt(
         lp_pool_lines=lp_pool_lines,
         param_instructions=param_instructions,
         user_materials=user_materials,
-        style_instruction=style_instruction,
         few_shot_examples=few_shot_text,
     )
     return text, all_image_paths
