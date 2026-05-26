@@ -59,6 +59,7 @@ async def generate_endpoint(
     options: list[str] | None = Query(default=None),
     topic: str | None = Query(default=None),
     core_question: str | None = Query(default=None),
+    learning_performance: list[str] | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -85,6 +86,7 @@ async def generate_endpoint(
         options=options,
         topic=topic,
         core_question=core_question,
+        learning_performance=learning_performance,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 

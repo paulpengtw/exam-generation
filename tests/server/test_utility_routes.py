@@ -54,5 +54,11 @@ def test_social_studies_schemas_include_content_types() -> None:
     with TestClient(app) as client:
         r = client.get("/api/schemas?subject=social_studies")
     assert r.status_code == 200
-    values = [entry["value"] for entry in r.json()["題目內容類型"]]
+    body = r.json()
+    values = [entry["value"] for entry in body["題目內容類型"]]
     assert values == ["純文字", "含圖片", "graphs/charts/tables", "customized"]
+
+    learning_performance = body["學習表現"]
+    assert learning_performance
+    assert {"value", "instruction", "科目"} <= set(learning_performance[0])
+    assert "社1b-Ⅳ-1" in {entry["value"] for entry in learning_performance}

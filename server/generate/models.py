@@ -33,6 +33,7 @@ class GenerateParams(BaseModel):
     options: list[str] | None = None
     topic: str | None = None
     core_question: str | None = None
+    learning_performance: list[str] | None = None
 
     model_config = {"populate_by_name": True}
 

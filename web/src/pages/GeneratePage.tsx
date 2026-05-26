@@ -61,6 +61,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         subject === "social_studies" ? params.passage : undefined,
       options:
         subject === "social_studies" ? params.options : undefined,
+      learning_performance:
+        subject === "social_studies" ? params.learning_performance : undefined,
     });
   };
 

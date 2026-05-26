@@ -67,7 +67,9 @@ def test_generate_route_forwards_social_studies_options() -> None:
                 "&topic=%E6%B0%A3%E5%80%99%E8%AE%8A%E9%81%B7"
                 "&content_type=timeline"
                 "&passage=%E7%B4%A0%E6%9D%90"
-                "&options=A&options=B",
+                "&options=A&options=B"
+                "&learning_performance=%E7%A4%BE1b-%E2%85%A3-1"
+                "&learning_performance=%E7%A4%BE2a-%E2%85%A3-1",
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -82,3 +84,4 @@ def test_generate_route_forwards_social_studies_options() -> None:
     assert captured["params"].content_type == "timeline"
     assert captured["params"].passage == "素材"
     assert captured["params"].options == ["A", "B"]
+    assert captured["params"].learning_performance == ["社1b-Ⅳ-1", "社2a-Ⅳ-1"]

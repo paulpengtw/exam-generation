@@ -20,6 +20,10 @@ export interface SchemaEntry {
   instruction: string;
 }
 
+export interface LearningPerformanceEntry extends SchemaEntry {
+  科目: string;
+}
+
 export interface Schemas {
   學習階段: string;
   grades: number[];
@@ -30,6 +34,7 @@ export interface Schemas {
   question_style?: SchemaEntry[];
   題目內容類型?: SchemaEntry[];
   科目?: SchemaEntry[];
+  學習表現?: LearningPerformanceEntry[];
   [key: string]: unknown;
 }
 

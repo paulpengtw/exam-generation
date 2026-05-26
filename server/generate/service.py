@@ -224,6 +224,7 @@ async def generate_question_stream(
                                 q_type=q_type_override,
                                 subject=subject_override,
                                 content_type=params.content_type,
+                                learning_performance=params.learning_performance,
                                 seed=seed,
                             )
                             question_id = f"ss_{timestamp}_{i+1:03d}"

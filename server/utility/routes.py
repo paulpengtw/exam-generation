@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from server.auth.dependencies import get_config
 from server.config import ServerConfig
+from src.social_studies.curriculum_loader import load_learning_performance
 from src.social_studies.schema_loader import load_schemas as load_ss_schemas
 
 router = APIRouter(tags=["utility"])
@@ -26,7 +27,21 @@ async def get_schemas(
 ) -> dict:
     if subject == "social_studies":
         try:
-            return load_ss_schemas(config.social_studies_curriculum_dir)
+            schemas = load_ss_schemas(config.social_studies_curriculum_dir)
+            performance = load_learning_performance(
+                config.social_studies_curriculum_dir / "learning_performance.json"
+            )
+            learning_stage = schemas.get("學習階段", "")
+            schemas["學習表現"] = [
+                {
+                    "value": entry["value"],
+                    "instruction": entry.get("說明", ""),
+                    "科目": entry.get("科目", ""),
+                }
+                for entry in performance.get("學習表現", [])
+                if entry.get("學習階段") == learning_stage
+            ]
+            return schemas
         except Exception as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

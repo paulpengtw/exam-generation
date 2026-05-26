@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getSchemas, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import CoreQuestionPicker from "./CoreQuestionPicker";
@@ -18,6 +18,7 @@ export interface GenerateParams {
   options?: string[];
   topic?: string;
   core_question?: string;
+  learning_performance?: string[];
 }
 
 export interface ParamFormProps {
@@ -28,6 +29,13 @@ export interface ParamFormProps {
 
 const TEXT_HINT = "500 字";
 const OPTION_HINT = "50 字";
+const SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
+  "": ["社"],
+  "歷史": ["歷", "社"],
+  "地理": ["地", "社"],
+  "公民與社會": ["公", "社"],
+  "跨科": ["歷", "地", "公", "社"],
+};
 
 export default function ParamForm({ subject = "math", onSubmit, disabled }: ParamFormProps) {
   const t = useT();
@@ -50,6 +58,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [options, setOptions] = useState<string[]>([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
   const [topic, setTopic] = useState<string>("");
   const [coreQuestion, setCoreQuestion] = useState<string | null>(null);
+  const [learningPerformance, setLearningPerformance] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +69,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     setImageGenerationMode("html");
     setPassage(TEXT_HINT);
     setOptions([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
+    setSubjectFilter("");
+    setLearningPerformance([]);
     getSchemas(subject)
       .then((s) => {
         if (cancelled) return;
@@ -87,6 +98,18 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       cancelled = true;
     };
   }, [subject]);
+
+  const availableLearningPerformance = useMemo(() => {
+    const entries = schemas?.學習表現 ?? [];
+    const prefixes =
+      SUBJECT_TO_PERFORMANCE_PREFIXES[subjectFilter] ?? SUBJECT_TO_PERFORMANCE_PREFIXES[""];
+    return entries.filter((entry) => prefixes.includes(entry.科目));
+  }, [schemas, subjectFilter]);
+
+  useEffect(() => {
+    const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
+    setLearningPerformance((prev) => prev.filter((value) => allowed.has(value)));
+  }, [availableLearningPerformance]);
 
   function toggleMulti(list: string[], value: string): string[] {
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -118,6 +141,10 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       options: cleanOptions.length ? cleanOptions : undefined,
       topic: subject === "social_studies" && cleanTopic ? cleanTopic : undefined,
       core_question: coreQuestion || undefined,
+      learning_performance:
+        subject === "social_studies" && learningPerformance.length > 0
+          ? learningPerformance
+          : undefined,
     });
   }
 
@@ -195,6 +222,54 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           ))}
         </select>
       </div>
+
+      {subject === "social_studies" && schemas.科目 && schemas.科目.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium">{t("form.subject_filter")}</label>
+          <select
+            value={subjectFilter}
+            onChange={(e) => setSubjectFilter(e.target.value)}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            <option value="">{t("form.subject_filter.all")}</option>
+            {schemas.科目.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.value}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {subject === "social_studies" && Array.isArray(schemas.學習表現) && (
+        <fieldset>
+          <legend className="text-sm font-medium">{t("form.learning_performance")}</legend>
+          {availableLearningPerformance.length > 0 ? (
+            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {availableLearningPerformance.map((entry) => (
+                <label key={entry.value} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={learningPerformance.includes(entry.value)}
+                    onChange={() =>
+                      setLearningPerformance((prev) => toggleMulti(prev, entry.value))
+                    }
+                    className="mt-1"
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium">{entry.value}</span>
+                    {entry.instruction && (
+                      <span className="text-gray-600">：{entry.instruction}</span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-gray-500">{t("form.learning_performance_empty")}</p>
+          )}
+        </fieldset>
+      )}
 
       {subject === "math" && (
         <div>
@@ -302,19 +377,19 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       </div>
 
       <div>
-        <label className="block text-sm font-medium">文本</label>
-        <textarea
+        <label className="block text-sm font-medium">文本字數限制</label>
+        <input
+          type="text"
           value={passage}
           onFocus={() => { if (passage === TEXT_HINT) setPassage(""); }}
           onBlur={() => { if (passage === "") setPassage(TEXT_HINT); }}
           onChange={(e) => setPassage(e.target.value)}
-          rows={6}
           className="mt-1 block w-full border rounded px-2 py-1"
         />
       </div>
 
       <fieldset>
-        <legend className="text-sm font-medium">選項</legend>
+        <legend className="text-sm font-medium">選項字數限制</legend>
         <div className="mt-1 space-y-1.5">
           {options.map((opt, i) => (
             <div key={i} className="flex items-center gap-2">
@@ -354,24 +429,6 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           >+ 新增選項</button>
         </div>
       </fieldset>
-
-      {subject === "social_studies" && schemas.科目 && schemas.科目.length > 0 && (
-        <div>
-          <label className="block text-sm font-medium">{t("form.subject_filter")}</label>
-          <select
-            value={subjectFilter}
-            onChange={(e) => setSubjectFilter(e.target.value)}
-            className="mt-1 block w-full border rounded px-2 py-1"
-          >
-            <option value="">{t("form.subject_filter.all")}</option>
-            {schemas.科目.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.value}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       {subject === "social_studies" && (
         <div>
