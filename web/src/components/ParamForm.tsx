@@ -139,6 +139,32 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {subject === "social_studies" && (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium">{t("form.topic_label")}</label>
+          <input
+            type="text"
+            value={topic}
+            onChange={(e) => {
+              setTopic(e.target.value);
+              setCoreQuestion(null);
+            }}
+            placeholder={t("form.topic_placeholder")}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          />
+          {topic.trim() && (
+            <CoreQuestionPicker
+              topic={topic}
+              subjectFilter={subjectFilter || undefined}
+              grade={grade !== "" ? grade : undefined}
+              onPick={(q) => setCoreQuestion(q)}
+              onClear={() => setCoreQuestion(null)}
+              pickedValue={coreQuestion}
+            />
+          )}
+        </div>
+      )}
+
       <div>
         <label className="block text-sm font-medium">{t("form.grade")}</label>
         <select
@@ -171,21 +197,23 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       )}
 
-      <fieldset>
-        <legend className="text-sm font-medium">{t("form.context")}</legend>
-        <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
-          {schemas.情境.map((s) => (
-            <label key={s.value} className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={context.includes(s.value)}
-                onChange={() => setContext((prev) => toggleMulti(prev, s.value))}
-              />
-              <span>{s.value}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      {subject === "math" && (
+        <fieldset>
+          <legend className="text-sm font-medium">{t("form.context")}</legend>
+          <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
+            {schemas.情境.map((s) => (
+              <label key={s.value} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={context.includes(s.value)}
+                  onChange={() => setContext((prev) => toggleMulti(prev, s.value))}
+                />
+                <span>{s.value}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
 
       <div>
         <label className="block text-sm font-medium">{t("form.set_type")}</label>
@@ -299,32 +327,6 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               </option>
             ))}
           </select>
-        </div>
-      )}
-
-      {subject === "social_studies" && (
-        <div className="space-y-2">
-          <label className="block text-sm font-medium">{t("form.topic_label")}</label>
-          <input
-            type="text"
-            value={topic}
-            onChange={(e) => {
-              setTopic(e.target.value);
-              setCoreQuestion(null);
-            }}
-            placeholder={t("form.topic_placeholder")}
-            className="mt-1 block w-full border rounded px-2 py-1"
-          />
-          {topic.trim() && (
-            <CoreQuestionPicker
-              topic={topic}
-              subjectFilter={subjectFilter || undefined}
-              grade={grade !== "" ? grade : undefined}
-              onPick={(q) => setCoreQuestion(q)}
-              onClear={() => setCoreQuestion(null)}
-              pickedValue={coreQuestion}
-            />
-          )}
         </div>
       )}
 
