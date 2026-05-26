@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from server.auth.dependencies import get_config
 from server.config import ServerConfig
+from src.social_studies.schema_loader import load_schemas as load_ss_schemas
 
 router = APIRouter(tags=["utility"])
 
@@ -23,11 +24,16 @@ async def get_schemas(
     subject: str = Query(default="math"),
     config: ServerConfig = Depends(get_config),
 ) -> dict:
-    path: Path = (
-        config.social_studies_schemas_path
-        if subject == "social_studies"
-        else config.question_schemas_path
-    )
+    if subject == "social_studies":
+        try:
+            return load_ss_schemas(config.social_studies_curriculum_dir)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"failed to load social_studies schemas: {exc}",
+            ) from exc
+
+    path: Path = config.question_schemas_path
     try:
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)

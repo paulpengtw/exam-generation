@@ -24,16 +24,40 @@ Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-op
 ### Web-ready design
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
 
+### Social studies mode (parallel forked codepath)
+`src/social_studies/` is a self-contained fork that generates PISA reading-literacy (社會科閱讀素養) exam items. It reuses `llm_client`, `verifier`, `corrector`, and `renderer` but has its own sampler, context builder, schema loader, and data loader.
+
+Schema, curriculum, and few-shot data are **CSV-driven** — no JSON, no rebuild. All five CSV files under `data/social_studies/` are read at runtime on every run:
+
+| CSV | Purpose |
+|---|---|
+| `curriculum/schema_meta.csv` | 學習階段 label + grades list |
+| `curriculum/schema_parameters.csv` | Allowed values + instructions for all 6 question parameter categories |
+| `curriculum/learning_performance.csv` | 學習表現標準 → injected into system prompt `## 課程綱要參考` |
+| `curriculum/learning_content.csv` | 學習內容 by grade → same section |
+| `few_shot/few_shot_examples.csv` | Few-shot examples (long format, grouped by `範例編號`) |
+
+CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separator. `範例_`-prefixed files in the same folders are reference examples for researchers — they are never loaded by the system. See `data/social_studies/csv_填寫指南.md` for the field-by-field filler guide.
+
 ## Key Files
 
 | File | Purpose |
 |---|---|
-| `data/curriculum/學習內容.json` | Full K-12 curriculum content, 14 grade levels |
-| `data/curriculum/學習表現.json` | Learning performance standards by stage |
-| `data/few_shot/` | Structured few-shot examples by question style |
+| `data/curriculum/學習內容.json` | Full K-12 math curriculum content, 14 grade levels |
+| `data/curriculum/學習表現.json` | Math learning performance standards by stage |
+| `data/few_shot/` | Math few-shot examples by question style |
 | `data/example_exams/` | Past national exam PDFs (112-114) for reference |
-| `question_schemas.json` | User-editable config: `"學習階段"` (string), `"grades"` (int array), and all 5 question parameter categories using `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
+| `question_schemas.json` | Math user-editable config: `"學習階段"` (string), `"grades"` (int array), and all 5 question parameter categories using `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
 | `src/schema_loader.py` | Loads `question_schemas.json`, exposes `load_grades()` / `load_learning_stage()`, builds dynamic str-enums via `build_enums()`, and builds `{category: {value: instruction}}` lookup via `build_instructions()` |
+| `data/social_studies/curriculum/schema_meta.csv` | Social studies 學習階段 + grades (runtime-editable) |
+| `data/social_studies/curriculum/schema_parameters.csv` | Social studies parameter values + instructions (6 categories) |
+| `data/social_studies/curriculum/learning_performance.csv` | Social studies 學習表現標準 → system prompt |
+| `data/social_studies/curriculum/learning_content.csv` | Social studies 學習內容 by grade → system prompt |
+| `data/social_studies/few_shot/few_shot_examples.csv` | Social studies few-shot examples (long format grouped by 範例編號) |
+| `data/social_studies/csv_填寫指南.md` | zh-TW filler guide: field-by-field explanation of all 5 CSVs |
+| `src/social_studies/schema_loader.py` | Builds social-studies schema dict from `schema_meta.csv` + `schema_parameters.csv` |
+| `src/social_studies/data_loader.py` | Loads `learning_performance.csv`, `learning_content.csv`, and CSV few-shot examples |
+| `src/social_studies/context_builder.py` | Social studies prompt assembly; `## 課程綱要參考` block injected into system prompt |
 | `src/schemas.py` | Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time); `ImageSpec` describes the image (`render_mode`, `chart_type`, etc.); includes `ChartVerificationResult` nested in `VerificationResult` |
 | `src/sampler.py` | Random parameter selection logic |
 | `src/context_builder.py` | Prompt assembly with few-shot injection |
@@ -100,7 +124,9 @@ Content codes follow the pattern `{Category}-{Grade}-{Number}`:
 
 ## Sampler Constraints
 
-Allowed values for all parameters come from `question_schemas.json` at the project root. Edit that file to add or remove options — no Python changes required. Override the path with `QUESTION_SCHEMAS_PATH` env var.
+**Math:** Allowed values for all parameters come from `question_schemas.json` at the project root. Edit that file to add or remove options — no Python changes required. Override the path with `QUESTION_SCHEMAS_PATH` env var.
+
+**Social studies:** Allowed values come from `data/social_studies/curriculum/schema_parameters.csv` (`類別,value,instruction`). Override the directory with `SOCIAL_STUDIES_CURRICULUM_DIR` env var.
 
 The file has two top-level scalar/array fields:
 - **`學習階段`**: string injected into the system prompt (e.g. `"第四學習階段"`)

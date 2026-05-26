@@ -56,12 +56,25 @@ exam-generation/
 ├── data/
 │   ├── curriculum/
 │   │   ├── 學習內容.json          # Full K-12 math curriculum content (grades 1-12)
-│   │   └── 學習表現.json          # Learning performance standards
+│   │   └── 學習表現.json          # Math learning performance standards
 │   ├── few_shot/
 │   │   ├── text_only/             # Text-only question examples
 │   │   ├── with_chart/            # Questions with chart descriptions
 │   │   ├── with_image/            # Questions with image descriptions
 │   │   └── creative_scenario/     # Creative real-world scenario examples
+│   ├── social_studies/
+│   │   ├── curriculum/
+│   │   │   ├── schema_meta.csv          # 學習階段 + grades (researcher-editable)
+│   │   │   ├── schema_parameters.csv    # Parameter values + instructions (6 categories)
+│   │   │   ├── learning_performance.csv # 學習表現標準 → system prompt
+│   │   │   ├── learning_content.csv     # 學習內容 by grade → system prompt
+│   │   │   └── 範例_*.csv               # Reference examples (never loaded)
+│   │   ├── few_shot/
+│   │   │   ├── few_shot_examples.csv    # Few-shot examples (long format, grouped by 範例編號)
+│   │   │   ├── 範例_few_shot_examples.csv  # Reference example (never loaded)
+│   │   │   └── {style}/                 # Legacy JSON few-shot (if any)
+│   │   ├── example_exams/               # PISA/NAER reference exam PDFs
+│   │   └── csv_填寫指南.md              # zh-TW filler guide for all 5 CSVs
 │   └── example_exams/
 │       ├── 112P_Math.pdf          # Past exam: year 112
 │       ├── 113P_Math.pdf          # Past exam: year 113
@@ -78,7 +91,13 @@ exam-generation/
 │   ├── html_renderer.py           # Playwright HTML→PNG for image questions (render_mode="html")
 │   ├── schemas.py                 # Pydantic data models (enums loaded from question_schemas.json)
 │   ├── schema_loader.py           # Loads question_schemas.json and builds dynamic enums
-│   └── data_loader.py             # Curriculum data loading & indexing
+│   ├── data_loader.py             # Curriculum data loading & indexing
+│   └── social_studies/            # Social studies (PISA reading literacy) codepath
+│       ├── schema_loader.py       # Builds schema dict from schema_meta.csv + schema_parameters.csv
+│       ├── data_loader.py         # Loads learning_performance/content CSVs + few-shot CSV
+│       ├── context_builder.py     # Prompt assembly; injects ## 課程綱要參考 into system prompt
+│       ├── sampler.py             # Social studies parameter sampler
+│       └── ...                    # verifier, corrector (reuse src/ equivalents)
 ├── server/                        # FastAPI backend
 │   ├── app.py                     # Application factory (uvicorn entry: server.app:create_app)
 │   ├── config.py                  # Server-only config (JWT, DB, CORS)
@@ -167,6 +186,7 @@ Environment variables (set in `.env` or export directly):
 | `LLM_MAX_RETRIES` | CLI + server | Max correction attempts when verification fails | `3` |
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |
 | `QUESTION_SCHEMAS_PATH` | CLI + server | Path to question parameter config JSON | `./question_schemas.json` |
+| `SOCIAL_STUDIES_CURRICULUM_DIR` | CLI + server | Directory containing social-studies curriculum CSVs | `./data/social_studies/curriculum` |
 | `DATABASE_URL` | server | Async SQLAlchemy database URL | `sqlite+aiosqlite:///./dev.db` |
 | `DB_PASSWORD` | docker-compose | Password for the bundled Postgres service | `changeme` |
 | `JWT_SECRET` | server | Secret used to sign auth tokens — must be a long random string | **(required for server)** |
@@ -360,6 +380,20 @@ All 5 question parameter categories use the same `{value, instruction}` object f
 - **Adding a new `question_style`**: also create `data/few_shot/{value}/` with example JSON files.
 
 To use an alternate config file: `QUESTION_SCHEMAS_PATH=/path/to/config.json uv run python -m src.cli generate`
+
+### Social studies parameters
+
+For social studies exam generation, all allowed parameter values live in the CSV files under `data/social_studies/curriculum/`:
+
+| CSV | Controls |
+|---|---|
+| `schema_meta.csv` | 學習階段 label, target grades |
+| `schema_parameters.csv` | Values + LLM instructions for 情境, 題型種類, 題型, 文本形式, 閱讀歷程, question_style |
+| `learning_performance.csv` | 學習表現標準 injected into system prompt |
+| `learning_content.csv` | 學習內容 by grade injected into system prompt |
+| `few_shot/few_shot_examples.csv` | Few-shot examples injected into user prompt |
+
+Changes take effect on the next run — no rebuild required. See **[`data/social_studies/csv_填寫指南.md`](data/social_studies/csv_填寫指南.md)** for the complete field-by-field guide (zh-TW). Reference files prefixed with `範例_` in the same folders demonstrate correct formatting but are never loaded by the system.
 
 ## Data Sources
 

@@ -6,8 +6,13 @@ import json
 import random
 from pathlib import Path
 
-from src.social_studies.data_loader import load_few_shot_examples
+from src.social_studies.data_loader import (
+    load_few_shot_examples,
+    load_learning_content,
+    load_learning_performance,
+)
 from src.social_studies.schema_loader import (
+    _resolve_dir,
     build_instructions,
     load_grades,
     load_learning_stage,
@@ -19,6 +24,13 @@ _schemas = load_schemas()
 _INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
 _GRADES: list[int] = load_grades(_schemas)
 _LEARNING_STAGE: str = load_learning_stage(_schemas)
+
+_CURRICULUM_DIR: Path = _resolve_dir()
+_PERFORMANCE: dict = load_learning_performance(_CURRICULUM_DIR)
+_CONTENT: list[dict] = load_learning_content(_CURRICULUM_DIR)
+
+_PERFORMANCE_TEXT: str = json.dumps(_PERFORMANCE, ensure_ascii=False, indent=2) if _PERFORMANCE else ""
+_CONTENT_TEXT: str = json.dumps(_CONTENT, ensure_ascii=False, indent=2) if _CONTENT else ""
 
 SYSTEM_PROMPT_TEMPLATE = """\
 你是一位資深的PISA閱讀素養命題教師，專門為{learning_stage}（{grade_names}）的學生設計符合PISA框架的閱讀素養考試題目。
@@ -48,6 +60,10 @@ PISA閱讀素養評量學生在真實生活情境中理解、使用、省思書�
 - **選擇題**：四選一，包含誘答選項；給分代號 2（全對）/ 0（全錯）
 - **封閉式建構反應題**：唯一正確答案；給分代號 2（正確）/ 0（錯誤）
 - **開放式建構反應題**：需說明思考過程；給分代號 2（完整）/ 1（部分）/ 0（錯誤）/ 9（未作答）
+
+## 課程綱要參考
+
+{curriculum_section}
 
 ## 輸出格式
 
@@ -121,18 +137,37 @@ USER_PROMPT_TEMPLATE = """\
 5. 只輸出 JSON 格式的結果。
 """
 
+_CURRICULUM_EMPTY_NOTICE = "（課程綱要資料待研究人員補充至 data/social_studies/curriculum/）"
+
+
+def _build_curriculum_section(content_text: str, performance_text: str) -> str:
+    if not content_text and not performance_text:
+        return _CURRICULUM_EMPTY_NOTICE
+    parts = []
+    if performance_text:
+        parts.append("### 學習表現標準\n\n" + performance_text)
+    if content_text:
+        parts.append("### 學習內容\n\n" + content_text)
+    return "\n\n".join(parts)
+
 
 def build_system_prompt(
     grades: list[int] | None = None,
     learning_stage: str | None = None,
+    content_text: str | None = None,
+    performance_text: str | None = None,
 ) -> str:
     """Build the PISA reading literacy system prompt."""
     g = grades if grades is not None else _GRADES
     stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
     grade_names = "、".join(f"{x}年級" for x in g)
+    c_text = content_text if content_text is not None else _CONTENT_TEXT
+    p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
+    curriculum_section = _build_curriculum_section(c_text, p_text)
     return SYSTEM_PROMPT_TEMPLATE.format(
         learning_stage=stage,
         grade_names=grade_names,
+        curriculum_section=curriculum_section,
     )
 
 

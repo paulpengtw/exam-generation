@@ -1,29 +1,52 @@
-"""Load social studies question parameter schemas and build dynamic enums."""
+"""Load social studies question parameter schemas from CSV files."""
 
 from __future__ import annotations
 
-import json
+import csv
 import os
 from enum import Enum
 from pathlib import Path
 
-_DEFAULT_PATH = Path(__file__).parent.parent.parent / "social_studies_schemas.json"
+_DEFAULT_DIR = Path(__file__).parent.parent.parent / "data" / "social_studies" / "curriculum"
 
 # Categories for social studies — replaces 數學思考 with 閱讀歷程 + 文本形式.
 _CATEGORIES = ("情境", "題型種類", "題型", "閱讀歷程", "文本形式", "question_style")
 
 
-def _resolve_path(path: Path | None = None) -> Path:
+def _resolve_dir(path: Path | None = None) -> Path:
     if path is not None:
         return path
-    env_path = os.environ.get("SOCIAL_STUDIES_SCHEMAS_PATH")
-    return Path(env_path) if env_path else _DEFAULT_PATH
+    env_path = os.environ.get("SOCIAL_STUDIES_CURRICULUM_DIR")
+    return Path(env_path) if env_path else _DEFAULT_DIR
 
 
-def load_schemas(path: Path | None = None) -> dict:
-    resolved = _resolve_path(path)
-    with open(resolved) as f:
-        return json.load(f)
+def _read_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        return list(csv.DictReader(f))
+
+
+def load_schemas(curriculum_dir: Path | None = None) -> dict:
+    d = _resolve_dir(curriculum_dir)
+
+    meta_rows = _read_csv(d / "schema_meta.csv")
+    meta = {row["欄位"]: row["值"] for row in meta_rows}
+    grades_raw = meta.get("grades", "")
+    grades = [int(g.strip()) for g in grades_raw.split(";") if g.strip()]
+
+    param_rows = _read_csv(d / "schema_parameters.csv")
+    categories: dict[str, list[dict[str, str]]] = {c: [] for c in _CATEGORIES}
+    for row in param_rows:
+        cat = row.get("類別", "")
+        if cat in categories:
+            categories[cat].append({"value": row["value"], "instruction": row.get("instruction", "")})
+
+    return {
+        "學習階段": meta.get("學習階段", ""),
+        "grades": grades,
+        **categories,
+    }
 
 
 def _extract_values(entries: list[dict]) -> list[str]:

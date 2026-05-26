@@ -199,15 +199,6 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         />
       </div>
 
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={skipVerify}
-          onChange={(e) => setSkipVerify(e.target.checked)}
-        />
-        <span className="text-sm">{t("form.skip_verify")}</span>
-      </label>
-
       {subject === "social_studies" && (
         <div>
           <label className="block text-sm font-medium">{t("form.image_generation_mode")}</label>
@@ -223,6 +214,15 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           </select>
         </div>
       )}
+
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={skipVerify}
+          onChange={(e) => setSkipVerify(e.target.checked)}
+        />
+        <span className="text-sm">{t("form.skip_verify")}</span>
+      </label>
 
       <button
         type="submit"

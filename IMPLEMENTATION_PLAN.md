@@ -15,6 +15,59 @@
 
 ---
 
+## Social studies context-injection parity gap
+
+The shipped `src/social_studies/` codepath injects far less context into the
+LLM payload than math, materially degrading generated-question quality.
+Logged here as tracked tech debt — **social studies should receive an
+equivalent level and coverage of context injection as math.**
+
+### 1. Missing curriculum / cross-stage context ✅ RESOLVED
+
+The math system prompt (`src/context_builder.py:34-46`) injects three live
+reference documents:
+
+| Slot | Source | Content |
+|---|---|---|
+| `{curriculum_json}` | `data/curriculum/學習內容.json` | Full K-12 學習內容 |
+| `{performance_json}` | `data/curriculum/學習表現.json` | Full 學習表現, 第一–第五 |
+| `{intro_text}` | `Introduction to "學習表現" and "學習階段".md` | 綱要 explanation |
+
+**Resolution:** A CSV-driven curriculum injection layer has been shipped for
+social studies. The social-studies system prompt
+(`src/social_studies/context_builder.py`) now has a `## 課程綱要參考` section
+that injects:
+
+- **學習表現標準** — loaded from `data/social_studies/curriculum/learning_performance.csv`
+  via `src/social_studies/data_loader.load_learning_performance()`
+- **學習內容** — loaded from `data/social_studies/curriculum/learning_content.csv`
+  via `src/social_studies/data_loader.load_learning_content()`
+
+The schema itself (學習階段, grades, 6 parameter categories with `instruction`
+strings) is now loaded from `schema_meta.csv` + `schema_parameters.csv` in the
+same directory, replacing the deleted `social_studies_schemas.json`.
+
+**Remaining gap:** the four curriculum CSVs ship empty. Until researchers at
+NAER fill them, the system prompt shows a fallback notice
+`（課程綱要資料待研究人員補充至 data/social_studies/curriculum/）`. The
+*mechanism* is at parity with math; *content population* is still pending.
+See `data/social_studies/csv_填寫指南.md` for the field-by-field filler guide.
+
+### 2. `_HTML_SYSTEM_PROMPT` hardcoded to "math exam questions"
+
+`src/renderer.py:361` — `_HTML_SYSTEM_PROMPT` reads "...visual designer for
+Taiwanese junior high school **math** exam questions." This prompt is shared by
+the social-studies `render_mode: "html"` image path (tables, maps, ads, forms,
+digital-reading material). The math persona is a copy-paste leftover that biases
+the designer LLM away from PISA non-continuous-text material and degrades those
+visuals.
+
+**Fix direction:** parametrize the HTML designer persona by subject (or
+neutralize the wording). Aligns with the deferred `tools/html_tool.py`
+"parametric HTML-via-LLM; per-tool system prompt" refactor below.
+
+---
+
 ## Multi-subject architecture (deferred — see Known design risks above)
 
 **Why:** ~70% of current code is math-bound (persona prompts, `數學思考` enum, `MathThinking` Pydantic field, chart-type allowlist, curriculum N/S/G/A/F/D/R codes, verifier persona). Extending cleanly requires a subject plugin layer rather than forking.
