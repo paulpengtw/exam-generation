@@ -77,11 +77,11 @@ def correct_question(
     try:
         if verification.chart_verification and chart_image_path:
             raw_text = client.generate_with_image(
-                CORRECTION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path
+                CORRECTION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path, purpose="correct"
             )
             corrected_data = extract_json(raw_text)
         else:
-            corrected_data = client.generate_json(CORRECTION_SYSTEM_PROMPT, user_prompt)
+            corrected_data = client.generate_json(CORRECTION_SYSTEM_PROMPT, user_prompt, purpose="correct")
     except Exception:
         return question
 

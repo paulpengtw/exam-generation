@@ -15,7 +15,7 @@ class FakeClient:
         self.user_prompt = ""
         self.image_path: str | None = None
 
-    def generate_with_image(self, system_prompt: str, user_prompt: str, image_path: str | None):
+    def generate_with_image(self, system_prompt: str, user_prompt: str, image_path: str | None, purpose: str = "generate"):
         self.system_prompt = system_prompt
         self.user_prompt = user_prompt
         self.image_path = image_path

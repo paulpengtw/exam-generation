@@ -67,11 +67,18 @@ export interface ExamQuestion {
   image_base64?: string;
 }
 
+export type LlmCallEvent =
+  | { type: "request"; purpose: string; model: string; messages: unknown[]; params?: unknown }
+  | { type: "thinking"; purpose: string; text: string }
+  | { type: "content"; purpose: string; text: string }
+  | { type: "response"; purpose: string; model: string; usage?: unknown };
+
 export interface UseGenerateReturn {
   status: GenerateStatus;
   jobsAhead: number;
   progressLines: string[];
   results: ExamQuestion[];
+  llmCalls: LlmCallEvent[];
   errorMessage: string | null;
   generate: (params: GenerateParams) => void;
   reset: () => void;
@@ -102,6 +109,7 @@ export function useGenerate(): UseGenerateReturn {
   const [jobsAhead, setJobsAhead] = useState<number>(0);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [results, setResults] = useState<ExamQuestion[]>([]);
+  const [llmCalls, setLlmCalls] = useState<LlmCallEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -117,6 +125,7 @@ export function useGenerate(): UseGenerateReturn {
     controllerRef.current = null;
     setProgressLines([]);
     setResults([]);
+    setLlmCalls([]);
     setJobsAhead(0);
     setErrorMessage(null);
     setStatus("idle");
@@ -134,6 +143,7 @@ export function useGenerate(): UseGenerateReturn {
     setStatus("generating");
     setProgressLines([]);
     setResults([]);
+    setLlmCalls([]);
     setJobsAhead(0);
     setErrorMessage(null);
 
@@ -168,6 +178,46 @@ export function useGenerate(): UseGenerateReturn {
           case "progress":
             setProgressLines((prev) => [...prev, ev.data]);
             break;
+          case "llm_request": {
+            try {
+              const d = JSON.parse(ev.data) as { purpose: string; model: string; messages: unknown[]; params?: unknown };
+              setLlmCalls((prev) => [...prev, { type: "request", purpose: d.purpose, model: d.model, messages: d.messages, params: d.params }]);
+            } catch { /* ignore */ }
+            break;
+          }
+          case "llm_thinking": {
+            try {
+              const d = JSON.parse(ev.data) as { purpose: string; text: string };
+              setLlmCalls((prev) => {
+                const last = prev[prev.length - 1];
+                if (last && last.type === "thinking" && last.purpose === d.purpose) {
+                  return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
+                }
+                return [...prev, { type: "thinking", purpose: d.purpose, text: d.text }];
+              });
+            } catch { /* ignore */ }
+            break;
+          }
+          case "llm_content": {
+            try {
+              const d = JSON.parse(ev.data) as { purpose: string; text: string };
+              setLlmCalls((prev) => {
+                const last = prev[prev.length - 1];
+                if (last && last.type === "content" && last.purpose === d.purpose) {
+                  return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
+                }
+                return [...prev, { type: "content", purpose: d.purpose, text: d.text }];
+              });
+            } catch { /* ignore */ }
+            break;
+          }
+          case "llm_response": {
+            try {
+              const d = JSON.parse(ev.data) as { purpose: string; model: string; usage?: unknown };
+              setLlmCalls((prev) => [...prev, { type: "response", purpose: d.purpose, model: d.model, usage: d.usage }]);
+            } catch { /* ignore */ }
+            break;
+          }
           case "result":
             try {
               const parsed = JSON.parse(ev.data) as ExamQuestion;
@@ -197,5 +247,5 @@ export function useGenerate(): UseGenerateReturn {
     });
   }, []);
 
-  return { status, jobsAhead, progressLines, results, errorMessage, generate, reset };
+  return { status, jobsAhead, progressLines, results, llmCalls, errorMessage, generate, reset };
 }

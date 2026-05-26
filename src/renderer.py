@@ -412,7 +412,7 @@ def _generate_html_via_llm(spec: dict, question_text: str, llm_client) -> str:
             else:
                 print("  Generating HTML image via LLM...", file=sys.stderr)
 
-            raw = llm_client.generate(_HTML_SYSTEM_PROMPT, prompt)
+            raw = llm_client.generate(_HTML_SYSTEM_PROMPT, prompt, purpose="html_image")
 
             # Extract HTML from code block if wrapped
             match = re.search(r"```(?:html)?\s*\n(.*?)\n```", raw, re.DOTALL)

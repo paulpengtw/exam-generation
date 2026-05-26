@@ -10,7 +10,7 @@ from pathlib import Path
 
 from src.config import Config
 from src.html_renderer import PlaywrightRenderer
-from src.llm_client import LLMClient
+from src.llm_client import LLMClient, make_stderr_observer
 from src.renderer import render_image
 from src.social_studies.context_builder import build_system_prompt, build_user_prompt
 from src.social_studies.corrector import correct_question
@@ -348,6 +348,8 @@ def main(argv: list[str] | None = None) -> None:
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
     client = None if args.dry_run else LLMClient(config)
+    if client is not None:
+        client.set_observer(make_stderr_observer(truncate=config.log_truncate))
 
     html_renderer = None
     if not args.dry_run:

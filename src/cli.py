@@ -24,7 +24,7 @@ from src.data_loader import (
     load_performance_standards,
 )
 from src.html_renderer import PlaywrightRenderer
-from src.llm_client import LLMClient
+from src.llm_client import LLMClient, make_stderr_observer
 from src.renderer import render_image
 from src.sampler import sample_params
 from src.schemas import (
@@ -332,6 +332,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # Initialize LLM client (skip for dry-run)
     client = None if args.dry_run else LLMClient(config)
+    if client is not None:
+        client.set_observer(make_stderr_observer(truncate=config.log_truncate))
 
     # Initialize Playwright renderer (skip for dry-run)
     # Started once here and reused across all questions to amortize ~1-2s startup cost

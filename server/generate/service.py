@@ -27,7 +27,7 @@ from datetime import datetime
 from typing import Any
 
 from src.cli import generate_with_corrections as math_generate_with_corrections
-from src.llm_client import LLMClient
+from src.llm_client import LLMClient, LLMObserver
 from src.sampler import sample_params as math_sample_params
 from src.schemas import (
     ExamQuestion as MathExamQuestion,
@@ -183,9 +183,29 @@ async def generate_question_stream(
 
             config.output_dir.mkdir(parents=True, exist_ok=True)
 
+            _EVENT_TYPE_MAP = {
+                "llm_request": "llm_request",
+                "llm_reasoning_delta": "llm_thinking",
+                "llm_content_delta": "llm_content",
+                "llm_response": "llm_response",
+            }
+
+            def _make_queue_observer(
+                _loop: asyncio.AbstractEventLoop,
+                _queue: asyncio.Queue,
+            ) -> LLMObserver:
+                def observer(event: dict) -> None:
+                    sse_event = _EVENT_TYPE_MAP.get(event.get("type", ""))
+                    if sse_event:
+                        _loop.call_soon_threadsafe(
+                            _queue.put_nowait, {"event": sse_event, "data": event}
+                        )
+                return observer
+
             def worker() -> None:
                 saved_stderr = sys.stderr
                 sys.stderr = _QueueWriter(loop, queue)
+                client.set_observer(_make_queue_observer(loop, queue))
                 try:
                     for i in range(count):
                         seed = (base_seed + i) if base_seed is not None else None

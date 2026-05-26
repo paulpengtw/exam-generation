@@ -75,7 +75,7 @@ def verify_question(
 
     try:
         raw = client.generate_with_image(
-            VERIFICATION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path
+            VERIFICATION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path, purpose="verify"
         )
         result = extract_json(raw)
 

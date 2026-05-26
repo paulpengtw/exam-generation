@@ -55,6 +55,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "progress.done": "Done",
     "progress.error": "Error",
     "progress.empty": "Generate a question to see progress",
+    "progress.llm_trace": "LLM Trace",
+    "progress.llm_trace_calls": "calls",
+    "progress.llm_trace_payload": "Payload",
 
     "card.hide_solution": "Hide Solution",
     "card.show_solution": "Show Solution",
@@ -134,6 +137,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "progress.done": "完成",
     "progress.error": "錯誤",
     "progress.empty": "產生題目以查看進度",
+    "progress.llm_trace": "LLM 追蹤",
+    "progress.llm_trace_calls": "次呼叫",
+    "progress.llm_trace_payload": "請求內容",
 
     "card.hide_solution": "隱藏解題過程",
     "card.show_solution": "顯示解題過程",

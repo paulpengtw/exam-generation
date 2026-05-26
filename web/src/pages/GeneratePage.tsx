@@ -29,7 +29,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const { status, jobsAhead, progressLines, results, errorMessage, generate, reset } = useGenerate();
+  const { status, jobsAhead, progressLines, results, llmCalls, errorMessage, generate, reset } = useGenerate();
 
   const handleLogout = () => {
     logout();
@@ -112,7 +112,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
         {showProgress && (
           <section className="rounded-lg border bg-white p-4 shadow-sm">
-            <ProgressLog lines={progressLines} status={status} jobsAhead={jobsAhead} errorMessage={errorMessage} />
+            <ProgressLog lines={progressLines} status={status} jobsAhead={jobsAhead} errorMessage={errorMessage} llmCalls={llmCalls} />
           </section>
         )}
 
