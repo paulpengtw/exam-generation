@@ -223,7 +223,7 @@ def build_user_prompt(
     params: SampledParams,
     few_shot_dir: Path,
     rng: random.Random | None = None,
-) -> str:
+) -> tuple[str, list[Path]]:
     if rng is None:
         rng = random.Random()
 
@@ -259,6 +259,7 @@ def build_user_prompt(
     style_instruction = _INSTRUCTIONS.get("question_style", {}).get(params.style.value, "")
 
     examples = load_few_shot_examples(few_shot_dir, params.style.value)
+    all_image_paths: list[Path] = []
     if examples:
         flat_examples = []
         for ex in examples:
@@ -271,8 +272,16 @@ def build_user_prompt(
         example_texts = []
         for i, ex in enumerate(selected, 1):
             q = ex.get("question", ex)
+            ex_images: list[dict] = ex.get("images", [])
+            img_notes = ""
+            if ex_images:
+                for j, img in enumerate(ex_images, 1):
+                    caption = img.get("caption", "")
+                    label = f"圖{j}" + (f"（{caption}）" if caption else "")
+                    img_notes += f"\n<!-- {label} 附於此範例後 -->"
+                    all_image_paths.append(Path(img["path"]))
             example_texts.append(
-                f"### 範例 {i}：{ex.get('description', '')}\n```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```"
+                f"### 範例 {i}：{ex.get('description', '')}\n```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```{img_notes}"
             )
         few_shot_text = "\n\n".join(example_texts)
     else:
@@ -299,7 +308,7 @@ def build_user_prompt(
     else:
         lp_pool_lines = ""
 
-    return USER_PROMPT_TEMPLATE.format(
+    text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         learning_stage=_LEARNING_STAGE,
         subject=params.科目.value,
@@ -315,3 +324,4 @@ def build_user_prompt(
         style_instruction=style_instruction,
         few_shot_examples=few_shot_text,
     )
+    return text, all_image_paths

@@ -217,16 +217,17 @@ def generate_one(
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     system_prompt = build_system_prompt()
-    user_prompt = build_user_prompt(params, config.data_dir / "social_studies" / "few_shot")
+    user_prompt, few_shot_images = build_user_prompt(params, config.data_dir / "social_studies" / "few_shot")
 
     if dry_run:
+        img_note = f" ({len(few_shot_images)} few-shot images)" if few_shot_images else ""
         return (
             f"=== SYSTEM PROMPT ({len(system_prompt)} chars) ===\n{system_prompt[:2000]}...\n\n"
-            f"=== USER PROMPT ({len(user_prompt)} chars) ===\n{user_prompt}"
+            f"=== USER PROMPT ({len(user_prompt)} chars{img_note}) ===\n{user_prompt}"
         )
 
     print(f"  Generating question {question_id}...", file=sys.stderr)
-    raw_json = client.generate_json(system_prompt, user_prompt)
+    raw_json = client.generate_json(system_prompt, user_prompt, images=few_shot_images or None)
 
     question = _parse_question(raw_json, question_id, params, config.model_execute)
 

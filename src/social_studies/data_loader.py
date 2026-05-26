@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -31,6 +32,33 @@ def _parse_lc_field(raw: str) -> list[dict]:
     return refs
 
 
+def _clean_caption(raw: str) -> str:
+    """Strip Windows/Unix file paths from captions, keeping the human-readable part."""
+    # Remove leading path (e.g. "C:\Users\...\foo.jpg" or "D:\繪圖\...\bar.png")
+    cleaned = re.sub(r"^[A-Za-z]:\\[^\n]*?(?:\\|\.(?:jpg|jpeg|png|gif))\s*", "", raw, flags=re.IGNORECASE)
+    cleaned = cleaned.strip()
+    return cleaned or raw.strip()
+
+
+def _load_example_images(images_dir: Path, example_id: str) -> list[dict]:
+    """Return [{path: Path, caption: str}] for all figures in images_dir/<example_id>/."""
+    manifest_path = images_dir / example_id / "manifest.json"
+    if not manifest_path.exists():
+        return []
+    try:
+        entries = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    result = []
+    example_dir = images_dir / example_id
+    for entry in entries:
+        fname = entry.get("file", "")
+        path = example_dir / fname
+        if path.exists():
+            result.append({"path": path, "caption": _clean_caption(entry.get("caption", ""))})
+    return result
+
+
 def _parse_rubric_field(raw: str) -> list[dict]:
     """Parse 評分規準 field (JSON array or empty)."""
     raw = raw.strip()
@@ -45,7 +73,7 @@ def _parse_rubric_field(raw: str) -> list[dict]:
     return []
 
 
-def _parse_few_shot_csv(rows: list[dict[str, str]], style: str) -> list[dict]:
+def _parse_few_shot_csv(rows: list[dict[str, str]], style: str, images_dir: Path | None = None) -> list[dict]:
     """Convert CSV rows filtered by style into {style, description, question} dicts.
 
     Supports both legacy columns and new 108課綱 per-subquestion columns:
@@ -125,11 +153,17 @@ def _parse_few_shot_csv(rows: list[dict[str, str]], style: str) -> list[dict]:
                 question["chart_spec"] = json.loads(chart_raw)
             except json.JSONDecodeError:
                 pass
-        examples.append({
+
+        example: dict = {
             "style": style,
             "description": first.get("description", "").strip(),
             "question": question,
-        })
+        }
+        if images_dir is not None:
+            imgs = _load_example_images(images_dir, key)
+            if imgs:
+                example["images"] = imgs
+        examples.append(example)
     return examples
 
 
@@ -146,7 +180,8 @@ def load_few_shot_examples(few_shot_dir: Path, style: str) -> list[dict]:
             with open(f, encoding="utf-8") as fh:
                 examples.append(json.load(fh))
 
+    images_dir = few_shot_dir / "images"
     csv_rows = _read_csv(few_shot_dir / "few_shot_examples.csv")
-    csv_examples = _parse_few_shot_csv(csv_rows, style)
+    csv_examples = _parse_few_shot_csv(csv_rows, style, images_dir=images_dir if images_dir.exists() else None)
     examples.extend(csv_examples)
     return examples

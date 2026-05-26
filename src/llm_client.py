@@ -24,16 +24,35 @@ class LLMClient:
         )
         self._image_client: OpenAI | None = None
 
-    def generate(self, system: str, user: str, model: str | None = None) -> str:
+    def generate(
+        self,
+        system: str,
+        user: str,
+        model: str | None = None,
+        images: list[Path] | None = None,
+    ) -> str:
         """Call the execution model (default: Sonnet) and return raw text response."""
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
         model = model or self.config.model_execute
+
+        if images:
+            user_content: list[dict] = [{"type": "text", "text": user}]
+            for img_path in images:
+                ext = Path(img_path).suffix.lower().lstrip(".")
+                mime = "jpeg" if ext in ("jpg", "jpeg") else ext or "png"
+                b64 = base64.b64encode(Path(img_path).read_bytes()).decode("utf-8")
+                user_content.append(
+                    {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{b64}"}}
+                )
+        else:
+            user_content = user  # type: ignore[assignment]
+
         response = self.client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": user},
+                {"role": "user", "content": user_content},
             ],
             max_tokens=8192,
             temperature=0.7,
@@ -68,9 +87,15 @@ class LLMClient:
         """Call the planning model (default: Opus) and return raw text response."""
         return self.generate(system, user, model=self.config.model_plan)
 
-    def generate_json(self, system: str, user: str, model: str | None = None) -> dict:
+    def generate_json(
+        self,
+        system: str,
+        user: str,
+        model: str | None = None,
+        images: list[Path] | None = None,
+    ) -> dict:
         """Call the execution model and parse the response as JSON."""
-        raw = self.generate(system, user, model)
+        raw = self.generate(system, user, model, images=images)
         return extract_json(raw)
 
     def generate_image(self, prompt: str, output_path: str | Path) -> str:
