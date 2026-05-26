@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import sys
 import traceback
 from collections.abc import AsyncIterator
@@ -48,6 +49,8 @@ from src.social_studies.schemas import (
 
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
+
+logger = logging.getLogger(__name__)
 
 _GEN_LOCK = asyncio.Lock()
 _QUEUE_TOTAL = 0   # monotonically increasing; each request claims the next number
@@ -210,11 +213,11 @@ async def generate_question_stream(
                                 )
                             except Exception as exc:
                                 tb = traceback.format_exc()
-                                logger.exception("worker ss_generate error")
                                 loop.call_soon_threadsafe(
                                     queue.put_nowait,
                                     {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
                                 )
+                                logger.exception("worker ss_generate error")
                                 return
                         else:
                             rng_params = math_sample_params(
@@ -243,11 +246,11 @@ async def generate_question_stream(
                                 )
                             except Exception as exc:
                                 tb = traceback.format_exc()
-                                logger.exception("worker math_generate error")
                                 loop.call_soon_threadsafe(
                                     queue.put_nowait,
                                     {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
                                 )
+                                logger.exception("worker math_generate error")
                                 return
 
                         assert isinstance(question, (MathExamQuestion, SSExamQuestion))
