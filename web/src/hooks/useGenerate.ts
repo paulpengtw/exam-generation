@@ -17,6 +17,8 @@ export interface GenerateParams {
   seed?: number;
   image_generation_mode?: "html" | "gpt_image";
   subject_filter?: string;
+  passage?: string;
+  options?: string[];
 }
 
 export interface LearningContentItem {
@@ -101,6 +103,8 @@ function buildQueryString(params: GenerateParams): string {
   for (const v of params.context ?? []) qs.append("context", v);
   for (const v of params.q_type ?? []) qs.append("q_type", v);
   if (params.subject_filter) qs.append("subject_filter", params.subject_filter);
+  if (params.passage) qs.append("passage", params.passage);
+  for (const v of params.options ?? []) qs.append("options", v);
   return qs.toString();
 }
 

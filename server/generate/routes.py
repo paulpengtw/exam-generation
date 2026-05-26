@@ -49,6 +49,8 @@ async def generate_endpoint(
     seed: int | None = Query(default=None),
     image_generation_mode: ImageGenerationMode = Query(default="html"),
     subject_filter: list[str] | None = Query(default=None),
+    passage: str | None = Query(default=None),
+    options: list[str] | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -70,6 +72,8 @@ async def generate_endpoint(
         seed=seed,
         image_generation_mode=image_generation_mode,
         subject_filter=subject_filter,
+        passage=passage,
+        options=options,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 

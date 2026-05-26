@@ -230,6 +230,8 @@ async def generate_question_stream(
                                     skip_verify=params.skip_verify,
                                     html_renderer=html_renderer,
                                     image_generation_mode=params.image_generation_mode,
+                                    user_passage=params.passage,
+                                    user_options=params.options,
                                 )
                             except Exception as exc:
                                 tb = traceback.format_exc()

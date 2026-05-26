@@ -106,7 +106,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.math_title": "數學科",
     "subject_select.math_desc": "7-9年級數學課綱，素養導向試題。",
     "subject_select.ss_title": "社會領域",
-    "subject_select.ss_desc": "PISA閱讀框架：文本形式、閱讀歷程。",
+    "subject_select.ss_desc": "7-9年級社會課綱，素養導向試題。",
 
     "staging.banner": "⚠ 此為測試環境，資料可能隨時被重設。",
 

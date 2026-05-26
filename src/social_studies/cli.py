@@ -214,10 +214,17 @@ def generate_one(
     skip_verify: bool = False,
     html_renderer: PlaywrightRenderer | None = None,
     image_generation_mode: str = "html",
+    user_passage: str | None = None,
+    user_options: list[str] | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     system_prompt = build_system_prompt()
-    user_prompt, few_shot_images = build_user_prompt(params, config.data_dir / "social_studies" / "few_shot")
+    user_prompt, few_shot_images = build_user_prompt(
+        params,
+        config.data_dir / "social_studies" / "few_shot",
+        user_passage=user_passage,
+        user_options=user_options,
+    )
 
     if dry_run:
         img_note = f" ({len(few_shot_images)} few-shot images)" if few_shot_images else ""
@@ -267,6 +274,8 @@ def generate_with_corrections(
     html_renderer: PlaywrightRenderer | None = None,
     image_generation_mode: str = "html",
     dry_run: bool = False,
+    user_passage: str | None = None,
+    user_options: list[str] | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     question = generate_one(
@@ -278,6 +287,8 @@ def generate_with_corrections(
         skip_verify=skip_verify,
         html_renderer=html_renderer,
         image_generation_mode=image_generation_mode,
+        user_passage=user_passage,
+        user_options=user_options,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):

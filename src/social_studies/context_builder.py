@@ -155,7 +155,7 @@ USER_PROMPT_TEMPLATE = """\
 - **閱讀歷程（PISA）**：{reading_process}
 - **文本形式**：{text_form}
 - **核心素養（限定使用）**：{core_competencies}
-{lc_pool_lines}{lp_pool_lines}{param_instructions}
+{lc_pool_lines}{lp_pool_lines}{param_instructions}{user_materials}
 ## 題目風格
 
 {style_instruction}
@@ -223,6 +223,8 @@ def build_user_prompt(
     params: SampledParams,
     few_shot_dir: Path,
     rng: random.Random | None = None,
+    user_passage: str | None = None,
+    user_options: list[str] | None = None,
 ) -> tuple[str, list[Path]]:
     if rng is None:
         rng = random.Random()
@@ -308,6 +310,26 @@ def build_user_prompt(
     else:
         lp_pool_lines = ""
 
+    user_materials_parts = []
+    if user_passage:
+        user_materials_parts.append(
+            "## 使用者指定素材\n\n"
+            "**文本（請逐字使用，不得修改）**：\n\n"
+            f"```\n{user_passage}\n```"
+        )
+    if user_options:
+        labels = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛"]
+        options_list = "\n".join(
+            f"({labels[i] if i < len(labels) else str(i + 1)}) {v}"
+            for i, v in enumerate(user_options)
+        )
+        user_materials_parts.append(
+            ("## 使用者指定素材\n\n" if not user_passage else "")
+            + "**選項（請依序使用，不得更動文字）**：\n\n"
+            + options_list
+        )
+    user_materials = ("\n" + "\n\n".join(user_materials_parts) + "\n") if user_materials_parts else ""
+
     text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         learning_stage=_LEARNING_STAGE,
@@ -321,6 +343,7 @@ def build_user_prompt(
         lc_pool_lines=lc_pool_lines,
         lp_pool_lines=lp_pool_lines,
         param_instructions=param_instructions,
+        user_materials=user_materials,
         style_instruction=style_instruction,
         few_shot_examples=few_shot_text,
     )
