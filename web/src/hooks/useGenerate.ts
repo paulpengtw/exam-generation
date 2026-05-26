@@ -24,6 +24,28 @@ export interface LearningContentItem {
   說明: string;
 }
 
+export interface RubricEntry {
+  code: "2" | "1" | "0" | "0X";
+  規準說明: string;
+  學生作答實例?: string[];
+}
+
+export interface SubQuestion {
+  id: string;
+  序號: number;
+  年級: number;
+  科目: string[];
+  核心素養: string[];
+  學習內容: LearningContentItem[];
+  學習表現: LearningContentItem[];
+  出題概念: string;
+  題型: string;
+  題目: string;
+  答案: string;
+  答案解析: string;
+  評分規準?: RubricEntry[];
+}
+
 export interface ExamQuestion {
   id?: string;
   情境: string[];
@@ -33,6 +55,9 @@ export interface ExamQuestion {
   學習內容?: LearningContentItem[];
   閱讀歷程?: string[];
   文本形式?: string;
+  核心問題?: string;
+  文本?: string;
+  subquestions?: SubQuestion[];
   題目: string[];
   正確解題分析: string[];
   圖片?: string | null;
