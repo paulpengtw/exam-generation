@@ -3,6 +3,8 @@ WORKDIR /app
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ .
+ARG VITE_IS_STAGING
+ENV VITE_IS_STAGING=$VITE_IS_STAGING
 RUN npm run build
 
 FROM nginx:alpine

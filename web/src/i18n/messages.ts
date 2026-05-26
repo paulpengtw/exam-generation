@@ -21,11 +21,13 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.prompt": "Select a subject to generate exam questions.",
     "subject_select.math_title": "Mathematics 數學科",
     "subject_select.math_desc": "Grade 7-9 Taiwan math curriculum, PISA-style questions.",
-    "subject_select.ss_title": "Reading Literacy 閱讀素養",
+    "subject_select.ss_title": "Social Studies 社會領域",
     "subject_select.ss_desc": "PISA reading framework: text forms, reading processes.",
 
+    "staging.banner": "⚠ Staging environment — data may be reset at any time.",
+
     "generate.title": "Math Exam Generator",
-    "generate.title_ss": "Reading Literacy Generator",
+    "generate.title_ss": "Social Studies Generator",
     "generate.btn_back_subjects": "Back to subjects",
     "generate.btn_logout": "Logout",
     "generate.results": "Results",
@@ -103,11 +105,13 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.prompt": "請選擇科目以產生考試題目。",
     "subject_select.math_title": "數學科",
     "subject_select.math_desc": "7-9年級數學課綱，素養導向試題。",
-    "subject_select.ss_title": "閱讀素養",
+    "subject_select.ss_title": "社會領域",
     "subject_select.ss_desc": "PISA閱讀框架：文本形式、閱讀歷程。",
 
+    "staging.banner": "⚠ 此為測試環境，資料可能隨時被重設。",
+
     "generate.title": "數學題目產生器",
-    "generate.title_ss": "閱讀素養題目產生器",
+    "generate.title_ss": "社會領域題目產生器",
     "generate.btn_back_subjects": "返回科目選擇",
     "generate.btn_logout": "登出",
     "generate.results": "結果",
