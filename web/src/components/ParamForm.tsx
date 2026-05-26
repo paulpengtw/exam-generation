@@ -15,6 +15,7 @@ export interface GenerateParams {
   subject_filter?: string;
   passage?: string;
   options?: string[];
+  topic?: string;
   core_question?: string;
 }
 
@@ -86,6 +87,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     if (grade === "") return;
     const cleanPassage = passage === TEXT_HINT ? undefined : passage;
     const cleanOptions = options.filter((o) => o && o !== OPTION_HINT);
+    const cleanTopic = topic.trim();
     onSubmit({
       grade,
       style: subject === "math" ? style : undefined,
@@ -98,6 +100,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
       options: cleanOptions.length ? cleanOptions : undefined,
+      topic: subject === "social_studies" && cleanTopic ? cleanTopic : undefined,
       core_question: coreQuestion || undefined,
     });
   }

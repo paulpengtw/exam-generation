@@ -221,18 +221,21 @@ def build_user_prompt(
     rng: random.Random | None = None,
     user_passage: str | None = None,
     user_options: list[str] | None = None,
+    user_topic: str | None = None,
     user_core_question: str | None = None,
 ) -> tuple[str, list[Path]]:
     if rng is None:
         rng = random.Random()
 
     reading_process = "、".join(p.value for p in params.閱讀歷程)
+    topic_override = user_topic.strip() if user_topic else ""
 
     param_instruction_lines = []
-    for c in params.情境:
-        instr = _INSTRUCTIONS.get("情境", {}).get(c.value)
-        if instr:
-            param_instruction_lines.append(f"  - **情境（{c.value}）補充**：{instr}")
+    if not topic_override:
+        for c in params.情境:
+            instr = _INSTRUCTIONS.get("情境", {}).get(c.value)
+            if instr:
+                param_instruction_lines.append(f"  - **情境（{c.value}）補充**：{instr}")
     for category, key in (
         ("題型種類", params.題型種類.value),
         ("題型", params.題型.value),
@@ -301,6 +304,12 @@ def build_user_prompt(
         lp_pool_lines = ""
 
     user_materials_parts = []
+    if topic_override:
+        user_materials_parts.append(
+            "## 指定情境（請直接取代原本的 PISA 情境）\n\n"
+            f"主題 / 議題：{topic_override}\n\n"
+            "請以此主題 / 議題作為題組的真實情境與文本取材方向。"
+        )
     if user_core_question:
         user_materials_parts.append(
             "## 指定核心問題（請逐字使用，不得修改）\n\n"
@@ -329,7 +338,7 @@ def build_user_prompt(
         grade=params.grade,
         learning_stage=_LEARNING_STAGE,
         subject=params.科目.value,
-        context="、".join(c.value for c in params.情境),
+        context=topic_override or "、".join(c.value for c in params.情境),
         set_type=params.題型種類.value,
         q_type=params.題型.value,
         reading_process=reading_process,

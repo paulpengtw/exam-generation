@@ -61,7 +61,7 @@ def test_generate_route_forwards_image_generation_mode() -> None:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=social_studies&image_generation_mode=gpt_image",
+                "/api/generate?subject=social_studies&image_generation_mode=gpt_image&topic=%E6%B0%A3%E5%80%99%E8%AE%8A%E9%81%B7",
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -72,3 +72,4 @@ def test_generate_route_forwards_image_generation_mode() -> None:
     assert response.status_code == 200
     assert captured["params"].subject == "social_studies"
     assert captured["params"].image_generation_mode == "gpt_image"
+    assert captured["params"].topic == "氣候變遷"
