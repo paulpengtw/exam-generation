@@ -94,3 +94,24 @@ export async function getSchemas(subject = "math"): Promise<Schemas> {
   const res = await apiFetch(`/api/schemas?subject=${encodeURIComponent(subject)}`);
   return (await res.json()) as Schemas;
 }
+
+export interface PlanCoreQuestionsRequest {
+  topic: string;
+  subject_filter?: string[];
+  grade?: number;
+}
+
+export interface PlanCoreQuestionsResponse {
+  candidates: string[];
+}
+
+export async function planCoreQuestions(
+  req: PlanCoreQuestionsRequest,
+): Promise<PlanCoreQuestionsResponse> {
+  const res = await apiFetch("/api/plan-core-questions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  return (await res.json()) as PlanCoreQuestionsResponse;
+}

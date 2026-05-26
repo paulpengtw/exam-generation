@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getSchemas, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
+import CoreQuestionPicker from "./CoreQuestionPicker";
 
 export interface GenerateParams {
   grade: number;
@@ -14,6 +15,7 @@ export interface GenerateParams {
   subject_filter?: string;
   passage?: string;
   options?: string[];
+  core_question?: string;
 }
 
 export interface ParamFormProps {
@@ -42,6 +44,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [subjectFilter, setSubjectFilter] = useState<string>("");
   const [passage, setPassage] = useState<string>(TEXT_HINT);
   const [options, setOptions] = useState<string[]>([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
+  const [topic, setTopic] = useState<string>("");
+  const [coreQuestion, setCoreQuestion] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +93,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
       options: cleanOptions.length ? cleanOptions : undefined,
+      core_question: coreQuestion || undefined,
     });
   }
 
@@ -284,6 +289,32 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {subject === "social_studies" && (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium">{t("form.topic_label")}</label>
+          <input
+            type="text"
+            value={topic}
+            onChange={(e) => {
+              setTopic(e.target.value);
+              setCoreQuestion(null);
+            }}
+            placeholder={t("form.topic_placeholder")}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          />
+          {topic.trim() && (
+            <CoreQuestionPicker
+              topic={topic}
+              subjectFilter={subjectFilter || undefined}
+              grade={grade !== "" ? grade : undefined}
+              onPick={(q) => setCoreQuestion(q)}
+              onClear={() => setCoreQuestion(null)}
+              pickedValue={coreQuestion}
+            />
+          )}
         </div>
       )}
 

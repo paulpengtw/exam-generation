@@ -54,7 +54,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 
 ### 題組結構
 每道題組（題組題）包含：
-1. **核心問題**：一句話說明本題組的跨科主要問題意識（如「如何理解1918年流感疫情的擴散與當代防疫啟示？」）
+1. **核心問題**：一句話說明本題組的跨科主要問題意識（如「如何理解1918年流感疫情的擴散與當代防疫啟示？」）。若使用者在指示中提供了「指定核心問題」，請直接將其逐字用於輸出的 `核心問題` 欄位，不得修改。
 2. **文本**：一篇或多篇真實情境素材（連續文本、非連續文本或混合）
 3. **取材來源**：列出文本的原始資料來源
 4. **小題（subquestions）**：3–7 道由淺入深的小題，各小題彼此獨立作答，但共用文本
@@ -225,6 +225,7 @@ def build_user_prompt(
     rng: random.Random | None = None,
     user_passage: str | None = None,
     user_options: list[str] | None = None,
+    user_core_question: str | None = None,
 ) -> tuple[str, list[Path]]:
     if rng is None:
         rng = random.Random()
@@ -311,6 +312,11 @@ def build_user_prompt(
         lp_pool_lines = ""
 
     user_materials_parts = []
+    if user_core_question:
+        user_materials_parts.append(
+            "## 指定核心問題（請逐字使用，不得修改）\n\n"
+            f"核心問題：{user_core_question}"
+        )
     if user_passage:
         user_materials_parts.append(
             "## 使用者指定素材\n\n"

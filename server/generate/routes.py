@@ -17,7 +17,12 @@ from sse_starlette.sse import EventSourceResponse
 from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
-from server.generate.models import GenerateParams, ImageGenerationMode
+from server.generate.models import (
+    GenerateParams,
+    ImageGenerationMode,
+    PlanCoreQuestionsRequest,
+    PlanCoreQuestionsResponse,
+)
 from server.generate.service import generate_question_stream
 from server.models import GenerationLog, User
 from server.rate_limit import jwt_user_key, limiter
@@ -51,6 +56,7 @@ async def generate_endpoint(
     subject_filter: list[str] | None = Query(default=None),
     passage: str | None = Query(default=None),
     options: list[str] | None = Query(default=None),
+    core_question: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -74,6 +80,7 @@ async def generate_endpoint(
         subject_filter=subject_filter,
         passage=passage,
         options=options,
+        core_question=core_question,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 
@@ -122,3 +129,32 @@ async def generate_endpoint(
         event_generator(),
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+@router.post("/plan-core-questions", response_model=PlanCoreQuestionsResponse)
+@limiter.limit("30/hour", key_func=jwt_user_key)
+async def plan_core_questions_endpoint(
+    request: Request,
+    body: PlanCoreQuestionsRequest,
+    user: User = Depends(get_current_user),
+    config: ServerConfig = Depends(get_config),
+) -> PlanCoreQuestionsResponse:
+    """Return three candidate 核心問題 for a given topic (Opus single call)."""
+    from src.config import Config as SrcConfig
+    from src.llm_client import LLMClient
+    from src.social_studies.planner import plan_core_questions
+    from src.social_studies.schema_loader import load_learning_stage, load_schemas
+
+    src_config = SrcConfig.from_env()
+    client = LLMClient(src_config)
+    schemas = load_schemas()
+    learning_stage = load_learning_stage(schemas)
+
+    candidates = plan_core_questions(
+        client,
+        body.topic,
+        subject_filter=body.subject_filter,
+        grade=body.grade,
+        learning_stage=learning_stage,
+    )
+    return PlanCoreQuestionsResponse(candidates=candidates)

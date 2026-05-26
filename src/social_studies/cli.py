@@ -216,6 +216,7 @@ def generate_one(
     image_generation_mode: str = "html",
     user_passage: str | None = None,
     user_options: list[str] | None = None,
+    user_core_question: str | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     system_prompt = build_system_prompt()
@@ -224,6 +225,7 @@ def generate_one(
         config.data_dir / "social_studies" / "few_shot",
         user_passage=user_passage,
         user_options=user_options,
+        user_core_question=user_core_question,
     )
 
     if dry_run:
@@ -276,6 +278,7 @@ def generate_with_corrections(
     dry_run: bool = False,
     user_passage: str | None = None,
     user_options: list[str] | None = None,
+    user_core_question: str | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     question = generate_one(
@@ -289,6 +292,7 @@ def generate_with_corrections(
         image_generation_mode=image_generation_mode,
         user_passage=user_passage,
         user_options=user_options,
+        user_core_question=user_core_question,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):

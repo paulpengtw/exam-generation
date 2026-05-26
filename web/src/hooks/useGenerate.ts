@@ -19,6 +19,7 @@ export interface GenerateParams {
   subject_filter?: string;
   passage?: string;
   options?: string[];
+  core_question?: string;
 }
 
 export interface LearningContentItem {
@@ -105,6 +106,7 @@ function buildQueryString(params: GenerateParams): string {
   if (params.subject_filter) qs.append("subject_filter", params.subject_filter);
   if (params.passage) qs.append("passage", params.passage);
   for (const v of params.options ?? []) qs.append("options", v);
+  if (params.core_question) qs.append("core_question", params.core_question);
   return qs.toString();
 }
 

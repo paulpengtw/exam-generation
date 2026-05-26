@@ -50,6 +50,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         subject === "social_studies" ? params.image_generation_mode : undefined,
       subject_filter:
         subject === "social_studies" ? params.subject_filter : undefined,
+      core_question:
+        subject === "social_studies" ? params.core_question : undefined,
     });
   };
 

@@ -30,5 +30,16 @@ class GenerateParams(BaseModel):
     subject_filter: list[str] | None = None
     passage: str | None = None
     options: list[str] | None = None
+    core_question: str | None = None
 
     model_config = {"populate_by_name": True}
+
+
+class PlanCoreQuestionsRequest(BaseModel):
+    topic: str
+    subject_filter: list[str] | None = None
+    grade: int | None = None
+
+
+class PlanCoreQuestionsResponse(BaseModel):
+    candidates: list[str]
