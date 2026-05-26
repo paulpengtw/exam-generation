@@ -11,6 +11,7 @@ export interface GenerateParams {
   count: number;
   skip_verify: boolean;
   image_generation_mode: "html" | "gpt_image";
+  subject_filter?: string;
 }
 
 export interface ParamFormProps {
@@ -33,6 +34,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [skipVerify, setSkipVerify] = useState<boolean>(false);
   const [imageGenerationMode, setImageGenerationMode] =
     useState<"html" | "gpt_image">("html");
+  const [subjectFilter, setSubjectFilter] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +75,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       count,
       skip_verify: skipVerify,
       image_generation_mode: imageGenerationMode,
+      subject_filter: subjectFilter || undefined,
     });
   }
 
@@ -198,6 +201,24 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           className="mt-1 block w-24 border rounded px-2 py-1"
         />
       </div>
+
+      {subject === "social_studies" && schemas.科目 && schemas.科目.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium">{t("form.subject_filter")}</label>
+          <select
+            value={subjectFilter}
+            onChange={(e) => setSubjectFilter(e.target.value)}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            <option value="">{t("form.subject_filter.all")}</option>
+            {schemas.科目.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.value}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {subject === "social_studies" && (
         <div>

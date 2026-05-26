@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import traceback
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
@@ -47,6 +48,7 @@ async def generate_endpoint(
     skip_verify: bool = Query(default=False),
     seed: int | None = Query(default=None),
     image_generation_mode: ImageGenerationMode = Query(default="html"),
+    subject_filter: list[str] | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -67,6 +69,7 @@ async def generate_endpoint(
         skip_verify=skip_verify,
         seed=seed,
         image_generation_mode=image_generation_mode,
+        subject_filter=subject_filter,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 
@@ -93,8 +96,9 @@ async def generate_endpoint(
                 yield _serialize_event(event)
         except Exception as exc:
             status = "failed"
-            error_msg = f"{type(exc).__name__}: {exc}"
-            logger.exception("generate_endpoint stream error: %s", error_msg)
+            tb = traceback.format_exc()
+            error_msg = f"{type(exc).__name__}: {exc}\n\n{tb}"
+            logger.exception("generate_endpoint stream error")
             yield {"event": "error", "data": error_msg}
             yield {"event": "done", "data": ""}
         finally:

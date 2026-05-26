@@ -29,7 +29,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const { status, jobsAhead, progressLines, results, generate, reset } = useGenerate();
+  const { status, jobsAhead, progressLines, results, errorMessage, generate, reset } = useGenerate();
 
   const handleLogout = () => {
     logout();
@@ -48,6 +48,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       skip_verify: params.skip_verify,
       image_generation_mode:
         subject === "social_studies" ? params.image_generation_mode : undefined,
+      subject_filter:
+        subject === "social_studies" ? params.subject_filter : undefined,
     });
   };
 
@@ -110,7 +112,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
         {showProgress && (
           <section className="rounded-lg border bg-white p-4 shadow-sm">
-            <ProgressLog lines={progressLines} status={status} jobsAhead={jobsAhead} />
+            <ProgressLog lines={progressLines} status={status} jobsAhead={jobsAhead} errorMessage={errorMessage} />
           </section>
         )}
 

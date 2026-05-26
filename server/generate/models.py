@@ -27,5 +27,6 @@ class GenerateParams(BaseModel):
     seed: int | None = None
     max_retries: int = 3
     image_generation_mode: ImageGenerationMode = "html"
+    subject_filter: list[str] | None = None
 
     model_config = {"populate_by_name": True}

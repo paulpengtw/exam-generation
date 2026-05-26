@@ -20,6 +20,7 @@ import asyncio
 import base64
 import json
 import sys
+import traceback
 from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
@@ -41,6 +42,7 @@ from src.social_studies.schemas import (
     QuestionContext as SSQuestionContext,
     QuestionSetType as SSQuestionSetType,
     QuestionStyle as SSQuestionStyle,
+    QuestionSubject as SSQuestionSubject,
     QuestionType as SSQuestionType,
 )
 
@@ -149,6 +151,10 @@ async def generate_question_stream(
                     [_resolve_enum(v, SSQuestionType) for v in params.q_type]
                     if params.q_type else None
                 )
+                subject_override = (
+                    [SSQuestionSubject(v) for v in params.subject_filter]
+                    if params.subject_filter else None
+                )
             else:
                 curriculum = app_state.curriculum
                 performance = app_state.performance
@@ -187,6 +193,7 @@ async def generate_question_stream(
                                 context=context_override,
                                 set_type=set_type_override,
                                 q_type=q_type_override,
+                                subject=subject_override,
                                 seed=seed,
                             )
                             question_id = f"ss_{timestamp}_{i+1:03d}"
@@ -202,9 +209,11 @@ async def generate_question_stream(
                                     image_generation_mode=params.image_generation_mode,
                                 )
                             except Exception as exc:
+                                tb = traceback.format_exc()
+                                logger.exception("worker ss_generate error")
                                 loop.call_soon_threadsafe(
                                     queue.put_nowait,
-                                    {"event": "error", "data": f"{type(exc).__name__}: {exc}"},
+                                    {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
                                 )
                                 return
                         else:
@@ -233,9 +242,11 @@ async def generate_question_stream(
                                     html_renderer=html_renderer,
                                 )
                             except Exception as exc:
+                                tb = traceback.format_exc()
+                                logger.exception("worker math_generate error")
                                 loop.call_soon_threadsafe(
                                     queue.put_nowait,
-                                    {"event": "error", "data": f"{type(exc).__name__}: {exc}"},
+                                    {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
                                 )
                                 return
 

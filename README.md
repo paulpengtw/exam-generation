@@ -275,6 +275,11 @@ uv run python -m src.social_studies.cli generate --subject 公民與社會 --gra
 # Cross-subject 題組
 uv run python -m src.social_studies.cli generate --subject 跨科
 
+# Web UI equivalent: 科目 dropdown on the social-studies Generate form
+# Options: 全部（隨機）/ 歷史 / 地理 / 公民與社會 / 跨科
+# Selecting 全部 omits the filter; sampler picks one subject randomly per question.
+# Maps to GET /api/generate?subject_filter=歷史 (or omitted for 全部).
+
 # Override sampled 學習內容 codes (1–3 values)
 uv run python -m src.social_studies.cli generate --learning-content 歷Ka-Ⅳ-1 地Aa-Ⅳ-2
 
@@ -426,7 +431,7 @@ For social studies exam generation, parameter schemas live in CSVs; curriculum d
 |---|---|
 | `schema_meta.csv` | 學習階段 label, target grades |
 | `schema_parameters.csv` | Values + LLM instructions for 情境, 題型種類, 題型, 文本形式, 閱讀歷程, 科目 (歷史/地理/公民與社會/跨科), question_style. Rubric scoring uses `2/1/0/0X` convention (`0X` = 未作答). |
-| `learning_content.json` | 108課綱 社會領域 學習內容 — 472 entries spanning 學習階段 二–五 (55 entries mapped at 第四學習階段); `對應學習表現` cross-links populated from official NAER ODT 呼應表. Sampler draws 1–3 codes per 題組 filtered by 學習階段 + 科目; injected into `## 指定條件` (user prompt) and `## 課程綱要參考` (system prompt). |
+| `learning_content.json` | 108課綱 社會領域 學習內容 — 472 entries spanning 學習階段 二–五 (55 entries mapped at 第四學習階段; 57 shared entries have `科目=""` and appear in every subject's pool). `對應學習表現` cross-links populated from official NAER ODT 呼應表. Sampler draws 1–3 codes per 題組 filtered by 學習階段 + 科目; injected into `## 指定條件` (user prompt) and `## 課程綱要參考` (system prompt). |
 | `learning_performance.json` | 108課綱 社會領域 學習表現標準 — 26 codes (歷/地/公/社 prefixes); `對應學習內容` cross-links from ODT. Sampler draws 1–2 codes per 題組; same injection pattern as 學習內容. |
 | `learning_performance_intro.md` | Official NAER 學習表現 framework chapter (構面/項目/編碼規則 + full 條目 list) → injected as `### 學習表現架構說明` in system prompt. |
 | `core_competencies.json` | 108課綱 核心素養 codes → sampler pool; override with `--core-competency`. |

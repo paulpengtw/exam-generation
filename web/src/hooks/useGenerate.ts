@@ -16,6 +16,7 @@ export interface GenerateParams {
   skip_verify?: boolean;
   seed?: number;
   image_generation_mode?: "html" | "gpt_image";
+  subject_filter?: string;
 }
 
 export interface LearningContentItem {
@@ -46,6 +47,7 @@ export interface UseGenerateReturn {
   jobsAhead: number;
   progressLines: string[];
   results: ExamQuestion[];
+  errorMessage: string | null;
   generate: (params: GenerateParams) => void;
   reset: () => void;
 }
@@ -66,6 +68,7 @@ function buildQueryString(params: GenerateParams): string {
   for (const v of params.style ?? []) qs.append("style", v);
   for (const v of params.context ?? []) qs.append("context", v);
   for (const v of params.q_type ?? []) qs.append("q_type", v);
+  if (params.subject_filter) qs.append("subject_filter", params.subject_filter);
   return qs.toString();
 }
 
@@ -74,6 +77,7 @@ export function useGenerate(): UseGenerateReturn {
   const [jobsAhead, setJobsAhead] = useState<number>(0);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [results, setResults] = useState<ExamQuestion[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -89,6 +93,7 @@ export function useGenerate(): UseGenerateReturn {
     setProgressLines([]);
     setResults([]);
     setJobsAhead(0);
+    setErrorMessage(null);
     setStatus("idle");
   }, []);
 
@@ -105,6 +110,7 @@ export function useGenerate(): UseGenerateReturn {
     setProgressLines([]);
     setResults([]);
     setJobsAhead(0);
+    setErrorMessage(null);
 
     fetchEventSource(url, {
       signal: controller.signal,
@@ -112,7 +118,9 @@ export function useGenerate(): UseGenerateReturn {
       openWhenHidden: true,
       async onopen(res) {
         if (!res.ok) {
-          throw new FatalStreamError(`Stream open failed with status ${res.status}`);
+          const msg = `Stream open failed: HTTP ${res.status}`;
+          setErrorMessage(msg);
+          throw new FatalStreamError(msg);
         }
       },
       onmessage(ev) {
@@ -139,6 +147,7 @@ export function useGenerate(): UseGenerateReturn {
             }
             break;
           case "error":
+            setErrorMessage(ev.data || "Unknown error");
             setStatus("error");
             break;
           case "done":
@@ -149,6 +158,7 @@ export function useGenerate(): UseGenerateReturn {
         }
       },
       onerror(err) {
+        setErrorMessage(err instanceof Error ? err.message : String(err));
         setStatus("error");
         throw err instanceof Error ? err : new FatalStreamError(String(err));
       },
@@ -157,5 +167,5 @@ export function useGenerate(): UseGenerateReturn {
     });
   }, []);
 
-  return { status, jobsAhead, progressLines, results, generate, reset };
+  return { status, jobsAhead, progressLines, results, errorMessage, generate, reset };
 }

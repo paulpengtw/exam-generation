@@ -5,9 +5,10 @@ export interface ProgressLogProps {
   lines: string[];
   status: "idle" | "queued" | "generating" | "error";
   jobsAhead?: number;
+  errorMessage?: string | null;
 }
 
-export default function ProgressLog({ lines, status, jobsAhead = 0 }: ProgressLogProps) {
+export default function ProgressLog({ lines, status, jobsAhead = 0, errorMessage }: ProgressLogProps) {
   const t = useT();
   const preRef = useRef<HTMLPreElement>(null);
 
@@ -54,6 +55,11 @@ export default function ProgressLog({ lines, status, jobsAhead = 0 }: ProgressLo
           <span className="text-red-600 font-medium">{t("progress.error")}</span>
         )}
       </div>
+      {status === "error" && errorMessage && (
+        <pre className="max-h-64 overflow-y-auto rounded border border-red-300 bg-red-50 p-3 font-mono text-xs text-red-800 whitespace-pre-wrap">
+          {errorMessage}
+        </pre>
+      )}
       <pre
         ref={preRef}
         className="h-64 overflow-y-auto bg-gray-900 text-gray-100 font-mono text-xs p-3 rounded whitespace-pre-wrap"

@@ -17,10 +17,10 @@ _DEFAULT_INTRO_PATH = _CURRICULUM_DIR / "learning_performance_intro.md"
 # 科目 prefixes that match each QuestionSubject value.
 # 社_* codes are cross-subject general 學習表現 and apply to all 社會 subjects.
 _SUBJECT_TO_PREFIXES: dict[str, set[str]] = {
-    "歷史": {"歷", "社"},
-    "地理": {"地", "社"},
-    "公民與社會": {"公", "社"},
-    "跨科": {"歷", "地", "公", "社"},
+    "歷史": {"歷", "社", ""},
+    "地理": {"地", "社", ""},
+    "公民與社會": {"公", "社", ""},
+    "跨科": {"歷", "地", "公", "社", ""},
 }
 
 

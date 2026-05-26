@@ -94,6 +94,12 @@ neutralize the wording). Aligns with the deferred `tools/html_tool.py`
 - **CLI** (`cli.py`) — `--learning-content`, `--learning-performance`, `--core-competency` override flags.
 - **Old CSVs** (`learning_content.csv`, `learning_performance.csv`) deleted; CSV loaders removed from `data_loader.py`.
 
+✅ **Web 科目 filter + shared LC pool fix (2026-05-26):**
+- `_SUBJECT_TO_PREFIXES` extended with `""` so the 57 `學習內容` entries with `科目=""` (shared/general) now appear in every subject's sampler pool — previously they were silently excluded from all subject-filtered draws.
+- Web Generate form gains a 科目 dropdown (全部 / 歷史 / 地理 / 公民與社會 / 跨科) visible only for social studies. 全部 omits the filter; the sampler picks one subject randomly per question.
+- Wired end-to-end: `web/ParamForm.tsx` → `subject_filter` query param on `GET /api/generate` → `server/generate/routes.py` + `models.py` → `service.py` → `ss_sample_params(subject=...)`.
+- No new API surface for math; no changes to math sampler or prompts.
+
 ---
 
 ## 108課綱 社會領域 re-framing (completed 2026-05-26)
