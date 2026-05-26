@@ -290,10 +290,29 @@ class LLMClient:
         model: str | None = None,
         images: list[Path] | None = None,
         purpose: str = "generate",
+        max_parse_retries: int = 2,
     ) -> dict:
         """Call the execution model and parse the response as JSON."""
-        raw = self.generate(system, user, model, images=images, purpose=purpose)
-        return extract_json(raw)
+        last_err: Exception | None = None
+        current_user = user
+        for attempt in range(max_parse_retries):
+            raw = self.generate(system, current_user, model, images=images, purpose=purpose)
+            try:
+                return extract_json(raw)
+            except (ValueError, json.JSONDecodeError) as e:
+                last_err = e
+                self._emit({
+                    "type": "llm_json_parse_retry",
+                    "purpose": purpose,
+                    "attempt": attempt + 1,
+                    "error": str(e),
+                })
+                current_user = (
+                    f"{user}\n\n"
+                    f"[Previous response had invalid JSON: {e}. "
+                    f"Return ONLY a valid JSON object, no prose or markdown.]"
+                )
+        raise last_err
 
     def generate_image(self, prompt: str, output_path: str | Path) -> str:
         """Generate a PNG image and write it to output_path."""
@@ -324,18 +343,34 @@ class LLMClient:
         return str(output)
 
 
+def _try_loads(text: str) -> dict:
+    """Try json.loads; on failure, attempt repair via json_repair."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    try:
+        from json_repair import repair_json
+        repaired = repair_json(text, return_objects=True)
+        if isinstance(repaired, (dict, list)):
+            return repaired
+    except Exception:
+        pass
+    return json.loads(text)  # re-raises original JSONDecodeError
+
+
 def extract_json(text: str) -> dict:
     """Extract JSON from LLM response text, handling markdown code blocks."""
     code_block_match = re.search(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
     if code_block_match:
-        return json.loads(code_block_match.group(1))
+        return _try_loads(code_block_match.group(1))
 
     text = text.strip()
     if text.startswith("{") or text.startswith("["):
-        return json.loads(text)
+        return _try_loads(text)
 
     brace_match = re.search(r"\{.*\}", text, re.DOTALL)
     if brace_match:
-        return json.loads(brace_match.group(0))
+        return _try_loads(brace_match.group(0))
 
     raise ValueError(f"Could not extract JSON from LLM response:\n{text[:500]}")
