@@ -92,11 +92,12 @@ exam-generation/
 │   ├── schemas.py                 # Pydantic data models (enums loaded from question_schemas.json)
 │   ├── schema_loader.py           # Loads question_schemas.json and builds dynamic enums
 │   ├── data_loader.py             # Curriculum data loading & indexing
-│   └── social_studies/            # Social studies (PISA reading literacy) codepath
+│   └── social_studies/            # Social studies (108課綱 社會領域素養導向) codepath
+│       ├── schemas.py             # ExamQuestion, SubQuestion, RubricEntry, LearningContentRef, QuestionSubject
 │       ├── schema_loader.py       # Builds schema dict from schema_meta.csv + schema_parameters.csv
 │       ├── data_loader.py         # Loads learning_performance/content CSVs + few-shot CSV
 │       ├── context_builder.py     # Prompt assembly; injects ## 課程綱要參考 into system prompt
-│       ├── sampler.py             # Social studies parameter sampler
+│       ├── sampler.py             # Social studies parameter sampler (includes 科目: 歷史/地理/公民與社會/跨科)
 │       └── ...                    # verifier, corrector (reuse src/ equivalents)
 ├── server/                        # FastAPI backend
 │   ├── app.py                     # Application factory (uvicorn entry: server.app:create_app)
@@ -253,6 +254,27 @@ uv run python -m src.cli generate --dry-run
 uv run python -m src.cli generate --max-retries 2
 ```
 
+### Social studies (108課綱 社會領域素養導向)
+
+```bash
+# Generate one 題組 (subject sampled randomly)
+uv run python -m src.social_studies.cli generate
+
+# Restrict 科目 to a subset — sampler picks randomly from given values
+uv run python -m src.social_studies.cli generate --subject 歷史 地理
+
+# Force a single subject + grade
+uv run python -m src.social_studies.cli generate --subject 公民與社會 --grade 9
+
+# Cross-subject 題組
+uv run python -m src.social_studies.cli generate --subject 跨科
+
+# Batch, seeded, text-only style
+uv run python -m src.social_studies.cli generate --count 5 --seed 1 --style text_only --batch
+```
+
+All math flags (`--grade`, `--style`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--max-retries`, `--batch`, `--dry-run`, `--output`) work identically for social studies.
+
 ## Running the server and web app
 
 ### Backend only
@@ -388,10 +410,10 @@ For social studies exam generation, all allowed parameter values live in the CSV
 | CSV | Controls |
 |---|---|
 | `schema_meta.csv` | 學習階段 label, target grades |
-| `schema_parameters.csv` | Values + LLM instructions for 情境, 題型種類, 題型, 文本形式, 閱讀歷程, question_style |
-| `learning_performance.csv` | 學習表現標準 injected into system prompt |
-| `learning_content.csv` | 學習內容 by grade injected into system prompt |
-| `few_shot/few_shot_examples.csv` | Few-shot examples injected into user prompt |
+| `schema_parameters.csv` | Values + LLM instructions for 情境, 題型種類, 題型, 文本形式, 閱讀歷程, 科目 (歷史/地理/公民與社會/跨科), question_style. Rubric scoring uses `2/1/0/0X` convention (`0X` = 未作答). |
+| `learning_performance.csv` | 108課綱 社會領域 學習表現標準 (歷1a-Ⅳ-*, 地1b-Ⅳ-*, 公1a-Ⅳ-*, 社1b-Ⅳ-* …) → system prompt |
+| `learning_content.csv` | 108課綱 社會領域 學習內容 (歷Ka-Ⅳ-*, 地Aa-Ⅳ-*, 公Bd-Ⅳ-* …) by grade → system prompt |
+| `few_shot/few_shot_examples.csv` | Few-shot examples injected into user prompt (long format, one row per subquestion; columns include `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `答案`, `答案解析`, `評分規準`) |
 
 Changes take effect on the next run — no rebuild required. See **[`data/social_studies/csv_填寫指南.md`](data/social_studies/csv_填寫指南.md)** for the complete field-by-field guide (zh-TW). Reference files prefixed with `範例_` in the same folders demonstrate correct formatting but are never loaded by the system.
 
@@ -413,11 +435,13 @@ Performance standards organized by learning stage (第一~第五學習階段), d
 
 ### Few-shot Examples
 
-Structured examples converted from the Claude Desktop proof-of-concept, organized by question style:
+**Math** (`data/few_shot/`): JSON files organized by question style:
 - **text_only**: Pure text questions (e.g., arithmetic, algebra, sequences)
 - **with_chart**: Questions involving statistical charts (histogram, boxplot, line chart)
 - **with_image**: Questions involving geometric diagrams or visual elements
 - **creative_scenario**: Real-world context questions (menus, stock prices, delivery plans)
+
+**Social studies** (`data/social_studies/few_shot/few_shot_examples.csv`): long-format CSV, one row per subquestion, grouped by `範例編號`. Key columns beyond the base set: `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準` (JSON-encoded rubric array with codes `2/1/0/0X`). Reference: `data/social_studies/csv_填寫指南.md`.
 
 ### Past Exams
 

@@ -1,9 +1,4 @@
-"""Correction pass for social studies questions.
-
-NOTE: Like the verifier, this reuses math-style answer-match correction logic.
-For rubric-graded items the correction target should be rubric conformance, not
-a single answer match. Flagged as known gap in IMPLEMENTATION_PLAN.md.
-"""
+"""Correction pass for social studies questions."""
 
 from __future__ import annotations
 
@@ -13,17 +8,18 @@ from src.llm_client import LLMClient, extract_json
 from src.social_studies.schemas import ExamQuestion, ImageSpec, VerificationResult
 
 CORRECTION_SYSTEM_PROMPT = """\
-你是一位PISA閱讀素養命題教師，剛收到審核老師對一道題組的意見回饋。
+你是一位108課綱社會領域素養導向命題教師，剛收到審核老師對一道題組的意見回饋。
 請根據審核意見「最小幅度」修正題目，保留所有正確的部分。
 
 修正原則：
 - **不要重寫整題**。只更正審核老師明確指出有問題的部分。
-- 若問題在解題分析（答案錯誤或評分規準不清）→ 只修改 正確解題分析。
-- 若問題在選項設計（答案不在選項中）→ 修正對應選項，必要時同步修正 正確解題分析。
-- 若問題在文本素材或題目敘述歧義 → 最小幅度澄清，同步調整 正確解題分析。
+- 若問題在小題答案或評分規準 → 只修改 subquestions 中對應小題的 答案/答案解析/評分規準。
+- 若問題在選項設計（答案不在選項中）→ 修正對應小題的題目文字與答案，同步修正 正確解題分析。
+- 若問題在文本素材或小題敘述歧義 → 最小幅度澄清文本或小題題目，同步調整答案解析。
 - 若 chart_verification 指出非連續文本素材錯誤 → 只修正 chart_spec 的 data/labels/description，
   保留 render_mode、chart_type 不變。
-- 絕對不可修改：情境、題型種類、題型、閱讀歷程、文本形式、id、metadata。
+- 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、id、metadata、
+  各小題的 學習內容/學習表現/核心素養/出題概念/科目/年級。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
 """
@@ -96,6 +92,49 @@ def correct_question(
 
     if "正確解題分析" in corrected_data and isinstance(corrected_data["正確解題分析"], list):
         update["正確解題分析"] = corrected_data["正確解題分析"]
+
+    if "文本" in corrected_data and isinstance(corrected_data["文本"], str):
+        update["文本"] = corrected_data["文本"]
+
+    # Allow correcting subquestion answers/rubrics, but preserve curriculum metadata
+    if "subquestions" in corrected_data and isinstance(corrected_data["subquestions"], list):
+        from src.social_studies.schemas import LearningContentRef, RubricEntry, SubQuestion
+        new_sqs = []
+        for i, sq_raw in enumerate(corrected_data["subquestions"]):
+            if not isinstance(sq_raw, dict):
+                continue
+            original = question.subquestions[i] if i < len(question.subquestions) else None
+            try:
+                rubric = [
+                    RubricEntry(
+                        code=str(r.get("code", "")),
+                        規準說明=r.get("規準說明", ""),
+                        學生作答實例=r.get("學生作答實例", []),
+                    )
+                    for r in sq_raw.get("評分規準", [])
+                    if isinstance(r, dict)
+                ]
+                sq = SubQuestion(
+                    id=original.id if original else sq_raw.get("id", ""),
+                    序號=original.序號 if original else sq_raw.get("序號", i + 1),
+                    年級=original.年級 if original else sq_raw.get("年級", 0),
+                    科目=original.科目 if original else sq_raw.get("科目", []),
+                    核心素養=original.核心素養 if original else sq_raw.get("核心素養", []),
+                    學習內容=original.學習內容 if original else [],
+                    學習表現=original.學習表現 if original else [],
+                    出題概念=original.出題概念 if original else sq_raw.get("出題概念", ""),
+                    題型=original.題型 if original else sq_raw.get("題型", ""),
+                    題目=sq_raw.get("題目", original.題目 if original else ""),
+                    答案=sq_raw.get("答案", original.答案 if original else ""),
+                    答案解析=sq_raw.get("答案解析", original.答案解析 if original else ""),
+                    評分規準=rubric if rubric else (original.評分規準 if original else []),
+                )
+                new_sqs.append(sq)
+            except Exception:
+                if original:
+                    new_sqs.append(original)
+        if new_sqs:
+            update["subquestions"] = new_sqs
 
     raw_spec = corrected_data.get("image_spec") or corrected_data.get("chart_spec")
     if raw_spec and isinstance(raw_spec, dict):

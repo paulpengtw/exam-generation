@@ -25,17 +25,19 @@ Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-op
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
 
 ### Social studies mode (parallel forked codepath)
-`src/social_studies/` is a self-contained fork that generates PISA reading-literacy (社會科閱讀素養) exam items. It reuses `llm_client`, `verifier`, `corrector`, and `renderer` but has its own sampler, context builder, schema loader, and data loader.
+`src/social_studies/` is a self-contained fork that generates **108課綱 社會領域素養導向 命題** (歷史/地理/公民與社會, 跨科題組). It reuses `llm_client`, `verifier`, `corrector`, and `renderer` but has its own sampler, context builder, schema loader, and data loader.
+
+PISA-style tags (`閱讀歷程`, `文本形式`) are retained as secondary diversity axes to influence question design, but the primary framing is 108課綱, not PISA reading literacy.
 
 Schema, curriculum, and few-shot data are **CSV-driven** — no JSON, no rebuild. All five CSV files under `data/social_studies/` are read at runtime on every run:
 
 | CSV | Purpose |
 |---|---|
 | `curriculum/schema_meta.csv` | 學習階段 label + grades list |
-| `curriculum/schema_parameters.csv` | Allowed values + instructions for all 6 question parameter categories |
-| `curriculum/learning_performance.csv` | 學習表現標準 → injected into system prompt `## 課程綱要參考` |
-| `curriculum/learning_content.csv` | 學習內容 by grade → same section |
-| `few_shot/few_shot_examples.csv` | Few-shot examples (long format, grouped by `範例編號`) |
+| `curriculum/schema_parameters.csv` | Allowed values + instructions for all 6 question parameter categories (includes 科目: 歷史/地理/公民與社會/跨科) |
+| `curriculum/learning_performance.csv` | 108課綱 社會領域 學習表現標準 (社1b-Ⅳ-*, 歷1a-Ⅳ-*, 地1b-Ⅳ-*, 公1a-Ⅳ-* …) → system prompt |
+| `curriculum/learning_content.csv` | 108課綱 社會領域 學習內容 (歷Ka-Ⅳ-*, 地Aa-Ⅳ-*, 公Bd-Ⅳ-* …) by grade → system prompt |
+| `few_shot/few_shot_examples.csv` | Few-shot examples (long format, grouped by `範例編號`; one row per subquestion) |
 
 CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separator. `範例_`-prefixed files in the same folders are reference examples for researchers — they are never loaded by the system. See `data/social_studies/csv_填寫指南.md` for the field-by-field filler guide.
 
@@ -51,14 +53,17 @@ CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separat
 | `src/schema_loader.py` | Loads `question_schemas.json`, exposes `load_grades()` / `load_learning_stage()`, builds dynamic str-enums via `build_enums()`, and builds `{category: {value: instruction}}` lookup via `build_instructions()` |
 | `data/social_studies/curriculum/schema_meta.csv` | Social studies 學習階段 + grades (runtime-editable) |
 | `data/social_studies/curriculum/schema_parameters.csv` | Social studies parameter values + instructions (6 categories) |
-| `data/social_studies/curriculum/learning_performance.csv` | Social studies 學習表現標準 → system prompt |
-| `data/social_studies/curriculum/learning_content.csv` | Social studies 學習內容 by grade → system prompt |
-| `data/social_studies/few_shot/few_shot_examples.csv` | Social studies few-shot examples (long format grouped by 範例編號) |
-| `data/social_studies/csv_填寫指南.md` | zh-TW filler guide: field-by-field explanation of all 5 CSVs |
+| `data/social_studies/curriculum/learning_performance.json` | Social studies 學習表現標準 JSON (14 codes; 科目/構面/項目 metadata) → system prompt + sampler pool |
+| `data/social_studies/curriculum/learning_performance_intro.md` | Official NAER 學習表現 framework chapter (構面/項目/編碼規則 + full 條目) → system prompt `### 學習表現架構說明` |
+| `data/social_studies/curriculum/learning_content.json` | Social studies 學習內容 JSON (25 codes; 科目/對應學習表現) → system prompt + sampler pool |
+| `data/social_studies/few_shot/few_shot_examples.csv` | Social studies few-shot examples (long format grouped by 範例編號; one row per subquestion with all 108課綱 metadata columns) |
+| `data/social_studies/csv_填寫指南.md` | zh-TW filler guide: field-by-field explanation of JSON + CSV files |
 | `src/social_studies/schema_loader.py` | Builds social-studies schema dict from `schema_meta.csv` + `schema_parameters.csv` |
-| `src/social_studies/data_loader.py` | Loads `learning_performance.csv`, `learning_content.csv`, and CSV few-shot examples |
+| `src/social_studies/curriculum_loader.py` | JSON loaders for `learning_content.json` / `learning_performance.json` + sampler helpers (`allowed_*`, `*_instructions`, `load_performance_intro`) |
+| `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
 | `src/social_studies/context_builder.py` | Social studies prompt assembly; `## 課程綱要參考` block injected into system prompt |
-| `src/schemas.py` | Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time); `ImageSpec` describes the image (`render_mode`, `chart_type`, etc.); includes `ChartVerificationResult` nested in `VerificationResult` |
+| `src/social_studies/schemas.py` | Social studies Pydantic models: `ExamQuestion`, `SubQuestion`, `LearningContentRef`, `RubricEntry`, `QuestionSubject` (歷史/地理/公民與社會/跨科), `VerificationResult`, `ImageSpec` |
+| `src/schemas.py` | Math Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time); `ImageSpec` describes the image (`render_mode`, `chart_type`, etc.); includes `ChartVerificationResult` nested in `VerificationResult` |
 | `src/sampler.py` | Random parameter selection logic |
 | `src/context_builder.py` | Prompt assembly with few-shot injection |
 | `src/llm_client.py` | OpenAI-compatible API client with model routing; `generate_with_image()` for multimodal (text + PNG) calls |
@@ -84,6 +89,8 @@ CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separat
 
 ## Exam Question Schema
 
+### Math question schema
+
 The output JSON follows this structure (Chinese keys are required):
 
 ```
@@ -95,6 +102,39 @@ The output JSON follows this structure (Chinese keys are required):
 題目: array of strings (question text, options, etc.)
 正確解題分析: array of strings (step-by-step solution)
 ```
+
+### Social studies question schema (108課綱)
+
+```
+核心問題: string — the essential question driving the 題組
+文本: string — the passage / stimulus material
+取材來源: array of strings — source citations
+情境: 1+ of [個人, 公共, 職業, 教育]
+題型種類: 題組題
+題型: one of [選擇題, 封閉式建構反應題, 開放式建構反應題]
+閱讀歷程: 1-2 of [擷取訊息, 形成廣泛理解, 發展解釋, 省思與評鑑文本內容, 省思與評鑑文本形式]
+文本形式: one of [連續文本, 非連續文本, 混合文本]
+題目: array of strings (legacy flat format — kept for compatibility)
+正確解題分析: array of strings (legacy)
+subquestions: array of SubQuestion objects (primary format)
+  SubQuestion:
+    id: string
+    序號: int
+    年級: int
+    科目: list[str] — e.g. ["地理"] or ["歷史", "公民與社會"]
+    核心素養: list[str] — e.g. ["社-J-A2"]
+    學習內容: list[{編碼, 說明}] — 108課綱 codes e.g. 歷Ka-Ⅳ-1
+    學習表現: list[{編碼, 說明}] — e.g. 社1b-Ⅳ-1
+    出題概念: string
+    題型: string
+    題目: string (full question text including options)
+    答案: string
+    答案解析: string
+    評分規準: list[RubricEntry] — for open-response items
+      RubricEntry: {code: "2"|"1"|"0"|"0X", 規準說明: str, 學生作答實例: list[str]}
+```
+
+Rubric scoring codes: `2` (full credit), `1` (partial), `0` (incorrect), `0X` (no response).
 
 ## Curriculum Data Structure
 
@@ -131,6 +171,8 @@ Content codes follow the pattern `{Category}-{Grade}-{Number}`:
 The file has two top-level scalar/array fields:
 - **`學習階段`**: string injected into the system prompt (e.g. `"第四學習階段"`)
 - **`grades`**: integer array of allowed grade levels (e.g. `[7, 8, 9]`) — drives CLI `--grade` choices, sampler selection, grade content index, and system prompt grade range text
+
+Social studies sampler picks: grade, 情境, 題型種類 (always 題組題), 題型, 文本形式, 閱讀歷程, **科目** (歷史/地理/公民與社會/跨科), and question_style. Use `--subject` to override 科目 (one or more values; multiple define a random pool). Use `--grade`, `--style`, `--q-type`, etc. as with math.
 
 When randomly selecting parameters, respect these rules:
 - **grade**: pick one from `question_schemas.json["grades"]`

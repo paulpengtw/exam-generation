@@ -18,14 +18,19 @@ from src.social_studies.data_loader import load_few_shot_examples  # noqa: F401
 from src.social_studies.sampler import sample_params
 from src.social_studies.schema_loader import load_grades, load_schemas
 from src.social_studies.schemas import (
+    CoreCompetency,
     ExamQuestion,
     ImageSpec,
+    LearningContentRef,
     QuestionContext,
     QuestionMetadata,
     QuestionSetType,
     QuestionStyle,
+    QuestionSubject,
     QuestionType,
+    RubricEntry,
     SampledParams,
+    SubQuestion,
 )
 from src.social_studies.verifier import verify_question
 
@@ -51,6 +56,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--context", type=str, nargs="+", help="情境 (e.g. 個人 公共)")
     gen.add_argument("--set-type", type=str, help="題型種類 (always 題組題 for PISA)")
     gen.add_argument("--q-type", type=str, nargs="+", help="題型 (one or more values)")
+    gen.add_argument(
+        "--subject",
+        type=str,
+        nargs="+",
+        choices=[s.value for s in QuestionSubject],  # type: ignore[attr-defined]
+        help="科目焦點 (e.g. 歷史 地理 公民與社會 跨科)",
+    )
+    gen.add_argument(
+        "--core-competency",
+        type=str,
+        nargs="+",
+        choices=[c.value for c in CoreCompetency],  # type: ignore[attr-defined]
+        help="核心素養代號 pool (e.g. 社-J-A2 社-J-C3)；多值時隨機選 1–3 個",
+    )
+    gen.add_argument(
+        "--learning-content",
+        type=str,
+        nargs="+",
+        help="指定學習內容 編碼 (e.g. 地Aa-Ⅳ-2 地Ad-Ⅳ-1)；覆蓋隨機取樣",
+    )
+    gen.add_argument(
+        "--learning-performance",
+        type=str,
+        nargs="+",
+        help="指定學習表現 編碼 (e.g. 社1b-Ⅳ-1)；覆蓋隨機取樣",
+    )
     gen.add_argument("--count", type=int, default=1, help="Number of question sets to generate")
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
@@ -109,8 +140,54 @@ def _parse_question(
                     data=raw_spec.get("data", {}),
                 )
 
+    subquestions: list[SubQuestion] = []
+    for i, sq_raw in enumerate(raw.get("subquestions", []), start=1):
+        if not isinstance(sq_raw, dict):
+            continue
+        try:
+            lc_refs = [
+                LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
+                for r in sq_raw.get("學習內容", [])
+                if isinstance(r, dict) and r.get("編碼")
+            ]
+            lp_refs = [
+                LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
+                for r in sq_raw.get("學習表現", [])
+                if isinstance(r, dict) and r.get("編碼")
+            ]
+            rubric = [
+                RubricEntry(
+                    code=str(r.get("code", "")),
+                    規準說明=r.get("規準說明", ""),
+                    學生作答實例=r.get("學生作答實例", []),
+                )
+                for r in sq_raw.get("評分規準", [])
+                if isinstance(r, dict)
+            ]
+            subquestions.append(SubQuestion(
+                id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
+                序號=sq_raw.get("序號", i),
+                年級=sq_raw.get("年級", params.grade),
+                科目=sq_raw.get("科目", [params.科目.value]),
+                核心素養=sq_raw.get("核心素養", []),
+                學習內容=lc_refs,
+                學習表現=lp_refs,
+                出題概念=sq_raw.get("出題概念", ""),
+                題型=sq_raw.get("題型", params.題型.value),
+                題目=sq_raw.get("題目", ""),
+                答案=sq_raw.get("答案", ""),
+                答案解析=sq_raw.get("答案解析", ""),
+                評分規準=rubric,
+            ))
+        except Exception:
+            pass
+
     return ExamQuestion(
         id=question_id,
+        核心問題=raw.get("核心問題", ""),
+        文本=raw.get("文本", ""),
+        取材來源=raw.get("取材來源", []),
+        subquestions=subquestions,
         情境=raw.get("情境", [c.value for c in params.情境]),
         題型種類=raw.get("題型種類", params.題型種類.value),
         題型=raw.get("題型", params.題型.value),
@@ -287,6 +364,10 @@ def main(argv: list[str] | None = None) -> None:
     )
     set_type_override = _resolve_enum(args.set_type, QuestionSetType)
     q_type_override = [_resolve_enum(v, QuestionType) for v in args.q_type] if args.q_type else None
+    subject_override = [QuestionSubject(v) for v in args.subject] if args.subject else None
+    core_competency_override = [CoreCompetency(v) for v in args.core_competency] if args.core_competency else None
+    learning_content_override = args.learning_content if args.learning_content else None
+    learning_performance_override = args.learning_performance if args.learning_performance else None
 
     results = []
     base_seed = args.seed
@@ -303,13 +384,19 @@ def main(argv: list[str] | None = None) -> None:
                 context=context_override,
                 set_type=set_type_override,
                 q_type=q_type_override,
+                subject=subject_override,
+                core_competency=core_competency_override,
+                learning_content=learning_content_override,
+                learning_performance=learning_performance_override,
                 seed=seed,
             )
 
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
-                  f"style={params.style.value}, 情境={'、'.join(c.value for c in params.情境)}, "
+                  f"style={params.style.value}, 科目={params.科目.value}, "
+                  f"情境={'、'.join(c.value for c in params.情境)}, "
                   f"題型={params.題型.value}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
-                  f"文本形式={params.文本形式.value}", file=sys.stderr)
+                  f"文本形式={params.文本形式.value}, "
+                  f"核心素養={'、'.join(c.value for c in params.核心素養)}", file=sys.stderr)
 
             result = generate_with_corrections(
                 config=config,

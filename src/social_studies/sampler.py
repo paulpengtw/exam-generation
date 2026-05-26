@@ -4,18 +4,45 @@ from __future__ import annotations
 
 import random
 
-from src.social_studies.schema_loader import load_grades, load_schemas
+from src.social_studies.core_competency_loader import (
+    allowed_competencies,
+    load_core_competencies,
+    stage_code_for,
+)
+from src.social_studies.curriculum_loader import (
+    allowed_learning_content,
+    allowed_learning_performance,
+    load_learning_content,
+    load_learning_performance,
+)
+from src.social_studies.schema_loader import load_grades, load_learning_stage, load_schemas
 from src.social_studies.schemas import (
+    CoreCompetency,
     QuestionContext,
     QuestionSetType,
     QuestionStyle,
+    QuestionSubject,
     QuestionType,
     ReadingProcess,
     SampledParams,
     TextForm,
 )
 
-_GRADES: list[int] = load_grades(load_schemas())
+_schemas = load_schemas()
+_GRADES: list[int] = load_grades(_schemas)
+_LEARNING_STAGE: str = load_learning_stage(_schemas)
+_CC_DATA: dict = load_core_competencies()
+_ALLOWED_COMPETENCY_VALUES: list[str] = allowed_competencies(_CC_DATA, _LEARNING_STAGE)
+_ALLOWED_COMPETENCIES: list[CoreCompetency] = [CoreCompetency(v) for v in _ALLOWED_COMPETENCY_VALUES]  # type: ignore[misc]
+
+_LC_DATA: dict = load_learning_content()
+_LP_DATA: dict = load_learning_performance()
+
+
+def _subject_prefix(subject_value: str) -> str:
+    """Map QuestionSubject value to 科目 prefix for curriculum filtering."""
+    mapping = {"歷史": "歷", "地理": "地", "公民與社會": "公", "跨科": "跨科"}
+    return mapping.get(subject_value, subject_value)
 
 
 def sample_params(
@@ -24,6 +51,10 @@ def sample_params(
     context: list[QuestionContext] | None = None,
     set_type: QuestionSetType | None = None,
     q_type: list[QuestionType] | None = None,
+    subject: list[QuestionSubject] | None = None,
+    core_competency: list[CoreCompetency] | None = None,
+    learning_content: list[str] | None = None,
+    learning_performance: list[str] | None = None,
     seed: int | None = None,
 ) -> SampledParams:
     """Sample random PISA-reading question parameters.
@@ -57,6 +88,30 @@ def sample_params(
 
     selected_style = rng.choice(style) if style is not None else rng.choice(list(QuestionStyle))
 
+    selected_subject = rng.choice(subject) if subject is not None else rng.choice(list(QuestionSubject))
+
+    if core_competency is not None:
+        selected_competency = core_competency
+    else:
+        pool = _ALLOWED_COMPETENCIES
+        competency_count = rng.randint(1, min(3, len(pool)))
+        selected_competency = rng.sample(pool, competency_count)
+
+    subj_prefix = _subject_prefix(selected_subject.value)
+    if learning_content is not None:
+        selected_lc_pool = learning_content
+    else:
+        lc_entries = allowed_learning_content(_LC_DATA, _LEARNING_STAGE, subj_prefix)
+        lc_count = rng.randint(1, min(3, max(1, len(lc_entries))))
+        selected_lc_pool = [e["value"] for e in rng.sample(lc_entries, lc_count)] if lc_entries else []
+
+    if learning_performance is not None:
+        selected_lp_pool = learning_performance
+    else:
+        lp_entries = allowed_learning_performance(_LP_DATA, _LEARNING_STAGE, subj_prefix)
+        lp_count = rng.randint(1, min(2, max(1, len(lp_entries))))
+        selected_lp_pool = [e["value"] for e in rng.sample(lp_entries, lp_count)] if lp_entries else []
+
     return SampledParams(
         grade=selected_grade,
         情境=selected_context,
@@ -65,4 +120,8 @@ def sample_params(
         閱讀歷程=selected_process,
         文本形式=selected_text_form,
         style=selected_style,
+        科目=selected_subject,
+        核心素養=selected_competency,
+        學習內容_pool=selected_lc_pool,
+        學習表現_pool=selected_lp_pool,
     )

@@ -1,4 +1,4 @@
-"""Assemble LLM prompts for PISA-style reading literacy question generation."""
+"""Assemble LLM prompts for 108課綱 社會領域素養導向 question generation."""
 
 from __future__ import annotations
 
@@ -6,13 +6,20 @@ import json
 import random
 from pathlib import Path
 
-from src.social_studies.data_loader import (
-    load_few_shot_examples,
+from src.social_studies.curriculum_loader import (
+    content_instructions,
     load_learning_content,
     load_learning_performance,
+    load_performance_intro,
+    performance_instructions,
+)
+from src.social_studies.data_loader import load_few_shot_examples
+from src.social_studies.core_competency_loader import (
+    competency_instructions,
+    load_core_competencies,
+    stage_code_for,
 )
 from src.social_studies.schema_loader import (
-    _resolve_dir,
     build_instructions,
     load_grades,
     load_learning_stage,
@@ -25,41 +32,49 @@ _INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
 _GRADES: list[int] = load_grades(_schemas)
 _LEARNING_STAGE: str = load_learning_stage(_schemas)
 
-_CURRICULUM_DIR: Path = _resolve_dir()
-_PERFORMANCE: dict = load_learning_performance(_CURRICULUM_DIR)
-_CONTENT: list[dict] = load_learning_content(_CURRICULUM_DIR)
+_CC_DATA: dict = load_core_competencies()
+_CC_INSTRUCTIONS: dict[str, str] = competency_instructions(_CC_DATA)
+_STAGE_CODE: str = stage_code_for(_CC_DATA, _LEARNING_STAGE)
 
-_PERFORMANCE_TEXT: str = json.dumps(_PERFORMANCE, ensure_ascii=False, indent=2) if _PERFORMANCE else ""
-_CONTENT_TEXT: str = json.dumps(_CONTENT, ensure_ascii=False, indent=2) if _CONTENT else ""
+_PERFORMANCE_DATA: dict = load_learning_performance()
+_CONTENT_DATA: dict = load_learning_content()
+_PERFORMANCE_INTRO: str = load_performance_intro()
+
+_PERFORMANCE_TEXT: str = json.dumps(_PERFORMANCE_DATA, ensure_ascii=False, indent=2) if _PERFORMANCE_DATA.get("學習表現") else ""
+_CONTENT_TEXT: str = json.dumps(_CONTENT_DATA, ensure_ascii=False, indent=2) if _CONTENT_DATA.get("學習內容") else ""
+_LC_INSTRUCTIONS: dict[str, str] = content_instructions(_CONTENT_DATA)
+_LP_INSTRUCTIONS: dict[str, str] = performance_instructions(_PERFORMANCE_DATA)
 
 SYSTEM_PROMPT_TEMPLATE = """\
-你是一位資深的PISA閱讀素養命題教師，專門為{learning_stage}（{grade_names}）的學生設計符合PISA框架的閱讀素養考試題目。
+你是一位資深的108課綱社會領域命題教師，專門為{learning_stage}（{grade_names}）設計「社會領域素養導向」考試題目。
+本題庫根據國家教育研究院 NAER-2019-041-A-1-1-E1-10 計畫之命題框架設計，涵蓋歷史、地理、公民與社會三科。
+**本題庫專為{learning_stage}設計：所有 `核心素養` 代號必須使用 `社-{stage_code}-*` 開頭（如 社-{stage_code}-A2、社-{stage_code}-C3），不得使用其他學習階段的代號。**
 
-## PISA閱讀素養框架
+## 108課綱社會領域素養導向命題框架
 
-PISA閱讀素養評量學生在真實生活情境中理解、使用、省思書面文本的能力，以充分達成個人目標、擴展知識和潛能、全面參與社會的能力。
+### 題組結構
+每道題組（題組題）包含：
+1. **核心問題**：一句話說明本題組的跨科主要問題意識（如「如何理解1918年流感疫情的擴散與當代防疫啟示？」）
+2. **文本**：一篇或多篇真實情境素材（連續文本、非連續文本或混合）
+3. **取材來源**：列出文本的原始資料來源
+4. **小題（subquestions）**：3–7 道由淺入深的小題，各小題彼此獨立作答，但共用文本
 
-### 三大核心面向
-1. **文本形式**：連續文本（敘事、說明、記敘、論述、指南）與非連續文本（圖表、表格、圖解、地圖、表單、廣告）
-2. **閱讀情境**：個人、公共、職業、教育
-3. **閱讀歷程**（五個歷程）：
-   - 擷取訊息（約25%試題）：從文本中定位特定訊息
-   - 形成廣泛理解（約25%試題）：掌握文本整體主旨與意涵
-   - 發展解釋（約25%試題）：比較、推論、尋找支持性證據
-   - 省思與評鑑文本內容（約12.5%試題）：連結個人知識，批判評估
-   - 省思與評鑑文本形式（約12.5%試題）：評析文本結構、風格、表達效果
+### 各小題必須標記
+- `年級`：7、8 或 9（同一題組內不同小題可以不同年級）
+- `科目`：歷史 / 地理 / 公民與社會（一小題可跨科時請列出複數）
+- `核心素養`：對應108課綱素養代號，本題庫限用 `社-{stage_code}-*` 開頭（如 社-{stage_code}-A2、社-{stage_code}-C3）
+- `學習內容`：對應課綱條目編碼+說明（如 地Aa-Ⅳ-2 全球海陸分布）
+- `學習表現`：對應課綱學習表現代號+說明（如 社1b-Ⅳ-1 應用社會領域內容知識解析生活經驗或社會現象）
+- `出題概念`：一句話說明此題評量學生何種能力
 
-### 試題比重
-- 擷取與檢索：約25%
-- 統整與解釋（形成廣泛理解 + 發展解釋）：約50%
-- 省思與評鑑（文本內容 + 文本形式）：約25%
-- 連續文本 ≈ 2/3，非連續文本 ≈ 1/3
+### 題型說明
+- **選擇題**：四選一；給分代號 2（正確）/ 0（錯誤）
+- **封閉式建構反應題**：唯一正確答案（詞彙、數字或短語）；給分代號 2 / 0
+- **開放式建構反應題**：需學生組織語言說明思考過程；給分代號 2（完整正確）/ 1（部分正確）/ 0（錯誤或不相關）/ 0X（未作答）；**必須附評分規準（rubric）**，每條規準請提供 1–2 個學生作答實例（含正確與典型錯誤示例）
 
-### 題型設計原則
-- **一律採題組式**：每題組提供一篇或多篇文本，搭配數道由淺入深的試題
-- **選擇題**：四選一，包含誘答選項；給分代號 2（全對）/ 0（全錯）
-- **封閉式建構反應題**：唯一正確答案；給分代號 2（正確）/ 0（錯誤）
-- **開放式建構反應題**：需說明思考過程；給分代號 2（完整）/ 1（部分）/ 0（錯誤）/ 9（未作答）
+### PISA閱讀歷程（輔助參考）
+試題設計時請參考閱讀歷程分布：
+- 擷取訊息（約25%）、形成廣泛理解（約25%）、發展解釋（約25%）、省思與評鑑（約25%）
 
 ## 課程綱要參考
 
@@ -67,17 +82,36 @@ PISA閱讀素養評量學生在真實生活情境中理解、使用、省思書�
 
 ## 輸出格式
 
-你必須輸出一個合法的 JSON 物件：
+你必須輸出一個合法的 JSON 物件，格式如下：
 
 ```json
 {{
-  "情境": ["（可為多個選項）"],
+  "核心問題": "本題組的跨科核心問題（一句話）",
+  "文本": "完整文本素材（包含說明文字、引述文獻、表格描述等）",
+  "取材來源": ["來源一", "來源二"],
+  "情境": ["（PISA情境，可多個：個人/公共/職業/教育）"],
   "題型種類": "題組題",
-  "題型": "（從指定選項中選一個）",
-  "閱讀歷程": ["（1-2個）"],
-  "文本形式": "（從指定選項中選一個）",
-  "題目": ["文本素材...", "第一題...", "第二題..."],
-  "正確解題分析": ["第一題解析...", "第二題解析..."],
+  "題型": "（所有小題的主要題型，選擇題/封閉式建構反應題/開放式建構反應題）",
+  "閱讀歷程": ["（主要閱讀歷程，1–2個）"],
+  "文本形式": "（連續文本—說明文 等）",
+  "subquestions": [
+    {{
+      "序號": 1,
+      "年級": 7,
+      "科目": ["地理"],
+      "核心素養": ["社-J-A2"],
+      "學習內容": [{{"編碼": "地Aa-Ⅳ-2", "說明": "全球海陸分布"}}],
+      "學習表現": [{{"編碼": "社1b-Ⅳ-1", "說明": "應用社會領域內容知識解析生活經驗或社會現象"}}],
+      "出題概念": "評量學生能否……",
+      "題型": "選擇題",
+      "題目": "問題一\n根據文章內容……\n（A）……\n（B）……\n（C）……\n（D）……",
+      "答案": "A",
+      "答案解析": "從圖1……",
+      "評分規準": []
+    }}
+  ],
+  "題目": ["（將文本和所有小題合併為陣列，供舊版驗證器使用）"],
+  "正確解題分析": ["（逐題答案說明，供舊版驗證器使用）"],
   "chart_spec": {{...}}
 }}
 ```
@@ -109,17 +143,19 @@ PISA閱讀素養評量學生在真實生活情境中理解、使用、省思書�
 """
 
 USER_PROMPT_TEMPLATE = """\
-請根據以下條件生成一道PISA閱讀素養題組：
+請根據以下條件生成一道108課綱社會領域素養導向題組：
 
 ## 指定條件
 
 - **年級重心**：{grade}年級（{learning_stage}）
-- **情境**：{context}
+- **科目焦點**：{subject}
+- **情境**：{context}（PISA閱讀情境）
 - **題型種類**：{set_type}
 - **題型**：{q_type}
-- **閱讀歷程**：{reading_process}
+- **閱讀歷程（PISA）**：{reading_process}
 - **文本形式**：{text_form}
-{param_instructions}
+- **核心素養（限定使用）**：{core_competencies}
+{lc_pool_lines}{lp_pool_lines}{param_instructions}
 ## 題目風格
 
 {style_instruction}
@@ -131,19 +167,29 @@ USER_PROMPT_TEMPLATE = """\
 ## 重要提醒
 
 1. 不要複製範例題目，必須原創。
-2. 文本素材應貼近真實情境，語言自然，非教科書式。
-3. 題目文字應寫入 `題目` 陣列的第一個元素（文本材料），其後接各小題。
-4. `正確解題分析` 請逐題說明答案及理由；開放式建構反應題請附評分規準（rubric）。
-5. 只輸出 JSON 格式的結果。
+2. 文本素材應貼近真實情境，語言自然，非教科書式；可使用新聞、報告、圖表、訪談摘要等真實素材形式。
+3. 每道小題須填入正確的 學習內容 編碼（參考系統提供的課程綱要）。各小題的 `學習內容` / `學習表現` 應優先使用上述指定代號；如題組設計需引入其他課綱代號，仍以 `## 課程綱要參考` 中列出者為限。
+4. 各小題的 `核心素養` 欄位**必須只從指定條件中的核心素養代號選擇**，整個題組應盡量讓每個指定代號至少出現一次。
+5. 開放式建構反應題必須附完整的評分規準（rubric），每條含 1–2 個學生作答實例。
+6. 評分代號請使用：2（滿分）/ 1（部分得分，限開放式）/ 0（零分）/ 0X（未作答）。
+7. `題目` 陣列（舊版格式）：第一個元素放文本素材，其後每個元素放一道小題完整文字。
+8. `正確解題分析` 陣列（舊版格式）：每個元素對應一道小題的答案與說明。
+9. 只輸出 JSON 格式的結果。
 """
 
 _CURRICULUM_EMPTY_NOTICE = "（課程綱要資料待研究人員補充至 data/social_studies/curriculum/）"
 
 
-def _build_curriculum_section(content_text: str, performance_text: str) -> str:
+def _build_curriculum_section(
+    content_text: str,
+    performance_text: str,
+    performance_intro: str = "",
+) -> str:
     if not content_text and not performance_text:
         return _CURRICULUM_EMPTY_NOTICE
     parts = []
+    if performance_intro:
+        parts.append("### 學習表現架構說明\n\n" + performance_intro)
     if performance_text:
         parts.append("### 學習表現標準\n\n" + performance_text)
     if content_text:
@@ -157,17 +203,19 @@ def build_system_prompt(
     content_text: str | None = None,
     performance_text: str | None = None,
 ) -> str:
-    """Build the PISA reading literacy system prompt."""
     g = grades if grades is not None else _GRADES
     stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
     grade_names = "、".join(f"{x}年級" for x in g)
     c_text = content_text if content_text is not None else _CONTENT_TEXT
     p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
-    curriculum_section = _build_curriculum_section(c_text, p_text)
+    p_intro = _PERFORMANCE_INTRO
+    curriculum_section = _build_curriculum_section(c_text, p_text, p_intro)
+    sc = stage_code_for(_CC_DATA, stage)
     return SYSTEM_PROMPT_TEMPLATE.format(
         learning_stage=stage,
         grade_names=grade_names,
         curriculum_section=curriculum_section,
+        stage_code=sc,
     )
 
 
@@ -176,7 +224,6 @@ def build_user_prompt(
     few_shot_dir: Path,
     rng: random.Random | None = None,
 ) -> str:
-    """Build the user prompt for PISA reading question generation."""
     if rng is None:
         rng = random.Random()
 
@@ -191,6 +238,7 @@ def build_user_prompt(
         ("題型種類", params.題型種類.value),
         ("題型", params.題型.value),
         ("文本形式", params.文本形式.value),
+        ("科目", params.科目.value),
     ):
         instr = _INSTRUCTIONS.get(category, {}).get(key)
         if instr:
@@ -199,6 +247,10 @@ def build_user_prompt(
         instr = _INSTRUCTIONS.get("閱讀歷程", {}).get(p.value)
         if instr:
             param_instruction_lines.append(f"  - **閱讀歷程（{p.value}）補充**：{instr}")
+    for c in params.核心素養:
+        instr = _CC_INSTRUCTIONS.get(c.value)
+        if instr:
+            param_instruction_lines.append(f"  - **核心素養（{c.value}）補充**：{instr}")
     param_instructions = (
         "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
         if param_instruction_lines else ""
@@ -226,14 +278,39 @@ def build_user_prompt(
     else:
         few_shot_text = "（此風格暫無範例，請根據指定條件自行設計。）"
 
+    core_competencies = "、".join(c.value for c in params.核心素養)
+
+    # 指定學習內容 / 指定學習表現 lines
+    if params.學習內容_pool:
+        lc_codes = "、".join(params.學習內容_pool)
+        lc_detail_lines = "\n".join(
+            f"  - {c}：{_LC_INSTRUCTIONS[c]}" for c in params.學習內容_pool if c in _LC_INSTRUCTIONS
+        )
+        lc_pool_lines = f"- **指定學習內容**：{lc_codes}\n{lc_detail_lines}\n"
+    else:
+        lc_pool_lines = ""
+
+    if params.學習表現_pool:
+        lp_codes = "、".join(params.學習表現_pool)
+        lp_detail_lines = "\n".join(
+            f"  - {c}：{_LP_INSTRUCTIONS[c]}" for c in params.學習表現_pool if c in _LP_INSTRUCTIONS
+        )
+        lp_pool_lines = f"- **指定學習表現**：{lp_codes}\n{lp_detail_lines}\n"
+    else:
+        lp_pool_lines = ""
+
     return USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         learning_stage=_LEARNING_STAGE,
+        subject=params.科目.value,
         context="、".join(c.value for c in params.情境),
         set_type=params.題型種類.value,
         q_type=params.題型.value,
         reading_process=reading_process,
         text_form=params.文本形式.value,
+        core_competencies=core_competencies,
+        lc_pool_lines=lc_pool_lines,
+        lp_pool_lines=lp_pool_lines,
         param_instructions=param_instructions,
         style_instruction=style_instruction,
         few_shot_examples=few_shot_text,

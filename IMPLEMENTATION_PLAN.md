@@ -9,9 +9,15 @@
 
 ## Known design risks (math-shaped scaffolding)
 
-`src/verifier.py` and `src/corrector.py` assume answer-match correctness (`my_answer == provided_answer`). PISA reading 開放式建構反應題 is rubric-scored (codes 2/1/0/9) — there is no single correct answer to match. `src/corrector.py` rewrites toward a single answer; rubric items need rubric-conformance editing instead. `數學思考` / `學習內容` enums and curriculum JSON are math-specific; reading uses `閱讀歷程` / `文本形式` with different cardinality and no K-12 curriculum lookup.
+`src/verifier.py` and `src/corrector.py` assume answer-match correctness (`my_answer == provided_answer`). 108課綱 社會領域 開放式建構反應題 is rubric-scored (codes 2/1/0/0X) — there is no single correct answer to match. `src/corrector.py` rewrites toward a single answer; rubric items need rubric-conformance editing instead. `數學思考` / `學習內容` enums and curriculum JSON are math-specific; social studies uses `閱讀歷程` / `文本形式` with different cardinality and a CSV-driven curriculum.
 
-**Decision:** Ship 社會科 as a parallel forked codepath (`src/social_studies/`). Verifier/corrector reuse math code with the gap documented; fix with a `rubric_grade` scoring strategy once a live example fails. Defer the SubjectAdapter / tool-registry / two-LLM verifier refactor below until a third subject arrives (rule of three).
+✅ **Structured rubric model resolved:** `RubricEntry(code, 規準說明, 學生作答實例)` is now a first-class Pydantic model in `src/social_studies/schemas.py`. Per-subquestion `評分規準` is populated in both the few-shot CSV and LLM output parsing.
+
+✅ **Scoring code convention resolved:** Social studies uses `0X` (未作答) not `9`. `schema_parameters.csv` now documents the correct `2/1/0/0X` convention. `src/social_studies/corrector.py` preserves rubric entries correctly across correction passes.
+
+✅ **Cross-subject 題組 partially resolved:** `SubQuestion` carries per-row `科目` (list) and `年級` fields; a single 題組 can span 歷史/地理/公民與社會 subquestions at different grade levels.
+
+**Decision:** Ship 社會科 as a parallel forked codepath (`src/social_studies/`). Verifier/corrector reuse math code with the gap documented. Defer the SubjectAdapter / tool-registry / two-LLM verifier refactor below until a third subject arrives (rule of three).
 
 ---
 
@@ -47,11 +53,13 @@ The schema itself (學習階段, grades, 6 parameter categories with `instructio
 strings) is now loaded from `schema_meta.csv` + `schema_parameters.csv` in the
 same directory, replacing the deleted `social_studies_schemas.json`.
 
-**Remaining gap:** the four curriculum CSVs ship empty. Until researchers at
-NAER fill them, the system prompt shows a fallback notice
-`（課程綱要資料待研究人員補充至 data/social_studies/curriculum/）`. The
-*mechanism* is at parity with math; *content population* is still pending.
-See `data/social_studies/csv_填寫指南.md` for the field-by-field filler guide.
+✅ **CSV population resolved (2026-05-26):** The curriculum CSVs are now seeded with codes extracted from six NAER reference 題組 (黃馨瑩 2021, NAER-2019-041-A-1-1-E1-10):
+
+- `learning_content.csv` — 25 學習內容 codes: 歷Ka/Kb/Kc/La-Ⅳ, 地Aa/Ab/Ac/Ad/Af-Ⅳ, 公Ba/Bb/Bc/Bd/Be-Ⅳ
+- `learning_performance.csv` — 14 學習表現 codes: 歷1a/2a/2b-Ⅳ, 地1a/1b/2a/2b-Ⅳ, 公1a/1b/2a/2b-Ⅳ, 社1b/3b-Ⅳ
+- `few_shot/few_shot_examples.csv` — seeded with the 1918年流感 3-subquestion 題組 (complete with `評分規準`)
+
+See `data/social_studies/csv_填寫指南.md` for the field-by-field filler guide for adding more codes.
 
 ### 2. `_HTML_SYSTEM_PROMPT` hardcoded to "math exam questions"
 
@@ -65,6 +73,94 @@ visuals.
 **Fix direction:** parametrize the HTML designer persona by subject (or
 neutralize the wording). Aligns with the deferred `tools/html_tool.py`
 "parametric HTML-via-LLM; per-tool system prompt" refactor below.
+
+---
+
+## Migrate `學習內容` and `學習表現` from CSV to JSON ✅ RESOLVED (2026-05-26)
+
+**Motivation:** `核心素養` was just migrated to `data/social_studies/curriculum/core_competencies.json` + `src/social_studies/core_competency_loader.py`, enabling the sampler to randomly draw codes uniformly and independent of the prompt-fill CSV pipeline. `學習內容` and `學習表現` remain CSV-only (`learning_content.csv`, `learning_performance.csv`) and are only used for system-prompt injection text — the sampler cannot draw individual 編碼 entries to constrain a 題組. Migrating them to the same JSON pattern lets the sampler pick a small subset of codes the same way it now picks 核心素養.
+
+### Target layout
+
+**Resolution (2026-05-26):** Both CSVs migrated to JSON. `curriculum_loader.py` provides JSON loaders + sampler helpers. Sampler picks 學習內容 1-3 / 學習表現 1-2 codes filtered by 學習階段 + 科目 prefix and stores them in `SampledParams.學習內容_pool` / `學習表現_pool`. The official 學習表現 framework explanation (構面/項目/編碼規則 + full 條目 list) from the NAER odt is saved as `learning_performance_intro.md` and injected as a `### 學習表現架構說明` block in the system prompt. User prompt `## 指定條件` now shows `- **指定學習內容**` and `- **指定學習表現**` with per-code descriptions. CLI flags `--learning-content` and `--learning-performance` allow override. Old CSVs deleted; CSV loaders removed from `data_loader.py`.
+
+Two new files in `data/social_studies/curriculum/`:
+
+- **`learning_content.json`** — top-level `學習階段_to_grades` (`{"第四學習階段": [7,8,9], …}`) plus a flat `學習內容` array of `{value, 學習階段, 年級, 科目, 條目說明, 備註, 對應學習表現[]}` entries. `value` = `編碼`; `科目` inferred from first character of 編碼 prefix (歷/地/公).
+- **`learning_performance.json`** — top-level `學習階段_to_grades` (same lookup) plus a flat `學習表現` array of `{value, 學習階段, 科目, 說明}` entries. `value` = `編碼`; `科目` inferred from prefix (社/歷/地/公).
+
+### Loader module
+
+New `src/social_studies/curriculum_loader.py` (same pattern as `core_competency_loader.py`):
+
+- `load_learning_content(path?) -> dict` — env override `SOCIAL_STUDIES_LEARNING_CONTENT_PATH`.
+- `load_learning_performance(path?) -> dict` — env override `SOCIAL_STUDIES_LEARNING_PERFORMANCE_PATH`.
+- `allowed_learning_content(data, learning_stage, subject?) -> list[dict]` — filter by 學習階段; optionally by 科目 prefix (e.g. `"歷"` → only `歷*` codes; `"跨科"` → all). Returns list of entry dicts.
+- `allowed_learning_performance(data, learning_stage, subject?) -> list[dict]` — same filter logic.
+- `content_instructions(data) / performance_instructions(data) -> dict[str, str]` — `{value: 條目說明 / 說明}` for prompt補充 injection.
+
+### Sampler wiring (`src/social_studies/sampler.py`)
+
+- New params: `learning_content: list[str] | None = None` (cardinality 1–3), `learning_performance: list[str] | None = None` (cardinality 1–2).
+- Pool filtered by `_LEARNING_STAGE` and the sampled `params.科目` — a 歷史 題組 draws only `歷` codes; 跨科 draws across all three subject prefixes.
+- Both picks added to `SampledParams` as `學習內容_pool: list[...]` and `學習表現_pool: list[...]` (distinct from per-`SubQuestion` `學習內容: list[LearningContentRef]` which is LLM-emitted).
+
+### Prompt wiring (`src/social_studies/context_builder.py`)
+
+- Replace `data_loader.load_learning_content` / `load_learning_performance` imports with the new JSON loaders.
+- Keep the full `## 課程綱要參考` system-prompt injection (LLM ground truth), but add the sampled subset to the **user prompt** under `## 指定條件`:
+  - `- **指定學習內容**：{codes}` with per-code補充 lines.
+  - `- **指定學習表現**：{codes}` with per-code補充 lines.
+- Add `## 重要提醒` bullet: "各小題的 `學習內容` / `學習表現` 應優先使用上述指定代號；如題組設計需引入其他課綱代號，仍以 `## 課程綱要參考` 中列出者為限。"
+
+### CSV rollback
+
+After JSON files are authoritative, delete `learning_content.csv` and `learning_performance.csv`; remove the two CSV loaders from `src/social_studies/data_loader.py` (keep the few-shot CSV loader — unrelated). `csv_填寫指南.md` to be rewritten describing the JSON shape. Alternatively, keep CSVs as a researcher input format and add `scripts/csv_to_curriculum_json.py` as a build step — TBD.
+
+### CLI additions
+
+- `--learning-content` (nargs="+") and `--learning-performance` (nargs="+") override flags, mirroring `--core-competency`.
+
+### Verification (post-execution)
+
+```bash
+uv run python -c "
+from src.social_studies.curriculum_loader import load_learning_content, allowed_learning_content
+d = load_learning_content()
+print(len(d['學習內容']))  # expect current CSV row count
+print(len(allowed_learning_content(d, '第四學習階段', '歷')))  # 歷史 codes only
+"
+uv run python -m src.social_studies.cli generate --dry-run --seed 0
+# expect: '**指定學習內容**：…' and '**指定學習表現**：…' in user prompt
+```
+
+---
+
+## 108課綱 社會領域 re-framing (completed 2026-05-26)
+
+`src/social_studies/` was re-framed from PISA reading literacy to **108課綱
+社會領域素養導向 命題** (歷史/地理/公民與社會, 跨科題組). PISA-style tags
+(`閱讀歷程`, `文本形式`) are retained as secondary diversity axes only.
+
+### Schema additions (`src/social_studies/schemas.py`)
+
+| New type | Purpose |
+|---|---|
+| `LearningContentRef` | `{編碼, 說明}` pair for 學習內容 and 學習表現 references |
+| `RubricEntry` | `{code, 規準說明, 學生作答實例}` — rubric row; codes are `2/1/0/0X` |
+| `SubQuestion` | Per-subquestion: `id`, `序號`, `年級`, `科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `題型`, `題目`, `答案`, `答案解析`, `評分規準` |
+| `QuestionSubject` | Enum: `歷史 / 地理 / 公民與社會 / 跨科` |
+
+`ExamQuestion` gained first-class fields: `核心問題`, `文本`, `取材來源`, `subquestions`.
+
+### Data population
+
+See "Social studies context-injection parity gap § CSV population resolved" above.
+
+### CLI addition
+
+`--subject` flag added to `src/social_studies/cli.py`; sampler picks `科目` from
+`QuestionSubject`; multiple values define a random pool.
 
 ---
 
