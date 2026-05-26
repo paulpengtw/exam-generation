@@ -29,17 +29,19 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 
 PISA-style tags (`閱讀歷程`, `文本形式`) are retained as secondary diversity axes to influence question design, but the primary framing is 108課綱, not PISA reading literacy.
 
-Schema, curriculum, and few-shot data are **CSV-driven** — no JSON, no rebuild. All five CSV files under `data/social_studies/` are read at runtime on every run:
+Schema, curriculum, and few-shot data are **CSV-driven** for schema/few-shot; **JSON-driven** for curriculum. Files under `data/social_studies/` read at runtime:
 
-| CSV | Purpose |
+| File | Purpose |
 |---|---|
 | `curriculum/schema_meta.csv` | 學習階段 label + grades list |
 | `curriculum/schema_parameters.csv` | Allowed values + instructions for all 6 question parameter categories (includes 科目: 歷史/地理/公民與社會/跨科) |
-| `curriculum/learning_performance.csv` | 108課綱 社會領域 學習表現標準 (社1b-Ⅳ-*, 歷1a-Ⅳ-*, 地1b-Ⅳ-*, 公1a-Ⅳ-* …) → system prompt |
-| `curriculum/learning_content.csv` | 108課綱 社會領域 學習內容 (歷Ka-Ⅳ-*, 地Aa-Ⅳ-*, 公Bd-Ⅳ-* …) by grade → system prompt |
+| `curriculum/learning_performance.json` | 108課綱 社會領域 學習表現標準 (26 codes; ODT-sourced) → system prompt + sampler pool |
+| `curriculum/learning_content.json` | 108課綱 社會領域 學習內容 (472 entries; ODT-sourced `對應學習表現`) → system prompt + sampler pool |
 | `few_shot/few_shot_examples.csv` | Few-shot examples (long format, grouped by `範例編號`; one row per subquestion) |
 
 CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separator. `範例_`-prefixed files in the same folders are reference examples for researchers — they are never loaded by the system. See `data/social_studies/csv_填寫指南.md` for the field-by-field filler guide.
+
+**Sampler 科目 filter:** `_SUBJECT_TO_PREFIXES` in `curriculum_loader.py` maps each subject to its 科目 set. All subjects include `"社"` so the 16 cross-subject general 學習表現 codes (社1a/1b/2a/2b/2c/3a/3b/3c/3d-Ⅳ-*) are in every subject's pool — not only 跨科. This is per 108課綱 design where 社_* codes apply across all 社會領域 subjects.
 
 ## Key Files
 
@@ -53,13 +55,16 @@ CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separat
 | `src/schema_loader.py` | Loads `question_schemas.json`, exposes `load_grades()` / `load_learning_stage()`, builds dynamic str-enums via `build_enums()`, and builds `{category: {value: instruction}}` lookup via `build_instructions()` |
 | `data/social_studies/curriculum/schema_meta.csv` | Social studies 學習階段 + grades (runtime-editable) |
 | `data/social_studies/curriculum/schema_parameters.csv` | Social studies parameter values + instructions (6 categories) |
-| `data/social_studies/curriculum/learning_performance.json` | Social studies 學習表現標準 JSON (14 codes; 科目/構面/項目 metadata) → system prompt + sampler pool |
+| `data/social_studies/curriculum/learning_performance.json` | Social studies 學習表現標準 JSON (26 codes; 科目/構面/項目 metadata + bidirectional `對應學習內容` field populated from ODT 呼應表) → system prompt + sampler pool |
 | `data/social_studies/curriculum/learning_performance_intro.md` | Official NAER 學習表現 framework chapter (構面/項目/編碼規則 + full 條目) → system prompt `### 學習表現架構說明` |
-| `data/social_studies/curriculum/learning_content.json` | Social studies 學習內容 JSON (25 codes; 科目/對應學習表現) → system prompt + sampler pool |
+| `data/social_studies/curriculum/learning_content.json` | Social studies 學習內容 JSON (472 entries spanning 學習階段 二/三/四/五; `對應學習表現` populated from ODT 呼應表 — 55 entries mapped at 第四學習階段) → system prompt + sampler pool |
+| `scripts/connect_curriculum_from_odt.py` | One-shot importer: reads the official 社會領域學習重點與核心素養呼應表 (ODT) and overwrites `對應學習表現` in `learning_content.json` and `對應學習內容` in `learning_performance.json`; also appends any perf codes referenced in the ODT but missing from the JSON. Re-run if NAER publishes an updated 呼應表. |
 | `data/social_studies/few_shot/few_shot_examples.csv` | Social studies few-shot examples (long format grouped by 範例編號; one row per subquestion with all 108課綱 metadata columns) |
 | `data/social_studies/csv_填寫指南.md` | zh-TW filler guide: field-by-field explanation of JSON + CSV files |
 | `src/social_studies/schema_loader.py` | Builds social-studies schema dict from `schema_meta.csv` + `schema_parameters.csv` |
-| `src/social_studies/curriculum_loader.py` | JSON loaders for `learning_content.json` / `learning_performance.json` + sampler helpers (`allowed_*`, `*_instructions`, `load_performance_intro`) |
+| `src/social_studies/curriculum_loader.py` | JSON loaders for `learning_content.json` / `learning_performance.json` + sampler helpers (`allowed_*`, `*_instructions`, `load_performance_intro`); `_SUBJECT_TO_PREFIXES` maps QuestionSubject values to code-prefix sets (all include `"社"`) |
+| `data/social_studies/curriculum/core_competencies.json` | 108課綱 核心素養 codes → sampler pool; loaded by `core_competency_loader.py` |
+| `src/social_studies/core_competency_loader.py` | JSON loader + `allowed_core_competencies(data, stage, subject)` for 核心素養 sampler pool |
 | `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
 | `src/social_studies/context_builder.py` | Social studies prompt assembly; `## 課程綱要參考` block injected into system prompt |
 | `src/social_studies/schemas.py` | Social studies Pydantic models: `ExamQuestion`, `SubQuestion`, `LearningContentRef`, `RubricEntry`, `QuestionSubject` (歷史/地理/公民與社會/跨科), `VerificationResult`, `ImageSpec` |
@@ -172,7 +177,7 @@ The file has two top-level scalar/array fields:
 - **`學習階段`**: string injected into the system prompt (e.g. `"第四學習階段"`)
 - **`grades`**: integer array of allowed grade levels (e.g. `[7, 8, 9]`) — drives CLI `--grade` choices, sampler selection, grade content index, and system prompt grade range text
 
-Social studies sampler picks: grade, 情境, 題型種類 (always 題組題), 題型, 文本形式, 閱讀歷程, **科目** (歷史/地理/公民與社會/跨科), and question_style. Use `--subject` to override 科目 (one or more values; multiple define a random pool). Use `--grade`, `--style`, `--q-type`, etc. as with math.
+Social studies sampler picks: grade, 情境, 題型種類 (always 題組題), 題型, 文本形式, 閱讀歷程, **科目** (歷史/地理/公民與社會/跨科), **核心素養** (1–3 codes from `core_competencies.json`), **學習內容_pool** (1–3 codes from `learning_content.json` filtered by 學習階段 + 科目), **學習表現_pool** (1–2 codes from `learning_performance.json` filtered similarly), and question_style. Use `--subject` to override 科目; `--learning-content`, `--learning-performance`, `--core-competency` to override the curriculum pools. Use `--grade`, `--style`, `--q-type`, etc. as with math.
 
 When randomly selecting parameters, respect these rules:
 - **grade**: pick one from `question_schemas.json["grades"]`

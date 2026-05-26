@@ -53,13 +53,15 @@ The schema itself (學習階段, grades, 6 parameter categories with `instructio
 strings) is now loaded from `schema_meta.csv` + `schema_parameters.csv` in the
 same directory, replacing the deleted `social_studies_schemas.json`.
 
-✅ **CSV population resolved (2026-05-26):** The curriculum CSVs are now seeded with codes extracted from six NAER reference 題組 (黃馨瑩 2021, NAER-2019-041-A-1-1-E1-10):
+✅ **CSV population resolved (2026-05-26, superseded by ODT import):** The curriculum CSVs were seeded with codes extracted from six NAER reference 題組 (黃馨瑩 2021, NAER-2019-041-A-1-1-E1-10) — 25 LC codes, 14 LP codes. These CSVs have since been **deleted** and replaced by JSON; the seed is now historical.
 
-- `learning_content.csv` — 25 學習內容 codes: 歷Ka/Kb/Kc/La-Ⅳ, 地Aa/Ab/Ac/Ad/Af-Ⅳ, 公Ba/Bb/Bc/Bd/Be-Ⅳ
-- `learning_performance.csv` — 14 學習表現 codes: 歷1a/2a/2b-Ⅳ, 地1a/1b/2a/2b-Ⅳ, 公1a/1b/2a/2b-Ⅳ, 社1b/3b-Ⅳ
+✅ **Full ODT import completed (2026-05-26):** `scripts/connect_curriculum_from_odt.py` read the official NAER 社會領域學習重點與核心素養呼應表 (ODT) and populated bidirectional cross-links:
+
+- `learning_content.json` — grew from 25 → **472 entries** spanning 學習階段 二/三/四/五 (55 mapped at 第四學習階段); `對應學習表現` cross-links populated
+- `learning_performance.json` — grew from 14 → **26 codes** (歷/地/公/社 prefixes); `對應學習內容` cross-links populated
 - `few_shot/few_shot_examples.csv` — seeded with the 1918年流感 3-subquestion 題組 (complete with `評分規準`)
 
-See `data/social_studies/csv_填寫指南.md` for the field-by-field filler guide for adding more codes.
+Re-run `scripts/connect_curriculum_from_odt.py` if NAER publishes an updated 呼應表.
 
 ### 2. `_HTML_SYSTEM_PROMPT` hardcoded to "math exam questions"
 
@@ -76,63 +78,21 @@ neutralize the wording). Aligns with the deferred `tools/html_tool.py`
 
 ---
 
-## Migrate `學習內容` and `學習表現` from CSV to JSON ✅ RESOLVED (2026-05-26)
+## Migrate `學習內容` and `學習表現` from CSV to JSON ✅ FULLY RESOLVED (2026-05-26)
 
-**Motivation:** `核心素養` was just migrated to `data/social_studies/curriculum/core_competencies.json` + `src/social_studies/core_competency_loader.py`, enabling the sampler to randomly draw codes uniformly and independent of the prompt-fill CSV pipeline. `學習內容` and `學習表現` remain CSV-only (`learning_content.csv`, `learning_performance.csv`) and are only used for system-prompt injection text — the sampler cannot draw individual 編碼 entries to constrain a 題組. Migrating them to the same JSON pattern lets the sampler pick a small subset of codes the same way it now picks 核心素養.
+**Motivation:** `核心素養` was migrated to `data/social_studies/curriculum/core_competencies.json` + `src/social_studies/core_competency_loader.py`, enabling the sampler to draw codes uniformly. `學習內容` and `學習表現` were CSV-only and sampler-blind. Migrating them to JSON allows the same per-題組 sampling pattern.
 
-### Target layout
+**Resolution:** Both CSVs deleted. `curriculum_loader.py` provides JSON loaders + sampler helpers. Implementation complete:
 
-**Resolution (2026-05-26):** Both CSVs migrated to JSON. `curriculum_loader.py` provides JSON loaders + sampler helpers. Sampler picks 學習內容 1-3 / 學習表現 1-2 codes filtered by 學習階段 + 科目 prefix and stores them in `SampledParams.學習內容_pool` / `學習表現_pool`. The official 學習表現 framework explanation (構面/項目/編碼規則 + full 條目 list) from the NAER odt is saved as `learning_performance_intro.md` and injected as a `### 學習表現架構說明` block in the system prompt. User prompt `## 指定條件` now shows `- **指定學習內容**` and `- **指定學習表現**` with per-code descriptions. CLI flags `--learning-content` and `--learning-performance` allow override. Old CSVs deleted; CSV loaders removed from `data_loader.py`.
-
-Two new files in `data/social_studies/curriculum/`:
-
-- **`learning_content.json`** — top-level `學習階段_to_grades` (`{"第四學習階段": [7,8,9], …}`) plus a flat `學習內容` array of `{value, 學習階段, 年級, 科目, 條目說明, 備註, 對應學習表現[]}` entries. `value` = `編碼`; `科目` inferred from first character of 編碼 prefix (歷/地/公).
-- **`learning_performance.json`** — top-level `學習階段_to_grades` (same lookup) plus a flat `學習表現` array of `{value, 學習階段, 科目, 說明}` entries. `value` = `編碼`; `科目` inferred from prefix (社/歷/地/公).
-
-### Loader module
-
-New `src/social_studies/curriculum_loader.py` (same pattern as `core_competency_loader.py`):
-
-- `load_learning_content(path?) -> dict` — env override `SOCIAL_STUDIES_LEARNING_CONTENT_PATH`.
-- `load_learning_performance(path?) -> dict` — env override `SOCIAL_STUDIES_LEARNING_PERFORMANCE_PATH`.
-- `allowed_learning_content(data, learning_stage, subject?) -> list[dict]` — filter by 學習階段; optionally by 科目 prefix (e.g. `"歷"` → only `歷*` codes; `"跨科"` → all). Returns list of entry dicts.
-- `allowed_learning_performance(data, learning_stage, subject?) -> list[dict]` — same filter logic.
-- `content_instructions(data) / performance_instructions(data) -> dict[str, str]` — `{value: 條目說明 / 說明}` for prompt補充 injection.
-
-### Sampler wiring (`src/social_studies/sampler.py`)
-
-- New params: `learning_content: list[str] | None = None` (cardinality 1–3), `learning_performance: list[str] | None = None` (cardinality 1–2).
-- Pool filtered by `_LEARNING_STAGE` and the sampled `params.科目` — a 歷史 題組 draws only `歷` codes; 跨科 draws across all three subject prefixes.
-- Both picks added to `SampledParams` as `學習內容_pool: list[...]` and `學習表現_pool: list[...]` (distinct from per-`SubQuestion` `學習內容: list[LearningContentRef]` which is LLM-emitted).
-
-### Prompt wiring (`src/social_studies/context_builder.py`)
-
-- Replace `data_loader.load_learning_content` / `load_learning_performance` imports with the new JSON loaders.
-- Keep the full `## 課程綱要參考` system-prompt injection (LLM ground truth), but add the sampled subset to the **user prompt** under `## 指定條件`:
-  - `- **指定學習內容**：{codes}` with per-code補充 lines.
-  - `- **指定學習表現**：{codes}` with per-code補充 lines.
-- Add `## 重要提醒` bullet: "各小題的 `學習內容` / `學習表現` 應優先使用上述指定代號；如題組設計需引入其他課綱代號，仍以 `## 課程綱要參考` 中列出者為限。"
-
-### CSV rollback
-
-After JSON files are authoritative, delete `learning_content.csv` and `learning_performance.csv`; remove the two CSV loaders from `src/social_studies/data_loader.py` (keep the few-shot CSV loader — unrelated). `csv_填寫指南.md` to be rewritten describing the JSON shape. Alternatively, keep CSVs as a researcher input format and add `scripts/csv_to_curriculum_json.py` as a build step — TBD.
-
-### CLI additions
-
-- `--learning-content` (nargs="+") and `--learning-performance` (nargs="+") override flags, mirroring `--core-competency`.
-
-### Verification (post-execution)
-
-```bash
-uv run python -c "
-from src.social_studies.curriculum_loader import load_learning_content, allowed_learning_content
-d = load_learning_content()
-print(len(d['學習內容']))  # expect current CSV row count
-print(len(allowed_learning_content(d, '第四學習階段', '歷')))  # 歷史 codes only
-"
-uv run python -m src.social_studies.cli generate --dry-run --seed 0
-# expect: '**指定學習內容**：…' and '**指定學習表現**：…' in user prompt
-```
+- **`learning_content.json`** — `{學習階段_to_grades, 學習內容[]}` where each entry is `{value, 學習階段, 年級, 科目, 條目說明, 備註, 對應學習表現[]}`. 472 entries (ODT import; spans 學習階段 二–五; 55 at 第四學習階段).
+- **`learning_performance.json`** — `{學習階段_to_grades, 學習表現[]}` where each entry is `{value, 學習階段, 科目, 說明, 對應學習內容[]}`. 26 codes (歷/地/公/社 prefixes).
+- **`learning_performance_intro.md`** — NAER framework chapter injected as `### 學習表現架構說明` in system prompt.
+- **`scripts/connect_curriculum_from_odt.py`** — one-shot ODT importer; re-run when NAER publishes an updated 呼應表.
+- **`src/social_studies/curriculum_loader.py`** — `load_learning_content()`, `load_learning_performance()`, `allowed_learning_content(data, stage, subject)`, `allowed_learning_performance(data, stage, subject)`. `subject` key now uses the full QuestionSubject value (e.g. `"歷史"`) via `_SUBJECT_TO_PREFIXES` which maps each to its code prefixes — all subjects include `"社"` so 社_* codes appear everywhere.
+- **Sampler** (`sampler.py`) — picks `學習內容_pool` (1-3 codes) and `學習表現_pool` (1-2 codes) filtered by 學習階段 + 科目; both stored on `SampledParams`.
+- **Context builder** (`context_builder.py`) — user prompt `## 指定條件` shows `- **指定學習內容**` and `- **指定學習表現**` with per-code descriptions; system prompt gets `## 課程綱要參考` (full JSON).
+- **CLI** (`cli.py`) — `--learning-content`, `--learning-performance`, `--core-competency` override flags.
+- **Old CSVs** (`learning_content.csv`, `learning_performance.csv`) deleted; CSV loaders removed from `data_loader.py`.
 
 ---
 

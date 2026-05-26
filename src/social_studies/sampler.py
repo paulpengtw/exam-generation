@@ -39,12 +39,6 @@ _LC_DATA: dict = load_learning_content()
 _LP_DATA: dict = load_learning_performance()
 
 
-def _subject_prefix(subject_value: str) -> str:
-    """Map QuestionSubject value to 科目 prefix for curriculum filtering."""
-    mapping = {"歷史": "歷", "地理": "地", "公民與社會": "公", "跨科": "跨科"}
-    return mapping.get(subject_value, subject_value)
-
-
 def sample_params(
     grade: int | None = None,
     style: list[QuestionStyle] | None = None,
@@ -97,18 +91,18 @@ def sample_params(
         competency_count = rng.randint(1, min(3, len(pool)))
         selected_competency = rng.sample(pool, competency_count)
 
-    subj_prefix = _subject_prefix(selected_subject.value)
+    subj_key = selected_subject.value
     if learning_content is not None:
         selected_lc_pool = learning_content
     else:
-        lc_entries = allowed_learning_content(_LC_DATA, _LEARNING_STAGE, subj_prefix)
+        lc_entries = allowed_learning_content(_LC_DATA, _LEARNING_STAGE, subj_key)
         lc_count = rng.randint(1, min(3, max(1, len(lc_entries))))
         selected_lc_pool = [e["value"] for e in rng.sample(lc_entries, lc_count)] if lc_entries else []
 
     if learning_performance is not None:
         selected_lp_pool = learning_performance
     else:
-        lp_entries = allowed_learning_performance(_LP_DATA, _LEARNING_STAGE, subj_prefix)
+        lp_entries = allowed_learning_performance(_LP_DATA, _LEARNING_STAGE, subj_key)
         lp_count = rng.randint(1, min(2, max(1, len(lp_entries))))
         selected_lp_pool = [e["value"] for e in rng.sample(lp_entries, lp_count)] if lp_entries else []
 
