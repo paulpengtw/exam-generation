@@ -204,12 +204,15 @@ class LLMClient:
         reasoning_parts: list[str] = []
         usage: dict = {}
 
+        system_param = (
+            [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+            if system else []
+        )
         with self.client.messages.stream(
             model=model,
             max_tokens=8192,
             temperature=0.7,
-            cache_control={"type": "ephemeral"},
-            system=system,
+            system=system_param,
             messages=messages,  # type: ignore[arg-type]
         ) as stream:
             for event in stream:
@@ -291,12 +294,15 @@ class LLMClient:
         if self._observer and self.config.llm_stream:
             return self._generate_streaming(system, anthropic_messages, model, purpose)
 
+        system_param = (
+            [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+            if system else []
+        )
         response = self.client.messages.create(
             model=model,
             max_tokens=8192,
             temperature=0.7,
-            cache_control={"type": "ephemeral"},
-            system=system,
+            system=system_param,
             messages=anthropic_messages,  # type: ignore[arg-type]
         )
         content = response.content[0].text
