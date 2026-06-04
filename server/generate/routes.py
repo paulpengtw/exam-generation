@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -168,13 +168,20 @@ async def plan_core_questions_endpoint(
         else:
             learning_stage = "第四學習階段"
 
-        candidates = math_plan_core_questions(
-            client,
-            body.topic,
-            subject_filter=body.subject_filter,
-            grade=body.grade,
-            learning_stage=learning_stage,
-        )
+        try:
+            candidates = math_plan_core_questions(
+                client,
+                body.topic,
+                subject_filter=body.subject_filter,
+                grade=body.grade,
+                learning_stage=learning_stage,
+            )
+        except ValueError as exc:
+            logger.warning("Planner returned malformed candidates: %s", exc)
+            raise HTTPException(
+                status_code=502,
+                detail="Planner upstream returned malformed candidates",
+            ) from exc
     else:
         from src.social_studies.planner import plan_core_questions as ss_plan_core_questions
         from src.social_studies.schema_loader import (
@@ -185,11 +192,18 @@ async def plan_core_questions_endpoint(
         schemas = load_schemas()
         learning_stage = load_learning_stage(schemas)
 
-        candidates = ss_plan_core_questions(
-            client,
-            body.topic,
-            subject_filter=body.subject_filter,
-            grade=body.grade,
-            learning_stage=learning_stage,
-        )
+        try:
+            candidates = ss_plan_core_questions(
+                client,
+                body.topic,
+                subject_filter=body.subject_filter,
+                grade=body.grade,
+                learning_stage=learning_stage,
+            )
+        except ValueError as exc:
+            logger.warning("Planner returned malformed candidates: %s", exc)
+            raise HTTPException(
+                status_code=502,
+                detail="Planner upstream returned malformed candidates",
+            ) from exc
     return PlanCoreQuestionsResponse(candidates=candidates)

@@ -38,8 +38,15 @@ def plan_core_questions(
         grade_hint=grade_hint,
     )
 
-    raw = client.plan(system, user, purpose="plan_core_questions")
-    return _parse_candidates(raw, n)
+    for attempt in range(2):
+        raw = client.plan(system, user, purpose="plan_core_questions")
+        try:
+            return _parse_candidates(raw, n)
+        except ValueError:
+            if attempt == 0:
+                user += f"\n注意：請務必輸出剛好 {n} 個候選的 JSON 陣列。"
+            else:
+                raise
 
 
 def _parse_candidates(raw: str, n: int) -> list[str]:
