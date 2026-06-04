@@ -40,7 +40,7 @@ Questions can include images, described by an `ImageSpec` on the generated quest
 | `"chart"` | `src/renderer.py` `render_chart()` | Deterministic matplotlib — `histogram`, `boxplot`, `line_chart`, `pie_chart` |
 | `"html"` | `src/html_renderer.py` `PlaywrightRenderer` | Sonnet writes HTML/CSS/SVG → Playwright screenshots to PNG |
 
-The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. Both math and social studies web generation accept an `image_generation_mode` parameter — set it to `gpt_image` to send the image spec to `IMAGE_MODEL` (default `gpt-image2`) and write the returned PNG directly, bypassing the Playwright path. The default mode is `html`. The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()` in `src/cli.py`.
+The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. Math and curriculum-subject generation accept an `image_generation_mode` parameter — set it to `gpt_image` to send the image spec to `IMAGE_MODEL` (default `gpt-image2`) and write the returned PNG directly, bypassing the Playwright path. For social studies, the web UI exposes image mode per 子題 row while the request-level value remains the renderer fallback. The default mode is `html`. The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()` in `src/cli.py`.
 
 ### Key Principles
 
@@ -78,7 +78,7 @@ exam-generation/
 │   │   │   ├── core_competencies.json       # 108課綱 核心素養 codes → sampler pool
 │   │   │   └── 範例_*.csv                   # Reference examples (never loaded)
 │   │   ├── few_shot/
-│   │   │   ├── few_shot_examples.csv        # Few-shot examples (long format, grouped by 範例編號)
+│   │   │   ├── few_shot_examples.csv        # Few-shot examples (long format, grouped by 範例編號; mixed 小題題型)
 │   │   │   ├── 範例_few_shot_examples.csv   # Reference example (never loaded)
 │   │   │   ├── *.json                       # JSON few-shot examples filtered by embedded style
 │   │   │   └── images/                      # Images attached to CSV few-shot examples
@@ -93,7 +93,7 @@ exam-generation/
 │   │   │   ├── core_competencies.json       # 108課綱 自然科學 核心素養 (9 entries)
 │   │   │   └── converted/課綱各項指標列表.xlsx # Canonical workbook used by the build script
 │   │   └── few_shot/
-│   │       ├── Simple-multiple-choice/      # JSON few-shot examples for 單選題 (currently seeded with .gitkeep)
+│   │       ├── Simple-multiple-choice/      # JSON few-shot examples for 單選題
 │   │       ├── Complex-multiple-choice/     # JSON few-shot examples for 複選題
 │   │       └── Constructed-response/        # JSON few-shot examples for 建構反應題
 │   └── example_exams/
@@ -119,14 +119,14 @@ exam-generation/
 │   ├── planner.py                 # Math planner shim — wraps src.common.planner with 數學領域 prompts
 │   ├── data_loader.py             # Curriculum data loading + CSV-driven few-shot loader (image-manifest aware, with per-style JSON fallback)
 │   └── social_studies/            # Social studies (108課綱 社會領域素養導向) codepath
-│       ├── schemas.py             # ExamQuestion, SubQuestion, RubricEntry, LearningContentRef, QuestionSubject
+│       ├── schemas.py             # ExamQuestion, SubQuestion, SubQuestionConfig, RubricEntry, LearningContentRef, QuestionSubject
 │       ├── schema_loader.py       # Builds schema dict from schema_meta.csv + schema_parameters.csv
 │       ├── curriculum_loader.py   # Shim over src.common.curriculum_loader (owns _SUBJECT_TO_PREFIXES + 社會 data dir)
 │       ├── core_competency_loader.py # Shim over src.common.core_competency_loader
 │       ├── planner.py             # Shim over src.common.planner with 社會領域 prompts
 │       ├── data_loader.py         # Loads few-shot CSV (learning content/performance via curriculum_loader shim)
-│       ├── context_builder.py     # Prompt assembly; injects ## 課程綱要參考 + ## 指定條件 into prompts
-│       ├── sampler.py             # Picks grade, 科目, 學習內容_pool (1-3), 學習表現_pool (1-2), 核心素養, …
+│       ├── context_builder.py     # Prompt assembly; injects ## 課程綱要參考, ## 指定條件, and per-子題 configs
+│       ├── sampler.py             # Picks grade, 科目, 題型 pool, 學習內容_pool, 學習表現_pool, 核心素養, per-子題 configs
 │       └── ...                    # verifier, corrector (reuse src/ equivalents)
 │   └── natural_sciences/          # Natural sciences (108課綱 自然科學 + PISA Scientific Literacy) codepath
 │       ├── schemas.py             # ExamQuestion (with subquestions[]), SubQuestion (科學能力 replaces 核心素養), ScienceCompetency (6 codes: 能力一/二/三 + 環境能力一/二/三), QuestionSubContext (PISA sub-context parented to 情境). No QuestionSubject — 科目 is fixed as 自然科學.
@@ -350,6 +350,11 @@ uv run python -m src.social_studies.cli generate --subject 跨科
 # Selecting 全部 omits the filter; sampler picks one subject randomly per question.
 # Maps to GET /api/generate?subject_filter=歷史 (or omitted for 全部).
 
+# Social-studies web/API also supports per-子題 controls:
+# sub_question_count=3..7 and subquestion_configs=[{question_word_limit,
+# option_word_limit, content_type, image_generation_mode}, ...].
+# These are web/API-only today; there are no dedicated CLI flags for them.
+
 # Override sampled 學習內容 codes (1–3 values)
 uv run python -m src.social_studies.cli generate --learning-content 歷Ka-Ⅳ-1 地Aa-Ⅳ-2
 
@@ -418,7 +423,7 @@ uv run uvicorn server.app:create_app --factory --reload --port 8000
 
 Routes live in:
 - `server/auth/routes.py` — sign-up, login, password reset
-- `server/generate/routes.py` — question generation, SSE streaming. `POST /api/plan-core-questions` branches on `body.subject` (`"math"` | `"social_studies"` | `"natural_sciences"`, default `"social_studies"`); math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage`. `GenerateParams` accepts curriculum-aware fields (`subject_filter`, `core_competency`, `learning_content`, `learning_performance`, `content_type`, `topic`, `passage`, `options`, `core_question`, `sub_context`, `science_competency`) — all three subjects share the same request model.
+- `server/generate/routes.py` — question generation, SSE streaming. `POST /api/plan-core-questions` branches on `body.subject` (`"math"` | `"social_studies"` | `"natural_sciences"`, default `"social_studies"`); math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage`. `GenerateParams` accepts curriculum-aware fields (`subject_filter`, `core_competency`, `learning_content`, `learning_performance`, `content_type`, `topic`, `passage`, `options`, `core_question`, `sub_context`, `science_competency`) plus social-studies per-子題 fields (`sub_question_count`, `question_word_limit`, `option_word_limit`, `subquestion_configs`) — all three subjects share the same request model.
 - `server/utility/routes.py` — health, schema introspection. `GET /api/schemas?subject=math` augments the base math schema file with `科目` (4 strands), `題目內容類型` (4 entries), and `學習表現` filtered by `學習階段` (from `data/math/curriculum/learning_performance.json`). `subject=natural_sciences` builds schema from `schema_parameters.csv` + `learning_performance.json` + `learning_content.json` (PISA-Science dimensions: 情境/情境子類別/科學能力/題型/題目內容類型).
 
 Migrations run automatically on app startup via the FastAPI lifespan handler. To run them manually:
@@ -481,6 +486,8 @@ Each generated question produces a JSON file following this schema:
 ```
 
 For image-based questions, a corresponding PNG file is generated in the same output directory. `chart_verification` is only present when a chart image was rendered and sent to the verifier; it is omitted (`null`) for text-only questions.
+
+Social studies and natural sciences use a 題組 shape with `subquestions[]`. For social studies, the top-level `題型` is a legacy/primary value, while each `subquestions[*].題型` may vary independently. Social-studies subquestions can also include per-子題 `題目內容類型`, `image_generation_mode`, and `chart_spec` when the prompt or web/API row config asks for them.
 
 ### Image Rendering
 
@@ -547,7 +554,9 @@ For social studies exam generation, parameter schemas live in CSVs; curriculum d
 | `learning_performance.json` | 108課綱 社會領域 學習表現標準 — 26 codes (歷/地/公/社 prefixes); `對應學習內容` cross-links from ODT. Sampler draws 1–2 codes per 題組; same injection pattern as 學習內容. |
 | `learning_performance_intro.md` | Official NAER 學習表現 framework chapter (構面/項目/編碼規則 + full 條目 list) → injected as `### 學習表現架構說明` in system prompt. |
 | `core_competencies.json` | 108課綱 核心素養 codes → sampler pool; override with `--core-competency`. |
-| `few_shot/few_shot_examples.csv` | Few-shot examples injected into user prompt (long format, one row per subquestion; columns include `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `答案`, `答案解析`, `評分規準`) |
+| `few_shot/few_shot_examples.csv` | Few-shot examples injected into user prompt (long format, one row per subquestion; columns include `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準`). Checked-in examples demonstrate mixed per-子題 題型, including a group with 選擇題 / 封閉式建構反應題 / 開放式建構反應題. |
+
+The social-studies web form labels the top-level `content_type` as `文本素材類型`. When users set `子題數量` (3–7), the form sends `subquestion_configs` as a JSON array string so each 子題 can carry its own 題目字數限制, 選項字數限制, 題目內容類型, and 圖片產生方式. Malformed `subquestion_configs` JSON is ignored by the backend with a warning.
 
 **Cross-subject 學習表現:** `社_*` codes (社1a/1b/2a/2b/2c/3a/3b/3c/3d-Ⅳ-*) are general 社會領域 standards that apply across all subjects — they appear in every subject's sampler pool, not only 跨科. This follows 108課綱 design.
 
@@ -571,7 +580,7 @@ The stage map covers 第二學習階段 grades 3-4, 第三 5-6, 第四 7-9, and 
 
 **Sampler 科目 handling:** Unlike social studies which filters by 科目 buckets (歷史/地理/公民與社會), natural sciences deliberately skips subject filtering — `科目` is fixed as `"自然科學"` on all subquestions. The `allowed_learning_content` / `allowed_learning_performance` helpers in `src/natural_sciences/curriculum_loader.py` override the shared-loader signature to omit the subject parameter. This is intentional: the natural sciences 108課綱 treats all content strands (生物/物理/化學/地球科學) as a single integrated domain for the 第四學習階段 sampler pool.
 
-Few-shot examples live under `data/natural_sciences/few_shot/`, organized into one folder per 題型: `Simple-multiple-choice/`, `Complex-multiple-choice/`, `Constructed-response/`. Each folder accepts JSON files (parallel to the math `data/few_shot/{style}/` layout) or a `few_shot_examples.csv` (parallel to social studies). Folders are currently seeded with `.gitkeep`; add `.json` example files to populate the injection pool.
+Few-shot examples live under `data/natural_sciences/few_shot/`, organized into one folder per 題型: `Simple-multiple-choice/`, `Complex-multiple-choice/`, `Constructed-response/`. Each folder accepts JSON files (parallel to the math `data/few_shot/{style}/` layout) or a `few_shot_examples.csv` (parallel to social studies). The repo currently includes 28 JSON examples across these folders.
 
 Natural sciences is a fully runnable third pipeline (CLI + web), parallel to social studies. See [Natural sciences CLI](#natural-sciences-108課綱-自然科學-pisa框架) above for the CLI surface.
 
@@ -614,7 +623,7 @@ Performance standards organized by learning stage (第一~第五學習階段), d
 - **with_image**: Questions involving geometric diagrams or visual elements
 - **creative_scenario**: Real-world context questions (menus, stock prices, delivery plans)
 
-**Social studies** (`data/social_studies/few_shot/`): each root-level JSON file is one few-shot sampling group; `few_shot_examples.csv` is a long-format CSV, one row per subquestion, grouped by `範例編號`. Key CSV columns beyond the base set: `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準` (JSON-encoded rubric array with codes `2/1/0/0X`). Reference: `data/social_studies/csv_填寫指南.md`.
+**Social studies** (`data/social_studies/few_shot/`): each root-level JSON file is one few-shot sampling group; `few_shot_examples.csv` is a long-format CSV, one row per subquestion, grouped by `範例編號`. Key CSV columns beyond the base set: `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準` (JSON-encoded rubric array with codes `2/1/0/0X`). The checked-in CSV includes mixed-type 題組 examples so the prompt demonstrates per-子題 題型 variation. Reference: `data/social_studies/csv_填寫指南.md`.
 
 ### Past Exams
 

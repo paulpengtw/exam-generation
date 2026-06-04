@@ -140,3 +140,21 @@ def test_csv_examples_are_single_item_groups(tmp_path: Path) -> None:
     assert len(groups) == 2
     assert all(len(group) == 1 for group in groups)
     assert [group[0]["description"] for group in groups] == ["A", "B"]
+
+
+def test_checked_in_social_studies_csv_has_three_type_group() -> None:
+    few_shot_dir = Path("data/social_studies/few_shot")
+
+    examples = load_few_shot_examples(few_shot_dir, "text_only")
+    type_sets = []
+    for ex in examples:
+        subquestions = ex.get("question", {}).get("subquestions", [])
+        if not subquestions:
+            continue
+        unique_types = {sq.get("題型") for sq in subquestions}
+        type_sets.append(unique_types)
+
+    assert any(
+        {"選擇題", "封閉式建構反應題", "開放式建構反應題"}.issubset(types)
+        for types in type_sets
+    )

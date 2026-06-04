@@ -160,6 +160,13 @@ def _parse_question(
                 for r in sq_raw.get("評分規準", [])
                 if isinstance(r, dict)
             ]
+            sq_chart_spec = None
+            raw_sq_spec = sq_raw.get("chart_spec")
+            if isinstance(raw_sq_spec, dict):
+                try:
+                    sq_chart_spec = ImageSpec(**raw_sq_spec)
+                except Exception:
+                    sq_chart_spec = None
             subquestions.append(SubQuestion(
                 id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
                 序號=sq_raw.get("序號", i),
@@ -174,6 +181,9 @@ def _parse_question(
                 答案=sq_raw.get("答案", ""),
                 答案解析=sq_raw.get("答案解析", ""),
                 評分規準=rubric,
+                題目內容類型=sq_raw.get("題目內容類型"),
+                image_generation_mode=sq_raw.get("image_generation_mode"),
+                chart_spec=sq_chart_spec,
             ))
         except Exception:
             pass

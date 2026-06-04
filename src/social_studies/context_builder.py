@@ -81,6 +81,9 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - `學習內容`：對應課綱條目編碼+說明（如 地Aa-Ⅳ-2 全球海陸分布）
 - `學習表現`：對應課綱學習表現代號+說明（如 社1b-Ⅳ-1 應用社會領域內容知識解析生活經驗或社會現象）
 - `出題概念`：一句話說明此題評量學生何種能力
+- `題目內容類型`：若使用者提供各小題配置，依該小題指定值填入
+  （純文字 / 含圖片 / graphs/charts/tables / 自訂類型）
+- `image_generation_mode`：若該小題指定圖片產生方式，填入 `html` 或 `gpt_image`
 
 ### 題型說明
 - **選擇題**：四選一；給分代號 2（正確）/ 0（錯誤）
@@ -119,10 +122,13 @@ SYSTEM_PROMPT_TEMPLATE = """\
       "學習表現": [{{"編碼": "社1b-Ⅳ-1", "說明": "應用社會領域內容知識解析生活經驗或社會現象"}}],
       "出題概念": "評量學生能否……",
       "題型": "選擇題",
+      "題目內容類型": "純文字",
+      "image_generation_mode": "html",
       "題目": "問題一\n根據文章內容……\n（A）……\n（B）……\n（C）……\n（D）……",
       "答案": "A",
       "答案解析": "從圖1……",
-      "評分規準": []
+      "評分規準": [],
+      "chart_spec": null
     }}
   ],
   "題目": ["（將文本和所有小題合併為陣列，供舊版驗證器使用）"],
@@ -131,7 +137,8 @@ SYSTEM_PROMPT_TEMPLATE = """\
 }}
 ```
 
-若題目含非連續文本素材，請加入 `chart_spec`：
+若題目含非連續文本素材，請加入 `chart_spec`；若素材只屬於特定小題，
+請放在該小題的 `chart_spec`，若整題組共用，才放在題組頂層：
 
 **統計圖表（`render_mode: "chart"`）**：
 ```json
@@ -172,7 +179,7 @@ USER_PROMPT_TEMPLATE = """\
 - **文本形式**：{text_form}
 - **文本素材類型**：{content_type}
 - **核心素養（限定使用）**：{core_competencies}
-{lc_pool_lines}{lp_pool_lines}{word_limit_lines}{subquestion_config_lines}{param_instructions}{user_materials}
+{lc_pool_lines}{lp_pool_lines}{subquestion_config_lines}{param_instructions}{user_materials}
 ## 參考範例
 
 {few_shot_examples}
@@ -329,15 +336,7 @@ def build_user_prompt(
     else:
         lp_pool_lines = ""
 
-    # #100: word limit instruction block
-    word_limit_parts = []
-    if params.question_word_limit:
-        word_limit_parts.append(f"  - **每道小題題目字數上限**：{params.question_word_limit} 字")
-    if params.option_word_limit:
-        word_limit_parts.append(f"  - **每個選項字數上限**：{params.option_word_limit} 字（限選擇題）")
-    word_limit_lines = ("\n## 字數限制\n\n" + "\n".join(word_limit_parts) + "\n") if word_limit_parts else ""
-
-    # #101: per-subquestion content_type and image_generation_mode
+    # #100/#101: per-subquestion count, word limits, content type, and image mode.
     sq_config_parts = []
     for i, cfg in enumerate(params.subquestion_configs, start=1):
         cfg_parts = []
@@ -350,9 +349,18 @@ def build_user_prompt(
         if cfg.option_word_limit:
             cfg_parts.append(f"選項字數上限={cfg.option_word_limit}")
         if cfg_parts:
-            sq_config_parts.append(f"  - 小題 {i}：" + "，".join(cfg_parts))
+            sq_config_parts.append(f"  - 第{i}小題：" + "，".join(cfg_parts))
+    if not sq_config_parts:
+        if params.question_word_limit:
+            sq_config_parts.append(f"  - 每道小題題目字數上限：{params.question_word_limit} 字")
+        if params.option_word_limit:
+            sq_config_parts.append(
+                f"  - 每個選項字數上限：{params.option_word_limit} 字（限選擇題）",
+            )
     if sq_config_parts:
-        sq_config_content_types = list({cfg.content_type for cfg in params.subquestion_configs if cfg.content_type})
+        sq_config_content_types = list(
+            {cfg.content_type for cfg in params.subquestion_configs if cfg.content_type},
+        )
         for ct in sq_config_content_types:
             ct_instr = CONTENT_TYPE_INSTRUCTIONS.get(ct, "")
             if ct_instr:
@@ -394,7 +402,10 @@ def build_user_prompt(
     user_materials = ("\n" + "\n\n".join(user_materials_parts) + "\n") if user_materials_parts else ""
 
     q_types_str = "、".join(t.value for t in params.題型)
-    sub_q_count_str = str(params.sub_question_count) if params.sub_question_count else "3–7（由命題教師自行決定）"
+    sub_q_count_str = (
+        str(params.sub_question_count)
+        if params.sub_question_count else "3–7（由命題教師自行決定）"
+    )
 
     text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
@@ -410,7 +421,6 @@ def build_user_prompt(
         core_competencies=core_competencies,
         lc_pool_lines=lc_pool_lines,
         lp_pool_lines=lp_pool_lines,
-        word_limit_lines=word_limit_lines,
         subquestion_config_lines=subquestion_config_lines,
         param_instructions=param_instructions,
         user_materials=user_materials,

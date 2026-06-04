@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import AsyncGenerator
+from urllib.parse import quote
 
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -59,6 +60,10 @@ def test_generate_route_forwards_social_studies_options() -> None:
     gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
+        sq_configs = quote(
+            '[{"question_word_limit":80,"option_word_limit":30,'
+            '"content_type":"純文字","image_generation_mode":"html"}]',
+        )
         with TestClient(app) as client:
             response = client.get(
                 "/api/generate?"
@@ -69,7 +74,9 @@ def test_generate_route_forwards_social_studies_options() -> None:
                 "&passage=%E7%B4%A0%E6%9D%90"
                 "&options=A&options=B"
                 "&learning_performance=%E7%A4%BE1b-%E2%85%A3-1"
-                "&learning_performance=%E7%A4%BE2a-%E2%85%A3-1",
+                "&learning_performance=%E7%A4%BE2a-%E2%85%A3-1"
+                "&sub_question_count=3"
+                f"&subquestion_configs={sq_configs}",
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -85,6 +92,17 @@ def test_generate_route_forwards_social_studies_options() -> None:
     assert captured["params"].passage == "素材"
     assert captured["params"].options == ["A", "B"]
     assert captured["params"].learning_performance == ["社1b-Ⅳ-1", "社2a-Ⅳ-1"]
+    assert captured["params"].sub_question_count == 3
+    assert "question_word_limit" in captured["params"].subquestion_configs
+
+
+def test_subquestion_config_decoder_ignores_malformed_json() -> None:
+    from server.generate.service import _decode_subquestion_configs
+
+    assert _decode_subquestion_configs('[{"question_word_limit": 80}]') == [
+        {"question_word_limit": 80},
+    ]
+    assert _decode_subquestion_configs("{not-json") is None
 
 
 def test_generate_route_forwards_natural_sciences_options() -> None:

@@ -123,6 +123,21 @@ def _resolve_enum(value: str | None, enum_cls: type) -> Any:
     raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
 
 
+def _decode_subquestion_configs(raw: str | None) -> list[dict] | None:
+    """Decode social-studies per-subquestion configs from the GET query string."""
+    if not raw:
+        return None
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning("subquestion_configs JSON parse failed, ignoring: %s", exc)
+        return None
+    if not isinstance(decoded, list):
+        logger.warning("subquestion_configs JSON must be an array, ignoring")
+        return None
+    return [item for item in decoded if isinstance(item, dict)]
+
+
 def _question_to_event(
     question: MathExamQuestion | SSExamQuestion | NSExamQuestion,
     config: ServerConfig,
@@ -268,13 +283,6 @@ async def generate_question_stream(
                         seed = (base_seed + i) if base_seed is not None else None
                         _emit_pipeline("question_start", index=i, total=count)
                         if is_social_studies:
-                            import json as _json
-                            _sq_configs = None
-                            if params.subquestion_configs:
-                                try:
-                                    _sq_configs = _json.loads(params.subquestion_configs)
-                                except Exception as _e:
-                                    logger.warning("subquestion_configs JSON parse failed, ignoring: %s", _e)
                             rng_params = ss_sample_params(
                                 grade=params.grade,
                                 context=context_override,
@@ -287,7 +295,9 @@ async def generate_question_stream(
                                 sub_question_count=params.sub_question_count,
                                 question_word_limit=params.question_word_limit,
                                 option_word_limit=params.option_word_limit,
-                                subquestion_configs=_sq_configs,
+                                subquestion_configs=_decode_subquestion_configs(
+                                    params.subquestion_configs,
+                                ),
                             )
                             question_id = f"ss_{timestamp}_{i+1:03d}"
                             try:

@@ -107,7 +107,7 @@ def correct_question(
 
     # Allow correcting subquestion answers/rubrics, but preserve curriculum metadata
     if "subquestions" in corrected_data and isinstance(corrected_data["subquestions"], list):
-        from src.social_studies.schemas import LearningContentRef, RubricEntry, SubQuestion
+        from src.social_studies.schemas import RubricEntry, SubQuestion
         new_sqs = []
         for i, sq_raw in enumerate(corrected_data["subquestions"]):
             if not isinstance(sq_raw, dict):
@@ -137,6 +137,14 @@ def correct_question(
                     答案=sq_raw.get("答案", original.答案 if original else ""),
                     答案解析=sq_raw.get("答案解析", original.答案解析 if original else ""),
                     評分規準=rubric if rubric else (original.評分規準 if original else []),
+                    題目內容類型=(
+                        original.題目內容類型 if original else sq_raw.get("題目內容類型")
+                    ),
+                    image_generation_mode=(
+                        original.image_generation_mode
+                        if original else sq_raw.get("image_generation_mode")
+                    ),
+                    chart_spec=original.chart_spec if original else None,
                 )
                 new_sqs.append(sq)
             except Exception:

@@ -7,7 +7,6 @@ import random
 from src.social_studies.core_competency_loader import (
     allowed_competencies,
     load_core_competencies,
-    stage_code_for,
 )
 from src.social_studies.curriculum_loader import (
     allowed_learning_content,
@@ -79,8 +78,11 @@ def sample_params(
     # 題型種類 is always 題組題 in PISA; schema has only one value so this is deterministic.
     selected_set_type = set_type if set_type is not None else rng.choice(list(QuestionSetType))
 
+    if sub_question_count is not None and not 3 <= sub_question_count <= 7:
+        raise ValueError("sub_question_count must be between 3 and 7")
+
     # 題型: sample a pool of 1-3 allowed types so each 子題 can choose its own.
-    q_type_pool = q_type if q_type is not None else list(QuestionType)
+    q_type_pool = q_type or list(QuestionType)
     type_count = rng.randint(1, min(3, len(q_type_pool)))
     selected_q_types = rng.sample(q_type_pool, type_count)
 

@@ -58,6 +58,9 @@ export interface SubQuestion {
   答案: string;
   答案解析: string;
   評分規準?: RubricEntry[];
+  題目內容類型?: string;
+  image_generation_mode?: "html" | "gpt_image";
+  chart_spec?: unknown;
 }
 
 export interface ExamQuestion {

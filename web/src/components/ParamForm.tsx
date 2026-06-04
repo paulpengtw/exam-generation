@@ -29,11 +29,7 @@ export interface GenerateParams {
   science_competency?: string[];
   learning_performance?: string[];
   learning_content?: string[];
-  // #100: 子題 count and word limits
   sub_question_count?: number;
-  question_word_limit?: number;
-  option_word_limit?: number;
-  // #101: per-子題 configs (JSON string)
   subquestion_configs?: string;
 }
 
@@ -94,11 +90,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [scienceCompetency, setScienceCompetency] = useState<string[]>([]);
   const [learningPerformance, setLearningPerformance] = useState<string[]>([]);
   const [learningContent, setLearningContent] = useState<string[]>([]);
-  // #100: 子題 count and word limits (social_studies only)
   const [subQuestionCount, setSubQuestionCount] = useState<number | "">("");
-  const [questionWordLimit, setQuestionWordLimit] = useState<number | "">("");
-  const [optionWordLimit, setOptionWordLimit] = useState<number | "">("");
-  // #101: per-子題 configs
   const [subquestionConfigs, setSubquestionConfigs] = useState<SubQuestionConfig[]>([]);
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
@@ -118,8 +110,6 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     setLearningPerformance([]);
     setLearningContent([]);
     setSubQuestionCount("");
-    setQuestionWordLimit("");
-    setOptionWordLimit("");
     setSubquestionConfigs([]);
     getSchemas(subject)
       .then((s) => {
@@ -219,7 +209,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     setLearningContent((prev) => prev.filter((value) => allowed.has(value)));
   }, [availableLearningContent]);
 
-  // Sync subquestionConfigs array length with subQuestionCount (#101)
+  // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
     const n = typeof subQuestionCount === "number" ? subQuestionCount : 0;
     setSubquestionConfigs((prev) => {
@@ -232,6 +222,12 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
   function updateSubquestionConfig(index: number, patch: Partial<SubQuestionConfig>) {
     setSubquestionConfigs((prev) => prev.map((cfg, i) => i === index ? { ...cfg, ...patch } : cfg));
+  }
+
+  function optionalNumber(raw: string): number | undefined {
+    if (raw.trim() === "") return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
   }
 
   function toggleMulti(list: string[], value: string): string[] {
@@ -249,6 +245,18 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
     if (isCurriculumSubject && !effectiveContentType) return;
+    const effectiveSubquestionConfigs =
+      subject === "social_studies" && subQuestionCount !== ""
+        ? subquestionConfigs.slice(0, subQuestionCount).map((cfg) => ({
+            content_type: cfg.content_type || undefined,
+            image_generation_mode: cfg.image_generation_mode || undefined,
+            question_word_limit: cfg.question_word_limit,
+            option_word_limit: cfg.option_word_limit,
+          }))
+        : [];
+    const hasSubquestionConfig = effectiveSubquestionConfigs.some(
+      (c) => c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit,
+    );
 
     // If no learning_performance selected, pre-draw randomly to match backend sampling
     let finalLp: string[] | undefined;
@@ -293,13 +301,9 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           ? learningContent
           : undefined,
       sub_question_count: subject === "social_studies" && subQuestionCount !== "" ? subQuestionCount : undefined,
-      question_word_limit: subject === "social_studies" && questionWordLimit !== "" ? questionWordLimit : undefined,
-      option_word_limit: subject === "social_studies" && optionWordLimit !== "" ? optionWordLimit : undefined,
       subquestion_configs:
-        subject === "social_studies" && subquestionConfigs.length > 0 && subquestionConfigs.some(
-          (c) => c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit
-        )
-          ? JSON.stringify(subquestionConfigs)
+        subject === "social_studies" && hasSubquestionConfig
+          ? JSON.stringify(effectiveSubquestionConfigs)
           : undefined,
     });
   }
@@ -338,11 +342,13 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       { label: t("form.confirm_count"), value: String(p.count) },
       { label: t("form.confirm_passage"), value: p.passage },
       { label: t("form.confirm_options"), value: p.options?.join(", ") },
-      { label: t("form.confirm_image_mode"), value: p.image_generation_mode },
+      {
+        label: t("form.confirm_image_mode"),
+        value: subject === "social_studies" ? undefined : p.image_generation_mode,
+      },
       { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined },
       { label: "小題數量", value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined },
-      { label: "各小題題目字數上限", value: p.question_word_limit !== undefined ? String(p.question_word_limit) : undefined },
-      { label: "各小題選項字數上限", value: p.option_word_limit !== undefined ? String(p.option_word_limit) : undefined },
+      { label: "各小題配置", value: p.subquestion_configs },
     ];
 
     const lpHeading = lpWasAutoDrawn
@@ -748,50 +754,20 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
       {subject === "social_studies" && (
         <div className="space-y-4 rounded-lg border border-gray-200 p-4">
-          <h3 className="text-sm font-semibold text-gray-700">子題設定（#100/#101）</h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <h3 className="text-sm font-semibold text-gray-700">子題設定</h3>
+          <div className="max-w-40">
             <div>
               <label className="block text-sm font-medium">小題數量</label>
               <input
                 type="number"
-                min={1}
-                max={10}
+                min={3}
+                max={7}
                 value={subQuestionCount}
                 onChange={(e) => {
                   const v = e.target.value;
-                  setSubQuestionCount(v === "" ? "" : Math.min(10, Math.max(1, Number(v) || 1)));
+                  setSubQuestionCount(v === "" ? "" : Math.min(7, Math.max(3, Number(v) || 3)));
                 }}
-                placeholder="自動"
-                className="mt-1 block w-full border rounded px-2 py-1"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">各小題題目字數上限</label>
-              <input
-                type="number"
-                min={10}
-                max={500}
-                value={questionWordLimit}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setQuestionWordLimit(v === "" ? "" : Number(v));
-                }}
-                placeholder="不限"
-                className="mt-1 block w-full border rounded px-2 py-1"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">各小題選項字數上限</label>
-              <input
-                type="number"
-                min={5}
-                max={200}
-                value={optionWordLimit}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setOptionWordLimit(v === "" ? "" : Number(v));
-                }}
-                placeholder="不限"
+                placeholder="自動 3-7"
                 className="mt-1 block w-full border rounded px-2 py-1"
               />
             </div>
@@ -801,10 +777,40 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
             <div className="space-y-2">
               <h4 className="text-xs font-medium text-gray-600">各小題配置</h4>
               {subquestionConfigs.map((cfg, i) => (
-                <div key={i} className="flex flex-wrap items-center gap-3 rounded border border-gray-100 bg-gray-50 px-3 py-2">
-                  <span className="w-12 shrink-0 text-sm font-medium text-gray-700">小題 {i + 1}</span>
-                  <div className="flex flex-1 flex-wrap gap-3">
-                    <div className="flex-1 min-w-32">
+                <div key={i} className="rounded border border-gray-100 bg-gray-50 px-3 py-2">
+                  <span className="block text-sm font-medium text-gray-700">第{i + 1}小題</span>
+                  <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div>
+                      <label className="block text-xs text-gray-500">題目字數限制</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={cfg.question_word_limit ?? ""}
+                        onChange={(e) =>
+                          updateSubquestionConfig(i, {
+                            question_word_limit: optionalNumber(e.target.value),
+                          })
+                        }
+                        placeholder="不限"
+                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500">選項字數限制</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={cfg.option_word_limit ?? ""}
+                        onChange={(e) =>
+                          updateSubquestionConfig(i, {
+                            option_word_limit: optionalNumber(e.target.value),
+                          })
+                        }
+                        placeholder="選擇題適用"
+                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+                      />
+                    </div>
+                    <div>
                       <label className="block text-xs text-gray-500">題目內容類型</label>
                       <select
                         value={cfg.content_type ?? ""}
@@ -817,7 +823,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                         ))}
                       </select>
                     </div>
-                    <div className="flex-1 min-w-32">
+                    <div>
                       <label className="block text-xs text-gray-500">圖片生成模式</label>
                       <select
                         value={cfg.image_generation_mode ?? ""}
@@ -837,61 +843,65 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       )}
 
-      <div>
-        <label className="block text-sm font-medium">文本字數限制</label>
-        <input
-          type="text"
-          value={passage}
-          onFocus={() => { if (passage === TEXT_HINT) setPassage(""); }}
-          onBlur={() => { if (passage === "") setPassage(TEXT_HINT); }}
-          onChange={(e) => setPassage(e.target.value)}
-          className="mt-1 block w-full border rounded px-2 py-1"
-        />
-      </div>
+      {subject !== "social_studies" && (
+        <>
+          <div>
+            <label className="block text-sm font-medium">文本字數限制</label>
+            <input
+              type="text"
+              value={passage}
+              onFocus={() => { if (passage === TEXT_HINT) setPassage(""); }}
+              onBlur={() => { if (passage === "") setPassage(TEXT_HINT); }}
+              onChange={(e) => setPassage(e.target.value)}
+              className="mt-1 block w-full border rounded px-2 py-1"
+            />
+          </div>
 
-      <fieldset>
-        <legend className="text-sm font-medium">選項字數限制</legend>
-        <div className="mt-1 space-y-1.5">
-          {options.map((opt, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <span className="w-5 text-sm text-gray-500">{String.fromCharCode(65 + i)}.</span>
-              <input
-                type="text"
-                value={opt}
-                onFocus={() => {
-                  if (opt === OPTION_HINT) {
-                    setOptions((prev) => prev.map((v, j) => j === i ? "" : v));
-                  }
-                }}
-                onBlur={() => {
-                  if (options[i] === "") {
-                    setOptions((prev) => prev.map((v, j) => j === i ? OPTION_HINT : v));
-                  }
-                }}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setOptions((prev) => prev.map((x, j) => j === i ? v : x));
-                }}
-                className="flex-1 border rounded px-2 py-1"
-              />
+          <fieldset>
+            <legend className="text-sm font-medium">選項字數限制</legend>
+            <div className="mt-1 space-y-1.5">
+              {options.map((opt, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="w-5 text-sm text-gray-500">{String.fromCharCode(65 + i)}.</span>
+                  <input
+                    type="text"
+                    value={opt}
+                    onFocus={() => {
+                      if (opt === OPTION_HINT) {
+                        setOptions((prev) => prev.map((v, j) => j === i ? "" : v));
+                      }
+                    }}
+                    onBlur={() => {
+                      if (options[i] === "") {
+                        setOptions((prev) => prev.map((v, j) => j === i ? OPTION_HINT : v));
+                      }
+                    }}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setOptions((prev) => prev.map((x, j) => j === i ? v : x));
+                    }}
+                    className="flex-1 border rounded px-2 py-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setOptions((prev) => prev.filter((_, j) => j !== i))}
+                    className="text-sm text-red-600 hover:underline disabled:opacity-40"
+                    disabled={options.length <= 2}
+                  >−</button>
+                </div>
+              ))}
               <button
                 type="button"
-                onClick={() => setOptions((prev) => prev.filter((_, j) => j !== i))}
-                className="text-sm text-red-600 hover:underline disabled:opacity-40"
-                disabled={options.length <= 2}
-              >−</button>
+                onClick={() => setOptions((prev) => [...prev, OPTION_HINT])}
+                className="text-sm text-blue-600 hover:underline disabled:opacity-40"
+                disabled={options.length >= 8}
+              >+ 新增選項</button>
             </div>
-          ))}
-          <button
-            type="button"
-            onClick={() => setOptions((prev) => [...prev, OPTION_HINT])}
-            className="text-sm text-blue-600 hover:underline disabled:opacity-40"
-            disabled={options.length >= 8}
-          >+ 新增選項</button>
-        </div>
-      </fieldset>
+          </fieldset>
+        </>
+      )}
 
-      {isCurriculumSubject && (
+      {isCurriculumSubject && subject !== "social_studies" && (
         <div>
           <label className="block text-sm font-medium">{t("form.image_generation_mode")}</label>
           <select

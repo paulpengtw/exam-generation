@@ -49,3 +49,42 @@ def test_custom_content_type_is_used_as_effective_type(tmp_path) -> None:
 
     assert "- **文本素材類型**：timeline with source excerpts" in prompt
     assert "請將題目內容類型視為「timeline with source excerpts」" in prompt
+
+
+def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
+    params = sample_params(
+        seed=1,
+        sub_question_count=3,
+        subquestion_configs=[
+            {
+                "content_type": "含圖片",
+                "image_generation_mode": "gpt_image",
+                "question_word_limit": 80,
+                "option_word_limit": 30,
+            },
+            {"content_type": "純文字", "question_word_limit": 120},
+            {"content_type": "graphs/charts/tables", "image_generation_mode": "html"},
+        ],
+    )
+
+    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+
+    assert "- **各小題允許題型（每道小題可各自選擇，不須一致）**：" in prompt
+    assert "- **小題數量**：3" in prompt
+    assert "## 各小題配置" in prompt
+    assert (
+        "第1小題：文本素材類型=含圖片，圖片生成模式=gpt_image，"
+        "題目字數上限=80，選項字數上限=30"
+    ) in prompt
+    assert "第2小題：文本素材類型=純文字，題目字數上限=120" in prompt
+    assert "第3小題：文本素材類型=graphs/charts/tables，圖片生成模式=html" in prompt
+
+
+def test_legacy_global_word_limits_render_when_no_row_config(tmp_path) -> None:
+    params = sample_params(seed=1, question_word_limit=90, option_word_limit=20)
+
+    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+
+    assert "## 各小題配置" in prompt
+    assert "每道小題題目字數上限：90 字" in prompt
+    assert "每個選項字數上限：20 字（限選擇題）" in prompt
