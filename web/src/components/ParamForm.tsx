@@ -135,14 +135,14 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     };
   }, [subject, isCurriculumSubject]);
 
-  // Re-fetch only 學習表現 when grade changes so the correct learning stage is used.
+  // Re-fetch grade-dependent fields when grade changes so the correct learning stage is used.
   useEffect(() => {
     if (grade === "") return;
     let cancelled = false;
     getSchemas(subject, grade)
       .then((s) => {
         if (cancelled) return;
-        setSchemas((prev) => prev ? { ...prev, 學習表現: s.學習表現 } : prev);
+        setSchemas((prev) => prev ? { ...prev, 學習表現: s.學習表現, 學習內容: s.學習內容, 科目: s.科目 } : prev);
       })
       .catch(() => {/* non-critical — keep existing list */});
     return () => { cancelled = true; };
