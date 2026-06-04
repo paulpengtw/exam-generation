@@ -22,6 +22,7 @@ class ServerConfig(Config):
     email_backend: str = "console"
     question_schemas_path: Path = Path(__file__).resolve().parent.parent / "question_schemas.json"
     social_studies_curriculum_dir: Path = Path(__file__).resolve().parent.parent / "data" / "social_studies" / "curriculum"
+    math_curriculum_dir: Path = Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"
     email_whitelist: tuple[str, ...] = ()
 
     @classmethod
@@ -65,6 +66,12 @@ class ServerConfig(Config):
                 os.environ.get(
                     "SOCIAL_STUDIES_CURRICULUM_DIR",
                     str(Path(__file__).resolve().parent.parent / "data" / "social_studies" / "curriculum"),
+                )
+            ),
+            math_curriculum_dir=Path(
+                os.environ.get(
+                    "MATH_CURRICULUM_DIR",
+                    str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
             ),
         )
