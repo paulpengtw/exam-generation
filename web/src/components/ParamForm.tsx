@@ -46,6 +46,13 @@ const MATH_SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
   "幾何": ["s", "S", "g", "G"],
   "統計與機率": ["d", "D", "p", "P"],
 };
+const SS_SUBJECT_FILTER_TO_CONTENT_CODE: Record<string, string | null> = {
+  "": null,
+  "歷史": "歷",
+  "地理": "地",
+  "公民與社會": "公",
+  "跨科": null,
+};
 
 export default function ParamForm({ subject = "math", onSubmit, disabled }: ParamFormProps) {
   const t = useT();
@@ -128,14 +135,14 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     };
   }, [subject, isCurriculumSubject]);
 
-  // Re-fetch only 學習表現 when grade changes so the correct learning stage is used.
+  // Re-fetch grade-dependent fields when grade changes so the correct learning stage is used.
   useEffect(() => {
     if (grade === "") return;
     let cancelled = false;
     getSchemas(subject, grade)
       .then((s) => {
         if (cancelled) return;
-        setSchemas((prev) => prev ? { ...prev, 學習表現: s.學習表現 } : prev);
+        setSchemas((prev) => prev ? { ...prev, 學習表現: s.學習表現, 學習內容: s.學習內容, 科目: s.科目 } : prev);
       })
       .catch(() => {/* non-critical — keep existing list */});
     return () => { cancelled = true; };
@@ -156,6 +163,21 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     return entries.filter((entry) => !entry.parent || entry.parent === selectedContext);
   }, [schemas, context]);
 
+  const availableLearningContent = useMemo(() => {
+    const entries = schemas?.學習內容 ?? [];
+    if (subject === "social_studies") {
+      if (!subjectFilter) return entries;
+      const code = SS_SUBJECT_FILTER_TO_CONTENT_CODE[subjectFilter] ?? null;
+      if (code === null) return entries;
+      return entries.filter((e) => e.科目 === code);
+    }
+    if (subject === "natural_sciences") {
+      if (!subjectFilter) return entries;
+      return entries.filter((e) => !e.科目 || e.科目 === subjectFilter);
+    }
+    return entries;
+  }, [schemas, subjectFilter, subject]);
+
   useEffect(() => {
     if (subject !== "natural_sciences") return;
     const allowed = new Set(availableSubContexts.map((entry) => entry.value));
@@ -168,6 +190,11 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
     setLearningPerformance((prev) => prev.filter((value) => allowed.has(value)));
   }, [availableLearningPerformance]);
+
+  useEffect(() => {
+    const allowed = new Set(availableLearningContent.map((entry) => entry.value));
+    setLearningContent((prev) => prev.filter((value) => allowed.has(value)));
+  }, [availableLearningContent]);
 
   function toggleMulti(list: string[], value: string): string[] {
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -630,26 +657,30 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       {(subject === "natural_sciences" || subject === "social_studies") && Array.isArray(schemas.學習內容) && schemas.學習內容.length > 0 && (
         <fieldset>
           <legend className="text-sm font-medium">{t("form.learning_content")}</legend>
-          <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {schemas.學習內容.map((entry) => (
-              <label key={entry.value} className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  checked={learningContent.includes(entry.value)}
-                  onChange={() =>
-                    setLearningContent((prev) => toggleMulti(prev, entry.value))
-                  }
-                  className="mt-1"
-                />
-                <span className="text-sm">
-                  <span className="font-medium">{entry.value}</span>
-                  {entry.instruction && (
-                    <span className="text-gray-600">：{entry.instruction}</span>
-                  )}
-                </span>
-              </label>
-            ))}
-          </div>
+          {availableLearningContent.length > 0 ? (
+            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {availableLearningContent.map((entry) => (
+                <label key={entry.value} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={learningContent.includes(entry.value)}
+                    onChange={() =>
+                      setLearningContent((prev) => toggleMulti(prev, entry.value))
+                    }
+                    className="mt-1"
+                  />
+                  <span className="text-sm">
+                    <span className="font-medium">{entry.value}</span>
+                    {entry.instruction && (
+                      <span className="text-gray-600">：{entry.instruction}</span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-gray-500">{t("form.learning_content_empty")}</p>
+          )}
         </fieldset>
       )}
 

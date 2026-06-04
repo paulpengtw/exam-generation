@@ -149,6 +149,11 @@ async def get_schemas(
                 for entry in content.get("學習內容", [])
                 if entry.get("學習階段") == learning_stage
             ]
+            ns_subjects = sorted({
+                entry["科目"] for entry in schemas["學習內容"] if entry.get("科目")
+            })
+            if ns_subjects:
+                schemas["科目"] = [{"value": s, "instruction": ""} for s in ns_subjects]
             return schemas
         except Exception as exc:
             raise HTTPException(
