@@ -219,6 +219,7 @@ def _render_subquestion_images(
     html_renderer: PlaywrightRenderer | None,
     image_generation_mode: str,
     obs,
+    subquestion_image_modes: dict[int, str] | None = None,
 ) -> list[str]:
     """Render PNGs for subquestion-local image specs and return paths."""
     rendered_paths: list[str] = []
@@ -226,7 +227,12 @@ def _render_subquestion_images(
         if not sub.chart_spec:
             continue
         img_path = config.output_dir / f"{question.id}_sq{sub.序號}.png"
-        mode = sub.image_generation_mode or image_generation_mode
+        mode = (
+            (subquestion_image_modes or {}).get(sub.序號)
+            or sub.image_generation_mode
+            or image_generation_mode
+        )
+        sub.image_generation_mode = mode
         question_text = "\n\n".join(
             part for part in (question.文本, sub.題目) if part
         )
@@ -313,6 +319,11 @@ def generate_one(
         html_renderer,
         image_generation_mode,
         obs,
+        {
+            i: cfg.image_generation_mode
+            for i, cfg in enumerate(params.subquestion_configs, start=1)
+            if cfg.image_generation_mode
+        },
     )
     if chart_image_path is None and subquestion_image_paths:
         chart_image_path = subquestion_image_paths[0]

@@ -113,6 +113,7 @@ function purposeToAgent(purpose: string): string {
     verify: "verifier",
     correct: "corrector",
     html_image: "image_agent",
+    gpt_image: "image_agent",
     plan: "planner",
   };
   return map[purpose] ?? purpose;

@@ -29,7 +29,6 @@ class _FakeClient:
                     "出題概念": "判讀都市更新示意圖",
                     "題型": "選擇題",
                     "題目內容類型": "含圖片",
-                    "image_generation_mode": "gpt_image",
                     "題目": "根據圖1，居民最可能關注哪一項變化？",
                     "答案": "A",
                     "答案解析": "圖中標示公共設施增加。",
@@ -72,6 +71,7 @@ def test_social_studies_subquestion_chart_spec_renders_png(tmp_path: Path) -> No
 
     assert not isinstance(question, str)
     assert question.subquestions[0].圖片 == "ss_test_sq1.png"
+    assert question.subquestions[0].image_generation_mode == "gpt_image"
     assert (tmp_path / "ss_test_sq1.png").read_bytes() == b"subquestion-png"
 
 

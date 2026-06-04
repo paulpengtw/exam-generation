@@ -22,6 +22,7 @@ _PURPOSE_TO_AGENT: dict[str, str] = {
     "verify": "verifier",
     "correct": "corrector",
     "html_image": "image_agent",
+    "gpt_image": "image_agent",
     "plan": "planner",
 }
 
@@ -427,6 +428,15 @@ class LLMClient:
                 base_url=self.config.image_base_url,
             )
 
+        purpose = "gpt_image"
+        self._emit({
+            "type": "llm_request",
+            "purpose": purpose,
+            "agent": _PURPOSE_TO_AGENT[purpose],
+            "model": self.config.image_model,
+            "messages": [{"role": "user", "content": prompt}],
+            "params": {"size": "1024x1024", "n": 1},
+        })
         response = self._image_client.images.generate(
             model=self.config.image_model,
             prompt=prompt,
@@ -440,6 +450,15 @@ class LLMClient:
 
         output = Path(output_path)
         output.write_bytes(base64.b64decode(b64_json))
+        self._emit({
+            "type": "llm_response",
+            "purpose": purpose,
+            "agent": _PURPOSE_TO_AGENT[purpose],
+            "model": self.config.image_model,
+            "content": str(output),
+            "reasoning": None,
+            "usage": None,
+        })
         return str(output)
 
 
