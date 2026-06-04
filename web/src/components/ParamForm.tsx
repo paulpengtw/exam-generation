@@ -245,6 +245,12 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       ? allLpEntries.filter((e) => p.learning_performance!.includes(e.value))
       : [];
 
+    // Resolve full 學習內容 entries for display
+    const allLcEntries = schemas?.學習內容 ?? [];
+    const lcDisplayEntries = p.learning_content
+      ? allLcEntries.filter((e) => p.learning_content!.includes(e.value))
+      : [];
+
     const rows: { label: string; value: string | undefined }[] = [
       { label: t("form.confirm_topic"), value: p.topic },
       { label: t("form.confirm_core_question"), value: p.core_question },
@@ -305,6 +311,23 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               )}
             </dd>
           </div>
+          {lcDisplayEntries.length > 0 && (
+            <div className="flex gap-3 px-4 py-2.5">
+              <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{t("form.confirm_learning_content")}</dt>
+              <dd className="flex-1 text-sm text-gray-900">
+                <ul className="space-y-1">
+                  {lcDisplayEntries.map((entry) => (
+                    <li key={entry.value} className="flex gap-2 text-sm">
+                      <span className="shrink-0 font-mono font-semibold text-gray-800">{entry.value}</span>
+                      {entry.instruction && (
+                        <span className="text-gray-600">— {entry.instruction}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          )}
         </dl>
         <div className="flex flex-wrap gap-3 pt-1">
           <button
