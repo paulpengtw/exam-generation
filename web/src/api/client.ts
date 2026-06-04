@@ -96,8 +96,10 @@ export async function getMe(): Promise<User> {
   return (await res.json()) as User;
 }
 
-export async function getSchemas(subject = "math"): Promise<Schemas> {
-  const res = await apiFetch(`/api/schemas?subject=${encodeURIComponent(subject)}`);
+export async function getSchemas(subject = "math", grade?: number): Promise<Schemas> {
+  const params = new URLSearchParams({ subject });
+  if (grade != null) params.set("grade", String(grade));
+  const res = await apiFetch(`/api/schemas?${params.toString()}`);
   return (await res.json()) as Schemas;
 }
 

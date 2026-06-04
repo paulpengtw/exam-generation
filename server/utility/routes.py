@@ -63,15 +63,26 @@ async def health() -> dict[str, str]:
 @router.get("/api/schemas")
 async def get_schemas(
     subject: str = Query(default="math"),
+    grade: int | None = Query(default=None),
     config: ServerConfig = Depends(get_config),
 ) -> dict:
+    from src.sampler import grade_to_learning_stage
+
+    def _resolve_stage(schemas: dict, grade: int | None) -> str:
+        if grade is not None:
+            try:
+                return grade_to_learning_stage(grade)
+            except ValueError:
+                pass
+        return schemas.get("學習階段", "")
+
     if subject == "social_studies":
         try:
             schemas = load_ss_schemas(config.social_studies_curriculum_dir)
             performance = load_learning_performance(
                 config.social_studies_curriculum_dir / "learning_performance.json"
             )
-            learning_stage = schemas.get("學習階段", "")
+            learning_stage = _resolve_stage(schemas, grade)
             schemas["學習表現"] = [
                 {
                     "value": entry["value"],
@@ -95,7 +106,7 @@ async def get_schemas(
                 schemas = json.load(f)
             schemas["科目"] = list(_MATH_SUBJECTS)
             schemas["題目內容類型"] = list(_MATH_CONTENT_TYPES)
-            learning_stage = schemas.get("學習階段", "")
+            learning_stage = _resolve_stage(schemas, grade)
             performance = load_common_lp(config.math_curriculum_dir)
             schemas["學習表現"] = [
                 {
