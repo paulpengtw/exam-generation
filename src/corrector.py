@@ -43,6 +43,7 @@ def correct_question(
     question: ExamQuestion,
     verification: VerificationResult,
     chart_image_path: str | None = None,
+    curriculum_context: str | None = None,
 ) -> ExamQuestion:
     """Apply verification feedback to produce a minimally corrected question.
 
@@ -80,15 +81,21 @@ def correct_question(
         chart_details_block=chart_details_block,
     )
 
+    system = (
+        f"{curriculum_context}\n\n---\n\n{CORRECTION_SYSTEM_PROMPT}"
+        if curriculum_context
+        else CORRECTION_SYSTEM_PROMPT
+    )
+
     try:
         # Use multimodal when chart has issues and PNG exists
         if verification.chart_verification and chart_image_path:
             raw_text = client.generate_with_image(
-                CORRECTION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path, purpose="correct"
+                system, user_prompt, image_path=chart_image_path, purpose="correct"
             )
             corrected_data = extract_json(raw_text)
         else:
-            corrected_data = client.generate_json(CORRECTION_SYSTEM_PROMPT, user_prompt, purpose="correct")
+            corrected_data = client.generate_json(system, user_prompt, purpose="correct")
     except Exception:
         return question  # fall back to original on any LLM/parse error
 

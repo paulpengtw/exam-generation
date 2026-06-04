@@ -107,6 +107,14 @@ def generate_one(
     system_prompt = build_system_prompt(curriculum_text, performance_text, intro_text)
     user_prompt = build_user_prompt(params, config.data_dir / "few_shot")
 
+    # Stable curriculum prefix for verifier/corrector — identical across the batch
+    # so the cache breakpoint applied in LLMClient hits on calls #2+.
+    verifier_curriculum_context = (
+        f"## 課程綱要參考\n\n{curriculum_text}\n\n"
+        f"## 學習表現\n\n{performance_text}\n\n"
+        f"{intro_text}"
+    )
+
     if dry_run:
         return f"=== SYSTEM PROMPT ({len(system_prompt)} chars) ===\n{system_prompt[:2000]}...\n\n=== USER PROMPT ({len(user_prompt)} chars) ===\n{user_prompt}"
 
@@ -144,7 +152,11 @@ def generate_one(
     if not skip_verify:
         print(f"  Verifying question {question_id}...", file=sys.stderr)
         emit_stage(obs, "verifier", "verify", "start")
-        result = verify_question(client, question, chart_image_path=chart_image_path)
+        result = verify_question(
+            client, question,
+            chart_image_path=chart_image_path,
+            curriculum_context=verifier_curriculum_context,
+        )
         emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
         status = "PASSED" if result.passed else "FAILED"
@@ -192,6 +204,14 @@ def generate_with_corrections(
 
     obs = client.get_observer() if client else None
 
+    curriculum_text = get_full_curriculum_text(curriculum)
+    performance_text = get_full_performance_text(performance)
+    verifier_curriculum_context = (
+        f"## 課程綱要參考\n\n{curriculum_text}\n\n"
+        f"## 學習表現\n\n{performance_text}\n\n"
+        f"{intro_text}"
+    )
+
     for attempt in range(max_retries):
         if skip_verify or question.verification is None or question.verification.passed:
             break
@@ -212,8 +232,11 @@ def generate_with_corrections(
                 chart_image_path = str(p)
 
         emit_stage(obs, "corrector", "correct", "start", retry=attempt + 1)
-        question = correct_question(client, question, question.verification,
-                                    chart_image_path=chart_image_path)
+        question = correct_question(
+            client, question, question.verification,
+            chart_image_path=chart_image_path,
+            curriculum_context=verifier_curriculum_context,
+        )
         emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
 
         # Re-render only when chart_spec actually changed
@@ -239,7 +262,11 @@ def generate_with_corrections(
 
         if not skip_verify:
             emit_stage(obs, "verifier", "verify", "start", retry=attempt + 1)
-            result = verify_question(client, question, chart_image_path=new_chart_image_path)
+            result = verify_question(
+                client, question,
+                chart_image_path=new_chart_image_path,
+                curriculum_context=verifier_curriculum_context,
+            )
             emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
             status = "PASSED" if result.passed else "FAILED"

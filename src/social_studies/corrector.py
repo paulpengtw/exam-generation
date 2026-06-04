@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 
 from src.llm_client import LLMClient, extract_json
+from src.social_studies.context_builder import _build_curriculum_section, _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
 from src.social_studies.schemas import ExamQuestion, ImageSpec, VerificationResult
 
-CORRECTION_SYSTEM_PROMPT = """\
+_CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO)
+
+_CORRECTION_SYSTEM_PROMPT_CORE = """\
 你是一位108課綱社會領域素養導向命題教師，剛收到審核老師對一道題組的意見回饋。
 請根據審核意見「最小幅度」修正題目，保留所有正確的部分。
 
@@ -23,6 +26,12 @@ CORRECTION_SYSTEM_PROMPT = """\
 
 請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
 """
+
+CORRECTION_SYSTEM_PROMPT = (
+    f"{_CURRICULUM_PREFIX}\n\n---\n\n{_CORRECTION_SYSTEM_PROMPT_CORE}"
+    if _CURRICULUM_PREFIX
+    else _CORRECTION_SYSTEM_PROMPT_CORE
+)
 
 CORRECTION_USER_TEMPLATE = """\
 ## 原始題目（JSON）

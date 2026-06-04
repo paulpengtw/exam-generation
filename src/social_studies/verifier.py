@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 
 from src.llm_client import LLMClient, extract_json
+from src.social_studies.context_builder import _build_curriculum_section, _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
 from src.social_studies.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
 
-VERIFICATION_SYSTEM_PROMPT = """\
+_CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO)
+
+_VERIFICATION_SYSTEM_PROMPT_CORE = """\
 你是一位108課綱社會領域素養導向命題審核教師，負責審核考試題組的可用性與明顯錯誤。你會收到一道題組，請你：
 
 1. 完全獨立地閱讀文本素材並回答每一道小題（不要看提供的解答）。
@@ -44,6 +47,12 @@ answer_match 的判斷也請寬鬆：
 
 若題目未附圖表圖片，請省略 chart_verification 欄位。只輸出 JSON，不要輸出其他文字。
 """
+
+VERIFICATION_SYSTEM_PROMPT = (
+    f"{_CURRICULUM_PREFIX}\n\n---\n\n{_VERIFICATION_SYSTEM_PROMPT_CORE}"
+    if _CURRICULUM_PREFIX
+    else _VERIFICATION_SYSTEM_PROMPT_CORE
+)
 
 VERIFICATION_USER_TEMPLATE = """\
 請審核以下社會領域素養導向題組：

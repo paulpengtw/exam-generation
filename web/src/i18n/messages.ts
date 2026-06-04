@@ -22,7 +22,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.math_title": "Mathematics 數學科",
     "subject_select.math_desc": "Grade 7-9 Taiwan math curriculum, PISA-style questions.",
     "subject_select.ss_title": "Social Studies 社會領域",
-    "subject_select.ss_desc": "PISA reading framework: text forms, reading processes.",
+    "subject_select.ss_desc": "Grade 7-9 Taiwan social studies curriculum",
 
     "staging.banner": "⚠ Staging environment — data may be reset at any time.",
 

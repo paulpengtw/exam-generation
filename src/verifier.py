@@ -57,6 +57,7 @@ def verify_question(
     client: LLMClient,
     question: ExamQuestion,
     chart_image_path: str | None = None,
+    curriculum_context: str | None = None,
 ) -> VerificationResult:
     """Run a second LLM pass to independently verify the question and answer."""
     question_text = "\n".join(question.題目)
@@ -73,9 +74,15 @@ def verify_question(
             "以下附上題目引用的圖表圖片，請檢查圖表數據與題目描述是否一致。"
         )
 
+    system = (
+        f"{curriculum_context}\n\n---\n\n{VERIFICATION_SYSTEM_PROMPT}"
+        if curriculum_context
+        else VERIFICATION_SYSTEM_PROMPT
+    )
+
     try:
         raw = client.generate_with_image(
-            VERIFICATION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path, purpose="verify"
+            system, user_prompt, image_path=chart_image_path, purpose="verify"
         )
         result = extract_json(raw)
 
