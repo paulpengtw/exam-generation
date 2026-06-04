@@ -252,6 +252,10 @@ async def generate_question_stream(
                                 logger.exception("worker ss_generate error")
                                 return
                         else:
+                            # math sampler accepts a single 科目 string; take first if list provided
+                            math_subject_filter: str | None = None
+                            if params.subject_filter:
+                                math_subject_filter = params.subject_filter[0]
                             rng_params = math_sample_params(
                                 grade_content=grade_content,
                                 grade=params.grade,
@@ -260,6 +264,11 @@ async def generate_question_stream(
                                 set_type=set_type_override,
                                 q_type=q_type_override,
                                 seed=seed,
+                                core_competency=params.core_competency,
+                                learning_content=params.learning_content,
+                                learning_performance=params.learning_performance,
+                                content_type=params.content_type,
+                                subject_filter=math_subject_filter,
                             )
                             question_id = f"q_{timestamp}_{i+1:03d}"
                             try:
@@ -275,6 +284,11 @@ async def generate_question_stream(
                                     max_retries=max_retries,
                                     skip_verify=params.skip_verify,
                                     html_renderer=html_renderer,
+                                    image_generation_mode=params.image_generation_mode,
+                                    user_topic=params.topic or "",
+                                    user_passage=params.passage or "",
+                                    user_options=params.options,
+                                    user_core_question=params.core_question or "",
                                 )
                             except Exception as exc:
                                 tb = traceback.format_exc()
