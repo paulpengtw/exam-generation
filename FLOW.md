@@ -2,7 +2,7 @@
 
 End-to-end trace of `GET /api/generate` from browser button click to rendered question.
 
-> For the CLI-only trace see [`LOGIC.md`](LOGIC.md). The shared per-question pipeline (`generate_one`) is the same in both paths.
+> For the CLI-only trace see [`LOGIC.md`](LOGIC.md). The shared per-question pipeline (`generate_with_corrections`, which wraps `generate_one`) is the same in both paths.
 
 ## ASCII Flow
 
@@ -80,12 +80,21 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
                 │
                 ├── 6. [unless skip_verify] verify_question()  (src/verifier.py)
                 │       LLM call #3 — multimodal: question + solution + optional PNG
-                │       → VerificationResult {passed, answer_match, chart_verification}
+                │       → VerificationResult {passed, answer_match, my_answer, provided_answer,
+                │                              chart_verification}
                 │
-                ├── 7. Write output files to config.output_dir
+                ├── 7. [if !passed and retries remain] correct + re-verify
+                │       (src/cli.py:generate_with_corrections, src/corrector.py)
+                │       ├── correct_question(client, question, verification, chart_image_path)
+                │       │     LLM call #4 — text-only, or multimodal if chart_verification + PNG
+                │       │     → ExamQuestion with only 題目/正確解題分析/chart_spec mutable
+                │       ├── re-render PNG only if chart_spec changed
+                │       └── verify_question() again → loop up to max_retries times
+                │
+                ├── 8. Write output files to config.output_dir
                 │       {question_id}.json  +  {question_id}.png  (if image)
                 │
-                └── 8. queue.put_nowait {event:"result", data: question_json + image_base64}
+                └── 9. queue.put_nowait {event:"result", data: question_json + image_base64}
                           (service.py:188-190)
 
             [async generator drains queue, yields each event to SSE response]
@@ -137,7 +146,10 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
 | LLM call #2 | `src/renderer.py` | 343 | HTML/CSS/SVG generation (html mode only) |
 | Playwright render | `src/html_renderer.py` | — | `PlaywrightRenderer.render()` → PNG screenshot |
 | LLM call #3 | `src/verifier.py` | — | multimodal verify: question + solution + optional PNG |
-| generate_one | `src/cli.py` | 83–142 | shared pipeline used by both CLI and web server |
+| Correction loop | `src/cli.py` | `generate_with_corrections()` | one initial generate_one + ≤ max_retries (correct + re-verify) passes |
+| LLM call #4 (correction) | `src/corrector.py` | `correct_question()` | multimodal when chart_verification + PNG exists |
+| generate_one | `src/cli.py` | 83–142 | single question generation; called by generate_with_corrections |
+| generate_with_corrections | `src/cli.py` | 148–235 | shared pipeline used by both CLI and web server |
 
 ## Concurrency Notes
 
@@ -148,7 +160,7 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
 
 ## CLI vs Web
 
-The web server calls `src.cli.generate_one()` directly (`service.py:166-178`) — the same function the CLI loop body calls. The web layer adds:
+The web server calls `src.cli.generate_with_corrections()` directly (`service.py:166-178`) — the same function the CLI loop body calls. The correction loop runs inside `generate_with_corrections()` so both CLI and web go through the same retry logic. The web layer adds:
 
 1. SSE transport (queue + `_QueueWriter` stderr bridge)
 2. In-process queue with position tracking

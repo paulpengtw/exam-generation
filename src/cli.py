@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.config import Config
+from src.corrector import correct_question
 from src.schema_loader import load_grades, load_schemas
 
 _GRADES: list[int] = load_grades(load_schemas())
@@ -23,7 +24,7 @@ from src.data_loader import (
     load_performance_standards,
 )
 from src.html_renderer import PlaywrightRenderer
-from src.llm_client import LLMClient
+from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
 from src.sampler import sample_params
 from src.schemas import (
@@ -63,6 +64,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
+    gen.add_argument("--max-retries", type=int, default=None,
+                     help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)")
     gen.add_argument("--output", type=str, help="Output directory")
     gen.add_argument("--dry-run", action="store_true", help="Show prompt without calling LLM")
     gen.add_argument("--env-file", type=str, help="Path to .env file")
@@ -107,9 +110,13 @@ def generate_one(
     if dry_run:
         return f"=== SYSTEM PROMPT ({len(system_prompt)} chars) ===\n{system_prompt[:2000]}...\n\n=== USER PROMPT ({len(user_prompt)} chars) ===\n{user_prompt}"
 
+    obs = client.get_observer() if client else None
+
     # Generate question via LLM
     print(f"  Generating question {question_id}...", file=sys.stderr)
+    emit_stage(obs, "generator", "llm_generate", "start")
     raw_json = client.generate_json(system_prompt, user_prompt)
+    emit_stage(obs, "generator", "llm_generate", "end")
 
     # Parse into ExamQuestion
     question = _parse_question(raw_json, question_id, params, config.model_execute)
@@ -120,6 +127,7 @@ def generate_one(
         img_path = config.output_dir / f"{question_id}.png"
         print(f"  Rendering image: {img_path}", file=sys.stderr)
         question_text = "\n".join(question.題目)
+        emit_stage(obs, "image_agent", "render_image", "start")
         rendered = render_image(
             question.chart_spec.model_dump(),
             img_path,
@@ -127,6 +135,7 @@ def generate_one(
             html_renderer=html_renderer,
             llm_client=client,
         )
+        emit_stage(obs, "image_agent", "render_image", "end")
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
@@ -134,10 +143,110 @@ def generate_one(
     # Verify if requested
     if not skip_verify:
         print(f"  Verifying question {question_id}...", file=sys.stderr)
+        emit_stage(obs, "verifier", "verify", "start")
         result = verify_question(client, question, chart_image_path=chart_image_path)
+        emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
+
+    return question
+
+
+def generate_with_corrections(
+    config: Config,
+    client: LLMClient | None,
+    curriculum: list[dict],
+    performance: dict,
+    intro_text: str,
+    grade_content: dict[int, list[LearningContentItem]],
+    params: SampledParams,
+    question_id: str,
+    max_retries: int = 3,
+    skip_verify: bool = False,
+    html_renderer: PlaywrightRenderer | None = None,
+    dry_run: bool = False,
+) -> ExamQuestion | str:
+    """generate_one followed by up to max_retries correction passes.
+
+    On each failed verification, sends the question + verifier details back to
+    the LLM to produce a minimal targeted fix rather than regenerating from scratch.
+    Image is only re-rendered when chart_spec actually changes.
+    """
+    question = generate_one(
+        config=config,
+        client=client,
+        curriculum=curriculum,
+        performance=performance,
+        intro_text=intro_text,
+        grade_content=grade_content,
+        params=params,
+        question_id=question_id,
+        dry_run=dry_run,
+        skip_verify=skip_verify,
+        html_renderer=html_renderer,
+    )
+
+    if dry_run or not isinstance(question, ExamQuestion):
+        return question
+
+    obs = client.get_observer() if client else None
+
+    for attempt in range(max_retries):
+        if skip_verify or question.verification is None or question.verification.passed:
+            break
+
+        print(
+            f"  Verification failed; applying correction "
+            f"(attempt {attempt + 1}/{max_retries})...",
+            file=sys.stderr,
+        )
+
+        prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
+
+        # Resolve current PNG path for multimodal corrector
+        chart_image_path: str | None = None
+        if question.圖片:
+            p = config.output_dir / question.圖片
+            if p.exists():
+                chart_image_path = str(p)
+
+        emit_stage(obs, "corrector", "correct", "start", retry=attempt + 1)
+        question = correct_question(client, question, question.verification,
+                                    chart_image_path=chart_image_path)
+        emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
+
+        # Re-render only when chart_spec actually changed
+        new_chart_image_path: str | None = None
+        if question.chart_spec and question.chart_spec != prior_chart_spec:
+            img_path = config.output_dir / f"{question_id}.png"
+            print(f"  Chart spec changed; re-rendering image: {img_path}", file=sys.stderr)
+            emit_stage(obs, "image_agent", "render_image", "start")
+            rendered = render_image(
+                question.chart_spec.model_dump(),
+                img_path,
+                question_text="\n".join(question.題目),
+                html_renderer=html_renderer,
+                llm_client=client,
+            )
+            emit_stage(obs, "image_agent", "render_image", "end")
+            if rendered:
+                question.圖片 = f"{question_id}.png"
+                new_chart_image_path = rendered
+        elif question.圖片:
+            p = config.output_dir / question.圖片
+            new_chart_image_path = str(p) if p.exists() else None
+
+        if not skip_verify:
+            emit_stage(obs, "verifier", "verify", "start", retry=attempt + 1)
+            result = verify_question(client, question, chart_image_path=new_chart_image_path)
+            emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
+            question.verification = result
+            status = "PASSED" if result.passed else "FAILED"
+            print(
+                f"  Re-verification {status}: {result.details[:100]}",
+                file=sys.stderr,
+            )
 
     return question
 
@@ -239,6 +348,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # Initialize LLM client (skip for dry-run)
     client = None if args.dry_run else LLMClient(config)
+    if client is not None:
+        client.set_observer(make_stderr_observer(truncate=config.log_truncate))
 
     # Initialize Playwright renderer (skip for dry-run)
     # Started once here and reused across all questions to amortize ~1-2s startup cost
@@ -264,11 +375,12 @@ def main(argv: list[str] | None = None) -> None:
     # Generate questions
     results = []
     base_seed = args.seed
+    max_retries = args.max_retries if args.max_retries is not None else config.max_retries
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     try:
         for i in range(args.count):
             seed = (base_seed + i) if base_seed is not None else None
-            rng = random.Random(seed)
+            question_id = f"q_{timestamp}_{i+1:03d}"
 
             params = sample_params(
                 grade_content=grade_content,
@@ -280,14 +392,12 @@ def main(argv: list[str] | None = None) -> None:
                 seed=seed,
             )
 
-            question_id = f"q_{timestamp}_{i+1:03d}"
-
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
                   f"style={params.style.value}, 情境={'、'.join(c.value for c in params.情境)}, "
                   f"題型={params.題型.value}", file=sys.stderr)
             print(f"  學習內容: {', '.join(c.編碼 for c in params.學習內容)}", file=sys.stderr)
 
-            result = generate_one(
+            result = generate_with_corrections(
                 config=config,
                 client=client,
                 curriculum=curriculum,
@@ -296,9 +406,10 @@ def main(argv: list[str] | None = None) -> None:
                 grade_content=grade_content,
                 params=params,
                 question_id=question_id,
-                dry_run=args.dry_run,
+                max_retries=max_retries,
                 skip_verify=args.no_verify,
                 html_renderer=html_renderer,
+                dry_run=args.dry_run,
             )
 
             if args.dry_run:

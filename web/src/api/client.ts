@@ -20,6 +20,10 @@ export interface SchemaEntry {
   instruction: string;
 }
 
+export interface LearningPerformanceEntry extends SchemaEntry {
+  科目: string;
+}
+
 export interface Schemas {
   學習階段: string;
   grades: number[];
@@ -27,7 +31,10 @@ export interface Schemas {
   題型種類: SchemaEntry[];
   題型: SchemaEntry[];
   數學思考: SchemaEntry[];
-  question_style: SchemaEntry[];
+  question_style?: SchemaEntry[];
+  題目內容類型?: SchemaEntry[];
+  科目?: SchemaEntry[];
+  學習表現?: LearningPerformanceEntry[];
   [key: string]: unknown;
 }
 
@@ -61,6 +68,9 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   }
   const res = await fetch(path, { ...options, headers });
   if (!res.ok) {
+    if (res.status === 401) {
+      useAuthStore.getState().logout();
+    }
     throw new ApiError(res.status, await extractDetail(res));
   }
   return res;
@@ -86,7 +96,28 @@ export async function getMe(): Promise<User> {
   return (await res.json()) as User;
 }
 
-export async function getSchemas(): Promise<Schemas> {
-  const res = await apiFetch("/api/schemas");
+export async function getSchemas(subject = "math"): Promise<Schemas> {
+  const res = await apiFetch(`/api/schemas?subject=${encodeURIComponent(subject)}`);
   return (await res.json()) as Schemas;
+}
+
+export interface PlanCoreQuestionsRequest {
+  topic: string;
+  subject_filter?: string[];
+  grade?: number;
+}
+
+export interface PlanCoreQuestionsResponse {
+  candidates: string[];
+}
+
+export async function planCoreQuestions(
+  req: PlanCoreQuestionsRequest,
+): Promise<PlanCoreQuestionsResponse> {
+  const res = await apiFetch("/api/plan-core-questions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  return (await res.json()) as PlanCoreQuestionsResponse;
 }

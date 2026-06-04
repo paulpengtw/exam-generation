@@ -15,8 +15,10 @@ graph TD
     B -->|grade / 題型 / 情境 / 學習內容| C{Context Builder}
     D[Few-shot Example DB] -->|matching examples| C
     C -->|assembled prompt| E[LLM: claude-sonnet-4-6 via OpenAI endpoint]
-    E -->|generated question JSON| F[Verifier: independent solve pass]
-    F -->|validated JSON| G[Output: JSON + optional PNG]
+    E -->|generated question JSON| F[Verifier: independent solve + correction loop]
+    F -->|passed| G[Output: JSON + optional PNG]
+    F -->|failed| H[Corrector: targeted fix]
+    H --> F
 ```
 
 ### Runnable surfaces
@@ -38,13 +40,13 @@ Questions can include images, described by an `ImageSpec` on the generated quest
 | `"chart"` | `src/renderer.py` `render_chart()` | Deterministic matplotlib — `histogram`, `boxplot`, `line_chart`, `pie_chart` |
 | `"html"` | `src/html_renderer.py` `PlaywrightRenderer` | Sonnet writes HTML/CSS/SVG → Playwright screenshots to PNG |
 
-The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()` in `src/cli.py`.
+The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. For social studies web generation, users can alternatively select GPT image generation, which sends the same image spec to `IMAGE_MODEL` (default `gpt-image2`) and writes the returned PNG directly. The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()` in `src/cli.py`.
 
 ### Key Principles
 
 - **No RAG.** All curriculum data and few-shot examples are injected directly as context.
 - **Randomness is script-side.** The program selects grade, question type, context, learning content — not the LLM.
-- **Two-pass verification.** Sonnet generates, then Sonnet independently solves and flags errors.
+- **Verify + correct loop.** Sonnet generates → Sonnet verifies → on failure, Sonnet applies a minimal targeted correction and re-verifies (up to `max_retries` times). Only the wrong field changes; classification, metadata, and correct fields are preserved.
 - **OpenAI-compatible endpoint.** Uses the `openai` SDK for endpoint diversity. Opus plans, Sonnet executes.
 
 ## Project Structure
@@ -54,12 +56,28 @@ exam-generation/
 ├── data/
 │   ├── curriculum/
 │   │   ├── 學習內容.json          # Full K-12 math curriculum content (grades 1-12)
-│   │   └── 學習表現.json          # Learning performance standards
+│   │   └── 學習表現.json          # Math learning performance standards
 │   ├── few_shot/
 │   │   ├── text_only/             # Text-only question examples
 │   │   ├── with_chart/            # Questions with chart descriptions
 │   │   ├── with_image/            # Questions with image descriptions
 │   │   └── creative_scenario/     # Creative real-world scenario examples
+│   ├── social_studies/
+│   │   ├── curriculum/
+│   │   │   ├── schema_meta.csv              # 學習階段 + grades (researcher-editable)
+│   │   │   ├── schema_parameters.csv        # Parameter values + instructions (6 categories)
+│   │   │   ├── learning_content.json        # 108課綱 學習內容 (472 entries, 學習階段 二–五; ODT-sourced 對應學習表現)
+│   │   │   ├── learning_performance.json    # 108課綱 學習表現標準 (26 codes; ODT-sourced 對應學習內容)
+│   │   │   ├── learning_performance_intro.md # NAER 學習表現 framework chapter → system prompt
+│   │   │   ├── core_competencies.json       # 108課綱 核心素養 codes → sampler pool
+│   │   │   └── 範例_*.csv                   # Reference examples (never loaded)
+│   │   ├── few_shot/
+│   │   │   ├── few_shot_examples.csv        # Few-shot examples (long format, grouped by 範例編號)
+│   │   │   ├── 範例_few_shot_examples.csv   # Reference example (never loaded)
+│   │   │   ├── *.json                       # JSON few-shot examples filtered by embedded style
+│   │   │   └── images/                      # Images attached to CSV few-shot examples
+│   │   ├── example_exams/               # PISA/NAER reference exam PDFs
+│   │   └── csv_填寫指南.md              # zh-TW filler guide for JSON curriculum files + CSVs
 │   └── example_exams/
 │       ├── 112P_Math.pdf          # Past exam: year 112
 │       ├── 113P_Math.pdf          # Past exam: year 113
@@ -70,12 +88,22 @@ exam-generation/
 │   ├── sampler.py                 # Random parameter selection
 │   ├── context_builder.py         # Prompt assembly with few-shot injection
 │   ├── llm_client.py              # OpenAI-compatible LLM client
-│   ├── verifier.py                # Two-pass answer verification
+│   ├── verifier.py                # Independent answer verification pass
+│   ├── corrector.py               # Targeted correction pass for failed-verification questions
 │   ├── renderer.py                # matplotlib PNG for chart questions (render_mode="chart")
 │   ├── html_renderer.py           # Playwright HTML→PNG for image questions (render_mode="html")
 │   ├── schemas.py                 # Pydantic data models (enums loaded from question_schemas.json)
 │   ├── schema_loader.py           # Loads question_schemas.json and builds dynamic enums
-│   └── data_loader.py             # Curriculum data loading & indexing
+│   ├── data_loader.py             # Curriculum data loading & indexing
+│   └── social_studies/            # Social studies (108課綱 社會領域素養導向) codepath
+│       ├── schemas.py             # ExamQuestion, SubQuestion, RubricEntry, LearningContentRef, QuestionSubject
+│       ├── schema_loader.py       # Builds schema dict from schema_meta.csv + schema_parameters.csv
+│       ├── curriculum_loader.py   # JSON loaders for learning_content/performance + allowed_* sampler helpers
+│       ├── core_competency_loader.py # JSON loader + allowed_core_competencies() for 核心素養 sampler pool
+│       ├── data_loader.py         # Loads few-shot CSV (learning content/performance now via curriculum_loader)
+│       ├── context_builder.py     # Prompt assembly; injects ## 課程綱要參考 + ## 指定條件 into prompts
+│       ├── sampler.py             # Picks grade, 科目, 學習內容_pool (1-3), 學習表現_pool (1-2), 核心素養, …
+│       └── ...                    # verifier, corrector (reuse src/ equivalents)
 ├── server/                        # FastAPI backend
 │   ├── app.py                     # Application factory (uvicorn entry: server.app:create_app)
 │   ├── config.py                  # Server-only config (JWT, DB, CORS)
@@ -91,7 +119,9 @@ exam-generation/
 │   └── Dockerfile                 # Multi-stage build → nginx:alpine
 ├── alembic/                       # Database migrations
 ├── tests/                         # Pytest suite
-├── scripts/                       # One-off utility scripts
+├── scripts/
+│   ├── connect_curriculum_from_odt.py  # One-shot ODT importer: populates 對應學習表現/對應學習內容 cross-links in the two JSON files
+│   └── ...                            # Other one-off utility scripts
 ├── output/                        # CLI-generated questions (gitignored)
 ├── question_schemas.json          # User-editable: 學習階段, grades, and allowed values for all question parameters
 ├── docker-compose.yml             # db + backend + frontend for local full-stack run
@@ -157,9 +187,14 @@ Environment variables (set in `.env` or export directly):
 | `LLM_BASE_URL` | CLI + server | Base URL for the API endpoint | `https://api.anthropic.com/v1` |
 | `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-opus-4-6` |
 | `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `claude-sonnet-4-6` |
+| `IMAGE_API_KEY` | CLI + server | API key for optional social-studies GPT image generation | — |
+| `IMAGE_BASE_URL` | CLI + server | Base URL for the image generation endpoint | `https://api.openai.com/v1` |
+| `IMAGE_MODEL` | CLI + server | Image generation model used when GPT image mode is selected | `gpt-image2` |
 | `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
+| `LLM_MAX_RETRIES` | CLI + server | Max correction attempts when verification fails | `3` |
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |
 | `QUESTION_SCHEMAS_PATH` | CLI + server | Path to question parameter config JSON | `./question_schemas.json` |
+| `SOCIAL_STUDIES_CURRICULUM_DIR` | CLI + server | Directory containing social-studies curriculum CSVs | `./data/social_studies/curriculum` |
 | `DATABASE_URL` | server | Async SQLAlchemy database URL | `sqlite+aiosqlite:///./dev.db` |
 | `DB_PASSWORD` | docker-compose | Password for the bundled Postgres service | `changeme` |
 | `JWT_SECRET` | server | Secret used to sign auth tokens — must be a long random string | **(required for server)** |
@@ -221,7 +256,45 @@ uv run python -m src.cli generate --output ./my_output
 
 # Dry run: show assembled prompt without calling LLM
 uv run python -m src.cli generate --dry-run
+
+# Cap correction attempts when verification fails (default 3)
+uv run python -m src.cli generate --max-retries 2
 ```
+
+### Social studies (108課綱 社會領域素養導向)
+
+```bash
+# Generate one 題組 (subject sampled randomly)
+uv run python -m src.social_studies.cli generate
+
+# Restrict 科目 to a subset — sampler picks randomly from given values
+uv run python -m src.social_studies.cli generate --subject 歷史 地理
+
+# Force a single subject + grade
+uv run python -m src.social_studies.cli generate --subject 公民與社會 --grade 9
+
+# Cross-subject 題組
+uv run python -m src.social_studies.cli generate --subject 跨科
+
+# Web UI equivalent: 科目 dropdown on the social-studies Generate form
+# Options: 全部（隨機）/ 歷史 / 地理 / 公民與社會 / 跨科
+# Selecting 全部 omits the filter; sampler picks one subject randomly per question.
+# Maps to GET /api/generate?subject_filter=歷史 (or omitted for 全部).
+
+# Override sampled 學習內容 codes (1–3 values)
+uv run python -m src.social_studies.cli generate --learning-content 歷Ka-Ⅳ-1 地Aa-Ⅳ-2
+
+# Override sampled 學習表現 codes (1–2 values)
+uv run python -m src.social_studies.cli generate --learning-performance 社1b-Ⅳ-1
+
+# Override 核心素養 codes
+uv run python -m src.social_studies.cli generate --core-competency 社-J-A2
+
+# Batch, seeded
+uv run python -m src.social_studies.cli generate --count 5 --seed 1 --batch
+```
+
+Most math flags (`--grade`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--max-retries`, `--batch`, `--dry-run`, `--output`) work identically for social studies. Social studies does not use `--style`.
 
 ## Running the server and web app
 
@@ -278,6 +351,8 @@ Each generated question produces a JSON file following this schema:
     "passed": true,
     "answer_match": true,
     "details": "...",
+    "my_answer": "...",
+    "provided_answer": "...",
     "chart_verification": {
       "chart_data_match": true,
       "chart_labels_correct": true,
@@ -349,6 +424,26 @@ All 5 question parameter categories use the same `{value, instruction}` object f
 
 To use an alternate config file: `QUESTION_SCHEMAS_PATH=/path/to/config.json uv run python -m src.cli generate`
 
+### Social studies parameters
+
+For social studies exam generation, parameter schemas live in CSVs; curriculum data (學習內容, 學習表現, 核心素養) lives in JSON files — all under `data/social_studies/curriculum/`:
+
+| File | Controls |
+|---|---|
+| `schema_meta.csv` | 學習階段 label, target grades |
+| `schema_parameters.csv` | Values + LLM instructions for 情境, 題型種類, 題型, 文本形式, 閱讀歷程, 科目 (歷史/地理/公民與社會/跨科). Rubric scoring uses `2/1/0/0X` convention (`0X` = 未作答). |
+| `learning_content.json` | 108課綱 社會領域 學習內容 — 472 entries spanning 學習階段 二–五 (55 entries mapped at 第四學習階段; 57 shared entries have `科目=""` and appear in every subject's pool). `對應學習表現` cross-links populated from official NAER ODT 呼應表. Sampler draws 1–3 codes per 題組 filtered by 學習階段 + 科目; injected into `## 指定條件` (user prompt) and `## 課程綱要參考` (system prompt). |
+| `learning_performance.json` | 108課綱 社會領域 學習表現標準 — 26 codes (歷/地/公/社 prefixes); `對應學習內容` cross-links from ODT. Sampler draws 1–2 codes per 題組; same injection pattern as 學習內容. |
+| `learning_performance_intro.md` | Official NAER 學習表現 framework chapter (構面/項目/編碼規則 + full 條目 list) → injected as `### 學習表現架構說明` in system prompt. |
+| `core_competencies.json` | 108課綱 核心素養 codes → sampler pool; override with `--core-competency`. |
+| `few_shot/few_shot_examples.csv` | Few-shot examples injected into user prompt (long format, one row per subquestion; columns include `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `答案`, `答案解析`, `評分規準`) |
+
+**Cross-subject 學習表現:** `社_*` codes (社1a/1b/2a/2b/2c/3a/3b/3c/3d-Ⅳ-*) are general 社會領域 standards that apply across all subjects — they appear in every subject's sampler pool, not only 跨科. This follows 108課綱 design.
+
+**Re-populating curriculum JSON from NAER:** Run `scripts/connect_curriculum_from_odt.py` whenever NAER publishes an updated 呼應表. It reads the official ODT and overwrites `對應學習表現` / `對應學習內容` in the two JSON files.
+
+Changes take effect on the next run — no rebuild required. See **[`data/social_studies/csv_填寫指南.md`](data/social_studies/csv_填寫指南.md)** for the field-by-field guide (zh-TW). Reference files prefixed with `範例_` in the same folders demonstrate correct formatting but are never loaded by the system.
+
 ## Data Sources
 
 ### Curriculum Data (學習內容.json)
@@ -367,11 +462,13 @@ Performance standards organized by learning stage (第一~第五學習階段), d
 
 ### Few-shot Examples
 
-Structured examples converted from the Claude Desktop proof-of-concept, organized by question style:
+**Math** (`data/few_shot/`): JSON files organized by question style:
 - **text_only**: Pure text questions (e.g., arithmetic, algebra, sequences)
 - **with_chart**: Questions involving statistical charts (histogram, boxplot, line chart)
 - **with_image**: Questions involving geometric diagrams or visual elements
 - **creative_scenario**: Real-world context questions (menus, stock prices, delivery plans)
+
+**Social studies** (`data/social_studies/few_shot/`): each root-level JSON file is one few-shot sampling group; `few_shot_examples.csv` is a long-format CSV, one row per subquestion, grouped by `範例編號`. Key CSV columns beyond the base set: `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準` (JSON-encoded rubric array with codes `2/1/0/0X`). Reference: `data/social_studies/csv_填寫指南.md`.
 
 ### Past Exams
 
@@ -531,7 +628,7 @@ For each question `i` in `range(args.count)`:
 
 ---
 
-### Phase 5: Image Rendering + Verification (Two-Pass)
+### Phase 5: Image Rendering + Verification + Correction Loop
 
 Image rendering happens **before** verification inside `generate_one()` so the verifier can inspect the image.
 
@@ -553,9 +650,15 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 26. If `--no-verify` not set, `verify_question(client, question, chart_image_path)` is called (verifier.py) — **LLM call #3**:
     - Formats question text and solution into `VERIFICATION_USER_TEMPLATE`
     - Sends to LLM via `client.generate_with_image()` — text + optional base64 PNG in a multimodal message
-    - Parses JSON response into `VerificationResult(passed, answer_match, details, chart_verification)` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}`
+    - Parses JSON response into `VerificationResult(passed, answer_match, details, my_answer, provided_answer, chart_verification)` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}`
     - On parse failure: returns `VerificationResult(passed=False)`
 27. Result attached to `question.verification`
+
+#### 5B. Correction loop (`src/cli.py` `generate_with_corrections()`, `src/corrector.py`)
+
+28. If `verification.passed=False` and retries remain, `correct_question(client, question, verification, chart_image_path)` (`src/corrector.py`) sends the failed question JSON + verifier's `details` (+ `my_answer`/`provided_answer` + optional `chart_verification`) back to Sonnet — multimodal if a PNG exists and chart verification failed. Returns a new `ExamQuestion` with only `題目`, `正確解題分析`, and `chart_spec` mutable; all classification and metadata fields are restored from the original.
+29. If `chart_spec` actually changed (`!=` compare), re-render the PNG. Otherwise reuse the existing PNG.
+30. Re-verify (**LLM call #3** again). Loop up to `max_retries` total correction passes (default 3, overridable via `--max-retries` / `LLM_MAX_RETRIES`).
 
 ---
 
@@ -581,6 +684,9 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 | 1 | Generate question JSON | Sonnet (`model_execute`) | llm_client.py | 26-40 |
 | 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet (`model_execute`) | renderer.py | 343 |
 | 3 | Verify question + image (multimodal) | Sonnet (`model_execute`) | verifier.py (`generate_with_image`) | — |
+| 4 | Correction (when verification fails; multimodal if chart was the issue) | Sonnet (`model_execute`) | corrector.py | — |
+
+Calls 3 + 4 may repeat up to `max_retries` times (default 3).
 
 ### Randomness Points
 

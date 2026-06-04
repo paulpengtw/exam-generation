@@ -21,6 +21,7 @@ class ServerConfig(Config):
     frontend_url: str = ""
     email_backend: str = "console"
     question_schemas_path: Path = Path(__file__).resolve().parent.parent / "question_schemas.json"
+    social_studies_curriculum_dir: Path = Path(__file__).resolve().parent.parent / "data" / "social_studies" / "curriculum"
     email_whitelist: tuple[str, ...] = ()
 
     @classmethod
@@ -36,6 +37,9 @@ class ServerConfig(Config):
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
             model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-opus-4-6"),
             model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
+            image_api_key=os.environ.get("IMAGE_API_KEY", ""),
+            image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
+            image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),
             output_dir=Path(os.environ.get("OUTPUT_DIR", "./output")),
             data_dir=Path(os.environ.get("DATA_DIR", "./data")),
             rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),
@@ -55,6 +59,12 @@ class ServerConfig(Config):
                 os.environ.get(
                     "QUESTION_SCHEMAS_PATH",
                     str(Path(__file__).resolve().parent.parent / "question_schemas.json"),
+                )
+            ),
+            social_studies_curriculum_dir=Path(
+                os.environ.get(
+                    "SOCIAL_STUDIES_CURRICULUM_DIR",
+                    str(Path(__file__).resolve().parent.parent / "data" / "social_studies" / "curriculum"),
                 )
             ),
         )

@@ -75,7 +75,7 @@ def verify_question(
 
     try:
         raw = client.generate_with_image(
-            VERIFICATION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path
+            VERIFICATION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path, purpose="verify"
         )
         result = extract_json(raw)
 
@@ -92,6 +92,8 @@ def verify_question(
             passed=result.get("passed", False),
             answer_match=result.get("answer_match", False),
             details=result.get("details", ""),
+            my_answer=result.get("my_answer", ""),
+            provided_answer=result.get("provided_answer", ""),
             chart_verification=chart_verif,
         )
     except (json.JSONDecodeError, ValueError, KeyError) as e:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import traceback
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
@@ -16,7 +17,12 @@ from sse_starlette.sse import EventSourceResponse
 from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
-from server.generate.models import GenerateParams
+from server.generate.models import (
+    GenerateParams,
+    ImageGenerationMode,
+    PlanCoreQuestionsRequest,
+    PlanCoreQuestionsResponse,
+)
 from server.generate.service import generate_question_stream
 from server.models import GenerationLog, User
 from server.rate_limit import jwt_user_key, limiter
@@ -37,6 +43,7 @@ def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
 @limiter.limit("10/hour", key_func=jwt_user_key)
 async def generate_endpoint(
     request: Request,
+    subject: str = Query(default="math"),
     grade: int | None = Query(default=None),
     style: list[str] | None = Query(default=None),
     context: list[str] | None = Query(default=None),
@@ -45,6 +52,14 @@ async def generate_endpoint(
     count: int = Query(default=1, ge=1),
     skip_verify: bool = Query(default=False),
     seed: int | None = Query(default=None),
+    image_generation_mode: ImageGenerationMode = Query(default="html"),
+    subject_filter: list[str] | None = Query(default=None),
+    content_type: str | None = Query(default=None),
+    passage: str | None = Query(default=None),
+    options: list[str] | None = Query(default=None),
+    topic: str | None = Query(default=None),
+    core_question: str | None = Query(default=None),
+    learning_performance: list[str] | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -55,6 +70,7 @@ async def generate_endpoint(
     `completed` or `failed` when the stream ends.
     """
     params = GenerateParams(
+        subject=subject,
         grade=grade,
         style=style,
         context=context,
@@ -63,6 +79,14 @@ async def generate_endpoint(
         count=count,
         skip_verify=skip_verify,
         seed=seed,
+        image_generation_mode=image_generation_mode,
+        subject_filter=subject_filter,
+        content_type=content_type,
+        passage=passage,
+        options=options,
+        topic=topic,
+        core_question=core_question,
+        learning_performance=learning_performance,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 
@@ -89,8 +113,9 @@ async def generate_endpoint(
                 yield _serialize_event(event)
         except Exception as exc:
             status = "failed"
-            error_msg = f"{type(exc).__name__}: {exc}"
-            logger.exception("generate_endpoint stream error: %s", error_msg)
+            tb = traceback.format_exc()
+            error_msg = f"{type(exc).__name__}: {exc}\n\n{tb}"
+            logger.exception("generate_endpoint stream error")
             yield {"event": "error", "data": error_msg}
             yield {"event": "done", "data": ""}
         finally:
@@ -110,3 +135,32 @@ async def generate_endpoint(
         event_generator(),
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+@router.post("/plan-core-questions", response_model=PlanCoreQuestionsResponse)
+@limiter.limit("30/hour", key_func=jwt_user_key)
+async def plan_core_questions_endpoint(
+    request: Request,
+    body: PlanCoreQuestionsRequest,
+    user: User = Depends(get_current_user),
+    config: ServerConfig = Depends(get_config),
+) -> PlanCoreQuestionsResponse:
+    """Return three candidate 核心問題 for a given topic (Opus single call)."""
+    from src.config import Config as SrcConfig
+    from src.llm_client import LLMClient
+    from src.social_studies.planner import plan_core_questions
+    from src.social_studies.schema_loader import load_learning_stage, load_schemas
+
+    src_config = SrcConfig.from_env()
+    client = LLMClient(src_config)
+    schemas = load_schemas()
+    learning_stage = load_learning_stage(schemas)
+
+    candidates = plan_core_questions(
+        client,
+        body.topic,
+        subject_filter=body.subject_filter,
+        grade=body.grade,
+        learning_stage=learning_stage,
+    )
+    return PlanCoreQuestionsResponse(candidates=candidates)

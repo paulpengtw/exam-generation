@@ -12,10 +12,11 @@ All curriculum data (學習內容.json, 學習表現.json) is injected directly 
 ### Script-side randomness
 The Python code handles all random selection (grade, 情境, 題型種類, 題型, 數學思考, 學習內容, question style). The LLM receives deterministic instructions — it does not choose these parameters itself.
 
-### Two-pass verification
-1. First call (Sonnet): generates the question and solution
-2. Chart is rendered to PNG (if `chart_spec` present) — before verification so the verifier can see it
-3. Second call (Sonnet): independently solves the question, inspects the chart image (multimodal), and flags any discrepancies. Returns structured `VerificationResult` with an optional nested `ChartVerificationResult`.
+### Verify + correct loop
+1. First call (Sonnet): generates the question and solution.
+2. Chart is rendered to PNG (if `chart_spec` present) — before verification so the verifier can see it.
+3. Second call (Sonnet, multimodal): independently solves the question, inspects PNG, returns `VerificationResult` with `passed`, `answer_match`, `details`, `my_answer`, `provided_answer`, and optional `chart_verification`.
+4. If `passed=False`, a correction pass sends the failed question + verifier feedback back to Sonnet for a minimal targeted fix (`src/corrector.py`). PNG re-renders only when `chart_spec` actually changes. Re-verify and loop up to `max_retries` (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
 
 ### OpenAI-compatible endpoint
 Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-opus-4-6` for planning, `claude-sonnet-4-6` for generation and verification.
@@ -23,21 +24,56 @@ Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-op
 ### Web-ready design
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
 
+### Social studies mode (parallel forked codepath)
+`src/social_studies/` is a self-contained fork that generates **108課綱 社會領域素養導向 命題** (歷史/地理/公民與社會, 跨科題組). It reuses `llm_client`, `verifier`, `corrector`, and `renderer` but has its own sampler, context builder, schema loader, and data loader.
+
+PISA-style tags (`閱讀歷程`, `文本形式`) are retained as secondary diversity axes to influence question design, but the primary framing is 108課綱, not PISA reading literacy.
+
+Schema, curriculum, and few-shot data are **CSV-driven** for schema/few-shot; **JSON-driven** for curriculum. Files under `data/social_studies/` read at runtime:
+
+| File | Purpose |
+|---|---|
+| `curriculum/schema_meta.csv` | 學習階段 label + grades list |
+| `curriculum/schema_parameters.csv` | Allowed values + instructions for all 6 question parameter categories (includes 科目: 歷史/地理/公民與社會/跨科) |
+| `curriculum/learning_performance.json` | 108課綱 社會領域 學習表現標準 (26 codes; ODT-sourced) → system prompt + sampler pool |
+| `curriculum/learning_content.json` | 108課綱 社會領域 學習內容 (472 entries; ODT-sourced `對應學習表現`) → system prompt + sampler pool |
+| `few_shot/few_shot_examples.csv` | Few-shot examples (long format, grouped by `範例編號`; one row per subquestion) |
+
+CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separator. `範例_`-prefixed files in the same folders are reference examples for researchers — they are never loaded by the system. See `data/social_studies/csv_填寫指南.md` for the field-by-field filler guide.
+
+**Sampler 科目 filter:** `_SUBJECT_TO_PREFIXES` in `curriculum_loader.py` maps each subject to its 科目 set. All subjects include `"社"` so the 16 cross-subject general 學習表現 codes (社1a/1b/2a/2b/2c/3a/3b/3c/3d-Ⅳ-*) are in every subject's pool — not only 跨科. This is per 108課綱 design where 社_* codes apply across all 社會領域 subjects. All subjects also include the empty-string `""` bucket so the 57 shared 學習內容 entries with `科目=""` appear in every subject's draw pool (parallel to the `社` bucket for 學習表現).
+
 ## Key Files
 
 | File | Purpose |
 |---|---|
-| `data/curriculum/學習內容.json` | Full K-12 curriculum content, 14 grade levels |
-| `data/curriculum/學習表現.json` | Learning performance standards by stage |
-| `data/few_shot/` | Structured few-shot examples by question style |
+| `data/curriculum/學習內容.json` | Full K-12 math curriculum content, 14 grade levels |
+| `data/curriculum/學習表現.json` | Math learning performance standards by stage |
+| `data/few_shot/` | Math few-shot examples by question style |
 | `data/example_exams/` | Past national exam PDFs (112-114) for reference |
-| `question_schemas.json` | User-editable config: `"學習階段"` (string), `"grades"` (int array), and all 5 question parameter categories using `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
+| `question_schemas.json` | Math user-editable config: `"學習階段"` (string), `"grades"` (int array), and all 5 question parameter categories using `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
 | `src/schema_loader.py` | Loads `question_schemas.json`, exposes `load_grades()` / `load_learning_stage()`, builds dynamic str-enums via `build_enums()`, and builds `{category: {value: instruction}}` lookup via `build_instructions()` |
-| `src/schemas.py` | Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time); `ImageSpec` describes the image (`render_mode`, `chart_type`, etc.); includes `ChartVerificationResult` nested in `VerificationResult` |
+| `data/social_studies/curriculum/schema_meta.csv` | Social studies 學習階段 + grades (runtime-editable) |
+| `data/social_studies/curriculum/schema_parameters.csv` | Social studies parameter values + instructions (6 categories) |
+| `data/social_studies/curriculum/learning_performance.json` | Social studies 學習表現標準 JSON (26 codes; 科目/構面/項目 metadata + bidirectional `對應學習內容` field populated from ODT 呼應表) → system prompt + sampler pool |
+| `data/social_studies/curriculum/learning_performance_intro.md` | Official NAER 學習表現 framework chapter (構面/項目/編碼規則 + full 條目) → system prompt `### 學習表現架構說明` |
+| `data/social_studies/curriculum/learning_content.json` | Social studies 學習內容 JSON (472 entries spanning 學習階段 二/三/四/五; `對應學習表現` populated from ODT 呼應表 — 55 entries mapped at 第四學習階段) → system prompt + sampler pool |
+| `scripts/connect_curriculum_from_odt.py` | One-shot importer: reads the official 社會領域學習重點與核心素養呼應表 (ODT) and overwrites `對應學習表現` in `learning_content.json` and `對應學習內容` in `learning_performance.json`; also appends any perf codes referenced in the ODT but missing from the JSON. Re-run if NAER publishes an updated 呼應表. |
+| `data/social_studies/few_shot/few_shot_examples.csv` | Social studies few-shot examples (long format grouped by 範例編號; one row per subquestion with all 108課綱 metadata columns) |
+| `data/social_studies/csv_填寫指南.md` | zh-TW filler guide: field-by-field explanation of JSON + CSV files |
+| `src/social_studies/schema_loader.py` | Builds social-studies schema dict from `schema_meta.csv` + `schema_parameters.csv` |
+| `src/social_studies/curriculum_loader.py` | JSON loaders for `learning_content.json` / `learning_performance.json` + sampler helpers (`allowed_*`, `*_instructions`, `load_performance_intro`); `_SUBJECT_TO_PREFIXES` maps QuestionSubject values to code-prefix sets (all include `"社"` and `""` so cross-subject and shared entries appear in every pool) |
+| `data/social_studies/curriculum/core_competencies.json` | 108課綱 核心素養 codes → sampler pool; loaded by `core_competency_loader.py` |
+| `src/social_studies/core_competency_loader.py` | JSON loader + `allowed_core_competencies(data, stage, subject)` for 核心素養 sampler pool |
+| `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
+| `src/social_studies/context_builder.py` | Social studies prompt assembly; `## 課程綱要參考` block injected into system prompt |
+| `src/social_studies/schemas.py` | Social studies Pydantic models: `ExamQuestion`, `SubQuestion`, `LearningContentRef`, `RubricEntry`, `QuestionSubject` (歷史/地理/公民與社會/跨科), `VerificationResult`, `ImageSpec` |
+| `src/schemas.py` | Math Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time); `ImageSpec` describes the image (`render_mode`, `chart_type`, etc.); includes `ChartVerificationResult` nested in `VerificationResult` |
 | `src/sampler.py` | Random parameter selection logic |
 | `src/context_builder.py` | Prompt assembly with few-shot injection |
 | `src/llm_client.py` | OpenAI-compatible API client with model routing; `generate_with_image()` for multimodal (text + PNG) calls |
-| `src/verifier.py` | Two-pass answer verification |
+| `src/verifier.py` | Independent answer verification pass |
+| `src/corrector.py` | Minimal targeted correction pass for failed-verification questions |
 | `src/renderer.py` | matplotlib PNG generation for statistical charts (`render_mode: "chart"`) |
 | `src/html_renderer.py` | Playwright HTML→PNG renderer (`render_mode: "html"`) |
 | `IMPLEMENTATION_PLAN.md` | Planned refactors and known tech debt |
@@ -58,6 +94,8 @@ All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `rende
 
 ## Exam Question Schema
 
+### Math question schema
+
 The output JSON follows this structure (Chinese keys are required):
 
 ```
@@ -69,6 +107,39 @@ The output JSON follows this structure (Chinese keys are required):
 題目: array of strings (question text, options, etc.)
 正確解題分析: array of strings (step-by-step solution)
 ```
+
+### Social studies question schema (108課綱)
+
+```
+核心問題: string — the essential question driving the 題組
+文本: string — the passage / stimulus material
+取材來源: array of strings — source citations
+情境: 1+ of [個人, 公共, 職業, 教育]
+題型種類: 題組題
+題型: one of [選擇題, 封閉式建構反應題, 開放式建構反應題]
+閱讀歷程: 1-2 of [擷取訊息, 形成廣泛理解, 發展解釋, 省思與評鑑文本內容, 省思與評鑑文本形式]
+文本形式: one of [連續文本, 非連續文本, 混合文本]
+題目: array of strings (legacy flat format — kept for compatibility)
+正確解題分析: array of strings (legacy)
+subquestions: array of SubQuestion objects (primary format)
+  SubQuestion:
+    id: string
+    序號: int
+    年級: int
+    科目: list[str] — e.g. ["地理"] or ["歷史", "公民與社會"]
+    核心素養: list[str] — e.g. ["社-J-A2"]
+    學習內容: list[{編碼, 說明}] — 108課綱 codes e.g. 歷Ka-Ⅳ-1
+    學習表現: list[{編碼, 說明}] — e.g. 社1b-Ⅳ-1
+    出題概念: string
+    題型: string
+    題目: string (full question text including options)
+    答案: string
+    答案解析: string
+    評分規準: list[RubricEntry] — for open-response items
+      RubricEntry: {code: "2"|"1"|"0"|"0X", 規準說明: str, 學生作答實例: list[str]}
+```
+
+Rubric scoring codes: `2` (full credit), `1` (partial), `0` (incorrect), `0X` (no response).
 
 ## Curriculum Data Structure
 
@@ -98,11 +169,15 @@ Content codes follow the pattern `{Category}-{Grade}-{Number}`:
 
 ## Sampler Constraints
 
-Allowed values for all parameters come from `question_schemas.json` at the project root. Edit that file to add or remove options — no Python changes required. Override the path with `QUESTION_SCHEMAS_PATH` env var.
+**Math:** Allowed values for all parameters come from `question_schemas.json` at the project root. Edit that file to add or remove options — no Python changes required. Override the path with `QUESTION_SCHEMAS_PATH` env var.
+
+**Social studies:** Allowed values come from `data/social_studies/curriculum/schema_parameters.csv` (`類別,value,instruction`). Override the directory with `SOCIAL_STUDIES_CURRICULUM_DIR` env var.
 
 The file has two top-level scalar/array fields:
 - **`學習階段`**: string injected into the system prompt (e.g. `"第四學習階段"`)
 - **`grades`**: integer array of allowed grade levels (e.g. `[7, 8, 9]`) — drives CLI `--grade` choices, sampler selection, grade content index, and system prompt grade range text
+
+Social studies sampler picks: grade, 情境, 題型種類 (always 題組題), 題型, 文本形式, 閱讀歷程, **科目** (歷史/地理/公民與社會/跨科), **核心素養** (1–3 codes from `core_competencies.json`), **學習內容_pool** (1–3 codes from `learning_content.json` filtered by 學習階段 + 科目), **學習表現_pool** (1–2 codes from `learning_performance.json` filtered similarly), and question_style. Use `--subject` to override 科目 via CLI; `--learning-content`, `--learning-performance`, `--core-competency` to override the curriculum pools. Use `--grade`, `--style`, `--q-type`, etc. as with math. The web Generate form exposes the same 科目 override as a `subject_filter` dropdown (全部 / 歷史 / 地理 / 公民與社會 / 跨科); selecting 全部 omits the filter and lets the sampler pick randomly — this maps to the `subject=None` default on `ss_sample_params`. The `subject_filter` query param on `GET /api/generate` accepts a list of values identical to the CLI `--subject` pool.
 
 When randomly selecting parameters, respect these rules:
 - **grade**: pick one from `question_schemas.json["grades"]`
@@ -183,13 +258,14 @@ For each question:
 
 **4G. Parse** — `_parse_question()` builds `ExamQuestion` + `QuestionMetadata` (cli.py:145-212); handles both `image_spec` (new) and `chart_spec` (legacy) field names from LLM output
 
-### Phase 5: Image Rendering + Verification (`src/renderer.py`, `src/html_renderer.py`, `src/verifier.py`, cli.py inside `generate_one`)
+### Phase 5: Image Rendering + Verification + Correction Loop (`src/renderer.py`, `src/html_renderer.py`, `src/verifier.py`, `src/corrector.py`, cli.py inside `generate_with_corrections`)
 Image rendering happens **before** verification so the verifier can see the PNG.
 
 1. If `question.chart_spec` exists: `render_image(spec, path, question_text, html_renderer, llm_client)` (renderer.py:271) dispatches by `render_mode`:
    - `"chart"` → `render_chart()` (renderer.py:50-71): `histogram/boxplot/line_chart/pie_chart` → hardcoded matplotlib
    - `"html"` → LLM call #2: `_generate_html_via_llm()` (renderer.py:343) asks Sonnet to write HTML/CSS/SVG; then `html_renderer.render()` (html_renderer.py) screenshots via Playwright
-2. LLM call #3: `verify_question(client, question, chart_image_path)` — sends question + solution + optional PNG via `client.generate_with_image()` (multimodal). Returns `VerificationResult{passed, answer_match, details, chart_verification}` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}` (verifier.py)
+2. LLM call #3: `verify_question(client, question, chart_image_path)` — sends question + solution + optional PNG via `client.generate_with_image()` (multimodal). Returns `VerificationResult{passed, answer_match, details, my_answer, provided_answer, chart_verification}` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}` (verifier.py)
+3. If `passed=False` and retries remain: `correct_question(client, question, verification, chart_image_path)` (corrector.py) sends the failed question JSON + verifier feedback to Sonnet (multimodal if chart failed + PNG exists). Only `題目`, `正確解題分析`, and `chart_spec` are mutable; all other fields are restored from the original. Re-render PNG only if `chart_spec` changed. Re-verify and loop up to `max_retries` times.
 
 ### Phase 7: Output (cli.py:313-330)
 - Default: `{question_id}.json` per question (`model_dump_json`, cli.py:315-320)
@@ -202,6 +278,9 @@ Image rendering happens **before** verification so the verifier can see the PNG.
 | 1 | Generate question | Sonnet | llm_client.py:26-40 |
 | 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet | renderer.py:343 |
 | 3 | Verify answer + image (multimodal) | Sonnet | verifier.py (`generate_with_image`) |
+| 4 | Correction (when verification fails; multimodal if chart failed) | Sonnet | corrector.py |
+
+Calls 3 + 4 may repeat up to `max_retries` times (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
 
 ### Randomness Summary
 

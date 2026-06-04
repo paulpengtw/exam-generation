@@ -76,6 +76,30 @@ interface Section {
   imageRef?: string;
 }
 
+function buildMetadataItems(question: ExamQuestion): string[] {
+  const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+  if (isSocialStudies) {
+    const subs = question.subquestions!;
+    const unique = <T>(arr: T[]): T[] => [...new Set(arr)];
+    return [
+      ...unique(subs.map((s) => `${s.年級}年級`)),
+      ...unique(subs.flatMap((s) => s.科目)),
+      ...unique(subs.flatMap((s) => s.核心素養)),
+      ...unique(subs.flatMap((s) => s.學習內容.map((lc) => lc.編碼))),
+      ...unique(subs.flatMap((s) => s.學習表現.map((lp) => lp.編碼))),
+    ].filter(Boolean);
+  }
+  return [
+    ...(question.情境 ?? []),
+    question.題型種類,
+    question.題型,
+    ...(question.數學思考 ?? []),
+    ...(question.閱讀歷程 ?? []),
+    question.文本形式,
+    ...(question.學習內容 ?? []).map((c) => c.編碼).filter(Boolean),
+  ].filter((item): item is string => Boolean(item));
+}
+
 function buildContentXml(title: string, sections: Section[], isMultiple: boolean): string {
   const paras: string[] = [];
 
@@ -92,14 +116,7 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
     }
 
     // Metadata chips line
-    const meta = [
-      ...question.情境,
-      question.題型種類,
-      question.題型,
-      ...question.數學思考,
-      ...question.學習內容.map((c) => c.編碼).filter(Boolean),
-    ]
-      .filter(Boolean)
+    const meta = buildMetadataItems(question)
       .map(xmlEscape)
       .join(" ｜ ");
     if (meta) {
@@ -119,17 +136,55 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
       );
     }
 
-    // Question text
-    paras.push(`<text:p text:style-name="Heading2">${xmlEscape("題目")}</text:p>`);
-    question.題目.forEach((line) => {
-      paras.push(`<text:p text:style-name="Standard">${xmlEscape(line)}</text:p>`);
-    });
+    const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
 
-    // Solution
-    paras.push(`<text:p text:style-name="Heading2">${xmlEscape("正確解題分析")}</text:p>`);
-    question.正確解題分析.forEach((line) => {
-      paras.push(`<text:p text:style-name="Standard">${xmlEscape(line)}</text:p>`);
-    });
+    if (isSocialStudies) {
+      // Core question
+      if (question.核心問題) {
+        paras.push(`<text:p text:style-name="Heading2">${xmlEscape("核心問題")}</text:p>`);
+        paras.push(`<text:p text:style-name="Standard">${xmlEscape(question.核心問題)}</text:p>`);
+      }
+      // Passage
+      if (question.文本) {
+        paras.push(`<text:p text:style-name="Heading2">${xmlEscape("文本")}</text:p>`);
+        paras.push(`<text:p text:style-name="Standard">${xmlEscape(question.文本)}</text:p>`);
+      }
+      // Subquestions
+      question.subquestions!.forEach((sub) => {
+        const subMeta = [
+          `${sub.年級}年級`,
+          ...sub.科目,
+          ...sub.核心素養,
+          ...sub.學習內容.map((lc) => lc.編碼),
+          ...sub.學習表現.map((lp) => lp.編碼),
+        ].filter(Boolean).map(xmlEscape).join(" ｜ ");
+        paras.push(`<text:p text:style-name="Heading2">${xmlEscape(`第${sub.序號}題`)}</text:p>`);
+        if (subMeta) {
+          paras.push(`<text:p text:style-name="MetaLine">${subMeta}</text:p>`);
+        }
+        paras.push(`<text:p text:style-name="Standard">${xmlEscape(sub.題目)}</text:p>`);
+        paras.push(`<text:p text:style-name="MetaLine">${xmlEscape("答案：")}${xmlEscape(sub.答案)}</text:p>`);
+        if (sub.答案解析) {
+          paras.push(`<text:p text:style-name="MetaLine">${xmlEscape("解析：")}${xmlEscape(sub.答案解析)}</text:p>`);
+        }
+        if (sub.評分規準?.length) {
+          paras.push(`<text:p text:style-name="MetaLine">${xmlEscape("評分規準：")}</text:p>`);
+          sub.評分規準.forEach((r) => {
+            paras.push(`<text:p text:style-name="Standard">${xmlEscape(`[${r.code}] ${r.規準說明}`)}</text:p>`);
+          });
+        }
+      });
+    } else {
+      // Math: flat question + solution
+      paras.push(`<text:p text:style-name="Heading2">${xmlEscape("題目")}</text:p>`);
+      question.題目.forEach((line) => {
+        paras.push(`<text:p text:style-name="Standard">${xmlEscape(line)}</text:p>`);
+      });
+      paras.push(`<text:p text:style-name="Heading2">${xmlEscape("正確解題分析")}</text:p>`);
+      question.正確解題分析.forEach((line) => {
+        paras.push(`<text:p text:style-name="Standard">${xmlEscape(line)}</text:p>`);
+      });
+    }
   });
 
   return `<?xml version="1.0" encoding="UTF-8"?>

@@ -5,12 +5,15 @@ description = "CLI tool for generating Taiwan junior high school math exam quest
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "anthropic>=0.40",
+    "anthropic>=0.40",
     "openai>=1.0",
     "pydantic>=2.0",
     "matplotlib>=3.8",
     "python-dotenv>=1.0",
     "pdfplumber>=0.11.9",
     "playwright>=1.40",
+    "json-repair>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -44,4 +47,5 @@ testpaths = ["tests"]
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "ruff>=0.15.9",
 ]
