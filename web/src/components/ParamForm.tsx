@@ -48,6 +48,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingParams, setPendingParams] = useState<GenerateParams | null>(null);
 
   const [grade, setGrade] = useState<number | "">("");
   const [style, setStyle] = useState<string>("");
@@ -149,7 +150,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
     if ((subject === "social_studies" || subject === "math") && !effectiveContentType) return;
-    onSubmit({
+    setPendingParams({
       grade,
       style: subject === "math" ? style : undefined,
       content_type: effectiveContentType,
@@ -172,6 +173,69 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           ? learningPerformance
           : undefined,
     });
+  }
+
+  function handleConfirmSend() {
+    if (!pendingParams) return;
+    setPendingParams(null);
+    onSubmit(pendingParams);
+  }
+
+  if (pendingParams) {
+    const p = pendingParams;
+    const rows: { label: string; value: string | undefined }[] = [
+      { label: t("form.confirm_topic"), value: p.topic },
+      { label: t("form.confirm_core_question"), value: p.core_question },
+      { label: t("form.confirm_grade"), value: String(p.grade) },
+      { label: t("form.confirm_subject_filter"), value: p.subject_filter },
+      { label: t("form.confirm_style"), value: p.style },
+      { label: t("form.confirm_content_type"), value: p.content_type },
+      { label: t("form.confirm_context"), value: p.context.length ? p.context.join(", ") : undefined },
+      { label: t("form.confirm_set_type"), value: p.set_type },
+      { label: t("form.confirm_q_type"), value: p.q_type.length ? p.q_type.join(", ") : undefined },
+      { label: t("form.confirm_count"), value: String(p.count) },
+      { label: t("form.confirm_passage"), value: p.passage },
+      { label: t("form.confirm_options"), value: p.options?.join(", ") },
+      { label: t("form.confirm_image_mode"), value: p.image_generation_mode },
+      { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined },
+      { label: t("form.confirm_learning_performance"), value: p.learning_performance?.join(", ") },
+    ];
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-base font-semibold">{t("form.confirm_title")}</h2>
+          <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
+        </div>
+        <dl className="divide-y rounded-lg border bg-gray-50">
+          {rows.map(({ label, value }) => (
+            <div key={label} className="flex gap-3 px-4 py-2.5">
+              <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{label}</dt>
+              <dd className="flex-1 text-sm text-gray-900 break-words">
+                {value ?? <span className="text-gray-400 italic">{t("form.confirm_none")}</span>}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <div className="flex flex-wrap gap-3 pt-1">
+          <button
+            type="button"
+            onClick={handleConfirmSend}
+            disabled={disabled}
+            className="inline-flex items-center gap-2 rounded bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {t("form.btn_confirm_send")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPendingParams(null)}
+            className="rounded border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 hover:bg-gray-50"
+          >
+            {t("form.btn_back_edit")}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
