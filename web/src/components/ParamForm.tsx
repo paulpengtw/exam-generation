@@ -36,6 +36,13 @@ const SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
   "公民與社會": ["公", "社"],
   "跨科": ["歷", "地", "公", "社"],
 };
+const MATH_SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
+  "": ["n", "N", "r", "R", "a", "A", "f", "F", "s", "S", "g", "G", "d", "D", "p", "P"],
+  "數與量": ["n", "N"],
+  "代數": ["r", "R", "a", "A", "f", "F"],
+  "幾何": ["s", "S", "g", "G"],
+  "統計與機率": ["d", "D", "p", "P"],
+};
 
 export default function ParamForm({ subject = "math", onSubmit, disabled }: ParamFormProps) {
   const t = useT();
@@ -84,7 +91,9 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         }
         const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
         setContentType(
-          subject === "social_studies" && Array.isArray(contentTypes) && contentTypes.length > 0
+          (subject === "social_studies" || subject === "math") &&
+            Array.isArray(contentTypes) &&
+            contentTypes.length > 0
             ? contentTypes[0].value
             : "純文字",
         );
@@ -101,10 +110,11 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
   const availableLearningPerformance = useMemo(() => {
     const entries = schemas?.學習表現 ?? [];
-    const prefixes =
-      SUBJECT_TO_PERFORMANCE_PREFIXES[subjectFilter] ?? SUBJECT_TO_PERFORMANCE_PREFIXES[""];
+    const map =
+      subject === "math" ? MATH_SUBJECT_TO_PERFORMANCE_PREFIXES : SUBJECT_TO_PERFORMANCE_PREFIXES;
+    const prefixes = map[subjectFilter] ?? map[""];
     return entries.filter((entry) => prefixes.includes(entry.科目));
-  }, [schemas, subjectFilter]);
+  }, [schemas, subjectFilter, subject]);
 
   useEffect(() => {
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
@@ -122,10 +132,10 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     const cleanOptions = options.filter((o) => o && o !== OPTION_HINT);
     const cleanTopic = topic.trim();
     const effectiveContentType =
-      subject === "social_studies"
+      subject === "social_studies" || subject === "math"
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
-    if (subject === "social_studies" && !effectiveContentType) return;
+    if ((subject === "social_studies" || subject === "math") && !effectiveContentType) return;
     onSubmit({
       grade,
       style: subject === "math" ? style : undefined,
@@ -139,10 +149,13 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
       options: cleanOptions.length ? cleanOptions : undefined,
-      topic: subject === "social_studies" && cleanTopic ? cleanTopic : undefined,
+      topic:
+        (subject === "social_studies" || subject === "math") && cleanTopic
+          ? cleanTopic
+          : undefined,
       core_question: coreQuestion || undefined,
       learning_performance:
-        subject === "social_studies" && learningPerformance.length > 0
+        (subject === "social_studies" || subject === "math") && learningPerformance.length > 0
           ? learningPerformance
           : undefined,
     });
@@ -182,7 +195,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {subject === "social_studies" && (
+      {(subject === "social_studies" || subject === "math") && (
         <div className="space-y-2">
           <label className="block text-sm font-medium">{t("form.topic_label")}</label>
           <input
@@ -198,6 +211,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           {topic.trim() && (
             <CoreQuestionPicker
               topic={topic}
+              subject={subject}
               subjectFilter={subjectFilter || undefined}
               grade={grade !== "" ? grade : undefined}
               onPick={(q) => setCoreQuestion(q)}
@@ -223,7 +237,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </select>
       </div>
 
-      {subject === "social_studies" && schemas.科目 && schemas.科目.length > 0 && (
+      {schemas.科目 && schemas.科目.length > 0 && (
         <div>
           <label className="block text-sm font-medium">{t("form.subject_filter")}</label>
           <select
@@ -241,7 +255,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       )}
 
-      {subject === "social_studies" && Array.isArray(schemas.學習表現) && (
+      {Array.isArray(schemas.學習表現) && schemas.學習表現.length > 0 && (
         <fieldset>
           <legend className="text-sm font-medium">{t("form.learning_performance")}</legend>
           {availableLearningPerformance.length > 0 ? (
@@ -288,7 +302,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       )}
 
-      {subject === "social_studies" && Array.isArray(schemas.題目內容類型) && (
+      {(subject === "social_studies" || subject === "math") && Array.isArray(schemas.題目內容類型) && (
         <div className="space-y-2">
           <label className="block text-sm font-medium">{t("form.content_type")}</label>
           <select

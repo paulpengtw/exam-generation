@@ -103,6 +103,7 @@ export async function getSchemas(subject = "math"): Promise<Schemas> {
 
 export interface PlanCoreQuestionsRequest {
   topic: string;
+  subject?: string;
   subject_filter?: string[];
   grade?: number;
 }
