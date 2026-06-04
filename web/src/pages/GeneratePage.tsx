@@ -50,7 +50,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       count: params.count,
       skip_verify: params.skip_verify,
       image_generation_mode:
-        subject === "social_studies" ? params.image_generation_mode : undefined,
+        subject === "social_studies" || subject === "math" ? params.image_generation_mode : undefined,
       subject_filter:
         subject === "social_studies" || subject === "math" ? params.subject_filter : undefined,
       topic:
