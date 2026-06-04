@@ -1,13 +1,11 @@
-"""Generate candidate 核心問題 for a given topic using the planning model."""
+"""Subject-specific shim over src.common.planner for 社會領域."""
 
 from __future__ import annotations
 
-import json
-import re
-
+from src.common.planner import _parse_candidates, plan_core_questions as _base_plan
 from src.llm_client import LLMClient
 
-_SYSTEM = """\
+_PLANNER_SYSTEM_PROMPT = """\
 你是一位資深108課綱社會領域命題教師。
 使用者會提供一個議題或主題，請你根據108課綱社會領域（歷史、地理、公民與社會）的素養導向命題精神，
 提出 {n} 個不同角度的「核心問題」候選。
@@ -22,7 +20,7 @@ _SYSTEM = """\
 ["核心問題一", "核心問題二", "核心問題三"]
 """
 
-_USER = """\
+_PLANNER_USER_TEMPLATE = """\
 議題/主題：{topic}{subject_hint}{grade_hint}
 
 請提出 {n} 個核心問題候選。
@@ -39,45 +37,16 @@ def plan_core_questions(
     learning_stage: str = "第四學習階段",
 ) -> list[str]:
     """Call planning model, return n candidate 核心問題 for the given topic."""
-    subject_hint = f"\n科目偏好：{'、'.join(subject_filter)}" if subject_filter else ""
-    grade_hint = f"\n目標年級：{grade}年級" if grade else ""
-
-    system = _SYSTEM.format(n=n, learning_stage=learning_stage)
-    user = _USER.format(
-        topic=topic,
-        subject_hint=subject_hint,
-        grade_hint=grade_hint,
+    return _base_plan(
+        client,
+        topic,
+        system_prompt=_PLANNER_SYSTEM_PROMPT,
+        user_prompt_template=_PLANNER_USER_TEMPLATE,
         n=n,
+        learning_stage=learning_stage,
+        subject_filter=subject_filter,
+        grade=grade,
     )
 
-    raw = client.plan(system, user, purpose="plan_core_questions")
-    candidates = _parse_candidates(raw, n)
-    return candidates
 
-
-def _parse_candidates(raw: str, n: int) -> list[str]:
-    """Extract list[str] from LLM output; retry-tolerant."""
-    # Try code block first
-    code_block = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
-    text = code_block.group(1).strip() if code_block else raw.strip()
-
-    # Find the JSON array
-    arr_match = re.search(r"\[.*\]", text, re.DOTALL)
-    if arr_match:
-        text = arr_match.group(0)
-
-    try:
-        result = json.loads(text)
-    except json.JSONDecodeError:
-        # Fall back to line-by-line extraction
-        lines = [line.strip().strip('",') for line in raw.splitlines() if line.strip().strip('",')]
-        result = [line for line in lines if len(line) > 5][:n]
-
-    if not isinstance(result, list):
-        raise ValueError(f"Expected JSON array from planner, got: {type(result)}")
-
-    candidates = [str(x) for x in result if x]
-    if len(candidates) < n:
-        raise ValueError(f"Planner returned {len(candidates)} candidates, expected {n}")
-
-    return candidates[:n]
+__all__ = ["plan_core_questions", "_parse_candidates"]
