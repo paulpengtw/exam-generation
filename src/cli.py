@@ -193,6 +193,7 @@ def generate_one(
             question_text=question_text,
             html_renderer=html_renderer,
             llm_client=client,
+            image_generation_mode=image_generation_mode,
         )
         emit_stage(obs, "image_agent", "render_image", "end")
         if rendered:
@@ -304,6 +305,7 @@ def generate_with_corrections(
                 question_text="\n".join(question.題目),
                 html_renderer=html_renderer,
                 llm_client=client,
+                image_generation_mode=image_generation_mode,
             )
             emit_stage(obs, "image_agent", "render_image", "end")
             if rendered:
