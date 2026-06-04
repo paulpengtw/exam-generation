@@ -24,45 +24,31 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("CoreQuestionPicker — custom question input", () => {
-  it("renders the custom input and disabled button when input is empty", () => {
+describe("CoreQuestionPicker — use my core question button", () => {
+  it("renders the 'Use my core question' button enabled when topic is non-empty", () => {
     render(<CoreQuestionPicker {...defaultProps} />);
-    const input = screen.getByPlaceholderText("Type your own core question…");
     const btn = screen.getByRole("button", { name: "Use my core question" });
-    expect(input).toBeInTheDocument();
-    expect(btn).toBeDisabled();
-  });
-
-  it("enables the button once text is typed", async () => {
-    const user = userEvent.setup();
-    render(<CoreQuestionPicker {...defaultProps} />);
-    const input = screen.getByPlaceholderText("Type your own core question…");
-    const btn = screen.getByRole("button", { name: "Use my core question" });
-    await user.type(input, "What is the derivative of x²?");
     expect(btn).toBeEnabled();
   });
 
-  it("calls onPick with trimmed value and clears input on click", async () => {
-    const user = userEvent.setup();
-    const onPick = vi.fn();
-    render(<CoreQuestionPicker {...defaultProps} onPick={onPick} />);
-    const input = screen.getByPlaceholderText("Type your own core question…");
-    await user.type(input, "  My custom question  ");
-    await user.click(screen.getByRole("button", { name: "Use my core question" }));
-    expect(onPick).toHaveBeenCalledWith("My custom question");
-    expect(input).toHaveValue("");
+  it("disables the button when topic is empty", () => {
+    render(<CoreQuestionPicker {...defaultProps} topic="" />);
+    const btn = screen.getByRole("button", { name: "Use my core question" });
+    expect(btn).toBeDisabled();
   });
 
-  it("pressing Enter in the custom input does not submit the form", async () => {
-    const onSubmit = vi.fn();
-    render(
-      <form onSubmit={onSubmit}>
-        <CoreQuestionPicker {...defaultProps} />
-      </form>,
-    );
-    const input = screen.getByPlaceholderText("Type your own core question…");
-    await userEvent.type(input, "test{Enter}");
-    expect(onSubmit).not.toHaveBeenCalled();
+  it("calls onPick with the trimmed topic value on click", async () => {
+    const user = userEvent.setup();
+    const onPick = vi.fn();
+    render(<CoreQuestionPicker {...defaultProps} topic="  My topic  " onPick={onPick} />);
+    await user.click(screen.getByRole("button", { name: "Use my core question" }));
+    expect(onPick).toHaveBeenCalledWith("My topic");
+  });
+
+  it("both action buttons appear side by side", () => {
+    render(<CoreQuestionPicker {...defaultProps} />);
+    expect(screen.getByRole("button", { name: "Generate core question candidates" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use my core question" })).toBeInTheDocument();
   });
 
   it("button is disabled while AI candidates are loading", async () => {
@@ -72,7 +58,6 @@ describe("CoreQuestionPicker — custom question input", () => {
     const user = userEvent.setup();
     render(<CoreQuestionPicker {...defaultProps} />);
     await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
-    await user.type(screen.getByPlaceholderText("Type your own core question…"), "anything");
     expect(screen.getByRole("button", { name: "Use my core question" })).toBeDisabled();
   });
 });
