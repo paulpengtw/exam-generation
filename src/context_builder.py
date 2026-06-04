@@ -146,7 +146,7 @@ USER_PROMPT_TEMPLATE = """\
 
 - **年級重心**：{grade}年級
 - **科目焦點**：{subject_filter}
-- **情境**：{context}
+- **情境**（題目輸出的 `情境` 欄位必須完全使用以下這幾個列舉值）：{context}
 - **題型種類**：{set_type}
 - **題型**：{q_type}
 - **數學思考**：{thinking}
@@ -172,8 +172,9 @@ USER_PROMPT_TEMPLATE = """\
 3. 學習內容可以跨年級整合（{grade_range}範圍內），但核心考點應以指定的學習內容為主。
 4. 選項的誘答設計應針對常見錯誤概念。
 5. 題目的 `核心素養` 欄位**必須只從指定條件中的核心素養代號選擇**。
-6. 維持單題輸出結構（不是題組）：不要產生 `subquestions`、`核心問題`、`文本`、`評分規準` 等題組欄位。
-7. 只輸出 JSON 格式的結果。
+6. 題目的 `情境` 欄位**必須完全使用「指定條件 → 情境」中列出的列舉值之一**（合法值僅為：個人 / 社會時事 / 科學 / 職業 / 建築與藝術 / 數學文字情境），不可改寫成題目主題、場景描述、或情境名稱。題目主題若需呈現，請放入題目內文，而不是 `情境` 欄位。
+7. 維持單題輸出結構（不是題組）：不要產生 `subquestions`、`核心問題`、`文本`、`評分規準` 等題組欄位。
+8. 只輸出 JSON 格式的結果。
 """
 
 _CURRICULUM_EMPTY_NOTICE = "（課程綱要資料待研究人員補充至 data/math/curriculum/）"
@@ -370,7 +371,7 @@ def build_user_prompt(
         grade=params.grade,
         grade_range=grade_range,
         subject_filter=subject_filter,
-        context=topic_override or "、".join(c.value for c in params.情境),
+        context="、".join(c.value for c in params.情境),
         set_type=params.題型種類.value,
         q_type=params.題型.value,
         thinking=thinking,

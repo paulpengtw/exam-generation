@@ -444,7 +444,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       </fieldset>
 
-      {subject === "social_studies" && (
+      {(subject === "social_studies" || subject === "math") && (
         <div>
           <label className="block text-sm font-medium">{t("form.image_generation_mode")}</label>
           <select
