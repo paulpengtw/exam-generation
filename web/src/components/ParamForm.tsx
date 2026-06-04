@@ -344,7 +344,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       { label: t("form.confirm_options"), value: p.options?.join(", ") },
       {
         label: t("form.confirm_image_mode"),
-        value: subject === "social_studies" ? undefined : p.image_generation_mode,
+        value: p.image_generation_mode,
       },
       { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined },
       { label: "小題數量", value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined },
@@ -602,6 +602,28 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       )}
 
+      {isCurriculumSubject && (
+        <div>
+          <label className="block text-sm font-medium">
+            {subject === "social_studies" ? "圖片生成模式" : t("form.image_generation_mode")}
+          </label>
+          <select
+            value={imageGenerationMode}
+            onChange={(e) =>
+              setImageGenerationMode(e.target.value as "html" | "gpt_image")
+            }
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            <option value="html">
+              {subject === "social_studies" ? "HTML 渲染" : t("form.image_generation_mode_html")}
+            </option>
+            <option value="gpt_image">
+              {subject === "social_studies" ? "GPT 生圖" : t("form.image_generation_mode_gpt")}
+            </option>
+          </select>
+        </div>
+      )}
+
       {subject === "math" && (
         <fieldset>
           <legend className="text-sm font-medium">{t("form.context")}</legend>
@@ -817,7 +839,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                         onChange={(e) => updateSubquestionConfig(i, { content_type: e.target.value || undefined })}
                         className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
                       >
-                        <option value="">（繼承全域）</option>
+                        <option value="">（沿用文本設定）</option>
                         {(schemas.題目內容類型 ?? []).map((s) => (
                           <option key={s.value} value={s.value}>{s.value}</option>
                         ))}
@@ -830,7 +852,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                         onChange={(e) => updateSubquestionConfig(i, { image_generation_mode: (e.target.value as "html" | "gpt_image") || undefined })}
                         className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
                       >
-                        <option value="">（繼承全域）</option>
+                        <option value="">（沿用文本設定）</option>
                         <option value="html">HTML 渲染</option>
                         <option value="gpt_image">GPT 生圖</option>
                       </select>
@@ -899,22 +921,6 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
             </div>
           </fieldset>
         </>
-      )}
-
-      {isCurriculumSubject && subject !== "social_studies" && (
-        <div>
-          <label className="block text-sm font-medium">{t("form.image_generation_mode")}</label>
-          <select
-            value={imageGenerationMode}
-            onChange={(e) =>
-              setImageGenerationMode(e.target.value as "html" | "gpt_image")
-            }
-            className="mt-1 block w-full border rounded px-2 py-1"
-          >
-            <option value="html">{t("form.image_generation_mode_html")}</option>
-            <option value="gpt_image">{t("form.image_generation_mode_gpt")}</option>
-          </select>
-        </div>
       )}
 
       <label className="flex items-center gap-2">
