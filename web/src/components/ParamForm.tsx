@@ -49,6 +49,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingParams, setPendingParams] = useState<GenerateParams | null>(null);
+  const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
 
   const [grade, setGrade] = useState<number | "">("");
   const [style, setStyle] = useState<string>("");
@@ -150,6 +151,21 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
     if ((subject === "social_studies" || subject === "math") && !effectiveContentType) return;
+
+    // If no learning_performance selected, pre-draw randomly to match backend sampling
+    let finalLp: string[] | undefined;
+    let autoDrawn = false;
+    if ((subject === "social_studies" || subject === "math") && learningPerformance.length === 0 && availableLearningPerformance.length > 0) {
+      const maxDraw = subject === "math" ? 3 : 2;
+      const drawCount = Math.floor(Math.random() * Math.min(maxDraw, availableLearningPerformance.length)) + 1;
+      const shuffled = [...availableLearningPerformance].sort(() => Math.random() - 0.5);
+      finalLp = shuffled.slice(0, drawCount).map((e) => e.value);
+      autoDrawn = true;
+    } else if ((subject === "social_studies" || subject === "math") && learningPerformance.length > 0) {
+      finalLp = learningPerformance;
+    }
+
+    setLpWasAutoDrawn(autoDrawn);
     setPendingParams({
       grade,
       style: subject === "math" ? style : undefined,
@@ -168,10 +184,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           ? cleanTopic
           : undefined,
       core_question: coreQuestion || undefined,
-      learning_performance:
-        (subject === "social_studies" || subject === "math") && learningPerformance.length > 0
-          ? learningPerformance
-          : undefined,
+      learning_performance: finalLp,
     });
   }
 
@@ -186,11 +199,9 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
     // Resolve full 學習表現 entries for display
     const allLpEntries = schemas?.學習表現 ?? [];
-    const selectedLpEntries = p.learning_performance
+    const lpDisplayEntries = p.learning_performance
       ? allLpEntries.filter((e) => p.learning_performance!.includes(e.value))
       : [];
-    const lpPoolEntries = p.learning_performance ? [] : availableLearningPerformance;
-    const isLpRandom = !p.learning_performance || p.learning_performance.length === 0;
 
     const rows: { label: string; value: string | undefined }[] = [
       { label: t("form.confirm_topic"), value: p.topic },
@@ -209,12 +220,9 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined },
     ];
 
-    const lpDisplayEntries = isLpRandom ? lpPoolEntries : selectedLpEntries;
-    const lpHeading = isLpRandom
-      ? t("form.confirm_lp_random_pool")
-          .replace("{n}", String(lpPoolEntries.length))
-          .replace("{max}", subject === "math" ? "3" : "2")
-      : t("form.confirm_lp_selected").replace("{n}", String(selectedLpEntries.length));
+    const lpHeading = lpWasAutoDrawn
+      ? t("form.confirm_lp_random_pool").replace("{n}", String(lpDisplayEntries.length))
+      : t("form.confirm_lp_selected").replace("{n}", String(lpDisplayEntries.length));
 
     return (
       <div className="space-y-4">
@@ -238,7 +246,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                 <span className="text-gray-400 italic">{t("form.confirm_none")}</span>
               ) : (
                 <div className="space-y-1">
-                  <p className={`text-xs font-medium mb-1.5 ${isLpRandom ? "text-amber-700" : "text-green-700"}`}>
+                  <p className={`text-xs font-medium mb-1.5 ${lpWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>
                     {lpHeading}
                   </p>
                   <ul className="space-y-1">
