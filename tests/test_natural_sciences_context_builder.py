@@ -11,7 +11,7 @@ from src.natural_sciences.schema_loader import load_schemas
 def test_natural_sciences_schema_contains_pisa_science_dimensions() -> None:
     schemas = load_schemas()
 
-    assert schemas["grades"] == [7, 8, 9]
+    assert schemas["grades"] == [7, 8, 9, 10, 11, 12]
     assert [entry["value"] for entry in schemas["情境"]] == [
         "Personal",
         "Local and national",

@@ -82,7 +82,7 @@ def test_natural_sciences_schemas_include_pisa_science_dimensions() -> None:
     assert r.status_code == 200
     body = r.json()
 
-    assert body["grades"] == [7, 8, 9]
+    assert body["grades"] == [7, 8, 9, 10, 11, 12]
     assert [entry["value"] for entry in body["情境"]] == [
         "Personal",
         "Local and national",

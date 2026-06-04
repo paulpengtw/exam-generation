@@ -194,7 +194,14 @@ async def plan_core_questions_endpoint(
         )
 
         schemas = load_schemas()
-        learning_stage = load_learning_stage(schemas)
+        if body.grade is not None:
+            from src.sampler import grade_to_learning_stage
+            try:
+                learning_stage = grade_to_learning_stage(body.grade)
+            except ValueError:
+                learning_stage = load_learning_stage(schemas)
+        else:
+            learning_stage = load_learning_stage(schemas)
 
         try:
             candidates = ns_plan_core_questions(
