@@ -34,6 +34,8 @@ class GenerateParams(BaseModel):
     topic: str | None = None
     core_question: str | None = None
     learning_performance: list[str] | None = None
+    core_competency: list[str] | None = None
+    learning_content: list[str] | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -42,6 +44,7 @@ class PlanCoreQuestionsRequest(BaseModel):
     topic: str
     subject_filter: list[str] | None = None
     grade: int | None = None
+    subject: Literal["math", "social_studies"] = "social_studies"
 
 
 class PlanCoreQuestionsResponse(BaseModel):

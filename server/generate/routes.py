@@ -60,6 +60,8 @@ async def generate_endpoint(
     topic: str | None = Query(default=None),
     core_question: str | None = Query(default=None),
     learning_performance: list[str] | None = Query(default=None),
+    core_competency: list[str] | None = Query(default=None),
+    learning_content: list[str] | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -87,6 +89,8 @@ async def generate_endpoint(
         topic=topic,
         core_question=core_question,
         learning_performance=learning_performance,
+        core_competency=core_competency,
+        learning_content=learning_content,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 
@@ -148,19 +152,44 @@ async def plan_core_questions_endpoint(
     """Return three candidate 核心問題 for a given topic (Opus single call)."""
     from src.config import Config as SrcConfig
     from src.llm_client import LLMClient
-    from src.social_studies.planner import plan_core_questions
-    from src.social_studies.schema_loader import load_learning_stage, load_schemas
 
     src_config = SrcConfig.from_env()
     client = LLMClient(src_config)
-    schemas = load_schemas()
-    learning_stage = load_learning_stage(schemas)
 
-    candidates = plan_core_questions(
-        client,
-        body.topic,
-        subject_filter=body.subject_filter,
-        grade=body.grade,
-        learning_stage=learning_stage,
-    )
+    if body.subject == "math":
+        from src.planner import plan_core_questions as math_plan_core_questions
+        from src.sampler import grade_to_learning_stage
+
+        if body.grade is not None:
+            try:
+                learning_stage = grade_to_learning_stage(body.grade)
+            except ValueError:
+                learning_stage = "第四學習階段"
+        else:
+            learning_stage = "第四學習階段"
+
+        candidates = math_plan_core_questions(
+            client,
+            body.topic,
+            subject_filter=body.subject_filter,
+            grade=body.grade,
+            learning_stage=learning_stage,
+        )
+    else:
+        from src.social_studies.planner import plan_core_questions as ss_plan_core_questions
+        from src.social_studies.schema_loader import (
+            load_learning_stage,
+            load_schemas,
+        )
+
+        schemas = load_schemas()
+        learning_stage = load_learning_stage(schemas)
+
+        candidates = ss_plan_core_questions(
+            client,
+            body.topic,
+            subject_filter=body.subject_filter,
+            grade=body.grade,
+            learning_stage=learning_stage,
+        )
     return PlanCoreQuestionsResponse(candidates=candidates)
