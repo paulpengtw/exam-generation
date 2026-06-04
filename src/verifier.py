@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import json
 
+from src.context_builder import (
+    _CONTENT_TEXT,
+    _PERFORMANCE_INTRO,
+    _PERFORMANCE_TEXT,
+    _build_curriculum_section,
+)
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
 
-VERIFICATION_SYSTEM_PROMPT = """\
+_CURRICULUM_PREFIX: str = _build_curriculum_section(
+    _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
+)
+
+_VERIFICATION_SYSTEM_PROMPT_CORE = """\
 你是一位數學教師，負責審核考試題目的正確性。你會收到一道數學題目，請你：
 
 1. 完全獨立地解這道題目（不要看提供的解答）。
@@ -39,6 +49,12 @@ VERIFICATION_SYSTEM_PROMPT = """\
 
 若題目未附圖表圖片，請省略 chart_verification 欄位。只輸出 JSON，不要輸出其他文字。
 """
+
+VERIFICATION_SYSTEM_PROMPT = (
+    f"{_CURRICULUM_PREFIX}\n\n---\n\n{_VERIFICATION_SYSTEM_PROMPT_CORE}"
+    if _CURRICULUM_PREFIX
+    else _VERIFICATION_SYSTEM_PROMPT_CORE
+)
 
 VERIFICATION_USER_TEMPLATE = """\
 請審核以下考試題目：
