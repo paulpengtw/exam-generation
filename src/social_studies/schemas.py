@@ -85,6 +85,7 @@ class SubQuestion(BaseModel):
     評分規準: list[RubricEntry] = Field(default_factory=list)
     題目內容類型: str | None = None
     image_generation_mode: Literal["html", "gpt_image"] | None = None
+    圖片: str | None = None
     chart_spec: ChartSpec | None = None
 
 

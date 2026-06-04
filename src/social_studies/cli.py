@@ -161,7 +161,7 @@ def _parse_question(
                 if isinstance(r, dict)
             ]
             sq_chart_spec = None
-            raw_sq_spec = sq_raw.get("chart_spec")
+            raw_sq_spec = sq_raw.get("image_spec") or sq_raw.get("chart_spec")
             if isinstance(raw_sq_spec, dict):
                 try:
                     sq_chart_spec = ImageSpec(**raw_sq_spec)
@@ -183,6 +183,7 @@ def _parse_question(
                 評分規準=rubric,
                 題目內容類型=sq_raw.get("題目內容類型"),
                 image_generation_mode=sq_raw.get("image_generation_mode"),
+                圖片=sq_raw.get("圖片"),
                 chart_spec=sq_chart_spec,
             ))
         except Exception:
@@ -209,6 +210,41 @@ def _parse_question(
             seed=None,
         ),
     )
+
+
+def _render_subquestion_images(
+    question: ExamQuestion,
+    config: Config,
+    client: LLMClient | None,
+    html_renderer: PlaywrightRenderer | None,
+    image_generation_mode: str,
+    obs,
+) -> list[str]:
+    """Render PNGs for subquestion-local image specs and return paths."""
+    rendered_paths: list[str] = []
+    for sub in question.subquestions:
+        if not sub.chart_spec:
+            continue
+        img_path = config.output_dir / f"{question.id}_sq{sub.序號}.png"
+        mode = sub.image_generation_mode or image_generation_mode
+        question_text = "\n\n".join(
+            part for part in (question.文本, sub.題目) if part
+        )
+        print(f"  Rendering subquestion image: {img_path}", file=sys.stderr)
+        emit_stage(obs, "image_agent", "render_image", "start")
+        rendered = render_image(
+            sub.chart_spec.model_dump(),
+            img_path,
+            question_text=question_text,
+            html_renderer=html_renderer,
+            llm_client=client,
+            image_generation_mode=mode,
+        )
+        emit_stage(obs, "image_agent", "render_image", "end")
+        if rendered:
+            sub.圖片 = img_path.name
+            rendered_paths.append(rendered)
+    return rendered_paths
 
 
 def generate_one(
@@ -269,6 +305,17 @@ def generate_one(
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
+
+    subquestion_image_paths = _render_subquestion_images(
+        question,
+        config,
+        client,
+        html_renderer,
+        image_generation_mode,
+        obs,
+    )
+    if chart_image_path is None and subquestion_image_paths:
+        chart_image_path = subquestion_image_paths[0]
 
     if not skip_verify:
         print(f"  Verifying question {question_id}...", file=sys.stderr)

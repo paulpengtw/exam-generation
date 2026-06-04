@@ -144,6 +144,7 @@ def correct_question(
                         original.image_generation_mode
                         if original else sq_raw.get("image_generation_mode")
                     ),
+                    圖片=original.圖片 if original else sq_raw.get("圖片"),
                     chart_spec=original.chart_spec if original else None,
                 )
                 new_sqs.append(sq)

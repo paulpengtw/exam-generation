@@ -78,6 +78,11 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
     ) in prompt
     assert "第2小題：文本素材類型=純文字，題目字數上限=120" in prompt
     assert "第3小題：文本素材類型=graphs/charts/tables，圖片生成模式=html" in prompt
+    assert (
+        "文本素材類型為 `含圖片` 或 `graphs/charts/tables` 的小題必須輸出"
+        "該小題自己的 `chart_spec`"
+    ) in prompt
+    assert "`image_generation_mode` 只指定渲染方式，不能單獨視為需要圖片" in prompt
 
 
 def test_legacy_global_word_limits_render_when_no_row_config(tmp_path) -> None:

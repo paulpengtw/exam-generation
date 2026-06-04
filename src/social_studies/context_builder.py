@@ -84,6 +84,10 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - `題目內容類型`：若使用者提供各小題配置，依該小題指定值填入
   （純文字 / 含圖片 / graphs/charts/tables / 自訂類型）
 - `image_generation_mode`：若該小題指定圖片產生方式，填入 `html` 或 `gpt_image`
+- 若某小題的 `題目內容類型` 是 `含圖片` 或 `graphs/charts/tables`，
+  該小題必須包含自己的 `chart_spec`。
+  `image_generation_mode` 只代表圖片渲染方式；若小題仍是純文字，
+  不要只因 `image_generation_mode` 而輸出圖片。
 
 ### 題型說明
 - **選擇題**：四選一；給分代號 2（正確）/ 0（錯誤）
@@ -138,7 +142,9 @@ SYSTEM_PROMPT_TEMPLATE = """\
 ```
 
 若題目含非連續文本素材，請加入 `chart_spec`；若素材只屬於特定小題，
-請放在該小題的 `chart_spec`，若整題組共用，才放在題組頂層：
+請放在該小題的 `chart_spec`，若整題組共用，才放在題組頂層。
+若「各小題配置」指定某小題的文本素材類型為 `含圖片` 或 `graphs/charts/tables`，
+該小題必須輸出非 null 的 `chart_spec`：
 
 **統計圖表（`render_mode: "chart"`）**：
 ```json
@@ -365,6 +371,13 @@ def build_user_prompt(
             ct_instr = CONTENT_TYPE_INSTRUCTIONS.get(ct, "")
             if ct_instr:
                 sq_config_parts.append(f"  - **{ct} 說明**：{ct_instr}")
+        if any(ct in {"含圖片", "graphs/charts/tables"} for ct in sq_config_content_types):
+            sq_config_parts.append(
+                "  - **小題圖片規則**：只有文本素材類型為 `含圖片` 或 "
+                "`graphs/charts/tables` 的小題必須輸出該小題自己的 "
+                "`chart_spec`；`image_generation_mode` 只指定渲染方式，"
+                "不能單獨視為需要圖片。"
+            )
     subquestion_config_lines = (
         "\n## 各小題配置\n\n" + "\n".join(sq_config_parts) + "\n"
         if sq_config_parts else ""

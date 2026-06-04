@@ -60,7 +60,9 @@ export interface SubQuestion {
   評分規準?: RubricEntry[];
   題目內容類型?: string;
   image_generation_mode?: "html" | "gpt_image";
+  圖片?: string | null;
   chart_spec?: unknown;
+  image_base64?: string;
 }
 
 export interface ExamQuestion {

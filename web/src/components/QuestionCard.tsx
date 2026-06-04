@@ -90,6 +90,14 @@ function SubQuestionBlock({ sub }: { sub: SubQuestion }) {
         ))}
       </div>
 
+      {sub.image_base64 && (
+        <img
+          src={`data:image/png;base64,${sub.image_base64}`}
+          alt={`第${sub.序號}題素材圖片`}
+          className="max-w-full rounded border border-gray-200 bg-white"
+        />
+      )}
+
       <div className="text-sm leading-relaxed whitespace-pre-wrap">{sub.題目}</div>
 
       <div>

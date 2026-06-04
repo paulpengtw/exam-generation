@@ -148,6 +148,14 @@ def _question_to_event(
         png_path = config.output_dir / question.圖片
         if png_path.exists():
             payload["image_base64"] = base64.b64encode(png_path.read_bytes()).decode("ascii")
+    for index, sub in enumerate(getattr(question, "subquestions", []) or []):
+        if not getattr(sub, "圖片", None):
+            continue
+        png_path = config.output_dir / sub.圖片
+        if png_path.exists() and index < len(payload.get("subquestions", [])):
+            payload["subquestions"][index]["image_base64"] = base64.b64encode(
+                png_path.read_bytes()
+            ).decode("ascii")
     return payload
 
 
