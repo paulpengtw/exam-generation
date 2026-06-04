@@ -19,6 +19,7 @@ from src.natural_sciences.curriculum_loader import (
     load_learning_performance as load_ns_learning_performance,
 )
 from src.natural_sciences.schema_loader import load_schemas as load_ns_schemas
+from src.social_studies.curriculum_loader import load_learning_content as load_ss_learning_content
 from src.social_studies.curriculum_loader import load_learning_performance
 from src.social_studies.schema_loader import load_schemas as load_ss_schemas
 
@@ -99,6 +100,18 @@ async def get_schemas(
                     "科目": entry.get("科目", ""),
                 }
                 for entry in performance.get("學習表現", [])
+                if entry.get("學習階段") == learning_stage
+            ]
+            content = load_ss_learning_content(
+                config.social_studies_curriculum_dir / "learning_content.json"
+            )
+            schemas["學習內容"] = [
+                {
+                    "value": entry["value"],
+                    "instruction": entry.get("條目說明", ""),
+                    "科目": entry.get("科目", ""),
+                }
+                for entry in content.get("學習內容", [])
                 if entry.get("學習階段") == learning_stage
             ]
             return schemas

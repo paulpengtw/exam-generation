@@ -21,6 +21,7 @@ export interface GenerateParams {
   sub_context?: string;
   science_competency?: string[];
   learning_performance?: string[];
+  learning_content?: string[];
 }
 
 export interface ParamFormProps {
@@ -72,6 +73,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [subContext, setSubContext] = useState<string>("");
   const [scienceCompetency, setScienceCompetency] = useState<string[]>([]);
   const [learningPerformance, setLearningPerformance] = useState<string[]>([]);
+  const [learningContent, setLearningContent] = useState<string[]>([]);
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
 
@@ -88,6 +90,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     setSubContext("");
     setScienceCompetency([]);
     setLearningPerformance([]);
+    setLearningContent([]);
     getSchemas(subject)
       .then((s) => {
         if (cancelled) return;
@@ -220,6 +223,10 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         subject === "natural_sciences" && scienceCompetency.length > 0
           ? scienceCompetency
           : undefined,
+      learning_content:
+        (subject === "natural_sciences" || subject === "social_studies") && learningContent.length > 0
+          ? learningContent
+          : undefined,
     });
   }
 
@@ -236,6 +243,12 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     const allLpEntries = schemas?.學習表現 ?? [];
     const lpDisplayEntries = p.learning_performance
       ? allLpEntries.filter((e) => p.learning_performance!.includes(e.value))
+      : [];
+
+    // Resolve full 學習內容 entries for display
+    const allLcEntries = schemas?.學習內容 ?? [];
+    const lcDisplayEntries = p.learning_content
+      ? allLcEntries.filter((e) => p.learning_content!.includes(e.value))
       : [];
 
     const rows: { label: string; value: string | undefined }[] = [
@@ -298,6 +311,23 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               )}
             </dd>
           </div>
+          {lcDisplayEntries.length > 0 && (
+            <div className="flex gap-3 px-4 py-2.5">
+              <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{t("form.confirm_learning_content")}</dt>
+              <dd className="flex-1 text-sm text-gray-900">
+                <ul className="space-y-1">
+                  {lcDisplayEntries.map((entry) => (
+                    <li key={entry.value} className="flex gap-2 text-sm">
+                      <span className="shrink-0 font-mono font-semibold text-gray-800">{entry.value}</span>
+                      {entry.instruction && (
+                        <span className="text-gray-600">— {entry.instruction}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          )}
         </dl>
         <div className="flex flex-wrap gap-3 pt-1">
           <button
@@ -589,6 +619,32 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                   <span className="font-medium">{s.value}</span>
                   {s.instruction && (
                     <span className="text-gray-600">：{s.instruction}</span>
+                  )}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {(subject === "natural_sciences" || subject === "social_studies") && Array.isArray(schemas.學習內容) && schemas.學習內容.length > 0 && (
+        <fieldset>
+          <legend className="text-sm font-medium">{t("form.learning_content")}</legend>
+          <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {schemas.學習內容.map((entry) => (
+              <label key={entry.value} className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={learningContent.includes(entry.value)}
+                  onChange={() =>
+                    setLearningContent((prev) => toggleMulti(prev, entry.value))
+                  }
+                  className="mt-1"
+                />
+                <span className="text-sm">
+                  <span className="font-medium">{entry.value}</span>
+                  {entry.instruction && (
+                    <span className="text-gray-600">：{entry.instruction}</span>
                   )}
                 </span>
               </label>
