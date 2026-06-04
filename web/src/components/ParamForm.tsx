@@ -108,6 +108,19 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     };
   }, [subject]);
 
+  // Re-fetch only 學習表現 when grade changes so the correct learning stage is used.
+  useEffect(() => {
+    if (grade === "") return;
+    let cancelled = false;
+    getSchemas(subject, grade)
+      .then((s) => {
+        if (cancelled) return;
+        setSchemas((prev) => prev ? { ...prev, 學習表現: s.學習表現 } : prev);
+      })
+      .catch(() => {/* non-critical — keep existing list */});
+    return () => { cancelled = true; };
+  }, [subject, grade]);
+
   const availableLearningPerformance = useMemo(() => {
     const entries = schemas?.學習表現 ?? [];
     const map =
