@@ -198,6 +198,13 @@ Images are described by `ImageSpec` (field `chart_spec` on `ExamQuestion`). The 
 
 2. **`render_mode: "html"`** — `render_image()` calls `_generate_html_via_llm()` (Sonnet generates a self-contained HTML/CSS/SVG document from `description` + `data`), then `PlaywrightRenderer.render()` in `src/html_renderer.py` screenshots it to PNG. Used for geometry diagrams, tables, menus, and any non-chart visual.
 
+Orthogonal to `render_mode`, the caller-controlled `image_generation_mode` kwarg on `render_image()` selects the rendering backend:
+
+- `"html"` (default) — use the path described above (matplotlib for `render_mode: "chart"`, Playwright for `render_mode: "html"`).
+- `"gpt_image"` — bypass both deterministic paths and send the image spec to `LLMClient.generate_image()` (model from `IMAGE_MODEL`, default `gpt-image2`). Requires `IMAGE_API_KEY`; falls back to `None` (no image) on failure rather than to the Playwright path.
+
+Both math (`src/cli.py`) and social studies (`src/social_studies/cli.py`) thread `image_generation_mode` from the CLI flag `--image-generation-mode` and the HTTP query param of the same name through to the two `render_image()` call sites (initial render and post-correction re-render).
+
 The entry point is always `render_image()` (`src/renderer.py:271`), called from `generate_one()` in `src/cli.py`.
 
 ## Common Commands
