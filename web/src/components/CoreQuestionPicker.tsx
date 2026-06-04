@@ -4,6 +4,7 @@ import { useT } from "../i18n/useT";
 
 export interface CoreQuestionPickerProps {
   topic: string;
+  subject?: string;
   subjectFilter?: string;
   grade?: number;
   onPick: (coreQuestion: string) => void;
@@ -13,6 +14,7 @@ export interface CoreQuestionPickerProps {
 
 export default function CoreQuestionPicker({
   topic,
+  subject,
   subjectFilter,
   grade,
   onPick,
@@ -32,6 +34,7 @@ export default function CoreQuestionPicker({
     try {
       const res = await planCoreQuestions({
         topic,
+        subject,
         subject_filter: subjectFilter ? [subjectFilter] : undefined,
         grade,
       });

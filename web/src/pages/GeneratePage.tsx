@@ -43,7 +43,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       grade: params.grade,
       style: subject === "math" && params.style ? [params.style] : [],
       content_type:
-        subject === "social_studies" ? params.content_type : undefined,
+        subject === "social_studies" || subject === "math" ? params.content_type : undefined,
       context: subject === "math" ? params.context : [],
       set_type: params.set_type,
       q_type: params.q_type,
@@ -52,17 +52,17 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       image_generation_mode:
         subject === "social_studies" ? params.image_generation_mode : undefined,
       subject_filter:
-        subject === "social_studies" ? params.subject_filter : undefined,
+        subject === "social_studies" || subject === "math" ? params.subject_filter : undefined,
       topic:
-        subject === "social_studies" ? params.topic : undefined,
+        subject === "social_studies" || subject === "math" ? params.topic : undefined,
       core_question:
-        subject === "social_studies" ? params.core_question : undefined,
+        subject === "social_studies" || subject === "math" ? params.core_question : undefined,
       passage:
-        subject === "social_studies" ? params.passage : undefined,
+        subject === "social_studies" || subject === "math" ? params.passage : undefined,
       options:
-        subject === "social_studies" ? params.options : undefined,
+        subject === "social_studies" || subject === "math" ? params.options : undefined,
       learning_performance:
-        subject === "social_studies" ? params.learning_performance : undefined,
+        subject === "social_studies" || subject === "math" ? params.learning_performance : undefined,
     });
   };
 
