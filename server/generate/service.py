@@ -273,8 +273,8 @@ async def generate_question_stream(
                             if params.subquestion_configs:
                                 try:
                                     _sq_configs = _json.loads(params.subquestion_configs)
-                                except Exception:
-                                    pass
+                                except Exception as _e:
+                                    logger.warning("subquestion_configs JSON parse failed, ignoring: %s", _e)
                             rng_params = ss_sample_params(
                                 grade=params.grade,
                                 context=context_override,
