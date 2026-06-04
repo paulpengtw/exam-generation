@@ -1,6 +1,6 @@
 # exam-generation
 
-LLM-driven generator for Taiwan math exam questions (default: grades 7-9, 第四學習階段; configurable via `question_schemas.json`). Ships with a CLI for local generation **and** a full web stack (FastAPI backend + React frontend + Postgres) for multi-user, browser-based use.
+LLM-driven generator for Taiwan math exam questions (default: grades 7-9, 第四學習階段; configurable via `question_schemas.json`), with full support for 108課綱 社會領域 (歷史/地理/公民與社會/跨科) question generation via the parallel `src/social_studies/` pipeline. Ships with a CLI for local generation **and** a full web stack (FastAPI backend + React frontend + Postgres) for multi-user, browser-based use.
 
 The system randomly samples question parameters (grade, type, context, learning content), assembles a structured prompt with few-shot examples, calls an LLM to generate the question, then runs a second verification pass. Output is JSON per question, with optional PNG images for chart/diagram-based questions.
 
@@ -55,8 +55,14 @@ The `"html"` path handles geometry diagrams, coordinate planes, tables, and any 
 exam-generation/
 ├── data/
 │   ├── curriculum/
-│   │   ├── 學習內容.json          # Full K-12 math curriculum content (grades 1-12)
-│   │   └── 學習表現.json          # Math learning performance standards
+│   │   ├── 學習內容.json          # Full K-12 math curriculum content (grades 1-12, legacy source)
+│   │   └── 學習表現.json          # Math learning performance standards (legacy source)
+│   ├── math/
+│   │   └── curriculum/
+│   │       ├── learning_content.json         # Reshaped math 學習內容 (288 entries, 5 學習階段)
+│   │       ├── learning_performance.json     # Reshaped math 學習表現 (131 entries)
+│   │       ├── core_competencies.json        # 27 數-E/J/U-A1..C3 核心素養 codes
+│   │       └── learning_performance_intro.md # Math 學習表現 framework intro
 │   ├── few_shot/
 │   │   ├── text_only/             # Text-only question examples
 │   │   ├── with_chart/            # Questions with chart descriptions
@@ -83,24 +89,30 @@ exam-generation/
 │       ├── 113P_Math.pdf          # Past exam: year 113
 │       └── 114P_Math.pdf          # Past exam: year 114
 ├── src/                           # Core engine (used by CLI + server)
+│   ├── common/                    # Subject-agnostic loaders shared by math + social studies
+│   │   ├── curriculum_loader.py   # 學習內容 / 學習表現 JSON loaders + allowed_* filters (parameterized by data_dir + 科目→prefix map)
+│   │   ├── core_competency_loader.py # 核心素養 JSON loader + build_core_competency_enum + allowed_competencies(stage)
+│   │   └── planner.py             # Subject-agnostic 核心問題 planner (callers supply prompt templates)
 │   ├── cli.py                     # CLI entry point
 │   ├── config.py                  # Configuration & env management
-│   ├── sampler.py                 # Random parameter selection
-│   ├── context_builder.py         # Prompt assembly with few-shot injection
+│   ├── sampler.py                 # Curriculum-aware math sampler (學習內容/學習表現/核心素養/題目內容類型/subject_filter); owns _MATH_SUBJECT_TO_PREFIXES + grade_to_learning_stage()
+│   ├── context_builder.py         # Prompt assembly with curriculum injection + few-shot; CONTENT_TYPE_INSTRUCTIONS dict
 │   ├── llm_client.py              # OpenAI-compatible LLM client
-│   ├── verifier.py                # Independent answer verification pass
-│   ├── corrector.py               # Targeted correction pass for failed-verification questions
+│   ├── verifier.py                # Independent answer verification pass (math; stricter "明確錯誤" stance)
+│   ├── corrector.py               # Targeted correction pass; frozen fields incl. 核心素養/學習內容/學習表現/出題概念/題目內容類型
 │   ├── renderer.py                # matplotlib PNG for chart questions (render_mode="chart")
 │   ├── html_renderer.py           # Playwright HTML→PNG for image questions (render_mode="html")
-│   ├── schemas.py                 # Pydantic data models (enums loaded from question_schemas.json)
+│   ├── schemas.py                 # Math Pydantic models incl. CoreCompetency enum (27 數-* codes) and QuestionSubject (數與量/代數/幾何/統計與機率/跨領域)
 │   ├── schema_loader.py           # Loads question_schemas.json and builds dynamic enums
-│   ├── data_loader.py             # Curriculum data loading & indexing
+│   ├── planner.py                 # Math planner shim — wraps src.common.planner with 數學領域 prompts
+│   ├── data_loader.py             # Curriculum data loading + CSV-driven few-shot loader (image-manifest aware, with per-style JSON fallback)
 │   └── social_studies/            # Social studies (108課綱 社會領域素養導向) codepath
 │       ├── schemas.py             # ExamQuestion, SubQuestion, RubricEntry, LearningContentRef, QuestionSubject
 │       ├── schema_loader.py       # Builds schema dict from schema_meta.csv + schema_parameters.csv
-│       ├── curriculum_loader.py   # JSON loaders for learning_content/performance + allowed_* sampler helpers
-│       ├── core_competency_loader.py # JSON loader + allowed_core_competencies() for 核心素養 sampler pool
-│       ├── data_loader.py         # Loads few-shot CSV (learning content/performance now via curriculum_loader)
+│       ├── curriculum_loader.py   # Shim over src.common.curriculum_loader (owns _SUBJECT_TO_PREFIXES + 社會 data dir)
+│       ├── core_competency_loader.py # Shim over src.common.core_competency_loader
+│       ├── planner.py             # Shim over src.common.planner with 社會領域 prompts
+│       ├── data_loader.py         # Loads few-shot CSV (learning content/performance via curriculum_loader shim)
 │       ├── context_builder.py     # Prompt assembly; injects ## 課程綱要參考 + ## 指定條件 into prompts
 │       ├── sampler.py             # Picks grade, 科目, 學習內容_pool (1-3), 學習表現_pool (1-2), 核心素養, …
 │       └── ...                    # verifier, corrector (reuse src/ equivalents)
@@ -121,6 +133,7 @@ exam-generation/
 ├── tests/                         # Pytest suite
 ├── scripts/
 │   ├── connect_curriculum_from_odt.py  # One-shot ODT importer: populates 對應學習表現/對應學習內容 cross-links in the two JSON files
+│   ├── build_math_curriculum.py        # Reproducibly emits data/math/curriculum/* from legacy data/curriculum/* + social_studies core_competencies template
 │   └── ...                            # Other one-off utility scripts
 ├── output/                        # CLI-generated questions (gitignored)
 ├── question_schemas.json          # User-editable: 學習階段, grades, and allowed values for all question parameters
@@ -195,6 +208,7 @@ Environment variables (set in `.env` or export directly):
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |
 | `QUESTION_SCHEMAS_PATH` | CLI + server | Path to question parameter config JSON | `./question_schemas.json` |
 | `SOCIAL_STUDIES_CURRICULUM_DIR` | CLI + server | Directory containing social-studies curriculum CSVs | `./data/social_studies/curriculum` |
+| `MATH_CURRICULUM_DIR` | server | Directory containing reshaped math curriculum JSON (learning_content, learning_performance, core_competencies, learning_performance_intro.md) | `./data/math/curriculum` |
 | `DATABASE_URL` | server | Async SQLAlchemy database URL | `sqlite+aiosqlite:///./dev.db` |
 | `DB_PASSWORD` | docker-compose | Password for the bundled Postgres service | `changeme` |
 | `JWT_SECRET` | server | Secret used to sign auth tokens — must be a long random string | **(required for server)** |
@@ -230,6 +244,37 @@ uv run python -m src.cli generate --style chart_only text_only
 
 # Combine both
 uv run python -m src.cli generate --q-type 選擇題 是非題 --style with_chart creative_scenario
+```
+
+### Curriculum-aware overrides (108課綱)
+
+The math sampler now picks 核心素養, 學習表現, 題目內容類型, and an optional 科目 focus alongside the legacy parameters. Each can be overridden from the CLI:
+
+```bash
+# Focus on a single 科目 strand (數與量 / 代數 / 幾何 / 統計與機率 / 跨領域)
+uv run python -m src.cli generate --subject-filter 代數
+
+# Override 核心素養 codes (one or more 數-E/J/U-A1..C3 values)
+uv run python -m src.cli generate --core-competency 數-J-A2 數-J-B1
+
+# Override 學習內容 / 學習表現 codes
+uv run python -m src.cli generate --learning-content A-7-1 A-7-3
+uv run python -m src.cli generate --learning-performance a-IV-2
+
+# Pick a specific 題目內容類型 (純文字 / 含圖片 / graphs/charts/tables / customized)
+uv run python -m src.cli generate --content-type 純文字
+
+# Seed the question with user-supplied 主題 / 題幹 / 選項 / 核心問題
+uv run python -m src.cli generate --topic "二次函數的應用" --core-question "如何用二次函數模型化拋體運動？"
+uv run python -m src.cli generate --passage "..." --options "(A)..." "(B)..." "(C)..." "(D)..."
+
+# Image generation mode (html / gpt_image — see IMAGE_MODEL env var)
+uv run python -m src.cli generate --image-generation-mode html
+
+# Composite example
+uv run python -m src.cli generate \
+  --subject-filter 代數 --core-competency 數-J-A2 \
+  --content-type 純文字 --topic "二次函數的應用" --count 1
 ```
 
 ### Batch generation
@@ -296,6 +341,8 @@ uv run python -m src.social_studies.cli generate --count 5 --seed 1 --batch
 
 Most math flags (`--grade`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--max-retries`, `--batch`, `--dry-run`, `--output`) work identically for social studies. Social studies does not use `--style`.
 
+Math now supports the same curriculum-aware parameter surface (`--subject-filter`, `--core-competency`, `--learning-content`, `--learning-performance`, `--content-type`, `--topic`, `--passage`, `--options`, `--core-question`) — see [Curriculum-aware overrides](#curriculum-aware-overrides-108課綱) above.
+
 ## Running the server and web app
 
 ### Backend only
@@ -307,8 +354,8 @@ uv run uvicorn server.app:create_app --factory --reload --port 8000
 
 Routes live in:
 - `server/auth/routes.py` — sign-up, login, password reset
-- `server/generate/routes.py` — question generation, SSE streaming
-- `server/utility/routes.py` — health, schema introspection
+- `server/generate/routes.py` — question generation, SSE streaming. `POST /api/plan-core-questions` branches on `body.subject` (`"math"` | `"social_studies"`, default `"social_studies"`); math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage`. `GenerateParams` accepts curriculum-aware fields (`subject_filter`, `core_competency`, `learning_content`, `learning_performance`, `content_type`, `topic`, `passage`, `options`, `core_question`) for both subjects.
+- `server/utility/routes.py` — health, schema introspection. `GET /api/schemas?subject=math` augments the base math schema file with `科目` (4 strands), `題目內容類型` (4 entries), and `學習表現` filtered by `學習階段` (from `data/math/curriculum/learning_performance.json`).
 
 Migrations run automatically on app startup via the FastAPI lifespan handler. To run them manually:
 
@@ -455,6 +502,21 @@ Complete grades 1-12 math curriculum from Taiwan's 十二年國民基本教育 c
 - `對應學習表現`: mapped performance standards
 
 The full file is injected as LLM context so the model understands prerequisite knowledge, target difficulty, and what lies beyond — the exact range is driven by `question_schemas.json`.
+
+`data/curriculum/{學習內容,學習表現}.json` remain the legacy K-12 sources read by `src/data_loader.py` for system-prompt curriculum injection.
+
+### Math 108課綱 reshaped curriculum (`data/math/curriculum/`)
+
+For curriculum-aware sampling (核心素養, 學習表現, 學習內容, 科目 filtering), the math pipeline uses a reshaped set of JSON files mirroring the social-studies layout. Loaded via the shared `src.common.curriculum_loader` / `src.common.core_competency_loader`:
+
+| File | Contents |
+|---|---|
+| `learning_content.json` | 288 entries across 5 學習階段. Row shape `{value, 學習階段, 科目, 條目說明, 備註, 對應學習表現}`. `科目` is a single-letter strand prefix N / A / F / R / S / G / D / P (mapped by `_MATH_SUBJECT_TO_PREFIXES` in `src/sampler.py`: 數與量={N,n}, 代數={A,F,R,a,f,r}, 幾何={S,G,s,g}, 統計與機率={D,P,d,p}). |
+| `learning_performance.json` | 131 entries; row shape `{value, 學習階段, 科目, 說明}`. |
+| `core_competencies.json` | 27 數-E/J/U-A1..C3 codes (synthesized from the social studies template with `value` rewritten from 社- to 數-). |
+| `learning_performance_intro.md` | NAER framework chapter injected as `### 學習表現架構說明` in the math system prompt. |
+
+These four files are rebuilt reproducibly by `scripts/build_math_curriculum.py` from the legacy `data/curriculum/{學習內容,學習表現}.json` sources + the social studies core_competencies template. Re-run if the upstream curriculum data changes.
 
 ### Learning Performance Standards (學習表現.json)
 
