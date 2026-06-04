@@ -28,6 +28,7 @@ from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
 from src.sampler import sample_params
 from src.schemas import (
+    CoreCompetency,
     ImageSpec,
     ExamQuestion,
     LearningContentItem,
@@ -35,6 +36,7 @@ from src.schemas import (
     QuestionMetadata,
     QuestionSetType,
     QuestionStyle,
+    QuestionSubject,
     QuestionType,
     SampledParams,
 )
@@ -60,6 +62,47 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--context", type=str, nargs="+", help="情境 (e.g. 個人 社會時事) — one or more values")
     gen.add_argument("--set-type", type=str, help="題型種類 (單一題 or 題組題)")
     gen.add_argument("--q-type", type=str, nargs="+", help="題型 (one or more of: 選擇題, 是非題, etc.) — randomly picked if multiple")
+    gen.add_argument(
+        "--subject-filter",
+        type=str,
+        choices=[s.value for s in QuestionSubject],
+        help="科目焦點（數與量 / 代數 / 幾何 / 統計與機率 / 跨領域）",
+    )
+    gen.add_argument(
+        "--core-competency",
+        type=str,
+        nargs="+",
+        choices=[c.value for c in CoreCompetency],  # type: ignore[attr-defined]
+        help="核心素養代號 pool（如 數-J-A2 數-J-C3）；多值時隨機選 1-3 個",
+    )
+    gen.add_argument(
+        "--learning-content",
+        type=str,
+        nargs="+",
+        help="指定學習內容 編碼（覆蓋隨機取樣）",
+    )
+    gen.add_argument(
+        "--learning-performance",
+        type=str,
+        nargs="+",
+        help="指定學習表現 編碼（覆蓋隨機取樣）",
+    )
+    gen.add_argument(
+        "--content-type",
+        type=str,
+        choices=["純文字", "含圖片", "graphs/charts/tables", "customized"],
+        help="題目內容類型",
+    )
+    gen.add_argument(
+        "--image-generation-mode",
+        choices=["html", "gpt_image"],
+        default="html",
+        help="Image creation mode for HTML image specs",
+    )
+    gen.add_argument("--topic", type=str, help="使用者指定主題／議題")
+    gen.add_argument("--passage", type=str, help="使用者指定題幹文字（逐字使用）")
+    gen.add_argument("--options", type=str, nargs="+", help="使用者指定選項（依序使用）")
+    gen.add_argument("--core-question", type=str, help="使用者指定核心問題")
     gen.add_argument("--count", type=int, default=1, help="Number of questions to generate")
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
@@ -95,6 +138,11 @@ def generate_one(
     dry_run: bool = False,
     skip_verify: bool = False,
     html_renderer: PlaywrightRenderer | None = None,
+    image_generation_mode: str = "html",
+    user_topic: str = "",
+    user_passage: str = "",
+    user_options: list[str] | None = None,
+    user_core_question: str = "",
 ) -> ExamQuestion | str:
     """Generate a single exam question.
 
@@ -105,18 +153,21 @@ def generate_one(
     performance_text = get_full_performance_text(performance)
 
     system_prompt = build_system_prompt(curriculum_text, performance_text, intro_text)
-    user_prompt = build_user_prompt(params, config.data_dir / "few_shot")
-
-    # Stable curriculum prefix for verifier/corrector — identical across the batch
-    # so the cache breakpoint applied in LLMClient hits on calls #2+.
-    verifier_curriculum_context = (
-        f"## 課程綱要參考\n\n{curriculum_text}\n\n"
-        f"## 學習表現\n\n{performance_text}\n\n"
-        f"{intro_text}"
+    user_prompt, few_shot_images = build_user_prompt(
+        params,
+        config.data_dir / "few_shot",
+        user_topic=user_topic,
+        user_passage=user_passage,
+        user_options=user_options,
+        user_core_question=user_core_question,
     )
 
     if dry_run:
-        return f"=== SYSTEM PROMPT ({len(system_prompt)} chars) ===\n{system_prompt[:2000]}...\n\n=== USER PROMPT ({len(user_prompt)} chars) ===\n{user_prompt}"
+        img_note = f" ({len(few_shot_images)} few-shot images)" if few_shot_images else ""
+        return (
+            f"=== SYSTEM PROMPT ({len(system_prompt)} chars) ===\n{system_prompt[:2000]}...\n\n"
+            f"=== USER PROMPT ({len(user_prompt)} chars{img_note}) ===\n{user_prompt}"
+        )
 
     obs = client.get_observer() if client else None
 
@@ -155,7 +206,7 @@ def generate_one(
         result = verify_question(
             client, question,
             chart_image_path=chart_image_path,
-            curriculum_context=verifier_curriculum_context,
+            curriculum_context=None,
         )
         emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
@@ -178,6 +229,11 @@ def generate_with_corrections(
     skip_verify: bool = False,
     html_renderer: PlaywrightRenderer | None = None,
     dry_run: bool = False,
+    image_generation_mode: str = "html",
+    user_topic: str = "",
+    user_passage: str = "",
+    user_options: list[str] | None = None,
+    user_core_question: str = "",
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
@@ -197,20 +253,17 @@ def generate_with_corrections(
         dry_run=dry_run,
         skip_verify=skip_verify,
         html_renderer=html_renderer,
+        image_generation_mode=image_generation_mode,
+        user_topic=user_topic,
+        user_passage=user_passage,
+        user_options=user_options,
+        user_core_question=user_core_question,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
         return question
 
     obs = client.get_observer() if client else None
-
-    curriculum_text = get_full_curriculum_text(curriculum)
-    performance_text = get_full_performance_text(performance)
-    verifier_curriculum_context = (
-        f"## 課程綱要參考\n\n{curriculum_text}\n\n"
-        f"## 學習表現\n\n{performance_text}\n\n"
-        f"{intro_text}"
-    )
 
     for attempt in range(max_retries):
         if skip_verify or question.verification is None or question.verification.passed:
@@ -235,7 +288,7 @@ def generate_with_corrections(
         question = correct_question(
             client, question, question.verification,
             chart_image_path=chart_image_path,
-            curriculum_context=verifier_curriculum_context,
+            curriculum_context=None,
         )
         emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
 
@@ -265,7 +318,7 @@ def generate_with_corrections(
             result = verify_question(
                 client, question,
                 chart_image_path=new_chart_image_path,
-                curriculum_context=verifier_curriculum_context,
+                curriculum_context=None,
             )
             emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
@@ -329,6 +382,30 @@ def _parse_question(
                     data=raw_spec.get("data", {}),
                 )
 
+    # Parse new curriculum fields (Phase 3)
+    raw_lp = raw.get("學習表現", [])
+    parsed_lp: list[LearningContentItem] = []
+    for item in raw_lp:
+        if isinstance(item, dict):
+            parsed_lp.append(LearningContentItem(
+                編碼=item.get("編碼", ""),
+                說明=item.get("說明", ""),
+            ))
+        elif isinstance(item, str):
+            parts = item.split("：", 1)
+            parsed_lp.append(LearningContentItem(
+                編碼=parts[0].strip() if len(parts) > 1 else item,
+                說明=parts[1].strip() if len(parts) > 1 else "",
+            ))
+    if not parsed_lp:
+        parsed_lp = list(params.學習表現)
+
+    raw_cc = raw.get("核心素養", [])
+    if isinstance(raw_cc, list) and raw_cc:
+        core_competencies = [str(c) for c in raw_cc]
+    else:
+        core_competencies = list(params.核心素養)
+
     return ExamQuestion(
         id=question_id,
         情境=raw.get("情境", [c.value for c in params.情境]),
@@ -339,6 +416,10 @@ def _parse_question(
         題目=raw.get("題目", []),
         正確解題分析=raw.get("正確解題分析", []),
         chart_spec=chart_spec,
+        核心素養=core_competencies,
+        學習表現=parsed_lp,
+        題目內容類型=raw.get("題目內容類型", params.題目內容類型),
+        出題概念=raw.get("出題概念", ""),
         metadata=QuestionMetadata(
             grade=params.grade,
             style=params.style,
@@ -398,6 +479,14 @@ def main(argv: list[str] | None = None) -> None:
     )
     set_type_override = _resolve_enum(args.set_type, QuestionSetType)
     q_type_override = [_resolve_enum(v, QuestionType) for v in args.q_type] if args.q_type else None
+    core_competency_override = (
+        [CoreCompetency(v) for v in args.core_competency]
+        if args.core_competency else None
+    )
+    learning_content_override = args.learning_content if args.learning_content else None
+    learning_performance_override = args.learning_performance if args.learning_performance else None
+    content_type_override = args.content_type if args.content_type else None
+    subject_filter_override = args.subject_filter if args.subject_filter else None
 
     # Generate questions
     results = []
@@ -417,6 +506,11 @@ def main(argv: list[str] | None = None) -> None:
                 set_type=set_type_override,
                 q_type=q_type_override,
                 seed=seed,
+                core_competency=core_competency_override,
+                learning_content=learning_content_override,
+                learning_performance=learning_performance_override,
+                content_type=content_type_override,
+                subject_filter=subject_filter_override,
             )
 
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
@@ -437,6 +531,11 @@ def main(argv: list[str] | None = None) -> None:
                 skip_verify=args.no_verify,
                 html_renderer=html_renderer,
                 dry_run=args.dry_run,
+                image_generation_mode=args.image_generation_mode,
+                user_topic=args.topic or "",
+                user_passage=args.passage or "",
+                user_options=args.options,
+                user_core_question=args.core_question or "",
             )
 
             if args.dry_run:

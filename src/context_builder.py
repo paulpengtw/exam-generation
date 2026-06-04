@@ -6,6 +6,18 @@ import json
 import random
 from pathlib import Path
 
+from src.common.core_competency_loader import (
+    competency_instructions,
+    load_core_competencies,
+    stage_code_for,
+)
+from src.common.curriculum_loader import (
+    content_instructions,
+    load_learning_content,
+    load_learning_performance,
+    load_performance_intro,
+    performance_instructions,
+)
 from src.data_loader import load_few_shot_examples
 from src.schema_loader import build_instructions, load_grades, load_learning_stage, load_schemas
 from src.schemas import SampledParams
@@ -15,13 +27,51 @@ _INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
 _GRADES: list[int] = load_grades(_schemas)
 _LEARNING_STAGE: str = load_learning_stage(_schemas)
 
+_MATH_DATA_DIR = Path(__file__).parent.parent / "data" / "math" / "curriculum"
+_CC_DATA: dict = load_core_competencies(_MATH_DATA_DIR / "core_competencies.json")
+_CC_INSTRUCTIONS: dict[str, str] = competency_instructions(_CC_DATA)
+_STAGE_CODE: str = stage_code_for(_CC_DATA, _LEARNING_STAGE)
 
-def _grade_description(grades: list[int]) -> str:
-    names = "、".join(f"{g}年級" for g in grades)
-    return f"{min(grades)}-{max(grades)}年級（{names}）"
+_PERFORMANCE_DATA: dict = load_learning_performance(_MATH_DATA_DIR)
+_CONTENT_DATA: dict = load_learning_content(_MATH_DATA_DIR)
+_PERFORMANCE_INTRO: str = load_performance_intro(_MATH_DATA_DIR)
+
+_PERFORMANCE_TEXT: str = (
+    json.dumps(_PERFORMANCE_DATA, ensure_ascii=False, indent=2)
+    if _PERFORMANCE_DATA.get("學習表現")
+    else ""
+)
+_CONTENT_TEXT: str = (
+    json.dumps(_CONTENT_DATA, ensure_ascii=False, indent=2)
+    if _CONTENT_DATA.get("學習內容")
+    else ""
+)
+_LC_INSTRUCTIONS: dict[str, str] = content_instructions(_CONTENT_DATA)
+_LP_INSTRUCTIONS: dict[str, str] = performance_instructions(_PERFORMANCE_DATA)
+
+
+CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
+    "純文字": (
+        "本題目必須只使用純文字描述。不得輸出 `chart_spec`、`image_spec` 或任何需要渲染成圖片的資料；"
+        "題目與解題分析只能依據文字內容。"
+    ),
+    "含圖片": (
+        "本題目必須包含圖片或視覺示意素材（幾何圖形、示意圖、版面等）。"
+        "請輸出 `chart_spec`，優先使用 `render_mode: \"html\"`，並在 `description` 與 `data` 中完整描述版面與內容。"
+    ),
+    "graphs/charts/tables": (
+        "本題目必須包含圖表或表格素材。統計圖（直方圖、折線圖、圓餅圖等）請使用 `render_mode: \"chart\"`；"
+        "表格或複合資料表請使用 `render_mode: \"html\"`，並在 `data` 中提供完整欄列資料。"
+    ),
+    "customized": (
+        "本題目內容類型由使用者自訂，請依照使用者提供的素材與指示生成題目。"
+    ),
+}
+
 
 SYSTEM_PROMPT_TEMPLATE = """\
 你是一位資深的台灣國中數學命題教師，專門為{learning_stage}（{grade_names}）的學生設計考試題目。
+**本題庫專為{learning_stage}設計：所有 `核心素養` 代號必須使用 `數-{stage_code}-*` 開頭（如 數-{stage_code}-A2、數-{stage_code}-C3），不得使用其他學習階段的代號。**
 
 ## 命題原則
 
@@ -30,20 +80,11 @@ SYSTEM_PROMPT_TEMPLATE = """\
 3. 你必須了解國小（1-6年級）的學習內容作為先備知識基礎，也要了解高中（10-12年級）的學習內容以確保不超出範圍。
 4. 選項設計應包含合理的誘答選項，針對學生常見的錯誤概念。
 5. 解題分析必須完整、正確，包含逐步推導過程。
+6. 題目可選擇填入 `核心素養`（代號清單）、`學習表現`（編碼+說明）、`題目內容類型`、`出題概念`（一句話評量目標），協助課綱對齊；保留math單題（非題組）輸出結構。
 
-## 完整學習內容（1-12年級）
+## 課程綱要參考
 
-以下為完整的學習內容 JSON，涵蓋所有年級：
-
-{curriculum_json}
-
-## 學習表現標準
-
-{performance_json}
-
-## 課程綱要說明
-
-{intro_text}
+{curriculum_section}
 
 ## 輸出格式
 
@@ -58,6 +99,12 @@ SYSTEM_PROMPT_TEMPLATE = """\
   "學習內容": [
     {{"編碼": "X-Y-Z", "說明": "..."}}
   ],
+  "學習表現": [
+    {{"編碼": "n-IV-1", "說明": "..."}}
+  ],
+  "核心素養": ["數-{stage_code}-A2"],
+  "題目內容類型": "純文字 / 含圖片 / graphs/charts/tables / customized",
+  "出題概念": "評量學生能否……（一句話）",
   "題目": ["題目文字", "選項或子題..."],
   "正確解題分析": ["步驟一...", "步驟二..."],
   "chart_spec": {{...}}
@@ -87,9 +134,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 }}
 ```
 
-`render_mode: "html"` 的 `description` 請盡量詳細，例如：「三角形 △ABC，∠C = 90°，AB = 20m（斜邊），AC = 18m，標示各邊長度和直角符號」或「餐廳菜單，包含飲品區（美式咖啡 $45、拿鐵 $65）和套餐區（A套餐 $75）」。
-
-如果題目不需要圖表，則不要包含 `chart_spec` 欄位。
+`render_mode: "html"` 的 `description` 請盡量詳細。如果題目不需要圖表，則不要包含 `chart_spec` 欄位。
 
 請只輸出 JSON，不要輸出其他文字。
 """
@@ -100,17 +145,20 @@ USER_PROMPT_TEMPLATE = """\
 ## 指定條件
 
 - **年級重心**：{grade}年級
+- **科目焦點**：{subject_filter}
 - **情境**：{context}
 - **題型種類**：{set_type}
 - **題型**：{q_type}
 - **數學思考**：{thinking}
+- **題目內容類型**：{content_type}
+- **核心素養（限定使用）**：{core_competencies}
 - **必須涵蓋的學習內容**：
 {content_list}
-{param_instructions}
+{lp_pool_lines}{param_instructions}
 ## 題目風格
 
 {style_instruction}
-
+{user_materials}
 ## 參考範例
 
 以下是符合類似風格的範例題目，供你參考格式和難度水準：
@@ -123,30 +171,59 @@ USER_PROMPT_TEMPLATE = """\
 2. 確保答案正確，解題過程完整。
 3. 學習內容可以跨年級整合（{grade_range}範圍內），但核心考點應以指定的學習內容為主。
 4. 選項的誘答設計應針對常見錯誤概念。
-5. 只輸出 JSON 格式的結果。
+5. 題目的 `核心素養` 欄位**必須只從指定條件中的核心素養代號選擇**。
+6. 維持單題輸出結構（不是題組）：不要產生 `subquestions`、`核心問題`、`文本`、`評分規準` 等題組欄位。
+7. 只輸出 JSON 格式的結果。
 """
 
+_CURRICULUM_EMPTY_NOTICE = "（課程綱要資料待研究人員補充至 data/math/curriculum/）"
+
+
+def _build_curriculum_section(
+    content_text: str,
+    performance_text: str,
+    performance_intro: str = "",
+) -> str:
+    if not content_text and not performance_text:
+        return _CURRICULUM_EMPTY_NOTICE
+    parts = []
+    if performance_intro:
+        parts.append("### 學習表現架構說明\n\n" + performance_intro)
+    if performance_text:
+        parts.append("### 學習表現標準\n\n" + performance_text)
+    if content_text:
+        parts.append("### 學習內容\n\n" + content_text)
+    return "\n\n".join(parts)
 
 
 def build_system_prompt(
-    curriculum_json: str,
-    performance_json: str,
-    intro_text: str,
+    curriculum_json: str | None = None,
+    performance_json: str | None = None,
+    intro_text: str | None = None,
     grades: list[int] | None = None,
     learning_stage: str | None = None,
 ) -> str:
-    """Build the system prompt with full curriculum context."""
+    """Build the system prompt with full curriculum context.
+
+    All args are optional; defaults use the materialized math curriculum data.
+    Positional args are still accepted for backward compat with old callers
+    that passed pre-serialized text.
+    """
     g = grades if grades is not None else _GRADES
     stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
     grade_range = f"{min(g)}-{max(g)}年級"
     grade_names = "、".join(f"{x}年級" for x in g)
+    c_text = curriculum_json if curriculum_json is not None else _CONTENT_TEXT
+    p_text = performance_json if performance_json is not None else _PERFORMANCE_TEXT
+    p_intro = intro_text if intro_text is not None else _PERFORMANCE_INTRO
+    curriculum_section = _build_curriculum_section(c_text, p_text, p_intro)
+    sc = stage_code_for(_CC_DATA, stage)
     return SYSTEM_PROMPT_TEMPLATE.format(
-        curriculum_json=curriculum_json,
-        performance_json=performance_json,
-        intro_text=intro_text,
+        learning_stage=stage,
         grade_range=grade_range,
         grade_names=grade_names,
-        learning_stage=stage,
+        curriculum_section=curriculum_section,
+        stage_code=sc,
     )
 
 
@@ -154,8 +231,17 @@ def build_user_prompt(
     params: SampledParams,
     few_shot_dir: Path,
     rng: random.Random | None = None,
-) -> str:
-    """Build the user prompt with sampled parameters and few-shot examples."""
+    *,
+    user_topic: str = "",
+    user_passage: str = "",
+    user_options: list[str] | None = None,
+    user_core_question: str = "",
+) -> tuple[str, list[Path]]:
+    """Build the user prompt with sampled parameters and few-shot examples.
+
+    Returns (prompt_text, few_shot_image_paths). Math currently returns an
+    empty image list because the math few-shot loader is JSON-based.
+    """
     if rng is None:
         rng = random.Random()
 
@@ -163,12 +249,26 @@ def build_user_prompt(
     content_lines = []
     for item in params.學習內容:
         content_lines.append(f"  - {item.編碼}：{item.說明}")
-    content_list = "\n".join(content_lines)
+    content_list = "\n".join(content_lines) if content_lines else "  - （無）"
 
     # Format math thinking
     thinking = "、".join(t.value for t in params.數學思考)
 
-    # Collect per-param instructions (only non-empty ones)
+    # 學習表現 detail block
+    if params.學習表現:
+        lp_detail_lines = "\n".join(
+            f"  - {item.編碼}：{item.說明}" for item in params.學習表現
+        )
+        lp_pool_lines = f"- **指定學習表現**：\n{lp_detail_lines}\n"
+    else:
+        lp_pool_lines = ""
+
+    # core competency codes line
+    core_competencies = "、".join(params.核心素養) if params.核心素養 else "（未指定）"
+    content_type = params.題目內容類型 or "純文字"
+    subject_filter = params.subject_filter or "（未指定，題目可跨數學各領域）"
+
+    # Per-param instructions
     param_instruction_lines = []
     for c in params.情境:
         instr = _INSTRUCTIONS.get("情境", {}).get(c.value)
@@ -185,6 +285,25 @@ def build_user_prompt(
         instr = _INSTRUCTIONS.get("數學思考", {}).get(t.value)
         if instr:
             param_instruction_lines.append(f"  - **數學思考（{t.value}）補充**：{instr}")
+    for code in params.核心素養:
+        instr = _CC_INSTRUCTIONS.get(code)
+        if instr:
+            param_instruction_lines.append(f"  - **核心素養（{code}）補充**：{instr}")
+    for item in params.學習內容:
+        instr = _LC_INSTRUCTIONS.get(item.編碼)
+        if instr:
+            param_instruction_lines.append(f"  - **學習內容（{item.編碼}）補充**：{instr}")
+    for item in params.學習表現:
+        instr = _LP_INSTRUCTIONS.get(item.編碼)
+        if instr:
+            param_instruction_lines.append(f"  - **學習表現（{item.編碼}）補充**：{instr}")
+    content_type_instr = CONTENT_TYPE_INSTRUCTIONS.get(
+        content_type,
+        f"請將題目內容類型視為「{content_type}」，依此設計題目素材。",
+    )
+    param_instruction_lines.append(
+        f"  - **題目內容類型（{content_type}）補充**：{content_type_instr}"
+    )
     param_instructions = (
         "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
         if param_instruction_lines else ""
@@ -193,38 +312,75 @@ def build_user_prompt(
     # Style instruction
     style_instruction = _INSTRUCTIONS.get("question_style", {}).get(params.style.value, "")
 
+    # User-supplied overrides
+    user_materials_parts = []
+    topic_override = user_topic.strip() if user_topic else ""
+    if topic_override:
+        user_materials_parts.append(
+            "## 指定情境（請以此主題作為題目情境）\n\n"
+            f"主題 / 議題：{topic_override}"
+        )
+    if user_core_question:
+        user_materials_parts.append(
+            "## 指定核心問題（命題參考方向，請扣題設計）\n\n"
+            f"核心問題：{user_core_question}"
+        )
+    if user_passage:
+        user_materials_parts.append(
+            "## 使用者指定素材\n\n"
+            "**題幹文字（請逐字使用，不得修改）**：\n\n"
+            f"```\n{user_passage}\n```"
+        )
+    if user_options:
+        labels = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛"]
+        options_list = "\n".join(
+            f"({labels[i] if i < len(labels) else str(i + 1)}) {v}"
+            for i, v in enumerate(user_options)
+        )
+        user_materials_parts.append(
+            ("## 使用者指定選項\n\n" if not user_passage else "")
+            + "**選項（請依序使用，不得更動文字）**：\n\n"
+            + options_list
+        )
+    user_materials = ("\n" + "\n\n".join(user_materials_parts) + "\n") if user_materials_parts else ""
+
     # Load and format few-shot examples
     examples = load_few_shot_examples(few_shot_dir, params.style.value)
     if examples:
-        # Flatten if each file is a list
         flat_examples = []
         for ex in examples:
             if isinstance(ex, list):
                 flat_examples.extend(ex)
             else:
                 flat_examples.append(ex)
-
-        # Pick 1-2 examples randomly
         sample_count = min(2, len(flat_examples))
         selected = rng.sample(flat_examples, sample_count)
         example_texts = []
         for i, ex in enumerate(selected, 1):
             q = ex.get("question", ex)
-            example_texts.append(f"### 範例 {i}：{ex.get('description', '')}\n```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```")
+            example_texts.append(
+                f"### 範例 {i}：{ex.get('description', '')}\n```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```"
+            )
         few_shot_text = "\n\n".join(example_texts)
     else:
         few_shot_text = "（此風格暫無範例，請根據指定條件自行設計。）"
 
     grade_range = f"{min(_GRADES)}-{max(_GRADES)}年級"
-    return USER_PROMPT_TEMPLATE.format(
+    text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         grade_range=grade_range,
-        context="、".join(c.value for c in params.情境),
+        subject_filter=subject_filter,
+        context=topic_override or "、".join(c.value for c in params.情境),
         set_type=params.題型種類.value,
         q_type=params.題型.value,
         thinking=thinking,
+        content_type=content_type,
+        core_competencies=core_competencies,
         content_list=content_list,
+        lp_pool_lines=lp_pool_lines,
         param_instructions=param_instructions,
         style_instruction=style_instruction,
+        user_materials=user_materials,
         few_shot_examples=few_shot_text,
     )
+    return text, []
