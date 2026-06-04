@@ -205,6 +205,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               setTopic(e.target.value);
               setCoreQuestion(null);
             }}
+            onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
             placeholder={t("form.topic_placeholder")}
             className="mt-1 block w-full border rounded px-2 py-1"
           />
