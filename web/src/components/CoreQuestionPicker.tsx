@@ -25,6 +25,7 @@ export default function CoreQuestionPicker({
   const [candidates, setCandidates] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customQuestion, setCustomQuestion] = useState("");
 
   async function handleFetch() {
     setLoading(true);
@@ -81,6 +82,36 @@ export default function CoreQuestionPicker({
           </button>
         </div>
       )}
+
+      <div className="flex items-center gap-2 text-sm text-gray-400">
+        <hr className="flex-1 border-gray-200" />
+        <span>{t("form.custom_question_divider")}</span>
+        <hr className="flex-1 border-gray-200" />
+      </div>
+
+      <div className="space-y-2">
+        <input
+          type="text"
+          value={customQuestion}
+          onChange={(e) => setCustomQuestion(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+          placeholder={t("form.custom_question_placeholder")}
+          className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            onPick(customQuestion.trim());
+            setCustomQuestion("");
+            setCandidates([]);
+            setError(null);
+          }}
+          disabled={!customQuestion.trim() || loading}
+          className="inline-flex items-center gap-2 rounded border border-green-600 bg-white px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {t("form.custom_question_btn")}
+        </button>
+      </div>
 
       {candidates.length > 0 && (
         <fieldset className="space-y-2">

@@ -62,6 +62,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.picker_heading": "Select a core question",
     "form.picker_error": "Failed to generate candidates: ",
     "form.picker_retry": "Try again",
+    "form.custom_question_placeholder": "Type your own core question…",
+    "form.custom_question_btn": "Use my core question",
+    "form.custom_question_divider": "— or type your own —",
     "form.topic_no_pick_warning": "You typed a topic but haven't picked a core question — generation will proceed without one.",
 
     "progress.queued": "Queued",
@@ -181,6 +184,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.picker_heading": "請選擇核心問題",
     "form.picker_error": "無法產生候選：",
     "form.picker_retry": "再試一次",
+    "form.custom_question_placeholder": "輸入你自己的核心問題…",
+    "form.custom_question_btn": "直接使用我的核心問題",
+    "form.custom_question_divider": "— 或自行輸入 —",
     "form.topic_no_pick_warning": "你輸入了主題但尚未選擇核心問題——將直接產生題目（不含核心問題）。",
 
     "progress.queued": "排隊中",
