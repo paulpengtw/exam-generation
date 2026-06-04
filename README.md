@@ -268,7 +268,7 @@ uv run python -m src.cli generate --content-type 純文字
 uv run python -m src.cli generate --topic "二次函數的應用" --core-question "如何用二次函數模型化拋體運動？"
 uv run python -m src.cli generate --passage "..." --options "(A)..." "(B)..." "(C)..." "(D)..."
 
-# Image generation mode (html / gpt — see IMAGE_MODEL env var)
+# Image generation mode (html / gpt_image — see IMAGE_MODEL env var)
 uv run python -m src.cli generate --image-generation-mode html
 
 # Composite example
