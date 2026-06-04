@@ -61,6 +61,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.plan_btn_loading": "Generating candidates…",
     "form.picker_heading": "Select a core question",
     "form.picker_error": "Failed to generate candidates: ",
+    "form.picker_retry": "Try again",
+    "form.topic_no_pick_warning": "You typed a topic but haven't picked a core question — generation will proceed without one.",
 
     "progress.queued": "Queued",
     "progress.queued_detail": "There are {n} jobs ahead of you. Please wait…",
@@ -178,6 +180,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.plan_btn_loading": "產生候選中…",
     "form.picker_heading": "請選擇核心問題",
     "form.picker_error": "無法產生候選：",
+    "form.picker_retry": "再試一次",
+    "form.topic_no_pick_warning": "你輸入了主題但尚未選擇核心問題——將直接產生題目（不含核心問題）。",
 
     "progress.queued": "排隊中",
     "progress.queued_detail": "目前有 {n} 個任務排在你前面，請稍候…",

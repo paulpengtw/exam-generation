@@ -40,7 +40,9 @@ export default function CoreQuestionPicker({
       });
       setCandidates(res.candidates);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[plan-core-questions]", e);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -52,7 +54,11 @@ export default function CoreQuestionPicker({
         type="button"
         onClick={handleFetch}
         disabled={!topic.trim() || loading}
-        className="inline-flex items-center gap-2 rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className={`inline-flex items-center gap-2 rounded border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+          error
+            ? "border-red-500 bg-red-50 text-red-700 hover:bg-red-100"
+            : "border-blue-600 bg-white text-blue-600 hover:bg-blue-50"
+        }`}
       >
         {loading && (
           <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
@@ -64,7 +70,16 @@ export default function CoreQuestionPicker({
       </button>
 
       {error && (
-        <p className="text-sm text-red-600">{t("form.picker_error")}{error}</p>
+        <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm">
+          <p className="font-medium text-red-700">⚠ {t("form.picker_error")}{error}</p>
+          <button
+            type="button"
+            onClick={handleFetch}
+            className="mt-1 text-red-700 underline hover:no-underline"
+          >
+            {t("form.picker_retry")}
+          </button>
+        </div>
       )}
 
       {candidates.length > 0 && (
