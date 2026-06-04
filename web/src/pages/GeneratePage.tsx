@@ -80,6 +80,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         subject === "social_studies" || subject === "math" || subject === "natural_sciences"
           ? params.learning_performance
           : undefined,
+      learning_content:
+        subject === "social_studies" || subject === "natural_sciences"
+          ? params.learning_content
+          : undefined,
     });
   };
 
