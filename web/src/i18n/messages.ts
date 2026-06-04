@@ -87,6 +87,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_none": "(none)",
     "form.btn_confirm_send": "確定發送",
     "form.btn_back_edit": "Back",
+    "form.confirm_lp_selected": "Selected ({n})",
+    "form.confirm_lp_random_pool": "None selected — backend will randomly draw 1–3 from this pool ({n} available):",
 
     "progress.queued": "Queued",
     "progress.queued_detail": "There are {n} jobs ahead of you. Please wait…",
@@ -230,6 +232,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_none": "（無）",
     "form.btn_confirm_send": "確定發送",
     "form.btn_back_edit": "返回修改",
+    "form.confirm_lp_selected": "已選擇（{n} 項）",
+    "form.confirm_lp_random_pool": "未選擇 — 後端將從以下 {n} 項隨機抽取 1–3 項：",
 
     "progress.queued": "排隊中",
     "progress.queued_detail": "目前有 {n} 個任務排在你前面，請稍候…",
