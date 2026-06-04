@@ -26,6 +26,10 @@ export interface GenerateParams {
   science_competency?: string[];
   learning_performance?: string[];
   learning_content?: string[];
+  sub_question_count?: number;
+  question_word_limit?: number;
+  option_word_limit?: number;
+  subquestion_configs?: string;
 }
 
 export interface LearningContentItem {
@@ -147,6 +151,10 @@ function buildQueryString(params: GenerateParams): string {
   for (const v of params.science_competency ?? []) qs.append("science_competency", v);
   for (const v of params.learning_performance ?? []) qs.append("learning_performance", v);
   for (const v of params.learning_content ?? []) qs.append("learning_content", v);
+  if (params.sub_question_count !== undefined) qs.append("sub_question_count", String(params.sub_question_count));
+  if (params.question_word_limit !== undefined) qs.append("question_word_limit", String(params.question_word_limit));
+  if (params.option_word_limit !== undefined) qs.append("option_word_limit", String(params.option_word_limit));
+  if (params.subquestion_configs) qs.append("subquestion_configs", params.subquestion_configs);
   return qs.toString();
 }
 

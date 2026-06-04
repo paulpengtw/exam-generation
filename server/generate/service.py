@@ -268,6 +268,13 @@ async def generate_question_stream(
                         seed = (base_seed + i) if base_seed is not None else None
                         _emit_pipeline("question_start", index=i, total=count)
                         if is_social_studies:
+                            import json as _json
+                            _sq_configs = None
+                            if params.subquestion_configs:
+                                try:
+                                    _sq_configs = _json.loads(params.subquestion_configs)
+                                except Exception as _e:
+                                    logger.warning("subquestion_configs JSON parse failed, ignoring: %s", _e)
                             rng_params = ss_sample_params(
                                 grade=params.grade,
                                 context=context_override,
@@ -277,6 +284,10 @@ async def generate_question_stream(
                                 content_type=params.content_type,
                                 learning_performance=params.learning_performance,
                                 seed=seed,
+                                sub_question_count=params.sub_question_count,
+                                question_word_limit=params.question_word_limit,
+                                option_word_limit=params.option_word_limit,
+                                subquestion_configs=_sq_configs,
                             )
                             question_id = f"ss_{timestamp}_{i+1:03d}"
                             try:

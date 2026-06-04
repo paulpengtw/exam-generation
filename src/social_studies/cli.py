@@ -169,7 +169,7 @@ def _parse_question(
                 學習內容=lc_refs,
                 學習表現=lp_refs,
                 出題概念=sq_raw.get("出題概念", ""),
-                題型=sq_raw.get("題型", params.題型.value),
+                題型=sq_raw.get("題型", params.題型[0].value if params.題型 else "選擇題"),
                 題目=sq_raw.get("題目", ""),
                 答案=sq_raw.get("答案", ""),
                 答案解析=sq_raw.get("答案解析", ""),
@@ -186,7 +186,7 @@ def _parse_question(
         subquestions=subquestions,
         情境=[c.value for c in params.情境],
         題型種類=params.題型種類.value,
-        題型=params.題型.value,
+        題型=params.題型[0].value if params.題型 else "選擇題",
         閱讀歷程=[p.value for p in params.閱讀歷程],
         文本形式=params.文本形式.value,
         題目內容類型=params.題目內容類型,
@@ -428,7 +428,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
                   f"科目={params.科目.value}, "
                   f"情境={'、'.join(c.value for c in params.情境)}, "
-                  f"題型={params.題型.value}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
+                  f"題型={'、'.join(t.value for t in params.題型)}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
                   f"文本形式={params.文本形式.value}, "
                   f"題目內容類型={params.題目內容類型}, "
                   f"核心素養={'、'.join(c.value for c in params.核心素養)}", file=sys.stderr)
