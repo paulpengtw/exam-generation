@@ -84,6 +84,12 @@ exam-generation/
 │   │   │   └── images/                      # Images attached to CSV few-shot examples
 │   │   ├── example_exams/               # PISA/NAER reference exam PDFs
 │   │   └── csv_填寫指南.md              # zh-TW filler guide for JSON curriculum files + CSVs
+│   ├── natural_sciences/
+│   │   └── curriculum/
+│   │       ├── learning_content.json        # 108課綱 自然科學 學習內容 (757 entries) + 跨科概念 taxonomy (48 entries)
+│   │       ├── learning_performance.json    # 108課綱 自然科學 學習表現 (99 entries)
+│   │       ├── core_competencies.json       # 108課綱 自然科學 核心素養 (9 entries)
+│   │       └── converted/課綱各項指標列表.xlsx # Canonical workbook used by the build script
 │   └── example_exams/
 │       ├── 112P_Math.pdf          # Past exam: year 112
 │       ├── 113P_Math.pdf          # Past exam: year 113
@@ -490,6 +496,18 @@ For social studies exam generation, parameter schemas live in CSVs; curriculum d
 **Re-populating curriculum JSON from NAER:** Run `scripts/connect_curriculum_from_odt.py` whenever NAER publishes an updated 呼應表. It reads the official ODT and overwrites `對應學習表現` / `對應學習內容` in the two JSON files.
 
 Changes take effect on the next run — no rebuild required. See **[`data/social_studies/csv_填寫指南.md`](data/social_studies/csv_填寫指南.md)** for the field-by-field guide (zh-TW). Reference files prefixed with `範例_` in the same folders demonstrate correct formatting but are never loaded by the system.
+
+### Natural sciences curriculum data
+
+Natural-sciences curriculum assets live under `data/natural_sciences/curriculum/`. They are generated from `converted/課綱各項指標列表.xlsx` with `python3 scripts/build_natural_sciences_curriculum.py`.
+
+| File | Contains |
+|---|---|
+| `learning_content.json` | `學習階段_to_grades`, top-level `跨科概念` taxonomy (48 entries), and `學習內容` (757 entries). Each content row has `value`, `學習階段`, `科目`, `條目說明`, `備註`, `對應學習表現`. |
+| `learning_performance.json` | `學習階段_to_grades` and `學習表現` (99 entries). Each performance row has `value`, `學習階段`, `科目`, `構面`, `項目`, `說明`, `對應學習內容`. |
+| `core_competencies.json` | 自然科學領域 核心素養 (9 entries). |
+
+The stage map covers 第二學習階段 grades 3-4, 第三 5-6, 第四 7-9, and 第五 10-12. High-school learning content is bucketed by `科目` (`生物`, `物理`, `化學`, `地球科學`); earlier-stage shared rows use an empty `科目`. These files are documented data assets for future natural-sciences generation work and are not currently a separate runnable CLI/web mode.
 
 ## Data Sources
 

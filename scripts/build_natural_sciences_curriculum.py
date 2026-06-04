@@ -1,22 +1,30 @@
-"""Build natural-sciences curriculum JSON files from local source exports.
+"""Build natural-sciences curriculum JSON files from the canonical XLSX.
 
 Run from repo root:
 
     python3 scripts/build_natural_sciences_curriculum.py
 
-Idempotent: re-running should produce a no-op diff when sources are unchanged.
+The workbook is read directly with the Python standard library so this script
+does not require openpyxl or other spreadsheet dependencies.
 """
 
 from __future__ import annotations
 
-import csv
 import json
+import posixpath
 import re
 from pathlib import Path
+from xml.etree import ElementTree as ET
+from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parent.parent
 CURRICULUM_DIR = ROOT / "data" / "natural_sciences" / "curriculum"
-CONTENT_SRC_DIR = CURRICULUM_DIR / "curriculum_content_108"
+WORKBOOK_PATH = CURRICULUM_DIR / "converted" / "課綱各項指標列表.xlsx"
+SOCIAL_CC_PATH = ROOT / "data" / "social_studies" / "curriculum" / "core_competencies.json"
+
+MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 
 STAGE_TO_GRADES = {
     "第二學習階段": [3, 4],
@@ -25,149 +33,328 @@ STAGE_TO_GRADES = {
     "第五學習階段": [10, 11, 12],
 }
 
-STAGE_ORDER = {stage: i for i, stage in enumerate(STAGE_TO_GRADES)}
-
-PERFORMANCE_SOURCES = [
-    (
-        CURRICULUM_DIR / "國小教育階段學習表現.xlsx - 學習表現.csv",
-        [
-            ("第二學習階段", "第二學習階段學習表現", "第二學習階段學習表現代碼"),
-            ("第三學習階段", "第三學習階段學習表現", "第三學習階段學習表現代碼"),
-        ],
-    ),
-    (
-        CURRICULUM_DIR / "國中教育階段學習表現.xlsx - 工作表1.csv",
-        [
-            ("第四學習階段", "第四學習階段學習表現", "第四學習階段學習表現代碼"),
-        ],
-    ),
-    (
-        CURRICULUM_DIR / "普通型高中教育階段學習表現.xlsx - 工作表1.csv",
-        [
-            ("第五學習階段", "第五學習階段學習表現(必修)", "第五學習階段學習表現代碼(必修)"),
-            ("第五學習階段", "第五學習階段學習表現（加深加廣選修）", "第五學習階段學習表現代碼（加深加廣選修）"),
-        ],
-    ),
+CONTENT_SHEETS = [
+    ("學習內容_國小II", "第二學習階段"),
+    ("學習內容_國小III", "第三學習階段"),
+    ("學習內容_國中", "第四學習階段"),
+    ("學習內容_高中生物", "第五學習階段"),
+    ("學習內容_高中物理", "第五學習階段"),
+    ("學習內容_高中化學", "第五學習階段"),
+    ("學習內容_高中地球科學", "第五學習階段"),
 ]
 
+CROSS_CONCEPT_SHEET = "跨科概念"
+CROSS_CONCEPT_COLUMNS = ["課題", "跨科概念", "主題", "次主題"]
 
-def clean_text(value: str | None) -> str:
-    """Trim and collapse CSV/markdown formatting whitespace."""
-    if not value:
+PERFORMANCE_SHEETS = [
+    ("學習表現_小II", "第二學習階段"),
+    ("學習表現_小III", "第三學習階段"),
+    ("學習表現_國", "第四學習階段"),
+    ("學習表現_高", "第五學習階段"),
+]
+
+HIGH_SCHOOL_SUBJECTS = {
+    "B": "生物",
+    "P": "物理",
+    "C": "化學",
+    "E": "地球科學",
+}
+
+EXAMPLE_MARKER = "(我是範例)"
+CORE_CODE_RE = re.compile(r"^(自S-[EJU]-[ABC][1-3])")
+
+
+def xml_tag(local_name: str) -> str:
+    return f"{{{MAIN_NS}}}{local_name}"
+
+
+def column_index(cell_ref: str) -> int:
+    match = re.match(r"^([A-Za-z]+)", cell_ref)
+    if not match:
+        raise ValueError(f"Cell reference has no column: {cell_ref!r}")
+    index = 0
+    for char in match.group(1).upper():
+        index = index * 26 + ord(char) - ord("A") + 1
+    return index - 1
+
+
+def element_text(element: ET.Element | None) -> str:
+    if element is None:
         return ""
-    return re.sub(r"\s+", " ", value).strip()
+    return "".join(text_node.text or "" for text_node in element.iter(xml_tag("t")))
 
 
-def parse_metadata(text: str, path: Path) -> dict[str, str]:
-    metadata: dict[str, str] = {}
-    for line in text.splitlines():
-        match = re.match(r"^- ([^：]+)：(.*)$", line)
-        if not match:
+def normalize_xl_target(target: str) -> str:
+    if target.startswith("/"):
+        return target.lstrip("/")
+    return posixpath.normpath(posixpath.join("xl", target))
+
+
+class XlsxWorkbook:
+    def __init__(self, path: Path):
+        self.path = path
+        self._zip = ZipFile(path)
+        self._shared_strings = self._read_shared_strings()
+        self._sheet_targets = self._read_sheet_targets()
+
+    def close(self) -> None:
+        self._zip.close()
+
+    def __enter__(self) -> "XlsxWorkbook":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+    def _read_shared_strings(self) -> list[str]:
+        if "xl/sharedStrings.xml" not in self._zip.namelist():
+            return []
+        root = ET.fromstring(self._zip.read("xl/sharedStrings.xml"))
+        return [element_text(item) for item in root.findall(xml_tag("si"))]
+
+    def _read_sheet_targets(self) -> dict[str, str]:
+        workbook = ET.fromstring(self._zip.read("xl/workbook.xml"))
+        relationships = ET.fromstring(self._zip.read("xl/_rels/workbook.xml.rels"))
+        rel_targets = {
+            rel.attrib["Id"]: rel.attrib["Target"]
+            for rel in relationships.findall(f"{{{PACKAGE_REL_NS}}}Relationship")
+        }
+
+        sheet_targets: dict[str, str] = {}
+        for sheet in workbook.findall(f"{xml_tag('sheets')}/{xml_tag('sheet')}"):
+            name = sheet.attrib["name"].strip()
+            relationship_id = sheet.attrib[f"{{{OFFICE_REL_NS}}}id"]
+            target = normalize_xl_target(rel_targets[relationship_id])
+            if name in sheet_targets:
+                raise ValueError(f"Duplicate sheet name after trimming whitespace: {name}")
+            sheet_targets[name] = target
+        return sheet_targets
+
+    def rows(self, sheet_name: str) -> list[tuple[int, list[str]]]:
+        name = sheet_name.strip()
+        if name not in self._sheet_targets:
+            available = ", ".join(sorted(self._sheet_targets))
+            raise ValueError(f"Workbook has no sheet {sheet_name!r}; available: {available}")
+
+        root = ET.fromstring(self._zip.read(self._sheet_targets[name]))
+        rows: list[tuple[int, list[str]]] = []
+        for row in root.findall(f"{xml_tag('sheetData')}/{xml_tag('row')}"):
+            row_number = int(row.attrib.get("r", str(len(rows) + 1)))
+            cells: dict[int, str] = {}
+            max_index = -1
+            for cell in row.findall(xml_tag("c")):
+                index = column_index(cell.attrib.get("r", "A1"))
+                cells[index] = self._cell_value(cell)
+                max_index = max(max_index, index)
+            values = [cells.get(index, "") for index in range(max_index + 1)] if max_index >= 0 else []
+            while values and values[-1] == "":
+                values.pop()
+            rows.append((row_number, values))
+        return rows
+
+    def _cell_value(self, cell: ET.Element) -> str:
+        cell_type = cell.attrib.get("t")
+        value = cell.find(xml_tag("v"))
+
+        if cell_type == "s":
+            if value is None or value.text is None:
+                return ""
+            return self._shared_strings[int(value.text)]
+        if cell_type == "inlineStr":
+            return element_text(cell.find(xml_tag("is")))
+        return value.text if value is not None and value.text is not None else ""
+
+
+def cell(row: list[str], index: int) -> str:
+    if index >= len(row):
+        return ""
+    return row[index].strip()
+
+
+def text_cell(row: list[str], index: int) -> str:
+    return re.sub(r"\s+", " ", cell(row, index)).strip()
+
+
+def is_blank(row: list[str]) -> bool:
+    return not any(value.strip() for value in row)
+
+
+def is_example(row: list[str]) -> bool:
+    return any(EXAMPLE_MARKER in value for value in row)
+
+
+def note_text(parts: list[tuple[str, str]]) -> str:
+    return "；".join(f"{key}：{value}" for key, value in parts if value)
+
+
+def subject_for_content(code: str, stage: str) -> str:
+    if stage != "第五學習階段":
+        return ""
+    return HIGH_SCHOOL_SUBJECTS.get(code[:1], "")
+
+
+def data_rows(workbook: XlsxWorkbook, sheet_name: str) -> list[tuple[int, list[str]]]:
+    rows = workbook.rows(sheet_name)
+    if not rows:
+        raise ValueError(f"{sheet_name} is empty")
+    return rows[1:]
+
+
+def build_cross_concepts(workbook: XlsxWorkbook) -> list[dict[str, str]]:
+    sheet_name = CROSS_CONCEPT_SHEET
+    rows = workbook.rows(sheet_name)
+    if not rows:
+        raise ValueError(f"{sheet_name} is empty")
+
+    _, header = rows[0]
+    actual_columns = [text_cell(header, index) for index in range(len(header))]
+    if actual_columns != CROSS_CONCEPT_COLUMNS:
+        raise ValueError(
+            f"{sheet_name} has unexpected columns: {actual_columns}; expected: {CROSS_CONCEPT_COLUMNS}"
+        )
+
+    entries: list[dict[str, str]] = []
+    for row_number, source_row in rows[1:]:
+        if is_blank(source_row) or is_example(source_row):
             continue
-        key = clean_text(match.group(1))
-        value = clean_text(match.group(2))
-        if key:
-            metadata[key] = value
 
-    required = ["代碼", "學習階段", "領域", "主題", "次主題"]
-    missing = [key for key in required if not metadata.get(key)]
-    if missing:
-        raise ValueError(f"{path} is missing metadata fields: {', '.join(missing)}")
-    return metadata
+        entry = {
+            column: text_cell(source_row, index)
+            for index, column in enumerate(CROSS_CONCEPT_COLUMNS)
+        }
+        missing = [column for column, value in entry.items() if not value]
+        if missing:
+            raise ValueError(f"{sheet_name}!{row_number} has incomplete cross-concept data: {', '.join(missing)}")
+        entries.append(entry)
 
-
-def parse_original_text(text: str, path: Path) -> str:
-    match = re.search(r"^## 原文\s*\n(?P<body>.*?)(?=^## |\Z)", text, flags=re.MULTILINE | re.DOTALL)
-    if not match:
-        raise ValueError(f"{path} is missing ## 原文 block")
-    body = clean_text(match.group("body"))
-    if not body:
-        raise ValueError(f"{path} has an empty ## 原文 block")
-    return body
+    return entries
 
 
-def stage_sort_key(stage: str) -> int:
-    try:
-        return STAGE_ORDER[stage]
-    except KeyError as exc:
-        raise ValueError(f"Unknown learning stage: {stage}") from exc
-
-
-def code_sort_key(code: str) -> tuple[str, int, str]:
-    match = re.match(r"^([A-Za-z]+)-[^-]+-(\d+)$", code)
-    if not match:
-        return (code, -1, code)
-    prefix, number = match.groups()
-    return (prefix.lower(), int(number), code)
-
-
-def build_learning_content() -> dict:
+def build_learning_content(workbook: XlsxWorkbook) -> dict:
+    cross_concepts = build_cross_concepts(workbook)
     rows: list[dict] = []
-    for path in sorted(CONTENT_SRC_DIR.glob("*.md")):
-        text = path.read_text(encoding="utf-8")
-        metadata = parse_metadata(text, path)
-        note_parts = [
-            f"領域：{metadata['領域']}",
-            f"主題：{metadata['主題']}",
-            f"次主題：{metadata['次主題']}",
-        ]
-        if metadata.get("備註"):
-            note_parts.append(f"來源備註：{metadata['備註']}")
-        rows.append(
+    for sheet_name, stage in CONTENT_SHEETS:
+        for row_number, source_row in data_rows(workbook, sheet_name):
+            if is_blank(source_row) or is_example(source_row):
+                continue
+
+            code = cell(source_row, 3)
+            description = text_cell(source_row, 4)
+            if not code or not description:
+                raise ValueError(f"{sheet_name}!{row_number} has incomplete learning content")
+
+            notes = note_text(
+                [
+                    ("跨科概念", text_cell(source_row, 0)),
+                    ("主題", text_cell(source_row, 1)),
+                    ("次主題", text_cell(source_row, 2)),
+                    ("來源工作表", sheet_name),
+                ]
+            )
+            rows.append(
+                {
+                    "value": code,
+                    "學習階段": stage,
+                    "科目": subject_for_content(code, stage),
+                    "條目說明": description,
+                    "備註": notes,
+                    "對應學習表現": [],
+                }
+            )
+
+    assert_unique_values(rows, "學習內容")
+    return {"學習階段_to_grades": STAGE_TO_GRADES, "跨科概念": cross_concepts, "學習內容": rows}
+
+
+def build_learning_performance(workbook: XlsxWorkbook) -> dict:
+    rows: list[dict] = []
+    for sheet_name, stage in PERFORMANCE_SHEETS:
+        for row_number, source_row in data_rows(workbook, sheet_name):
+            if is_blank(source_row) or is_example(source_row):
+                continue
+
+            dimension = text_cell(source_row, 0)
+            item = text_cell(source_row, 1)
+            code = cell(source_row, 2)
+            description = text_cell(source_row, 3)
+            if not code and not description:
+                continue
+            if not dimension or not item or not code or not description:
+                raise ValueError(f"{sheet_name}!{row_number} has incomplete learning performance")
+
+            rows.append(
+                {
+                    "value": code,
+                    "學習階段": stage,
+                    "科目": "",
+                    "構面": dimension,
+                    "項目": item,
+                    "說明": description,
+                    "對應學習內容": [],
+                }
+            )
+
+    assert_unique_values(rows, "學習表現")
+    return {"學習階段_to_grades": STAGE_TO_GRADES, "學習表現": rows}
+
+
+def extract_core_code(code: str, instruction: str, sheet_name: str, row_number: int) -> str:
+    if code:
+        return code
+    match = CORE_CODE_RE.match(instruction)
+    if not match:
+        raise ValueError(f"{sheet_name}!{row_number} has no 指標代碼 and no leading code")
+    return match.group(1)
+
+
+def remove_leading_code(instruction: str, code: str) -> str:
+    if instruction.startswith(code):
+        return instruction[len(code) :].strip()
+    return instruction
+
+
+def core_meta_from_code(code: str, sheet_name: str, row_number: int) -> tuple[str, str, str]:
+    parts = code.split("-")
+    if len(parts) != 3 or not parts[1] or not parts[2]:
+        raise ValueError(f"{sheet_name}!{row_number} has invalid core competency code: {code}")
+    stage = parts[1]
+    item = parts[2]
+    dimension = item[:1]
+    return stage, dimension, item
+
+
+def build_core_competencies(workbook: XlsxWorkbook) -> dict:
+    social_core = json.loads(SOCIAL_CC_PATH.read_text(encoding="utf-8"))
+    entries: list[dict] = []
+    sheet_name = "核心素養"
+
+    for row_number, source_row in data_rows(workbook, sheet_name):
+        if is_blank(source_row) or is_example(source_row):
+            continue
+
+        instruction = text_cell(source_row, 3)
+        code = extract_core_code(cell(source_row, 2), instruction, sheet_name, row_number)
+        if not instruction:
+            raise ValueError(f"{sheet_name}!{row_number} has no core competency instruction")
+
+        stage, dimension, item = core_meta_from_code(code, sheet_name, row_number)
+        entries.append(
             {
-                "value": metadata["代碼"],
-                "學習階段": metadata["學習階段"],
-                "科目": "",
-                "條目說明": parse_original_text(text, path),
-                "備註": "；".join(note_parts),
-                "對應學習表現": [],
+                "value": code,
+                "stage": stage,
+                "面向": dimension,
+                "項目": item,
+                "instruction": remove_leading_code(instruction, code),
             }
         )
 
-    rows.sort(key=lambda row: (stage_sort_key(row["學習階段"]), code_sort_key(row["value"])))
-    assert_unique_values(rows, "學習內容")
-    return {"學習階段_to_grades": STAGE_TO_GRADES, "學習內容": rows}
-
-
-def normalized_row(row: dict[str, str]) -> dict[str, str]:
-    return {key.strip(): value for key, value in row.items()}
-
-
-def read_csv_rows(path: Path) -> list[dict[str, str]]:
-    with path.open(encoding="utf-8-sig", newline="") as handle:
-        return [normalized_row(row) for row in csv.DictReader(handle)]
-
-
-def build_learning_performance() -> dict:
-    rows: list[dict] = []
-    for path, pairs in PERFORMANCE_SOURCES:
-        for source_row in read_csv_rows(path):
-            dimension = clean_text(source_row.get("項目"))
-            item = clean_text(source_row.get("子項"))
-            if not dimension or not item:
-                raise ValueError(f"{path} has a row without 項目/子項: {source_row}")
-            for stage, description_column, code_column in pairs:
-                description = clean_text(source_row.get(description_column))
-                code = (source_row.get(code_column) or "").strip()
-                if not description and not code:
-                    continue
-                if not description or not code:
-                    raise ValueError(f"{path} has an incomplete {stage} entry: {source_row}")
-                rows.append(
-                    {
-                        "value": code,
-                        "學習階段": stage,
-                        "科目": "",
-                        "構面": dimension,
-                        "項目": item,
-                        "說明": description,
-                        "對應學習內容": [],
-                    }
-                )
-
-    rows.sort(key=lambda row: (stage_sort_key(row["學習階段"]), code_sort_key(row["value"])))
-    assert_unique_values(rows, "學習表現")
-    return {"學習階段_to_grades": STAGE_TO_GRADES, "學習表現": rows}
+    assert_unique_values(entries, "核心素養")
+    return {
+        "學習階段_to_stage": social_core["學習階段_to_stage"],
+        "面向": social_core["面向"],
+        "項目": social_core["項目"],
+        "核心素養": entries,
+    }
 
 
 def assert_unique_values(rows: list[dict], label: str) -> None:
@@ -183,14 +370,26 @@ def assert_unique_values(rows: list[dict], label: str) -> None:
 
 
 def write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def main() -> None:
-    write_json(CURRICULUM_DIR / "learning_content.json", build_learning_content())
-    write_json(CURRICULUM_DIR / "learning_performance.json", build_learning_performance())
-    print(f"Wrote {CURRICULUM_DIR}/learning_content.json")
-    print(f"Wrote {CURRICULUM_DIR}/learning_performance.json")
+    with XlsxWorkbook(WORKBOOK_PATH) as workbook:
+        learning_content = build_learning_content(workbook)
+        learning_performance = build_learning_performance(workbook)
+        core_competencies = build_core_competencies(workbook)
+
+    write_json(CURRICULUM_DIR / "learning_content.json", learning_content)
+    write_json(CURRICULUM_DIR / "learning_performance.json", learning_performance)
+    write_json(CURRICULUM_DIR / "core_competencies.json", core_competencies)
+
+    print(
+        f"Wrote {CURRICULUM_DIR}/learning_content.json "
+        f"({len(learning_content['跨科概念'])} cross-concept entries, {len(learning_content['學習內容'])} content entries)"
+    )
+    print(f"Wrote {CURRICULUM_DIR}/learning_performance.json ({len(learning_performance['學習表現'])} entries)")
+    print(f"Wrote {CURRICULUM_DIR}/core_competencies.json ({len(core_competencies['核心素養'])} entries)")
 
 
 if __name__ == "__main__":

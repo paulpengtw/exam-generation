@@ -54,6 +54,25 @@ CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separat
 
 **Sampler 科目 filter:** `_SUBJECT_TO_PREFIXES` in `curriculum_loader.py` maps each subject to its 科目 set. All subjects include `"社"` so the 16 cross-subject general 學習表現 codes (社1a/1b/2a/2b/2c/3a/3b/3c/3d-Ⅳ-*) are in every subject's pool — not only 跨科. This is per 108課綱 design where 社_* codes apply across all 社會領域 subjects. All subjects also include the empty-string `""` bucket so the 57 shared 學習內容 entries with `科目=""` appear in every subject's draw pool (parallel to the `社` bucket for 學習表現).
 
+### Natural sciences curriculum data
+`data/natural_sciences/curriculum/` contains generated 108課綱 自然科學領域 curriculum JSON assets. These files are not yet wired into a dedicated runtime adapter, sampler, or CLI mode; treat them as curriculum context data for future natural-sciences generation work.
+
+The canonical source is `data/natural_sciences/curriculum/converted/課綱各項指標列表.xlsx`. Rebuild with `python3 scripts/build_natural_sciences_curriculum.py`.
+
+| File | Purpose |
+|---|---|
+| `curriculum/learning_content.json` | Top-level `學習階段_to_grades`, `跨科概念` taxonomy (48 entries), and `學習內容` (757 entries). |
+| `curriculum/learning_performance.json` | `學習表現` standards (99 entries) plus `學習階段_to_grades`. |
+| `curriculum/core_competencies.json` | 自然科學領域 核心素養 (9 entries). |
+
+Natural-sciences JSON shapes:
+
+- `跨科概念`: `課題`, `跨科概念`, `主題`, `次主題`.
+- `學習內容`: `value`, `學習階段`, `科目`, `條目說明`, `備註`, `對應學習表現`.
+- `學習表現`: `value`, `學習階段`, `科目`, `構面`, `項目`, `說明`, `對應學習內容`.
+
+Stage mapping is shared across the two files: 第二學習階段 grades 3-4, 第三 5-6, 第四 7-9, 第五 10-12. High-school 學習內容 uses `科目` buckets `生物`, `物理`, `化學`, `地球科學`; earlier-stage shared rows use `科目=""`.
+
 ## Key Files
 
 | File | Purpose |
@@ -79,6 +98,9 @@ CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separat
 | `data/social_studies/curriculum/learning_performance_intro.md` | Official NAER 學習表現 framework chapter (構面/項目/編碼規則 + full 條目) → system prompt `### 學習表現架構說明` |
 | `data/social_studies/curriculum/learning_content.json` | Social studies 學習內容 JSON (472 entries spanning 學習階段 二/三/四/五; `對應學習表現` populated from ODT 呼應表 — 55 entries mapped at 第四學習階段) → system prompt + sampler pool |
 | `scripts/connect_curriculum_from_odt.py` | One-shot importer: reads the official 社會領域學習重點與核心素養呼應表 (ODT) and overwrites `對應學習表現` in `learning_content.json` and `對應學習內容` in `learning_performance.json`; also appends any perf codes referenced in the ODT but missing from the JSON. Re-run if NAER publishes an updated 呼應表. |
+| `data/natural_sciences/curriculum/learning_content.json` | Natural sciences 學習內容 JSON (757 entries) plus top-level `跨科概念` taxonomy (48 entries), generated from the canonical converted workbook. |
+| `data/natural_sciences/curriculum/learning_performance.json` | Natural sciences 學習表現 JSON (99 entries; stages 二/三/四/五). |
+| `scripts/build_natural_sciences_curriculum.py` | Rebuilds natural-sciences `learning_content.json`, `learning_performance.json`, and `core_competencies.json` from `converted/課綱各項指標列表.xlsx`. |
 | `data/social_studies/few_shot/few_shot_examples.csv` | Social studies few-shot examples (long format grouped by 範例編號; one row per subquestion with all 108課綱 metadata columns) |
 | `data/social_studies/csv_填寫指南.md` | zh-TW filler guide: field-by-field explanation of JSON + CSV files |
 | `src/social_studies/schema_loader.py` | Builds social-studies schema dict from `schema_meta.csv` + `schema_parameters.csv` |
