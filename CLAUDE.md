@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is a CLI-based exam question generator for Taiwan math (default: grades 7-9, 第四學習階段). Target 學習階段 and grade list are configurable in `question_schemas.json`. It uses LLMs via OpenAI-compatible endpoints to generate structured exam questions with optional chart/image output.
+This is a CLI-based exam question generator for Taiwan math (default: grades 7-9, 第四學習階段), 108課綱 社會領域 (歷史/地理/公民與社會/跨科), and 108課綱 自然科學 (PISA-style scientific literacy framing). Math target 學習階段 and grade list are configurable in `question_schemas.json`. It uses LLMs via OpenAI-compatible endpoints to generate structured exam questions with optional chart/image output.
 
 ## Architecture Decisions
 
@@ -10,7 +10,7 @@ This is a CLI-based exam question generator for Taiwan math (default: grades 7-9
 All curriculum data (學習內容.json, 學習表現.json) is injected directly into the LLM context. The full grades 1-12 curriculum is provided so the model can calibrate difficulty — understanding what students already know (grades 1-6) and what lies ahead (grades 10-12).
 
 ### Script-side randomness
-The Python code handles all random selection (grade, 情境, 題型種類, 題型, 數學思考, 學習內容, 學習表現, 核心素養, 題目內容類型, subject_filter, question style). The LLM receives deterministic instructions — it does not choose these parameters itself.
+The Python code handles all random selection (grade, 情境, 題型種類, 題型, 數學思考, 學習內容, 學習表現, 核心素養, 題目內容類型, subject_filter, question style; natural sciences also adds 情境子類別 and 科學能力). The LLM receives deterministic instructions — it does not choose these parameters itself.
 
 ### Verify + correct loop
 1. First call (Sonnet): generates the question and solution.
@@ -24,8 +24,8 @@ Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-op
 ### Web-ready design
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
 
-### Shared loaders, two subject pipelines
-Math (`src/*.py`) and social studies (`src/social_studies/*.py`) are two parallel question-generation pipelines that share their curriculum-loading core. The subject-agnostic loaders live in `src/common/`:
+### Shared loaders, three subject pipelines
+Math (`src/*.py`), social studies (`src/social_studies/*.py`), and natural sciences (`src/natural_sciences/*.py`) are three parallel question-generation pipelines that share their curriculum-loading core. The subject-agnostic loaders live in `src/common/`:
 
 - `src/common/curriculum_loader.py` — JSON loaders + `allowed_learning_content` / `allowed_learning_performance` filters, parameterized by `data_dir` and a `subject_to_prefixes` map.
 - `src/common/core_competency_loader.py` — JSON loader + `build_core_competency_enum` + `allowed_competencies(stage)`.
@@ -34,9 +34,10 @@ Math (`src/*.py`) and social studies (`src/social_studies/*.py`) are two paralle
 Each subject package wraps these with its own data directory and prefix map:
 
 - **Math** uses `data/math/curriculum/` and `_MATH_SUBJECT_TO_PREFIXES` (in `src/sampler.py`): 數與量={N,n}, 代數={A,F,R,a,f,r}, 幾何={S,G,s,g}, 統計與機率={D,P,d,p}, 跨領域=all. Subject prompts live in `src/planner.py` (數學領域命題教師).
-- **Social studies** uses `data/social_studies/curriculum/` and `_SUBJECT_TO_PREFIXES` (in `src/social_studies/curriculum_loader.py`). The historical `src/social_studies/{curriculum_loader, core_competency_loader, planner}.py` modules are now thin shims over `src.common.*` that preserve the original public API.
+- **Social studies** uses `data/social_studies/curriculum/` and `_SUBJECT_TO_PREFIXES` (in `src/social_studies/curriculum_loader.py`). The `src/social_studies/{curriculum_loader, core_competency_loader, planner}.py` modules are thin shims over `src.common.*`.
+- **Natural sciences** uses `data/natural_sciences/curriculum/`, subject_prefix `"自"` (in `src/natural_sciences/core_competency_loader.py`). Unlike the other two subjects, natural sciences has **no per-subject bucketing** — `科目` is fixed as `"自然科學"` on all subquestions, and `src/natural_sciences/curriculum_loader.py` overrides `allowed_learning_content` / `allowed_learning_performance` to skip the subject filter entirely. Subject prompts live in `src/natural_sciences/planner.py` (PISA-Science scientific literacy template). The `src/natural_sciences/{curriculum_loader, core_competency_loader, planner}.py` modules are thin shims over `src.common.*`.
 
-Math keeps its single-question, flat output structure (one 題目 + 正確解題分析 + math-specific fields like 數學思考 and `chart_spec`). Social studies keeps its 題組 structure with `subquestions[]`, `閱讀歷程`, `文本形式`, and rubric entries.
+Math keeps its single-question, flat output structure (one 題目 + 正確解題分析 + math-specific fields like 數學思考 and `chart_spec`). Social studies and natural sciences both use a 題組 structure with `subquestions[]` and rubric entries. Social studies keeps `閱讀歷程` and `文本形式` (PISA reading literacy axes). Natural sciences replaces `核心素養` with `科學能力` (6 entries: 能力一/二/三 + 環境能力一/二/三) and adds `情境子類別` (a PISA sub-context parented to the top-level 情境). The natural sciences verifier uses the lenient "寬鬆通過、只攔重大問題" stance, distinct from math's strict "明確錯誤" stance.
 
 PISA-style tags (`閱讀歷程`, `文本形式`) are retained on social studies as secondary diversity axes to influence question design, but the primary framing is 108課綱, not PISA reading literacy.
 
@@ -55,12 +56,12 @@ CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separat
 **Sampler 科目 filter:** `_SUBJECT_TO_PREFIXES` in `curriculum_loader.py` maps each subject to its 科目 set. All subjects include `"社"` so the 16 cross-subject general 學習表現 codes (社1a/1b/2a/2b/2c/3a/3b/3c/3d-Ⅳ-*) are in every subject's pool — not only 跨科. This is per 108課綱 design where 社_* codes apply across all 社會領域 subjects. All subjects also include the empty-string `""` bucket so the 57 shared 學習內容 entries with `科目=""` appear in every subject's draw pool (parallel to the `社` bucket for 學習表現).
 
 ### Natural sciences curriculum data
-`data/natural_sciences/curriculum/` contains generated 108課綱 自然科學領域 curriculum JSON assets. These files are not yet wired into a dedicated runtime adapter, sampler, or CLI mode; treat them as curriculum context data for future natural-sciences generation work.
-
-The canonical source is `data/natural_sciences/curriculum/converted/課綱各項指標列表.xlsx`. Rebuild with `python3 scripts/build_natural_sciences_curriculum.py`.
+`data/natural_sciences/curriculum/` contains 108課綱 自然科學領域 curriculum assets. The JSON files are generated from the canonical source `converted/課綱各項指標列表.xlsx` via `python3 scripts/build_natural_sciences_curriculum.py`. The CSV files are researcher-editable, mirroring the social-studies layout.
 
 | File | Purpose |
 |---|---|
+| `curriculum/schema_meta.csv` | 學習階段 label + grades list (runtime-editable) |
+| `curriculum/schema_parameters.csv` | Parameter values + instructions for 情境, 情境子類別, 題型種類, 題型, 科學能力, 題目內容類型. 情境子類別 rows carry a `parent` column linking each sub-context to its parent 情境 value. |
 | `curriculum/learning_content.json` | Top-level `學習階段_to_grades`, `跨科概念` taxonomy (48 entries), and `學習內容` (757 entries). |
 | `curriculum/learning_performance.json` | `學習表現` standards (99 entries) plus `學習階段_to_grades`. |
 | `curriculum/core_competencies.json` | 自然科學領域 核心素養 (9 entries). |
@@ -72,6 +73,18 @@ Natural-sciences JSON shapes:
 - `學習表現`: `value`, `學習階段`, `科目`, `構面`, `項目`, `說明`, `對應學習內容`.
 
 Stage mapping is shared across the two files: 第二學習階段 grades 3-4, 第三 5-6, 第四 7-9, 第五 10-12. High-school 學習內容 uses `科目` buckets `生物`, `物理`, `化學`, `地球科學`; earlier-stage shared rows use `科目=""`.
+
+**Sampler 科目 filter:** Natural sciences deliberately does NOT bucket by 科目 (生物/物理/化學/地球科學) at the sampler level, unlike social studies. `科目` is fixed at `"自然科學"` on every subquestion. `src/natural_sciences/curriculum_loader.py` overrides `allowed_learning_content` / `allowed_learning_performance` to omit the subject parameter and return the full stage pool.
+
+Few-shot examples live under `data/natural_sciences/few_shot/` in one folder per 題型:
+
+| Folder | 題型 |
+|---|---|
+| `Simple-multiple-choice/` | PISA 單選 |
+| `Complex-multiple-choice/` | PISA 複選 |
+| `Constructed-response/` | PISA 建構反應題 |
+
+Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot/{style}/`) or a `few_shot_examples.csv` (parallel to social studies). Folders are currently seeded with `.gitkeep`. The data loader (`src/natural_sciences/data_loader.py`) falls back to scanning all subdirectories when `q_type` is unknown.
 
 ## Key Files
 
@@ -111,6 +124,19 @@ Stage mapping is shared across the two files: 第二學習階段 grades 3-4, 第
 | `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
 | `src/social_studies/context_builder.py` | Social studies prompt assembly; `## 課程綱要參考` block injected into system prompt |
 | `src/social_studies/schemas.py` | Social studies Pydantic models: `ExamQuestion`, `SubQuestion`, `LearningContentRef`, `RubricEntry`, `QuestionSubject` (歷史/地理/公民與社會/跨科), `VerificationResult`, `ImageSpec` |
+| `src/natural_sciences/cli.py` | CLI entry point (no `--subject` flag; adds `--science-competency` and `--sub-context`; 題型 choices: Simple/Complex-multiple-choice/Constructed-response) |
+| `src/natural_sciences/schema_loader.py` | Builds schema dict from `schema_meta.csv` + `schema_parameters.csv`; handles `parent` column on `情境子類別` rows to build the parent-child map used by the sampler |
+| `src/natural_sciences/curriculum_loader.py` | Thin shim over `src.common.curriculum_loader`; overrides `allowed_learning_content` / `allowed_learning_performance` to skip subject filtering (科目 is fixed as 自然科學) |
+| `src/natural_sciences/core_competency_loader.py` | Thin shim over `src.common.core_competency_loader`; `NaturalCoreCompetency` enum, subject_prefix `"自"` |
+| `src/natural_sciences/planner.py` | Thin shim over `src.common.planner.plan_core_questions`; PISA-Science prompt template (自然科學領域命題教師) |
+| `src/natural_sciences/sampler.py` | PISA-Science sampler: picks grade, 情境 + 情境子類別 (parent-child constrained), 題型, 科學能力 (1–2 of 6: 能力一/二/三 + 環境能力一/二/三), 學習表現 (1–2), 學習內容 (1–3 preferentially derived from chosen 學習表現 via `對應學習內容`). No 科目 buckets. |
+| `src/natural_sciences/schemas.py` | Pydantic models: `ExamQuestion` (subquestions[], 科學能力, 情境子類別, no 核心素養 at top level), `SubQuestion` (科學能力 replaces 社會領域 核心素養; 科目 fixed as 自然科學), `ScienceCompetency` (6-member enum), `QuestionSubContext`. No `QuestionSubject` enum. |
+| `src/natural_sciences/data_loader.py` | Hybrid few-shot loader: scans `data/natural_sciences/few_shot/{q_type}/` for `*.json` and optional `few_shot_examples.csv`; falls back to all subdirs when q_type unknown |
+| `src/natural_sciences/context_builder.py` | PISA-Science prompt assembly; injects `跨科概念` taxonomy + `## 課程綱要參考` block (學習內容 + 學習表現 + 跨科概念) into system prompt |
+| `src/natural_sciences/verifier.py` | Explicit "寬鬆通過、只攔重大問題" stance — more lenient than math's "明確錯誤"; otherwise parallel architecture (multimodal when chart PNG present) |
+| `src/natural_sciences/corrector.py` | Frozen fields: `學習內容/學習表現/科學能力/出題概念/科目/年級`; minimal targeted correction (parallel to social studies corrector) |
+| `data/natural_sciences/curriculum/schema_meta.csv` | Natural sciences 學習階段 + grades (runtime-editable) |
+| `data/natural_sciences/curriculum/schema_parameters.csv` | Natural sciences parameter values + instructions (情境/情境子類別/題型/科學能力/題目內容類型; `parent` column on 情境子類別) |
 | `src/schemas.py` | Math Pydantic models (enums loaded dynamically from `question_schemas.json` at import time). `ExamQuestion` has optional 核心素養 (list[str]), 學習表現 (list[LearningContentItem]), 題目內容類型 (str \| None), 出題概念 (str). `SampledParams` mirrors these plus `subject_filter`. New enums: `CoreCompetency` (27 數-E/J/U-A1..C3 codes built via `src.common.core_competency_loader.build_core_competency_enum`) and `QuestionSubject` (數與量/代數/幾何/統計與機率/跨領域). `ImageSpec` describes the image; `ChartVerificationResult` is nested in `VerificationResult`. |
 | `src/sampler.py` | Curriculum-aware math sampler. Loads `data/math/curriculum/` via `src.common.*`. Owns `_MATH_SUBJECT_TO_PREFIXES` (科目→prefix-letter map) and `grade_to_learning_stage(grade)` helper. Samples 核心素養 (1–3), 學習表現 (1–3), 題目內容類型 (1 of 純文字 / 含圖片 / graphs/charts/tables / customized), and optional `subject_filter` alongside the existing 情境/題型種類/題型/數學思考/學習內容/style draws. |
 | `src/context_builder.py` | Math prompt assembly. Injects curriculum context (`## 課程綱要參考`) into the system prompt — same pattern as social studies. `build_user_prompt` accepts `user_topic`, `user_passage`, `user_options`, `user_core_question` overrides and returns `(prompt, few_shot_images)`. `CONTENT_TYPE_INSTRUCTIONS` maps the 4 題目內容類型 values to per-prompt instructions. |
@@ -125,10 +151,10 @@ Stage mapping is shared across the two files: 第二學習階段 grades 3-4, 第
 | `src/data_loader.py` | Curriculum data loading + grade filtering (legacy `data/curriculum/*.json` paths) and the CSV-driven few-shot loader with image-manifest support (`data/few_shot/few_shot_examples.csv` + `images/<id>/manifest.json`), with fallback to per-style JSON. No rubric parsing (math has no 評分規準). |
 | `src/verifier.py` (math) | Independent answer verification pass. Module-level `_CURRICULUM_PREFIX` (~93 KB curriculum context) mirrors social studies. Keeps math's stricter "明確錯誤" verification stance — NOT loosened to social studies' "寬鬆通過". |
 | `src/corrector.py` (math) | Targeted correction pass. Frozen-fields list extended with 核心素養, 學習內容, 學習表現, 出題概念, 題目內容類型 (alongside existing 情境/題型種類/題型/數學思考). |
-| `server/generate/routes.py` `/api/plan-core-questions` | Branches on `body.subject` (default `"social_studies"`). Math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage` and dispatches to `src.planner.plan_core_questions`. |
-| `server/generate/models.py` `GenerateParams` | Accepts `core_competency` and `learning_content` lists alongside the existing `subject_filter`, `content_type`, `passage`, `options`, `topic`, `core_question`, `learning_performance` fields. Math's `subject_filter` is `str \| None` — the API takes a list and coerces to single value via `[0]` (math has no semantic need for multi-select since 跨領域 already means "all"). |
-| `server/utility/routes.py` `/api/schemas?subject=math` | Augments the base math schema file with `科目` (4 strands), `題目內容類型` (4 entries parallel to social studies), and `學習表現` filtered by `學習階段` (loaded from `data/math/curriculum/learning_performance.json`). |
-| `server/config.py` `ServerConfig.math_curriculum_dir` | Env `MATH_CURRICULUM_DIR`, parallel to `social_studies_curriculum_dir`. |
+| `server/generate/routes.py` `/api/plan-core-questions` | Branches on `body.subject` (`"math"` \| `"social_studies"` \| `"natural_sciences"`, default `"social_studies"`). Math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage`. Natural sciences uses `src.natural_sciences.planner.plan_core_questions`. |
+| `server/generate/models.py` `GenerateParams` | Accepts all three subjects. New NS-specific fields: `sub_context: str \| None`, `science_competency: list[str] \| None`. `subject` is plain `str` (accepts `"natural_sciences"`). `PlanCoreQuestionsRequest.subject` is `Literal["math", "social_studies", "natural_sciences"]`. |
+| `server/utility/routes.py` `/api/schemas?subject=...` | `subject=math` augments base math schema with `科目` (4 strands), `題目內容類型` (4 entries), and `學習表現` filtered by 學習階段. `subject=natural_sciences` builds schema from `schema_parameters.csv` + curriculum JSON (PISA-Science dimensions: 情境/情境子類別/科學能力/題型/題目內容類型 with 學習表現 and 學習內容 pools). |
+| `server/config.py` `ServerConfig.math_curriculum_dir` | Env `MATH_CURRICULUM_DIR`, parallel to `social_studies_curriculum_dir`. `natural_sciences_curriculum_dir` env `NATURAL_SCIENCES_CURRICULUM_DIR` added alongside. |
 | `src/config.py` | Environment variable configuration |
 | `src/cli.py` | CLI entry point (argparse) |
 
@@ -195,6 +221,39 @@ subquestions: array of SubQuestion objects (primary format)
 ```
 
 Rubric scoring codes: `2` (full credit), `1` (partial), `0` (incorrect), `0X` (no response).
+
+### Natural sciences question schema (108課綱 自然科學 + PISA)
+
+```
+核心問題: string — the essential question driving the 題組
+文本: string — the passage / stimulus material
+取材來源: array of strings — source citations
+情境: 1+ of [Personal, Local-and-national, Global] (PISA-Science contexts)
+情境子類別: string | None — PISA sub-context (e.g. 健康, 自然資源, 環境品質); must be a child of the chosen 情境
+題型種類: 題組題
+題型: one of [Simple-multiple-choice, Complex-multiple-choice, Constructed-response]
+科學能力: list[str] — 1–2 of [能力一, 能力二, 能力三, 環境能力一, 環境能力二, 環境能力三]
+題目內容類型: str | None
+subquestions: array of SubQuestion objects
+  SubQuestion:
+    id: string
+    序號: int
+    年級: int
+    科目: list[str] — fixed as ["自然科學"] (no 生物/物理/化學/地球科學 branching at question level)
+    科學能力: list[str] — per-subquestion capability codes
+    核心素養: list[str] — present but not actively sampled (legacy field, typically empty)
+    學習內容: list[{編碼, 說明}] — 108課綱 codes e.g. INc-IV-1
+    學習表現: list[{編碼, 說明}] — e.g. tr-IV-1
+    出題概念: string
+    題型: string
+    題目: string (full question text including options)
+    答案: string
+    答案解析: string
+    評分規準: list[RubricEntry] — for Constructed-response items
+      RubricEntry: {code: "2"|"1"|"0"|"0X", 規準說明: str, 學生作答實例: list[str]}
+```
+
+Rubric scoring codes follow the same 2/1/0/0X convention as social studies.
 
 ## Curriculum Data Structure
 
@@ -263,6 +322,12 @@ When randomly selecting parameters, respect these rules:
 CLI overrides: `--subject-filter`, `--core-competency`, `--learning-content`, `--learning-performance`, `--content-type`, `--topic`, `--passage`, `--options`, `--core-question`, `--image-generation-mode` (in addition to the legacy `--grade`, `--style`, `--q-type`, `--context`, `--set-type` flags).
 
 All 5 categories share the same `{value, instruction}` object format. A non-empty `instruction` on any entry is injected into the LLM user prompt: style instructions land under `## 題目風格`; instructions for 情境, 題型種類, 題型, and 數學思考 land under `## 條件補充說明` (section omitted if all instructions are empty).
+
+**Natural sciences:** Allowed values come from `data/natural_sciences/curriculum/schema_parameters.csv` (categories: 情境, 情境子類別, 題型種類, 題型, 科學能力, 題目內容類型). Override the directory with `NATURAL_SCIENCES_CURRICULUM_DIR`.
+
+Natural sciences sampler picks: grade (from `schema_meta.csv`), **情境** (1 from [Personal / Local-and-national / Global]), **情境子類別** (1 from the sub-contexts whose `parent` matches the chosen 情境), **題型種類** (always 題組題), **題型** (Simple-multiple-choice / Complex-multiple-choice / Constructed-response), **科學能力** (1–2 of 6: 能力一/二/三 + 環境能力一/二/三), **題目內容類型** (1 of 純文字 / 含圖片 / graphs/charts/tables; customized is never random), **學習表現_pool** (1–2 codes from `learning_performance.json` filtered by 學習階段), **學習內容_pool** (1–3 codes: first tries to derive from chosen 學習表現 codes' `對應學習內容` cross-links, then falls back to the full stage pool). There is no `--subject` flag and no 科目 bucketing.
+
+CLI overrides: `--science-competency`, `--sub-context`, `--learning-content`, `--learning-performance`, `--content-type`, `--image-generation-mode`, `--grade`, `--q-type`, `--count`, `--batch`, `--seed`, `--no-verify`, `--max-retries`, `--output`, `--dry-run`. No `--style` flag (few-shot examples are keyed by 題型 folder, not style).
 
 ## Image Rendering Architecture
 
