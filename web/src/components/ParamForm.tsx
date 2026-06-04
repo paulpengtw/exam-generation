@@ -211,7 +211,9 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
     const lpDisplayEntries = isLpRandom ? lpPoolEntries : selectedLpEntries;
     const lpHeading = isLpRandom
-      ? t("form.confirm_lp_random_pool").replace("{n}", String(lpPoolEntries.length))
+      ? t("form.confirm_lp_random_pool")
+          .replace("{n}", String(lpPoolEntries.length))
+          .replace("{max}", subject === "math" ? "3" : "2")
       : t("form.confirm_lp_selected").replace("{n}", String(selectedLpEntries.length));
 
     return (
