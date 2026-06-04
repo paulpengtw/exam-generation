@@ -73,3 +73,31 @@ def test_social_studies_schemas_include_content_types() -> None:
     assert learning_performance
     assert {"value", "instruction", "科目"} <= set(learning_performance[0])
     assert "社1b-Ⅳ-1" in {entry["value"] for entry in learning_performance}
+
+
+def test_natural_sciences_schemas_include_pisa_science_dimensions() -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        r = client.get("/api/schemas?subject=natural_sciences")
+    assert r.status_code == 200
+    body = r.json()
+
+    assert body["grades"] == [7, 8, 9]
+    assert [entry["value"] for entry in body["情境"]] == [
+        "Personal",
+        "Local and national",
+        "Global",
+    ]
+    assert [entry["value"] for entry in body["題型種類"]] == ["題組題"]
+    assert [entry["value"] for entry in body["題型"]] == [
+        "Simple multiple-choice",
+        "Complex multiple-choice",
+        "Constructed response",
+    ]
+    assert len(body["科學能力"]) == 6
+    assert any(entry.get("parent") == "Global" for entry in body["情境子類別"])
+
+    learning_performance = body["學習表現"]
+    assert len(learning_performance) == 20
+    assert {"value", "instruction", "科目"} <= set(learning_performance[0])
+    assert "tr-Ⅳ-1" in {entry["value"] for entry in learning_performance}

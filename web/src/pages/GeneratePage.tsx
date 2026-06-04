@@ -43,26 +43,43 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       grade: params.grade,
       style: subject === "math" && params.style ? [params.style] : [],
       content_type:
-        subject === "social_studies" || subject === "math" ? params.content_type : undefined,
-      context: subject === "math" ? params.context : [],
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.content_type
+          : undefined,
+      context: subject === "math" || subject === "natural_sciences" ? params.context : [],
       set_type: params.set_type,
       q_type: params.q_type,
       count: params.count,
       skip_verify: params.skip_verify,
       image_generation_mode:
-        subject === "social_studies" || subject === "math" ? params.image_generation_mode : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.image_generation_mode
+          : undefined,
       subject_filter:
         subject === "social_studies" || subject === "math" ? params.subject_filter : undefined,
       topic:
-        subject === "social_studies" || subject === "math" ? params.topic : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.topic
+          : undefined,
       core_question:
-        subject === "social_studies" || subject === "math" ? params.core_question : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.core_question
+          : undefined,
       passage:
-        subject === "social_studies" || subject === "math" ? params.passage : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.passage
+          : undefined,
       options:
-        subject === "social_studies" || subject === "math" ? params.options : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.options
+          : undefined,
+      sub_context: subject === "natural_sciences" ? params.sub_context : undefined,
+      science_competency:
+        subject === "natural_sciences" ? params.science_competency : undefined,
       learning_performance:
-        subject === "social_studies" || subject === "math" ? params.learning_performance : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.learning_performance
+          : undefined,
     });
   };
 
@@ -97,7 +114,11 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
               ←
             </button>
             <h1 className="text-base font-semibold sm:text-lg">
-              {subject === "social_studies" ? t("generate.title_ss") : t("generate.title")}
+              {subject === "social_studies"
+                ? t("generate.title_ss")
+                : subject === "natural_sciences"
+                  ? t("generate.title_ns")
+                  : t("generate.title")}
             </h1>
           </div>
           <div className="flex min-w-0 items-center gap-2 text-sm sm:gap-3">

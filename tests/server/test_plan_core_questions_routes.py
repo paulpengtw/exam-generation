@@ -6,7 +6,6 @@ import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -55,7 +54,6 @@ def _make_app_and_token():
 def test_plan_core_questions_math_happy_path(monkeypatch) -> None:
     app, token, engine = _make_app_and_token()
 
-    import src.common.planner as common_planner
 
     def fake_plan_core_questions(client, topic, **kwargs):
         return ["核心問題一", "核心問題二", "核心問題三"]
@@ -86,8 +84,6 @@ def test_plan_core_questions_math_malformed_then_retry(monkeypatch) -> None:
     app, token, engine = _make_app_and_token()
 
     call_count = 0
-    original_plan = None
-
     import src.llm_client as llm_module
 
     def fake_plan(self, system, user, *, purpose):
@@ -174,3 +170,39 @@ def test_plan_core_questions_defaults_to_social_studies(monkeypatch) -> None:
     assert response.status_code == 200
     assert captured.get("subject") == "social_studies"
     assert captured.get("topic") == "民主政治"
+
+
+def test_plan_core_questions_natural_sciences(monkeypatch) -> None:
+    app, token, engine = _make_app_and_token()
+
+    captured = {}
+
+    def fake_ns_plan(client, topic, **kwargs):
+        captured["topic"] = topic
+        captured["learning_stage"] = kwargs["learning_stage"]
+        captured["grade"] = kwargs["grade"]
+        return ["科學問題一", "科學問題二", "科學問題三"]
+
+    monkeypatch.setattr(
+        "src.natural_sciences.planner.plan_core_questions",
+        fake_ns_plan,
+    )
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/plan-core-questions",
+                json={"topic": "糧食安全", "subject": "natural_sciences", "grade": 8},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200
+    assert response.json()["candidates"] == ["科學問題一", "科學問題二", "科學問題三"]
+    assert captured == {
+        "topic": "糧食安全",
+        "learning_stage": "第四學習階段",
+        "grade": 8,
+    }

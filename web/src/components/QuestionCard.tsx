@@ -76,6 +76,9 @@ function SubQuestionBlock({ sub }: { sub: SubQuestion }) {
         {sub.科目.map((s) => (
           <Chip key={`subj-${s}`} label={s} tone="purple" />
         ))}
+        {(sub.科學能力 ?? []).map((c) => (
+          <Chip key={`sci-${c}`} label={c} tone="amber" />
+        ))}
         {sub.核心素養.map((c) => (
           <Chip key={`cc-${c}`} label={c} tone="amber" />
         ))}
@@ -156,6 +159,10 @@ export default function QuestionCard({ question }: QuestionCardProps) {
     () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.核心素養) : [],
     [question.subquestions, isSocialStudies]
   );
+  const ssScienceComp = useMemo(
+    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.科學能力 ?? []) : [],
+    [question.subquestions, isSocialStudies]
+  );
   const ssLcCodes = useMemo(
     () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.學習內容.map((lc) => lc.編碼)) : [],
     [question.subquestions, isSocialStudies]
@@ -200,6 +207,12 @@ export default function QuestionCard({ question }: QuestionCardProps) {
               {ssCoreComp.map((c) => (
                 <Chip key={`cc-${c}`} label={c} tone="amber" />
               ))}
+              {ssScienceComp.map((c) => (
+                <Chip key={`sci-${c}`} label={c} tone="amber" />
+              ))}
+              {question.情境子類別 && (
+                <Chip label={question.情境子類別} tone="blue" />
+              )}
               {ssLcCodes.map((code) => (
                 <Chip key={`lc-${code}`} label={code} tone="gray" />
               ))}

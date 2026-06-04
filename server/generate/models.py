@@ -33,6 +33,8 @@ class GenerateParams(BaseModel):
     options: list[str] | None = None
     topic: str | None = None
     core_question: str | None = None
+    sub_context: str | None = None
+    science_competency: list[str] | None = None
     learning_performance: list[str] | None = None
     core_competency: list[str] | None = None
     learning_content: list[str] | None = None
@@ -44,7 +46,7 @@ class PlanCoreQuestionsRequest(BaseModel):
     topic: str
     subject_filter: list[str] | None = None
     grade: int | None = None
-    subject: Literal["math", "social_studies"] = "social_studies"
+    subject: Literal["math", "social_studies", "natural_sciences"] = "social_studies"
 
 
 class PlanCoreQuestionsResponse(BaseModel):

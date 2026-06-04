@@ -59,6 +59,8 @@ async def generate_endpoint(
     options: list[str] | None = Query(default=None),
     topic: str | None = Query(default=None),
     core_question: str | None = Query(default=None),
+    sub_context: str | None = Query(default=None),
+    science_competency: list[str] | None = Query(default=None),
     learning_performance: list[str] | None = Query(default=None),
     core_competency: list[str] | None = Query(default=None),
     learning_content: list[str] | None = Query(default=None),
@@ -88,6 +90,8 @@ async def generate_endpoint(
         options=options,
         topic=topic,
         core_question=core_question,
+        sub_context=sub_context,
+        science_competency=science_competency,
         learning_performance=learning_performance,
         core_competency=core_competency,
         learning_content=learning_content,
@@ -170,6 +174,30 @@ async def plan_core_questions_endpoint(
 
         try:
             candidates = math_plan_core_questions(
+                client,
+                body.topic,
+                subject_filter=body.subject_filter,
+                grade=body.grade,
+                learning_stage=learning_stage,
+            )
+        except ValueError as exc:
+            logger.warning("Planner returned malformed candidates: %s", exc)
+            raise HTTPException(
+                status_code=502,
+                detail="Planner upstream returned malformed candidates",
+            ) from exc
+    elif body.subject == "natural_sciences":
+        from src.natural_sciences.planner import plan_core_questions as ns_plan_core_questions
+        from src.natural_sciences.schema_loader import (
+            load_learning_stage,
+            load_schemas,
+        )
+
+        schemas = load_schemas()
+        learning_stage = load_learning_stage(schemas)
+
+        try:
+            candidates = ns_plan_core_questions(
                 client,
                 body.topic,
                 subject_filter=body.subject_filter,

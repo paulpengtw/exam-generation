@@ -39,7 +39,7 @@ export default function SubjectSelectPage() {
 
       <main className="mx-auto max-w-3xl px-4 py-12">
         <p className="mb-8 text-center text-gray-600">{t("subject_select.prompt")}</p>
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-6 sm:grid-cols-3">
           <button
             type="button"
             onClick={() => navigate("/generate/math")}
@@ -61,6 +61,18 @@ export default function SubjectSelectPage() {
             <div>
               <div className="text-lg font-semibold text-gray-900">{t("subject_select.ss_title")}</div>
               <div className="mt-1 text-sm text-gray-500">{t("subject_select.ss_desc")}</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate("/generate/natural_sciences")}
+            className="flex flex-col items-center gap-3 rounded-xl border-2 border-cyan-200 bg-white p-8 text-left shadow-sm transition hover:border-cyan-500 hover:shadow-md"
+          >
+            <span className="text-4xl">🔬</span>
+            <div>
+              <div className="text-lg font-semibold text-gray-900">{t("subject_select.ns_title")}</div>
+              <div className="mt-1 text-sm text-gray-500">{t("subject_select.ns_desc")}</div>
             </div>
           </button>
         </div>

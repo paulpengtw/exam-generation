@@ -18,6 +18,8 @@ export interface GenerateParams {
   options?: string[];
   topic?: string;
   core_question?: string;
+  sub_context?: string;
+  science_competency?: string[];
   learning_performance?: string[];
 }
 
@@ -67,7 +69,11 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [options, setOptions] = useState<string[]>([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
   const [topic, setTopic] = useState<string>("");
   const [coreQuestion, setCoreQuestion] = useState<string | null>(null);
+  const [subContext, setSubContext] = useState<string>("");
+  const [scienceCompetency, setScienceCompetency] = useState<string[]>([]);
   const [learningPerformance, setLearningPerformance] = useState<string[]>([]);
+  const isCurriculumSubject =
+    subject === "social_studies" || subject === "math" || subject === "natural_sciences";
 
   useEffect(() => {
     let cancelled = false;
@@ -79,12 +85,21 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     setPassage(TEXT_HINT);
     setOptions([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
     setSubjectFilter("");
+    setSubContext("");
+    setScienceCompetency([]);
     setLearningPerformance([]);
     getSchemas(subject)
       .then((s) => {
         if (cancelled) return;
         setSchemas(s);
         if (s.grades.length > 0) setGrade(s.grades[0]);
+        if (subject === "natural_sciences" && s.情境.length > 0) {
+          setContext([s.情境[0].value]);
+          const firstSub = (s.情境子類別 ?? []).find(
+            (entry) => entry.parent === s.情境[0].value,
+          );
+          setSubContext(firstSub?.value ?? "");
+        }
         const questionStyles = s.question_style ?? [];
         if (subject === "math" && questionStyles.length > 0) {
           setStyle(questionStyles[0].value);
@@ -93,7 +108,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         }
         const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
         setContentType(
-          (subject === "social_studies" || subject === "math") &&
+          isCurriculumSubject &&
             Array.isArray(contentTypes) &&
             contentTypes.length > 0
             ? contentTypes[0].value
@@ -108,7 +123,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     return () => {
       cancelled = true;
     };
-  }, [subject]);
+  }, [subject, isCurriculumSubject]);
 
   // Re-fetch only 學習表現 when grade changes so the correct learning stage is used.
   useEffect(() => {
@@ -125,11 +140,26 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
   const availableLearningPerformance = useMemo(() => {
     const entries = schemas?.學習表現 ?? [];
+    if (subject === "natural_sciences") return entries;
     const map =
       subject === "math" ? MATH_SUBJECT_TO_PERFORMANCE_PREFIXES : SUBJECT_TO_PERFORMANCE_PREFIXES;
     const prefixes = map[subjectFilter] ?? map[""];
     return entries.filter((entry) => prefixes.includes(entry.科目));
   }, [schemas, subjectFilter, subject]);
+
+  const availableSubContexts = useMemo(() => {
+    const entries = schemas?.情境子類別 ?? [];
+    const selectedContext = context[0] ?? "";
+    return entries.filter((entry) => !entry.parent || entry.parent === selectedContext);
+  }, [schemas, context]);
+
+  useEffect(() => {
+    if (subject !== "natural_sciences") return;
+    const allowed = new Set(availableSubContexts.map((entry) => entry.value));
+    if (!subContext || !allowed.has(subContext)) {
+      setSubContext(availableSubContexts[0]?.value ?? "");
+    }
+  }, [availableSubContexts, subContext, subject]);
 
   useEffect(() => {
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
@@ -147,21 +177,21 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     const cleanOptions = options.filter((o) => o && o !== OPTION_HINT);
     const cleanTopic = topic.trim();
     const effectiveContentType =
-      subject === "social_studies" || subject === "math"
+      isCurriculumSubject
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
-    if ((subject === "social_studies" || subject === "math") && !effectiveContentType) return;
+    if (isCurriculumSubject && !effectiveContentType) return;
 
     // If no learning_performance selected, pre-draw randomly to match backend sampling
     let finalLp: string[] | undefined;
     let autoDrawn = false;
-    if ((subject === "social_studies" || subject === "math") && learningPerformance.length === 0 && availableLearningPerformance.length > 0) {
+    if (isCurriculumSubject && learningPerformance.length === 0 && availableLearningPerformance.length > 0) {
       const maxDraw = subject === "math" ? 3 : 2;
       const drawCount = Math.floor(Math.random() * Math.min(maxDraw, availableLearningPerformance.length)) + 1;
       const shuffled = [...availableLearningPerformance].sort(() => Math.random() - 0.5);
       finalLp = shuffled.slice(0, drawCount).map((e) => e.value);
       autoDrawn = true;
-    } else if ((subject === "social_studies" || subject === "math") && learningPerformance.length > 0) {
+    } else if (isCurriculumSubject && learningPerformance.length > 0) {
       finalLp = learningPerformance;
     }
 
@@ -170,7 +200,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       grade,
       style: subject === "math" ? style : undefined,
       content_type: effectiveContentType,
-      context,
+      context: subject === "natural_sciences" ? context.slice(0, 1) : context,
       set_type: setType,
       q_type: qType,
       count,
@@ -180,11 +210,16 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       passage: cleanPassage,
       options: cleanOptions.length ? cleanOptions : undefined,
       topic:
-        (subject === "social_studies" || subject === "math") && cleanTopic
+        isCurriculumSubject && cleanTopic
           ? cleanTopic
           : undefined,
       core_question: coreQuestion || undefined,
       learning_performance: finalLp,
+      sub_context: subject === "natural_sciences" ? subContext : undefined,
+      science_competency:
+        subject === "natural_sciences" && scienceCompetency.length > 0
+          ? scienceCompetency
+          : undefined,
     });
   }
 
@@ -319,7 +354,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {(subject === "social_studies" || subject === "math") && (
+      {isCurriculumSubject && (
         <div className="space-y-2">
           <label className="block text-sm font-medium">{t("form.topic_label")}</label>
           <input
@@ -427,7 +462,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       )}
 
-      {(subject === "social_studies" || subject === "math") && Array.isArray(schemas.題目內容類型) && (
+      {isCurriculumSubject && Array.isArray(schemas.題目內容類型) && (
         <div className="space-y-2">
           <label className="block text-sm font-medium">{t("form.content_type")}</label>
           <select
@@ -472,6 +507,39 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </fieldset>
       )}
 
+      {subject === "natural_sciences" && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium">{t("form.context")}</label>
+            <select
+              value={context[0] ?? ""}
+              onChange={(e) => setContext(e.target.value ? [e.target.value] : [])}
+              className="mt-1 block w-full border rounded px-2 py-1"
+            >
+              {schemas.情境.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.value}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium">{t("form.sub_context")}</label>
+            <select
+              value={subContext}
+              onChange={(e) => setSubContext(e.target.value)}
+              className="mt-1 block w-full border rounded px-2 py-1"
+            >
+              {availableSubContexts.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.value}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       <div>
         <label className="block text-sm font-medium">{t("form.set_type")}</label>
         <select
@@ -502,6 +570,32 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           ))}
         </div>
       </fieldset>
+
+      {subject === "natural_sciences" && Array.isArray(schemas.科學能力) && (
+        <fieldset>
+          <legend className="text-sm font-medium">{t("form.science_competency")}</legend>
+          <div className="mt-1 grid grid-cols-1 gap-2">
+            {schemas.科學能力.map((s) => (
+              <label key={s.value} className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={scienceCompetency.includes(s.value)}
+                  onChange={() =>
+                    setScienceCompetency((prev) => toggleMulti(prev, s.value))
+                  }
+                  className="mt-1"
+                />
+                <span className="text-sm">
+                  <span className="font-medium">{s.value}</span>
+                  {s.instruction && (
+                    <span className="text-gray-600">：{s.instruction}</span>
+                  )}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
 
       <div>
         <label className="block text-sm font-medium">{t("form.count")}</label>
@@ -569,7 +663,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       </fieldset>
 
-      {(subject === "social_studies" || subject === "math") && (
+      {isCurriculumSubject && (
         <div>
           <label className="block text-sm font-medium">{t("form.image_generation_mode")}</label>
           <select
@@ -594,7 +688,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         <span className="text-sm">{t("form.skip_verify")}</span>
       </label>
 
-      {(subject === "social_studies" || subject === "math") && topic.trim() && !coreQuestion && (
+      {isCurriculumSubject && topic.trim() && !coreQuestion && (
         <p role="status" className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
           ⚠ {t("form.topic_no_pick_warning")}
         </p>

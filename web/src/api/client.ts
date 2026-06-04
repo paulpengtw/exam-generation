@@ -18,6 +18,7 @@ export interface User {
 export interface SchemaEntry {
   value: string;
   instruction: string;
+  parent?: string;
 }
 
 export interface LearningPerformanceEntry extends SchemaEntry {
@@ -28,13 +29,16 @@ export interface Schemas {
   學習階段: string;
   grades: number[];
   情境: SchemaEntry[];
+  情境子類別?: SchemaEntry[];
   題型種類: SchemaEntry[];
   題型: SchemaEntry[];
   數學思考: SchemaEntry[];
+  科學能力?: SchemaEntry[];
   question_style?: SchemaEntry[];
   題目內容類型?: SchemaEntry[];
   科目?: SchemaEntry[];
   學習表現?: LearningPerformanceEntry[];
+  學習內容?: LearningPerformanceEntry[];
   [key: string]: unknown;
 }
 

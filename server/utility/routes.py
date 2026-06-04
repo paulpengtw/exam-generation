@@ -1,5 +1,7 @@
 """Utility routes: /health and /api/schemas."""
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import json
@@ -10,6 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from server.auth.dependencies import get_config
 from server.config import ServerConfig
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
+from src.natural_sciences.curriculum_loader import (
+    load_learning_content as load_ns_learning_content,
+)
+from src.natural_sciences.curriculum_loader import (
+    load_learning_performance as load_ns_learning_performance,
+)
+from src.natural_sciences.schema_loader import load_schemas as load_ns_schemas
 from src.social_studies.curriculum_loader import load_learning_performance
 from src.social_studies.schema_loader import load_schemas as load_ss_schemas
 
@@ -99,6 +108,41 @@ async def get_schemas(
                 detail=f"failed to load social_studies schemas: {exc}",
             ) from exc
 
+    if subject == "natural_sciences":
+        try:
+            schemas = load_ns_schemas(config.natural_sciences_curriculum_dir)
+            learning_stage = _resolve_stage(schemas, grade)
+            performance = load_ns_learning_performance(
+                config.natural_sciences_curriculum_dir / "learning_performance.json"
+            )
+            content = load_ns_learning_content(
+                config.natural_sciences_curriculum_dir / "learning_content.json"
+            )
+            schemas["學習表現"] = [
+                {
+                    "value": entry["value"],
+                    "instruction": entry.get("說明", ""),
+                    "科目": entry.get("科目", ""),
+                }
+                for entry in performance.get("學習表現", [])
+                if entry.get("學習階段") == learning_stage
+            ]
+            schemas["學習內容"] = [
+                {
+                    "value": entry["value"],
+                    "instruction": entry.get("條目說明", ""),
+                    "科目": entry.get("科目", ""),
+                }
+                for entry in content.get("學習內容", [])
+                if entry.get("學習階段") == learning_stage
+            ]
+            return schemas
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"failed to load natural_sciences schemas: {exc}",
+            ) from exc
+
     if subject == "math":
         try:
             path: Path = config.question_schemas_path
@@ -121,7 +165,7 @@ async def get_schemas(
         except FileNotFoundError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"schemas file not found for subject 'math'",
+                detail="schemas file not found for subject 'math'",
             ) from exc
         except Exception as exc:
             raise HTTPException(

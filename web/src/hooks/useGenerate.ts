@@ -22,6 +22,8 @@ export interface GenerateParams {
   options?: string[];
   topic?: string;
   core_question?: string;
+  sub_context?: string;
+  science_competency?: string[];
   learning_performance?: string[];
 }
 
@@ -41,6 +43,7 @@ export interface SubQuestion {
   序號: number;
   年級: number;
   科目: string[];
+  科學能力?: string[];
   核心素養: string[];
   學習內容: LearningContentItem[];
   學習表現: LearningContentItem[];
@@ -62,6 +65,8 @@ export interface ExamQuestion {
   閱讀歷程?: string[];
   文本形式?: string;
   題目內容類型?: string;
+  情境子類別?: string;
+  科學能力?: string[];
   核心問題?: string;
   文本?: string;
   subquestions?: SubQuestion[];
@@ -137,6 +142,8 @@ function buildQueryString(params: GenerateParams): string {
   for (const v of params.options ?? []) qs.append("options", v);
   if (params.topic) qs.append("topic", params.topic);
   if (params.core_question) qs.append("core_question", params.core_question);
+  if (params.sub_context) qs.append("sub_context", params.sub_context);
+  for (const v of params.science_competency ?? []) qs.append("science_competency", v);
   for (const v of params.learning_performance ?? []) qs.append("learning_performance", v);
   return qs.toString();
 }

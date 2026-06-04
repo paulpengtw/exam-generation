@@ -1,0 +1,134 @@
+"""Pydantic data models for PISA Science + 108課綱自然科學 question generation."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+from src.natural_sciences.schema_loader import build_enums, load_grades, load_schemas
+
+_schemas = load_schemas()
+QuestionContext, QuestionSubContext, QuestionSetType, QuestionType, ScienceCompetency = (
+    build_enums(_schemas)
+)
+_GRADES: list[int] = load_grades(_schemas)
+
+
+class ImageSpec(BaseModel):
+    render_mode: Literal["chart", "html"] = "chart"
+    chart_type: (
+        Literal["histogram", "boxplot", "line_chart", "pie_chart", "scatter_plot"] | None
+    ) = None
+    title: str = ""
+    data: dict = Field(default_factory=dict)
+    labels: dict = Field(default_factory=dict)
+    html: str = ""
+    description: str = ""
+
+
+ChartSpec = ImageSpec
+
+
+class ChartVerificationResult(BaseModel):
+    chart_data_match: bool
+    chart_labels_correct: bool
+    chart_details: str
+
+
+class VerificationResult(BaseModel):
+    passed: bool
+    answer_match: bool
+    details: str
+    my_answer: str = ""
+    provided_answer: str = ""
+    chart_verification: ChartVerificationResult | None = None
+
+
+class LearningContentRef(BaseModel):
+    """A 108課綱 learning content or performance standard code with description."""
+
+    編碼: str
+    說明: str = ""
+
+
+class RubricEntry(BaseModel):
+    """One row of a 評分規準 table."""
+
+    code: str
+    規準說明: str
+    學生作答實例: list[str] = Field(default_factory=list)
+
+
+class SubQuestion(BaseModel):
+    """One subquestion within a PISA Science 題組."""
+
+    id: str = ""
+    序號: int = 1
+    年級: int = 0
+    科目: list[str] = Field(default_factory=list)
+    科學能力: list[str] = Field(default_factory=list)
+    核心素養: list[str] = Field(default_factory=list)
+    學習內容: list[LearningContentRef] = Field(default_factory=list)
+    學習表現: list[LearningContentRef] = Field(default_factory=list)
+    出題概念: str = ""
+    題型: QuestionType  # type: ignore[valid-type]
+    題目: str
+    答案: str = ""
+    答案解析: str = ""
+    評分規準: list[RubricEntry] = Field(default_factory=list)
+
+
+class QuestionMetadata(BaseModel):
+    grade: int
+    model: str
+    generated_at: datetime = Field(default_factory=datetime.now)
+    seed: int | None = None
+
+
+class ExamQuestion(BaseModel):
+    """A complete PISA Science + 108課綱自然科學 exam question set."""
+
+    id: str = ""
+    核心問題: str = ""
+    文本: str = ""
+    取材來源: list[str] = Field(default_factory=list)
+    subquestions: list[SubQuestion] = Field(default_factory=list)
+
+    情境: list[QuestionContext]  # type: ignore[valid-type]
+    情境子類別: QuestionSubContext | None = None  # type: ignore[valid-type]
+    題型種類: QuestionSetType  # type: ignore[valid-type]
+    題型: QuestionType  # type: ignore[valid-type]
+    科學能力: list[ScienceCompetency] = Field(default_factory=list)  # type: ignore[valid-type]
+    題目內容類型: str | None = None
+
+    題目: list[str] = Field(default_factory=list)
+    正確解題分析: list[str] = Field(default_factory=list)
+
+    圖片: str | None = None
+    chart_spec: ChartSpec | None = None
+    verification: VerificationResult | None = None
+    metadata: QuestionMetadata | None = None
+
+
+class SampledParams(BaseModel):
+    """Parameters selected by the sampler for natural-sciences generation."""
+
+    grade: int
+
+    @field_validator("grade")
+    @classmethod
+    def grade_must_be_allowed(cls, v: int) -> int:
+        if v not in _GRADES:
+            raise ValueError(f"grade must be one of {_GRADES}, got {v}")
+        return v
+
+    情境: list[QuestionContext]  # type: ignore[valid-type]
+    情境子類別: QuestionSubContext  # type: ignore[valid-type]
+    題型種類: QuestionSetType  # type: ignore[valid-type]
+    題型: QuestionType  # type: ignore[valid-type]
+    科學能力: list[ScienceCompetency] = Field(default_factory=list)  # type: ignore[valid-type]
+    題目內容類型: str = ""
+    學習內容_pool: list[str] = Field(default_factory=list)
+    學習表現_pool: list[str] = Field(default_factory=list)

@@ -26,28 +26,63 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
+from server.config import ServerConfig
+from server.generate.models import GenerateParams
 from src.cli import generate_with_corrections as math_generate_with_corrections
 from src.llm_client import LLMClient, LLMObserver
+from src.natural_sciences.cli import generate_with_corrections as ns_generate_with_corrections
+from src.natural_sciences.sampler import sample_params as ns_sample_params
+from src.natural_sciences.schemas import (
+    ExamQuestion as NSExamQuestion,
+)
+from src.natural_sciences.schemas import (
+    QuestionContext as NSQuestionContext,
+)
+from src.natural_sciences.schemas import (
+    QuestionSetType as NSQuestionSetType,
+)
+from src.natural_sciences.schemas import (
+    QuestionSubContext as NSQuestionSubContext,
+)
+from src.natural_sciences.schemas import (
+    QuestionType as NSQuestionType,
+)
+from src.natural_sciences.schemas import (
+    ScienceCompetency as NSScienceCompetency,
+)
 from src.sampler import sample_params as math_sample_params
 from src.schemas import (
     ExamQuestion as MathExamQuestion,
+)
+from src.schemas import (
     QuestionContext as MathQuestionContext,
+)
+from src.schemas import (
     QuestionSetType as MathQuestionSetType,
+)
+from src.schemas import (
     QuestionStyle as MathQuestionStyle,
+)
+from src.schemas import (
     QuestionType as MathQuestionType,
 )
 from src.social_studies.cli import generate_with_corrections as ss_generate_with_corrections
 from src.social_studies.sampler import sample_params as ss_sample_params
 from src.social_studies.schemas import (
     ExamQuestion as SSExamQuestion,
+)
+from src.social_studies.schemas import (
     QuestionContext as SSQuestionContext,
+)
+from src.social_studies.schemas import (
     QuestionSetType as SSQuestionSetType,
+)
+from src.social_studies.schemas import (
     QuestionSubject as SSQuestionSubject,
+)
+from src.social_studies.schemas import (
     QuestionType as SSQuestionType,
 )
-
-from server.config import ServerConfig
-from server.generate.models import GenerateParams
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +124,7 @@ def _resolve_enum(value: str | None, enum_cls: type) -> Any:
 
 
 def _question_to_event(
-    question: MathExamQuestion | SSExamQuestion,
+    question: MathExamQuestion | SSExamQuestion | NSExamQuestion,
     config: ServerConfig,
 ) -> dict[str, Any]:
     """Serialize an ExamQuestion to a result-event payload, embedding PNG if present."""
@@ -139,6 +174,7 @@ async def generate_question_stream(
             client = LLMClient(config)
             html_renderer = getattr(app_state, "html_renderer", None)
             is_social_studies = params.subject == "social_studies"
+            is_natural_sciences = params.subject == "natural_sciences"
 
             if is_social_studies:
                 context_override = (
@@ -153,6 +189,21 @@ async def generate_question_stream(
                 subject_override = (
                     [SSQuestionSubject(v) for v in params.subject_filter]
                     if params.subject_filter else None
+                )
+            elif is_natural_sciences:
+                context_override = (
+                    [_resolve_enum(v, NSQuestionContext) for v in params.context]
+                    if params.context else None
+                )
+                sub_context_override = _resolve_enum(params.sub_context, NSQuestionSubContext)
+                set_type_override = _resolve_enum(params.set_type, NSQuestionSetType)
+                q_type_override = (
+                    [_resolve_enum(v, NSQuestionType) for v in params.q_type]
+                    if params.q_type else None
+                )
+                science_competency_override = (
+                    [_resolve_enum(v, NSScienceCompetency) for v in params.science_competency]
+                    if params.science_competency else None
                 )
             else:
                 curriculum = app_state.curriculum
@@ -247,9 +298,52 @@ async def generate_question_stream(
                                 tb = traceback.format_exc()
                                 loop.call_soon_threadsafe(
                                     queue.put_nowait,
-                                    {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
+                                    {
+                                        "event": "error",
+                                        "data": f"{type(exc).__name__}: {exc}\n\n{tb}",
+                                    },
                                 )
                                 logger.exception("worker ss_generate error")
+                                return
+                        elif is_natural_sciences:
+                            rng_params = ns_sample_params(
+                                grade=params.grade,
+                                context=context_override,
+                                sub_context=sub_context_override,
+                                set_type=set_type_override,
+                                q_type=q_type_override,
+                                science_competency=science_competency_override,
+                                content_type=params.content_type,
+                                learning_content=params.learning_content,
+                                learning_performance=params.learning_performance,
+                                seed=seed,
+                            )
+                            question_id = f"ns_{timestamp}_{i+1:03d}"
+                            try:
+                                question = ns_generate_with_corrections(
+                                    config=config,
+                                    client=client,
+                                    params=rng_params,
+                                    question_id=question_id,
+                                    max_retries=max_retries,
+                                    skip_verify=params.skip_verify,
+                                    html_renderer=html_renderer,
+                                    image_generation_mode=params.image_generation_mode,
+                                    user_passage=params.passage,
+                                    user_options=params.options,
+                                    user_topic=params.topic,
+                                    user_core_question=params.core_question,
+                                )
+                            except Exception as exc:
+                                tb = traceback.format_exc()
+                                loop.call_soon_threadsafe(
+                                    queue.put_nowait,
+                                    {
+                                        "event": "error",
+                                        "data": f"{type(exc).__name__}: {exc}\n\n{tb}",
+                                    },
+                                )
+                                logger.exception("worker ns_generate error")
                                 return
                         else:
                             # math sampler accepts a single 科目 string; take first if list provided
@@ -294,12 +388,18 @@ async def generate_question_stream(
                                 tb = traceback.format_exc()
                                 loop.call_soon_threadsafe(
                                     queue.put_nowait,
-                                    {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
+                                    {
+                                        "event": "error",
+                                        "data": f"{type(exc).__name__}: {exc}\n\n{tb}",
+                                    },
                                 )
                                 logger.exception("worker math_generate error")
                                 return
 
-                        assert isinstance(question, (MathExamQuestion, SSExamQuestion))
+                        assert isinstance(
+                            question,
+                            (MathExamQuestion, SSExamQuestion, NSExamQuestion),
+                        )
                         _emit_pipeline("question_end", index=i, total=count)
                         payload = _question_to_event(question, config)
                         loop.call_soon_threadsafe(

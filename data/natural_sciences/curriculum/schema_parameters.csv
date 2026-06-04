@@ -1,0 +1,71 @@
+類別,value,instruction,parent
+情境,Personal,個人層次的科學與科技情境，題組素材應連結學生自身健康、安全、消費、飲食、能源使用或個人科技選擇。,
+情境,Local and national,地方與國家層次的科學與科技情境，題組素材應連結社區、城市、國家政策、公共衛生、能源、食物供應、環境管理或新興科技治理。,
+情境,Global,全球層次的科學與科技情境，題組素材應連結跨國風險、全球永續、氣候、能源、宇宙、人口、糧食安全或全球科技影響。,
+情境子類別,Maintenance of health,個人健康維持相關情境。,Personal
+情境子類別,Accidents,事故與安全風險相關情境。,Personal
+情境子類別,Nutrition,營養與健康飲食相關情境。,Personal
+情境子類別,Vaccination,疫苗接種與個人防護相關情境。,Personal
+情境子類別,"Personal consumption of materials, types of food and energy",個人物質、食物與能源消費相關情境。,Personal
+情境子類別,Consuming locally produced food,在地食物消費與環境影響相關情境。,Personal
+情境子類別,Choosing non-dairy and vegetarian diets,非乳製與素食飲食選擇相關情境。,Personal
+情境子類別,Sustainable practices of recycling and reduction of resource use,回收與降低資源使用的永續實踐情境。,Personal
+情境子類別,Risk assessments of lifestyle choices,生活型態選擇的風險評估情境。,Personal
+情境子類別,"Scientific aspects of the use of new technologies, e.g. gene editing, virtual reality",基因編輯、虛擬實境等新科技使用的科學面向情境。,Personal
+情境子類別,Control of disease,疾病控制相關情境。,Local and national
+情境子類別,Social transmission,疾病或資訊的社會傳播相關情境。,Local and national
+情境子類別,Food choices,食物選擇與公共健康相關情境。,Local and national
+情境子類別,Obesity,肥胖與社會健康相關情境。,Local and national
+情境子類別,Community health,社區健康相關情境。,Local and national
+情境子類別,Maintenance of human populations,人口維持與社會發展相關情境。,Local and national
+情境子類別,Quality of life,生活品質與科學科技應用相關情境。,Local and national
+情境子類別,"Security, production, and distribution of food",糧食安全、生產與分配相關情境。,Local and national
+情境子類別,Energy supply,能源供應相關情境。,Local and national
+情境子類別,Environmental impact of mining and resource extraction,採礦與資源開採的環境影響情境。,Local and national
+情境子類別,Production of renewable energy,再生能源生產相關情境。,Local and national
+情境子類別,Population distribution,人口分布與環境承載相關情境。,Local and national
+情境子類別,Waste management,廢棄物管理相關情境。,Local and national
+情境子類別,Environmental impact,環境衝擊評估相關情境。,Local and national
+情境子類別,Use of regeneration agriculture,再生農業使用相關情境。,Local and national
+情境子類別,"Rapid changes (e.g. earthquakes, severe weather)",地震、劇烈天氣等快速環境變化情境。,Local and national
+情境子類別,"Slow and progressive changes (e.g. coastal erosion, sedimentation)",海岸侵蝕、沉積等緩慢累積變化情境。,Local and national
+情境子類別,Risk assessment,社會或環境風險評估情境。,Local and national
+情境子類別,Facial recognition,臉部辨識科技相關情境。,Local and national
+情境子類別,New materials,新材料科技相關情境。,Local and national
+情境子類別,Devices and processes,裝置與製程科技相關情境。,Local and national
+情境子類別,Genetic modifications,基因改造與治理相關情境。,Local and national
+情境子類別,Health technology,健康科技相關情境。,Local and national
+情境子類別,Transport,交通科技與環境影響相關情境。,Local and national
+情境子類別,Use of artificial intelligence,人工智慧使用與科學決策相關情境。,Local and national
+情境子類別,Pandemics,全球大流行與公共衛生相關情境。,Global
+情境子類別,Food security,全球糧食安全相關情境。,Global
+情境子類別,Healthy lifestyles,健康生活型態與全球趨勢相關情境。,Global
+情境子類別,Renewable and non-renewable sources of energy,再生與非再生能源相關情境。,Global
+情境子類別,Natural systems,自然系統運作相關情境。,Global
+情境子類別,Population growth,人口成長與資源需求相關情境。,Global
+情境子類別,Sustainable use of species and land,物種與土地的永續利用情境。,Global
+情境子類別,Biodiversity and its value,生物多樣性及其價值相關情境。,Global
+情境子類別,Environmental sustainability,環境永續相關情境。,Global
+情境子類別,Management of pollution and air quality,污染與空氣品質管理相關情境。,Global
+情境子類別,Loss of soil / biomass,土壤或生物量流失相關情境。,Global
+情境子類別,Mass extinction of species,物種大滅絕風險相關情境。,Global
+情境子類別,Ocean acidification,海洋酸化相關情境。,Global
+情境子類別,Threats posed by climate change,氣候變遷威脅相關情境。,Global
+情境子類別,Impact of modern communication,現代通訊科技影響相關情境。,Global
+情境子類別,"Energy and its production, e.g. fracking, nuclear, gas",能源及其生產方式，例如水力壓裂、核能與天然氣相關情境。,Global
+情境子類別,Exploration of space,太空探索相關情境。,Global
+情境子類別,Origin and structure of the universe,宇宙起源與結構相關情境。,Global
+題型種類,題組題,PISA Science 題組式設計；每個題組包含一個真實科學情境素材，搭配3到7道小題，評量科學能力與臺灣自然科學課綱學習重點。,
+題型,Simple multiple-choice,簡單選擇題：包含四選一單選題，或可在圖形／文本中點選答案元素的 hot spot 題。,
+題型,Complex multiple-choice,複雜選擇題：包含一系列是非題且整組計分、多選題、下拉選單填空，以及拖放配對、排序或分類任務。,
+題型,Constructed response,建構反應題：以短語、短段落或簡單圖形／圖表／示意圖作答；文字回答通常為二到四句解釋，繪圖題需明確描述簡易作答介面需求。,
+科學能力,能力一：以科學的角度解釋現象,回憶與應用科學知識；轉譯不同表徵；提出並辯護科學預測或解決方案；辨識、建構和評估模型；辨認與發展解釋性假說；解釋科學知識對社會的潛在啟示。,
+科學能力,能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據,指出科學研究問題；提出合宜實驗設計；評估設計是否能回答研究問題；詮釋不同表徵的數據並提出、評估結論。,
+科學能力,能力三：研究、評估和運用科學資訊進行決策與行動,搜尋與評估科學、社會、經濟與倫理資訊；區分證據強弱；建立資料支持的論證；批判推理缺陷；用科學論點支持個人或公共決策。,
+科學能力,環境能力一：解釋人類與地球系統的相互作用對環境的影響,解釋物質、生命與地球系統及其交互作用；研究並應用人類與系統互動的知識；說明正負面影響；解釋社會、文化或經濟因素如何造成這些影響。,
+科學能力,環境能力二：評估證據並做出有根據的決策以重建和維護環境,從多元知識體系取得並評估證據；用創造性與系統性思維評估或設計社會生態議題方案；透過個人與集體參與做出有共識的決策並採取行動。,
+科學能力,環境能力三：抱持希望並尊重多元觀點以回應社會生態危機,以生態中心與關懷倫理評估行動；辨識不公平並促進社群與生態系福祉；展現韌性、希望與效能；尊重多元觀點並尋求可行方案。,
+題目內容類型,純文字,純文字題組，不需任何圖表或圖片；題目僅透過文字描述科學情境、資料與問題，且不得輸出 chart_spec。,
+題目內容類型,含圖片,題組必須搭配視覺式素材，例如實驗裝置圖、示意圖、流程圖、模型圖、地圖、標籤圖或情境圖，並以 chart_spec 描述素材。,
+題目內容類型,graphs/charts/tables,題組必須搭配圖表或表格素材，例如數據表、折線圖、長條圖、散佈圖、分類表或比較表，並以 chart_spec 提供完整資料。,
+題目內容類型,customized,由使用者自行輸入題目內容類型；送出時以前端輸入文字作為實際內容類型。,

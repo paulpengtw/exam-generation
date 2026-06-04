@@ -20,9 +20,13 @@ from zipfile import ZipFile
 ROOT = Path(__file__).resolve().parent.parent
 CURRICULUM_DIR = ROOT / "data" / "natural_sciences" / "curriculum"
 WORKBOOK_PATH = CURRICULUM_DIR / "converted" / "課綱各項指標列表.xlsx"
+CONTENT_PERFORMANCE_DOCX_PATH = (
+    CURRICULUM_DIR / "to-be-convert" / "自然科_學習內容:學習表現對照表.docx"
+)
 SOCIAL_CC_PATH = ROOT / "data" / "social_studies" / "curriculum" / "core_competencies.json"
 
 MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 
@@ -62,10 +66,32 @@ HIGH_SCHOOL_SUBJECTS = {
 
 EXAMPLE_MARKER = "(我是範例)"
 CORE_CODE_RE = re.compile(r"^(自S-[EJU]-[ABC][1-3])")
+DASH_TRANSLATION = str.maketrans(
+    {
+        "‐": "-",
+        "‑": "-",
+        "‒": "-",
+        "–": "-",
+        "—": "-",
+        "―": "-",
+        "−": "-",
+        "－": "-",
+    }
+)
+ROMAN_STAGE_TOKENS = {
+    "III": "Ⅲ",
+    "IV": "Ⅳ",
+    "II": "Ⅱ",
+    "V": "Ⅴ",
+}
 
 
 def xml_tag(local_name: str) -> str:
     return f"{{{MAIN_NS}}}{local_name}"
+
+
+def word_tag(local_name: str) -> str:
+    return f"{{{WORD_NS}}}{local_name}"
 
 
 def column_index(cell_ref: str) -> int:
@@ -298,6 +324,143 @@ def build_learning_performance(workbook: XlsxWorkbook) -> dict:
     return {"學習階段_to_grades": STAGE_TO_GRADES, "學習表現": rows}
 
 
+def normalize_code_for_lookup(code: str) -> str:
+    normalized = re.sub(r"\s+", "", code.translate(DASH_TRANSLATION))
+    roman_tokens = sorted(ROMAN_STAGE_TOKENS.items(), key=lambda item: len(item[0]), reverse=True)
+    for ascii_roman, unicode_roman in roman_tokens:
+        normalized = re.sub(
+            rf"(?<=-){ascii_roman}(?=[-a-zA-Z])",
+            unicode_roman,
+            normalized,
+            flags=re.IGNORECASE,
+        )
+    return normalized
+
+
+def normalized_code_lookup(rows: list[dict], label: str) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    duplicates: dict[str, list[str]] = {}
+    for row in rows:
+        value = row["value"]
+        normalized = normalize_code_for_lookup(value)
+        if normalized in lookup:
+            duplicates.setdefault(normalized, [lookup[normalized]]).append(value)
+        lookup[normalized] = value
+    if duplicates:
+        details = "; ".join(f"{key}: {', '.join(values)}" for key, values in duplicates.items())
+        raise ValueError(f"Duplicate normalized {label} values: {details}")
+    return lookup
+
+
+def docx_cell_text(cell_element: ET.Element) -> str:
+    return "".join(text_node.text or "" for text_node in cell_element.iter(word_tag("t")))
+
+
+def docx_table_rows(path: Path) -> list[tuple[int, int, list[str]]]:
+    with ZipFile(path) as docx:
+        root = ET.fromstring(docx.read("word/document.xml"))
+
+    rows: list[tuple[int, int, list[str]]] = []
+    for table_index, table in enumerate(root.findall(f".//{word_tag('tbl')}"), start=1):
+        for row_index, row in enumerate(table.findall(word_tag("tr")), start=1):
+            cells = [docx_cell_text(cell_element) for cell_element in row.findall(word_tag("tc"))]
+            rows.append((table_index, row_index, cells))
+    return rows
+
+
+def extract_codes_from_cell(
+    raw_value: str,
+    lookup: dict[str, str],
+    sorted_normalized_codes: list[str],
+    label: str,
+    table_index: int,
+    row_index: int,
+) -> list[str]:
+    normalized_value = normalize_code_for_lookup(raw_value)
+    codes: list[str] = []
+    index = 0
+    while index < len(normalized_value):
+        for normalized_code in sorted_normalized_codes:
+            if normalized_value.startswith(normalized_code, index):
+                codes.append(lookup[normalized_code])
+                index += len(normalized_code)
+                break
+        else:
+            raise ValueError(
+                f"{CONTENT_PERFORMANCE_DOCX_PATH.name} table {table_index} row {row_index} "
+                f"has unknown {label} code near {normalized_value[index:]!r} from {raw_value!r}"
+            )
+    return codes
+
+
+def content_performance_links(
+    learning_content: dict,
+    learning_performance: dict,
+) -> dict[str, set[str]]:
+    content_lookup = normalized_code_lookup(learning_content["學習內容"], "學習內容")
+    performance_lookup = normalized_code_lookup(learning_performance["學習表現"], "學習表現")
+    sorted_content_codes = sorted(content_lookup, key=len, reverse=True)
+    sorted_performance_codes = sorted(performance_lookup, key=len, reverse=True)
+    links: dict[str, set[str]] = {row["value"]: set() for row in learning_content["學習內容"]}
+
+    for table_index, row_index, cells in docx_table_rows(CONTENT_PERFORMANCE_DOCX_PATH):
+        if len(cells) < 3:
+            continue
+
+        performance_raw = cells[0]
+        content_raw = cells[2]
+        if "學習表現" in performance_raw or "學習內容" in content_raw:
+            continue
+        if not performance_raw.strip() and not content_raw.strip():
+            continue
+        if not performance_raw.strip() or not content_raw.strip():
+            raise ValueError(
+                f"{CONTENT_PERFORMANCE_DOCX_PATH.name} table {table_index} row {row_index} "
+                "has an incomplete content/performance mapping row"
+            )
+
+        performance_codes = extract_codes_from_cell(
+            performance_raw,
+            performance_lookup,
+            sorted_performance_codes,
+            "學習表現",
+            table_index,
+            row_index,
+        )
+        content_codes = extract_codes_from_cell(
+            content_raw,
+            content_lookup,
+            sorted_content_codes,
+            "學習內容",
+            table_index,
+            row_index,
+        )
+
+        for content_code in content_codes:
+            links[content_code].update(performance_codes)
+
+    return links
+
+
+def populate_learning_content_performance_links(
+    learning_content: dict,
+    learning_performance: dict,
+) -> None:
+    links = content_performance_links(learning_content, learning_performance)
+    reverse_links: dict[str, set[str]] = {
+        row["value"]: set() for row in learning_performance["學習表現"]
+    }
+
+    for row in learning_content["學習內容"]:
+        content_code = row["value"]
+        row["對應學習表現"] = sorted(links[content_code], key=normalize_code_for_lookup)
+        for performance_code in links[content_code]:
+            reverse_links[performance_code].add(content_code)
+
+    for row in learning_performance["學習表現"]:
+        row["對應學習內容"] = sorted(reverse_links[row["value"]], key=normalize_code_for_lookup)
+
+
 def extract_core_code(code: str, instruction: str, sheet_name: str, row_number: int) -> str:
     if code:
         return code
@@ -379,6 +542,8 @@ def main() -> None:
         learning_content = build_learning_content(workbook)
         learning_performance = build_learning_performance(workbook)
         core_competencies = build_core_competencies(workbook)
+
+    populate_learning_content_performance_links(learning_content, learning_performance)
 
     write_json(CURRICULUM_DIR / "learning_content.json", learning_content)
     write_json(CURRICULUM_DIR / "learning_performance.json", learning_performance)
