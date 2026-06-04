@@ -469,6 +469,12 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         <span className="text-sm">{t("form.skip_verify")}</span>
       </label>
 
+      {(subject === "social_studies" || subject === "math") && topic.trim() && !coreQuestion && (
+        <p role="status" className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+          ⚠ {t("form.topic_no_pick_warning")}
+        </p>
+      )}
+
       <button
         type="submit"
         disabled={disabled}
