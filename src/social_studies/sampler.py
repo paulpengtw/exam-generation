@@ -55,6 +55,10 @@ def sample_params(
     learning_performance: list[str] | None = None,
     content_type: str | None = None,
     seed: int | None = None,
+    sub_question_count: int | None = None,
+    question_word_limit: int | None = None,
+    option_word_limit: int | None = None,
+    subquestion_configs: list | None = None,
 ) -> SampledParams:
     """Sample random PISA-reading question parameters.
 
@@ -75,7 +79,10 @@ def sample_params(
     # 題型種類 is always 題組題 in PISA; schema has only one value so this is deterministic.
     selected_set_type = set_type if set_type is not None else rng.choice(list(QuestionSetType))
 
-    selected_q_type = rng.choice(q_type) if q_type is not None else rng.choice(list(QuestionType))
+    # 題型: sample a pool of 1-3 allowed types so each 子題 can choose its own.
+    q_type_pool = q_type if q_type is not None else list(QuestionType)
+    type_count = rng.randint(1, min(3, len(q_type_pool)))
+    selected_q_types = rng.sample(q_type_pool, type_count)
 
     # 閱讀歷程: pick 1-2
     all_processes = list(ReadingProcess)
@@ -130,11 +137,20 @@ def sample_params(
         lp_count = rng.randint(1, min(2, max(1, len(lp_entries))))
         selected_lp_pool = [e["value"] for e in rng.sample(lp_entries, lp_count)] if lp_entries else []
 
+    from src.social_studies.schemas import SubQuestionConfig
+    resolved_configs: list[SubQuestionConfig] = []
+    if subquestion_configs:
+        for cfg in subquestion_configs:
+            if isinstance(cfg, dict):
+                resolved_configs.append(SubQuestionConfig(**cfg))
+            elif isinstance(cfg, SubQuestionConfig):
+                resolved_configs.append(cfg)
+
     return SampledParams(
         grade=selected_grade,
         情境=selected_context,
         題型種類=selected_set_type,
-        題型=selected_q_type,
+        題型=selected_q_types,
         閱讀歷程=selected_process,
         文本形式=selected_text_form,
         題目內容類型=selected_content_type,
@@ -142,4 +158,8 @@ def sample_params(
         核心素養=selected_competency,
         學習內容_pool=selected_lc_pool,
         學習表現_pool=selected_lp_pool,
+        sub_question_count=sub_question_count,
+        question_word_limit=question_word_limit,
+        option_word_limit=option_word_limit,
+        subquestion_configs=resolved_configs,
     )

@@ -64,6 +64,10 @@ async def generate_endpoint(
     learning_performance: list[str] | None = Query(default=None),
     core_competency: list[str] | None = Query(default=None),
     learning_content: list[str] | None = Query(default=None),
+    sub_question_count: int | None = Query(default=None),
+    question_word_limit: int | None = Query(default=None),
+    option_word_limit: int | None = Query(default=None),
+    subquestion_configs: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -95,6 +99,10 @@ async def generate_endpoint(
         learning_performance=learning_performance,
         core_competency=core_competency,
         learning_content=learning_content,
+        sub_question_count=sub_question_count,
+        question_word_limit=question_word_limit,
+        option_word_limit=option_word_limit,
+        subquestion_configs=subquestion_configs,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 

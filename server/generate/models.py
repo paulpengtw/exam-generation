@@ -38,6 +38,12 @@ class GenerateParams(BaseModel):
     learning_performance: list[str] | None = None
     core_competency: list[str] | None = None
     learning_content: list[str] | None = None
+    # #100: 子題 count and word limits
+    sub_question_count: int | None = None
+    question_word_limit: int | None = None
+    option_word_limit: int | None = None
+    # #101: per-子題 configs as JSON string (array of {content_type, image_generation_mode, ...})
+    subquestion_configs: str | None = None
 
     model_config = {"populate_by_name": True}
 

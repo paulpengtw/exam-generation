@@ -60,6 +60,14 @@ class RubricEntry(BaseModel):
     學生作答實例: list[str] = Field(default_factory=list)
 
 
+class SubQuestionConfig(BaseModel):
+    """Per-subquestion generation configuration overrides (issues #100 and #101)."""
+    content_type: str | None = None
+    image_generation_mode: str | None = None  # "html" | "gpt_image"
+    question_word_limit: int | None = None
+    option_word_limit: int | None = None
+
+
 class SubQuestion(BaseModel):
     """One subquestion within a 題組, tagged with 108課綱 curriculum metadata."""
     id: str = ""
@@ -75,6 +83,7 @@ class SubQuestion(BaseModel):
     答案: str = ""
     答案解析: str = ""
     評分規準: list[RubricEntry] = Field(default_factory=list)
+    chart_spec: ChartSpec | None = None
 
 
 class QuestionMetadata(BaseModel):
@@ -125,11 +134,17 @@ class SampledParams(BaseModel):
 
     情境: list[QuestionContext]  # type: ignore[valid-type]
     題型種類: QuestionSetType  # type: ignore[valid-type]
-    題型: QuestionType  # type: ignore[valid-type]
+    題型: list[QuestionType]  # allowed pool of types; each 子題 picks its own  # type: ignore[valid-type]
     閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
     文本形式: TextForm  # type: ignore[valid-type]
-    題目內容類型: str = ""
+    題目內容類型: str = ""  # top-level 文本素材類型 (renamed in UI for #101)
     科目: QuestionSubject  # type: ignore[valid-type]
     核心素養: list[CoreCompetency] = Field(default_factory=list)  # type: ignore[valid-type]
     學習內容_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-3)
     學習表現_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-2)
+    # #100: 子題 count and word limits
+    sub_question_count: int | None = None
+    question_word_limit: int | None = None
+    option_word_limit: int | None = None
+    # #101: per-子題 content_type and image_generation_mode
+    subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)

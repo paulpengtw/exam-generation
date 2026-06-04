@@ -166,12 +166,13 @@ USER_PROMPT_TEMPLATE = """\
 - **科目焦點**：{subject}
 - **情境**：{context}（PISA閱讀情境）
 - **題型種類**：{set_type}
-- **題型**：{q_type}
+- **各小題允許題型（每道小題可各自選擇，不須一致）**：{q_types}
+- **小題數量**：{sub_question_count}
 - **閱讀歷程（PISA）**：{reading_process}
 - **文本形式**：{text_form}
-- **題目內容類型**：{content_type}
+- **文本素材類型**：{content_type}
 - **核心素養（限定使用）**：{core_competencies}
-{lc_pool_lines}{lp_pool_lines}{param_instructions}{user_materials}
+{lc_pool_lines}{lp_pool_lines}{word_limit_lines}{subquestion_config_lines}{param_instructions}{user_materials}
 ## 參考範例
 
 {few_shot_examples}
@@ -255,13 +256,16 @@ def build_user_prompt(
                 param_instruction_lines.append(f"  - **情境（{c.value}）補充**：{instr}")
     for category, key in (
         ("題型種類", params.題型種類.value),
-        ("題型", params.題型.value),
         ("文本形式", params.文本形式.value),
         ("科目", params.科目.value),
     ):
         instr = _INSTRUCTIONS.get(category, {}).get(key)
         if instr:
             param_instruction_lines.append(f"  - **{category}（{key}）補充**：{instr}")
+    for qt in params.題型:
+        instr = _INSTRUCTIONS.get("題型", {}).get(qt.value)
+        if instr:
+            param_instruction_lines.append(f"  - **題型（{qt.value}）補充**：{instr}")
     for p in params.閱讀歷程:
         instr = _INSTRUCTIONS.get("閱讀歷程", {}).get(p.value)
         if instr:
@@ -325,6 +329,39 @@ def build_user_prompt(
     else:
         lp_pool_lines = ""
 
+    # #100: word limit instruction block
+    word_limit_parts = []
+    if params.question_word_limit:
+        word_limit_parts.append(f"  - **每道小題題目字數上限**：{params.question_word_limit} 字")
+    if params.option_word_limit:
+        word_limit_parts.append(f"  - **每個選項字數上限**：{params.option_word_limit} 字（限選擇題）")
+    word_limit_lines = ("\n## 字數限制\n\n" + "\n".join(word_limit_parts) + "\n") if word_limit_parts else ""
+
+    # #101: per-subquestion content_type and image_generation_mode
+    sq_config_parts = []
+    for i, cfg in enumerate(params.subquestion_configs, start=1):
+        cfg_parts = []
+        if cfg.content_type:
+            cfg_parts.append(f"文本素材類型={cfg.content_type}")
+        if cfg.image_generation_mode:
+            cfg_parts.append(f"圖片生成模式={cfg.image_generation_mode}")
+        if cfg.question_word_limit:
+            cfg_parts.append(f"題目字數上限={cfg.question_word_limit}")
+        if cfg.option_word_limit:
+            cfg_parts.append(f"選項字數上限={cfg.option_word_limit}")
+        if cfg_parts:
+            sq_config_parts.append(f"  - 小題 {i}：" + "，".join(cfg_parts))
+    if sq_config_parts:
+        sq_config_content_types = list({cfg.content_type for cfg in params.subquestion_configs if cfg.content_type})
+        for ct in sq_config_content_types:
+            ct_instr = CONTENT_TYPE_INSTRUCTIONS.get(ct, "")
+            if ct_instr:
+                sq_config_parts.append(f"  - **{ct} 說明**：{ct_instr}")
+    subquestion_config_lines = (
+        "\n## 各小題配置\n\n" + "\n".join(sq_config_parts) + "\n"
+        if sq_config_parts else ""
+    )
+
     user_materials_parts = []
     if topic_override:
         user_materials_parts.append(
@@ -356,19 +393,25 @@ def build_user_prompt(
         )
     user_materials = ("\n" + "\n\n".join(user_materials_parts) + "\n") if user_materials_parts else ""
 
+    q_types_str = "、".join(t.value for t in params.題型)
+    sub_q_count_str = str(params.sub_question_count) if params.sub_question_count else "3–7（由命題教師自行決定）"
+
     text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         learning_stage=_LEARNING_STAGE,
         subject=params.科目.value,
         context=topic_override or "、".join(c.value for c in params.情境),
         set_type=params.題型種類.value,
-        q_type=params.題型.value,
+        q_types=q_types_str,
+        sub_question_count=sub_q_count_str,
         reading_process=reading_process,
         text_form=params.文本形式.value,
         content_type=content_type,
         core_competencies=core_competencies,
         lc_pool_lines=lc_pool_lines,
         lp_pool_lines=lp_pool_lines,
+        word_limit_lines=word_limit_lines,
+        subquestion_config_lines=subquestion_config_lines,
         param_instructions=param_instructions,
         user_materials=user_materials,
         few_shot_examples=few_shot_text,
