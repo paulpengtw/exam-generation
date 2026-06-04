@@ -10,7 +10,7 @@ This is a CLI-based exam question generator for Taiwan math (default: grades 7-9
 All curriculum data (學習內容.json, 學習表現.json) is injected directly into the LLM context. The full grades 1-12 curriculum is provided so the model can calibrate difficulty — understanding what students already know (grades 1-6) and what lies ahead (grades 10-12).
 
 ### Script-side randomness
-The Python code handles all random selection (grade, 情境, 題型種類, 題型, 數學思考, 學習內容, question style). The LLM receives deterministic instructions — it does not choose these parameters itself.
+The Python code handles all random selection (grade, 情境, 題型種類, 題型, 數學思考, 學習內容, 學習表現, 核心素養, 題目內容類型, subject_filter, question style). The LLM receives deterministic instructions — it does not choose these parameters itself.
 
 ### Verify + correct loop
 1. First call (Sonnet): generates the question and solution.
@@ -24,10 +24,21 @@ Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-op
 ### Web-ready design
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
 
-### Social studies mode (parallel forked codepath)
-`src/social_studies/` is a self-contained fork that generates **108課綱 社會領域素養導向 命題** (歷史/地理/公民與社會, 跨科題組). It reuses `llm_client`, `verifier`, `corrector`, and `renderer` but has its own sampler, context builder, schema loader, and data loader.
+### Shared loaders, two subject pipelines
+Math (`src/*.py`) and social studies (`src/social_studies/*.py`) are two parallel question-generation pipelines that share their curriculum-loading core. The subject-agnostic loaders live in `src/common/`:
 
-PISA-style tags (`閱讀歷程`, `文本形式`) are retained as secondary diversity axes to influence question design, but the primary framing is 108課綱, not PISA reading literacy.
+- `src/common/curriculum_loader.py` — JSON loaders + `allowed_learning_content` / `allowed_learning_performance` filters, parameterized by `data_dir` and a `subject_to_prefixes` map.
+- `src/common/core_competency_loader.py` — JSON loader + `build_core_competency_enum` + `allowed_competencies(stage)`.
+- `src/common/planner.py` — subject-agnostic 核心問題 generator; callers pass their own system/user prompt templates.
+
+Each subject package wraps these with its own data directory and prefix map:
+
+- **Math** uses `data/math/curriculum/` and `_MATH_SUBJECT_TO_PREFIXES` (in `src/sampler.py`): 數與量={N,n}, 代數={A,F,R,a,f,r}, 幾何={S,G,s,g}, 統計與機率={D,P,d,p}, 跨領域=all. Subject prompts live in `src/planner.py` (數學領域命題教師).
+- **Social studies** uses `data/social_studies/curriculum/` and `_SUBJECT_TO_PREFIXES` (in `src/social_studies/curriculum_loader.py`). The historical `src/social_studies/{curriculum_loader, core_competency_loader, planner}.py` modules are now thin shims over `src.common.*` that preserve the original public API.
+
+Math keeps its single-question, flat output structure (one 題目 + 正確解題分析 + math-specific fields like 數學思考 and `chart_spec`). Social studies keeps its 題組 structure with `subquestions[]`, `閱讀歷程`, `文本形式`, and rubric entries.
+
+PISA-style tags (`閱讀歷程`, `文本形式`) are retained on social studies as secondary diversity axes to influence question design, but the primary framing is 108課綱, not PISA reading literacy.
 
 Schema, curriculum, and few-shot data are **CSV-driven** for schema/few-shot; **JSON-driven** for curriculum. Files under `data/social_studies/` read at runtime:
 
@@ -47,8 +58,17 @@ CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separat
 
 | File | Purpose |
 |---|---|
-| `data/curriculum/學習內容.json` | Full K-12 math curriculum content, 14 grade levels |
-| `data/curriculum/學習表現.json` | Math learning performance standards by stage |
+| `data/curriculum/學習內容.json` | Full K-12 math curriculum content, 14 grade levels (legacy source for `data_loader.py`) |
+| `data/curriculum/學習表現.json` | Math learning performance standards by stage (legacy source) |
+| `data/math/curriculum/learning_content.json` | Reshaped math 學習內容 (288 entries across 5 學習階段; row shape `{value, 學習階段, 科目, 條目說明, 對應學習表現}`; `科目` is a single-letter strand prefix N/A/F/R/S/G/D/P). Loaded via `src.common.curriculum_loader`. |
+| `data/math/curriculum/learning_performance.json` | Reshaped math 學習表現 (131 entries; row shape `{value, 學習階段, 科目, 說明}`). Loaded via `src.common.curriculum_loader`. |
+| `data/math/curriculum/core_competencies.json` | 108課綱 數學領域 核心素養 (27 codes 數-E/J/U-A1..C3, synthesized from social studies' template with `值` rewritten from 社- to 數-). |
+| `data/math/curriculum/learning_performance_intro.md` | Math 學習表現 framework intro → injected into system prompt. |
+| `scripts/build_math_curriculum.py` | Reproducible builder: emits the four `data/math/curriculum/` files from `data/curriculum/{學習內容,學習表現}.json` + the social studies core_competencies template. |
+| `src/common/curriculum_loader.py` | Subject-agnostic JSON loaders + `allowed_learning_content/performance(data, stage, *, subject, subject_to_prefixes)` filters. |
+| `src/common/core_competency_loader.py` | Subject-agnostic 核心素養 loader + `build_core_competency_enum` + `allowed_competencies(data, stage)`. |
+| `src/common/planner.py` | Subject-agnostic `plan_core_questions()`; callers pass their own system/user prompt templates. |
+| `src/planner.py` | Math planner shim — wraps `src.common.planner.plan_core_questions` with a 資深108課綱數學領域命題教師 system prompt asking for 3 candidate 核心問題 covering 代數 / 幾何 / 統計三大面向. |
 | `data/few_shot/` | Math few-shot examples by question style |
 | `data/example_exams/` | Past national exam PDFs (112-114) for reference |
 | `question_schemas.json` | Math user-editable config: `"學習階段"` (string), `"grades"` (int array), and all 5 question parameter categories using `[{value, instruction}]` objects. Non-empty `instruction` fields are injected into the LLM prompt. |
@@ -62,15 +82,16 @@ CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separat
 | `data/social_studies/few_shot/few_shot_examples.csv` | Social studies few-shot examples (long format grouped by 範例編號; one row per subquestion with all 108課綱 metadata columns) |
 | `data/social_studies/csv_填寫指南.md` | zh-TW filler guide: field-by-field explanation of JSON + CSV files |
 | `src/social_studies/schema_loader.py` | Builds social-studies schema dict from `schema_meta.csv` + `schema_parameters.csv` |
-| `src/social_studies/curriculum_loader.py` | JSON loaders for `learning_content.json` / `learning_performance.json` + sampler helpers (`allowed_*`, `*_instructions`, `load_performance_intro`); `_SUBJECT_TO_PREFIXES` maps QuestionSubject values to code-prefix sets (all include `"社"` and `""` so cross-subject and shared entries appear in every pool) |
-| `data/social_studies/curriculum/core_competencies.json` | 108課綱 核心素養 codes → sampler pool; loaded by `core_competency_loader.py` |
-| `src/social_studies/core_competency_loader.py` | JSON loader + `allowed_core_competencies(data, stage, subject)` for 核心素養 sampler pool |
+| `src/social_studies/curriculum_loader.py` | Thin shim over `src.common.curriculum_loader`. Owns `_SUBJECT_TO_PREFIXES` (歷史/地理/公民與社會/跨科, all include `"社"` and `""`) and the `data/social_studies/curriculum/` default path. Adds `*_instructions` / `load_performance_intro` helpers on top of the shared loader. |
+| `data/social_studies/curriculum/core_competencies.json` | 108課綱 社會領域 核心素養 codes → sampler pool; loaded via `src.common.core_competency_loader` through the shim. |
+| `src/social_studies/core_competency_loader.py` | Thin shim over `src.common.core_competency_loader`; adds `allowed_core_competencies(data, stage, subject)` for 核心素養 sampler pool. |
+| `src/social_studies/planner.py` | Thin shim over `src.common.planner.plan_core_questions`; provides the 社會領域 system/user templates. |
 | `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
 | `src/social_studies/context_builder.py` | Social studies prompt assembly; `## 課程綱要參考` block injected into system prompt |
 | `src/social_studies/schemas.py` | Social studies Pydantic models: `ExamQuestion`, `SubQuestion`, `LearningContentRef`, `RubricEntry`, `QuestionSubject` (歷史/地理/公民與社會/跨科), `VerificationResult`, `ImageSpec` |
-| `src/schemas.py` | Math Pydantic models defining question structure (enums loaded dynamically from `question_schemas.json` at import time); `ImageSpec` describes the image (`render_mode`, `chart_type`, etc.); includes `ChartVerificationResult` nested in `VerificationResult` |
-| `src/sampler.py` | Random parameter selection logic |
-| `src/context_builder.py` | Prompt assembly with few-shot injection |
+| `src/schemas.py` | Math Pydantic models (enums loaded dynamically from `question_schemas.json` at import time). `ExamQuestion` has optional 核心素養 (list[str]), 學習表現 (list[LearningContentItem]), 題目內容類型 (str \| None), 出題概念 (str). `SampledParams` mirrors these plus `subject_filter`. New enums: `CoreCompetency` (27 數-E/J/U-A1..C3 codes built via `src.common.core_competency_loader.build_core_competency_enum`) and `QuestionSubject` (數與量/代數/幾何/統計與機率/跨領域). `ImageSpec` describes the image; `ChartVerificationResult` is nested in `VerificationResult`. |
+| `src/sampler.py` | Curriculum-aware math sampler. Loads `data/math/curriculum/` via `src.common.*`. Owns `_MATH_SUBJECT_TO_PREFIXES` (科目→prefix-letter map) and `grade_to_learning_stage(grade)` helper. Samples 核心素養 (1–3), 學習表現 (1–3), 題目內容類型 (1 of 純文字 / 含圖片 / graphs/charts/tables / customized), and optional `subject_filter` alongside the existing 情境/題型種類/題型/數學思考/學習內容/style draws. |
+| `src/context_builder.py` | Math prompt assembly. Injects curriculum context (`## 課程綱要參考`) into the system prompt — same pattern as social studies. `build_user_prompt` accepts `user_topic`, `user_passage`, `user_options`, `user_core_question` overrides and returns `(prompt, few_shot_images)`. `CONTENT_TYPE_INSTRUCTIONS` maps the 4 題目內容類型 values to per-prompt instructions. |
 | `src/llm_client.py` | OpenAI-compatible API client with model routing; `generate_with_image()` for multimodal (text + PNG) calls |
 | `src/verifier.py` | Independent answer verification pass |
 | `src/corrector.py` | Minimal targeted correction pass for failed-verification questions |
@@ -79,7 +100,13 @@ CSVs are `utf-8-sig` (Excel BOM-tolerant); multi-value fields use `;` as separat
 | `IMPLEMENTATION_PLAN.md` | Planned refactors and known tech debt |
 | `FLOW.md` | ASCII tree of web Generate request lifecycle (frontend click → SSE → queue → worker → result) |
 | `LOGIC.md` | Full waterfall execution trace with file + line references |
-| `src/data_loader.py` | Curriculum data loading and grade filtering |
+| `src/data_loader.py` | Curriculum data loading + grade filtering (legacy `data/curriculum/*.json` paths) and the CSV-driven few-shot loader with image-manifest support (`data/few_shot/few_shot_examples.csv` + `images/<id>/manifest.json`), with fallback to per-style JSON. No rubric parsing (math has no 評分規準). |
+| `src/verifier.py` (math) | Independent answer verification pass. Module-level `_CURRICULUM_PREFIX` (~93 KB curriculum context) mirrors social studies. Keeps math's stricter "明確錯誤" verification stance — NOT loosened to social studies' "寬鬆通過". |
+| `src/corrector.py` (math) | Targeted correction pass. Frozen-fields list extended with 核心素養, 學習內容, 學習表現, 出題概念, 題目內容類型 (alongside existing 情境/題型種類/題型/數學思考). |
+| `server/generate/routes.py` `/api/plan-core-questions` | Branches on `body.subject` (default `"social_studies"`). Math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage` and dispatches to `src.planner.plan_core_questions`. |
+| `server/generate/models.py` `GenerateParams` | Accepts `core_competency` and `learning_content` lists alongside the existing `subject_filter`, `content_type`, `passage`, `options`, `topic`, `core_question`, `learning_performance` fields. Math's `subject_filter` is `str \| None` — the API takes a list and coerces to single value via `[0]` (math has no semantic need for multi-select since 跨領域 already means "all"). |
+| `server/utility/routes.py` `/api/schemas?subject=math` | Augments the base math schema file with `科目` (4 strands), `題目內容類型` (4 entries parallel to social studies), and `學習表現` filtered by `學習階段` (loaded from `data/math/curriculum/learning_performance.json`). |
+| `server/config.py` `ServerConfig.math_curriculum_dir` | Env `MATH_CURRICULUM_DIR`, parallel to `social_studies_curriculum_dir`. |
 | `src/config.py` | Environment variable configuration |
 | `src/cli.py` | CLI entry point (argparse) |
 
@@ -106,6 +133,12 @@ The output JSON follows this structure (Chinese keys are required):
 學習內容: 1+ entries with {編碼, 說明} — a single question can span multiple items
 題目: array of strings (question text, options, etc.)
 正確解題分析: array of strings (step-by-step solution)
+
+# Optional curriculum-aware fields (Phase 3+); math output stays flat:
+核心素養: list[str]                          # e.g. ["數-J-A2"] (codes only)
+學習表現: list[{編碼, 說明}]
+題目內容類型: str | None                     # 純文字 / 含圖片 / graphs/charts/tables / customized
+出題概念: str
 ```
 
 ### Social studies question schema (108課綱)
@@ -167,6 +200,19 @@ Content codes follow the pattern `{Category}-{Grade}-{Number}`:
 - D: 資料與不確定性 (Data & Uncertainty)
 - R: 關係 (Relations, elementary only)
 
+### `data/math/curriculum/` (reshaped, used by the shared loader)
+
+The Phase 2 build materializes these four files for the `src.common.*` loaders. Row shape parallels social studies' files:
+
+| File | Shape / size |
+|---|---|
+| `learning_content.json` | 288 entries across 5 學習階段; rows `{value, 學習階段, 科目, 條目說明, 備註, 對應學習表現}`. `科目` is a single-letter strand prefix N / A / F / R / S / G / D / P (capital = junior/senior high curriculum table, lowercase = 學習表現 codes). |
+| `learning_performance.json` | 131 entries; rows `{value, 學習階段, 科目, 說明}`. |
+| `core_competencies.json` | 27 數-E/J/U-A1..C3 codes synthesized from the social studies template with `value` rewritten from 社- to 數-. Same outer shape (`學習階段_to_stage`, `面向`, `項目`, `核心素養`). |
+| `learning_performance_intro.md` | NAER framework chapter, injected as `### 學習表現架構說明` in the math system prompt. |
+
+All four files are rebuilt reproducibly by `scripts/build_math_curriculum.py` from `data/curriculum/{學習內容,學習表現}.json` (the legacy K-12 sources) plus the social studies core_competencies template.
+
 ## Sampler Constraints
 
 **Math:** Allowed values for all parameters come from `question_schemas.json` at the project root. Edit that file to add or remove options — no Python changes required. Override the path with `QUESTION_SCHEMAS_PATH` env var.
@@ -180,13 +226,19 @@ The file has two top-level scalar/array fields:
 Social studies sampler picks: grade, 情境, 題型種類 (always 題組題), 題型, 文本形式, 閱讀歷程, **科目** (歷史/地理/公民與社會/跨科), **核心素養** (1–3 codes from `core_competencies.json`), **學習內容_pool** (1–3 codes from `learning_content.json` filtered by 學習階段 + 科目), **學習表現_pool** (1–2 codes from `learning_performance.json` filtered similarly), and question_style. Use `--subject` to override 科目 via CLI; `--learning-content`, `--learning-performance`, `--core-competency` to override the curriculum pools. Use `--grade`, `--style`, `--q-type`, etc. as with math. The web Generate form exposes the same 科目 override as a `subject_filter` dropdown (全部 / 歷史 / 地理 / 公民與社會 / 跨科); selecting 全部 omits the filter and lets the sampler pick randomly — this maps to the `subject=None` default on `ss_sample_params`. The `subject_filter` query param on `GET /api/generate` accepts a list of values identical to the CLI `--subject` pool.
 
 When randomly selecting parameters, respect these rules:
-- **grade**: pick one from `question_schemas.json["grades"]`
+- **grade**: pick one from `question_schemas.json["grades"]`. `grade_to_learning_stage(grade)` in `src/sampler.py` maps the chosen grade to a 108課綱 學習階段 (一/二/三/四/五).
 - **情境**: pick 1 to N (from `question_schemas.json["情境"]`) — multi-select, same pattern as 數學思考
 - **題型種類**: pick exactly one (from `question_schemas.json["題型種類"]`)
 - **題型**: pick exactly one (from `question_schemas.json["題型"]`)
 - **數學思考**: pick 1 to 3 (from `question_schemas.json["數學思考"]`)
-- **學習內容**: pick 1 or more from the selected grade (can cross configured grades for integrated questions)
+- **學習內容**: pick 1–3 entries from `data/math/curriculum/learning_content.json` filtered by 學習階段 + (optional) 科目. The 科目→prefix map lives in `_MATH_SUBJECT_TO_PREFIXES` in `src/sampler.py`.
+- **學習表現**: pick 1–3 entries from `data/math/curriculum/learning_performance.json`, filtered identically.
+- **核心素養**: pick 1–3 codes from `data/math/curriculum/core_competencies.json` for the selected 學習階段 (數-E-* / 數-J-* / 數-U-*).
+- **題目內容類型**: pick exactly one of 純文字 / 含圖片 / graphs/charts/tables (customized is never picked randomly — it's a manual override).
+- **subject_filter**: optional 科目 focus (數與量 / 代數 / 幾何 / 統計與機率 / 跨領域); when set, restricts the 學習內容 and 學習表現 draw pools by prefix.
 - **Question style**: pick one from `question_schemas.json["question_style"][*].value` — determines which few-shot examples to inject and whether to generate images.
+
+CLI overrides: `--subject-filter`, `--core-competency`, `--learning-content`, `--learning-performance`, `--content-type`, `--topic`, `--passage`, `--options`, `--core-question`, `--image-generation-mode` (in addition to the legacy `--grade`, `--style`, `--q-type`, `--context`, `--set-type` flags).
 
 All 5 categories share the same `{value, instruction}` object format. A non-empty `instruction` on any entry is injected into the LLM user prompt: style instructions land under `## 題目風格`; instructions for 情境, 題型種類, 題型, and 數學思考 land under `## 條件補充說明` (section omitted if all instructions are empty).
 
@@ -275,6 +327,7 @@ Image rendering happens **before** verification so the verifier can see the PNG.
 
 | # | Purpose | Model | File:Line |
 |---|---|---|---|
+| 0 | Plan 核心問題 candidates (optional; only when called via `/api/plan-core-questions` or upstream of CLI `--core-question`) | Opus (`model_plan`) | src/planner.py + src/common/planner.py |
 | 1 | Generate question | Sonnet | llm_client.py:26-40 |
 | 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet | renderer.py:343 |
 | 3 | Verify answer + image (multimodal) | Sonnet | verifier.py (`generate_with_image`) |
