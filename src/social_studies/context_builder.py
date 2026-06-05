@@ -83,6 +83,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - `學習內容`：對應課綱條目編碼+說明（如 地Aa-Ⅳ-2 全球海陸分布）
 - `學習表現`：對應課綱學習表現代號+說明（如 社1b-Ⅳ-1 應用社會領域內容知識解析生活經驗或社會現象）
 - `出題概念`：一句話說明此題評量學生何種能力
+- `出題指示`：若使用者提供各小題配置中的出題指示，請逐字填入
 - `題目內容類型`：若使用者提供各小題配置，依該小題指定值填入
   （純文字 / 含圖片 / graphs/charts/tables / 自訂類型）
 - `image_generation_mode`：若該小題指定圖片產生方式，填入 `html` 或 `gpt_image`
@@ -136,6 +137,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
       "學習內容": [{{"編碼": "地Aa-Ⅳ-2", "說明": "全球海陸分布"}}],
       "學習表現": [{{"編碼": "社1b-Ⅳ-1", "說明": "應用社會領域內容知識解析生活經驗或社會現象"}}],
       "出題概念": "評量學生能否……",
+      "出題指示": "使用者指定給本小題的出題方向；若未指定則為 null",
       "題型": "選擇題",
       "題目內容類型": "純文字",
       "image_generation_mode": "html",
@@ -365,12 +367,13 @@ def build_user_prompt(
     else:
         lp_pool_lines = ""
 
-    # #100/#101: per-subquestion count, word limits, content type, image mode, and question type.
+    # #100/#101: per-subquestion count, word limits, content type, image mode, type, and instruction.
     sq_config_parts = []
     for i, cfg in enumerate(params.subquestion_configs, start=1):
         cfg_parts = []
         has_config = any((
             cfg.question_type,
+            cfg.instruction,
             cfg.content_type,
             cfg.image_generation_mode,
             cfg.question_word_limit,
@@ -378,6 +381,8 @@ def build_user_prompt(
         ))
         if cfg.question_type:
             cfg_parts.append(f"題型={cfg.question_type.value}")
+        if cfg.instruction:
+            cfg_parts.append(f"出題指示={cfg.instruction}")
         if has_config:
             cfg_parts.append(f"文本素材類型={cfg.content_type or content_type}")
             cfg_parts.append(
@@ -407,6 +412,7 @@ def build_user_prompt(
                     cfg.question_word_limit,
                     cfg.option_word_limit,
                     cfg.question_type,
+                    cfg.instruction,
                 ))
             },
         )

@@ -106,7 +106,11 @@ def test_social_studies_subquestion_chart_spec_renders_png(tmp_path: Path) -> No
         seed=1,
         sub_question_count=3,
         subquestion_configs=[
-            {"content_type": "含圖片", "image_generation_mode": "gpt_image"},
+            {
+                "content_type": "含圖片",
+                "image_generation_mode": "gpt_image",
+                "instruction": "請聚焦在都市更新前後比較",
+            },
         ],
     )
 
@@ -122,6 +126,7 @@ def test_social_studies_subquestion_chart_spec_renders_png(tmp_path: Path) -> No
     assert not isinstance(question, str)
     assert question.subquestions[0].圖片 == "ss_test_sq1.png"
     assert question.subquestions[0].image_generation_mode == "gpt_image"
+    assert question.subquestions[0].出題指示 == "請聚焦在都市更新前後比較"
     assert (tmp_path / "ss_test_sq1.png").read_bytes() == b"subquestion-png"
 
 

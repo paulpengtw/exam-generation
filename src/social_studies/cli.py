@@ -203,6 +203,10 @@ def _parse_question(
                     sq_chart_spec = ImageSpec(**raw_sq_spec)
                 except Exception:
                     sq_chart_spec = None
+            cfg = (
+                params.subquestion_configs[i - 1]
+                if i - 1 < len(params.subquestion_configs) else None
+            )
             subquestions.append(SubQuestion(
                 id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
                 序號=sq_raw.get("序號", i),
@@ -212,6 +216,9 @@ def _parse_question(
                 學習內容=lc_refs,
                 學習表現=lp_refs,
                 出題概念=sq_raw.get("出題概念", ""),
+                出題指示=(
+                    cfg.instruction if cfg and cfg.instruction else sq_raw.get("出題指示")
+                ),
                 題型=sq_raw.get("題型", params.題型[0].value if params.題型 else "選擇題"),
                 題目=sq_raw.get("題目", ""),
                 答案=sq_raw.get("答案", ""),

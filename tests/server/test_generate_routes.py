@@ -64,7 +64,7 @@ def test_generate_route_forwards_social_studies_options() -> None:
         sq_configs = quote(
             '[{"question_word_limit":80,"option_word_limit":30,'
             '"content_type":"純文字","image_generation_mode":"html",'
-            '"question_type":"選擇題"}]',
+            '"question_type":"選擇題","instruction":"聚焦資料判讀"}]',
         )
         with TestClient(app) as client:
             response = client.get(
@@ -97,14 +97,22 @@ def test_generate_route_forwards_social_studies_options() -> None:
     assert captured["params"].sub_question_count == 3
     assert "question_word_limit" in captured["params"].subquestion_configs
     assert "question_type" in captured["params"].subquestion_configs
+    assert "instruction" in captured["params"].subquestion_configs
 
 
 def test_subquestion_config_decoder_ignores_malformed_json() -> None:
     from server.generate.service import _decode_subquestion_configs
 
-    raw_configs = '[{"question_word_limit": 80, "question_type": "選擇題"}]'
+    raw_configs = (
+        '[{"question_word_limit": 80, "question_type": "選擇題", '
+        '"instruction": "聚焦資料判讀"}]'
+    )
     assert _decode_subquestion_configs(raw_configs) == [
-        {"question_word_limit": 80, "question_type": "選擇題"},
+        {
+            "question_word_limit": 80,
+            "question_type": "選擇題",
+            "instruction": "聚焦資料判讀",
+        },
     ]
     assert _decode_subquestion_configs("{not-json") is None
 

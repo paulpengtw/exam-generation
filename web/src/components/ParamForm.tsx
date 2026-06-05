@@ -5,6 +5,7 @@ import CoreQuestionPicker from "./CoreQuestionPicker";
 
 export interface SubQuestionConfig {
   question_type?: string;
+  instruction?: string;
   content_type?: string;
   image_generation_mode?: "html" | "gpt_image";
   question_word_limit?: number;
@@ -250,6 +251,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       subject === "social_studies" && subQuestionCount !== ""
         ? subquestionConfigs.slice(0, subQuestionCount).map((cfg) => ({
             question_type: cfg.question_type || undefined,
+            instruction: cfg.instruction?.trim() || undefined,
             content_type: cfg.content_type || undefined,
             image_generation_mode: cfg.image_generation_mode || undefined,
             question_word_limit: cfg.question_word_limit,
@@ -257,7 +259,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           }))
         : [];
     const hasSubquestionConfig = effectiveSubquestionConfigs.some(
-      (c) => c.question_type || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit,
+      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit,
     );
     const shouldSendSubquestionConfigs =
       subject === "social_studies" && subQuestionCount !== "" && (
@@ -881,6 +883,16 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                         <option value="gpt_image">GPT 生圖</option>
                       </select>
                     </div>
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-xs text-gray-500">出題指示</label>
+                    <textarea
+                      value={cfg.instruction ?? ""}
+                      onChange={(e) => updateSubquestionConfig(i, { instruction: e.target.value || undefined })}
+                      placeholder="例如：請聚焦在資料判讀與因果推論"
+                      rows={2}
+                      className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+                    />
                   </div>
                 </div>
               ))}

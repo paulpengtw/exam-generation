@@ -63,6 +63,7 @@ class RubricEntry(BaseModel):
 class SubQuestionConfig(BaseModel):
     """Per-subquestion generation configuration overrides (issues #100 and #101)."""
     question_type: QuestionType | None = None  # type: ignore[valid-type]
+    instruction: str | None = None
     content_type: str | None = None
     image_generation_mode: Literal["html", "gpt_image"] | None = None
     question_word_limit: int | None = None
@@ -79,6 +80,7 @@ class SubQuestion(BaseModel):
     學習內容: list[LearningContentRef] = Field(default_factory=list)
     學習表現: list[LearningContentRef] = Field(default_factory=list)
     出題概念: str = ""
+    出題指示: str | None = None
     題型: QuestionType  # type: ignore[valid-type]
     題目: str
     答案: str = ""

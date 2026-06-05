@@ -74,6 +74,7 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
                 "image_generation_mode": "gpt_image",
                 "question_word_limit": 80,
                 "option_word_limit": 30,
+                "instruction": "請聚焦在資料判讀與因果推論",
             },
             {
                 "question_type": "封閉式建構反應題",
@@ -89,10 +90,10 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
     assert "- **題型**：由各小題配置指定" in prompt
     assert "- **小題數量**：3" in prompt
     assert "## 各小題配置" in prompt
-    assert (
-        "第1小題：題型=選擇題，文本素材類型=含圖片，圖片生成模式=gpt_image，"
-        "題目字數上限=80，選項字數上限=30"
-    ) in prompt
+    assert "第1小題：題型=選擇題" in prompt
+    assert "出題指示=請聚焦在資料判讀與因果推論" in prompt
+    assert "文本素材類型=含圖片，圖片生成模式=gpt_image" in prompt
+    assert "題目字數上限=80，選項字數上限=30" in prompt
     assert (
         "第2小題：題型=封閉式建構反應題，文本素材類型=純文字，"
         "圖片生成模式=html，題目字數上限=120"

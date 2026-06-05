@@ -22,7 +22,7 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 - 若 chart_verification 指出非連續文本素材錯誤 → 只修正 chart_spec 的 data/labels/description，
   保留 render_mode、chart_type 不變。
 - 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、id、metadata、
-  各小題的 學習內容/學習表現/核心素養/出題概念/科目/年級。
+  各小題的 學習內容/學習表現/核心素養/出題概念/出題指示/科目/年級。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
 """
@@ -132,6 +132,7 @@ def correct_question(
                     學習內容=original.學習內容 if original else [],
                     學習表現=original.學習表現 if original else [],
                     出題概念=original.出題概念 if original else sq_raw.get("出題概念", ""),
+                    出題指示=original.出題指示 if original else sq_raw.get("出題指示"),
                     題型=original.題型 if original else sq_raw.get("題型", ""),
                     題目=sq_raw.get("題目", original.題目 if original else ""),
                     答案=sq_raw.get("答案", original.答案 if original else ""),
