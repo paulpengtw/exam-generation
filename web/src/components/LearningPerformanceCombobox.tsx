@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 interface LpEntry {
   value: string;
@@ -11,6 +11,7 @@ interface Props {
   selected: string[];
   onChange: (next: string[]) => void;
   placeholder?: string;
+  id?: string;
 }
 
 export default function LearningPerformanceCombobox({
@@ -18,7 +19,12 @@ export default function LearningPerformanceCombobox({
   selected,
   onChange,
   placeholder = "（沿用題組設定）",
+  id: idProp,
 }: Props) {
+  const generatedId = useId();
+  const inputId = idProp ?? generatedId;
+  const listboxId = `${inputId}-listbox`;
+
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -31,6 +37,9 @@ export default function LearningPerformanceCombobox({
     const q = query.toLowerCase();
     return o.value.toLowerCase().includes(q) || (o.instruction ?? "").toLowerCase().includes(q);
   });
+
+  const activeOptionId =
+    open && filtered[activeIndex] ? `${listboxId}-opt-${activeIndex}` : undefined;
 
   useEffect(() => {
     setActiveIndex(0);
@@ -117,7 +126,13 @@ export default function LearningPerformanceCombobox({
         })}
         <input
           ref={inputRef}
+          id={inputId}
           type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          aria-controls={listboxId}
+          aria-activedescendant={activeOptionId}
           value={query}
           placeholder={selected.length === 0 ? placeholder : "搜尋…"}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
@@ -128,10 +143,17 @@ export default function LearningPerformanceCombobox({
       </div>
 
       {open && filtered.length > 0 && (
-        <ul className="absolute z-20 mt-0.5 max-h-52 w-full overflow-y-auto rounded border bg-white py-1 shadow-md text-sm">
+        <ul
+          id={listboxId}
+          role="listbox"
+          className="absolute z-20 mt-0.5 max-h-52 w-full overflow-y-auto rounded border bg-white py-1 shadow-md text-sm"
+        >
           {filtered.map((o, idx) => (
             <li
               key={o.value}
+              id={`${listboxId}-opt-${idx}`}
+              role="option"
+              aria-selected={idx === activeIndex}
               onMouseDown={(e) => { e.preventDefault(); select(o.value); }}
               onMouseEnter={() => setActiveIndex(idx)}
               className={`flex cursor-pointer items-start gap-2 px-3 py-1.5 ${

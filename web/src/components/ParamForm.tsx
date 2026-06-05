@@ -369,7 +369,6 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       },
       { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined },
       { label: "小題數量", value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined },
-      { label: "各小題配置", value: p.subquestion_configs },
     ];
 
     const lpHeading = lpWasAutoDrawn
@@ -432,6 +431,40 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               </dd>
             </div>
           )}
+          {(() => {
+            if (!p.subquestion_configs) return null;
+            let configs: SubQuestionConfig[] = [];
+            try { configs = JSON.parse(p.subquestion_configs); } catch { return null; }
+            const hasAnyLp = configs.some((c) => c.learning_performance?.length);
+            if (!hasAnyLp) return null;
+            return (
+              <div className="flex gap-3 px-4 py-2.5">
+                <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">各小題學習表現</dt>
+                <dd className="flex-1 text-sm text-gray-900">
+                  <ul className="space-y-2">
+                    {configs.map((cfg, idx) => {
+                      const lp = cfg.learning_performance;
+                      if (!lp?.length) return null;
+                      const entries = allLpEntries.filter((e) => lp.includes(e.value));
+                      return (
+                        <li key={idx}>
+                          <span className="text-xs font-medium text-gray-500">第{idx + 1}小題：</span>
+                          <ul className="mt-0.5 space-y-0.5">
+                            {entries.map((e) => (
+                              <li key={e.value} className="flex gap-2 text-sm">
+                                <span className="shrink-0 font-mono font-semibold text-gray-800">{e.value}</span>
+                                {e.instruction && <span className="text-gray-600">— {e.instruction}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </dd>
+              </div>
+            );
+          })()}
         </dl>
         <div className="flex flex-wrap gap-3 pt-1">
           <button
@@ -906,8 +939,9 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                   </div>
                   {availableLearningPerformance.length > 0 && (
                     <div className="mt-3">
-                      <label className="block text-xs text-gray-500">學習表現（本小題覆寫）</label>
+                      <label htmlFor={`sq-lp-${i}`} className="block text-xs text-gray-500">學習表現（本小題覆寫）</label>
                       <LearningPerformanceCombobox
+                        id={`sq-lp-${i}`}
                         options={availableLearningPerformance}
                         selected={cfg.learning_performance ?? []}
                         onChange={(next) => updateSubquestionConfig(i, { learning_performance: next.length ? next : undefined })}
