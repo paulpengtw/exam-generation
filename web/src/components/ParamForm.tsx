@@ -4,6 +4,7 @@ import { useT } from "../i18n/useT";
 import CoreQuestionPicker from "./CoreQuestionPicker";
 
 export interface SubQuestionConfig {
+  question_type?: string;
   content_type?: string;
   image_generation_mode?: "html" | "gpt_image";
   question_word_limit?: number;
@@ -248,6 +249,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     const effectiveSubquestionConfigs =
       subject === "social_studies" && subQuestionCount !== ""
         ? subquestionConfigs.slice(0, subQuestionCount).map((cfg) => ({
+            question_type: cfg.question_type || undefined,
             content_type: cfg.content_type || undefined,
             image_generation_mode: cfg.image_generation_mode || undefined,
             question_word_limit: cfg.question_word_limit,
@@ -255,8 +257,12 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           }))
         : [];
     const hasSubquestionConfig = effectiveSubquestionConfigs.some(
-      (c) => c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit,
+      (c) => c.question_type || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit,
     );
+    const shouldSendSubquestionConfigs =
+      subject === "social_studies" && subQuestionCount !== "" && (
+        hasSubquestionConfig || effectiveSubquestionConfigs.length > 0
+      );
 
     // If no learning_performance selected, pre-draw randomly to match backend sampling
     let finalLp: string[] | undefined;
@@ -278,7 +284,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       content_type: effectiveContentType,
       context: subject === "natural_sciences" ? context.slice(0, 1) : context,
       set_type: setType,
-      q_type: qType,
+      q_type: subject === "social_studies" ? [] : qType,
       count,
       skip_verify: skipVerify,
       image_generation_mode: imageGenerationMode,
@@ -302,7 +308,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           : undefined,
       sub_question_count: subject === "social_studies" && subQuestionCount !== "" ? subQuestionCount : undefined,
       subquestion_configs:
-        subject === "social_studies" && hasSubquestionConfig
+        shouldSendSubquestionConfigs
           ? JSON.stringify(effectiveSubquestionConfigs)
           : undefined,
     });
@@ -338,7 +344,10 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       { label: t("form.confirm_content_type"), value: p.content_type },
       { label: t("form.confirm_context"), value: p.context.length ? p.context.join(", ") : undefined },
       { label: t("form.confirm_set_type"), value: p.set_type },
-      { label: t("form.confirm_q_type"), value: p.q_type.length ? p.q_type.join(", ") : undefined },
+      {
+        label: t("form.confirm_q_type"),
+        value: subject !== "social_studies" && p.q_type.length ? p.q_type.join(", ") : undefined,
+      },
       { label: t("form.confirm_count"), value: String(p.count) },
       { label: t("form.confirm_passage"), value: p.passage },
       { label: t("form.confirm_options"), value: p.options?.join(", ") },
@@ -690,6 +699,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </select>
       </div>
 
+      {subject !== "social_studies" && (
       <fieldset>
         <legend className="text-sm font-medium">{t("form.q_type")}</legend>
         <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
@@ -705,6 +715,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           ))}
         </div>
       </fieldset>
+      )}
 
       {subject === "natural_sciences" && Array.isArray(schemas.科學能力) && (
         <fieldset>
@@ -801,7 +812,20 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               {subquestionConfigs.map((cfg, i) => (
                 <div key={i} className="rounded border border-gray-100 bg-gray-50 px-3 py-2">
                   <span className="block text-sm font-medium text-gray-700">第{i + 1}小題</span>
-                  <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-5">
+                    <div>
+                      <label className="block text-xs text-gray-500">題型</label>
+                      <select
+                        value={cfg.question_type ?? ""}
+                        onChange={(e) => updateSubquestionConfig(i, { question_type: e.target.value || undefined })}
+                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+                      >
+                        <option value="">（隨機）</option>
+                        {schemas.題型.map((s) => (
+                          <option key={s.value} value={s.value}>{s.value}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div>
                       <label className="block text-xs text-gray-500">題目字數限制</label>
                       <input

@@ -69,27 +69,39 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
         sub_question_count=3,
         subquestion_configs=[
             {
+                "question_type": "選擇題",
                 "content_type": "含圖片",
                 "image_generation_mode": "gpt_image",
                 "question_word_limit": 80,
                 "option_word_limit": 30,
             },
-            {"content_type": "純文字", "question_word_limit": 120},
+            {
+                "question_type": "封閉式建構反應題",
+                "content_type": "純文字",
+                "question_word_limit": 120,
+            },
             {"content_type": "graphs/charts/tables", "image_generation_mode": "html"},
         ],
     )
 
     prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
-    assert "- **各小題允許題型（每道小題可各自選擇，不須一致）**：" in prompt
+    assert "- **題型**：由各小題配置指定" in prompt
     assert "- **小題數量**：3" in prompt
     assert "## 各小題配置" in prompt
     assert (
-        "第1小題：文本素材類型=含圖片，圖片生成模式=gpt_image，"
+        "第1小題：題型=選擇題，文本素材類型=含圖片，圖片生成模式=gpt_image，"
         "題目字數上限=80，選項字數上限=30"
     ) in prompt
-    assert "第2小題：文本素材類型=純文字，圖片生成模式=html，題目字數上限=120" in prompt
-    assert "第3小題：文本素材類型=graphs/charts/tables，圖片生成模式=html" in prompt
+    assert (
+        "第2小題：題型=封閉式建構反應題，文本素材類型=純文字，"
+        "圖片生成模式=html，題目字數上限=120"
+    ) in prompt
+    assert "第3小題：題型=" in prompt
+    assert (
+        "第3小題：題型=開放式建構反應題，"
+        "文本素材類型=graphs/charts/tables，圖片生成模式=html"
+    ) in prompt
     assert (
         "文本素材類型為 `含圖片` 或 `graphs/charts/tables` 的小題必須輸出"
         "該小題自己的 `chart_spec`"
@@ -117,9 +129,12 @@ def test_per_subquestion_config_renders_inherited_image_mode(tmp_path) -> None:
     )
 
     assert "- **圖片生成模式**：gpt_image" in prompt
-    assert "第1小題：文本素材類型=含圖片，圖片生成模式=html" in prompt
-    assert "第2小題：文本素材類型=graphs/charts/tables，圖片生成模式=gpt_image" in prompt
-    assert "第3小題：文本素材類型=含圖片，圖片生成模式=gpt_image，題目字數上限=120" in prompt
+    assert "第1小題：題型=" in prompt
+    assert "文本素材類型=含圖片，圖片生成模式=html" in prompt
+    assert "第2小題：題型=" in prompt
+    assert "文本素材類型=graphs/charts/tables，圖片生成模式=gpt_image" in prompt
+    assert "第3小題：題型=" in prompt
+    assert "文本素材類型=含圖片，圖片生成模式=gpt_image，題目字數上限=120" in prompt
 
 
 def test_legacy_global_word_limits_render_when_no_row_config(tmp_path) -> None:
@@ -130,3 +145,28 @@ def test_legacy_global_word_limits_render_when_no_row_config(tmp_path) -> None:
     assert "## 各小題配置" in prompt
     assert "每道小題題目字數上限：90 字" in prompt
     assert "每個選項字數上限：20 字（限選擇題）" in prompt
+
+
+def test_missing_subquestion_question_types_are_sampled(tmp_path) -> None:
+    params = sample_params(
+        seed=2,
+        sub_question_count=3,
+        subquestion_configs=[
+            {"question_type": "選擇題"},
+            {},
+            {"question_word_limit": 60},
+        ],
+    )
+
+    assert len(params.subquestion_configs) == 3
+    sampled_types = [
+        cfg.question_type.value for cfg in params.subquestion_configs if cfg.question_type
+    ]
+    assert sampled_types[0] == "選擇題"
+    assert all(cfg.question_type is not None for cfg in params.subquestion_configs)
+
+    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+
+    assert "第1小題：題型=選擇題" in prompt
+    assert "第2小題：題型=" in prompt
+    assert "第3小題：題型=" in prompt

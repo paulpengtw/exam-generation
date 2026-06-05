@@ -191,7 +191,7 @@ USER_PROMPT_TEMPLATE = """\
 - **科目焦點**：{subject}
 - **情境**：{context}（PISA閱讀情境）
 - **題型種類**：{set_type}
-- **各小題允許題型（每道小題可各自選擇，不須一致）**：{q_types}
+- **題型**：由各小題配置指定；若未列出固定小題，允許題型為 {q_types}
 - **小題數量**：{sub_question_count}
 - **閱讀歷程（PISA）**：{reading_process}
 - **文本形式**：{text_form}
@@ -365,16 +365,19 @@ def build_user_prompt(
     else:
         lp_pool_lines = ""
 
-    # #100/#101: per-subquestion count, word limits, content type, and image mode.
+    # #100/#101: per-subquestion count, word limits, content type, image mode, and question type.
     sq_config_parts = []
     for i, cfg in enumerate(params.subquestion_configs, start=1):
         cfg_parts = []
         has_config = any((
+            cfg.question_type,
             cfg.content_type,
             cfg.image_generation_mode,
             cfg.question_word_limit,
             cfg.option_word_limit,
         ))
+        if cfg.question_type:
+            cfg_parts.append(f"題型={cfg.question_type.value}")
         if has_config:
             cfg_parts.append(f"文本素材類型={cfg.content_type or content_type}")
             cfg_parts.append(
@@ -403,6 +406,7 @@ def build_user_prompt(
                     cfg.image_generation_mode,
                     cfg.question_word_limit,
                     cfg.option_word_limit,
+                    cfg.question_type,
                 ))
             },
         )

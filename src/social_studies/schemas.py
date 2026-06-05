@@ -62,6 +62,7 @@ class RubricEntry(BaseModel):
 
 class SubQuestionConfig(BaseModel):
     """Per-subquestion generation configuration overrides (issues #100 and #101)."""
+    question_type: QuestionType | None = None  # type: ignore[valid-type]
     content_type: str | None = None
     image_generation_mode: Literal["html", "gpt_image"] | None = None
     question_word_limit: int | None = None

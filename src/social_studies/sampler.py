@@ -81,10 +81,7 @@ def sample_params(
     if sub_question_count is not None and not 3 <= sub_question_count <= 7:
         raise ValueError("sub_question_count must be between 3 and 7")
 
-    # 題型: sample a pool of 1-3 allowed types so each 子題 can choose its own.
     q_type_pool = q_type or list(QuestionType)
-    type_count = rng.randint(1, min(3, len(q_type_pool)))
-    selected_q_types = rng.sample(q_type_pool, type_count)
 
     # 閱讀歷程: pick 1-2
     all_processes = list(ReadingProcess)
@@ -147,6 +144,26 @@ def sample_params(
                 resolved_configs.append(SubQuestionConfig(**cfg))
             elif isinstance(cfg, SubQuestionConfig):
                 resolved_configs.append(cfg)
+
+    # 題型 is owned by each 小題 when the count is known. Missing row types are
+    # sampled deterministically from the request pool or the full schema.
+    if sub_question_count is not None:
+        resolved_configs = [
+            resolved_configs[i] if i < len(resolved_configs) else SubQuestionConfig()
+            for i in range(sub_question_count)
+        ]
+        resolved_configs = [
+            cfg.model_copy(update={"question_type": cfg.question_type or rng.choice(q_type_pool)})
+            for cfg in resolved_configs
+        ]
+        selected_q_types: list[QuestionType] = []
+        for cfg in resolved_configs:
+            if cfg.question_type and cfg.question_type not in selected_q_types:
+                selected_q_types.append(cfg.question_type)
+    else:
+        # Legacy/global mode for CLI or API callers that do not pin 小題 count.
+        type_count = rng.randint(1, min(3, len(q_type_pool)))
+        selected_q_types = rng.sample(q_type_pool, type_count)
 
     return SampledParams(
         grade=selected_grade,

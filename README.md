@@ -351,8 +351,9 @@ uv run python -m src.social_studies.cli generate --subject 跨科
 # Maps to GET /api/generate?subject_filter=歷史 (or omitted for 全部).
 
 # Social-studies web/API also supports per-子題 controls:
-# sub_question_count=3..7 and subquestion_configs=[{question_word_limit,
-# option_word_limit, content_type, image_generation_mode}, ...].
+# sub_question_count=3..7 and subquestion_configs=[{question_type,
+# question_word_limit, option_word_limit, content_type, image_generation_mode}, ...].
+# Blank/missing question_type values are sampled randomly per 小題.
 # content_type=含圖片 or graphs/charts/tables asks the model for a per-小題
 # chart_spec; image_generation_mode only chooses html vs gpt_image rendering.
 # These are web/API-only today; there are no dedicated CLI flags for them.
@@ -425,7 +426,7 @@ uv run uvicorn server.app:create_app --factory --reload --port 8000
 
 Routes live in:
 - `server/auth/routes.py` — sign-up, login, password reset
-- `server/generate/routes.py` — question generation, SSE streaming. `POST /api/plan-core-questions` branches on `body.subject` (`"math"` | `"social_studies"` | `"natural_sciences"`, default `"social_studies"`); math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage`. `GenerateParams` accepts curriculum-aware fields (`subject_filter`, `core_competency`, `learning_content`, `learning_performance`, `content_type`, `topic`, `passage`, `options`, `core_question`, `sub_context`, `science_competency`) plus social-studies per-子題 fields (`sub_question_count`, `question_word_limit`, `option_word_limit`, `subquestion_configs`) — all three subjects share the same request model.
+- `server/generate/routes.py` — question generation, SSE streaming. `POST /api/plan-core-questions` branches on `body.subject` (`"math"` | `"social_studies"` | `"natural_sciences"`, default `"social_studies"`); math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage`. `GenerateParams` accepts curriculum-aware fields (`subject_filter`, `core_competency`, `learning_content`, `learning_performance`, `content_type`, `topic`, `passage`, `options`, `core_question`, `sub_context`, `science_competency`) plus social-studies per-子題 fields (`sub_question_count`, `question_word_limit`, `option_word_limit`, `subquestion_configs`). Social-studies `subquestion_configs` may include `question_type`; missing values are randomly sampled per 小題. All three subjects share the same request model.
 - `server/utility/routes.py` — health, schema introspection. `GET /api/schemas?subject=math` augments the base math schema file with `科目` (4 strands), `題目內容類型` (4 entries), and `學習表現` filtered by `學習階段` (from `data/math/curriculum/learning_performance.json`). `subject=natural_sciences` builds schema from `schema_parameters.csv` + `learning_performance.json` + `learning_content.json` (PISA-Science dimensions: 情境/情境子類別/科學能力/題型/題目內容類型).
 
 Migrations run automatically on app startup via the FastAPI lifespan handler. To run them manually:
@@ -489,7 +490,7 @@ Each generated question produces a JSON file following this schema:
 
 For image-based questions, a corresponding PNG file is generated in the same output directory. Social-studies per-小題 images use filenames like `{question_id}_sq{序號}.png`; SSE result payloads embed these as `subquestions[*].image_base64`, and the web UI / ODT export render them inline with the matching 小題. `chart_verification` is only present when a chart image was rendered and sent to the verifier; it is omitted (`null`) for text-only questions.
 
-Social studies and natural sciences use a 題組 shape with `subquestions[]`. For social studies, the top-level `題型` is a legacy/primary value, while each `subquestions[*].題型` may vary independently. Social-studies subquestions can also include per-子題 `題目內容類型`, `image_generation_mode`, `chart_spec`, `圖片`, and `image_base64` when the prompt or web/API row config asks for visual material.
+Social studies and natural sciences use a 題組 shape with `subquestions[]`. For social studies, the top-level `題型` is a legacy/primary value, while each `subquestions[*].題型` may vary independently. The web UI sets social-studies 題型 on each 小題 row; blank rows are sampled randomly by the backend. Social-studies subquestions can also include per-子題 `題目內容類型`, `image_generation_mode`, `chart_spec`, `圖片`, and `image_base64` when the prompt or web/API row config asks for visual material.
 
 ### Image Rendering
 
@@ -558,7 +559,7 @@ For social studies exam generation, parameter schemas live in CSVs; curriculum d
 | `core_competencies.json` | 108課綱 核心素養 codes → sampler pool; override with `--core-competency`. |
 | `few_shot/few_shot_examples.csv` | Few-shot examples injected into user prompt (long format, one row per subquestion; columns include `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準`). Checked-in examples demonstrate mixed per-子題 題型, including a group with 選擇題 / 封閉式建構反應題 / 開放式建構反應題. |
 
-The social-studies web form labels the top-level `content_type` as `文本素材類型` and exposes a main `圖片生成模式`. When users set `子題數量` (3–7), the form sends `subquestion_configs` as a JSON array string so each 子題 can carry its own 題目字數限制, 選項字數限制, 題目內容類型, and 圖片產生方式. Per-小題 `content_type` controls whether visual material is required: `含圖片` and `graphs/charts/tables` ask the model to output that 小題's own `chart_spec`. Per-小題 `image_generation_mode` only selects the renderer backend (`html` vs `gpt_image`); by itself it does not require an image, and a blank value inherits the main/request-level image mode. Renderer precedence is submitted per-小題 mode → submitted main mode; model-emitted `image_generation_mode` is preserved in output only after being normalized to the effective renderer. Malformed `subquestion_configs` JSON is ignored by the backend with a warning.
+The social-studies web form labels the top-level `content_type` as `文本素材類型` and exposes a main `圖片生成模式`. When users set `子題數量` (3–7), the form sends `subquestion_configs` as a JSON array string so each 子題 can carry its own `question_type`, 題目字數限制, 選項字數限制, 題目內容類型, and 圖片產生方式. Blank per-小題 `question_type` values are sampled randomly by the backend. Per-小題 `content_type` controls whether visual material is required: `含圖片` and `graphs/charts/tables` ask the model to output that 小題's own `chart_spec`. Per-小題 `image_generation_mode` only selects the renderer backend (`html` vs `gpt_image`); by itself it does not require an image, and a blank value inherits the main/request-level image mode. Renderer precedence is submitted per-小題 mode → submitted main mode; model-emitted `image_generation_mode` is preserved in output only after being normalized to the effective renderer. Malformed `subquestion_configs` JSON is ignored by the backend with a warning.
 
 **Cross-subject 學習表現:** `社_*` codes (社1a/1b/2a/2b/2c/3a/3b/3c/3d-Ⅳ-*) are general 社會領域 standards that apply across all subjects — they appear in every subject's sampler pool, not only 跨科. This follows 108課綱 design.
 
