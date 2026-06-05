@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getSchemas, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import CoreQuestionPicker from "./CoreQuestionPicker";
+import LearningPerformanceCombobox from "./LearningPerformanceCombobox";
 
 export interface SubQuestionConfig {
   question_type?: string;
@@ -10,6 +11,7 @@ export interface SubQuestionConfig {
   image_generation_mode?: "html" | "gpt_image";
   question_word_limit?: number;
   option_word_limit?: number;
+  learning_performance?: string[];
 }
 
 export interface GenerateParams {
@@ -204,6 +206,13 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   useEffect(() => {
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
     setLearningPerformance((prev) => prev.filter((value) => allowed.has(value)));
+    setSubquestionConfigs((prev) =>
+      prev.map((cfg) =>
+        cfg.learning_performance?.length
+          ? { ...cfg, learning_performance: cfg.learning_performance.filter((v) => allowed.has(v)) }
+          : cfg,
+      ),
+    );
   }, [availableLearningPerformance]);
 
   useEffect(() => {
@@ -256,10 +265,11 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
             image_generation_mode: cfg.image_generation_mode || undefined,
             question_word_limit: cfg.question_word_limit,
             option_word_limit: cfg.option_word_limit,
+            learning_performance: cfg.learning_performance?.length ? cfg.learning_performance : undefined,
           }))
         : [];
     const hasSubquestionConfig = effectiveSubquestionConfigs.some(
-      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit,
+      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.learning_performance?.length,
     );
     const shouldSendSubquestionConfigs =
       subject === "social_studies" && subQuestionCount !== "" && (
@@ -894,6 +904,16 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                       className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
                     />
                   </div>
+                  {availableLearningPerformance.length > 0 && (
+                    <div className="mt-3">
+                      <label className="block text-xs text-gray-500">學習表現（本小題覆寫）</label>
+                      <LearningPerformanceCombobox
+                        options={availableLearningPerformance}
+                        selected={cfg.learning_performance ?? []}
+                        onChange={(next) => updateSubquestionConfig(i, { learning_performance: next.length ? next : undefined })}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

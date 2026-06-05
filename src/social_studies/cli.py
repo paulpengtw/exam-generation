@@ -13,7 +13,7 @@ from src.config import Config
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
-from src.social_studies.context_builder import build_system_prompt, build_user_prompt
+from src.social_studies.context_builder import _LP_INSTRUCTIONS, build_system_prompt, build_user_prompt
 from src.social_studies.corrector import correct_question
 from src.social_studies.sampler import sample_params
 from src.social_studies.schema_loader import load_grades, load_schemas
@@ -187,6 +187,15 @@ def _parse_question(
                 for r in sq_raw.get("學習表現", [])
                 if isinstance(r, dict) and r.get("編碼")
             ]
+            cfg = (
+                params.subquestion_configs[i - 1]
+                if i - 1 < len(params.subquestion_configs) else None
+            )
+            if cfg and cfg.learning_performance:
+                lp_refs = [
+                    LearningContentRef(編碼=code, 說明=_LP_INSTRUCTIONS.get(code, ""))
+                    for code in cfg.learning_performance
+                ]
             rubric = [
                 RubricEntry(
                     code=str(r.get("code", "")),
@@ -203,10 +212,6 @@ def _parse_question(
                     sq_chart_spec = ImageSpec(**raw_sq_spec)
                 except Exception:
                     sq_chart_spec = None
-            cfg = (
-                params.subquestion_configs[i - 1]
-                if i - 1 < len(params.subquestion_configs) else None
-            )
             subquestions.append(SubQuestion(
                 id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
                 序號=sq_raw.get("序號", i),
