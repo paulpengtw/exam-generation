@@ -227,11 +227,7 @@ def _render_subquestion_images(
         if not sub.chart_spec:
             continue
         img_path = config.output_dir / f"{question.id}_sq{sub.序號}.png"
-        mode = (
-            (subquestion_image_modes or {}).get(sub.序號)
-            or sub.image_generation_mode
-            or image_generation_mode
-        )
+        mode = (subquestion_image_modes or {}).get(sub.序號, image_generation_mode)
         sub.image_generation_mode = mode
         question_text = "\n\n".join(
             part for part in (question.文本, sub.題目) if part
@@ -272,6 +268,7 @@ def generate_one(
     user_prompt, few_shot_images = build_user_prompt(
         params,
         config.data_dir / "social_studies" / "few_shot",
+        image_generation_mode=image_generation_mode,
         user_passage=user_passage,
         user_options=user_options,
         user_topic=user_topic,

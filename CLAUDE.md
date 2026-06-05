@@ -14,7 +14,7 @@ The Python code handles all random selection (grade, 情境, 題型種類, 題�
 
 ### Verify + correct loop
 1. First call (Sonnet): generates the question and solution.
-2. Chart is rendered to PNG (if `chart_spec` present) — before verification so the verifier can see it.
+2. Chart/image specs are rendered to PNG before verification so the verifier can see them. Math and natural sciences render top-level `chart_spec`; social studies also renders `subquestions[*].chart_spec` to per-小題 PNGs.
 3. Second call (Sonnet, multimodal): independently solves the question, inspects PNG, returns `VerificationResult` with `passed`, `answer_match`, `details`, `my_answer`, `provided_answer`, and optional `chart_verification`.
 4. If `passed=False`, a correction pass sends the failed question + verifier feedback back to Sonnet for a minimal targeted fix (`src/corrector.py`). PNG re-renders only when `chart_spec` actually changes. Re-verify and loop up to `max_retries` (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
 
@@ -123,7 +123,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/social_studies/planner.py` | Thin shim over `src.common.planner.plan_core_questions`; provides the 社會領域 system/user templates. |
 | `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
 | `src/social_studies/context_builder.py` | Social studies prompt assembly; `## 課程綱要參考` block injected into system prompt; renders `## 各小題配置` when web/API per-子題 constraints are provided |
-| `src/social_studies/schemas.py` | Social studies Pydantic models: `ExamQuestion`, `SubQuestion`, `SubQuestionConfig`, `LearningContentRef`, `RubricEntry`, `QuestionSubject` (歷史/地理/公民與社會/跨科), `VerificationResult`, `ImageSpec`. `SubQuestion` includes optional per-子題 `題目內容類型`, `image_generation_mode`, and `chart_spec`. |
+| `src/social_studies/schemas.py` | Social studies Pydantic models: `ExamQuestion`, `SubQuestion`, `SubQuestionConfig`, `LearningContentRef`, `RubricEntry`, `QuestionSubject` (歷史/地理/公民與社會/跨科), `VerificationResult`, `ImageSpec`. `SubQuestion` includes optional per-子題 `題目內容類型`, `image_generation_mode`, `圖片`, and `chart_spec`. |
 | `src/natural_sciences/cli.py` | CLI entry point (no `--subject` flag; adds `--science-competency` and `--sub-context`; 題型 choices: Simple/Complex-multiple-choice/Constructed-response) |
 | `src/natural_sciences/schema_loader.py` | Builds schema dict from `schema_meta.csv` + `schema_parameters.csv`; handles `parent` column on `情境子類別` rows to build the parent-child map used by the sampler |
 | `src/natural_sciences/curriculum_loader.py` | Thin shim over `src.common.curriculum_loader`; overrides `allowed_learning_content` / `allowed_learning_performance` to skip subject filtering (科目 is fixed as 自然科學) |
@@ -214,7 +214,8 @@ subquestions: array of SubQuestion objects (primary format)
     出題概念: string
     題型: string
     題目內容類型: str | None — per-子題 content/stimulus type when configured
-    image_generation_mode: "html" | "gpt_image" | None — per-子題 prompt/output metadata
+    image_generation_mode: "html" | "gpt_image" | None — per-子題 renderer override; not an image requirement by itself
+    圖片: str | None — rendered per-子題 PNG filename, e.g. {question_id}_sq1.png
     chart_spec: ImageSpec | None — use here when a visual belongs only to this 小題
     題目: string (full question text including options)
     答案: string
@@ -309,7 +310,7 @@ The file has two top-level scalar/array fields:
 
 Social studies sampler picks: grade, 情境, 題型種類 (always 題組題), **題型 pool** (1–3 allowed values; each 子題 may use a different type), 文本形式, 閱讀歷程, **科目** (歷史/地理/公民與社會/跨科), **核心素養** (1–3 codes from `core_competencies.json`), **學習內容_pool** (1–3 codes from `learning_content.json` filtered by 學習階段 + 科目), **學習表現_pool** (1–2 codes from `learning_performance.json` filtered similarly), optional `sub_question_count` (3–7), and optional per-子題 `SubQuestionConfig` rows. Use `--subject` to override 科目 via CLI; `--learning-content`, `--learning-performance`, `--core-competency` to override the curriculum pools. Use `--grade`, `--q-type`, etc. as with math. Social studies does not use `--style`. The web Generate form exposes the same 科目 override as a `subject_filter` dropdown (全部 / 歷史 / 地理 / 公民與社會 / 跨科); selecting 全部 omits the filter and lets the sampler pick randomly — this maps to the `subject=None` default on `ss_sample_params`. The `subject_filter` query param on `GET /api/generate` accepts a list of values identical to the CLI `--subject` pool.
 
-Social-studies web/API per-子題 controls are encoded as `subquestion_configs`, a JSON array string accepted by `GET /api/generate`. Each row can include `question_word_limit`, `option_word_limit`, `content_type`, and `image_generation_mode`; malformed JSON is ignored with a warning. If `sub_question_count` is unset, the prompt keeps the existing 3–7 LLM-decided behavior. If no per-子題 config is supplied, existing global/default word-limit behavior remains backward compatible.
+Social-studies web/API per-子題 controls are encoded as `subquestion_configs`, a JSON array string accepted by `GET /api/generate`. Each row can include `question_word_limit`, `option_word_limit`, `content_type`, and `image_generation_mode`; malformed JSON is ignored with a warning. `content_type=含圖片` or `graphs/charts/tables` asks the model to emit that 小題's own `chart_spec`. `image_generation_mode` only selects the renderer backend (`html` or `gpt_image`); it does not require an image by itself. A blank per-子題 image mode inherits the main/request-level `image_generation_mode`, which the social-studies web form labels as `圖片生成模式`. Renderer precedence is submitted per-子題 mode → submitted main mode; generated `subquestions[*].image_generation_mode` is metadata and is overwritten with the effective renderer before output. If `sub_question_count` is unset, the prompt keeps the existing 3–7 LLM-decided behavior. If no per-子題 config is supplied, existing global/default word-limit behavior remains backward compatible.
 
 When randomly selecting parameters, respect these rules:
 - **grade**: pick one from `question_schemas.json["grades"]`. `grade_to_learning_stage(grade)` in `src/sampler.py` maps the chosen grade to a 108課綱 學習階段 (一/二/三/四/五).
@@ -347,7 +348,11 @@ Orthogonal to `render_mode`, the caller-controlled `image_generation_mode` kwarg
 - `"html"` (default) — use the path described above (matplotlib for `render_mode: "chart"`, Playwright for `render_mode: "html"`).
 - `"gpt_image"` — bypass both deterministic paths and send the image spec to `LLMClient.generate_image()` (model from `IMAGE_MODEL`, default `gpt-image2`). Requires `IMAGE_API_KEY`; falls back to `None` (no image) on failure rather than to the Playwright path.
 
-Both math (`src/cli.py`) and social studies (`src/social_studies/cli.py`) thread `image_generation_mode` from the CLI flag `--image-generation-mode` and the HTTP query param of the same name through to the two `render_image()` call sites (initial render and post-correction re-render). Social-studies web rows can also send per-子題 `image_generation_mode` inside `subquestion_configs`; that value is injected into the prompt and accepted on `SubQuestion`, while the request-level `image_generation_mode` remains the renderer fallback.
+Both math (`src/cli.py`) and social studies (`src/social_studies/cli.py`) thread `image_generation_mode` from the CLI flag `--image-generation-mode` and the HTTP query param of the same name through to `render_image()`. Social-studies web rows can also send per-子題 `image_generation_mode` inside `subquestion_configs`; that value overrides the renderer only for that 小題, while the request-level `image_generation_mode` remains the fallback. The renderer does not trust model-emitted per-小題 image modes over submitted settings.
+
+Social studies has two image locations:
+- Top-level `question.chart_spec` renders to `{question_id}.png` and is stored as `question.圖片`.
+- Per-小題 `subquestions[*].chart_spec` renders to `{question_id}_sq{序號}.png` and is stored as `subquestions[*].圖片`. `server/generate/service.py` embeds those PNGs as `subquestions[*].image_base64`; the React card displays them inline and ODT export inserts them near the matching 小題.
 
 The entry point is always `render_image()` (`src/renderer.py:271`), called from `generate_one()` in `src/cli.py`.
 
@@ -412,11 +417,12 @@ For each question:
 ### Phase 5: Image Rendering + Verification + Correction Loop (`src/renderer.py`, `src/html_renderer.py`, `src/verifier.py`, `src/corrector.py`, cli.py inside `generate_with_corrections`)
 Image rendering happens **before** verification so the verifier can see the PNG.
 
-1. If `question.chart_spec` exists: `render_image(spec, path, question_text, html_renderer, llm_client)` (renderer.py:271) dispatches by `render_mode`:
+1. If `question.chart_spec` exists: `render_image(spec, path, question_text, html_renderer, llm_client)` (renderer.py:271) first checks effective `image_generation_mode`; `gpt_image` sends the spec to `LLMClient.generate_image()`, while `html` dispatches by `render_mode`:
    - `"chart"` → `render_chart()` (renderer.py:50-71): `histogram/boxplot/line_chart/pie_chart` → hardcoded matplotlib
    - `"html"` → LLM call #2: `_generate_html_via_llm()` (renderer.py:343) asks Sonnet to write HTML/CSS/SVG; then `html_renderer.render()` (html_renderer.py) screenshots via Playwright
-2. LLM call #3: `verify_question(client, question, chart_image_path)` — sends question + solution + optional PNG via `client.generate_with_image()` (multimodal). Returns `VerificationResult{passed, answer_match, details, my_answer, provided_answer, chart_verification}` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}` (verifier.py)
-3. If `passed=False` and retries remain: `correct_question(client, question, verification, chart_image_path)` (corrector.py) sends the failed question JSON + verifier feedback to Sonnet (multimodal if chart failed + PNG exists). Only `題目`, `正確解題分析`, and `chart_spec` are mutable; all other fields are restored from the original. Re-render PNG only if `chart_spec` changed. Re-verify and loop up to `max_retries` times.
+2. For social studies, `_render_subquestion_images()` also renders each `subquestions[*].chart_spec` before verification, using submitted per-子題 `image_generation_mode` when present and otherwise the request-level fallback.
+3. LLM call #3: `verify_question(client, question, chart_image_path)` — sends question + solution + optional PNG via `client.generate_with_image()` (multimodal). Returns `VerificationResult{passed, answer_match, details, my_answer, provided_answer, chart_verification}` where `chart_verification: ChartVerificationResult | None` holds `{chart_data_match, chart_labels_correct, chart_details}` (verifier.py)
+4. If `passed=False` and retries remain: `correct_question(client, question, verification, chart_image_path)` (corrector.py) sends the failed question JSON + verifier feedback to Sonnet (multimodal if chart failed + PNG exists). Only `題目`, `正確解題分析`, and `chart_spec` are mutable; all other fields are restored from the original. Re-render PNG only if `chart_spec` changed. Re-verify and loop up to `max_retries` times.
 
 ### Phase 7: Output (cli.py:313-330)
 - Default: `{question_id}.json` per question (`model_dump_json`, cli.py:315-320)

@@ -40,7 +40,7 @@ Questions can include images, described by an `ImageSpec` on the generated quest
 | `"chart"` | `src/renderer.py` `render_chart()` | Deterministic matplotlib — `histogram`, `boxplot`, `line_chart`, `pie_chart` |
 | `"html"` | `src/html_renderer.py` `PlaywrightRenderer` | Sonnet writes HTML/CSS/SVG → Playwright screenshots to PNG |
 
-The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. Math and curriculum-subject generation accept an `image_generation_mode` parameter — set it to `gpt_image` to send the image spec to `IMAGE_MODEL` (default `gpt-image2`) and write the returned PNG directly, bypassing the Playwright path. For social studies, the web UI exposes image mode per 子題 row while the request-level value remains the renderer fallback. The default mode is `html`. The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()` in `src/cli.py`.
+The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. Math and curriculum-subject generation accept an `image_generation_mode` parameter — set it to `gpt_image` to send the image spec to `IMAGE_MODEL` (default `gpt-image2`) and write the returned PNG directly, bypassing the Playwright and matplotlib paths. Social studies supports both shared 題組 images (`question.chart_spec`) and per-小題 images (`subquestions[*].chart_spec`). The web UI exposes a main `圖片生成模式`; per-小題 rows can override it, or leave it blank to inherit the main mode. Generated `subquestions[*].image_generation_mode` is output metadata only and does not override the submitted renderer choice. The default mode is `html`. The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()`.
 
 ### Key Principles
 
@@ -353,6 +353,8 @@ uv run python -m src.social_studies.cli generate --subject 跨科
 # Social-studies web/API also supports per-子題 controls:
 # sub_question_count=3..7 and subquestion_configs=[{question_word_limit,
 # option_word_limit, content_type, image_generation_mode}, ...].
+# content_type=含圖片 or graphs/charts/tables asks the model for a per-小題
+# chart_spec; image_generation_mode only chooses html vs gpt_image rendering.
 # These are web/API-only today; there are no dedicated CLI flags for them.
 
 # Override sampled 學習內容 codes (1–3 values)
@@ -485,13 +487,13 @@ Each generated question produces a JSON file following this schema:
 }
 ```
 
-For image-based questions, a corresponding PNG file is generated in the same output directory. `chart_verification` is only present when a chart image was rendered and sent to the verifier; it is omitted (`null`) for text-only questions.
+For image-based questions, a corresponding PNG file is generated in the same output directory. Social-studies per-小題 images use filenames like `{question_id}_sq{序號}.png`; SSE result payloads embed these as `subquestions[*].image_base64`, and the web UI / ODT export render them inline with the matching 小題. `chart_verification` is only present when a chart image was rendered and sent to the verifier; it is omitted (`null`) for text-only questions.
 
-Social studies and natural sciences use a 題組 shape with `subquestions[]`. For social studies, the top-level `題型` is a legacy/primary value, while each `subquestions[*].題型` may vary independently. Social-studies subquestions can also include per-子題 `題目內容類型`, `image_generation_mode`, and `chart_spec` when the prompt or web/API row config asks for them.
+Social studies and natural sciences use a 題組 shape with `subquestions[]`. For social studies, the top-level `題型` is a legacy/primary value, while each `subquestions[*].題型` may vary independently. Social-studies subquestions can also include per-子題 `題目內容類型`, `image_generation_mode`, `chart_spec`, `圖片`, and `image_base64` when the prompt or web/API row config asks for visual material.
 
 ### Image Rendering
 
-Questions can specify an image via `image_spec` (or legacy `chart_spec`) in the LLM output. The `render_mode` field selects the renderer:
+Questions can specify an image via `image_spec` (or legacy `chart_spec`) in the LLM output. The submitted `image_generation_mode` is checked first: `gpt_image` sends the spec directly to the image API, while `html` uses `render_mode` to select the renderer:
 
 **`render_mode: "chart"`** — `render_chart()` in `src/renderer.py`:
 
@@ -556,7 +558,7 @@ For social studies exam generation, parameter schemas live in CSVs; curriculum d
 | `core_competencies.json` | 108課綱 核心素養 codes → sampler pool; override with `--core-competency`. |
 | `few_shot/few_shot_examples.csv` | Few-shot examples injected into user prompt (long format, one row per subquestion; columns include `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準`). Checked-in examples demonstrate mixed per-子題 題型, including a group with 選擇題 / 封閉式建構反應題 / 開放式建構反應題. |
 
-The social-studies web form labels the top-level `content_type` as `文本素材類型`. When users set `子題數量` (3–7), the form sends `subquestion_configs` as a JSON array string so each 子題 can carry its own 題目字數限制, 選項字數限制, 題目內容類型, and 圖片產生方式. Malformed `subquestion_configs` JSON is ignored by the backend with a warning.
+The social-studies web form labels the top-level `content_type` as `文本素材類型` and exposes a main `圖片生成模式`. When users set `子題數量` (3–7), the form sends `subquestion_configs` as a JSON array string so each 子題 can carry its own 題目字數限制, 選項字數限制, 題目內容類型, and 圖片產生方式. Per-小題 `content_type` controls whether visual material is required: `含圖片` and `graphs/charts/tables` ask the model to output that 小題's own `chart_spec`. Per-小題 `image_generation_mode` only selects the renderer backend (`html` vs `gpt_image`); by itself it does not require an image, and a blank value inherits the main/request-level image mode. Renderer precedence is submitted per-小題 mode → submitted main mode; model-emitted `image_generation_mode` is preserved in output only after being normalized to the effective renderer. Malformed `subquestion_configs` JSON is ignored by the backend with a warning.
 
 **Cross-subject 學習表現:** `社_*` codes (社1a/1b/2a/2b/2c/3a/3b/3c/3d-Ⅳ-*) are general 社會領域 standards that apply across all subjects — they appear in every subject's sampler pool, not only 跨科. This follows 108課綱 design.
 
@@ -789,16 +791,17 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 
 **File: `src/cli.py` inside `generate_one()` (lines 117-132), `src/renderer.py`**
 
-24. If `question.chart_spec` exists, `render_image(spec, img_path, question_text, html_renderer, llm_client)` (renderer.py:271) is called. Dispatches by `render_mode`:
+24. If `question.chart_spec` exists, `render_image(spec, img_path, question_text, html_renderer, llm_client)` (renderer.py:271) is called. `image_generation_mode=gpt_image` uses the image API first; otherwise `render_mode` selects the renderer:
 
 **File: `src/renderer.py`**
 
-| `render_mode` | Path | Lines |
+| Effective mode | Path | Lines |
 |---|---|---|
-| `"chart"` | `render_chart()` → `_render_histogram/boxplot/line_chart/pie_chart()` | 50-71 |
-| `"html"` | `_generate_html_via_llm()` (LLM call #2) → `html_renderer.render()` | 271-308 |
+| `gpt_image` | `LLMClient.generate_image()` | renderer.py:271 |
+| `html` + `render_mode="chart"` | `render_chart()` → `_render_histogram/boxplot/line_chart/pie_chart()` | 50-71 |
+| `html` + `render_mode="html"` | `_generate_html_via_llm()` (LLM call #2) → `html_renderer.render()` | 271-308 |
 
-25. On render success: `question.圖片 = "{question_id}.png"`, `chart_image_path` = absolute PNG path
+25. On render success: `question.圖片 = "{question_id}.png"`, `chart_image_path` = absolute PNG path. Social-studies `subquestions[*].chart_spec` entries are rendered by `src/social_studies/cli.py` to `{question_id}_sq{序號}.png`; the subquestion stores `圖片`, and `server/generate/service.py` embeds the PNG as `subquestions[*].image_base64` for the React card and ODT export.
 
 **File: `src/cli.py` inside `generate_one()`, `src/verifier.py`**
 

@@ -76,13 +76,38 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
         "第1小題：文本素材類型=含圖片，圖片生成模式=gpt_image，"
         "題目字數上限=80，選項字數上限=30"
     ) in prompt
-    assert "第2小題：文本素材類型=純文字，題目字數上限=120" in prompt
+    assert "第2小題：文本素材類型=純文字，圖片生成模式=html，題目字數上限=120" in prompt
     assert "第3小題：文本素材類型=graphs/charts/tables，圖片生成模式=html" in prompt
     assert (
         "文本素材類型為 `含圖片` 或 `graphs/charts/tables` 的小題必須輸出"
         "該小題自己的 `chart_spec`"
     ) in prompt
     assert "`image_generation_mode` 只指定渲染方式，不能單獨視為需要圖片" in prompt
+
+
+def test_per_subquestion_config_renders_inherited_image_mode(tmp_path) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="含圖片",
+        sub_question_count=3,
+        subquestion_configs=[
+            {"image_generation_mode": "html"},
+            {"content_type": "graphs/charts/tables"},
+            {"question_word_limit": 120},
+        ],
+    )
+
+    prompt, _images = build_user_prompt(
+        params,
+        tmp_path,
+        rng=random.Random(1),
+        image_generation_mode="gpt_image",
+    )
+
+    assert "- **圖片生成模式**：gpt_image" in prompt
+    assert "第1小題：文本素材類型=含圖片，圖片生成模式=html" in prompt
+    assert "第2小題：文本素材類型=graphs/charts/tables，圖片生成模式=gpt_image" in prompt
+    assert "第3小題：文本素材類型=含圖片，圖片生成模式=gpt_image，題目字數上限=120" in prompt
 
 
 def test_legacy_global_word_limits_render_when_no_row_config(tmp_path) -> None:

@@ -184,6 +184,7 @@ USER_PROMPT_TEMPLATE = """\
 - **閱讀歷程（PISA）**：{reading_process}
 - **文本形式**：{text_form}
 - **文本素材類型**：{content_type}
+- **圖片生成模式**：{image_generation_mode}
 - **核心素養（限定使用）**：{core_competencies}
 {lc_pool_lines}{lp_pool_lines}{subquestion_config_lines}{param_instructions}{user_materials}
 ## 參考範例
@@ -249,6 +250,7 @@ def build_user_prompt(
     params: SampledParams,
     few_shot_dir: Path,
     rng: random.Random | None = None,
+    image_generation_mode: str = "html",
     user_passage: str | None = None,
     user_options: list[str] | None = None,
     user_topic: str | None = None,
@@ -346,10 +348,17 @@ def build_user_prompt(
     sq_config_parts = []
     for i, cfg in enumerate(params.subquestion_configs, start=1):
         cfg_parts = []
-        if cfg.content_type:
-            cfg_parts.append(f"文本素材類型={cfg.content_type}")
-        if cfg.image_generation_mode:
-            cfg_parts.append(f"圖片生成模式={cfg.image_generation_mode}")
+        has_config = any((
+            cfg.content_type,
+            cfg.image_generation_mode,
+            cfg.question_word_limit,
+            cfg.option_word_limit,
+        ))
+        if has_config:
+            cfg_parts.append(f"文本素材類型={cfg.content_type or content_type}")
+            cfg_parts.append(
+                f"圖片生成模式={cfg.image_generation_mode or image_generation_mode}",
+            )
         if cfg.question_word_limit:
             cfg_parts.append(f"題目字數上限={cfg.question_word_limit}")
         if cfg.option_word_limit:
@@ -365,7 +374,16 @@ def build_user_prompt(
             )
     if sq_config_parts:
         sq_config_content_types = list(
-            {cfg.content_type for cfg in params.subquestion_configs if cfg.content_type},
+            {
+                cfg.content_type or content_type
+                for cfg in params.subquestion_configs
+                if any((
+                    cfg.content_type,
+                    cfg.image_generation_mode,
+                    cfg.question_word_limit,
+                    cfg.option_word_limit,
+                ))
+            },
         )
         for ct in sq_config_content_types:
             ct_instr = CONTENT_TYPE_INSTRUCTIONS.get(ct, "")
@@ -431,6 +449,7 @@ def build_user_prompt(
         reading_process=reading_process,
         text_form=params.文本形式.value,
         content_type=content_type,
+        image_generation_mode=image_generation_mode,
         core_competencies=core_competencies,
         lc_pool_lines=lc_pool_lines,
         lp_pool_lines=lp_pool_lines,
