@@ -150,6 +150,11 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "card.hide_answer": "Hide Answer",
     "card.show_answer": "Show Answer",
     "card.rubric": "Rubric",
+    "card.final": "Final",
+    "card.phase_draft": "Draft",
+    "card.phase_image": "Image ready",
+    "card.phase_verified": "Verified draft",
+    "card.phase_corrected": "Corrected draft",
 
     "error.title": "Something went wrong",
     "error.desc": "An unexpected error occurred. Try reloading the page.",
@@ -303,6 +308,11 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "card.hide_answer": "隱藏答案",
     "card.show_answer": "顯示答案",
     "card.rubric": "評分規準",
+    "card.final": "正式結果",
+    "card.phase_draft": "草稿",
+    "card.phase_image": "圖片已產生",
+    "card.phase_verified": "已驗證草稿",
+    "card.phase_corrected": "已修正草稿",
 
     "error.title": "發生錯誤",
     "error.desc": "發生意外錯誤，請重新載入頁面。",

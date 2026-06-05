@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi.testclient import TestClient
@@ -171,3 +172,68 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
     assert captured["params"].q_type == ["Constructed response"]
     assert captured["params"].content_type == "graphs/charts/tables"
     assert captured["params"].learning_performance == ["tr-Ⅳ-1"]
+
+
+def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from server.generate import service
+    from server.generate.models import GenerateParams
+    from src.social_studies.schemas import ExamQuestion
+
+    config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+
+    def fake_generate_with_corrections(**kwargs):
+        question_id = kwargs["question_id"]
+        sampled = kwargs["params"]
+        question = ExamQuestion(
+            id=question_id,
+            核心問題="核心問題",
+            文本="題組文本",
+            subquestions=[],
+            情境=[c.value for c in sampled.情境],
+            題型種類=sampled.題型種類.value,
+            題型=sampled.題型[0].value,
+            閱讀歷程=[p.value for p in sampled.閱讀歷程],
+            文本形式=sampled.文本形式.value,
+            題目=["題目"],
+            正確解題分析=["解析"],
+        )
+        question.圖片 = f"{question_id}.png"
+        (tmp_path / question.圖片).write_bytes(b"draft-png")
+        kwargs["on_question_update"](question, "draft")
+        return question
+
+    async def collect_events():
+        events = []
+        async for event in service.generate_question_stream(
+            params,
+            config,
+            SimpleNamespace(html_renderer=None),
+        ):
+            events.append(event)
+        return events
+
+    original = service.ss_generate_with_corrections
+    old_total = service._QUEUE_TOTAL
+    old_done = service._QUEUE_DONE
+    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
+    service._QUEUE_TOTAL = 0
+    service._QUEUE_DONE = 0
+    try:
+        events = asyncio.run(collect_events())
+    finally:
+        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+        service._QUEUE_TOTAL = old_total
+        service._QUEUE_DONE = old_done
+
+    updates = [event for event in events if event["event"] == "question_update"]
+    results = [event for event in events if event["event"] == "result"]
+
+    assert len(updates) == 1
+    assert updates[0]["data"]["index"] == 0
+    assert updates[0]["data"]["phase"] == "draft"
+    assert updates[0]["data"]["question"]["image_base64"] == "ZHJhZnQtcG5n"
+    assert len(results) == 1
+    assert results[0]["data"]["image_base64"] == "ZHJhZnQtcG5n"

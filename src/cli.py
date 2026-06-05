@@ -6,6 +6,7 @@ import argparse
 import json
 import random
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from src.corrector import correct_question
 from src.schema_loader import load_grades, load_schemas
 
 _GRADES: list[int] = load_grades(load_schemas())
+
 from src.context_builder import build_system_prompt, build_user_prompt
 from src.data_loader import (
     get_full_curriculum_text,
@@ -41,6 +43,18 @@ from src.schemas import (
     SampledParams,
 )
 from src.verifier import verify_question
+
+QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
+
+
+def _emit_question_update(
+    callback: QuestionUpdateCallback | None,
+    question: ExamQuestion,
+    phase: str,
+) -> None:
+    if callback is None:
+        return
+    callback(question, phase)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -143,6 +157,7 @@ def generate_one(
     user_passage: str = "",
     user_options: list[str] | None = None,
     user_core_question: str = "",
+    on_question_update: QuestionUpdateCallback | None = None,
 ) -> ExamQuestion | str:
     """Generate a single exam question.
 
@@ -179,6 +194,7 @@ def generate_one(
 
     # Parse into ExamQuestion
     question = _parse_question(raw_json, question_id, params, config.model_execute)
+    _emit_question_update(on_question_update, question, "draft")
 
     # Render image before verification so verifier can see the PNG
     chart_image_path: str | None = None
@@ -199,6 +215,7 @@ def generate_one(
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
+            _emit_question_update(on_question_update, question, "image")
 
     # Verify if requested
     if not skip_verify:
@@ -211,6 +228,7 @@ def generate_one(
         )
         emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
+        _emit_question_update(on_question_update, question, "verified")
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
 
@@ -235,6 +253,7 @@ def generate_with_corrections(
     user_passage: str = "",
     user_options: list[str] | None = None,
     user_core_question: str = "",
+    on_question_update: QuestionUpdateCallback | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
@@ -259,6 +278,7 @@ def generate_with_corrections(
         user_passage=user_passage,
         user_options=user_options,
         user_core_question=user_core_question,
+        on_question_update=on_question_update,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -292,6 +312,7 @@ def generate_with_corrections(
             curriculum_context=None,
         )
         emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
+        _emit_question_update(on_question_update, question, "corrected")
 
         # Re-render only when chart_spec actually changed
         new_chart_image_path: str | None = None
@@ -311,6 +332,7 @@ def generate_with_corrections(
             if rendered:
                 question.圖片 = f"{question_id}.png"
                 new_chart_image_path = rendered
+                _emit_question_update(on_question_update, question, "image")
         elif question.圖片:
             p = config.output_dir / question.圖片
             new_chart_image_path = str(p) if p.exists() else None
@@ -324,6 +346,7 @@ def generate_with_corrections(
             )
             emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
+            _emit_question_update(on_question_update, question, "verified")
             status = "PASSED" if result.passed else "FAILED"
             print(
                 f"  Re-verification {status}: {result.details[:100]}",

@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 
-import type { ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
+import type { DraftPhase, ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
 
 export interface QuestionCardProps {
   question: ExamQuestion;
+  phase?: DraftPhase;
+  isFinal?: boolean;
 }
 
 interface VerificationShape {
@@ -62,9 +64,9 @@ const RUBRIC_TONE: Record<string, string> = {
   "0X": "bg-gray-100 text-gray-500",
 };
 
-function SubQuestionBlock({ sub }: { sub: SubQuestion }) {
+function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuestion; showAnswersByDefault?: boolean }) {
   const t = useT();
-  const [showAnswer, setShowAnswer] = useState(false);
+  const [showAnswer, setShowAnswer] = useState(showAnswersByDefault);
 
   return (
     <div className="rounded border border-gray-100 bg-gray-50 p-3 space-y-2">
@@ -144,14 +146,17 @@ function SubQuestionBlock({ sub }: { sub: SubQuestion }) {
   );
 }
 
-export default function QuestionCard({ question }: QuestionCardProps) {
+export default function QuestionCard({ question, phase = "verified", isFinal = true }: QuestionCardProps) {
   const t = useT();
-  const [showSolution, setShowSolution] = useState(false);
+  const [showSolution, setShowSolution] = useState(!isFinal);
 
   const verification = question.verification as VerificationShape | undefined;
   const passed = Boolean(verification?.passed);
   const questionId = getQuestionId(question);
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+  const phaseLabel = isFinal
+    ? t("card.final")
+    : t(`card.phase_${phase}` as Parameters<typeof t>[0]);
 
   const mathCodes = useMemo(() => getLearningContentCodes(question), [question]);
 
@@ -204,6 +209,9 @@ export default function QuestionCard({ question }: QuestionCardProps) {
       {/* Header chips */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
+          {!isFinal && (
+            <Chip label={phaseLabel} tone="orange" />
+          )}
           {isSocialStudies ? (
             <>
               {ssGrades.map((g) => (
@@ -272,7 +280,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
           )}
           <div className="space-y-2">
             {question.subquestions!.map((sub) => (
-              <SubQuestionBlock key={sub.id} sub={sub} />
+              <SubQuestionBlock key={sub.id} sub={sub} showAnswersByDefault={!isFinal} />
             ))}
           </div>
         </div>
@@ -311,7 +319,8 @@ export default function QuestionCard({ question }: QuestionCardProps) {
         <button
           type="button"
           onClick={handleDownloadJson}
-          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          disabled={!isFinal}
+          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t("card.download_json")}
         </button>
@@ -319,7 +328,8 @@ export default function QuestionCard({ question }: QuestionCardProps) {
           <button
             type="button"
             onClick={handleDownloadPng}
-            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            disabled={!isFinal}
+            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("card.download_png")}
           </button>
@@ -327,7 +337,8 @@ export default function QuestionCard({ question }: QuestionCardProps) {
         <button
           type="button"
           onClick={handleDownloadOdt}
-          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          disabled={!isFinal}
+          className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t("card.download_odt")}
         </button>
@@ -336,7 +347,7 @@ export default function QuestionCard({ question }: QuestionCardProps) {
   );
 }
 
-type ChipTone = "blue" | "purple" | "amber" | "gray" | "teal";
+type ChipTone = "blue" | "purple" | "amber" | "gray" | "teal" | "orange";
 
 const TONE_CLASSES: Record<ChipTone, string> = {
   blue: "bg-blue-100 text-blue-800",
@@ -344,6 +355,7 @@ const TONE_CLASSES: Record<ChipTone, string> = {
   amber: "bg-amber-100 text-amber-800",
   gray: "bg-gray-100 text-gray-800",
   teal: "bg-teal-100 text-teal-800",
+  orange: "bg-orange-100 text-orange-800",
 };
 
 function Chip({ label, tone, title }: { label: string; tone: ChipTone; title?: string }) {

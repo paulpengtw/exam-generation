@@ -170,6 +170,7 @@ async def generate_question_stream(
       - {"event": "queued",   "data": {"jobs_ahead": int}}  (only when waiting)
       - {"event": "started",  "data": ""}
       - {"event": "progress", "data": str}
+      - {"event": "question_update", "data": {"index": int, "phase": str, "question": dict}}
       - {"event": "result",   "data": dict}
       - {"event": "error",    "data": str}
       - {"event": "done",     "data": ""}
@@ -285,11 +286,29 @@ async def generate_question_stream(
                         queue.put_nowait, {"event": "pipeline", "data": payload}
                     )
 
+                def _make_question_update_emitter(index: int):
+                    def emit_question_update(
+                        question: MathExamQuestion | SSExamQuestion | NSExamQuestion,
+                        phase: str,
+                    ) -> None:
+                        payload = {
+                            "index": index,
+                            "phase": phase,
+                            "question": _question_to_event(question, config),
+                        }
+                        loop.call_soon_threadsafe(
+                            queue.put_nowait,
+                            {"event": "question_update", "data": payload},
+                        )
+
+                    return emit_question_update
+
                 try:
                     _emit_pipeline("pipeline_start", total=count)
                     for i in range(count):
                         seed = (base_seed + i) if base_seed is not None else None
                         _emit_pipeline("question_start", index=i, total=count)
+                        emit_question_update = _make_question_update_emitter(i)
                         if is_social_studies:
                             rng_params = ss_sample_params(
                                 grade=params.grade,
@@ -322,6 +341,7 @@ async def generate_question_stream(
                                     user_options=params.options,
                                     user_topic=params.topic,
                                     user_core_question=params.core_question,
+                                    on_question_update=emit_question_update,
                                 )
                             except Exception as exc:
                                 tb = traceback.format_exc()
@@ -362,6 +382,7 @@ async def generate_question_stream(
                                     user_options=params.options,
                                     user_topic=params.topic,
                                     user_core_question=params.core_question,
+                                    on_question_update=emit_question_update,
                                 )
                             except Exception as exc:
                                 tb = traceback.format_exc()
@@ -412,6 +433,7 @@ async def generate_question_stream(
                                     user_passage=params.passage or "",
                                     user_options=params.options,
                                     user_core_question=params.core_question or "",
+                                    on_question_update=emit_question_update,
                                 )
                             except Exception as exc:
                                 tb = traceback.format_exc()

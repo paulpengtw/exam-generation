@@ -52,11 +52,13 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     ),
     "含圖片": (
         "本題組必須包含圖片式或視覺式非連續素材，例如地圖、圖解、廣告、表單、海報或網頁畫面。"
-        "請輸出 `chart_spec`，優先使用 `render_mode: \"html\"`，並在 `description` 與 `data` 中完整描述版面與內容。"
+        "請在題組頂層輸出非 null 的 `chart_spec`，優先使用 `render_mode: \"html\"`，"
+        "並在 `description` 與 `data` 中完整描述版面與內容。"
     ),
     "graphs/charts/tables": (
         "本題組必須包含圖表或表格素材。統計圖（直方圖、折線圖、圓餅圖等）請使用 `render_mode: \"chart\"`；"
-        "表格或複合資料表請使用 `render_mode: \"html\"`，並在 `data` 中提供完整欄列資料。"
+        "表格或複合資料表請使用 `render_mode: \"html\"`，並在題組頂層輸出非 null 的 `chart_spec`，"
+        "於 `data` 中提供完整欄列資料。"
     ),
 }
 
@@ -89,6 +91,14 @@ SYSTEM_PROMPT_TEMPLATE = """\
   `image_generation_mode` 只代表圖片渲染方式；若小題仍是純文字，
   不要只因 `image_generation_mode` 而輸出圖片。
 
+### 題組共用素材圖片規則
+- 若指定條件中的全域 `文本素材類型` 是 `含圖片` 或 `graphs/charts/tables`，
+  必須在題組 JSON 頂層輸出非 null 的 `chart_spec`，作為整個題組共用的主要素材圖片。
+- `subquestions[*].chart_spec` 只能表示特定小題自己的補充圖片；
+  不能取代全域 `文本素材類型` 要求的題組頂層 `chart_spec`。
+- 若同時指定全域視覺素材與各小題視覺素材，可以同時輸出題組頂層 `chart_spec`
+  與對應小題的 `subquestions[*].chart_spec`。
+
 ### 題型說明
 - **選擇題**：四選一；給分代號 2（正確）/ 0（錯誤）
 - **封閉式建構反應題**：唯一正確答案（詞彙、數字或短語）；給分代號 2 / 0
@@ -116,6 +126,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
   "題型": "（所有小題的主要題型，選擇題/封閉式建構反應題/開放式建構反應題）",
   "閱讀歷程": ["（主要閱讀歷程，1–2個）"],
   "文本形式": "（連續文本—說明文 等）",
+  "題目內容類型": "含圖片",
   "subquestions": [
     {{
       "序號": 1,
@@ -141,8 +152,9 @@ SYSTEM_PROMPT_TEMPLATE = """\
 }}
 ```
 
-若題目含非連續文本素材，請加入 `chart_spec`；若素材只屬於特定小題，
-請放在該小題的 `chart_spec`，若整題組共用，才放在題組頂層。
+若題目含非連續文本素材，請加入 `chart_spec`。若全域 `文本素材類型` 是
+`含圖片` 或 `graphs/charts/tables`，必須放在題組頂層 `chart_spec`；
+若素材只屬於特定小題，才額外放在該小題的 `chart_spec`。
 若「各小題配置」指定某小題的文本素材類型為 `含圖片` 或 `graphs/charts/tables`，
 該小題必須輸出非 null 的 `chart_spec`：
 
@@ -293,7 +305,16 @@ def build_user_prompt(
         content_type,
         f"請將題目內容類型視為「{content_type}」，依此設計文本、素材形式與題目，不得偏離此指定類型。",
     )
-    param_instruction_lines.append(f"  - **題目內容類型（{content_type}）補充**：{content_type_instr}")
+    param_instruction_lines.append(
+        f"  - **題目內容類型（{content_type}）補充**：{content_type_instr}"
+    )
+    if content_type in {"含圖片", "graphs/charts/tables"}:
+        param_instruction_lines.append(
+            "  - **題組共用圖片規則**：全域 `文本素材類型` 是 `含圖片` 或 "
+            "`graphs/charts/tables` 時，必須在題組 JSON 頂層輸出非 null 的 "
+            "`chart_spec`；`subquestions[*].chart_spec` 只能作為特定小題補充，"
+            "不能取代全域 `文本素材類型` 要求的題組頂層 `chart_spec`。"
+        )
     param_instructions = (
         "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
         if param_instruction_lines else ""

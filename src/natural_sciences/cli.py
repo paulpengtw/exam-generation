@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -33,6 +34,18 @@ from src.natural_sciences.verifier import verify_question
 from src.renderer import render_image
 
 _GRADES: list[int] = load_grades(load_schemas())
+
+QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
+
+
+def _emit_question_update(
+    callback: QuestionUpdateCallback | None,
+    question: ExamQuestion,
+    phase: str,
+) -> None:
+    if callback is None:
+        return
+    callback(question, phase)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -201,6 +214,7 @@ def generate_one(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    on_question_update: QuestionUpdateCallback | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA Science question set."""
     system_prompt = build_system_prompt()
@@ -228,6 +242,7 @@ def generate_one(
     emit_stage(obs, "generator", "llm_generate", "end")
 
     question = _parse_question(raw_json, question_id, params, config.model_execute)
+    _emit_question_update(on_question_update, question, "draft")
 
     chart_image_path: str | None = None
     if question.chart_spec:
@@ -246,6 +261,7 @@ def generate_one(
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
+            _emit_question_update(on_question_update, question, "image")
 
     if not skip_verify:
         print(f"  Verifying question {question_id}...", file=sys.stderr)
@@ -253,6 +269,7 @@ def generate_one(
         result = verify_question(client, question, chart_image_path=chart_image_path)
         emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
+        _emit_question_update(on_question_update, question, "verified")
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
 
@@ -273,6 +290,7 @@ def generate_with_corrections(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    on_question_update: QuestionUpdateCallback | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     question = generate_one(
@@ -288,6 +306,7 @@ def generate_with_corrections(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        on_question_update=on_question_update,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -318,6 +337,7 @@ def generate_with_corrections(
             client, question, question.verification, chart_image_path=chart_image_path
         )
         emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
+        _emit_question_update(on_question_update, question, "corrected")
 
         new_chart_image_path: str | None = None
         if question.chart_spec and question.chart_spec != prior_chart_spec:
@@ -336,6 +356,7 @@ def generate_with_corrections(
             if rendered:
                 question.圖片 = f"{question_id}.png"
                 new_chart_image_path = rendered
+                _emit_question_update(on_question_update, question, "image")
         elif question.圖片:
             p = config.output_dir / question.圖片
             new_chart_image_path = str(p) if p.exists() else None
@@ -345,6 +366,7 @@ def generate_with_corrections(
             result = verify_question(client, question, chart_image_path=new_chart_image_path)
             emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
+            _emit_question_update(on_question_update, question, "verified")
             status = "PASSED" if result.passed else "FAILED"
             print(f"  Re-verification {status}: {result.details[:100]}", file=sys.stderr)
 

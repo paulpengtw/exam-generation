@@ -30,7 +30,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const { status, jobsAhead, progressLines, results, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
+  const { status, jobsAhead, progressLines, results, displayResults, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
 
   const handleLogout = () => {
     logout();
@@ -106,7 +106,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   };
 
   const showProgress = !(progressLines.length === 0 && status === "idle");
-  const hasResults = results.length > 0;
+  const hasResults = displayResults.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -167,19 +167,21 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         {hasResults && (
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">{t("generate.results")} ({results.length})</h2>
+              <h2 className="text-base font-semibold">{t("generate.results")} ({displayResults.length})</h2>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={handleDownloadAll}
-                  className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                  disabled={results.length === 0}
+                  className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t("generate.btn_download_all")}
                 </button>
                 <button
                   type="button"
                   onClick={handleDownloadAllOdt}
-                  className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                  disabled={results.length === 0}
+                  className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t("generate.btn_download_all_odt")}
                 </button>
@@ -193,8 +195,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
               </div>
             </div>
             <div className="space-y-3">
-              {results.map((q, i) => (
-                <QuestionCard key={q.id ?? `q-${i}`} question={q} />
+              {displayResults.map((item) => (
+                <QuestionCard
+                  key={item.question.id ?? `q-${item.index}`}
+                  question={item.question}
+                  phase={item.phase}
+                  isFinal={item.isFinal}
+                />
               ))}
             </div>
           </section>

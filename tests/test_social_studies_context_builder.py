@@ -39,7 +39,19 @@ def test_graph_chart_table_content_type_requires_visual_spec(tmp_path) -> None:
 
     assert "- **文本素材類型**：graphs/charts/tables" in prompt
     assert "本題組必須包含圖表或表格素材" in prompt
+    assert "題組頂層輸出非 null 的 `chart_spec`" in prompt
     assert params.文本形式.value in {"非連續文本—圖表與圖形", "非連續文本—表格"}
+
+
+def test_global_image_content_type_requires_top_level_visual_spec(tmp_path) -> None:
+    params = sample_params(seed=1, content_type="含圖片")
+
+    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+
+    assert "- **文本素材類型**：含圖片" in prompt
+    assert "全域 `文本素材類型` 是 `含圖片` 或 `graphs/charts/tables`" in prompt
+    assert "必須在題組 JSON 頂層輸出非 null 的 `chart_spec`" in prompt
+    assert "不能取代全域 `文本素材類型` 要求的題組頂層 `chart_spec`" in prompt
 
 
 def test_custom_content_type_is_used_as_effective_type(tmp_path) -> None:

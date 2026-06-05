@@ -89,6 +89,15 @@ export interface ExamQuestion {
   image_base64?: string;
 }
 
+export type DraftPhase = "draft" | "image" | "verified" | "corrected";
+
+export interface GeneratedQuestion {
+  index: number;
+  question: ExamQuestion;
+  phase: DraftPhase;
+  isFinal: boolean;
+}
+
 export type LlmCallEvent =
   | { type: "request"; purpose: string; agent: string; model: string; messages: unknown[]; params?: unknown }
   | { type: "thinking"; purpose: string; agent: string; text: string }
@@ -124,6 +133,7 @@ export interface UseGenerateReturn {
   jobsAhead: number;
   progressLines: string[];
   results: ExamQuestion[];
+  displayResults: GeneratedQuestion[];
   llmCalls: LlmCallEvent[];
   agentLanes: AgentLane[];
   errorMessage: string | null;
@@ -132,6 +142,26 @@ export interface UseGenerateReturn {
 }
 
 class FatalStreamError extends Error {}
+
+function questionKey(question: ExamQuestion, index: number): string {
+  return question.id && question.id.length > 0 ? question.id : `index-${index}`;
+}
+
+function upsertDisplayResult(
+  prev: GeneratedQuestion[],
+  next: GeneratedQuestion,
+): GeneratedQuestion[] {
+  const key = questionKey(next.question, next.index);
+  const existingIndex = prev.findIndex((item) => (
+    questionKey(item.question, item.index) === key || item.index === next.index
+  ));
+  if (existingIndex === -1) {
+    return [...prev, next].sort((a, b) => a.index - b.index);
+  }
+  const updated = [...prev];
+  updated[existingIndex] = next;
+  return updated.sort((a, b) => a.index - b.index);
+}
 
 function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
@@ -230,9 +260,11 @@ export function useGenerate(): UseGenerateReturn {
   const [jobsAhead, setJobsAhead] = useState<number>(0);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [results, setResults] = useState<ExamQuestion[]>([]);
+  const [displayResults, setDisplayResults] = useState<GeneratedQuestion[]>([]);
   const [llmCalls, setLlmCalls] = useState<LlmCallEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const nextFinalIndexRef = useRef(0);
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
@@ -248,9 +280,11 @@ export function useGenerate(): UseGenerateReturn {
     controllerRef.current = null;
     setProgressLines([]);
     setResults([]);
+    setDisplayResults([]);
     setLlmCalls([]);
     setJobsAhead(0);
     setErrorMessage(null);
+    nextFinalIndexRef.current = 0;
     setStatus("idle");
   }, []);
 
@@ -266,9 +300,11 @@ export function useGenerate(): UseGenerateReturn {
     setStatus("generating");
     setProgressLines([]);
     setResults([]);
+    setDisplayResults([]);
     setLlmCalls([]);
     setJobsAhead(0);
     setErrorMessage(null);
+    nextFinalIndexRef.current = 0;
 
     fetchEventSource(url, {
       signal: controller.signal,
@@ -355,10 +391,30 @@ export function useGenerate(): UseGenerateReturn {
           case "pipeline":
             // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
             break;
+          case "question_update": {
+            try {
+              const parsed = JSON.parse(ev.data) as { index: number; phase: DraftPhase; question: ExamQuestion };
+              setDisplayResults((prev) => upsertDisplayResult(prev, {
+                index: parsed.index,
+                question: parsed.question,
+                phase: parsed.phase,
+                isFinal: false,
+              }));
+            } catch { /* ignore malformed draft updates */ }
+            break;
+          }
           case "result":
             try {
               const parsed = JSON.parse(ev.data) as ExamQuestion;
+              const index = nextFinalIndexRef.current;
+              nextFinalIndexRef.current += 1;
               setResults((prev) => [...prev, parsed]);
+              setDisplayResults((prev) => upsertDisplayResult(prev, {
+                index,
+                question: parsed,
+                phase: "verified",
+                isFinal: true,
+              }));
             } catch {
               setStatus("error");
             }
@@ -384,5 +440,16 @@ export function useGenerate(): UseGenerateReturn {
     });
   }, []);
 
-  return { status, jobsAhead, progressLines, results, llmCalls, agentLanes, errorMessage, generate, reset };
+  return {
+    status,
+    jobsAhead,
+    progressLines,
+    results,
+    displayResults,
+    llmCalls,
+    agentLanes,
+    errorMessage,
+    generate,
+    reset,
+  };
 }
