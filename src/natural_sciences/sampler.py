@@ -76,6 +76,10 @@ def sample_params(
     learning_performance: list[str] | None = None,
     content_type: str | None = None,
     seed: int | None = None,
+    sub_question_count: int | None = None,
+    question_word_limit: int | None = None,
+    option_word_limit: int | None = None,
+    subquestion_configs: list | None = None,
 ) -> SampledParams:
     """Sample random PISA Science parameters for a single 題組."""
 
@@ -141,6 +145,45 @@ def sample_params(
                 else []
             )
 
+    from src.natural_sciences.schemas import SubQuestionConfig
+    resolved_configs: list[SubQuestionConfig] = []
+    if subquestion_configs:
+        for cfg in subquestion_configs:
+            if isinstance(cfg, dict):
+                resolved_configs.append(SubQuestionConfig(**cfg))
+            elif isinstance(cfg, SubQuestionConfig):
+                resolved_configs.append(cfg)
+
+    q_type_pool = q_type if q_type is not None else list(QuestionType)
+
+    if sub_question_count is not None:
+        if not 3 <= sub_question_count <= 7:
+            raise ValueError("sub_question_count must be between 3 and 7")
+        resolved_configs = [
+            resolved_configs[i] if i < len(resolved_configs) else SubQuestionConfig()
+            for i in range(sub_question_count)
+        ]
+        blank_count = sum(1 for cfg in resolved_configs if not cfg.question_type)
+        shuffled = list(q_type_pool)
+        rng.shuffle(shuffled)
+        fill_iter = iter(shuffled[i % len(shuffled)] for i in range(blank_count))
+        resolved_configs = [
+            cfg.model_copy(update={"question_type": cfg.question_type or next(fill_iter)})
+            for cfg in resolved_configs
+        ]
+    else:
+        resolved_configs = []
+
+    if resolved_configs:
+        selected_q_type = resolved_configs[0].question_type or selected_q_type
+        resolved_configs = [
+            cfg.model_copy(update={
+                "learning_content": list(cfg.learning_content or selected_lc_pool),
+                "learning_performance": list(cfg.learning_performance or selected_lp_pool),
+            })
+            for cfg in resolved_configs
+        ]
+
     return SampledParams(
         grade=selected_grade,
         情境=selected_context,
@@ -151,4 +194,8 @@ def sample_params(
         題目內容類型=selected_content_type,
         學習內容_pool=selected_lc_pool,
         學習表現_pool=selected_lp_pool,
+        sub_question_count=sub_question_count,
+        question_word_limit=question_word_limit,
+        option_word_limit=option_word_limit,
+        subquestion_configs=resolved_configs,
     )

@@ -61,6 +61,20 @@ class RubricEntry(BaseModel):
     學生作答實例: list[str] = Field(default_factory=list)
 
 
+class SubQuestionConfig(BaseModel):
+    """Per-subquestion generation configuration overrides for natural sciences."""
+
+    question_type: QuestionType | None = None  # type: ignore[valid-type]
+    instruction: str | None = None
+    content_type: str | None = None
+    image_generation_mode: Literal["html", "gpt_image"] | None = None
+    question_word_limit: int | None = None
+    option_word_limit: int | None = None
+    text_word_limit: int | None = None
+    learning_content: list[str] = Field(default_factory=list)
+    learning_performance: list[str] = Field(default_factory=list)
+
+
 class SubQuestion(BaseModel):
     """One subquestion within a PISA Science 題組."""
 
@@ -73,6 +87,7 @@ class SubQuestion(BaseModel):
     學習內容: list[LearningContentRef] = Field(default_factory=list)
     學習表現: list[LearningContentRef] = Field(default_factory=list)
     出題概念: str = ""
+    出題指示: str | None = None
     題型: QuestionType  # type: ignore[valid-type]
     題目: str
     答案: str = ""
@@ -132,3 +147,7 @@ class SampledParams(BaseModel):
     題目內容類型: str = ""
     學習內容_pool: list[str] = Field(default_factory=list)
     學習表現_pool: list[str] = Field(default_factory=list)
+    sub_question_count: int | None = None
+    question_word_limit: int | None = None
+    option_word_limit: int | None = None
+    subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)

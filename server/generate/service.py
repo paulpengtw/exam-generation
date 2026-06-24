@@ -296,6 +296,12 @@ async def generate_question_stream(
                     learning_content=params.learning_content,
                     learning_performance=params.learning_performance,
                     seed=seed,
+                    sub_question_count=params.sub_question_count,
+                    question_word_limit=params.question_word_limit,
+                    option_word_limit=params.option_word_limit,
+                    subquestion_configs=_decode_subquestion_configs(
+                        params.subquestion_configs,
+                    ),
                 )
                 question_id = f"ns_{timestamp}_{i+1:03d}"
                 question = ns_generate_with_corrections(

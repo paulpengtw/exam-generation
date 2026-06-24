@@ -167,7 +167,8 @@ USER_PROMPT_TEMPLATE = """\
 - **題型**：{q_type}
 - **科學能力**：{science_competencies}
 - **題目內容類型**：{content_type}
-{lc_pool_lines}{lp_pool_lines}{param_instructions}{user_materials}
+- **小題數量**：{sub_question_count}
+{subquestion_config_lines}{lc_pool_lines}{lp_pool_lines}{param_instructions}{user_materials}
 ## 參考範例
 
 {few_shot_examples}
@@ -226,6 +227,7 @@ def build_user_prompt(
     params: SampledParams,
     few_shot_dir: Path,
     rng: random.Random | None = None,
+    image_generation_mode: str = "html",
     user_passage: str | None = None,
     user_options: list[str] | None = None,
     user_topic: str | None = None,
@@ -308,6 +310,50 @@ def build_user_prompt(
     else:
         lp_pool_lines = ""
 
+    sq_config_parts: list[str] = []
+    for i, cfg in enumerate(params.subquestion_configs, start=1):
+        cfg_parts = []
+        has_config = any((
+            cfg.question_type, cfg.instruction, cfg.content_type,
+            cfg.image_generation_mode, cfg.question_word_limit,
+            cfg.option_word_limit, cfg.text_word_limit,
+            cfg.learning_content, cfg.learning_performance,
+        ))
+        if cfg.question_type:
+            cfg_parts.append(f"題型={cfg.question_type.value}")
+        if cfg.instruction:
+            cfg_parts.append(f"出題指示={cfg.instruction}")
+        if cfg.learning_content:
+            cfg_parts.append(f"學習內容={','.join(cfg.learning_content)}")
+        if cfg.learning_performance:
+            cfg_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
+        if has_config:
+            cfg_parts.append(f"文本素材類型={cfg.content_type or params.題目內容類型 or '純文字'}")
+            cfg_parts.append(f"圖片生成模式={cfg.image_generation_mode or image_generation_mode}")
+        if cfg.question_word_limit:
+            cfg_parts.append(f"題目字數上限={cfg.question_word_limit}")
+        if cfg.option_word_limit:
+            cfg_parts.append(f"選項字數上限={cfg.option_word_limit}")
+        if cfg.text_word_limit:
+            cfg_parts.append(f"文本字數上限={cfg.text_word_limit}")
+        if cfg_parts:
+            sq_config_parts.append(f"  - 第{i}小題：" + "，".join(cfg_parts))
+            for code in cfg.learning_content:
+                if code in _LC_INSTRUCTIONS:
+                    sq_config_parts.append(f"    - {code}：{_LC_INSTRUCTIONS[code]}")
+            for code in cfg.learning_performance:
+                if code in _LP_INSTRUCTIONS:
+                    sq_config_parts.append(f"    - {code}：{_LP_INSTRUCTIONS[code]}")
+    if not sq_config_parts:
+        if params.question_word_limit:
+            sq_config_parts.append(f"  - 每道小題題目字數上限：{params.question_word_limit} 字")
+        if params.option_word_limit:
+            sq_config_parts.append(f"  - 每個選項字數上限：{params.option_word_limit} 字（限選擇題）")
+    subquestion_config_lines = (
+        "\n## 各小題配置\n\n" + "\n".join(sq_config_parts) + "\n"
+        if sq_config_parts else ""
+    )
+
     user_materials_parts = []
     if topic_override:
         user_materials_parts.append(
@@ -352,6 +398,11 @@ def build_user_prompt(
         q_type=params.題型.value,
         science_competencies=science_competencies,
         content_type=content_type,
+        sub_question_count=(
+            str(params.sub_question_count)
+            if params.sub_question_count else "3–7（由命題教師自行決定）"
+        ),
+        subquestion_config_lines=subquestion_config_lines,
         lc_pool_lines=lc_pool_lines,
         lp_pool_lines=lp_pool_lines,
         param_instructions=param_instructions,

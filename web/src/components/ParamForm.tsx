@@ -359,7 +359,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         : undefined;
     if (isCurriculumSubject && !effectiveContentType) return;
     const effectiveSubquestionConfigs =
-      subject === "social_studies" && subQuestionCount !== ""
+      (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== ""
         ? subquestionConfigs.slice(0, subQuestionCount).map((cfg) => ({
             question_type: cfg.question_type || undefined,
             instruction: cfg.instruction?.trim() || undefined,
@@ -376,7 +376,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.learning_content?.length || c.learning_performance?.length,
     );
     const shouldSendSubquestionConfigs =
-      subject === "social_studies" && subQuestionCount !== "" && (
+      (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== "" && (
         hasSubquestionConfig || effectiveSubquestionConfigs.length > 0
       );
 
@@ -439,7 +439,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           : undefined,
       learning_content:
         finalLc,
-      sub_question_count: subject === "social_studies" && subQuestionCount !== "" ? subQuestionCount : undefined,
+      sub_question_count: (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== "" ? subQuestionCount : undefined,
       subquestion_configs:
         shouldSendSubquestionConfigs
           ? JSON.stringify(effectiveSubquestionConfigs)
@@ -968,7 +968,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         />
       </div>
 
-      {subject === "social_studies" && (
+      {(subject === "social_studies" || subject === "natural_sciences") && (
         <div className="space-y-4 rounded-lg border border-gray-200 p-4">
           <h3 className="text-sm font-semibold text-gray-700">子題設定</h3>
           <div className="max-w-40">
