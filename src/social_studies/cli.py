@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -13,7 +14,12 @@ from src.config import Config
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
-from src.social_studies.context_builder import build_system_prompt, build_user_prompt
+from src.social_studies.context_builder import (
+    build_subquestion_prompt,
+    build_system_prompt,
+    build_text_generation_prompt,
+    build_user_prompt,
+)
 from src.social_studies.corrector import correct_question
 from src.social_studies.sampler import sample_params
 from src.social_studies.schema_loader import load_grades, load_schemas
@@ -118,8 +124,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
-    gen.add_argument("--max-retries", type=int, default=None,
-                     help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)")
+    gen.add_argument(
+        "--max-retries",
+        type=int,
+        default=None,
+        help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)",
+    )
     gen.add_argument(
         "--image-generation-mode",
         choices=["html", "gpt_image"],
@@ -285,6 +295,111 @@ def _parse_image_spec(raw_spec: object) -> ImageSpec | None:
             return None
 
 
+def _parse_text_result(
+    raw: dict,
+    question_id: str,
+    params: SampledParams,
+    model: str,
+) -> ExamQuestion:
+    """Parse Phase A LLM output into a partial ExamQuestion (no subquestions yet)."""
+    return ExamQuestion(
+        id=question_id,
+        核心問題=raw.get("核心問題", ""),
+        文本=raw.get("文本", ""),
+        取材來源=raw.get("取材來源", []),
+        subquestions=[],
+        情境=[c.value for c in params.情境],
+        題型種類=params.題型種類.value,
+        題型=params.題型[0].value if params.題型 else "選擇題",
+        閱讀歷程=[p.value for p in params.閱讀歷程],
+        文本形式=params.文本形式.value,
+        題目內容類型=params.題目內容類型,
+        題目=raw.get("題目", []),
+        正確解題分析=raw.get("正確解題分析", []),
+        chart_spec=_parse_image_spec(raw.get("image_spec") or raw.get("chart_spec")),
+        metadata=QuestionMetadata(grade=params.grade, model=model, seed=None),
+    )
+
+
+def _parse_subquestion_result(
+    raw: dict,
+    slot_index: int,
+    question_id: str,
+    params: SampledParams,
+) -> SubQuestion:
+    """Parse Phase B LLM output for one subquestion slot."""
+    i = slot_index + 1  # 1-based 序號
+    lc_refs = [
+        LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
+        for r in raw.get("學習內容", [])
+        if isinstance(r, dict) and r.get("編碼")
+    ]
+    lp_refs = [
+        LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
+        for r in raw.get("學習表現", [])
+        if isinstance(r, dict) and r.get("編碼")
+    ]
+    rubric = [
+        RubricEntry(
+            code=str(r.get("code", "")),
+            規準說明=r.get("規準說明", ""),
+            學生作答實例=r.get("學生作答實例", []),
+        )
+        for r in raw.get("評分規準", [])
+        if isinstance(r, dict)
+    ]
+    cfg = (
+        params.subquestion_configs[slot_index]
+        if slot_index < len(params.subquestion_configs) else None
+    )
+    return SubQuestion(
+        id=raw.get("id", f"{question_id}-{raw.get('序號', i):02d}"),
+        序號=raw.get("序號", i),
+        年級=raw.get("年級", params.grade),
+        科目=raw.get("科目", [params.科目.value]),
+        核心素養=raw.get("核心素養", []),
+        學習內容=lc_refs,
+        學習表現=lp_refs,
+        出題概念=raw.get("出題概念", ""),
+        出題指示=(cfg.instruction if cfg and cfg.instruction else raw.get("出題指示")),
+        題型=raw.get("題型", cfg.question_type.value if cfg and cfg.question_type else "選擇題"),
+        題目=raw.get("題目", ""),
+        答案=raw.get("答案", ""),
+        答案解析=raw.get("答案解析", ""),
+        評分規準=rubric,
+        題目內容類型=raw.get("題目內容類型"),
+        image_generation_mode=raw.get("image_generation_mode"),
+        圖片=raw.get("圖片"),
+        chart_spec=_parse_image_spec(raw.get("image_spec") or raw.get("chart_spec")),
+    )
+
+
+_COHERENCE_CHECK_SYSTEM = """\
+你是一位108課綱社會領域題組審查教師。請檢查以下題組的各小題是否有跨題洩漏答案或重複考查同一知識點的問題。
+只輸出 JSON：{"passed": true} 或 {"passed": false, "issue": "一句話說明問題"}
+"""
+
+
+def _check_subquestion_coherence(
+    client: LLMClient,
+    passage: str,
+    subquestions: list[SubQuestion],
+) -> str | None:
+    """Return an issue description string if cross-slot coherence fails, else None."""
+    sq_summary = "\n".join(
+        f"第{sq.序號}小題（{sq.題型}）題目：{sq.題目[:200]}　答案：{sq.答案[:80]}"
+        for sq in subquestions
+    )
+    user_prompt = f"文本摘要：{passage[:500]}\n\n各小題：\n{sq_summary}"
+    try:
+        raw = client.generate_json(_COHERENCE_CHECK_SYSTEM, user_prompt, purpose="verify")
+        if not raw.get("passed", True):
+            return raw.get("issue", "coherence check failed")
+    except Exception as exc:
+        print(f"  Warning: coherence check failed: {exc}", file=sys.stderr)
+    return None
+
+
 def _ensure_top_level_visual_spec(
     question: ExamQuestion,
     params: SampledParams,
@@ -372,33 +487,99 @@ def generate_one(
     on_question_update: QuestionUpdateCallback | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
-    system_prompt = build_system_prompt()
-    user_prompt, few_shot_images = build_user_prompt(
-        params,
-        config.data_dir / "social_studies" / "few_shot",
-        image_generation_mode=image_generation_mode,
-        user_passage=user_passage,
-        user_options=user_options,
-        user_topic=user_topic,
-        user_core_question=user_core_question,
-    )
-
+    # dry_run: fall back to legacy single-prompt preview
     if dry_run:
+        system_prompt = build_system_prompt()
+        user_prompt, few_shot_images = build_user_prompt(
+            params,
+            config.data_dir / "social_studies" / "few_shot",
+            image_generation_mode=image_generation_mode,
+            user_passage=user_passage,
+            user_options=user_options,
+            user_topic=user_topic,
+            user_core_question=user_core_question,
+        )
         img_note = f" ({len(few_shot_images)} few-shot images)" if few_shot_images else ""
         return (
             f"=== SYSTEM PROMPT ({len(system_prompt)} chars) ===\n{system_prompt[:2000]}...\n\n"
             f"=== USER PROMPT ({len(user_prompt)} chars{img_note}) ===\n{user_prompt}"
         )
 
-    obs = client.get_observer() if client else None
+    obs = client.get_observer() if (client and hasattr(client, "get_observer")) else None
 
-    print(f"  Generating question {question_id}...", file=sys.stderr)
-    emit_stage(obs, "generator", "llm_generate", "start")
-    raw_json = client.generate_json(system_prompt, user_prompt, images=few_shot_images or None)
-    emit_stage(obs, "generator", "llm_generate", "end")
+    # --- Phase 1: Generate 文本 + top-level metadata ---
+    system_a, user_a = build_text_generation_prompt(
+        params,
+        user_passage=user_passage,
+        user_topic=user_topic,
+        user_core_question=user_core_question,
+    )
+    print(f"  [Phase 1] Generating text for {question_id}...", file=sys.stderr)
+    emit_stage(obs, "generator", "llm_generate_text", "start")
+    raw_text = client.generate_json(system_a, user_a, purpose="generate")
+    emit_stage(obs, "generator", "llm_generate_text", "end")
 
-    question = _parse_question(raw_json, question_id, params, config.model_execute)
+    question = _parse_text_result(raw_text, question_id, params, config.model_execute)
     _emit_question_update(on_question_update, question, "draft")
+
+    passage = question.文本
+
+    # --- Phase 2: Generate subquestions in parallel ---
+    n_slots = len(params.subquestion_configs) or 3
+    from src.social_studies.schemas import SubQuestionConfig
+
+    all_slot_configs = list(params.subquestion_configs) + [
+        SubQuestionConfig() for _ in range(max(0, n_slots - len(params.subquestion_configs)))
+    ]
+    all_slot_configs = all_slot_configs[:n_slots]
+
+    def _generate_slot(slot_index: int) -> SubQuestion:
+        slot_client = LLMClient(config)
+        if hasattr(slot_client, "set_observer") and hasattr(client, "get_observer"):
+            slot_client.set_observer(client.get_observer())
+        sys_b, usr_b = build_subquestion_prompt(
+            params,
+            slot_index,
+            passage,
+            all_slot_configs,
+        )
+        raw_sq = slot_client.generate_json(sys_b, usr_b, purpose="generate")
+        return _parse_subquestion_result(raw_sq, slot_index, question_id, params)
+
+    print(
+        f"  [Phase 2] Generating {n_slots} subquestions in parallel for {question_id}...",
+        file=sys.stderr,
+    )
+    emit_stage(obs, "generator", "llm_generate_subquestions", "start")
+    max_workers = min(n_slots, 5)
+    subquestions: list[SubQuestion | None] = [None] * n_slots
+    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="sq_gen") as pool:
+        futures = {pool.submit(_generate_slot, i): i for i in range(n_slots)}
+        for future in as_completed(futures):
+            slot_index = futures[future]
+            subquestions[slot_index] = future.result()
+    emit_stage(obs, "generator", "llm_generate_subquestions", "end")
+
+    question.subquestions = [sq for sq in subquestions if sq is not None]
+    _emit_question_update(on_question_update, question, "draft")
+
+    # --- Phase 3: Coherence check -> image repair -> render -> verify ---
+    if not skip_verify and client is not None:
+        coherence_issue = _check_subquestion_coherence(client, passage, question.subquestions)
+        if coherence_issue:
+            print(f"  Coherence issue: {coherence_issue}", file=sys.stderr)
+            from src.social_studies.schemas import VerificationResult
+
+            question.verification = VerificationResult(
+                passed=False,
+                answer_match=False,
+                details=f"Coherence check failed: {coherence_issue}",
+                my_answer="",
+                provided_answer="",
+            )
+            _emit_question_update(on_question_update, question, "verified")
+            return question
+
     prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
     _ensure_top_level_visual_spec(question, params, client)
     if question.chart_spec != prior_chart_spec:
@@ -576,7 +757,10 @@ def main(argv: list[str] | None = None) -> None:
             html_renderer.start()
             print("  Playwright browser started.", file=sys.stderr)
         except Exception as e:
-            print(f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.", file=sys.stderr)
+            print(
+                f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.",
+                file=sys.stderr,
+            )
 
     context_override = (
         [_resolve_enum(v, QuestionContext) for v in args.context]
@@ -585,7 +769,10 @@ def main(argv: list[str] | None = None) -> None:
     set_type_override = _resolve_enum(args.set_type, QuestionSetType)
     q_type_override = [_resolve_enum(v, QuestionType) for v in args.q_type] if args.q_type else None
     subject_override = [QuestionSubject(v) for v in args.subject] if args.subject else None
-    core_competency_override = [CoreCompetency(v) for v in args.core_competency] if args.core_competency else None
+    core_competency_override = (
+        [CoreCompetency(v) for v in args.core_competency]
+        if args.core_competency else None
+    )
     learning_content_override = args.learning_content if args.learning_content else None
     learning_performance_override = args.learning_performance if args.learning_performance else None
     content_type_override = args.content_type if args.content_type else None
@@ -615,7 +802,8 @@ def main(argv: list[str] | None = None) -> None:
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
                   f"科目={params.科目.value}, "
                   f"情境={'、'.join(c.value for c in params.情境)}, "
-                  f"題型={'、'.join(t.value for t in params.題型)}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
+                  f"題型={'、'.join(t.value for t in params.題型)}, "
+                  f"閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
                   f"文本形式={params.文本形式.value}, "
                   f"題目內容類型={params.題目內容類型}, "
                   f"核心素養={'、'.join(c.value for c in params.核心素養)}", file=sys.stderr)
