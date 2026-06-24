@@ -48,7 +48,9 @@ function LaneCard({ lane }: LaneCardProps) {
     }
   }, [lane.streamingThinking, lane.streamingContent]);
 
-  const agentLabel = t(`agent.${lane.agent}` as Parameters<typeof t>[0]) || lane.agent;
+  const [baseAgent, instanceIdx] = lane.agent.split("#");
+  const baseAgentLabel = t(`agent.${baseAgent}` as Parameters<typeof t>[0]) || baseAgent;
+  const agentLabel = instanceIdx ? `${baseAgentLabel} #${instanceIdx}` : baseAgentLabel;
   const stageLabel = lane.currentStage
     ? (t(`stage.${lane.currentStage}` as Parameters<typeof t>[0]) || lane.currentStage)
     : null;

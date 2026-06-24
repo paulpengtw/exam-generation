@@ -245,14 +245,22 @@ function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
     }
   }
 
-  const sorted: AgentLane[] = [];
-  for (const agent of AGENT_ORDER) {
-    if (lanesMap.has(agent)) sorted.push(lanesMap.get(agent)!);
-  }
-  for (const [agent, lane] of lanesMap.entries()) {
-    if (!AGENT_ORDER.includes(agent)) sorted.push(lane);
-  }
-  return sorted;
+  const laneOrder = (agent: string): [number, number] => {
+    if (agent === "generator") return [0, 0];
+    if (agent.startsWith("sub_generator#")) {
+      const idx = Number(agent.split("#")[1]);
+      return [1, Number.isFinite(idx) ? idx : Number.MAX_SAFE_INTEGER];
+    }
+    const orderIndex = AGENT_ORDER.indexOf(agent);
+    if (orderIndex !== -1) return [2, orderIndex];
+    return [3, 0];
+  };
+
+  return Array.from(lanesMap.values()).sort((a, b) => {
+    const [aGroup, aIndex] = laneOrder(a.agent);
+    const [bGroup, bIndex] = laneOrder(b.agent);
+    return aGroup - bGroup || aIndex - bIndex;
+  });
 }
 
 export function useGenerate(): UseGenerateReturn {

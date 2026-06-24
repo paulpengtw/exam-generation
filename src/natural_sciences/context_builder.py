@@ -410,3 +410,288 @@ def build_user_prompt(
         few_shot_examples=few_shot_text,
     )
     return text, all_image_paths
+
+
+_TEXT_OUTPUT_FORMAT_BLOCK = """\
+## 輸出格式
+你必須輸出合法 JSON 物件，只包含以下欄位：
+
+{{
+  "核心問題": "本題組的核心問題",
+  "文本": "完整科學情境素材",
+  "取材來源": ["來源一"],
+  "subquestions": [
+    {{
+      "序號": 1,
+      "題型": "Simple multiple-choice",
+      "出題概念": "一句話說明此小題要評量的能力"
+    }}
+  ]
+}}
+
+`subquestions` 陣列為各小題的出題規劃，每筆只需序號、題型與一句出題概念說明；
+詳細題目與答案將由後續子題產生器負責。請只輸出 JSON，不要輸出其他文字。
+"""
+
+_FULL_OUTPUT_FORMAT_BLOCK = """\
+## 輸出格式
+你必須輸出合法 JSON 物件，格式如下：
+
+```json
+{{
+  "核心問題": "本題組的核心問題",
+  "文本": "完整科學情境素材",
+  "取材來源": ["來源一", "來源二"],
+  "情境": ["Personal"],
+  "情境子類別": "Maintenance of health",
+  "題型種類": "題組題",
+  "題型": "Simple multiple-choice",
+  "科學能力": ["能力一：以科學的角度解釋現象"],
+  "題目內容類型": "純文字",
+  "subquestions": [
+    {{
+      "序號": 1,
+      "年級": 8,
+      "科目": ["自然科學"],
+      "科學能力": ["能力一：以科學的角度解釋現象"],
+      "學習內容": [{{"編碼": "Ka-Ⅳ-1", "說明": "說明文字"}}],
+      "學習表現": [{{"編碼": "tr-Ⅳ-1", "說明": "說明文字"}}],
+      "出題概念": "評量學生能否……",
+      "題型": "Simple multiple-choice",
+      "題目": "問題一……",
+      "答案": "A",
+      "答案解析": "說明正答依據",
+      "評分規準": []
+    }}
+  ],
+  "題目": ["文本素材", "問題一……"],
+  "正確解題分析": ["問題一答案與解析"],
+  "chart_spec": {{...}}
+}}
+```
+
+純文字題目不需 `chart_spec`。請只輸出 JSON，不要輸出其他文字。
+"""
+
+TEXT_SYSTEM_PROMPT_TEMPLATE = SYSTEM_PROMPT_TEMPLATE.replace(
+    _FULL_OUTPUT_FORMAT_BLOCK,
+    _TEXT_OUTPUT_FORMAT_BLOCK,
+)
+
+TEXT_USER_PROMPT_TEMPLATE = USER_PROMPT_TEMPLATE.replace(
+    """\
+6. `題目` 陣列：第一個元素放文本素材，其後每個元素放一道小題完整文字。
+7. `正確解題分析` 陣列：每個元素對應一道小題答案與說明。
+8. 只輸出 JSON 格式的結果。
+""",
+    """\
+6. `subquestions` 陣列中每筆只需提供 `序號`、`題型` 與 `出題概念`；不要輸出題目文字、答案或評分規準。
+7. 只輸出 JSON 格式的結果。
+""",
+)
+
+
+def build_text_system_prompt(
+    grades: list[int] | None = None,
+    learning_stage: str | None = None,
+    content_text: str | None = None,
+    performance_text: str | None = None,
+) -> str:
+    g = grades if grades is not None else _GRADES
+    stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
+    grade_names = "、".join(f"{x}年級" for x in g)
+    c_text = content_text if content_text is not None else _CONTENT_TEXT
+    p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
+    curriculum_section = _build_curriculum_section(c_text, p_text)
+    return TEXT_SYSTEM_PROMPT_TEMPLATE.format(
+        learning_stage=stage,
+        grade_names=grade_names,
+        curriculum_section=curriculum_section,
+    )
+
+
+def build_text_user_prompt(
+    params: SampledParams,
+    few_shot_dir: Path,
+    rng: random.Random | None = None,
+    image_generation_mode: str = "html",
+    user_passage: str | None = None,
+    user_options: list[str] | None = None,
+    user_topic: str | None = None,
+    user_core_question: str | None = None,
+) -> tuple[str, list[Path]]:
+    text, image_paths = build_user_prompt(
+        params=params,
+        few_shot_dir=few_shot_dir,
+        rng=rng,
+        image_generation_mode=image_generation_mode,
+        user_passage=user_passage,
+        user_options=user_options,
+        user_topic=user_topic,
+        user_core_question=user_core_question,
+    )
+    text = text.replace(
+        """\
+6. `題目` 陣列：第一個元素放文本素材，其後每個元素放一道小題完整文字。
+7. `正確解題分析` 陣列：每個元素對應一道小題答案與說明。
+8. 只輸出 JSON 格式的結果。
+""",
+        """\
+6. `subquestions` 陣列中每筆只需提供 `序號`、`題型` 與 `出題概念`；不要輸出題目文字、答案或評分規準。
+7. 只輸出 JSON 格式的結果。
+""",
+    )
+    return text, image_paths
+
+
+def build_subquestion_system_prompt(
+    learning_stage: str,
+    content_text: str | None = None,
+    performance_text: str | None = None,
+) -> str:
+    c_text = content_text if content_text is not None else _CONTENT_TEXT
+    p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
+    curriculum_section = _build_curriculum_section(c_text, p_text)
+    return f"""\
+你是一位108課綱自然科學領域子題命題教師。你會收到一份共用科學文本，以及一道小題的出題規劃；請只根據該文本與規劃撰寫 exactly one SubQuestion JSON。
+
+目前學習階段：{learning_stage}
+
+輸出必須是合法 JSON 物件，格式如下：
+
+```json
+{{
+  "序號": 1,
+  "年級": 8,
+  "科目": ["自然科學"],
+  "科學能力": ["能力一：以科學的角度解釋現象"],
+  "核心素養": [],
+  "學習內容": [{{"編碼": "Ka-Ⅳ-1", "說明": "說明文字"}}],
+  "學習表現": [{{"編碼": "tr-Ⅳ-1", "說明": "說明文字"}}],
+  "出題概念": "評量學生能否……",
+  "題型": "Simple multiple-choice",
+  "題目": "完整題目文字（含選項）",
+  "答案": "A",
+  "答案解析": "說明正答依據",
+  "評分規準": []
+}}
+```
+
+## 評分規準
+- Simple multiple-choice：正確代號 2，錯誤代號 0。
+- Complex multiple-choice：通常採整組計分；全對代號 2，部分正確可給 1，錯誤代號 0，未作答 0X。
+- Constructed response：必須附 `評分規準`，使用 2 / 1 / 0 / 0X，並提供學生作答實例。
+
+## 課程綱要參考
+
+{curriculum_section}
+
+請只輸出 JSON，不要輸出其他文字。
+"""
+
+
+def build_subquestion_user_prompt(
+    核心問題: str,
+    文本: str,
+    取材來源: list[str],
+    sq_plan: dict,
+    params: SampledParams,
+    few_shot_dir: Path,
+    rng: random.Random | None = None,
+    image_generation_mode: str = "html",
+) -> tuple[str, list[Path]]:
+    del image_generation_mode
+    if rng is None:
+        rng = random.Random()
+
+    q_type = sq_plan["題型"]
+    example_groups = load_few_shot_example_groups(few_shot_dir, q_type=q_type)
+    all_image_paths: list[Path] = []
+    if example_groups:
+        selected_group = rng.choice(example_groups)
+        ex = rng.choice(selected_group)
+        q = ex.get("question", ex)
+        if isinstance(q, dict) and q.get("subquestions"):
+            matching = [
+                sq for sq in q["subquestions"]
+                if isinstance(sq, dict) and sq.get("題型") == q_type
+            ]
+            q = matching[0] if matching else q["subquestions"][0]
+        ex_images: list[dict] = ex.get("images", [])
+        img_notes = ""
+        if ex_images:
+            for j, img in enumerate(ex_images, 1):
+                caption = img.get("caption", "")
+                label = f"圖{j}" + (f"（{caption}）" if caption else "")
+                img_notes += f"\n<!-- {label} 附於此範例後 -->"
+                all_image_paths.append(Path(img["path"]))
+        few_shot_text = (
+            f"### 範例 1：{ex.get('description', '')}\n"
+            f"```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```{img_notes}"
+        )
+    else:
+        few_shot_text = "（目前暫無範例，請根據指定條件自行設計。）"
+
+    science_competencies = "、".join(c.value for c in params.科學能力)
+
+    if params.學習內容_pool:
+        lc_codes = "、".join(params.學習內容_pool)
+        lc_detail_lines = "\n".join(
+            f"  - {c}：{_LC_INSTRUCTIONS[c]}" for c in params.學習內容_pool if c in _LC_INSTRUCTIONS
+        )
+        lc_pool_lines = f"- **指定學習內容**：{lc_codes}\n{lc_detail_lines}\n"
+    else:
+        lc_pool_lines = ""
+
+    if params.學習表現_pool:
+        lp_codes = "、".join(params.學習表現_pool)
+        lp_detail_lines = "\n".join(
+            f"  - {c}：{_LP_INSTRUCTIONS[c]}" for c in params.學習表現_pool if c in _LP_INSTRUCTIONS
+        )
+        lp_pool_lines = f"- **指定學習表現**：{lp_codes}\n{lp_detail_lines}\n"
+    else:
+        lp_pool_lines = ""
+
+    source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
+    return f"""\
+請根據以下共用素材與小題規劃，生成一道 PISA Science + 108課綱自然科學小題：
+
+## 共用素材
+
+- **核心問題**：{核心問題}
+- **文本**：
+
+```
+{文本}
+```
+
+- **取材來源**：
+
+```json
+{source_text}
+```
+
+## 本小題規劃
+
+- **序號**：{sq_plan.get("序號", 1)}
+- **題型**：{q_type}
+- **出題概念**：{sq_plan.get("出題概念", "")}
+
+## 指定條件
+
+- **年級重心**：{params.grade}年級（{_LEARNING_STAGE}）
+- **情境**：{"、".join(c.value for c in params.情境)}
+- **情境子類別**：{params.情境子類別.value}
+- **科學能力**：{science_competencies}
+{lc_pool_lines}{lp_pool_lines}
+## 參考範例
+
+{few_shot_text}
+
+## 重要提醒
+
+1. 只撰寫序號 {sq_plan.get("序號", 1)} 的一道小題。
+2. 小題必須能依據共用文本作答，不要引入無法由文本支持的新情境。
+3. `學習內容` / `學習表現` 應優先使用上述指定代號；如需引入其他代號，仍以系統提供的課綱資料為限。
+4. 請只輸出一道小題的 JSON，不要輸出其他文字。
+""", all_image_paths

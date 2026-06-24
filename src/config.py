@@ -22,6 +22,7 @@ class Config:
     data_dir: Path = field(default_factory=lambda: Path("./data"))
     rate_limit_delay: float = 0.0  # seconds between API calls
     max_retries: int = 3  # retries when verification fails (0 = no retry)
+    subgen_max_concurrency: int = 6
     llm_stream: bool = True  # use streaming API when observer is set
     log_truncate: int | None = None  # max chars per message in llm_request events; None = no limit
 
@@ -45,6 +46,7 @@ class Config:
             data_dir=Path(os.environ.get("DATA_DIR", "./data")),
             rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),
             max_retries=int(os.environ.get("LLM_MAX_RETRIES", "3")),
+            subgen_max_concurrency=int(os.environ.get("SUBGEN_MAX_CONCURRENCY", "6")),
             llm_stream=os.environ.get("LLM_STREAM", "1") not in ("0", "false", "False"),
             log_truncate=int(os.environ["LLM_LOG_TRUNCATE"]) if os.environ.get("LLM_LOG_TRUNCATE") else None,
         )

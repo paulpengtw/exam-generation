@@ -110,7 +110,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "progress.llm_trace_calls": "calls",
     "progress.llm_trace_payload": "Payload",
 
-    "agent.generator": "Generator",
+    "agent.generator": "Text Generator",
+    "agent.sub_generator": "Sub-question Generator",
     "agent.verifier": "Verifier",
     "agent.corrector": "Corrector",
     "agent.image_agent": "Image Agent",
@@ -270,7 +271,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "progress.llm_trace_calls": "次呼叫",
     "progress.llm_trace_payload": "請求內容",
 
-    "agent.generator": "題目生成器",
+    "agent.generator": "文本生成器",
+    "agent.sub_generator": "子題產生器",
     "agent.verifier": "答案驗證器",
     "agent.corrector": "修正器",
     "agent.image_agent": "圖片生成器",

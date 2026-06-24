@@ -199,11 +199,13 @@ class LLMClient:
         messages: list[dict],
         model: str,
         purpose: str,
+        agent_override: str | None = None,
     ) -> str:
         """Stream via Anthropic SDK, emitting deltas to observer. Returns assembled content."""
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         usage: dict = {}
+        agent = agent_override if agent_override is not None else _PURPOSE_TO_AGENT.get(purpose, purpose)
 
         system_param = (
             [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
@@ -226,7 +228,7 @@ class LLMClient:
                         self._emit({
                             "type": "llm_content_delta",
                             "purpose": purpose,
-                            "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
+                            "agent": agent,
                             "text": text,
                         })
                     elif dtype == "thinking_delta":
@@ -235,7 +237,7 @@ class LLMClient:
                         self._emit({
                             "type": "llm_reasoning_delta",
                             "purpose": purpose,
-                            "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
+                            "agent": agent,
                             "text": thinking,
                         })
 
@@ -252,7 +254,7 @@ class LLMClient:
         self._emit({
             "type": "llm_response",
             "purpose": purpose,
-            "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
+            "agent": agent,
             "model": model,
             "content": content,
             "reasoning": "".join(reasoning_parts) or None,
@@ -265,8 +267,10 @@ class LLMClient:
         messages: list[dict],
         model: str,
         purpose: str,
+        agent_override: str | None = None,
     ) -> str:
         """Emit request event, call Anthropic API (streaming or not), emit response event."""
+        agent = agent_override if agent_override is not None else _PURPOSE_TO_AGENT.get(purpose, purpose)
         # Separate system message from user/assistant turns
         system = ""
         user_messages_raw: list[dict] = []
@@ -280,7 +284,7 @@ class LLMClient:
             self._emit({
                 "type": "llm_request",
                 "purpose": purpose,
-                "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
+                "agent": agent,
                 "model": model,
                 "messages": self._summarize_for_observer(messages),
                 "params": {"max_tokens": 8192, "temperature": 0.7},
@@ -293,7 +297,7 @@ class LLMClient:
         ]
 
         if self._observer and self.config.llm_stream:
-            return self._generate_streaming(system, anthropic_messages, model, purpose)
+            return self._generate_streaming(system, anthropic_messages, model, purpose, agent_override)
 
         system_param = (
             [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
@@ -312,7 +316,7 @@ class LLMClient:
             self._emit({
                 "type": "llm_response",
                 "purpose": purpose,
-                "agent": _PURPOSE_TO_AGENT.get(purpose, purpose),
+                "agent": agent,
                 "model": model,
                 "content": content,
                 "reasoning": None,
@@ -392,12 +396,33 @@ class LLMClient:
         images: list[Path] | None = None,
         purpose: str = "generate",
         max_parse_retries: int = 2,
+        agent_override: str | None = None,
     ) -> dict:
         """Call the execution model and parse the response as JSON."""
         last_err: Exception | None = None
         current_user = user
         for attempt in range(max_parse_retries):
-            raw = self.generate(system, current_user, model, images=images, purpose=purpose)
+            if self.config.rate_limit_delay > 0:
+                time.sleep(self.config.rate_limit_delay)
+            call_model = model or self.config.model_execute
+
+            if images:
+                user_content: list[dict] = [{"type": "text", "text": current_user}]
+                for img_path in images:
+                    ext = Path(img_path).suffix.lower().lstrip(".")
+                    mime = "jpeg" if ext in ("jpg", "jpeg") else ext or "png"
+                    b64 = base64.b64encode(Path(img_path).read_bytes()).decode("utf-8")
+                    user_content.append(
+                        {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{b64}"}}
+                    )
+            else:
+                user_content = current_user  # type: ignore[assignment]
+
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ]
+            raw = self._call(messages, call_model, purpose, agent_override)
             try:
                 return extract_json(raw)
             except (ValueError, json.JSONDecodeError) as e:

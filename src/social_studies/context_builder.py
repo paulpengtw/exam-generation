@@ -825,3 +825,250 @@ def build_subquestion_prompt(
         slot_instruction_line=slot_instruction_line,
     )
     return system_prompt, user_prompt
+
+
+def build_text_system_prompt(
+    grades: list[int] | None = None,
+    learning_stage: str | None = None,
+    content_text: str | None = None,
+    performance_text: str | None = None,
+) -> str:
+    prompt = build_system_prompt(
+        grades=grades,
+        learning_stage=learning_stage,
+        content_text=content_text,
+        performance_text=performance_text,
+    )
+    prompt_intro = prompt.split("## 輸出格式", 1)[0].rstrip()
+    return prompt_intro + """
+
+## 輸出格式
+
+你必須輸出一個合法的 JSON 物件，格式如下：
+
+```json
+{
+  "核心問題": "本題組的核心問題",
+  "文本": "完整閱讀素材",
+  "取材來源": ["來源一"],
+  "subquestions": [
+    {
+      "序號": 1,
+      "題型": "選擇題",
+      "出題概念": "一句話說明此小題要評量的能力"
+    }
+  ]
+}
+```
+
+`subquestions` 陣列為各小題的出題規劃，每筆只需序號、題型與一句出題概念說明；詳細題目與答案將由後續子題產生器負責。請只輸出 JSON，不要輸出其他文字。
+"""
+
+
+def build_text_user_prompt(
+    params: SampledParams,
+    few_shot_dir: Path,
+    rng: random.Random | None = None,
+    image_generation_mode: str = "html",
+    user_passage: str | None = None,
+    user_options: list[str] | None = None,
+    user_topic: str | None = None,
+    user_core_question: str | None = None,
+) -> tuple[str, list[Path]]:
+    text, image_paths = build_user_prompt(
+        params=params,
+        few_shot_dir=few_shot_dir,
+        rng=rng,
+        image_generation_mode=image_generation_mode,
+        user_passage=user_passage,
+        user_options=user_options,
+        user_topic=user_topic,
+        user_core_question=user_core_question,
+    )
+    text = text.replace(
+        """\
+6. 評分代號請使用：2（滿分）/ 1（部分得分，限開放式）/ 0（零分）/ 0X（未作答）。
+7. `題目` 陣列（舊版格式）：第一個元素放文本素材，其後每個元素放一道小題完整文字。
+8. `正確解題分析` 陣列（舊版格式）：每個元素對應一道小題的答案與說明。
+9. 只輸出 JSON 格式的結果。
+""",
+        """\
+6. `subquestions` 陣列中每筆只需提供 `序號`、`題型` 與 `出題概念`；不要輸出題目文字、答案或評分規準。
+7. 只輸出 JSON 格式的結果。
+""",
+    )
+    return text, image_paths
+
+
+def build_subquestion_system_prompt(
+    learning_stage: str,
+    content_text: str | None = None,
+    performance_text: str | None = None,
+) -> str:
+    c_text = content_text if content_text is not None else _CONTENT_TEXT
+    p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
+    curriculum_section = _build_curriculum_section(c_text, p_text, _PERFORMANCE_INTRO)
+    sc = stage_code_for(_CC_DATA, learning_stage)
+    return f"""\
+你是一位108課綱社會領域子題命題教師。你會收到一份共用閱讀素材，以及一道小題的出題規劃；請只根據該素材與規劃撰寫 exactly one SubQuestion JSON。
+
+目前學習階段：{learning_stage}
+本小題的核心素養代號必須使用 `社-{sc}-*` 開頭。
+
+輸出必須是合法 JSON 物件，格式如下：
+
+```json
+{{
+  "序號": 1,
+  "年級": 8,
+  "科目": ["歷史"],
+  "核心素養": ["社-J-A2"],
+  "學習內容": [{{"編碼": "歷Ka-Ⅳ-1", "說明": "說明文字"}}],
+  "學習表現": [{{"編碼": "社1b-Ⅳ-1", "說明": "說明文字"}}],
+  "出題概念": "評量學生能否……",
+  "題型": "選擇題",
+  "題目": "完整題目文字（含選項）",
+  "答案": "A",
+  "答案解析": "說明正答依據",
+  "評分規準": []
+}}
+```
+
+## 評分規準
+- 選擇題：四選一；答案為 A/B/C/D；正確代號 2，錯誤代號 0，評分規準為空陣列。
+- 封閉式建構反應題：唯一正確答案（詞彙、數字或短語）；正確代號 2，錯誤代號 0，評分規準為空陣列。
+- 開放式建構反應題：必須附 `評分規準`，使用 2 / 1 / 0 / 0X。2 代表完整正確，1 代表部分正確，0 代表錯誤或不相關，0X 代表未作答；每條規準請提供 1–2 個學生作答實例。
+
+## 課程綱要參考
+
+{curriculum_section}
+
+請只輸出 JSON，不要輸出其他文字。
+"""
+
+
+def build_subquestion_user_prompt(
+    核心問題: str,
+    文本: str,
+    取材來源: list[str],
+    sq_plan: dict,
+    params: SampledParams,
+    few_shot_dir: Path,
+    rng: random.Random | None = None,
+    image_generation_mode: str = "html",
+) -> tuple[str, list[Path]]:
+    del image_generation_mode
+    if rng is None:
+        rng = random.Random()
+
+    q_type = sq_plan.get("題型", "")
+    example_groups = load_few_shot_example_groups(few_shot_dir)
+    all_image_paths: list[Path] = []
+    matching_examples: list[dict] = []
+    fallback_examples: list[dict] = []
+    for group in example_groups:
+        for ex in group:
+            q = ex.get("question", ex)
+            fallback_examples.append(ex)
+            if isinstance(q, dict):
+                if q.get("題型") == q_type:
+                    matching_examples.append(ex)
+                for subquestion in q.get("subquestions", []):
+                    if isinstance(subquestion, dict) and subquestion.get("題型") == q_type:
+                        matching_examples.append(ex)
+                        break
+
+    if matching_examples or fallback_examples:
+        ex = rng.choice(matching_examples or fallback_examples)
+        q = ex.get("question", ex)
+        if isinstance(q, dict) and q.get("subquestions"):
+            matching_subquestions = [
+                subquestion
+                for subquestion in q["subquestions"]
+                if isinstance(subquestion, dict) and subquestion.get("題型") == q_type
+            ]
+            q = matching_subquestions[0] if matching_subquestions else q["subquestions"][0]
+        ex_images: list[dict] = ex.get("images", [])
+        img_notes = ""
+        if ex_images:
+            for j, img in enumerate(ex_images, 1):
+                caption = img.get("caption", "")
+                label = f"圖{j}" + (f"（{caption}）" if caption else "")
+                img_notes += f"\n<!-- {label} 附於此範例後 -->"
+                all_image_paths.append(Path(img["path"]))
+        few_shot_text = (
+            f"### 範例 1：{ex.get('description', '')}\n"
+            f"```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```{img_notes}"
+        )
+    else:
+        few_shot_text = "（目前暫無範例，請根據指定條件自行設計。）"
+
+    subject_filter = getattr(params, "subject_filter", None)
+    if subject_filter:
+        subject_value = getattr(subject_filter, "value", subject_filter)
+    else:
+        subject_value = params.科目.value
+    core_competencies = "、".join(c.value for c in params.核心素養)
+
+    if params.學習內容_pool:
+        lc_codes = "、".join(params.學習內容_pool)
+        lc_detail_lines = "\n".join(
+            f"  - {c}：{_LC_INSTRUCTIONS[c]}" for c in params.學習內容_pool if c in _LC_INSTRUCTIONS
+        )
+        lc_pool_lines = f"- **指定學習內容**：{lc_codes}\n{lc_detail_lines}\n"
+    else:
+        lc_pool_lines = "- **指定學習內容**：（依課綱自行選用）\n"
+
+    if params.學習表現_pool:
+        lp_codes = "、".join(params.學習表現_pool)
+        lp_detail_lines = "\n".join(
+            f"  - {c}：{_LP_INSTRUCTIONS[c]}" for c in params.學習表現_pool if c in _LP_INSTRUCTIONS
+        )
+        lp_pool_lines = f"- **指定學習表現**：{lp_codes}\n{lp_detail_lines}\n"
+    else:
+        lp_pool_lines = "- **指定學習表現**：（依課綱自行選用）\n"
+
+    source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
+    return f"""\
+請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題：
+
+## 共用素材
+
+- **核心問題**：{核心問題}
+- **文本**：
+
+```
+{文本}
+```
+
+- **取材來源**：
+
+```json
+{source_text}
+```
+
+## 本小題規劃
+
+- **序號**：{sq_plan.get("序號", 1)}
+- **題型**：{q_type}
+- **出題概念**：{sq_plan.get("出題概念", "")}
+
+## 指定條件
+
+- **年級重心**：{params.grade}年級（{_LEARNING_STAGE}）
+- **情境**：{"、".join(c.value for c in params.情境)}
+- **科目焦點**：{subject_value}
+- **核心素養（限定使用）**：{core_competencies}
+{lc_pool_lines}{lp_pool_lines}
+## 參考範例
+
+{few_shot_text}
+
+## 重要提醒
+
+1. 只撰寫序號 {sq_plan.get("序號", 1)} 的一道小題。
+2. 小題必須能依據共用文本作答，不要引入無法由文本支持的新情境。
+3. `學習內容` / `學習表現` 應優先使用上述指定代號；如需引入其他代號，仍以系統提供的課綱資料為限。
+4. 題型必須符合本小題規劃中的 `題型`，出題概念需回應規劃中的能力提示。
+5. 請只輸出一道小題的 JSON，不要輸出其他文字。
+""", all_image_paths
