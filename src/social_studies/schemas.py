@@ -68,6 +68,7 @@ class SubQuestionConfig(BaseModel):
     image_generation_mode: Literal["html", "gpt_image"] | None = None
     question_word_limit: int | None = None
     option_word_limit: int | None = None
+    text_word_limit: int | None = None
 
 
 class SubQuestion(BaseModel):
