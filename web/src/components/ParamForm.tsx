@@ -72,6 +72,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [error, setError] = useState<string | null>(null);
   const [pendingParams, setPendingParams] = useState<GenerateParams | null>(null);
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
+  const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
 
   const [grade, setGrade] = useState<number | "">("");
   const [style, setStyle] = useState<string>("");
@@ -282,6 +283,25 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     }
 
     setLpWasAutoDrawn(autoDrawn);
+    let finalLc: string[] | undefined;
+    let lcAutoDrawn = false;
+    if (
+      (subject === "natural_sciences" || subject === "social_studies") &&
+      learningContent.length === 0 &&
+      availableLearningContent.length > 0
+    ) {
+      const drawCount = Math.floor(Math.random() * Math.min(3, availableLearningContent.length)) + 1;
+      const shuffled = [...availableLearningContent].sort(() => Math.random() - 0.5);
+      finalLc = shuffled.slice(0, drawCount).map((e) => e.value);
+      lcAutoDrawn = true;
+    } else if (
+      (subject === "natural_sciences" || subject === "social_studies") &&
+      learningContent.length > 0
+    ) {
+      finalLc = learningContent;
+    }
+
+    setLcWasAutoDrawn(lcAutoDrawn);
     setPendingParams({
       grade,
       style: subject === "math" ? style : undefined,
@@ -307,9 +327,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           ? scienceCompetency
           : undefined,
       learning_content:
-        (subject === "natural_sciences" || subject === "social_studies") && learningContent.length > 0
-          ? learningContent
-          : undefined,
+        finalLc,
       sub_question_count: subject === "social_studies" && subQuestionCount !== "" ? subQuestionCount : undefined,
       subquestion_configs:
         shouldSendSubquestionConfigs
@@ -367,6 +385,9 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     const lpHeading = lpWasAutoDrawn
       ? t("form.confirm_lp_random_pool").replace("{n}", String(lpDisplayEntries.length))
       : t("form.confirm_lp_selected").replace("{n}", String(lpDisplayEntries.length));
+    const lcHeading = lcWasAutoDrawn
+      ? t("form.confirm_lc_random_pool").replace("{n}", String(lcDisplayEntries.length))
+      : t("form.confirm_lc_selected").replace("{n}", String(lcDisplayEntries.length));
 
     return (
       <div className="space-y-4">
@@ -413,16 +434,21 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               {lcDisplayEntries.length === 0 ? (
                 <span className="text-gray-400 italic">{t("form.confirm_none")}</span>
               ) : (
-                <ul className="space-y-1">
-                  {lcDisplayEntries.map((entry) => (
-                    <li key={entry.value} className="flex gap-2 text-sm">
-                      <span className="shrink-0 font-mono font-semibold text-gray-800">{entry.value}</span>
-                      {entry.instruction && (
-                        <span className="text-gray-600">— {entry.instruction}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                <div className="space-y-1">
+                  <p className={`text-xs font-medium mb-1.5 ${lcWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>
+                    {lcHeading}
+                  </p>
+                  <ul className="space-y-1">
+                    {lcDisplayEntries.map((entry) => (
+                      <li key={entry.value} className="flex gap-2 text-sm">
+                        <span className="shrink-0 font-mono font-semibold text-gray-800">{entry.value}</span>
+                        {entry.instruction && (
+                          <span className="text-gray-600">— {entry.instruction}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </dd>
           </div>
