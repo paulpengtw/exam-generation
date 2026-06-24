@@ -141,8 +141,8 @@ async def generate_question_stream(
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-    client = LLMClient(config)
-    html_renderer = getattr(app_state, "html_renderer", None)
+    renderer_pool = getattr(app_state, "renderer_pool", None)
+    html_renderer = await renderer_pool.get() if renderer_pool else None
     is_social_studies = params.subject == "social_studies"
     is_natural_sciences = params.subject == "natural_sciences"
 
@@ -220,194 +220,168 @@ async def generate_question_stream(
                 )
         return observer
 
-    def worker() -> None:
-        client.set_observer(_make_queue_observer(loop, queue))
+    def _emit_pipeline(event_name: str, **data: object) -> None:
+        import time as _time
 
-        def _emit_pipeline(event_name: str, **data: object) -> None:
-            import time as _time
-            payload = {"event_name": event_name, "ts": _time.time(), **data}
+        payload = {"event_name": event_name, "ts": _time.time(), **data}
+        loop.call_soon_threadsafe(
+            queue.put_nowait, {"event": "pipeline", "data": payload}
+        )
+
+    def _make_question_update_emitter(index: int):
+        def emit_question_update(
+            question: MathExamQuestion | SSExamQuestion | NSExamQuestion,
+            phase: str,
+        ) -> None:
+            payload = {
+                "index": index,
+                "phase": phase,
+                "question": _question_to_event(question, config),
+            }
             loop.call_soon_threadsafe(
-                queue.put_nowait, {"event": "pipeline", "data": payload}
+                queue.put_nowait,
+                {"event": "question_update", "data": payload},
             )
 
-        def _make_question_update_emitter(index: int):
-            def emit_question_update(
-                question: MathExamQuestion | SSExamQuestion | NSExamQuestion,
-                phase: str,
-            ) -> None:
-                payload = {
-                    "index": index,
-                    "phase": phase,
-                    "question": _question_to_event(question, config),
-                }
-                loop.call_soon_threadsafe(
-                    queue.put_nowait,
-                    {"event": "question_update", "data": payload},
-                )
+        return emit_question_update
 
-            return emit_question_update
-
+    def worker_one(i: int, question_client: LLMClient) -> None:
+        seed = (base_seed + i) if base_seed is not None else None
+        question_client.set_observer(_make_queue_observer(loop, queue))
+        emit_question_update = _make_question_update_emitter(i)
+        _emit_pipeline("question_start", index=i, total=count)
         try:
-            _emit_pipeline("pipeline_start", total=count)
-            for i in range(count):
-                seed = (base_seed + i) if base_seed is not None else None
-                _emit_pipeline("question_start", index=i, total=count)
-                emit_question_update = _make_question_update_emitter(i)
-                if is_social_studies:
-                    rng_params = ss_sample_params(
-                        grade=params.grade,
-                        context=context_override,
-                        set_type=set_type_override,
-                        q_type=q_type_override,
-                        subject=subject_override,
-                        content_type=params.content_type,
-                        learning_performance=params.learning_performance,
-                        seed=seed,
-                        sub_question_count=params.sub_question_count,
-                        question_word_limit=params.question_word_limit,
-                        option_word_limit=params.option_word_limit,
-                        subquestion_configs=_decode_subquestion_configs(
-                            params.subquestion_configs,
-                        ),
-                    )
-                    question_id = f"ss_{timestamp}_{i+1:03d}"
-                    try:
-                        question = ss_generate_with_corrections(
-                            config=config,
-                            client=client,
-                            params=rng_params,
-                            question_id=question_id,
-                            max_retries=max_retries,
-                            skip_verify=params.skip_verify,
-                            html_renderer=html_renderer,
-                            image_generation_mode=params.image_generation_mode,
-                            user_passage=params.passage,
-                            user_options=params.options,
-                            user_topic=params.topic,
-                            user_core_question=params.core_question,
-                            on_question_update=emit_question_update,
-                        )
-                    except Exception as exc:
-                        tb = traceback.format_exc()
-                        loop.call_soon_threadsafe(
-                            queue.put_nowait,
-                            {
-                                "event": "error",
-                                "data": f"{type(exc).__name__}: {exc}\n\n{tb}",
-                            },
-                        )
-                        logger.exception("worker ss_generate error")
-                        return
-                elif is_natural_sciences:
-                    rng_params = ns_sample_params(
-                        grade=params.grade,
-                        context=context_override,
-                        sub_context=sub_context_override,
-                        set_type=set_type_override,
-                        q_type=q_type_override,
-                        science_competency=science_competency_override,
-                        content_type=params.content_type,
-                        learning_content=params.learning_content,
-                        learning_performance=params.learning_performance,
-                        seed=seed,
-                    )
-                    question_id = f"ns_{timestamp}_{i+1:03d}"
-                    try:
-                        question = ns_generate_with_corrections(
-                            config=config,
-                            client=client,
-                            params=rng_params,
-                            question_id=question_id,
-                            max_retries=max_retries,
-                            skip_verify=params.skip_verify,
-                            html_renderer=html_renderer,
-                            image_generation_mode=params.image_generation_mode,
-                            user_passage=params.passage,
-                            user_options=params.options,
-                            user_topic=params.topic,
-                            user_core_question=params.core_question,
-                            on_question_update=emit_question_update,
-                        )
-                    except Exception as exc:
-                        tb = traceback.format_exc()
-                        loop.call_soon_threadsafe(
-                            queue.put_nowait,
-                            {
-                                "event": "error",
-                                "data": f"{type(exc).__name__}: {exc}\n\n{tb}",
-                            },
-                        )
-                        logger.exception("worker ns_generate error")
-                        return
-                else:
-                    # math sampler accepts a single 科目 string; take first if list provided
-                    math_subject_filter: str | None = None
-                    if params.subject_filter:
-                        math_subject_filter = params.subject_filter[0]
-                    rng_params = math_sample_params(
-                        grade_content=grade_content,
-                        grade=params.grade,
-                        style=style_override,
-                        context=context_override,
-                        set_type=set_type_override,
-                        q_type=q_type_override,
-                        seed=seed,
-                        core_competency=params.core_competency,
-                        learning_content=params.learning_content,
-                        learning_performance=params.learning_performance,
-                        content_type=params.content_type,
-                        subject_filter=math_subject_filter,
-                    )
-                    question_id = f"q_{timestamp}_{i+1:03d}"
-                    try:
-                        question = math_generate_with_corrections(
-                            config=config,
-                            client=client,
-                            curriculum=curriculum,
-                            performance=performance,
-                            intro_text=intro_text,
-                            grade_content=grade_content,
-                            params=rng_params,
-                            question_id=question_id,
-                            max_retries=max_retries,
-                            skip_verify=params.skip_verify,
-                            html_renderer=html_renderer,
-                            image_generation_mode=params.image_generation_mode,
-                            user_topic=params.topic or "",
-                            user_passage=params.passage or "",
-                            user_options=params.options,
-                            user_core_question=params.core_question or "",
-                            on_question_update=emit_question_update,
-                        )
-                    except Exception as exc:
-                        tb = traceback.format_exc()
-                        loop.call_soon_threadsafe(
-                            queue.put_nowait,
-                            {
-                                "event": "error",
-                                "data": f"{type(exc).__name__}: {exc}\n\n{tb}",
-                            },
-                        )
-                        logger.exception("worker math_generate error")
-                        return
-
-                assert isinstance(
-                    question,
-                    (MathExamQuestion, SSExamQuestion, NSExamQuestion),
+            if is_social_studies:
+                rng_params = ss_sample_params(
+                    grade=params.grade,
+                    context=context_override,
+                    set_type=set_type_override,
+                    q_type=q_type_override,
+                    subject=subject_override,
+                    content_type=params.content_type,
+                    learning_performance=params.learning_performance,
+                    seed=seed,
+                    sub_question_count=params.sub_question_count,
+                    question_word_limit=params.question_word_limit,
+                    option_word_limit=params.option_word_limit,
+                    subquestion_configs=_decode_subquestion_configs(
+                        params.subquestion_configs,
+                    ),
                 )
-                _emit_pipeline("question_end", index=i, total=count)
-                payload = _question_to_event(question, config)
-                loop.call_soon_threadsafe(
-                    queue.put_nowait, {"event": "result", "data": payload}
+                question_id = f"ss_{timestamp}_{i+1:03d}"
+                question = ss_generate_with_corrections(
+                    config=config,
+                    client=question_client,
+                    params=rng_params,
+                    question_id=question_id,
+                    max_retries=max_retries,
+                    skip_verify=params.skip_verify,
+                    html_renderer=html_renderer,
+                    image_generation_mode=params.image_generation_mode,
+                    user_passage=params.passage,
+                    user_options=params.options,
+                    user_topic=params.topic,
+                    user_core_question=params.core_question,
+                    on_question_update=emit_question_update,
                 )
-            _emit_pipeline("pipeline_end", total=count)
-        finally:
-            loop.call_soon_threadsafe(
-                queue.put_nowait, {"event": "done", "data": ""}
+            elif is_natural_sciences:
+                rng_params = ns_sample_params(
+                    grade=params.grade,
+                    context=context_override,
+                    sub_context=sub_context_override,
+                    set_type=set_type_override,
+                    q_type=q_type_override,
+                    science_competency=science_competency_override,
+                    content_type=params.content_type,
+                    learning_content=params.learning_content,
+                    learning_performance=params.learning_performance,
+                    seed=seed,
+                )
+                question_id = f"ns_{timestamp}_{i+1:03d}"
+                question = ns_generate_with_corrections(
+                    config=config,
+                    client=question_client,
+                    params=rng_params,
+                    question_id=question_id,
+                    max_retries=max_retries,
+                    skip_verify=params.skip_verify,
+                    html_renderer=html_renderer,
+                    image_generation_mode=params.image_generation_mode,
+                    user_passage=params.passage,
+                    user_options=params.options,
+                    user_topic=params.topic,
+                    user_core_question=params.core_question,
+                    on_question_update=emit_question_update,
+                )
+            else:
+                # math sampler accepts a single 科目 string; take first if list provided
+                math_subject_filter: str | None = None
+                if params.subject_filter:
+                    math_subject_filter = params.subject_filter[0]
+                rng_params = math_sample_params(
+                    grade_content=grade_content,
+                    grade=params.grade,
+                    style=style_override,
+                    context=context_override,
+                    set_type=set_type_override,
+                    q_type=q_type_override,
+                    seed=seed,
+                    core_competency=params.core_competency,
+                    learning_content=params.learning_content,
+                    learning_performance=params.learning_performance,
+                    content_type=params.content_type,
+                    subject_filter=math_subject_filter,
+                )
+                question_id = f"q_{timestamp}_{i+1:03d}"
+                question = math_generate_with_corrections(
+                    config=config,
+                    client=question_client,
+                    curriculum=curriculum,
+                    performance=performance,
+                    intro_text=intro_text,
+                    grade_content=grade_content,
+                    params=rng_params,
+                    question_id=question_id,
+                    max_retries=max_retries,
+                    skip_verify=params.skip_verify,
+                    html_renderer=html_renderer,
+                    image_generation_mode=params.image_generation_mode,
+                    user_topic=params.topic or "",
+                    user_passage=params.passage or "",
+                    user_options=params.options,
+                    user_core_question=params.core_question or "",
+                    on_question_update=emit_question_update,
+                )
+            assert isinstance(
+                question,
+                (MathExamQuestion, SSExamQuestion, NSExamQuestion),
             )
+            _emit_pipeline("question_end", index=i, total=count)
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"event": "result", "data": _question_to_event(question, config)},
+            )
+        except Exception as exc:
+            tb = traceback.format_exc()
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
+            )
+            logger.exception("worker_one error (index=%d)", i)
 
-    future = loop.run_in_executor(None, worker)
+    _emit_pipeline("pipeline_start", total=count)
+    question_clients = [LLMClient(config) for _ in range(count)]
+    futures = [
+        loop.run_in_executor(None, worker_one, i, question_clients[i])
+        for i in range(count)
+    ]
 
+    async def _wait_and_signal() -> None:
+        await asyncio.gather(*futures, return_exceptions=True)
+        _emit_pipeline("pipeline_end", total=count)
+        queue.put_nowait({"event": "done", "data": ""})
+
+    signal_task = asyncio.create_task(_wait_and_signal())
     try:
         while True:
             event = await queue.get()
@@ -415,4 +389,6 @@ async def generate_question_stream(
             if event["event"] in ("done", "error"):
                 break
     finally:
-        await future
+        await signal_task
+        if renderer_pool is not None and html_renderer is not None:
+            await renderer_pool.put(html_renderer)

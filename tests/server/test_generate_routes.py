@@ -221,23 +221,17 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
         async for event in service.generate_question_stream(
             params,
             config,
-            SimpleNamespace(html_renderer=None),
+            SimpleNamespace(html_renderer=None, renderer_pool=None),
         ):
             events.append(event)
         return events
 
     original = service.ss_generate_with_corrections
-    old_total = service._QUEUE_TOTAL
-    old_done = service._QUEUE_DONE
     service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
-    service._QUEUE_TOTAL = 0
-    service._QUEUE_DONE = 0
     try:
         events = asyncio.run(collect_events())
     finally:
         service.ss_generate_with_corrections = original  # type: ignore[assignment]
-        service._QUEUE_TOTAL = old_total
-        service._QUEUE_DONE = old_done
 
     updates = [event for event in events if event["event"] == "question_update"]
     results = [event for event in events if event["event"] == "result"]
