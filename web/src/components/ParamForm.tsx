@@ -68,6 +68,112 @@ const SS_SUBJECT_FILTER_TO_CONTENT_CODE: Record<string, string | null> = {
   "跨科": null,
 };
 
+interface SearchPickerEntry {
+  value: string;
+  instruction?: string;
+  科目?: string;
+}
+
+function SearchPicker({
+  available,
+  selected,
+  onChange,
+  placeholder,
+}: {
+  available: SearchPickerEntry[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return [];
+    const q = query.toLowerCase();
+    return available
+      .filter((item) => !selected.includes(item.value))
+      .filter(
+        (item) =>
+          item.value.toLowerCase().includes(q) ||
+          (item.instruction ?? "").toLowerCase().includes(q),
+      )
+      .slice(0, 10);
+  }, [available, selected, query]);
+
+  function handleSelect(value: string) {
+    onChange([...selected, value]);
+    setQuery("");
+    setOpen(false);
+  }
+
+  function handleRemove(value: string) {
+    onChange(selected.filter((v) => v !== value));
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={query}
+        autoComplete="off"
+        placeholder={placeholder ?? "搜尋..."}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => { if (query) setOpen(true); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className="block w-full border rounded px-2 py-1 text-sm"
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-10 mt-0.5 w-full rounded border border-gray-200 bg-white shadow-md max-h-48 overflow-y-auto">
+          {filtered.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onMouseDown={() => handleSelect(item.value)}
+              className="block w-full px-2 py-1.5 text-left text-xs hover:bg-gray-100"
+            >
+              <span className="font-medium">{item.value}</span>
+              {item.instruction && (
+                <span className="ml-1 text-gray-500">：{item.instruction}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {selected.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {selected.map((code) => {
+            const item = available.find((a) => a.value === code);
+            return (
+              <span
+                key={code}
+                className="inline-flex items-center gap-0.5 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700 border border-blue-200"
+              >
+                <span className="font-medium">{code}</span>
+                {item?.instruction && (
+                  <span className="text-blue-500">
+                    ：{item.instruction.length > 20 ? item.instruction.slice(0, 20) + "…" : item.instruction}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleRemove(code)}
+                  className="ml-0.5 text-blue-400 hover:text-blue-600"
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ParamForm({ subject = "math", onSubmit, disabled }: ParamFormProps) {
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
@@ -943,64 +1049,34 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                       className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
                     />
                   </div>
-                  {(learningPerformance.length > 0 || learningContent.length > 0) && (
+                  {(availableLearningPerformance.length > 0 || availableLearningContent.length > 0) && (
                     <div className="mt-3 space-y-2">
                       <p className="text-xs text-gray-500">留空 = 沿用全域設定</p>
-                      {learningPerformance.length > 0 && (
-                        <fieldset>
-                          <legend className="text-xs text-gray-500">學習表現 (留空沿用全域)</legend>
-                          <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
-                            {learningPerformance.map((code) => {
-                              const entry = availableLearningPerformance.find((item) => item.value === code);
-                              return (
-                                <label key={code} className="flex items-start gap-1.5 text-xs text-gray-500">
-                                  <input
-                                    type="checkbox"
-                                    checked={(cfg.learning_performance ?? []).includes(code)}
-                                    onChange={() =>
-                                      updateSubquestionConfig(i, {
-                                        learning_performance: toggleMulti(cfg.learning_performance ?? [], code),
-                                      })
-                                    }
-                                    className="mt-0.5"
-                                  />
-                                  <span>
-                                    <span className="font-medium">{code}</span>
-                                    {entry?.instruction && <span>：{entry.instruction}</span>}
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </fieldset>
+                      {availableLearningPerformance.length > 0 && (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-0.5">學習表現 (留空沿用全域)</p>
+                          <SearchPicker
+                            available={availableLearningPerformance}
+                            selected={cfg.learning_performance ?? []}
+                            onChange={(vals) =>
+                              updateSubquestionConfig(i, { learning_performance: vals.length ? vals : undefined })
+                            }
+                            placeholder="搜尋學習表現..."
+                          />
+                        </div>
                       )}
-                      {learningContent.length > 0 && (
-                        <fieldset>
-                          <legend className="text-xs text-gray-500">學習內容 (留空沿用全域)</legend>
-                          <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
-                            {learningContent.map((code) => {
-                              const entry = availableLearningContent.find((item) => item.value === code);
-                              return (
-                                <label key={code} className="flex items-start gap-1.5 text-xs text-gray-500">
-                                  <input
-                                    type="checkbox"
-                                    checked={(cfg.learning_content ?? []).includes(code)}
-                                    onChange={() =>
-                                      updateSubquestionConfig(i, {
-                                        learning_content: toggleMulti(cfg.learning_content ?? [], code),
-                                      })
-                                    }
-                                    className="mt-0.5"
-                                  />
-                                  <span>
-                                    <span className="font-medium">{code}</span>
-                                    {entry?.instruction && <span>：{entry.instruction}</span>}
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </fieldset>
+                      {availableLearningContent.length > 0 && (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-0.5">學習內容 (留空沿用全域)</p>
+                          <SearchPicker
+                            available={availableLearningContent}
+                            selected={cfg.learning_content ?? []}
+                            onChange={(vals) =>
+                              updateSubquestionConfig(i, { learning_content: vals.length ? vals : undefined })
+                            }
+                            placeholder="搜尋學習內容..."
+                          />
+                        </div>
                       )}
                     </div>
                   )}
