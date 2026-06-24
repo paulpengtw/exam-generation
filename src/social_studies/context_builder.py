@@ -379,11 +379,17 @@ def build_user_prompt(
             cfg.question_word_limit,
             cfg.option_word_limit,
             cfg.text_word_limit,
+            cfg.learning_content,
+            cfg.learning_performance,
         ))
         if cfg.question_type:
             cfg_parts.append(f"題型={cfg.question_type.value}")
         if cfg.instruction:
             cfg_parts.append(f"出題指示={cfg.instruction}")
+        if cfg.learning_content:
+            cfg_parts.append(f"學習內容={','.join(cfg.learning_content)}")
+        if cfg.learning_performance:
+            cfg_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
         if has_config:
             cfg_parts.append(f"文本素材類型={cfg.content_type or content_type}")
             cfg_parts.append(
@@ -397,6 +403,12 @@ def build_user_prompt(
             cfg_parts.append(f"文本字數上限={cfg.text_word_limit}")
         if cfg_parts:
             sq_config_parts.append(f"  - 第{i}小題：" + "，".join(cfg_parts))
+            for code in cfg.learning_content:
+                if code in _LC_INSTRUCTIONS:
+                    sq_config_parts.append(f"    - {code}：{_LC_INSTRUCTIONS[code]}")
+            for code in cfg.learning_performance:
+                if code in _LP_INSTRUCTIONS:
+                    sq_config_parts.append(f"    - {code}：{_LP_INSTRUCTIONS[code]}")
     if not sq_config_parts:
         if params.question_word_limit:
             sq_config_parts.append(f"  - 每道小題題目字數上限：{params.question_word_limit} 字")
@@ -417,6 +429,8 @@ def build_user_prompt(
                     cfg.text_word_limit,
                     cfg.question_type,
                     cfg.instruction,
+                    cfg.learning_content,
+                    cfg.learning_performance,
                 ))
             },
         )

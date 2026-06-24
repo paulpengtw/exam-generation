@@ -69,6 +69,8 @@ class SubQuestionConfig(BaseModel):
     question_word_limit: int | None = None
     option_word_limit: int | None = None
     text_word_limit: int | None = None
+    learning_content: list[str] = Field(default_factory=list)
+    learning_performance: list[str] = Field(default_factory=list)
 
 
 class SubQuestion(BaseModel):
