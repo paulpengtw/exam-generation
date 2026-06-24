@@ -172,7 +172,17 @@ def sample_params(
             for cfg in resolved_configs
         ]
     else:
-        resolved_configs = []
+        # No explicit 小題 count: keep any caller-provided configs and fill their
+        # blank 題型 slots from the pool (parallel to the counted path above).
+        if resolved_configs:
+            blank_count = sum(1 for cfg in resolved_configs if not cfg.question_type)
+            shuffled = list(q_type_pool)
+            rng.shuffle(shuffled)
+            fill_iter = iter(shuffled[i % len(shuffled)] for i in range(blank_count))
+            resolved_configs = [
+                cfg.model_copy(update={"question_type": cfg.question_type or next(fill_iter)})
+                for cfg in resolved_configs
+            ]
 
     if resolved_configs:
         selected_q_type = resolved_configs[0].question_type or selected_q_type

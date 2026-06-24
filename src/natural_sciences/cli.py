@@ -225,6 +225,7 @@ def generate_one(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        image_generation_mode=image_generation_mode,
     )
 
     if dry_run:
