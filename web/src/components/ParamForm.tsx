@@ -11,6 +11,8 @@ export interface SubQuestionConfig {
   question_word_limit?: number;
   option_word_limit?: number;
   text_word_limit?: number;
+  learning_content?: string[];
+  learning_performance?: string[];
 }
 
 export interface GenerateParams {
@@ -259,10 +261,12 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
             question_word_limit: cfg.question_word_limit,
             option_word_limit: cfg.option_word_limit,
             text_word_limit: cfg.text_word_limit,
+            learning_content: cfg.learning_content?.length ? cfg.learning_content : undefined,
+            learning_performance: cfg.learning_performance?.length ? cfg.learning_performance : undefined,
           }))
         : [];
     const hasSubquestionConfig = effectiveSubquestionConfigs.some(
-      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit,
+      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.learning_content?.length || c.learning_performance?.length,
     );
     const shouldSendSubquestionConfigs =
       subject === "social_studies" && subQuestionCount !== "" && (
@@ -939,6 +943,67 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                       className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
                     />
                   </div>
+                  {(learningPerformance.length > 0 || learningContent.length > 0) && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs text-gray-500">留空 = 沿用全域設定</p>
+                      {learningPerformance.length > 0 && (
+                        <fieldset>
+                          <legend className="text-xs text-gray-500">學習表現 (留空沿用全域)</legend>
+                          <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
+                            {learningPerformance.map((code) => {
+                              const entry = availableLearningPerformance.find((item) => item.value === code);
+                              return (
+                                <label key={code} className="flex items-start gap-1.5 text-xs text-gray-500">
+                                  <input
+                                    type="checkbox"
+                                    checked={(cfg.learning_performance ?? []).includes(code)}
+                                    onChange={() =>
+                                      updateSubquestionConfig(i, {
+                                        learning_performance: toggleMulti(cfg.learning_performance ?? [], code),
+                                      })
+                                    }
+                                    className="mt-0.5"
+                                  />
+                                  <span>
+                                    <span className="font-medium">{code}</span>
+                                    {entry?.instruction && <span>：{entry.instruction}</span>}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </fieldset>
+                      )}
+                      {learningContent.length > 0 && (
+                        <fieldset>
+                          <legend className="text-xs text-gray-500">學習內容 (留空沿用全域)</legend>
+                          <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
+                            {learningContent.map((code) => {
+                              const entry = availableLearningContent.find((item) => item.value === code);
+                              return (
+                                <label key={code} className="flex items-start gap-1.5 text-xs text-gray-500">
+                                  <input
+                                    type="checkbox"
+                                    checked={(cfg.learning_content ?? []).includes(code)}
+                                    onChange={() =>
+                                      updateSubquestionConfig(i, {
+                                        learning_content: toggleMulti(cfg.learning_content ?? [], code),
+                                      })
+                                    }
+                                    className="mt-0.5"
+                                  />
+                                  <span>
+                                    <span className="font-medium">{code}</span>
+                                    {entry?.instruction && <span>：{entry.instruction}</span>}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </fieldset>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

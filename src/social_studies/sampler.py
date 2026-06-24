@@ -171,6 +171,14 @@ def sample_params(
         type_count = rng.randint(1, min(3, len(q_type_pool)))
         selected_q_types = rng.sample(q_type_pool, type_count)
 
+    resolved_configs = [
+        cfg.model_copy(update={
+            "learning_content": list(cfg.learning_content or selected_lc_pool),
+            "learning_performance": list(cfg.learning_performance or selected_lp_pool),
+        })
+        for cfg in resolved_configs
+    ]
+
     return SampledParams(
         grade=selected_grade,
         情境=selected_context,
