@@ -193,7 +193,7 @@ def _parse_question(
                     規準說明=r.get("規準說明", ""),
                     學生作答實例=r.get("學生作答實例", []),
                 )
-                for r in sq_raw.get("評分規準", [])
+                for r in (sq_raw.get("評分規準") or sq_raw.get("評分標準") or [])
                 if isinstance(r, dict)
             ]
             sq_chart_spec = None
