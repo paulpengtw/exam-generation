@@ -424,7 +424,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       skip_verify: skipVerify,
       image_generation_mode: imageGenerationMode,
       subject_filter: subjectFilter || undefined,
-      passage: subject === "math" ? cleanPassage : undefined,
+      passage: cleanPassage,
       options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,
       topic:
         isCurriculumSubject && cleanTopic
@@ -1128,62 +1128,60 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       )}
 
-      {subject === "math" && (
-        <>
-          <div>
-            <label className="block text-sm font-medium">文本字數限制</label>
-            <input
-              type="text"
-              value={passage}
-              onFocus={() => { if (passage === TEXT_HINT) setPassage(""); }}
-              onBlur={() => { if (passage === "") setPassage(TEXT_HINT); }}
-              onChange={(e) => setPassage(e.target.value)}
-              className="mt-1 block w-full border rounded px-2 py-1"
-            />
-          </div>
+      <div>
+        <label className="block text-sm font-medium">文本字數限制</label>
+        <input
+          type="text"
+          value={passage}
+          onFocus={() => { if (passage === TEXT_HINT) setPassage(""); }}
+          onBlur={() => { if (passage === "") setPassage(TEXT_HINT); }}
+          onChange={(e) => setPassage(e.target.value)}
+          className="mt-1 block w-full border rounded px-2 py-1"
+        />
+      </div>
 
-          <fieldset>
-            <legend className="text-sm font-medium">選項字數限制</legend>
-            <div className="mt-1 space-y-1.5">
-              {options.map((opt, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="w-5 text-sm text-gray-500">{String.fromCharCode(65 + i)}.</span>
-                  <input
-                    type="text"
-                    value={opt}
-                    onFocus={() => {
-                      if (opt === OPTION_HINT) {
-                        setOptions((prev) => prev.map((v, j) => j === i ? "" : v));
-                      }
-                    }}
-                    onBlur={() => {
-                      if (options[i] === "") {
-                        setOptions((prev) => prev.map((v, j) => j === i ? OPTION_HINT : v));
-                      }
-                    }}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setOptions((prev) => prev.map((x, j) => j === i ? v : x));
-                    }}
-                    className="flex-1 border rounded px-2 py-1"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setOptions((prev) => prev.filter((_, j) => j !== i))}
-                    className="text-sm text-red-600 hover:underline disabled:opacity-40"
-                    disabled={options.length <= 2}
-                  >−</button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => setOptions((prev) => [...prev, OPTION_HINT])}
-                className="text-sm text-blue-600 hover:underline disabled:opacity-40"
-                disabled={options.length >= 8}
-              >+ 新增選項</button>
-            </div>
-          </fieldset>
-        </>
+      {subject === "math" && (
+        <fieldset>
+          <legend className="text-sm font-medium">選項字數限制</legend>
+          <div className="mt-1 space-y-1.5">
+            {options.map((opt, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="w-5 text-sm text-gray-500">{String.fromCharCode(65 + i)}.</span>
+                <input
+                  type="text"
+                  value={opt}
+                  onFocus={() => {
+                    if (opt === OPTION_HINT) {
+                      setOptions((prev) => prev.map((v, j) => j === i ? "" : v));
+                    }
+                  }}
+                  onBlur={() => {
+                    if (options[i] === "") {
+                      setOptions((prev) => prev.map((v, j) => j === i ? OPTION_HINT : v));
+                    }
+                  }}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setOptions((prev) => prev.map((x, j) => j === i ? v : x));
+                  }}
+                  className="flex-1 border rounded px-2 py-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => setOptions((prev) => prev.filter((_, j) => j !== i))}
+                  className="text-sm text-red-600 hover:underline disabled:opacity-40"
+                  disabled={options.length <= 2}
+                >−</button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setOptions((prev) => [...prev, OPTION_HINT])}
+              className="text-sm text-blue-600 hover:underline disabled:opacity-40"
+              disabled={options.length >= 8}
+            >+ 新增選項</button>
+          </div>
+        </fieldset>
       )}
 
       <label className="flex items-center gap-2">
