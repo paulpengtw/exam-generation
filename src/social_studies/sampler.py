@@ -152,8 +152,14 @@ def sample_params(
             resolved_configs[i] if i < len(resolved_configs) else SubQuestionConfig()
             for i in range(sub_question_count)
         ]
+        # Fill blank slots from a shuffled cycle so no 題型 repeats before exhausting
+        # the pool. Pinned slots are untouched; only blank slots consume from fill_iter.
+        blank_count = sum(1 for cfg in resolved_configs if not cfg.question_type)
+        shuffled = q_type_pool[:]
+        rng.shuffle(shuffled)
+        fill_iter = iter(shuffled[i % len(shuffled)] for i in range(blank_count))
         resolved_configs = [
-            cfg.model_copy(update={"question_type": cfg.question_type or rng.choice(q_type_pool)})
+            cfg.model_copy(update={"question_type": cfg.question_type or next(fill_iter)})
             for cfg in resolved_configs
         ]
         selected_q_types: list[QuestionType] = []
