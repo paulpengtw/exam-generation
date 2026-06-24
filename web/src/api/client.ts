@@ -18,6 +18,7 @@ export interface User {
 export interface SchemaEntry {
   value: string;
   instruction: string;
+  parent?: string;
 }
 
 export interface LearningPerformanceEntry extends SchemaEntry {
@@ -28,13 +29,16 @@ export interface Schemas {
   學習階段: string;
   grades: number[];
   情境: SchemaEntry[];
+  情境子類別?: SchemaEntry[];
   題型種類: SchemaEntry[];
   題型: SchemaEntry[];
   數學思考: SchemaEntry[];
+  科學能力?: SchemaEntry[];
   question_style?: SchemaEntry[];
   題目內容類型?: SchemaEntry[];
   科目?: SchemaEntry[];
   學習表現?: LearningPerformanceEntry[];
+  學習內容?: LearningPerformanceEntry[];
   [key: string]: unknown;
 }
 
@@ -96,13 +100,16 @@ export async function getMe(): Promise<User> {
   return (await res.json()) as User;
 }
 
-export async function getSchemas(subject = "math"): Promise<Schemas> {
-  const res = await apiFetch(`/api/schemas?subject=${encodeURIComponent(subject)}`);
+export async function getSchemas(subject = "math", grade?: number): Promise<Schemas> {
+  const params = new URLSearchParams({ subject });
+  if (grade != null) params.set("grade", String(grade));
+  const res = await apiFetch(`/api/schemas?${params.toString()}`);
   return (await res.json()) as Schemas;
 }
 
 export interface PlanCoreQuestionsRequest {
   topic: string;
+  subject?: string;
   subject_filter?: string[];
   grade?: number;
 }

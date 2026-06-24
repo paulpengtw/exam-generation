@@ -4,6 +4,7 @@ import { useT } from "../i18n/useT";
 
 export interface CoreQuestionPickerProps {
   topic: string;
+  subject?: string;
   subjectFilter?: string;
   grade?: number;
   onPick: (coreQuestion: string) => void;
@@ -13,6 +14,7 @@ export interface CoreQuestionPickerProps {
 
 export default function CoreQuestionPicker({
   topic,
+  subject,
   subjectFilter,
   grade,
   onPick,
@@ -32,12 +34,15 @@ export default function CoreQuestionPicker({
     try {
       const res = await planCoreQuestions({
         topic,
+        subject,
         subject_filter: subjectFilter ? [subjectFilter] : undefined,
         grade,
       });
       setCandidates(res.candidates);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[plan-core-questions]", e);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -45,23 +50,51 @@ export default function CoreQuestionPicker({
 
   return (
     <div className="space-y-3">
-      <button
-        type="button"
-        onClick={handleFetch}
-        disabled={!topic.trim() || loading}
-        className="inline-flex items-center gap-2 rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {loading && (
-          <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-          </svg>
-        )}
-        {loading ? t("form.plan_btn_loading") : t("form.plan_btn")}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={handleFetch}
+          disabled={!topic.trim() || loading}
+          className={`inline-flex items-center gap-2 rounded border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+            error
+              ? "border-red-500 bg-red-50 text-red-700 hover:bg-red-100"
+              : "border-blue-600 bg-white text-blue-600 hover:bg-blue-50"
+          }`}
+        >
+          {loading && (
+            <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          )}
+          {loading ? t("form.plan_btn_loading") : t("form.plan_btn")}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            onPick(topic.trim());
+            setCandidates([]);
+            setError(null);
+          }}
+          disabled={!topic.trim() || loading}
+          className="inline-flex items-center gap-2 rounded border border-green-600 bg-white px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {t("form.custom_question_btn")}
+        </button>
+      </div>
 
       {error && (
-        <p className="text-sm text-red-600">{t("form.picker_error")}{error}</p>
+        <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm">
+          <p className="font-medium text-red-700">⚠ {t("form.picker_error")}{error}</p>
+          <button
+            type="button"
+            onClick={handleFetch}
+            className="mt-1 text-red-700 underline hover:no-underline"
+          >
+            {t("form.picker_retry")}
+          </button>
+        </div>
       )}
 
       {candidates.length > 0 && (

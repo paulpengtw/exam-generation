@@ -38,7 +38,18 @@ def test_schemas_returns_file_contents(tmp_path: Path) -> None:
     with TestClient(app) as client:
         r = client.get("/api/schemas")
     assert r.status_code == 200
-    assert r.json() == payload
+    body = r.json()
+    # Math is the default subject; the base file contents must be present,
+    # plus the math augmentation fields (科目, 題目內容類型, 學習表現).
+    assert body["學習階段"] == payload["學習階段"]
+    assert body["grades"] == payload["grades"]
+    assert {entry["value"] for entry in body["科目"]} == {
+        "數與量", "代數", "幾何", "統計與機率",
+    }
+    assert [entry["value"] for entry in body["題目內容類型"]] == [
+        "純文字", "含圖片", "graphs/charts/tables", "customized",
+    ]
+    assert "學習表現" in body
 
 
 def test_schemas_missing_file(tmp_path: Path) -> None:
@@ -62,3 +73,31 @@ def test_social_studies_schemas_include_content_types() -> None:
     assert learning_performance
     assert {"value", "instruction", "科目"} <= set(learning_performance[0])
     assert "社1b-Ⅳ-1" in {entry["value"] for entry in learning_performance}
+
+
+def test_natural_sciences_schemas_include_pisa_science_dimensions() -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        r = client.get("/api/schemas?subject=natural_sciences")
+    assert r.status_code == 200
+    body = r.json()
+
+    assert body["grades"] == [7, 8, 9, 10, 11, 12]
+    assert [entry["value"] for entry in body["情境"]] == [
+        "Personal",
+        "Local and national",
+        "Global",
+    ]
+    assert [entry["value"] for entry in body["題型種類"]] == ["題組題"]
+    assert [entry["value"] for entry in body["題型"]] == [
+        "Simple multiple-choice",
+        "Complex multiple-choice",
+        "Constructed response",
+    ]
+    assert len(body["科學能力"]) == 6
+    assert any(entry.get("parent") == "Global" for entry in body["情境子類別"])
+
+    learning_performance = body["學習表現"]
+    assert len(learning_performance) == 20
+    assert {"value", "instruction", "科目"} <= set(learning_performance[0])
+    assert "tr-Ⅳ-1" in {entry["value"] for entry in learning_performance}

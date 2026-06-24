@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -33,6 +34,41 @@ from src.social_studies.schemas import (
 from src.social_studies.verifier import verify_question
 
 _GRADES: list[int] = load_grades(load_schemas())
+_VISUAL_CONTENT_TYPES = {"含圖片", "graphs/charts/tables"}
+
+QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
+
+
+def _emit_question_update(
+    callback: QuestionUpdateCallback | None,
+    question: ExamQuestion,
+    phase: str,
+) -> None:
+    if callback is None:
+        return
+    callback(question, phase)
+
+_TOP_LEVEL_IMAGE_REPAIR_SYSTEM_PROMPT = """\
+你是一位108課綱社會領域素養導向題組的視覺素材設計教師。
+請只根據既有題組內容，補上一個整個題組共用的主要素材圖片規格。
+
+規則：
+- 只輸出合法 JSON 物件，不要輸出其他文字。
+- JSON 必須包含 `chart_spec` 欄位。
+- `chart_spec` 必須是整個題組共用的視覺素材，不是單一小題專用圖片。
+- 若是圖片式素材、地圖、海報、表單、網頁畫面、流程圖或圖解，使用 `render_mode: "html"`。
+- 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
+- 不要加入答案提示。
+"""
+
+_TOP_LEVEL_IMAGE_REPAIR_USER_TEMPLATE = """\
+以下題組的全域文本素材類型是「{content_type}」，但缺少題組頂層 chart_spec。
+請為整個題組共用的主要素材補上 `chart_spec`。
+
+```json
+{question_json}
+```
+"""
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -160,6 +196,17 @@ def _parse_question(
                 for r in sq_raw.get("評分規準", [])
                 if isinstance(r, dict)
             ]
+            sq_chart_spec = None
+            raw_sq_spec = sq_raw.get("image_spec") or sq_raw.get("chart_spec")
+            if isinstance(raw_sq_spec, dict):
+                try:
+                    sq_chart_spec = ImageSpec(**raw_sq_spec)
+                except Exception:
+                    sq_chart_spec = None
+            cfg = (
+                params.subquestion_configs[i - 1]
+                if i - 1 < len(params.subquestion_configs) else None
+            )
             subquestions.append(SubQuestion(
                 id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
                 序號=sq_raw.get("序號", i),
@@ -169,11 +216,18 @@ def _parse_question(
                 學習內容=lc_refs,
                 學習表現=lp_refs,
                 出題概念=sq_raw.get("出題概念", ""),
-                題型=sq_raw.get("題型", params.題型.value),
+                出題指示=(
+                    cfg.instruction if cfg and cfg.instruction else sq_raw.get("出題指示")
+                ),
+                題型=sq_raw.get("題型", params.題型[0].value if params.題型 else "選擇題"),
                 題目=sq_raw.get("題目", ""),
                 答案=sq_raw.get("答案", ""),
                 答案解析=sq_raw.get("答案解析", ""),
                 評分規準=rubric,
+                題目內容類型=sq_raw.get("題目內容類型"),
+                image_generation_mode=sq_raw.get("image_generation_mode"),
+                圖片=sq_raw.get("圖片"),
+                chart_spec=sq_chart_spec,
             ))
         except Exception:
             pass
@@ -186,7 +240,7 @@ def _parse_question(
         subquestions=subquestions,
         情境=[c.value for c in params.情境],
         題型種類=params.題型種類.value,
-        題型=params.題型.value,
+        題型=params.題型[0].value if params.題型 else "選擇題",
         閱讀歷程=[p.value for p in params.閱讀歷程],
         文本形式=params.文本形式.value,
         題目內容類型=params.題目內容類型,
@@ -199,6 +253,107 @@ def _parse_question(
             seed=None,
         ),
     )
+
+
+def _parse_image_spec(raw_spec: object) -> ImageSpec | None:
+    if not isinstance(raw_spec, dict):
+        return None
+    try:
+        return ImageSpec(**raw_spec)
+    except Exception:
+        if raw_spec.get("chart_type"):
+            try:
+                return ImageSpec(
+                    render_mode="chart",
+                    chart_type=raw_spec.get("chart_type"),
+                    data=raw_spec.get("data", {}),
+                    labels=raw_spec.get("labels", {}),
+                    title=raw_spec.get("title", ""),
+                    description=raw_spec.get("description", ""),
+                )
+            except Exception:
+                return None
+        try:
+            return ImageSpec(
+                render_mode="html",
+                description=raw_spec.get("description", raw_spec.get("title", "")),
+                title=raw_spec.get("title", ""),
+                data=raw_spec.get("data", {}),
+                html=raw_spec.get("html", ""),
+            )
+        except Exception:
+            return None
+
+
+def _ensure_top_level_visual_spec(
+    question: ExamQuestion,
+    params: SampledParams,
+    client: LLMClient | None,
+) -> None:
+    """Repair missing shared visual specs for globally visual social-studies 題組."""
+    if question.chart_spec or params.題目內容類型 not in _VISUAL_CONTENT_TYPES or client is None:
+        return
+
+    question_json = question.model_dump_json(
+        exclude_none=True,
+        exclude={"verification", "圖片"},
+    )
+    user_prompt = _TOP_LEVEL_IMAGE_REPAIR_USER_TEMPLATE.format(
+        content_type=params.題目內容類型,
+        question_json=question_json,
+    )
+
+    try:
+        repaired = client.generate_json(
+            _TOP_LEVEL_IMAGE_REPAIR_SYSTEM_PROMPT,
+            user_prompt,
+            purpose="generate",
+        )
+    except Exception as exc:
+        print(f"  Warning: top-level image spec repair failed: {exc}", file=sys.stderr)
+        return
+
+    raw_spec = repaired.get("image_spec") or repaired.get("chart_spec")
+    image_spec = _parse_image_spec(raw_spec)
+    if image_spec:
+        question.chart_spec = image_spec
+
+
+def _render_subquestion_images(
+    question: ExamQuestion,
+    config: Config,
+    client: LLMClient | None,
+    html_renderer: PlaywrightRenderer | None,
+    image_generation_mode: str,
+    obs,
+    subquestion_image_modes: dict[int, str] | None = None,
+) -> list[str]:
+    """Render PNGs for subquestion-local image specs and return paths."""
+    rendered_paths: list[str] = []
+    for sub in question.subquestions:
+        if not sub.chart_spec:
+            continue
+        img_path = config.output_dir / f"{question.id}_sq{sub.序號}.png"
+        mode = (subquestion_image_modes or {}).get(sub.序號, image_generation_mode)
+        sub.image_generation_mode = mode
+        question_text = "\n\n".join(
+            part for part in (question.文本, sub.題目) if part
+        )
+        print(f"  Rendering subquestion image: {img_path}", file=sys.stderr)
+        emit_stage(obs, "image_agent", "render_image", "start")
+        rendered = render_image(
+            sub.chart_spec.model_dump(),
+            img_path,
+            question_text=question_text,
+            html_renderer=html_renderer,
+            llm_client=client,
+            image_generation_mode=mode,
+        )
+        emit_stage(obs, "image_agent", "render_image", "end")
+        if rendered:
+            sub.圖片 = img_path.name
+            rendered_paths.append(rendered)
+    return rendered_paths
 
 
 def generate_one(
@@ -214,12 +369,14 @@ def generate_one(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    on_question_update: QuestionUpdateCallback | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     system_prompt = build_system_prompt()
     user_prompt, few_shot_images = build_user_prompt(
         params,
         config.data_dir / "social_studies" / "few_shot",
+        image_generation_mode=image_generation_mode,
         user_passage=user_passage,
         user_options=user_options,
         user_topic=user_topic,
@@ -241,6 +398,11 @@ def generate_one(
     emit_stage(obs, "generator", "llm_generate", "end")
 
     question = _parse_question(raw_json, question_id, params, config.model_execute)
+    _emit_question_update(on_question_update, question, "draft")
+    prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
+    _ensure_top_level_visual_spec(question, params, client)
+    if question.chart_spec != prior_chart_spec:
+        _emit_question_update(on_question_update, question, "corrected")
 
     chart_image_path: str | None = None
     if question.chart_spec:
@@ -250,7 +412,7 @@ def generate_one(
         rendered = render_image(
             question.chart_spec.model_dump(),
             img_path,
-            question_text="\n".join(question.題目),
+            question_text="\n".join(question.題目) or question.文本,
             html_renderer=html_renderer,
             llm_client=client,
             image_generation_mode=image_generation_mode,
@@ -259,6 +421,25 @@ def generate_one(
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
+            _emit_question_update(on_question_update, question, "image")
+
+    subquestion_image_paths = _render_subquestion_images(
+        question,
+        config,
+        client,
+        html_renderer,
+        image_generation_mode,
+        obs,
+        {
+            i: cfg.image_generation_mode
+            for i, cfg in enumerate(params.subquestion_configs, start=1)
+            if cfg.image_generation_mode
+        },
+    )
+    if chart_image_path is None and subquestion_image_paths:
+        chart_image_path = subquestion_image_paths[0]
+    if subquestion_image_paths:
+        _emit_question_update(on_question_update, question, "image")
 
     if not skip_verify:
         print(f"  Verifying question {question_id}...", file=sys.stderr)
@@ -266,6 +447,7 @@ def generate_one(
         result = verify_question(client, question, chart_image_path=chart_image_path)
         emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
+        _emit_question_update(on_question_update, question, "verified")
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
 
@@ -286,6 +468,7 @@ def generate_with_corrections(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    on_question_update: QuestionUpdateCallback | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     question = generate_one(
@@ -301,6 +484,7 @@ def generate_with_corrections(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        on_question_update=on_question_update,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -330,6 +514,7 @@ def generate_with_corrections(
         question = correct_question(client, question, question.verification,
                                     chart_image_path=chart_image_path)
         emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
+        _emit_question_update(on_question_update, question, "corrected")
 
         new_chart_image_path: str | None = None
         if question.chart_spec and question.chart_spec != prior_chart_spec:
@@ -339,7 +524,7 @@ def generate_with_corrections(
             rendered = render_image(
                 question.chart_spec.model_dump(),
                 img_path,
-                question_text="\n".join(question.題目),
+                question_text="\n".join(question.題目) or question.文本,
                 html_renderer=html_renderer,
                 llm_client=client,
                 image_generation_mode=image_generation_mode,
@@ -348,6 +533,7 @@ def generate_with_corrections(
             if rendered:
                 question.圖片 = f"{question_id}.png"
                 new_chart_image_path = rendered
+                _emit_question_update(on_question_update, question, "image")
         elif question.圖片:
             p = config.output_dir / question.圖片
             new_chart_image_path = str(p) if p.exists() else None
@@ -357,6 +543,7 @@ def generate_with_corrections(
             result = verify_question(client, question, chart_image_path=new_chart_image_path)
             emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
+            _emit_question_update(on_question_update, question, "verified")
             status = "PASSED" if result.passed else "FAILED"
             print(f"  Re-verification {status}: {result.details[:100]}", file=sys.stderr)
 
@@ -428,7 +615,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
                   f"科目={params.科目.value}, "
                   f"情境={'、'.join(c.value for c in params.情境)}, "
-                  f"題型={params.題型.value}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
+                  f"題型={'、'.join(t.value for t in params.題型)}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
                   f"文本形式={params.文本形式.value}, "
                   f"題目內容類型={params.題目內容類型}, "
                   f"核心素養={'、'.join(c.value for c in params.核心素養)}", file=sys.stderr)

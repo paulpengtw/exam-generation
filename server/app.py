@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import traceback
 from collections.abc import AsyncIterator
@@ -35,10 +36,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config: ServerConfig = get_config()
 
     try:
-        import asyncio
+        from alembic.config import Config as AlembicConfig
 
         from alembic import command
-        from alembic.config import Config as AlembicConfig
 
         def _run_alembic() -> None:
             alembic_cfg = AlembicConfig(
@@ -63,24 +63,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.grade_content = grade_content
     print(f"Curriculum loaded: {len(curriculum)} grade entries, target grades {grades}")
 
-    html_renderer: PlaywrightRenderer | None
-    try:
-        html_renderer = PlaywrightRenderer()
-        html_renderer.start()
-        print("Playwright renderer started")
-    except Exception as exc:
-        print(f"Warning: Playwright failed to start: {exc}", file=sys.stderr)
-        html_renderer = None
-    app.state.html_renderer = html_renderer
+    renderer_pool: asyncio.Queue[PlaywrightRenderer] = asyncio.Queue()
+    started_renderers: list[PlaywrightRenderer] = []
+    for _ in range(2):
+        try:
+            r = PlaywrightRenderer()
+            r.start()
+            renderer_pool.put_nowait(r)
+            started_renderers.append(r)
+        except Exception as exc:
+            print(f"Warning: Playwright failed to start: {exc}", file=sys.stderr)
+            break
+    app.state.renderer_pool = renderer_pool if started_renderers else None
+    app.state.html_renderer = None  # legacy; service.py uses renderer_pool
+    if started_renderers:
+        print(f"Playwright renderer pool started ({len(started_renderers)} instances)")
 
     try:
         yield
     finally:
-        if app.state.html_renderer is not None:
-            try:
-                app.state.html_renderer.stop()
-            except Exception as exc:  # pragma: no cover
-                print(f"Warning: Playwright shutdown failed: {exc}", file=sys.stderr)
+        if app.state.renderer_pool is not None:
+            while not app.state.renderer_pool.empty():
+                r = app.state.renderer_pool.get_nowait()
+                try:
+                    r.stop()
+                except Exception as exc:  # pragma: no cover
+                    print(f"Warning: Playwright shutdown failed: {exc}", file=sys.stderr)
 
 
 def create_app() -> FastAPI:

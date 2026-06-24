@@ -30,7 +30,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const { status, jobsAhead, progressLines, results, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
+  const { status, jobsAhead, progressLines, results, displayResults, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
 
   const handleLogout = () => {
     logout();
@@ -43,26 +43,51 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       grade: params.grade,
       style: subject === "math" && params.style ? [params.style] : [],
       content_type:
-        subject === "social_studies" ? params.content_type : undefined,
-      context: subject === "math" ? params.context : [],
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.content_type
+          : undefined,
+      context: subject === "math" || subject === "natural_sciences" ? params.context : [],
       set_type: params.set_type,
       q_type: params.q_type,
       count: params.count,
       skip_verify: params.skip_verify,
       image_generation_mode:
-        subject === "social_studies" ? params.image_generation_mode : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.image_generation_mode
+          : undefined,
       subject_filter:
-        subject === "social_studies" ? params.subject_filter : undefined,
+        subject === "social_studies" || subject === "math" ? params.subject_filter : undefined,
       topic:
-        subject === "social_studies" ? params.topic : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.topic
+          : undefined,
       core_question:
-        subject === "social_studies" ? params.core_question : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.core_question
+          : undefined,
       passage:
-        subject === "social_studies" ? params.passage : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.passage
+          : undefined,
       options:
-        subject === "social_studies" ? params.options : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.options
+          : undefined,
+      sub_context: subject === "natural_sciences" ? params.sub_context : undefined,
+      science_competency:
+        subject === "natural_sciences" ? params.science_competency : undefined,
       learning_performance:
-        subject === "social_studies" ? params.learning_performance : undefined,
+        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
+          ? params.learning_performance
+          : undefined,
+      learning_content:
+        subject === "social_studies" || subject === "natural_sciences"
+          ? params.learning_content
+          : undefined,
+      sub_question_count:
+        subject === "social_studies" ? params.sub_question_count : undefined,
+      subquestion_configs:
+        subject === "social_studies" ? params.subquestion_configs : undefined,
     });
   };
 
@@ -81,7 +106,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   };
 
   const showProgress = !(progressLines.length === 0 && status === "idle");
-  const hasResults = results.length > 0;
+  const hasResults = displayResults.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -97,7 +122,11 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
               ←
             </button>
             <h1 className="text-base font-semibold sm:text-lg">
-              {subject === "social_studies" ? t("generate.title_ss") : t("generate.title")}
+              {subject === "social_studies"
+                ? t("generate.title_ss")
+                : subject === "natural_sciences"
+                  ? t("generate.title_ns")
+                  : t("generate.title")}
             </h1>
           </div>
           <div className="flex min-w-0 items-center gap-2 text-sm sm:gap-3">
@@ -138,19 +167,21 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         {hasResults && (
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">{t("generate.results")} ({results.length})</h2>
+              <h2 className="text-base font-semibold">{t("generate.results")} ({displayResults.length})</h2>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={handleDownloadAll}
-                  className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                  disabled={results.length === 0}
+                  className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t("generate.btn_download_all")}
                 </button>
                 <button
                   type="button"
                   onClick={handleDownloadAllOdt}
-                  className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50"
+                  disabled={results.length === 0}
+                  className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t("generate.btn_download_all_odt")}
                 </button>
@@ -164,8 +195,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
               </div>
             </div>
             <div className="space-y-3">
-              {results.map((q, i) => (
-                <QuestionCard key={q.id ?? `q-${i}`} question={q} />
+              {displayResults.map((item) => (
+                <QuestionCard
+                  key={item.question.id ?? `q-${item.index}`}
+                  question={item.question}
+                  phase={item.phase}
+                  isFinal={item.isFinal}
+                />
               ))}
             </div>
           </section>

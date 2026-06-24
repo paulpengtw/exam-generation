@@ -20,8 +20,18 @@ class ServerConfig(Config):
     ses_from_email: str = ""
     frontend_url: str = ""
     email_backend: str = "console"
-    question_schemas_path: Path = Path(__file__).resolve().parent.parent / "question_schemas.json"
-    social_studies_curriculum_dir: Path = Path(__file__).resolve().parent.parent / "data" / "social_studies" / "curriculum"
+    question_schemas_path: Path = (
+        Path(__file__).resolve().parent.parent / "question_schemas.json"
+    )
+    social_studies_curriculum_dir: Path = (
+        Path(__file__).resolve().parent.parent / "data" / "social_studies" / "curriculum"
+    )
+    natural_sciences_curriculum_dir: Path = (
+        Path(__file__).resolve().parent.parent / "data" / "natural_sciences" / "curriculum"
+    )
+    math_curriculum_dir: Path = (
+        Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"
+    )
     email_whitelist: tuple[str, ...] = ()
 
     @classmethod
@@ -64,7 +74,25 @@ class ServerConfig(Config):
             social_studies_curriculum_dir=Path(
                 os.environ.get(
                     "SOCIAL_STUDIES_CURRICULUM_DIR",
-                    str(Path(__file__).resolve().parent.parent / "data" / "social_studies" / "curriculum"),
+                    str(
+                        Path(__file__).resolve().parent.parent
+                        / "data" / "social_studies" / "curriculum"
+                    ),
+                )
+            ),
+            natural_sciences_curriculum_dir=Path(
+                os.environ.get(
+                    "NATURAL_SCIENCES_CURRICULUM_DIR",
+                    str(
+                        Path(__file__).resolve().parent.parent
+                        / "data" / "natural_sciences" / "curriculum"
+                    ),
+                )
+            ),
+            math_curriculum_dir=Path(
+                os.environ.get(
+                    "MATH_CURRICULUM_DIR",
+                    str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
             ),
         )

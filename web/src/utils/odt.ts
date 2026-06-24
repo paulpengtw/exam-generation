@@ -74,6 +74,23 @@ function buildStyles(): string {
 interface Section {
   question: ExamQuestion;
   imageRef?: string;
+  subImageRefs?: Record<string, string>;
+}
+
+function subImageKey(id: string | undefined, sequence: number): string {
+  return id && id.length > 0 ? id : String(sequence);
+}
+
+function buildImageParagraph(name: string, imageRef: string, zIndex: number): string {
+  return (
+    `<text:p text:style-name="Standard">` +
+      `<draw:frame draw:name="${xmlEscape(name)}" text:anchor-type="as-char" ` +
+      `svg:width="12cm" svg:height="9cm" draw:z-index="${zIndex}">` +
+      `<draw:image xlink:href="${xmlEscape(imageRef)}" xlink:type="simple" ` +
+      `xlink:show="embed" xlink:actuate="onLoad"/>` +
+      `</draw:frame>` +
+      `</text:p>`
+  );
 }
 
 function buildMetadataItems(question: ExamQuestion): string[] {
@@ -107,7 +124,7 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
     paras.push(`<text:p text:style-name="Heading1">${xmlEscape(title)}</text:p>`);
   }
 
-  sections.forEach(({ question, imageRef }, idx) => {
+  sections.forEach(({ question, imageRef, subImageRefs }, idx) => {
     if (isMultiple) {
       if (idx > 0) {
         paras.push(`<text:p text:style-name="PageBreak"/>`);
@@ -125,15 +142,7 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
 
     // Embedded image
     if (imageRef) {
-      paras.push(
-        `<text:p text:style-name="Standard">` +
-          `<draw:frame draw:name="img${idx}" text:anchor-type="as-char" ` +
-          `svg:width="12cm" svg:height="9cm" draw:z-index="${idx}">` +
-          `<draw:image xlink:href="${xmlEscape(imageRef)}" xlink:type="simple" ` +
-          `xlink:show="embed" xlink:actuate="onLoad"/>` +
-          `</draw:frame>` +
-          `</text:p>`
-      );
+      paras.push(buildImageParagraph(`img${idx}`, imageRef, idx));
     }
 
     const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
@@ -161,6 +170,10 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
         paras.push(`<text:p text:style-name="Heading2">${xmlEscape(`第${sub.序號}題`)}</text:p>`);
         if (subMeta) {
           paras.push(`<text:p text:style-name="MetaLine">${subMeta}</text:p>`);
+        }
+        const subImageRef = sectionSubImageRef(sub.序號, sub.id, subImageRefs);
+        if (subImageRef) {
+          paras.push(buildImageParagraph(`img${idx}_sq${sub.序號}`, subImageRef, idx));
         }
         paras.push(`<text:p text:style-name="Standard">${xmlEscape(sub.題目)}</text:p>`);
         paras.push(`<text:p text:style-name="MetaLine">${xmlEscape("答案：")}${xmlEscape(sub.答案)}</text:p>`);
@@ -203,6 +216,15 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
 </office:document-content>`;
 }
 
+function sectionSubImageRef(
+  sequence: number,
+  id: string | undefined,
+  subImageRefs: Record<string, string> | undefined,
+): string | undefined {
+  if (!subImageRefs) return undefined;
+  return subImageRefs[subImageKey(id, sequence)] ?? subImageRefs[String(sequence)];
+}
+
 function buildManifest(imageRefs: string[]): string {
   const imgEntries = imageRefs
     .map(
@@ -239,6 +261,17 @@ export async function buildExamOdt(title: string, questions: ExamQuestion[]): Pr
       section.imageRef = ref;
       zip.file(ref, base64ToUint8Array(q.image_base64));
     }
+    q.subquestions?.forEach((sub) => {
+      if (!sub.image_base64) return;
+      const ref = `Pictures/img_${idx}_sq_${sub.序號}.png`;
+      imageRefs.push(ref);
+      section.subImageRefs = {
+        ...(section.subImageRefs ?? {}),
+        [subImageKey(sub.id, sub.序號)]: ref,
+        [String(sub.序號)]: ref,
+      };
+      zip.file(ref, base64ToUint8Array(sub.image_base64));
+    });
     return section;
   });
 

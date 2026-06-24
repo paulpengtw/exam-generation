@@ -33,7 +33,17 @@ class GenerateParams(BaseModel):
     options: list[str] | None = None
     topic: str | None = None
     core_question: str | None = None
+    sub_context: str | None = None
+    science_competency: list[str] | None = None
     learning_performance: list[str] | None = None
+    core_competency: list[str] | None = None
+    learning_content: list[str] | None = None
+    # #100: 子題 count and word limits
+    sub_question_count: int | None = Field(default=None, ge=3, le=7)
+    question_word_limit: int | None = Field(default=None, ge=1)
+    option_word_limit: int | None = Field(default=None, ge=1)
+    # #101: per-子題 configs as JSON string (array of {content_type, image_generation_mode, ...})
+    subquestion_configs: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -42,6 +52,7 @@ class PlanCoreQuestionsRequest(BaseModel):
     topic: str
     subject_filter: list[str] | None = None
     grade: int | None = None
+    subject: Literal["math", "social_studies", "natural_sciences"] = "social_studies"
 
 
 class PlanCoreQuestionsResponse(BaseModel):

@@ -37,6 +37,14 @@ export default function App() {
             </AuthGuard>
           }
         />
+        <Route
+          path="/generate/natural_sciences"
+          element={
+            <AuthGuard>
+              <GeneratePage subject="natural_sciences" />
+            </AuthGuard>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );

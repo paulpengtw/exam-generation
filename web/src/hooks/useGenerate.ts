@@ -22,7 +22,14 @@ export interface GenerateParams {
   options?: string[];
   topic?: string;
   core_question?: string;
+  sub_context?: string;
+  science_competency?: string[];
   learning_performance?: string[];
+  learning_content?: string[];
+  sub_question_count?: number;
+  question_word_limit?: number;
+  option_word_limit?: number;
+  subquestion_configs?: string;
 }
 
 export interface LearningContentItem {
@@ -41,6 +48,7 @@ export interface SubQuestion {
   序號: number;
   年級: number;
   科目: string[];
+  科學能力?: string[];
   核心素養: string[];
   學習內容: LearningContentItem[];
   學習表現: LearningContentItem[];
@@ -50,6 +58,11 @@ export interface SubQuestion {
   答案: string;
   答案解析: string;
   評分規準?: RubricEntry[];
+  題目內容類型?: string;
+  image_generation_mode?: "html" | "gpt_image";
+  圖片?: string | null;
+  chart_spec?: unknown;
+  image_base64?: string;
 }
 
 export interface ExamQuestion {
@@ -62,6 +75,8 @@ export interface ExamQuestion {
   閱讀歷程?: string[];
   文本形式?: string;
   題目內容類型?: string;
+  情境子類別?: string;
+  科學能力?: string[];
   核心問題?: string;
   文本?: string;
   subquestions?: SubQuestion[];
@@ -72,6 +87,15 @@ export interface ExamQuestion {
   verification?: unknown;
   metadata?: unknown;
   image_base64?: string;
+}
+
+export type DraftPhase = "draft" | "image" | "verified" | "corrected";
+
+export interface GeneratedQuestion {
+  index: number;
+  question: ExamQuestion;
+  phase: DraftPhase;
+  isFinal: boolean;
 }
 
 export type LlmCallEvent =
@@ -98,6 +122,7 @@ function purposeToAgent(purpose: string): string {
     verify: "verifier",
     correct: "corrector",
     html_image: "image_agent",
+    gpt_image: "image_agent",
     plan: "planner",
   };
   return map[purpose] ?? purpose;
@@ -108,6 +133,7 @@ export interface UseGenerateReturn {
   jobsAhead: number;
   progressLines: string[];
   results: ExamQuestion[];
+  displayResults: GeneratedQuestion[];
   llmCalls: LlmCallEvent[];
   agentLanes: AgentLane[];
   errorMessage: string | null;
@@ -116,6 +142,26 @@ export interface UseGenerateReturn {
 }
 
 class FatalStreamError extends Error {}
+
+function questionKey(question: ExamQuestion, index: number): string {
+  return question.id && question.id.length > 0 ? question.id : `index-${index}`;
+}
+
+function upsertDisplayResult(
+  prev: GeneratedQuestion[],
+  next: GeneratedQuestion,
+): GeneratedQuestion[] {
+  const key = questionKey(next.question, next.index);
+  const existingIndex = prev.findIndex((item) => (
+    questionKey(item.question, item.index) === key || item.index === next.index
+  ));
+  if (existingIndex === -1) {
+    return [...prev, next].sort((a, b) => a.index - b.index);
+  }
+  const updated = [...prev];
+  updated[existingIndex] = next;
+  return updated.sort((a, b) => a.index - b.index);
+}
 
 function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
@@ -137,7 +183,14 @@ function buildQueryString(params: GenerateParams): string {
   for (const v of params.options ?? []) qs.append("options", v);
   if (params.topic) qs.append("topic", params.topic);
   if (params.core_question) qs.append("core_question", params.core_question);
+  if (params.sub_context) qs.append("sub_context", params.sub_context);
+  for (const v of params.science_competency ?? []) qs.append("science_competency", v);
   for (const v of params.learning_performance ?? []) qs.append("learning_performance", v);
+  for (const v of params.learning_content ?? []) qs.append("learning_content", v);
+  if (params.sub_question_count !== undefined) qs.append("sub_question_count", String(params.sub_question_count));
+  if (params.question_word_limit !== undefined) qs.append("question_word_limit", String(params.question_word_limit));
+  if (params.option_word_limit !== undefined) qs.append("option_word_limit", String(params.option_word_limit));
+  if (params.subquestion_configs) qs.append("subquestion_configs", params.subquestion_configs);
   return qs.toString();
 }
 
@@ -207,9 +260,11 @@ export function useGenerate(): UseGenerateReturn {
   const [jobsAhead, setJobsAhead] = useState<number>(0);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [results, setResults] = useState<ExamQuestion[]>([]);
+  const [displayResults, setDisplayResults] = useState<GeneratedQuestion[]>([]);
   const [llmCalls, setLlmCalls] = useState<LlmCallEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const nextFinalIndexRef = useRef(0);
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
@@ -225,9 +280,11 @@ export function useGenerate(): UseGenerateReturn {
     controllerRef.current = null;
     setProgressLines([]);
     setResults([]);
+    setDisplayResults([]);
     setLlmCalls([]);
     setJobsAhead(0);
     setErrorMessage(null);
+    nextFinalIndexRef.current = 0;
     setStatus("idle");
   }, []);
 
@@ -243,9 +300,11 @@ export function useGenerate(): UseGenerateReturn {
     setStatus("generating");
     setProgressLines([]);
     setResults([]);
+    setDisplayResults([]);
     setLlmCalls([]);
     setJobsAhead(0);
     setErrorMessage(null);
+    nextFinalIndexRef.current = 0;
 
     fetchEventSource(url, {
       signal: controller.signal,
@@ -332,10 +391,30 @@ export function useGenerate(): UseGenerateReturn {
           case "pipeline":
             // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
             break;
+          case "question_update": {
+            try {
+              const parsed = JSON.parse(ev.data) as { index: number; phase: DraftPhase; question: ExamQuestion };
+              setDisplayResults((prev) => upsertDisplayResult(prev, {
+                index: parsed.index,
+                question: parsed.question,
+                phase: parsed.phase,
+                isFinal: false,
+              }));
+            } catch { /* ignore malformed draft updates */ }
+            break;
+          }
           case "result":
             try {
               const parsed = JSON.parse(ev.data) as ExamQuestion;
+              const index = nextFinalIndexRef.current;
+              nextFinalIndexRef.current += 1;
               setResults((prev) => [...prev, parsed]);
+              setDisplayResults((prev) => upsertDisplayResult(prev, {
+                index,
+                question: parsed,
+                phase: "verified",
+                isFinal: true,
+              }));
             } catch {
               setStatus("error");
             }
@@ -361,5 +440,16 @@ export function useGenerate(): UseGenerateReturn {
     });
   }, []);
 
-  return { status, jobsAhead, progressLines, results, llmCalls, agentLanes, errorMessage, generate, reset };
+  return {
+    status,
+    jobsAhead,
+    progressLines,
+    results,
+    displayResults,
+    llmCalls,
+    agentLanes,
+    errorMessage,
+    generate,
+    reset,
+  };
 }

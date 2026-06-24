@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import json
 
+from src.context_builder import (
+    _CONTENT_TEXT,
+    _PERFORMANCE_INTRO,
+    _PERFORMANCE_TEXT,
+    _build_curriculum_section,
+)
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ExamQuestion, ImageSpec, VerificationResult
 
-CORRECTION_SYSTEM_PROMPT = """\
+_CURRICULUM_PREFIX: str = _build_curriculum_section(
+    _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
+)
+
+_CORRECTION_SYSTEM_PROMPT_CORE = """\
 你是一位數學教師，剛剛收到審核老師對一道考試題目的意見回饋。
 請根據審核意見「最小幅度」修正題目，保留所有正確的部分。
 
@@ -18,10 +28,16 @@ CORRECTION_SYSTEM_PROMPT = """\
 - 若問題在「題目敘述歧義」→ 最小幅度澄清 題目，並同步調整 正確解題分析。
 - 若 chart_verification 指出圖表錯誤 → 只修正 image_spec/chart_spec 的 data/labels，
   保留 description、title、render_mode、chart_type 不變（除非審核明確要求）。
-- 絕對不可修改：情境、題型種類、題型、數學思考、學習內容、id、metadata。
+- 絕對不可修改：情境、題型種類、題型、數學思考、學習內容、學習表現、核心素養、出題概念、題目內容類型、id、metadata。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同（含所有原欄位）。只輸出 JSON，不要輸出其他文字。
 """
+
+CORRECTION_SYSTEM_PROMPT = (
+    f"{_CURRICULUM_PREFIX}\n\n---\n\n{_CORRECTION_SYSTEM_PROMPT_CORE}"
+    if _CURRICULUM_PREFIX
+    else _CORRECTION_SYSTEM_PROMPT_CORE
+)
 
 CORRECTION_USER_TEMPLATE = """\
 ## 原始題目（JSON）
@@ -43,6 +59,7 @@ def correct_question(
     question: ExamQuestion,
     verification: VerificationResult,
     chart_image_path: str | None = None,
+    curriculum_context: str | None = None,
 ) -> ExamQuestion:
     """Apply verification feedback to produce a minimally corrected question.
 
@@ -80,15 +97,21 @@ def correct_question(
         chart_details_block=chart_details_block,
     )
 
+    system = (
+        f"{curriculum_context}\n\n---\n\n{CORRECTION_SYSTEM_PROMPT}"
+        if curriculum_context
+        else CORRECTION_SYSTEM_PROMPT
+    )
+
     try:
         # Use multimodal when chart has issues and PNG exists
         if verification.chart_verification and chart_image_path:
             raw_text = client.generate_with_image(
-                CORRECTION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path, purpose="correct"
+                system, user_prompt, image_path=chart_image_path, purpose="correct"
             )
             corrected_data = extract_json(raw_text)
         else:
-            corrected_data = client.generate_json(CORRECTION_SYSTEM_PROMPT, user_prompt, purpose="correct")
+            corrected_data = client.generate_json(system, user_prompt, purpose="correct")
     except Exception:
         return question  # fall back to original on any LLM/parse error
 

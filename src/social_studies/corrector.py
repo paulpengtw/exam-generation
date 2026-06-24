@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 
 from src.llm_client import LLMClient, extract_json
+from src.social_studies.context_builder import _build_curriculum_section, _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
 from src.social_studies.schemas import ExamQuestion, ImageSpec, VerificationResult
 
-CORRECTION_SYSTEM_PROMPT = """\
+_CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO)
+
+_CORRECTION_SYSTEM_PROMPT_CORE = """\
 你是一位108課綱社會領域素養導向命題教師，剛收到審核老師對一道題組的意見回饋。
 請根據審核意見「最小幅度」修正題目，保留所有正確的部分。
 
@@ -19,10 +22,16 @@ CORRECTION_SYSTEM_PROMPT = """\
 - 若 chart_verification 指出非連續文本素材錯誤 → 只修正 chart_spec 的 data/labels/description，
   保留 render_mode、chart_type 不變。
 - 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、id、metadata、
-  各小題的 學習內容/學習表現/核心素養/出題概念/科目/年級。
+  各小題的 學習內容/學習表現/核心素養/出題概念/出題指示/科目/年級。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
 """
+
+CORRECTION_SYSTEM_PROMPT = (
+    f"{_CURRICULUM_PREFIX}\n\n---\n\n{_CORRECTION_SYSTEM_PROMPT_CORE}"
+    if _CURRICULUM_PREFIX
+    else _CORRECTION_SYSTEM_PROMPT_CORE
+)
 
 CORRECTION_USER_TEMPLATE = """\
 ## 原始題目（JSON）
@@ -98,7 +107,7 @@ def correct_question(
 
     # Allow correcting subquestion answers/rubrics, but preserve curriculum metadata
     if "subquestions" in corrected_data and isinstance(corrected_data["subquestions"], list):
-        from src.social_studies.schemas import LearningContentRef, RubricEntry, SubQuestion
+        from src.social_studies.schemas import RubricEntry, SubQuestion
         new_sqs = []
         for i, sq_raw in enumerate(corrected_data["subquestions"]):
             if not isinstance(sq_raw, dict):
@@ -123,11 +132,21 @@ def correct_question(
                     學習內容=original.學習內容 if original else [],
                     學習表現=original.學習表現 if original else [],
                     出題概念=original.出題概念 if original else sq_raw.get("出題概念", ""),
+                    出題指示=original.出題指示 if original else sq_raw.get("出題指示"),
                     題型=original.題型 if original else sq_raw.get("題型", ""),
                     題目=sq_raw.get("題目", original.題目 if original else ""),
                     答案=sq_raw.get("答案", original.答案 if original else ""),
                     答案解析=sq_raw.get("答案解析", original.答案解析 if original else ""),
                     評分規準=rubric if rubric else (original.評分規準 if original else []),
+                    題目內容類型=(
+                        original.題目內容類型 if original else sq_raw.get("題目內容類型")
+                    ),
+                    image_generation_mode=(
+                        original.image_generation_mode
+                        if original else sq_raw.get("image_generation_mode")
+                    ),
+                    圖片=original.圖片 if original else sq_raw.get("圖片"),
+                    chart_spec=original.chart_spec if original else None,
                 )
                 new_sqs.append(sq)
             except Exception:
