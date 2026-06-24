@@ -424,8 +424,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       skip_verify: skipVerify,
       image_generation_mode: imageGenerationMode,
       subject_filter: subjectFilter || undefined,
-      passage: cleanPassage,
-      options: cleanOptions.length ? cleanOptions : undefined,
+      passage: subject === "math" ? cleanPassage : undefined,
+      options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,
       topic:
         isCurriculumSubject && cleanTopic
           ? cleanTopic
@@ -1128,7 +1128,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         </div>
       )}
 
-      {subject !== "social_studies" && (
+      {subject === "math" && (
         <>
           <div>
             <label className="block text-sm font-medium">文本字數限制</label>
