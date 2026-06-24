@@ -407,10 +407,12 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               )}
             </dd>
           </div>
-          {lcDisplayEntries.length > 0 && (
-            <div className="flex gap-3 px-4 py-2.5">
-              <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{t("form.confirm_learning_content")}</dt>
-              <dd className="flex-1 text-sm text-gray-900">
+          <div className="flex gap-3 px-4 py-2.5">
+            <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{t("form.confirm_learning_content")}</dt>
+            <dd className="flex-1 text-sm text-gray-900">
+              {lcDisplayEntries.length === 0 ? (
+                <span className="text-gray-400 italic">{t("form.confirm_none")}</span>
+              ) : (
                 <ul className="space-y-1">
                   {lcDisplayEntries.map((entry) => (
                     <li key={entry.value} className="flex gap-2 text-sm">
@@ -421,9 +423,9 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                     </li>
                   ))}
                 </ul>
-              </dd>
-            </div>
-          )}
+              )}
+            </dd>
+          </div>
         </dl>
         <div className="flex flex-wrap gap-3 pt-1">
           <button
