@@ -680,33 +680,21 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       )}
 
       {Array.isArray(schemas.學習表現) && schemas.學習表現.length > 0 && (
-        <fieldset>
-          <legend className="text-sm font-medium">{t("form.learning_performance")}</legend>
+        <div>
+          <label className="block text-sm font-medium">{t("form.learning_performance")}</label>
           {availableLearningPerformance.length > 0 ? (
-            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {availableLearningPerformance.map((entry) => (
-                <label key={entry.value} className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={learningPerformance.includes(entry.value)}
-                    onChange={() =>
-                      setLearningPerformance((prev) => toggleMulti(prev, entry.value))
-                    }
-                    className="mt-1"
-                  />
-                  <span className="text-sm">
-                    <span className="font-medium">{entry.value}</span>
-                    {entry.instruction && (
-                      <span className="text-gray-600">：{entry.instruction}</span>
-                    )}
-                  </span>
-                </label>
-              ))}
+            <div className="mt-1">
+              <SearchPicker
+                available={availableLearningPerformance}
+                selected={learningPerformance}
+                onChange={setLearningPerformance}
+                placeholder="搜尋學習表現..."
+              />
             </div>
           ) : (
             <p className="mt-1 text-sm text-gray-500">{t("form.learning_performance_empty")}</p>
           )}
-        </fieldset>
+        </div>
       )}
 
       {subject === "math" && (
@@ -886,33 +874,21 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       )}
 
       {(subject === "natural_sciences" || subject === "social_studies") && Array.isArray(schemas.學習內容) && schemas.學習內容.length > 0 && (
-        <fieldset>
-          <legend className="text-sm font-medium">{t("form.learning_content")}</legend>
+        <div>
+          <label className="block text-sm font-medium">{t("form.learning_content")}</label>
           {availableLearningContent.length > 0 ? (
-            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {availableLearningContent.map((entry) => (
-                <label key={entry.value} className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={learningContent.includes(entry.value)}
-                    onChange={() =>
-                      setLearningContent((prev) => toggleMulti(prev, entry.value))
-                    }
-                    className="mt-1"
-                  />
-                  <span className="text-sm">
-                    <span className="font-medium">{entry.value}</span>
-                    {entry.instruction && (
-                      <span className="text-gray-600">：{entry.instruction}</span>
-                    )}
-                  </span>
-                </label>
-              ))}
+            <div className="mt-1">
+              <SearchPicker
+                available={availableLearningContent}
+                selected={learningContent}
+                onChange={setLearningContent}
+                placeholder="搜尋學習內容..."
+              />
             </div>
           ) : (
             <p className="mt-1 text-sm text-gray-500">{t("form.learning_content_empty")}</p>
           )}
-        </fieldset>
+        </div>
       )}
 
       <div>
