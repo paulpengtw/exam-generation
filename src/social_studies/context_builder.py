@@ -378,6 +378,7 @@ def build_user_prompt(
             cfg.image_generation_mode,
             cfg.question_word_limit,
             cfg.option_word_limit,
+            cfg.text_word_limit,
         ))
         if cfg.question_type:
             cfg_parts.append(f"題型={cfg.question_type.value}")
@@ -392,6 +393,8 @@ def build_user_prompt(
             cfg_parts.append(f"題目字數上限={cfg.question_word_limit}")
         if cfg.option_word_limit:
             cfg_parts.append(f"選項字數上限={cfg.option_word_limit}")
+        if cfg.text_word_limit:
+            cfg_parts.append(f"文本字數上限={cfg.text_word_limit}")
         if cfg_parts:
             sq_config_parts.append(f"  - 第{i}小題：" + "，".join(cfg_parts))
     if not sq_config_parts:
@@ -411,6 +414,7 @@ def build_user_prompt(
                     cfg.image_generation_mode,
                     cfg.question_word_limit,
                     cfg.option_word_limit,
+                    cfg.text_word_limit,
                     cfg.question_type,
                     cfg.instruction,
                 ))

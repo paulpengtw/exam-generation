@@ -10,6 +10,7 @@ export interface SubQuestionConfig {
   image_generation_mode?: "html" | "gpt_image";
   question_word_limit?: number;
   option_word_limit?: number;
+  text_word_limit?: number;
 }
 
 export interface GenerateParams {
@@ -256,10 +257,11 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
             image_generation_mode: cfg.image_generation_mode || undefined,
             question_word_limit: cfg.question_word_limit,
             option_word_limit: cfg.option_word_limit,
+            text_word_limit: cfg.text_word_limit,
           }))
         : [];
     const hasSubquestionConfig = effectiveSubquestionConfigs.some(
-      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit,
+      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit,
     );
     const shouldSendSubquestionConfigs =
       subject === "social_studies" && subQuestionCount !== "" && (
@@ -814,7 +816,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               {subquestionConfigs.map((cfg, i) => (
                 <div key={i} className="rounded border border-gray-100 bg-gray-50 px-3 py-2">
                   <span className="block text-sm font-medium text-gray-700">第{i + 1}小題</span>
-                  <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-5">
+                  <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-6">
                     <div>
                       <label className="block text-xs text-gray-500">題型</label>
                       <select
@@ -827,6 +829,21 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                           <option key={s.value} value={s.value}>{s.value}</option>
                         ))}
                       </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500">文本字數限制</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={cfg.text_word_limit ?? ""}
+                        onChange={(e) =>
+                          updateSubquestionConfig(i, {
+                            text_word_limit: optionalNumber(e.target.value),
+                          })
+                        }
+                        placeholder="不限"
+                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+                      />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500">題目字數限制</label>
