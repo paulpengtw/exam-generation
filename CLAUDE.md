@@ -16,7 +16,7 @@ The Python code handles all random selection (grade, 情境, 題型種類, 題�
 The web form always shows both 學習內容 and 學習表現 in the confirmation step before submission. If the user made no manual selection, the frontend pre-draws a random subset (1–3 items for 學習內容, 1–2 for 學習表現) from the available pool before displaying the confirmation screen. What is shown is exactly what will be sent to the backend — no further randomness happens on the backend for those fields when they are present.
 
 ### Verify + correct loop
-1. First call (Sonnet): generates the question and solution.
+1. First call (Sonnet): generates the question and solution. **For math,** this is a single call producing the full question. **For social studies and natural sciences,** this is a two-stage pipeline: a **文本生成器** call produces the shared 核心問題/文本/取材來源 plus an N-entry 子題 plan, then N concurrent **子題產生器** calls each write one complete 子題 (via `ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6); the assembled 題組 then enters the verify/correct loop.
 2. Chart/image specs are rendered to PNG before verification so the verifier can see them. Math and natural sciences render top-level `chart_spec`; social studies also renders `subquestions[*].chart_spec` to per-小題 PNGs.
 3. Second call (Sonnet, multimodal): independently solves the question, inspects PNG, returns `VerificationResult` with `passed`, `answer_match`, `details`, `my_answer`, `provided_answer`, and optional `chart_verification`.
 4. If `passed=False`, a correction pass sends the failed question + verifier feedback back to Sonnet for a minimal targeted fix (`src/corrector.py`). PNG re-renders only when `chart_spec` actually changes. Re-verify and loop up to `max_retries` (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
@@ -28,7 +28,7 @@ Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-op
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
 
 ### Shared loaders, three subject pipelines
-Math (`src/*.py`), social studies (`src/social_studies/*.py`), and natural sciences (`src/natural_sciences/*.py`) are three parallel question-generation pipelines that share their curriculum-loading core. The subject-agnostic loaders live in `src/common/`:
+Math (`src/*.py`), social studies (`src/social_studies/*.py`), and natural sciences (`src/natural_sciences/*.py`) are three parallel question-generation pipelines that share their curriculum-loading core. The subject-agnostic loaders live in `src/common/`: Social studies and natural sciences `generate_one` now run a **文本生成器 → N parallel 子題產生器** pipeline; math's `generate_one` retains the original single-call structure.
 
 - `src/common/curriculum_loader.py` — JSON loaders + `allowed_learning_content` / `allowed_learning_performance` filters, parameterized by `data_dir` and a `subject_to_prefixes` map.
 - `src/common/core_competency_loader.py` — JSON loader + `build_core_competency_enum` + `allowed_competencies(stage)`.
@@ -125,9 +125,10 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/social_studies/core_competency_loader.py` | Thin shim over `src.common.core_competency_loader`; adds `allowed_core_competencies(data, stage, subject)` for 核心素養 sampler pool. |
 | `src/social_studies/planner.py` | Thin shim over `src.common.planner.plan_core_questions`; provides the 社會領域 system/user templates. |
 | `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
-| `src/social_studies/context_builder.py` | Social studies prompt assembly; `## 課程綱要參考` block injected into system prompt; renders `## 各小題配置` when web/API per-小題 constraints are provided |
+| `src/social_studies/context_builder.py` | Social studies prompt assembly; `## 課程綱要參考` block injected into system prompt; renders `## 各小題配置` when web/API per-小題 constraints are provided; adds `build_text_system/user_prompt` (文本生成器 stage) and `build_subquestion_system/user_prompt` (per-子題 stage); original `build_system/user_prompt` retained for correction passes |
 | `src/social_studies/schemas.py` | Social studies Pydantic models: `ExamQuestion`, `SubQuestion`, `SubQuestionConfig`, `LearningContentRef`, `RubricEntry`, `QuestionSubject` (歷史/地理/公民與社會/跨科), `VerificationResult`, `ImageSpec`. `SubQuestionConfig` includes optional per-小題 `question_type`, `instruction`, `learning_content: list[str]`, `learning_performance: list[str]` (empty = global pool fallback), content/image mode, and word-limit controls; `SubQuestion` includes optional persisted `出題指示`, per-小題 `題目內容類型`, `image_generation_mode`, `圖片`, and `chart_spec`. |
-| `src/natural_sciences/cli.py` | CLI entry point (no `--subject` flag; adds `--science-competency` and `--sub-context`; 題型 choices: Simple/Complex-multiple-choice/Constructed-response) |
+| `src/natural_sciences/cli.py` | CLI entry point (no `--subject` flag; adds `--science-competency` and `--sub-context`; 題型 choices: Simple/Complex-multiple-choice/Constructed-response); `generate_one` runs 文本生成器 → N parallel 子題產生器 stages via `ThreadPoolExecutor`; helpers `_parse_text_shell` / `_parse_subquestion`; optional `sub_client_factory` for test injection |
+| `src/social_studies/cli.py` | CLI entry point for 108課綱 社會領域 generation; `generate_one` runs 文本生成器 → N parallel 子題產生器 stages via `ThreadPoolExecutor`; helpers `_parse_text_shell` / `_parse_subquestion`; optional `sub_client_factory` for test injection |
 | `src/natural_sciences/schema_loader.py` | Builds schema dict from `schema_meta.csv` + `schema_parameters.csv`; handles `parent` column on `情境子類別` rows to build the parent-child map used by the sampler |
 | `src/natural_sciences/curriculum_loader.py` | Thin shim over `src.common.curriculum_loader`; overrides `allowed_learning_content` / `allowed_learning_performance` to skip subject filtering (科目 is fixed as 自然科學) |
 | `src/natural_sciences/core_competency_loader.py` | Thin shim over `src.common.core_competency_loader`; `NaturalCoreCompetency` enum, subject_prefix `"自"` |
@@ -135,7 +136,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/natural_sciences/sampler.py` | PISA-Science sampler: picks grade, 情境 + 情境子類別 (parent-child constrained), 題型, 科學能力 (1–2 of 6: 能力一/二/三 + 環境能力一/二/三), 學習表現 (1–2), 學習內容 (1–3 preferentially derived from chosen 學習表現 via `對應學習內容`). No 科目 buckets. |
 | `src/natural_sciences/schemas.py` | Pydantic models: `ExamQuestion` (subquestions[], 科學能力, 情境子類別, no 核心素養 at top level), `SubQuestion` (科學能力 replaces 社會領域 核心素養; 科目 fixed as 自然科學), `ScienceCompetency` (6-member enum), `QuestionSubContext`. No `QuestionSubject` enum. |
 | `src/natural_sciences/data_loader.py` | Hybrid few-shot loader: scans `data/natural_sciences/few_shot/{q_type}/` for `*.json` and optional `few_shot_examples.csv`; falls back to all subdirs when q_type unknown. Current repo includes 28 JSON examples. |
-| `src/natural_sciences/context_builder.py` | PISA-Science prompt assembly; injects `跨科概念` taxonomy + `## 課程綱要參考` block (學習內容 + 學習表現 + 跨科概念) into system prompt |
+| `src/natural_sciences/context_builder.py` | PISA-Science prompt assembly; injects `跨科概念` taxonomy + `## 課程綱要參考` block (學習內容 + 學習表現 + 跨科概念) into system prompt; adds `build_text_system/user_prompt` and `build_subquestion_system/user_prompt` for the two-stage pipeline; original builders retained |
 | `src/natural_sciences/verifier.py` | Explicit "寬鬆通過、只攔重大問題" stance — more lenient than math's "明確錯誤"; otherwise parallel architecture (multimodal when chart PNG present) |
 | `src/natural_sciences/corrector.py` | Frozen fields: `學習內容/學習表現/科學能力/出題概念/科目/年級`; minimal targeted correction (parallel to social studies corrector) |
 | `data/natural_sciences/curriculum/schema_meta.csv` | Natural sciences 學習階段 + grades (runtime-editable) |
@@ -143,7 +144,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/schemas.py` | Math Pydantic models (enums loaded dynamically from `question_schemas.json` at import time). `ExamQuestion` has optional 核心素養 (list[str]), 學習表現 (list[LearningContentItem]), 題目內容類型 (str \| None), 出題概念 (str). `SampledParams` mirrors these plus `subject_filter`. New enums: `CoreCompetency` (27 數-E/J/U-A1..C3 codes built via `src.common.core_competency_loader.build_core_competency_enum`) and `QuestionSubject` (數與量/代數/幾何/統計與機率/跨領域). `ImageSpec` describes the image; `ChartVerificationResult` is nested in `VerificationResult`. |
 | `src/sampler.py` | Curriculum-aware math sampler. Loads `data/math/curriculum/` via `src.common.*`. Owns `_MATH_SUBJECT_TO_PREFIXES` (科目→prefix-letter map) and `grade_to_learning_stage(grade)` helper. Samples 核心素養 (1–3), 學習表現 (1–3), 題目內容類型 (1 of 純文字 / 含圖片 / graphs/charts/tables / customized), and optional `subject_filter` alongside the existing 情境/題型種類/題型/數學思考/學習內容/style draws. |
 | `src/context_builder.py` | Math prompt assembly. Injects curriculum context (`## 課程綱要參考`) into the system prompt — same pattern as social studies. `build_user_prompt` accepts `user_topic`, `user_passage`, `user_options`, `user_core_question` overrides and returns `(prompt, few_shot_images)`. `CONTENT_TYPE_INSTRUCTIONS` maps the 4 題目內容類型 values to per-prompt instructions. |
-| `src/llm_client.py` | OpenAI-compatible API client with model routing; `generate_with_image()` for multimodal (text + PNG) calls |
+| `src/llm_client.py` | OpenAI-compatible API client with model routing; `generate_with_image()` for multimodal (text + PNG) calls; `generate_json(..., agent_override=str)` stamps per-子題 agent ids (`sub_generator#i`) on all streamed events; `emit_stage(obs, agent, stage, status)` emits stage-lifecycle events |
 | `src/verifier.py` | Independent answer verification pass |
 | `src/corrector.py` | Minimal targeted correction pass for failed-verification questions |
 | `src/renderer.py` | matplotlib PNG generation for statistical charts (`render_mode: "chart"`) |
@@ -158,7 +159,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `server/generate/models.py` `GenerateParams` | Accepts all three subjects. NS-specific fields: `sub_context: str \| None`, `science_competency: list[str] \| None`. Social-studies per-小題 fields: `sub_question_count` (3-7), `question_word_limit`, `option_word_limit`, and `subquestion_configs` JSON string; each row may include `question_type`, `instruction`, `learning_content`, and `learning_performance` (empty lists fall back to the global sampled pool), with blank question types sampled per 小題. `subject` is plain `str` (accepts `"natural_sciences"`). `PlanCoreQuestionsRequest.subject` is `Literal["math", "social_studies", "natural_sciences"]`. |
 | `server/utility/routes.py` `/api/schemas?subject=...` | `subject=math` augments base math schema with `科目` (4 strands), `題目內容類型` (4 entries), and `學習表現` filtered by 學習階段. `subject=natural_sciences` builds schema from `schema_parameters.csv` + curriculum JSON (PISA-Science dimensions: 情境/情境子類別/科學能力/題型/題目內容類型 with 學習表現 and 學習內容 pools). |
 | `server/config.py` `ServerConfig.math_curriculum_dir` | Env `MATH_CURRICULUM_DIR`, parallel to `social_studies_curriculum_dir`. `natural_sciences_curriculum_dir` env `NATURAL_SCIENCES_CURRICULUM_DIR` added alongside. |
-| `src/config.py` | Environment variable configuration |
+| `src/config.py` | Environment variable configuration; `subgen_max_concurrency` (env `SUBGEN_MAX_CONCURRENCY`, default 6) caps parallel 子題產生器 calls |
 | `src/cli.py` | CLI entry point (argparse) |
 
 ## Code Conventions
@@ -382,7 +383,7 @@ Complete waterfall trace of `uv run python -m src.cli generate`. Full reference:
 
 ### Phase 1: Bootstrap & Configuration (`src/cli.py`, `src/config.py`)
 1. `main()` → `parse_args()` (cli.py:215, 43-70)
-2. `Config.from_env()` reads `.env` + env vars: `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_PLAN/EXECUTE`, `LLM_RATE_LIMIT_DELAY`, `OUTPUT_DIR`, `DATA_DIR` (config.py:22-36)
+2. `Config.from_env()` reads `.env` + env vars: `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_PLAN/EXECUTE`, `LLM_RATE_LIMIT_DELAY`, `OUTPUT_DIR`, `DATA_DIR`, `SUBGEN_MAX_CONCURRENCY` (config.py:22-36)
 3. `config.validate()` ensures `LLM_API_KEY` present (cli.py:227)
 4. `output_dir.mkdir()` (cli.py:230)
 
@@ -441,6 +442,7 @@ Image rendering happens **before** verification so the verifier can see the PNG.
 | 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet | renderer.py:343 |
 | 3 | Verify answer + image (multimodal) | Sonnet | verifier.py (`generate_with_image`) |
 | 4 | Correction (when verification fails; multimodal if chart failed) | Sonnet | corrector.py |
+> **Social studies & natural sciences:** Call #1 is replaced by a 文本生成器 call (agent `generator`) + N concurrent 子題產生器 calls (agents `sub_generator#1`…`sub_generator#N`), each on its own `LLMClient` instance. Calls #2–4 (image/verify/correct) are unchanged.
 
 Calls 3 + 4 may repeat up to `max_retries` times (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
 

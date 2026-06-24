@@ -46,6 +46,7 @@ The `"html"` path handles geometry diagrams, coordinate planes, tables, and any 
 
 - **No RAG.** All curriculum data and few-shot examples are injected directly as context.
 - **Randomness is script-side.** The program selects grade, question type, context, learning content — not the LLM.
+- **Two-stage generation (社會 / 自然).** For social studies and natural sciences, question generation runs a two-stage pipeline: a **文本生成器** call produces the shared 核心問題, 文本, and 取材來源 plus an N-entry 子題 plan; then N **子題產生器** calls each write one full 子題 concurrently (`ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6). The assembled 題組 then flows through image rendering → verification → correction unchanged. Math generation stays a single flat call.
 - **Verify + correct loop.** Sonnet generates → Sonnet verifies → on failure, Sonnet applies a minimal targeted correction and re-verifies (up to `max_retries` times). Only the wrong field changes; classification, metadata, and correct fields are preserved.
 - **OpenAI-compatible endpoint.** Uses the `openai` SDK for endpoint diversity. Opus plans, Sonnet executes.
 
@@ -228,6 +229,7 @@ Environment variables (set in `.env` or export directly):
 | `IMAGE_MODEL` | CLI + server | Image generation model used when GPT image mode is selected | `gpt-image2` |
 | `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
 | `LLM_MAX_RETRIES` | CLI + server | Max correction attempts when verification fails | `3` |
+| `SUBGEN_MAX_CONCURRENCY` | CLI + server | Max concurrent 子題產生器 LLM calls per 題組 (SS/NS only) | `6` |
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |
 | `QUESTION_SCHEMAS_PATH` | CLI + server | Path to question parameter config JSON | `./question_schemas.json` |
 | `SOCIAL_STUDIES_CURRICULUM_DIR` | CLI + server | Directory containing social-studies curriculum CSVs | `./data/social_studies/curriculum` |
@@ -493,7 +495,7 @@ Each generated question produces a JSON file following this schema:
 
 For image-based questions, a corresponding PNG file is generated in the same output directory. Social-studies per-小題 images use filenames like `{question_id}_sq{序號}.png`; SSE result payloads embed these as `subquestions[*].image_base64`, and the web UI / ODT export render them inline with the matching 小題. `chart_verification` is only present when a chart image was rendered and sent to the verifier; it is omitted (`null`) for text-only questions.
 
-Social studies and natural sciences use a 題組 shape with `subquestions[]`. For social studies, the parent item is locked as 題組題 and the top-level `題型` is a legacy/primary value, while each `subquestions[*].題型` may vary independently. The web UI sets social-studies 題型 on each 小題 row; blank rows are sampled randomly by the backend. Per-小題 free-text instructions are persisted as `subquestions[*].出題指示`. Social-studies subquestions can also include per-小題 `題目內容類型`, `image_generation_mode`, `chart_spec`, `圖片`, and `image_base64` when the prompt or web/API row config asks for visual material.
+Social studies and natural sciences use a 題組 shape with `subquestions[]`. For social studies, the parent item is locked as 題組題 and the top-level `題型` is a legacy/primary value, while each `subquestions[*].題型` may vary independently. The web UI sets social-studies 題型 on each 小題 row; blank rows are sampled randomly by the backend. Per-小題 free-text instructions are persisted as `subquestions[*].出題指示`. Social-studies subquestions can also include per-小題 `題目內容類型`, `image_generation_mode`, `chart_spec`, `圖片`, and `image_base64` when the prompt or web/API row config asks for visual material. For social studies and natural sciences, `subquestions[]` is populated by N parallel 子題產生器 LLM calls (one per 子題); the assembled question then proceeds through image rendering, verification, and correction as usual.
 
 ### Image Rendering
 
@@ -847,6 +849,8 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 | 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet (`model_execute`) | renderer.py | 343 |
 | 3 | Verify question + image (multimodal) | Sonnet (`model_execute`) | verifier.py (`generate_with_image`) | — |
 | 4 | Correction (when verification fails; multimodal if chart was the issue) | Sonnet (`model_execute`) | corrector.py | — |
+
+> **Social studies & natural sciences only:** Call #1 is replaced by a two-stage pipeline — one **文本生成器** call (agent: `generator`) produces the shared passage and 子題 plan, followed by N concurrent **子題產生器** calls (agents: `sub_generator#1` … `sub_generator#N`, each writing one complete 子題). Calls #2–4 (image rendering, verification, correction) are unchanged and operate on the fully-assembled 題組.
 
 Calls 3 + 4 may repeat up to `max_retries` times (default 3).
 
