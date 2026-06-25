@@ -29,6 +29,7 @@ export interface GenerateParams {
   image_generation_mode: "html" | "gpt_image";
   subject_filter?: string;
   passage?: string;
+  text_word_limit?: number;
   options?: string[];
   topic?: string;
   core_question?: string;
@@ -199,6 +200,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     useState<"html" | "gpt_image">("html");
   const [subjectFilter, setSubjectFilter] = useState<string>("");
   const [passage, setPassage] = useState<string>(TEXT_HINT);
+  const [textWordLimit, setTextWordLimit] = useState<number | undefined>(undefined);
   const [options, setOptions] = useState<string[]>([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
   const [topic, setTopic] = useState<string>("");
   const [coreQuestion, setCoreQuestion] = useState<string | null>(null);
@@ -220,6 +222,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     setQType([]);
     setImageGenerationMode("html");
     setPassage(TEXT_HINT);
+    setTextWordLimit(undefined);
     setOptions([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
     setSubjectFilter("");
     setSubContext("");
@@ -431,6 +434,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       image_generation_mode: imageGenerationMode,
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
+      text_word_limit: textWordLimit,
       options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,
       topic:
         isCurriculumSubject && cleanTopic
@@ -1161,11 +1165,11 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       <div>
         <label className="block text-sm font-medium">文本字數限制</label>
         <input
-          type="text"
-          value={passage}
-          onFocus={() => { if (passage === TEXT_HINT) setPassage(""); }}
-          onBlur={() => { if (passage === "") setPassage(TEXT_HINT); }}
-          onChange={(e) => setPassage(e.target.value)}
+          type="number"
+          min={1}
+          value={textWordLimit ?? ""}
+          onChange={(e) => setTextWordLimit(e.target.value ? Number(e.target.value) : undefined)}
+          placeholder="不限"
           className="mt-1 block w-full border rounded px-2 py-1"
         />
       </div>

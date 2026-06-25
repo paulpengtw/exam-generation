@@ -68,6 +68,7 @@ async def generate_endpoint(
     sub_question_count: int | None = Query(default=None, ge=3, le=7),
     question_word_limit: int | None = Query(default=None, ge=1),
     option_word_limit: int | None = Query(default=None, ge=1),
+    text_word_limit: int | None = Query(default=None, ge=1),
     subquestion_configs: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
@@ -104,6 +105,7 @@ async def generate_endpoint(
         sub_question_count=sub_question_count,
         question_word_limit=question_word_limit,
         option_word_limit=option_word_limit,
+        text_word_limit=text_word_limit,
         subquestion_configs=subquestion_configs,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))

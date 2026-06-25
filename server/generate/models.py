@@ -43,6 +43,7 @@ class GenerateParams(BaseModel):
     sub_question_count: int | None = Field(default=None, ge=3, le=7)
     question_word_limit: int | None = Field(default=None, ge=1)
     option_word_limit: int | None = Field(default=None, ge=1)
+    text_word_limit: int | None = Field(default=None, ge=1)
     # #101: per-子題 configs as JSON string (array of {content_type, image_generation_mode, ...})
     subquestion_configs: str | None = None
 

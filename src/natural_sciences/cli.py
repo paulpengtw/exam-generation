@@ -39,6 +39,7 @@ from src.natural_sciences.schemas import (
     SampledParams,
     ScienceCompetency,
     SubQuestion,
+    SubQuestionConfig,
 )
 from src.natural_sciences.verifier import verify_question
 from src.renderer import render_image
@@ -56,6 +57,30 @@ def _emit_question_update(
     if callback is None:
         return
     callback(question, phase)
+
+
+def _with_text_word_limit(
+    params: SampledParams,
+    text_word_limit: int | None,
+) -> SampledParams:
+    if text_word_limit is None:
+        return params
+
+    slot_count = params.sub_question_count or len(params.subquestion_configs) or 3
+    configs = list(params.subquestion_configs)
+    if len(configs) < slot_count:
+        configs.extend(SubQuestionConfig() for _ in range(slot_count - len(configs)))
+
+    return params.model_copy(
+        update={
+            "subquestion_configs": [
+                cfg
+                if cfg.text_word_limit is not None
+                else cfg.model_copy(update={"text_word_limit": text_word_limit})
+                for cfg in configs
+            ],
+        },
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -335,6 +360,7 @@ def generate_one(
     html_renderer: PlaywrightRenderer | None = None,
     image_generation_mode: str = "html",
     user_passage: str | None = None,
+    text_word_limit: int | None = None,
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
@@ -342,6 +368,7 @@ def generate_one(
     sub_client_factory: Callable[[], Any] | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA Science question set."""
+    params = _with_text_word_limit(params, text_word_limit)
     if dry_run:
         text_system = build_text_system_prompt()
         text_user, text_images = build_text_user_prompt(
@@ -493,6 +520,7 @@ def generate_with_corrections(
     image_generation_mode: str = "html",
     dry_run: bool = False,
     user_passage: str | None = None,
+    text_word_limit: int | None = None,
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
@@ -510,6 +538,7 @@ def generate_with_corrections(
         html_renderer=html_renderer,
         image_generation_mode=image_generation_mode,
         user_passage=user_passage,
+        text_word_limit=text_word_limit,
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
