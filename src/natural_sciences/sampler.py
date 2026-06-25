@@ -145,6 +145,7 @@ def sample_params(
                 else []
             )
 
+    from src.natural_sciences.reporting_scale import REPORTING_SCALE_ORDER
     from src.natural_sciences.schemas import SubQuestionConfig
     resolved_configs: list[SubQuestionConfig] = []
     if subquestion_configs:
@@ -187,6 +188,15 @@ def sample_params(
             ]
 
     if resolved_configs:
+        resolved_configs = [
+            cfg.model_copy(
+                update={
+                    "reporting_scale": cfg.reporting_scale
+                    or rng.choice(REPORTING_SCALE_ORDER)
+                }
+            )
+            for cfg in resolved_configs
+        ]
         selected_q_type = resolved_configs[0].question_type or selected_q_type
 
     return SampledParams(

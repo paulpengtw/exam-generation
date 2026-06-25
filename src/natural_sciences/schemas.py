@@ -71,6 +71,7 @@ class SubQuestionConfig(BaseModel):
     question_word_limit: int | None = None
     option_word_limit: int | None = None
     text_word_limit: int | None = None
+    reporting_scale: str | None = None
     learning_content: list[str] = Field(default_factory=list)
     learning_performance: list[str] = Field(default_factory=list)
 
@@ -88,6 +89,7 @@ class SubQuestion(BaseModel):
     學習表現: list[LearningContentRef] = Field(default_factory=list)
     出題概念: str = ""
     出題指示: str | None = None
+    reporting_scale: str | None = None
     題型: QuestionType  # type: ignore[valid-type]
     題目: str
     答案: str = ""

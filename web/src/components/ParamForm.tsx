@@ -11,6 +11,7 @@ export interface SubQuestionConfig {
   question_word_limit?: number;
   option_word_limit?: number;
   text_word_limit?: number;
+  reporting_scale?: string;
   learning_content?: string[];
   learning_performance?: string[];
 }
@@ -371,12 +372,13 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
             question_word_limit: cfg.question_word_limit,
             option_word_limit: cfg.option_word_limit,
             text_word_limit: cfg.text_word_limit,
+            reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
             learning_content: cfg.learning_content?.length ? cfg.learning_content : undefined,
             learning_performance: cfg.learning_performance?.length ? cfg.learning_performance : undefined,
           }))
         : [];
     const hasSubquestionConfig = effectiveSubquestionConfigs.some(
-      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.learning_content?.length || c.learning_performance?.length,
+      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.reporting_scale || c.learning_content?.length || c.learning_performance?.length,
     );
     const shouldSendSubquestionConfigs =
       (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== "" && (
@@ -1087,6 +1089,26 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
                         <option value="gpt_image">GPT 生圖</option>
                       </select>
                     </div>
+                    {subject === "natural_sciences" && (
+                      <div>
+                        <label className="block text-xs text-gray-500">報告等級</label>
+                        <select
+                          value={cfg.reporting_scale || ""}
+                          onChange={(e) => updateSubquestionConfig(i, { reporting_scale: e.target.value || undefined })}
+                          className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+                        >
+                          <option value="">（隨機）</option>
+                          <option value="1c">等級 1c</option>
+                          <option value="1b">等級 1b</option>
+                          <option value="1a">等級 1a</option>
+                          <option value="2">等級 2</option>
+                          <option value="3">等級 3</option>
+                          <option value="4">等級 4</option>
+                          <option value="5">等級 5</option>
+                          <option value="6">等級 6</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <div className="mt-3">
                     <label className="block text-xs text-gray-500">出題指示</label>

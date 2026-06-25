@@ -15,9 +15,9 @@ from src.config import Config
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.natural_sciences.context_builder import (
+    _LEARNING_STAGE,
     LC_INSTRUCTIONS,
     LP_INSTRUCTIONS,
-    _LEARNING_STAGE,
     build_subquestion_system_prompt,
     build_subquestion_user_prompt,
     build_text_system_prompt,

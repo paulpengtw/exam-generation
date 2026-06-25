@@ -14,6 +14,10 @@ from src.natural_sciences.curriculum_loader import (
     performance_instructions,
 )
 from src.natural_sciences.data_loader import load_few_shot_example_groups
+from src.natural_sciences.reporting_scale import (
+    REPORTING_SCALE_LEVELS,
+    REPORTING_SCALE_ORDER,
+)
 from src.natural_sciences.schema_loader import (
     build_instructions,
     load_grades,
@@ -689,6 +693,24 @@ def build_subquestion_user_prompt(
     else:
         lp_pool_lines = ""
 
+    reporting_scale = cfg.reporting_scale if cfg and cfg.reporting_scale else None
+    reporting_scale_target_line = (
+        f"- **目標報告等級**：{reporting_scale}（{REPORTING_SCALE_LEVELS[reporting_scale]}）\n"
+        if reporting_scale
+        else ""
+    )
+    reporting_scale_reference = (
+        "\n## PISA Science 報告等級（Reporting Scale）參考\n\n"
+        "以下為 PISA Science 各等級之能力描述，供命題時參考各等級之認知需求差異：\n\n"
+        + "\n".join(
+            f"- **等級 {level}**：{REPORTING_SCALE_LEVELS[level]}"
+            for level in REPORTING_SCALE_ORDER
+        )
+        + "\n"
+        if reporting_scale
+        else ""
+    )
+
     source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
     return f"""\
 請根據以下共用素材與小題規劃，生成一道 PISA Science + 108課綱自然科學小題：
@@ -720,7 +742,7 @@ def build_subquestion_user_prompt(
 - **情境**：{"、".join(c.value for c in params.情境)}
 - **情境子類別**：{params.情境子類別.value}
 - **科學能力**：{science_competencies}
-{lc_pool_lines}{lp_pool_lines}
+{lc_pool_lines}{lp_pool_lines}{reporting_scale_target_line}{reporting_scale_reference}
 ## 參考範例
 
 {few_shot_text}
