@@ -566,6 +566,12 @@ def build_text_user_prompt(
 7. 只輸出 JSON 格式的結果。
 """,
     )
+    if params.text_word_limit:
+        text = text.replace(
+            "\n## 參考範例\n",
+            f"\n- **文本字數上限**：{params.text_word_limit} 字\n\n## 參考範例\n",
+            1,
+        )
     return text, image_paths
 
 

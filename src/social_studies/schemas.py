@@ -155,5 +155,6 @@ class SampledParams(BaseModel):
     sub_question_count: int | None = None
     question_word_limit: int | None = None
     option_word_limit: int | None = None
+    text_word_limit: int | None = None
     # #101: per-子題 content_type and image_generation_mode
     subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)

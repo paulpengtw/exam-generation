@@ -152,4 +152,5 @@ class SampledParams(BaseModel):
     sub_question_count: int | None = None
     question_word_limit: int | None = None
     option_word_limit: int | None = None
+    text_word_limit: int | None = None
     subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)
