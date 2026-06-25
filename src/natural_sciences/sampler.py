@@ -164,7 +164,9 @@ def sample_params(
             for i in range(sub_question_count)
         ]
         blank_count = sum(1 for cfg in resolved_configs if not cfg.question_type)
-        shuffled = list(q_type_pool)
+        pinned_types = {cfg.question_type for cfg in resolved_configs if cfg.question_type}
+        fill_pool = [q for q in q_type_pool if q not in pinned_types] or list(q_type_pool)
+        shuffled = list(fill_pool)
         rng.shuffle(shuffled)
         fill_iter = iter(shuffled[i % len(shuffled)] for i in range(blank_count))
         resolved_configs = [
@@ -186,13 +188,6 @@ def sample_params(
 
     if resolved_configs:
         selected_q_type = resolved_configs[0].question_type or selected_q_type
-        resolved_configs = [
-            cfg.model_copy(update={
-                "learning_content": list(cfg.learning_content or selected_lc_pool),
-                "learning_performance": list(cfg.learning_performance or selected_lp_pool),
-            })
-            for cfg in resolved_configs
-        ]
 
     return SampledParams(
         grade=selected_grade,

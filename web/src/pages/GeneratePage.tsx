@@ -85,9 +85,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           ? params.learning_content
           : undefined,
       sub_question_count:
-        subject === "social_studies" ? params.sub_question_count : undefined,
+        subject === "social_studies" || subject === "natural_sciences" ? params.sub_question_count : undefined,
       subquestion_configs:
-        subject === "social_studies" ? params.subquestion_configs : undefined,
+        subject === "social_studies" || subject === "natural_sciences" ? params.subquestion_configs : undefined,
     });
   };
 

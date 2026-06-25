@@ -171,3 +171,56 @@ def test_missing_subquestion_question_types_are_sampled(tmp_path) -> None:
     assert "第1小題：題型=選擇題" in prompt
     assert "第2小題：題型=" in prompt
     assert "第3小題：題型=" in prompt
+
+
+def test_build_subquestion_user_prompt_explicit_lc_lp_uses_cfg():
+    """Explicit per-子題 LC/LP appears in prompt with hard wording."""
+    from src.social_studies.context_builder import build_subquestion_user_prompt
+    from src.social_studies.schemas import SubQuestionConfig
+    from src.social_studies.sampler import ss_sample_params
+    import random
+
+    rng = random.Random(42)
+    params = ss_sample_params(rng=rng)
+    cfg = SubQuestionConfig(learning_content=["歷Ka-Ⅳ-1"], learning_performance=["社1b-Ⅳ-1"])
+    sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "測試"}
+    import pathlib
+    few_shot_dir = pathlib.Path("data/social_studies/few_shot")
+    prompt, _ = build_subquestion_user_prompt(
+        核心問題="測試核心問題",
+        文本="測試文本",
+        取材來源=["來源A"],
+        sq_plan=sq_plan,
+        params=params,
+        few_shot_dir=few_shot_dir,
+        rng=rng,
+        cfg=cfg,
+    )
+    assert "歷Ka-Ⅳ-1" in prompt
+    assert "社1b-Ⅳ-1" in prompt
+    assert "不得替換或新增" in prompt
+
+
+def test_build_subquestion_user_prompt_empty_cfg_uses_global_pool():
+    """Empty per-子題 cfg falls back to global pool header (no hard wording)."""
+    from src.social_studies.context_builder import build_subquestion_user_prompt
+    from src.social_studies.schemas import SubQuestionConfig
+    from src.social_studies.sampler import ss_sample_params
+    import random, pathlib
+
+    rng = random.Random(42)
+    params = ss_sample_params(rng=rng)
+    cfg = SubQuestionConfig()  # empty
+    sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "測試"}
+    few_shot_dir = pathlib.Path("data/social_studies/few_shot")
+    prompt, _ = build_subquestion_user_prompt(
+        核心問題="測試核心問題",
+        文本="測試文本",
+        取材來源=["來源A"],
+        sq_plan=sq_plan,
+        params=params,
+        few_shot_dir=few_shot_dir,
+        rng=rng,
+        cfg=cfg,
+    )
+    assert "不得替換或新增" not in prompt

@@ -6,6 +6,11 @@ import json
 import random
 from pathlib import Path
 
+from src.social_studies.core_competency_loader import (
+    competency_instructions,
+    load_core_competencies,
+    stage_code_for,
+)
 from src.social_studies.curriculum_loader import (
     content_instructions,
     load_learning_content,
@@ -14,18 +19,13 @@ from src.social_studies.curriculum_loader import (
     performance_instructions,
 )
 from src.social_studies.data_loader import load_few_shot_example_groups
-from src.social_studies.core_competency_loader import (
-    competency_instructions,
-    load_core_competencies,
-    stage_code_for,
-)
 from src.social_studies.schema_loader import (
     build_instructions,
     load_grades,
     load_learning_stage,
     load_schemas,
 )
-from src.social_studies.schemas import SampledParams
+from src.social_studies.schemas import SampledParams, SubQuestionConfig
 
 _schemas = load_schemas()
 _INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
@@ -44,6 +44,8 @@ _PERFORMANCE_TEXT: str = json.dumps(_PERFORMANCE_DATA, ensure_ascii=False, inden
 _CONTENT_TEXT: str = json.dumps(_CONTENT_DATA, ensure_ascii=False, indent=2) if _CONTENT_DATA.get("學習內容") else ""
 _LC_INSTRUCTIONS: dict[str, str] = content_instructions(_CONTENT_DATA)
 _LP_INSTRUCTIONS: dict[str, str] = performance_instructions(_PERFORMANCE_DATA)
+LC_INSTRUCTIONS = _LC_INSTRUCTIONS
+LP_INSTRUCTIONS = _LP_INSTRUCTIONS
 
 CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     "純文字": (
@@ -769,8 +771,6 @@ def build_subquestion_prompt(
         passage: The 文本 string produced by Call A.
         all_slot_configs: Full list of SubQuestionConfig for this 題組.
     """
-    from src.social_studies.schemas import SubQuestionConfig  # local to avoid circular
-
     g = grades if grades is not None else _GRADES
     stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
     grade_names = "、".join(f"{x}年級" for x in g)
@@ -956,6 +956,7 @@ def build_subquestion_user_prompt(
     few_shot_dir: Path,
     rng: random.Random | None = None,
     image_generation_mode: str = "html",
+    cfg: "SubQuestionConfig | None" = None,
 ) -> tuple[str, list[Path]]:
     del image_generation_mode
     if rng is None:
@@ -1010,21 +1011,37 @@ def build_subquestion_user_prompt(
         subject_value = params.科目.value
     core_competencies = "、".join(c.value for c in params.核心素養)
 
-    if params.學習內容_pool:
-        lc_codes = "、".join(params.學習內容_pool)
+    lc_explicit = bool(cfg and cfg.learning_content)
+    lc_for_slot = cfg.learning_content if lc_explicit else params.學習內容_pool
+    if lc_for_slot:
+        lc_codes = "、".join(lc_for_slot)
         lc_detail_lines = "\n".join(
-            f"  - {c}：{_LC_INSTRUCTIONS[c]}" for c in params.學習內容_pool if c in _LC_INSTRUCTIONS
+            f"  - {c}：{_LC_INSTRUCTIONS[c]}" for c in lc_for_slot if c in _LC_INSTRUCTIONS
         )
-        lc_pool_lines = f"- **指定學習內容**：{lc_codes}\n{lc_detail_lines}\n"
+        if lc_explicit:
+            lc_pool_lines = (
+                f"- **指定學習內容（本小題務必使用下列指定學習內容，不得替換或新增）**："
+                f"{lc_codes}\n{lc_detail_lines}\n"
+            )
+        else:
+            lc_pool_lines = f"- **指定學習內容**：{lc_codes}\n{lc_detail_lines}\n"
     else:
         lc_pool_lines = "- **指定學習內容**：（依課綱自行選用）\n"
 
-    if params.學習表現_pool:
-        lp_codes = "、".join(params.學習表現_pool)
+    lp_explicit = bool(cfg and cfg.learning_performance)
+    lp_for_slot = cfg.learning_performance if lp_explicit else params.學習表現_pool
+    if lp_for_slot:
+        lp_codes = "、".join(lp_for_slot)
         lp_detail_lines = "\n".join(
-            f"  - {c}：{_LP_INSTRUCTIONS[c]}" for c in params.學習表現_pool if c in _LP_INSTRUCTIONS
+            f"  - {c}：{_LP_INSTRUCTIONS[c]}" for c in lp_for_slot if c in _LP_INSTRUCTIONS
         )
-        lp_pool_lines = f"- **指定學習表現**：{lp_codes}\n{lp_detail_lines}\n"
+        if lp_explicit:
+            lp_pool_lines = (
+                f"- **指定學習表現（本小題務必使用下列指定學習表現，不得替換或新增）**："
+                f"{lp_codes}\n{lp_detail_lines}\n"
+            )
+        else:
+            lp_pool_lines = f"- **指定學習表現**：{lp_codes}\n{lp_detail_lines}\n"
     else:
         lp_pool_lines = "- **指定學習表現**：（依課綱自行選用）\n"
 

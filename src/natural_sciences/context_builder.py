@@ -20,7 +20,7 @@ from src.natural_sciences.schema_loader import (
     load_learning_stage,
     load_schemas,
 )
-from src.natural_sciences.schemas import SampledParams
+from src.natural_sciences.schemas import SampledParams, SubQuestionConfig
 
 _schemas = load_schemas()
 _INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
@@ -64,6 +64,8 @@ _CONTENT_TEXT: str = json.dumps(
 )
 _LC_INSTRUCTIONS: dict[str, str] = content_instructions(_CONTENT_DATA)
 _LP_INSTRUCTIONS: dict[str, str] = performance_instructions(_PERFORMANCE_DATA)
+LC_INSTRUCTIONS = _LC_INSTRUCTIONS
+LP_INSTRUCTIONS = _LP_INSTRUCTIONS
 
 CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     "純文字": (
@@ -599,6 +601,7 @@ def build_subquestion_user_prompt(
     few_shot_dir: Path,
     rng: random.Random | None = None,
     image_generation_mode: str = "html",
+    cfg: "SubQuestionConfig | None" = None,
 ) -> tuple[str, list[Path]]:
     del image_generation_mode
     if rng is None:
@@ -634,21 +637,31 @@ def build_subquestion_user_prompt(
 
     science_competencies = "、".join(c.value for c in params.科學能力)
 
-    if params.學習內容_pool:
-        lc_codes = "、".join(params.學習內容_pool)
+    lc_explicit = bool(cfg and cfg.learning_content)
+    lc_for_slot = cfg.learning_content if lc_explicit else params.學習內容_pool
+    if lc_for_slot:
+        lc_codes = "、".join(lc_for_slot)
         lc_detail_lines = "\n".join(
-            f"  - {c}：{_LC_INSTRUCTIONS[c]}" for c in params.學習內容_pool if c in _LC_INSTRUCTIONS
+            f"  - {c}：{_LC_INSTRUCTIONS[c]}" for c in lc_for_slot if c in _LC_INSTRUCTIONS
         )
-        lc_pool_lines = f"- **指定學習內容**：{lc_codes}\n{lc_detail_lines}\n"
+        if lc_explicit:
+            lc_pool_lines = f"- **指定學習內容（本小題務必使用下列指定學習內容，不得替換或新增）**：\n{lc_codes}\n{lc_detail_lines}\n"
+        else:
+            lc_pool_lines = f"- **指定學習內容**：{lc_codes}\n{lc_detail_lines}\n"
     else:
         lc_pool_lines = ""
 
-    if params.學習表現_pool:
-        lp_codes = "、".join(params.學習表現_pool)
+    lp_explicit = bool(cfg and cfg.learning_performance)
+    lp_for_slot = cfg.learning_performance if lp_explicit else params.學習表現_pool
+    if lp_for_slot:
+        lp_codes = "、".join(lp_for_slot)
         lp_detail_lines = "\n".join(
-            f"  - {c}：{_LP_INSTRUCTIONS[c]}" for c in params.學習表現_pool if c in _LP_INSTRUCTIONS
+            f"  - {c}：{_LP_INSTRUCTIONS[c]}" for c in lp_for_slot if c in _LP_INSTRUCTIONS
         )
-        lp_pool_lines = f"- **指定學習表現**：{lp_codes}\n{lp_detail_lines}\n"
+        if lp_explicit:
+            lp_pool_lines = f"- **指定學習表現（本小題務必使用下列指定學習表現，不得替換或新增）**：\n{lp_codes}\n{lp_detail_lines}\n"
+        else:
+            lp_pool_lines = f"- **指定學習表現**：{lp_codes}\n{lp_detail_lines}\n"
     else:
         lp_pool_lines = ""
 

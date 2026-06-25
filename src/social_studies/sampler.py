@@ -155,7 +155,9 @@ def sample_params(
         # Fill blank slots from a shuffled cycle so no 題型 repeats before exhausting
         # the pool. Pinned slots are untouched; only blank slots consume from fill_iter.
         blank_count = sum(1 for cfg in resolved_configs if not cfg.question_type)
-        shuffled = q_type_pool[:]
+        pinned_types = {cfg.question_type for cfg in resolved_configs if cfg.question_type}
+        fill_pool = [q for q in q_type_pool if q not in pinned_types] or q_type_pool[:]
+        shuffled = fill_pool[:]
         rng.shuffle(shuffled)
         fill_iter = iter(shuffled[i % len(shuffled)] for i in range(blank_count))
         resolved_configs = [
@@ -170,14 +172,6 @@ def sample_params(
         # Legacy/global mode for CLI or API callers that do not pin 小題 count.
         type_count = rng.randint(1, min(3, len(q_type_pool)))
         selected_q_types = rng.sample(q_type_pool, type_count)
-
-    resolved_configs = [
-        cfg.model_copy(update={
-            "learning_content": list(cfg.learning_content or selected_lc_pool),
-            "learning_performance": list(cfg.learning_performance or selected_lp_pool),
-        })
-        for cfg in resolved_configs
-    ]
 
     return SampledParams(
         grade=selected_grade,
@@ -196,3 +190,10 @@ def sample_params(
         option_word_limit=option_word_limit,
         subquestion_configs=resolved_configs,
     )
+
+
+def ss_sample_params(rng: random.Random | None = None, **kwargs) -> SampledParams:
+    seed = kwargs.pop("seed", None)
+    if seed is None and rng is not None:
+        seed = rng.randrange(2**32)
+    return sample_params(seed=seed, **kwargs)

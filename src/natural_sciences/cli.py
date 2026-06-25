@@ -15,6 +15,8 @@ from src.config import Config
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.natural_sciences.context_builder import (
+    LC_INSTRUCTIONS,
+    LP_INSTRUCTIONS,
     _LEARNING_STAGE,
     build_subquestion_system_prompt,
     build_subquestion_user_prompt,
@@ -218,6 +220,7 @@ def _parse_subquestion(
     if not isinstance(sq_raw, dict):
         return None
     try:
+        cfg = params.subquestion_configs[i - 1] if i - 1 < len(params.subquestion_configs) else None
         lc_refs = [
             LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
             for r in sq_raw.get("學習內容", [])
@@ -228,6 +231,16 @@ def _parse_subquestion(
             for r in sq_raw.get("學習表現", [])
             if isinstance(r, dict) and r.get("編碼")
         ]
+        if cfg and cfg.learning_content:
+            lc_refs = [
+                LearningContentRef(編碼=code, 說明=LC_INSTRUCTIONS.get(code, ""))
+                for code in cfg.learning_content
+            ]
+        if cfg and cfg.learning_performance:
+            lp_refs = [
+                LearningContentRef(編碼=code, 說明=LP_INSTRUCTIONS.get(code, ""))
+                for code in cfg.learning_performance
+            ]
         rubric = [
             RubricEntry(
                 code=str(r.get("code", "")),
@@ -386,6 +399,10 @@ def generate_one(
         sub_client = sub_client_factory() if sub_client_factory is not None else LLMClient(config)
         if hasattr(sub_client, "set_observer"):
             sub_client.set_observer(obs)
+        slot_cfg = (
+            params.subquestion_configs[idx - 1]
+            if idx - 1 < len(params.subquestion_configs) else None
+        )
         sub_user, sub_images = build_subquestion_user_prompt(
             核心問題=text_raw.get("核心問題", ""),
             文本=text_raw.get("文本", ""),
@@ -394,6 +411,7 @@ def generate_one(
             params=params,
             few_shot_dir=config.data_dir / "natural_sciences" / "few_shot",
             image_generation_mode=image_generation_mode,
+            cfg=slot_cfg,
         )
         emit_stage(obs, agent_id, "llm_generate", "start")
         try:
