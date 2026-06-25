@@ -234,6 +234,7 @@ def build_user_prompt(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    disable_reference_fewshot: bool = False,
 ) -> tuple[str, list[Path]]:
     if rng is None:
         rng = random.Random()
@@ -275,7 +276,11 @@ def build_user_prompt(
         if param_instruction_lines else ""
     )
 
-    example_groups = load_few_shot_example_groups(few_shot_dir, q_type=params.題型.value)
+    example_groups = (
+        []
+        if disable_reference_fewshot
+        else load_few_shot_example_groups(few_shot_dir, q_type=params.題型.value)
+    )
     all_image_paths: list[Path] = []
     if example_groups:
         sample_count = min(2, len(example_groups))
@@ -521,6 +526,7 @@ def build_text_user_prompt(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    disable_reference_fewshot: bool = False,
 ) -> tuple[str, list[Path]]:
     text, image_paths = build_user_prompt(
         params=params,
@@ -531,6 +537,7 @@ def build_text_user_prompt(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        disable_reference_fewshot=disable_reference_fewshot,
     )
     text = text.replace(
         """\
@@ -602,13 +609,18 @@ def build_subquestion_user_prompt(
     rng: random.Random | None = None,
     image_generation_mode: str = "html",
     cfg: "SubQuestionConfig | None" = None,
+    disable_reference_fewshot: bool = False,
 ) -> tuple[str, list[Path]]:
     del image_generation_mode
     if rng is None:
         rng = random.Random()
 
     q_type = sq_plan["題型"]
-    example_groups = load_few_shot_example_groups(few_shot_dir, q_type=q_type)
+    example_groups = (
+        []
+        if disable_reference_fewshot
+        else load_few_shot_example_groups(few_shot_dir, q_type=q_type)
+    )
     all_image_paths: list[Path] = []
     if example_groups:
         selected_group = rng.choice(example_groups)

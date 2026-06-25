@@ -15,6 +15,7 @@ export interface GenerateParams {
   q_type?: string[];
   count?: number;
   skip_verify?: boolean;
+  disable_reference_fewshot?: boolean;
   seed?: number;
   image_generation_mode?: "html" | "gpt_image";
   subject_filter?: string;
@@ -171,6 +172,9 @@ function buildQueryString(params: GenerateParams): string {
   if (params.set_type !== undefined) qs.append("set_type", params.set_type);
   if (params.count !== undefined) qs.append("count", String(params.count));
   if (params.skip_verify !== undefined) qs.append("skip_verify", String(params.skip_verify));
+  if (params.disable_reference_fewshot !== undefined) {
+    qs.append("disable_reference_fewshot", String(params.disable_reference_fewshot));
+  }
   if (params.seed !== undefined) qs.append("seed", String(params.seed));
   if (params.image_generation_mode !== undefined) {
     qs.append("image_generation_mode", params.image_generation_mode);

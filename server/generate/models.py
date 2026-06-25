@@ -24,6 +24,7 @@ class GenerateParams(BaseModel):
     q_type: list[str] | None = None
     count: int = 1
     skip_verify: bool = False
+    disable_reference_fewshot: bool = False
     seed: int | None = None
     max_retries: int = 3
     image_generation_mode: ImageGenerationMode = "html"

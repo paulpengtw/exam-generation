@@ -51,6 +51,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       q_type: params.q_type,
       count: params.count,
       skip_verify: params.skip_verify,
+      disable_reference_fewshot:
+        subject === "social_studies" || subject === "natural_sciences"
+          ? params.disable_reference_fewshot
+          : undefined,
       image_generation_mode:
         subject === "social_studies" || subject === "math" || subject === "natural_sciences"
           ? params.image_generation_mode

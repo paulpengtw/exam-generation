@@ -24,6 +24,7 @@ export interface GenerateParams {
   q_type: string[];
   count: number;
   skip_verify: boolean;
+  disable_reference_fewshot?: boolean;
   image_generation_mode: "html" | "gpt_image";
   subject_filter?: string;
   passage?: string;
@@ -191,6 +192,8 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [qType, setQType] = useState<string[]>([]);
   const [count, setCount] = useState<number>(1);
   const [skipVerify, setSkipVerify] = useState<boolean>(false);
+  const [disableReferenceFewshot, setDisableReferenceFewshot] =
+    useState<boolean>(false);
   const [imageGenerationMode, setImageGenerationMode] =
     useState<"html" | "gpt_image">("html");
   const [subjectFilter, setSubjectFilter] = useState<string>("");
@@ -422,6 +425,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       q_type: subject === "social_studies" ? [] : qType,
       count,
       skip_verify: skipVerify,
+      disable_reference_fewshot: disableReferenceFewshot,
       image_generation_mode: imageGenerationMode,
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
@@ -489,6 +493,10 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         value: p.image_generation_mode,
       },
       { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined },
+      {
+        label: t("form.confirm_disable_reference_fewshot"),
+        value: p.disable_reference_fewshot ? "✓" : undefined,
+      },
       { label: "小題數量", value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined },
       { label: "各小題配置", value: p.subquestion_configs },
     ];
@@ -1192,6 +1200,17 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         />
         <span className="text-sm">{t("form.skip_verify")}</span>
       </label>
+
+      {(subject === "social_studies" || subject === "natural_sciences") && (
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={disableReferenceFewshot}
+            onChange={(e) => setDisableReferenceFewshot(e.target.checked)}
+          />
+          <span className="text-sm">{t("form.disable_reference_fewshot")}</span>
+        </label>
+      )}
 
       {isCurriculumSubject && topic.trim() && !coreQuestion && (
         <p role="status" className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">

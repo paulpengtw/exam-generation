@@ -512,6 +512,7 @@ def generate_one(
     question_id: str,
     dry_run: bool = False,
     skip_verify: bool = False,
+    disable_reference_fewshot: bool = False,
     html_renderer: PlaywrightRenderer | None = None,
     image_generation_mode: str = "html",
     user_passage: str | None = None,
@@ -533,6 +534,7 @@ def generate_one(
             user_options=user_options,
             user_topic=user_topic,
             user_core_question=user_core_question,
+            disable_reference_fewshot=disable_reference_fewshot,
         )
         img_note = f" ({len(text_images)} few-shot images)" if text_images else ""
         return (
@@ -553,6 +555,7 @@ def generate_one(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        disable_reference_fewshot=disable_reference_fewshot,
     )
     emit_stage(obs, "generator", "llm_generate", "start")
     text_raw = client.generate_json(text_system, text_user, images=text_images or None)
@@ -600,6 +603,7 @@ def generate_one(
             few_shot_dir=few_shot_dir,
             image_generation_mode=image_generation_mode,
             cfg=slot_cfg,
+            disable_reference_fewshot=disable_reference_fewshot,
         )
         emit_stage(obs, agent_id, "llm_generate", "start")
         try:
@@ -690,6 +694,7 @@ def generate_with_corrections(
     question_id: str,
     max_retries: int = 3,
     skip_verify: bool = False,
+    disable_reference_fewshot: bool = False,
     html_renderer: PlaywrightRenderer | None = None,
     image_generation_mode: str = "html",
     dry_run: bool = False,
@@ -707,6 +712,7 @@ def generate_with_corrections(
         question_id=question_id,
         dry_run=dry_run,
         skip_verify=skip_verify,
+        disable_reference_fewshot=disable_reference_fewshot,
         html_renderer=html_renderer,
         image_generation_mode=image_generation_mode,
         user_passage=user_passage,
