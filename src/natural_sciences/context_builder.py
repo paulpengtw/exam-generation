@@ -336,12 +336,13 @@ def build_user_prompt(
     sq_config_parts: list[str] = []
     for i, cfg in enumerate(params.subquestion_configs, start=1):
         cfg_parts = []
-        has_config = any((
+        has_structural_config = any((
             cfg.question_type, cfg.instruction, cfg.content_type,
             cfg.image_generation_mode, cfg.question_word_limit,
-            cfg.option_word_limit, cfg.text_word_limit,
+            cfg.option_word_limit,
             cfg.learning_content, cfg.learning_performance,
         ))
+        has_config = has_structural_config or bool(cfg.text_word_limit)
         if cfg.question_type:
             cfg_parts.append(f"題型={cfg.question_type.value}")
         if cfg.instruction:
@@ -350,7 +351,7 @@ def build_user_prompt(
             cfg_parts.append(f"學習內容={','.join(cfg.learning_content)}")
         if cfg.learning_performance:
             cfg_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
-        if has_config:
+        if has_structural_config:
             cfg_parts.append(f"文本素材類型={cfg.content_type or params.題目內容類型 or '純文字'}")
             cfg_parts.append(f"圖片生成模式={cfg.image_generation_mode or image_generation_mode}")
         if cfg.question_word_limit:
