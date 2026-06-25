@@ -260,6 +260,7 @@ def _parse_subquestion(
             學習內容=lc_refs,
             學習表現=lp_refs,
             出題概念=sq_raw.get("出題概念", ""),
+            reporting_scale=sq_raw.get("reporting_scale") or (cfg.reporting_scale if cfg else None),
             題型=sq_raw.get("題型", params.題型.value),
             題目=sq_raw.get("題目", ""),
             答案=sq_raw.get("答案", ""),

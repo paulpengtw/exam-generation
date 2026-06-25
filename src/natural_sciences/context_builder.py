@@ -594,6 +594,7 @@ def build_subquestion_system_prompt(
   "學習內容": [{{"編碼": "Ka-Ⅳ-1", "說明": "說明文字"}}],
   "學習表現": [{{"編碼": "tr-Ⅳ-1", "說明": "說明文字"}}],
   "出題概念": "評量學生能否……",
+  "reporting_scale": "3",
   "題型": "Simple multiple-choice",
   "題目": "完整題目文字（含選項）",
   "答案": "A",
