@@ -73,6 +73,7 @@ def _with_text_word_limit(
 
     return params.model_copy(
         update={
+            "text_word_limit": text_word_limit,
             "subquestion_configs": [
                 cfg
                 if cfg.text_word_limit is not None
