@@ -11,7 +11,7 @@
 
 | 科目 | Loader | 資料夾 | 檔案格式 |
 |------|--------|--------|---------|
-| 數學 | `src.data_loader.load_few_shot_examples` | `data/few_shot/{style}/` | 每檔一個 JSON 物件或陣列；style = `text_only` / `with_chart` / `with_image` / `creative_scenario` |
+| 數學 | `src.data_loader.load_few_shot_examples` | `data/few_shot/{style}/` | 每檔為單一 JSON 物件；style = `text_only` / `with_chart` / `with_image` / `creative_scenario` |
 | 社會 | `src.social_studies.data_loader.load_few_shot_example_groups` | `data/social_studies/few_shot/` | 根目錄 JSON（每檔一個 sampling group）＋ 選用 `few_shot_examples.csv`（長格式，一列一子題，以 `範例編號` 分組） |
 | 自然 | `src.natural_sciences.data_loader.load_few_shot_example_groups` | `data/natural_sciences/few_shot/{q_type_folder}/` | 每檔一個 JSON 物件或陣列；資料夾對應 PISA 題型（檔名以連字號連接）：`Simple-multiple-choice/` (Simple multiple-choice) / `Complex-multiple-choice/` (Complex multiple-choice) / `Constructed-response/` (Constructed response) |
 
