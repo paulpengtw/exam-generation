@@ -13,7 +13,7 @@
 |------|--------|--------|---------|
 | 數學 | `src.data_loader.load_few_shot_examples` | `data/few_shot/{style}/` | 每檔一個 JSON 物件或陣列；style = `text_only` / `with_chart` / `with_image` / `creative_scenario` |
 | 社會 | `src.social_studies.data_loader.load_few_shot_example_groups` | `data/social_studies/few_shot/` | 根目錄 JSON（每檔一個 sampling group）＋ 選用 `few_shot_examples.csv`（長格式，一列一子題，以 `範例編號` 分組） |
-| 自然 | `src.natural_sciences.data_loader.load_few_shot_example_groups` | `data/natural_sciences/few_shot/{q_type_folder}/` | 每檔一個 JSON 物件或陣列；資料夾對應 PISA 題型：`Simple-multiple-choice` / `Complex-multiple-choice` / `Constructed-response` |
+| 自然 | `src.natural_sciences.data_loader.load_few_shot_example_groups` | `data/natural_sciences/few_shot/{q_type_folder}/` | 每檔一個 JSON 物件或陣列；資料夾對應 PISA 題型（檔名以連字號連接）：`Simple-multiple-choice/` (Simple multiple-choice) / `Complex-multiple-choice/` (Complex multiple-choice) / `Constructed-response/` (Constructed response) |
 
 ---
 
@@ -31,7 +31,7 @@ data/few_shot/
 └── images/<範例編號>/manifest.json   # 選用：CSV 範例配圖
 ```
 
-- 每個 style 子資料夾下放置 `*.json`，每檔可以是**單一物件**或**陣列**（loader 兩種都接受）。
+- 每個 style 子資料夾下放置 `*.json`，**每檔為單一 JSON 物件**（math loader 不會展開頂層陣列；若要放多筆範例請拆成多個檔案）。
 - CSV 為選用；欄位包含 `範例編號, style, description, 情境, 題型種類, 題型, 學習內容, 學習表現, 核心素養, 出題概念, 題目, 正確解題分析, chart_spec`。
 - 圖檔透過 `images/<範例編號>/manifest.json` 綁定；`manifest.json` 為 `[{"file": "...", "caption": "..."}]` 陣列。
 
@@ -97,7 +97,7 @@ data/social_studies/few_shot/
     "question": {
       "核心問題": "傳染病在全球化下如何跨區擴散？",
       "文本": "近年跨國旅行頻繁，使部分傳染病能在短時間內跨越國界。城市人口密集與交通樞紐地位提高感染風險…",
-      "取材面": ["公共衛生資料整理"],
+      "取材來源": ["公共衛生資料整理"],
       "情境": ["公共"],
       "題型種類": "題組題",
       "題型": "選擇題",
@@ -154,7 +154,7 @@ data/natural_sciences/few_shot/
   "question": {
     "核心問題": "如何用比熱與能量守恆解釋日常加熱現象？",
     "文本": "小華以 100 g 常溫水（25°C）進行加熱實驗，記錄 5 分鐘後溫度上升至 55°C。已知水的比熱為 1 卡/(g·°C)。",
-    "取材面": ["國中自然課程素材"],
+    "取材來源": ["國中自然課程素材"],
     "情境": ["Personal"],
     "情境子類別": "健康",
     "題型種類": "題組題",
@@ -247,6 +247,8 @@ uv run python -c "from pathlib import Path; from src.social_studies.data_loader 
 ```bash
 uv run python -c "from pathlib import Path; from src.natural_sciences.data_loader import load_few_shot_example_groups; print(len(load_few_shot_example_groups(Path('data/natural_sciences/few_shot'), 'Constructed-response')))"
 ```
+
+(此處 `Constructed-response` 是資料夾名；正式 題型 enum 為 `Constructed response`（含空格），loader 內部會將空格轉為連字號。)
 
 ### 三科目共用：跑相關單元測試
 
