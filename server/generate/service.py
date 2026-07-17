@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import itertools
 import json
 import logging
+import threading
 import traceback
 import uuid
 from collections.abc import AsyncIterator
@@ -225,6 +227,13 @@ async def generate_question_stream(
                 )
         return observer
 
+    order_counter = itertools.count(1)
+    order_lock = threading.Lock()
+
+    def _next_order() -> int:
+        with order_lock:
+            return next(order_counter)
+
     def _make_recorder() -> ExchangeRecorder | None:
         if generation_log_id is None or config.llm_exchange_retention_days <= 0:
             return None
@@ -241,7 +250,7 @@ async def generate_question_stream(
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning("llm_exchanges insert failed: %s", exc)
 
-        return ExchangeRecorder(generation_log_id, _write_row)
+        return ExchangeRecorder(generation_log_id, _write_row, next_order=_next_order)
 
     def _make_observer(
         queue_obs: LLMObserver,
@@ -284,12 +293,11 @@ async def generate_question_stream(
 
         return emit_question_update
 
-    shared_recorder = _make_recorder()
-
     def worker_one(i: int, question_client: LLMClient) -> None:
         seed = (base_seed + i) if base_seed is not None else None
+        worker_recorder = _make_recorder()
         question_client.set_observer(
-            _make_observer(_make_queue_observer(loop, queue), shared_recorder)
+            _make_observer(_make_queue_observer(loop, queue), worker_recorder)
         )
         emit_question_update = _make_question_update_emitter(i)
         _emit_pipeline("question_start", index=i, total=count)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import threading
 import uuid
 from typing import Any
@@ -144,6 +145,44 @@ def test_thread_safety_under_concurrent_events(sink):
     assert len(rows) == 4 * 50
     orders = sorted(r["exchange_order"] for r in rows)
     assert orders == list(range(1, 4 * 50 + 1))
+
+
+def test_shared_allocator_across_recorders_prevents_cross_question_pairing(sink):
+    rows, write = sink
+
+    order_counter = itertools.count(1)
+    order_lock = threading.Lock()
+
+    def next_order() -> int:
+        with order_lock:
+            return next(order_counter)
+
+    rec_a = ExchangeRecorder(uuid.uuid4(), write, next_order=next_order)
+    rec_b = ExchangeRecorder(uuid.uuid4(), write, next_order=next_order)
+
+    # Two "questions" (separate recorder instances, isolated pending maps)
+    # both concurrently running an agent named "generator". Interleave the
+    # events across the two recorders the way two parallel workers would.
+    rec_a(_req("generator", purpose="question-a"))
+    rec_b(_req("generator", purpose="question-b"))
+    rec_a(_resp("generator", purpose="question-a"))
+    rec_b(_resp("generator", purpose="question-b"))
+
+    assert len(rows) == 2
+
+    row_a = next(r for r in rows if r["purpose"] == "question-a")
+    row_b = next(r for r in rows if r["purpose"] == "question-b")
+
+    # Each row must pair with its own recorder's request, not the other's.
+    assert row_a["request_body"]["messages"][1]["content"] == "hello"
+    assert row_b["request_body"]["messages"][1]["content"] == "hello"
+    assert row_a["response_body"]["content"] == "ok"
+    assert row_b["response_body"]["content"] == "ok"
+
+    # Orders come from the shared allocator: disjoint and contiguous 1..N.
+    orders = sorted(r["exchange_order"] for r in rows)
+    assert orders == [1, 2]
+    assert row_a["exchange_order"] != row_b["exchange_order"]
 
 
 def test_non_llm_events_are_ignored(sink):

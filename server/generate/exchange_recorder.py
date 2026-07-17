@@ -27,12 +27,18 @@ class ExchangeRecorder:
     generation_log row's `status='failed'` already signals the crash.
     """
 
-    def __init__(self, generation_log_id: uuid.UUID, write_row: WriteRow) -> None:
+    def __init__(
+        self,
+        generation_log_id: uuid.UUID,
+        write_row: WriteRow,
+        next_order: Callable[[], int] | None = None,
+    ) -> None:
         self._log_id = generation_log_id
         self._write_row = write_row
         self._pending: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._counter = itertools.count(1)
+        self._next_order = next_order
 
     def __call__(self, event: dict[str, Any]) -> None:
         try:
@@ -64,8 +70,11 @@ class ExchangeRecorder:
             prompt_tokens = usage.get("input")
             completion_tokens = usage.get("output")
 
-        with self._lock:
-            order = next(self._counter)
+        if self._next_order is not None:
+            order = self._next_order()
+        else:
+            with self._lock:
+                order = next(self._counter)
 
         row: dict[str, Any] = {
             "generation_log_id": self._log_id,
