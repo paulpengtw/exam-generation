@@ -436,7 +436,7 @@ def test_ns_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
                         "學習內容": [{"編碼": f"INc-Ⅳ-{idx}", "說明": "測試"}],
                         "學習表現": [{"編碼": "tr-Ⅳ-1", "說明": "測試"}],
                         "出題概念": "測試",
-                        "題型": "Simple-multiple-choice",
+                        "題型": "Simple multiple-choice",
                         "題目": "測試題目",
                         "答案": "A",
                         "答案解析": "測試",
