@@ -18,6 +18,7 @@ export interface GenerateParams {
   disable_reference_fewshot?: boolean;
   seed?: number;
   image_generation_mode?: "html" | "gpt_image";
+  difficulty?: "easy" | "medium" | "hard";
   subject_filter?: string;
   passage?: string;
   options?: string[];
@@ -195,6 +196,7 @@ function buildQueryString(params: GenerateParams): string {
   if (params.question_word_limit !== undefined) qs.append("question_word_limit", String(params.question_word_limit));
   if (params.option_word_limit !== undefined) qs.append("option_word_limit", String(params.option_word_limit));
   if (params.subquestion_configs) qs.append("subquestion_configs", params.subquestion_configs);
+  if (params.difficulty !== undefined) qs.append("difficulty", params.difficulty);
   return qs.toString();
 }
 

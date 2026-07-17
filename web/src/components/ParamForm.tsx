@@ -27,6 +27,7 @@ export interface GenerateParams {
   skip_verify: boolean;
   disable_reference_fewshot?: boolean;
   image_generation_mode: "html" | "gpt_image";
+  difficulty?: "easy" | "medium" | "hard";
   subject_filter?: string;
   passage?: string;
   text_word_limit?: number;
@@ -198,6 +199,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     useState<boolean>(false);
   const [imageGenerationMode, setImageGenerationMode] =
     useState<"html" | "gpt_image">("html");
+  const [difficulty, setDifficulty] = useState<"" | "easy" | "medium" | "hard">("");
   const [subjectFilter, setSubjectFilter] = useState<string>("");
   const [passage, setPassage] = useState<string>(TEXT_HINT);
   const [textWordLimit, setTextWordLimit] = useState<number | undefined>(undefined);
@@ -221,6 +223,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     setContext([]);
     setQType([]);
     setImageGenerationMode("html");
+    setDifficulty("");
     setPassage(TEXT_HINT);
     setTextWordLimit(undefined);
     setOptions([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
@@ -432,6 +435,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       skip_verify: skipVerify,
       disable_reference_fewshot: disableReferenceFewshot,
       image_generation_mode: imageGenerationMode,
+      difficulty: difficulty === "" ? undefined : difficulty,
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
       text_word_limit: textWordLimit,
@@ -482,6 +486,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       { label: t("form.confirm_topic"), value: p.topic },
       { label: t("form.confirm_core_question"), value: p.core_question },
       { label: t("form.confirm_grade"), value: String(p.grade) },
+      { label: t("form.confirm_difficulty"), value: p.difficulty },
       { label: t("form.confirm_subject_filter"), value: p.subject_filter },
       { label: t("form.confirm_style"), value: p.style },
       { label: t("form.confirm_content_type"), value: p.content_type },
@@ -673,6 +678,23 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
               {g}
             </option>
           ))}
+        </select>
+      </div>
+
+      <div>
+        <label htmlFor="difficulty" className="block text-sm font-medium">
+          {t("form.difficulty")}
+        </label>
+        <select
+          id="difficulty"
+          value={difficulty}
+          onChange={(e) => setDifficulty(e.target.value as "" | "easy" | "medium" | "hard")}
+          className="mt-1 block w-full border rounded px-2 py-1"
+        >
+          <option value="">{t("form.difficulty_default")}</option>
+          <option value="easy">{t("form.difficulty_easy")}</option>
+          <option value="medium">{t("form.difficulty_medium")}</option>
+          <option value="hard">{t("form.difficulty_hard")}</option>
         </select>
       </div>
 
