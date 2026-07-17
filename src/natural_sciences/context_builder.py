@@ -92,6 +92,23 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     ),
 }
 
+DIFFICULTY_INSTRUCTIONS: dict[str, str] = _INSTRUCTIONS.get("難度", {})
+
+
+def _difficulty_section(params: "SampledParams") -> str:
+    """Return the shared `## 難度要求` block for text + subquestion prompts."""
+    value = params.difficulty.value
+    instr = DIFFICULTY_INSTRUCTIONS.get(
+        value,
+        "本題組無指定難度說明；請以中等難度作為預設。",
+    )
+    return (
+        "\n## 難度要求\n\n"
+        f"- **難度等級**：{value}\n"
+        f"- **命題指示**：{instr}\n"
+    )
+
+
 SYSTEM_PROMPT_TEMPLATE = """\
 你是一位資深的108課綱自然科學領域命題教師，專門為{learning_stage}（{grade_names}）設計 PISA Science 風格的科學素養題組。
 本題庫要融合兩個框架：
@@ -185,7 +202,7 @@ USER_PROMPT_TEMPLATE = """\
 - **科學能力**：{science_competencies}
 - **題目內容類型**：{content_type}
 - **小題數量**：{sub_question_count}
-{subquestion_config_lines}{lc_pool_lines}{lp_pool_lines}{param_instructions}{user_materials}
+{subquestion_config_lines}{lc_pool_lines}{lp_pool_lines}{param_instructions}{difficulty_section}{user_materials}
 ## 參考範例
 
 {few_shot_examples}
@@ -291,6 +308,8 @@ def build_user_prompt(
         "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
         if param_instruction_lines else ""
     )
+
+    difficulty_section = _difficulty_section(params)
 
     example_groups = (
         []
@@ -430,6 +449,7 @@ def build_user_prompt(
         lc_pool_lines=lc_pool_lines,
         lp_pool_lines=lp_pool_lines,
         param_instructions=param_instructions,
+        difficulty_section=difficulty_section,
         user_materials=user_materials,
         few_shot_examples=few_shot_text,
     )
@@ -720,6 +740,7 @@ def build_subquestion_user_prompt(
     )
 
     source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
+    difficulty_section = _difficulty_section(params).lstrip("\n")
     return f"""\
 請根據以下共用素材與小題規劃，生成一道 PISA Science + 108課綱自然科學小題：
 
@@ -751,6 +772,7 @@ def build_subquestion_user_prompt(
 - **情境子類別**：{params.情境子類別.value}
 - **科學能力**：{science_competencies}
 {lc_pool_lines}{lp_pool_lines}{reporting_scale_target_line}{reporting_scale_reference}
+{difficulty_section}
 ## 參考範例
 
 {few_shot_text}
