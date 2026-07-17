@@ -42,7 +42,7 @@ def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
 
 def _check_model_allowed(model: str | None, config: ServerConfig, field: str) -> None:
     """Raise HTTPException(422) when a submitted model is outside the allowlist."""
-    if model is None:
+    if not model:
         return
     if model not in config.llm_models_allowed:
         allowed = ", ".join(config.llm_models_allowed)

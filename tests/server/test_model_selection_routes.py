@@ -168,3 +168,53 @@ def test_plan_core_questions_route_rejects_unlisted_model_plan_with_422() -> Non
 
     assert response.status_code == 422
     assert "gpt-4o" in response.json()["detail"]
+
+
+def test_plan_core_questions_route_rejects_unlisted_model_execute_with_422() -> None:
+    app, token, engine, _cfg = _make_app_and_token(
+        allowed=("claude-opus-4-6", "claude-sonnet-4-6")
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/plan-core-questions",
+                json={"topic": "民主政治", "model_execute": "gpt-4o"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "gpt-4o" in detail
+    assert "model_execute" in detail
+
+
+def test_generate_route_empty_string_model_execute_treated_as_absent() -> None:
+    from server.generate import routes as gen_routes
+
+    app, token, engine, _cfg = _make_app_and_token()
+
+    captured: dict = {}
+
+    async def fake_stream(params, *_args):
+        captured["params"] = params
+        yield {"event": "done", "data": ""}
+
+    original = gen_routes.generate_question_stream
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    try:
+        with TestClient(app) as client:
+            # Empty string in query param should not trigger 422
+            response = client.get(
+                "/api/generate?subject=math&model_execute=",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    # Empty string should be treated as absent (not cause allowlist rejection)
+    assert response.status_code == 200
