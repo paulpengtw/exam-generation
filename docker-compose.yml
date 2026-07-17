@@ -32,6 +32,8 @@ services:
     build:
       context: .
       dockerfile: web/Dockerfile
+      args:
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
     environment:
       BACKEND_HOST: backend:8000
       BACKEND_SCHEME: http
