@@ -46,6 +46,18 @@ def test_allowlist_dedupe_when_defaults_match_env_entries(tmp_path: Path) -> Non
     assert cfg.llm_models_allowed == ("claude-opus-4-6", "claude-sonnet-4-6")
 
 
+def test_allowlist_env_missing_defaults_are_appended(tmp_path: Path) -> None:
+    env = _base_env()
+    env["LLM_MODELS_ALLOWED"] = "claude-haiku-4-6"
+    with mock.patch.dict(os.environ, env, clear=True):
+        cfg = ServerConfig.from_env(env_file=tmp_path / ".env.missing")
+    assert cfg.llm_models_allowed == (
+        "claude-haiku-4-6",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+    )
+
+
 def test_allowlist_empty_string_falls_back_to_defaults(tmp_path: Path) -> None:
     env = _base_env()
     env["LLM_MODELS_ALLOWED"] = "   "

@@ -102,18 +102,17 @@ class ServerConfig(Config):
                 if m.strip()
             ),
         )
-        if not cfg.llm_models_allowed:
-            seen: dict[str, None] = {}
-            for m in (cfg.model_plan, cfg.model_execute):
-                if m and m not in seen:
-                    seen[m] = None
-            cfg.llm_models_allowed = tuple(seen)
-        else:
-            seen = {}
-            for m in cfg.llm_models_allowed:
-                if m and m not in seen:
-                    seen[m] = None
-            cfg.llm_models_allowed = tuple(seen)
+        seen: dict[str, None] = {}
+        for m in cfg.llm_models_allowed:
+            if m and m not in seen:
+                seen[m] = None
+        # Always ensure the configured default models are present so
+        # GET /api/models never advertises a default that the 422 gate
+        # would then reject.
+        for m in (cfg.model_plan, cfg.model_execute):
+            if m and m not in seen:
+                seen[m] = None
+        cfg.llm_models_allowed = tuple(seen)
         return cfg
 
     def validate(self) -> None:
