@@ -150,6 +150,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=str,
         help="題目內容類型 (純文字 / 含圖片 / graphs/charts/tables / 自訂文字)",
     )
+    gen.add_argument(
+        "--difficulty",
+        type=str,
+        choices=["easy", "medium", "hard"],
+        default=None,
+        help="題組難度（easy / medium / hard；預設 medium，純粹傳遞不參與隨機抽樣）",
+    )
     gen.add_argument("--count", type=int, default=1, help="Number of question sets to generate")
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
@@ -297,6 +304,7 @@ def _parse_question(
             grade=params.grade,
             model=model,
             seed=None,
+            difficulty=params.difficulty,
         ),
     )
 
@@ -426,6 +434,7 @@ def _parse_text_shell(
             grade=params.grade,
             model=model,
             seed=None,
+            difficulty=params.difficulty,
         ),
     )
 
@@ -875,6 +884,7 @@ def main(argv: list[str] | None = None) -> None:
                 learning_performance=learning_performance_override,
                 content_type=content_type_override,
                 seed=seed,
+                difficulty=args.difficulty,
             )
 
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "

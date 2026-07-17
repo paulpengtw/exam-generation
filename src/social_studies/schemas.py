@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.common.difficulty import DEFAULT_DIFFICULTY, Difficulty
 from src.social_studies.core_competency_loader import build_core_competency_enum, load_core_competencies
 from src.social_studies.schema_loader import build_enums, load_grades, load_schemas
 
@@ -100,6 +101,7 @@ class QuestionMetadata(BaseModel):
     model: str
     generated_at: datetime = Field(default_factory=datetime.now)
     seed: int | None = None
+    difficulty: Difficulty = DEFAULT_DIFFICULTY
 
 
 class ExamQuestion(BaseModel):
@@ -158,3 +160,5 @@ class SampledParams(BaseModel):
     text_word_limit: int | None = None
     # #101: per-子題 content_type and image_generation_mode
     subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)
+    # Issue #116: explicit difficulty (pure passthrough — never randomized).
+    difficulty: Difficulty = DEFAULT_DIFFICULTY

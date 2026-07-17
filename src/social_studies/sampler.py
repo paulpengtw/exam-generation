@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 
+from src.common.difficulty import Difficulty, resolve_difficulty
 from src.social_studies.core_competency_loader import (
     allowed_competencies,
     load_core_competencies,
@@ -58,6 +59,7 @@ def sample_params(
     question_word_limit: int | None = None,
     option_word_limit: int | None = None,
     subquestion_configs: list | None = None,
+    difficulty: Difficulty | str | None = None,
 ) -> SampledParams:
     """Sample random PISA-reading question parameters.
 
@@ -65,6 +67,7 @@ def sample_params(
     Sampler cardinality: 情境 1+, 文本形式 1, 閱讀歷程 1-2; 題型種類 forced 題組題.
     """
     rng = random.Random(seed)
+    resolved_difficulty: Difficulty = resolve_difficulty(difficulty)
 
     selected_grade = grade if grade is not None else rng.choice(_GRADES)
 
@@ -189,6 +192,7 @@ def sample_params(
         question_word_limit=question_word_limit,
         option_word_limit=option_word_limit,
         subquestion_configs=resolved_configs,
+        difficulty=resolved_difficulty,
     )
 
 
