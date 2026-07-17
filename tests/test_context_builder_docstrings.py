@@ -27,3 +27,8 @@ def test_module_docstring_cites_figure_rendering_policy(path: Path) -> None:
         f"{path.relative_to(_ROOT).as_posix()} module docstring must cite "
         f"{_POLICY_ANCHOR}"
     )
+
+
+def test_claude_md_links_figure_rendering_policy() -> None:
+    text = (_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    assert _POLICY_ANCHOR in text

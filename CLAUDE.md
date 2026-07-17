@@ -349,6 +349,8 @@ Images are described by `ImageSpec` (field `chart_spec` on `ExamQuestion`). The 
 
 2. **`render_mode: "html"`** — `render_image()` calls `_generate_html_via_llm()` (Sonnet generates a self-contained HTML/CSS/SVG document from `description` + `data`), then `PlaywrightRenderer.render()` in `src/html_renderer.py` screenshots it to PNG. Used for geometry diagrams, tables, menus, and any non-chart visual.
 
+> **Routing rule:** which `render_mode` value the prompt asks the model to emit is codified in [`docs/figure-rendering-policy.md`](docs/figure-rendering-policy.md). Every `src/**/context_builder.py` module cites that doc from its top-level docstring — update the policy first, then the docstrings, then the `CONTENT_TYPE_INSTRUCTIONS` tables.
+
 Orthogonal to `render_mode`, the caller-controlled `image_generation_mode` kwarg on `render_image()` selects the rendering backend:
 
 - `"html"` (default) — use the path described above (matplotlib for `render_mode: "chart"`, Playwright for `render_mode: "html"`).
