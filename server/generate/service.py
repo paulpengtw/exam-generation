@@ -61,8 +61,12 @@ from src.schemas import (
 from src.schemas import (
     QuestionType as MathQuestionType,
 )
+from src.social_studies.cli import _plan_batch_briefs as ss_plan_batch_briefs
 from src.social_studies.cli import generate_with_corrections as ss_generate_with_corrections
 from src.social_studies.sampler import sample_params as ss_sample_params
+from src.social_studies.schemas import (
+    CreativeBrief as SSCreativeBrief,
+)
 from src.social_studies.schemas import (
     ExamQuestion as SSExamQuestion,
 )
@@ -319,6 +323,10 @@ async def generate_question_stream(
                         params.subquestion_configs,
                     ),
                 )
+                if i < len(ss_batch_briefs) and ss_batch_briefs[i] is not None:
+                    rng_params = rng_params.model_copy(
+                        update={"creative_brief": ss_batch_briefs[i]},
+                    )
                 question_id = f"ss_{timestamp}_{i+1:03d}"
                 question = ss_generate_with_corrections(
                     config=config,
@@ -429,6 +437,39 @@ async def generate_question_stream(
                 {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
             )
             logger.exception("worker_one error (index=%d)", i)
+
+    # #114: for SS batches, plan creative briefs once before spawning workers.
+    ss_batch_briefs: list[SSCreativeBrief | None] = []
+    if is_social_studies and count >= 1 and config.creative_planning:
+        # Sample all SS params up front so plan_context_angles sees the actual
+        # 情境 and 學習內容 pool that the workers will use. Workers re-sample
+        # with the same seed and receive the corresponding brief.
+        pre_params_list = []
+        for i in range(count):
+            seed = (base_seed + i) if base_seed is not None else None
+            pre_params_list.append(
+                ss_sample_params(
+                    grade=params.grade,
+                    context=context_override,
+                    set_type=set_type_override,
+                    q_type=q_type_override,
+                    subject=subject_override,
+                    content_type=params.content_type,
+                    learning_performance=params.learning_performance,
+                    seed=seed,
+                    sub_question_count=params.sub_question_count,
+                    question_word_limit=params.question_word_limit,
+                    option_word_limit=params.option_word_limit,
+                    subquestion_configs=_decode_subquestion_configs(
+                        params.subquestion_configs,
+                    ),
+                ),
+            )
+        # Use a dedicated planning client so worker observers stay clean.
+        planning_client = LLMClient(config)
+        ss_batch_briefs = ss_plan_batch_briefs(planning_client, config, pre_params_list)
+    elif is_social_studies:
+        ss_batch_briefs = [None] * count
 
     _emit_pipeline("pipeline_start", total=count)
     question_clients = [LLMClient(config) for _ in range(count)]

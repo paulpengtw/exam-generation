@@ -34,6 +34,7 @@ class ServerConfig(Config):
     )
     email_whitelist: tuple[str, ...] = ()
     llm_exchange_retention_days: int = 30
+    creative_planning: bool = True
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -99,6 +100,10 @@ class ServerConfig(Config):
             llm_exchange_retention_days=int(
                 os.environ.get("LLM_EXCHANGE_RETENTION_DAYS", "30")
             ),
+            web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "none"),
+            web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
+            creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
+            not in ("0", "false", "False", ""),
         )
 
     def validate(self) -> None:
