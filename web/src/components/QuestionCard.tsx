@@ -3,6 +3,11 @@ import { useMemo, useState } from "react";
 import type { DraftPhase, ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
+import FigureRenderer, {
+  classifySpec,
+  isFrontendTsEnabled,
+  type ChartSpecInput,
+} from "./FigureRenderer";
 
 export interface QuestionCardProps {
   question: ExamQuestion;
@@ -36,6 +41,27 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
     bytes[i] = binary.charCodeAt(i);
   }
   return new Blob([bytes], { type: mimeType });
+}
+
+function pickFigure(
+  chartSpec: unknown,
+  imageBase64: string | undefined,
+  alt: string,
+): { kind: "ts"; spec: ChartSpecInput } | { kind: "png"; src: string } | null {
+  if (isFrontendTsEnabled() && chartSpec && typeof chartSpec === "object") {
+    const spec = chartSpec as ChartSpecInput;
+    if (classifySpec(spec) !== "unsupported") {
+      return { kind: "ts", spec };
+    }
+    // Log so fallback rate is trackable in the browser console.
+    console.warn("[figure-renderer-fallback] unsupported spec, using PNG", spec);
+  }
+  if (imageBase64) {
+    return { kind: "png", src: `data:image/png;base64,${imageBase64}` };
+  }
+  // Silence unused-var lint when neither branch fires.
+  void alt;
+  return null;
 }
 
 function getLearningContentCodes(question: ExamQuestion): string[] {
@@ -123,13 +149,24 @@ function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuest
         ))}
       </div>
 
-      {sub.image_base64 && (
-        <img
-          src={`data:image/png;base64,${sub.image_base64}`}
-          alt={`第${sub.序號}題素材圖片`}
-          className="max-w-full rounded border border-gray-200 bg-white"
-        />
-      )}
+      {(() => {
+        const figure = pickFigure(sub.chart_spec, sub.image_base64, `第${sub.序號}題素材圖片`);
+        if (!figure) return null;
+        if (figure.kind === "ts") {
+          return (
+            <div className="rounded border border-gray-200 bg-white p-2">
+              <FigureRenderer spec={figure.spec} alt={`第${sub.序號}題素材圖片`} />
+            </div>
+          );
+        }
+        return (
+          <img
+            src={figure.src}
+            alt={`第${sub.序號}題素材圖片`}
+            className="max-w-full rounded border border-gray-200 bg-white"
+          />
+        );
+      })()}
 
       <div className="text-sm leading-relaxed whitespace-pre-wrap">{sub.題目}</div>
 
@@ -289,13 +326,24 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
         <VerificationBadge passed={passed} verifiedLabel={t("card.verified")} unverifiedLabel={t("card.unverified")} />
       </div>
 
-      {question.image_base64 && (
-        <img
-          src={`data:image/png;base64,${question.image_base64}`}
-          alt="Question diagram"
-          className="max-w-full rounded border border-gray-200"
-        />
-      )}
+      {(() => {
+        const figure = pickFigure(question.chart_spec, question.image_base64, "Question diagram");
+        if (!figure) return null;
+        if (figure.kind === "ts") {
+          return (
+            <div className="rounded border border-gray-200 p-2">
+              <FigureRenderer spec={figure.spec} alt="Question diagram" />
+            </div>
+          );
+        }
+        return (
+          <img
+            src={figure.src}
+            alt="Question diagram"
+            className="max-w-full rounded border border-gray-200"
+          />
+        );
+      })()}
 
       {/* Social studies: core question + passage + subquestions */}
       {isSocialStudies ? (

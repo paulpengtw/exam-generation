@@ -1,5 +1,13 @@
 # ruff: noqa: E501
-"""Assemble LLM prompts for PISA Science + 108課綱自然科學 question generation."""
+"""Assemble LLM prompts for PISA Science + 108課綱自然科學 question generation.
+
+Figure routing: any `chart_spec` this module instructs the model to emit
+must follow the rule in ``docs/figure-rendering-policy.md`` —
+precise/quantitative statistical charts use ``render_mode: "chart"``
+(matplotlib); illustrative figures — 實驗裝置圖, 模型圖, 流程圖, 標籤圖,
+data tables — use ``render_mode: "html"`` (LLM-HTML + Playwright). See
+``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``題目內容類型`` mapping.
+"""
 
 from __future__ import annotations
 

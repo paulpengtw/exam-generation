@@ -1,4 +1,13 @@
-"""Assemble LLM prompts for 108課綱 社會領域素養導向 question generation."""
+"""Assemble LLM prompts for 108課綱 社會領域素養導向 question generation.
+
+Figure routing: any `chart_spec` this module instructs the model to emit
+(top-level 題組 material or per-小題 supplements) must follow the rule in
+``docs/figure-rendering-policy.md`` — precise/quantitative statistical charts
+use ``render_mode: "chart"`` (matplotlib); illustrative figures — maps,
+posters, tables, scenario cards — use ``render_mode: "html"`` (LLM-HTML +
+Playwright). See ``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``文本素材類型``
+mapping.
+"""
 
 from __future__ import annotations
 
