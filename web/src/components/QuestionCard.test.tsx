@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 import QuestionCard from "./QuestionCard";
@@ -28,5 +28,79 @@ describe("QuestionCard draft rendering", () => {
     expect(screen.getByText("2 + 2 = 4.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download JSON" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Download ODT" })).toBeDisabled();
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe("QuestionCard + FigureRenderer swap", () => {
+  it("renders the PNG img when VITE_ENABLE_FRONTEND_TS_RENDERER is unset", () => {
+    vi.stubEnv("VITE_ENABLE_FRONTEND_TS_RENDERER", "");
+    const question = {
+      情境: [],
+      題型種類: "單一題",
+      題型: "選擇題",
+      題目: ["Q"],
+      正確解題分析: ["A"],
+      image_base64: "aGVsbG8=",
+      chart_spec: {
+        render_mode: "html",
+        description: "課表",
+        data: { columns: ["a"], rows: [["1"]] },
+      },
+    } as unknown as import("../hooks/useGenerate").ExamQuestion;
+    render(<QuestionCard question={question} isFinal />);
+    expect(screen.getByRole("img")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,aGVsbG8=",
+    );
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("renders the FigureRenderer when the flag is on and the spec is supported", () => {
+    vi.stubEnv("VITE_ENABLE_FRONTEND_TS_RENDERER", "1");
+    const question = {
+      情境: [],
+      題型種類: "單一題",
+      題型: "選擇題",
+      題目: ["Q"],
+      正確解題分析: ["A"],
+      image_base64: "aGVsbG8=",
+      chart_spec: {
+        render_mode: "html",
+        description: "課表",
+        data: { columns: ["時段"], rows: [["9:00"]] },
+      },
+    } as unknown as import("../hooks/useGenerate").ExamQuestion;
+    render(<QuestionCard question={question} isFinal />);
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    // The PNG <img> should not be rendered in the diagram slot when the TS renderer took over.
+    expect(screen.queryByAltText("Question diagram")).toBeNull();
+  });
+
+  it("falls back to the PNG img when the flag is on but the spec is unsupported", () => {
+    vi.stubEnv("VITE_ENABLE_FRONTEND_TS_RENDERER", "1");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const question = {
+      情境: [],
+      題型種類: "單一題",
+      題型: "選擇題",
+      題目: ["Q"],
+      正確解題分析: ["A"],
+      image_base64: "aGVsbG8=",
+      chart_spec: { render_mode: "chart", chart_type: "histogram", data: {} },
+    } as unknown as import("../hooks/useGenerate").ExamQuestion;
+    render(<QuestionCard question={question} isFinal />);
+    expect(screen.getByAltText("Question diagram")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,aGVsbG8=",
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[figure-renderer-fallback]/),
+      expect.anything(),
+    );
+    warn.mockRestore();
   });
 });

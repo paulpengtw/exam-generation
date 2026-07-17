@@ -10,6 +10,8 @@
  * docs/figure-rendering-policy.md documents when this path is active.
  */
 
+import type { JSX } from "react";
+
 const SCENARIO_KEYWORDS = ["情境卡", "菜單", "廣告", "海報", "票券", "看板", "簡介"];
 
 export interface ChartSpecInput {
@@ -21,10 +23,12 @@ export interface ChartSpecInput {
 
 export type FigureCategory = "table" | "geometry" | "scenario_card" | "unsupported";
 
+// eslint-disable-next-line react-refresh/only-export-components -- utility export co-located with the component by design (see Task 3 brief)
 export function isFrontendTsEnabled(): boolean {
   return Boolean(import.meta.env.VITE_ENABLE_FRONTEND_TS_RENDERER);
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- utility export co-located with the component by design (see Task 3 brief)
 export function classifySpec(spec: ChartSpecInput): FigureCategory {
   const mode = (spec.render_mode ?? "").toLowerCase();
   if (mode === "chart") return "unsupported";
