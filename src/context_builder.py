@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import random
+from collections.abc import Sequence
 from pathlib import Path
 
+from src.common.batch_dedup import PriorScope, format_prior_scopes_block
 from src.common.core_competency_loader import (
     competency_instructions,
     load_core_competencies,
@@ -167,7 +169,7 @@ USER_PROMPT_TEMPLATE = """\
 ## 題目風格
 
 {style_instruction}
-{user_materials}
+{user_materials}{prior_scopes_block}
 ## 參考範例
 
 以下是符合類似風格的範例題目，供你參考格式和難度水準：
@@ -247,6 +249,7 @@ def build_user_prompt(
     user_passage: str = "",
     user_options: list[str] | None = None,
     user_core_question: str = "",
+    prior_scopes: "Sequence[PriorScope] | None" = None,
 ) -> tuple[str, list[Path]]:
     """Build the user prompt with sampled parameters and few-shot examples.
 
@@ -377,6 +380,9 @@ def build_user_prompt(
         few_shot_text = "（此風格暫無範例，請根據指定條件自行設計。）"
 
     grade_range = f"{min(_GRADES)}-{max(_GRADES)}年級"
+    prior_scopes_block = (
+        "\n" + format_prior_scopes_block(prior_scopes) if prior_scopes else ""
+    )
     text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         grade_range=grade_range,
@@ -392,6 +398,7 @@ def build_user_prompt(
         param_instructions=param_instructions,
         style_instruction=style_instruction,
         user_materials=user_materials,
+        prior_scopes_block=prior_scopes_block,
         few_shot_examples=few_shot_text,
     )
     return text, []

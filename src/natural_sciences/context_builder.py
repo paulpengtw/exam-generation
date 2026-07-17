@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import json
 import random
+from collections.abc import Sequence
 from pathlib import Path
 
+from src.common.batch_dedup import PriorScope, format_prior_scopes_block
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.natural_sciences.curriculum_loader import (
     content_instructions,
@@ -257,6 +259,7 @@ def build_user_prompt(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     disable_reference_fewshot: bool = False,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
     if rng is None:
         rng = random.Random()
@@ -419,6 +422,10 @@ def build_user_prompt(
         else ""
     )
 
+    if prior_scopes:
+        prior_scopes_text = format_prior_scopes_block(prior_scopes)
+        user_materials = (user_materials or "\n") + "\n" + prior_scopes_text
+
     text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         learning_stage=_LEARNING_STAGE,
@@ -550,6 +557,7 @@ def build_text_user_prompt(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     disable_reference_fewshot: bool = False,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
     text, image_paths = build_user_prompt(
         params=params,
@@ -561,6 +569,7 @@ def build_text_user_prompt(
         user_topic=user_topic,
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
+        prior_scopes=prior_scopes,
     )
     text = text.replace(
         """\
