@@ -29,19 +29,21 @@ question's subject, grade, or 學習內容 code.
 ## Phase A outcome (issue #108)
 
 The Phase A evaluation (`docs/figure-rendering-evaluation.md`) recorded a
-**HYBRID** decision for adding a frontend TS renderer.
+**NO-GO (for now)** decision for adding a frontend TS renderer.
 
-- **HYBRID**: `render_mode` stays `Literal["chart", "html"]` as the shipped
-  default. The frontend TS prototype remains behind `VITE_ENABLE_FRONTEND_TS_RENDERER`
-  for further experimentation but is not part of the shipped routing. A full GO
-  requires a production census (≥30 questions per subject) and a live fidelity
-  comparison with measured fallback rates. When that evidence is collected, Task 10
-  of the plan extends `render_mode` with `"frontend_ts"` for illustrative figures
-  whose display can be done client-side. Verifier and ODT export would still
-  consume the server-side PNG, so illustrative specs would also keep producing
-  one — the frontend TS renderer replaces the on-page `<img>` display only.
-  `"html"` remains permanently accepted as a legacy alias for already-generated
-  questions.
+- **NO-GO (for now)**: `render_mode` stays `Literal["chart", "html"]` as the
+  shipped default. Task 10 of the plan (extending `render_mode` with
+  `"frontend_ts"`) is deferred pending production evidence. The frontend TS
+  prototype remains behind `VITE_ENABLE_FRONTEND_TS_RENDERER` for continued
+  experimentation. A full GO (triggering Task 10) requires both a production
+  census (≥30 questions per subject) and a live fidelity comparison with
+  measured fallback rates. When that evidence is collected, re-run Phase A;
+  if the outcome is GO or HYBRID, Task 10 extends `render_mode` with
+  `"frontend_ts"` for illustrative figures whose display can be done
+  client-side. Verifier and ODT export would still consume the server-side
+  PNG, so illustrative specs would also keep producing one — the frontend TS
+  renderer replaces the on-page `<img>` display only. `"html"` remains
+  permanently accepted as a legacy alias for already-generated questions.
 
 ## What each subject's prompt must instruct
 

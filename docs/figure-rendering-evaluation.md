@@ -89,17 +89,15 @@ rendering only affects on-page display.
 
 ## Decision
 
-**HYBRID** — No production distribution exists (empty `output/`, few-shot
+**NO-GO (for now)** — No production distribution exists (empty `output/`, few-shot
 corpora not unwrapped by the census), and no live fidelity comparison was
-possible in the headless container. Under these conditions a GO is unjustified,
-but the prototype's three supported shapes have no correctness risk (they are
-display-only behind a flag). Shipping HYBRID preserves the server path as the
-default (`render_mode: "html"` stays authoritative for verifier and ODT export)
-while allowing continued frontend-TS experimentation behind
-`VITE_ENABLE_FRONTEND_TS_RENDERER`. A full GO requires a production census
-(≥30 questions per subject) and a live fidelity comparison with measured fallback
-rates.
-
-If HYBRID / GO, Task 10 of the plan extends the `render_mode` enum with
-`"frontend_ts"` and updates `CONTENT_TYPE_INSTRUCTIONS`; the `"html"` value
+possible in the headless container. Under these conditions a GO is unjustified.
+The prototype's three supported shapes have no correctness risk (they are
+display-only behind a flag), so the prototype remains in-tree behind
+`VITE_ENABLE_FRONTEND_TS_RENDERER` for continued experimentation. However, Task 10
+of the plan (extending `render_mode` with `"frontend_ts"`) is deferred. A full GO
+requires a production census (≥30 questions per subject) and a live fidelity
+comparison with measured fallback rates. When those conditions are met, re-run
+Phase A; if the outcome is GO or HYBRID, Task 10 extends the `render_mode` enum
+with `"frontend_ts"` and updates `CONTENT_TYPE_INSTRUCTIONS`; the `"html"` value
 remains a permanent legacy alias.
