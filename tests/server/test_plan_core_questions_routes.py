@@ -35,7 +35,12 @@ def _make_app_and_token():
     config = ServerConfig(
         api_key="x",
         jwt_secret="test-secret",
-        llm_models_allowed=("claude-opus-4-6", "claude-sonnet-4-6"),
+        llm_models_allowed=(
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+            "claude-haiku-4-6",
+        ),
     )
     user_id = uuid.uuid4()
 
@@ -232,8 +237,8 @@ def test_plan_core_questions_forwards_model_plan_override(monkeypatch) -> None:
                 json={
                     "topic": "統計",
                     "subject": "math",
-                    "model_plan": "claude-opus-4-6",
-                    "model_execute": "claude-sonnet-4-6",
+                    "model_plan": "claude-haiku-4-5",
+                    "model_execute": "claude-haiku-4-6",
                 },
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -242,8 +247,10 @@ def test_plan_core_questions_forwards_model_plan_override(monkeypatch) -> None:
         asyncio.run(engine.dispose())
 
     assert response.status_code == 200
-    assert captured["model_plan"] == "claude-opus-4-6"
-    assert captured["model_execute"] == "claude-sonnet-4-6"
+    # Distinct from SrcConfig.from_env() defaults (opus-4-6 / sonnet-4-6) so this
+    # actually discriminates override-applied from override-ignored.
+    assert captured["model_plan"] == "claude-haiku-4-5"
+    assert captured["model_execute"] == "claude-haiku-4-6"
 
 
 def test_plan_core_questions_absent_override_keeps_defaults(monkeypatch) -> None:

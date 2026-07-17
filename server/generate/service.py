@@ -271,7 +271,7 @@ async def generate_question_stream(
                 )
                 question_id = f"ss_{timestamp}_{i+1:03d}"
                 question = ss_generate_with_corrections(
-                    config=config,
+                    config=client_config,
                     client=question_client,
                     params=rng_params,
                     question_id=question_id,
@@ -308,7 +308,7 @@ async def generate_question_stream(
                 )
                 question_id = f"ns_{timestamp}_{i+1:03d}"
                 question = ns_generate_with_corrections(
-                    config=config,
+                    config=client_config,
                     client=question_client,
                     params=rng_params,
                     question_id=question_id,
@@ -345,7 +345,7 @@ async def generate_question_stream(
                 )
                 question_id = f"q_{timestamp}_{i+1:03d}"
                 question = math_generate_with_corrections(
-                    config=config,
+                    config=client_config,
                     client=question_client,
                     curriculum=curriculum,
                     performance=performance,
