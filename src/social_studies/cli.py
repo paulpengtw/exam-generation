@@ -6,11 +6,12 @@ import argparse
 import concurrent.futures
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
 from src.config import Config
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
@@ -548,6 +549,7 @@ def generate_one(
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     few_shot_dir = config.data_dir / "social_studies" / "few_shot"
@@ -563,6 +565,7 @@ def generate_one(
             user_topic=user_topic,
             user_core_question=user_core_question,
             disable_reference_fewshot=disable_reference_fewshot,
+            prior_scopes=prior_scopes,
         )
         img_note = f" ({len(text_images)} few-shot images)" if text_images else ""
         return (
@@ -584,6 +587,7 @@ def generate_one(
         user_topic=user_topic,
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
+        prior_scopes=prior_scopes,
     )
     emit_stage(obs, "generator", "llm_generate", "start")
     text_raw = client.generate_json(text_system, text_user, images=text_images or None)
@@ -732,6 +736,7 @@ def generate_with_corrections(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     question = generate_one(
@@ -750,6 +755,7 @@ def generate_with_corrections(
         user_topic=user_topic,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        prior_scopes=prior_scopes,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -856,6 +862,7 @@ def main(argv: list[str] | None = None) -> None:
     content_type_override = args.content_type if args.content_type else None
 
     results = []
+    prior_scopes: list[PriorScope] = []
     base_seed = args.seed
     max_retries = args.max_retries if args.max_retries is not None else config.max_retries
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -895,6 +902,7 @@ def main(argv: list[str] | None = None) -> None:
                 html_renderer=html_renderer,
                 image_generation_mode=args.image_generation_mode,
                 dry_run=args.dry_run,
+                prior_scopes=list(prior_scopes),
             )
 
             if args.dry_run:
@@ -904,6 +912,10 @@ def main(argv: list[str] | None = None) -> None:
             question = result
             assert isinstance(question, ExamQuestion)
             results.append(question)
+
+            scope = extract_ss_prior_scope(question)
+            if scope is not None:
+                prior_scopes.append(scope)
 
             if not args.batch:
                 out_path = config.output_dir / f"{question_id}.json"
