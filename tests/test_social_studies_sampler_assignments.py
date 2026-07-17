@@ -56,6 +56,24 @@ def test_assigned_learning_content_ignored_when_user_pinned_lc() -> None:
     assert p.學習內容_pool == ["公Ab-Ⅳ-1"]
 
 
+def test_assigned_q_type_applies_when_q_type_is_empty_list() -> None:
+    # An empty q_type list means "not pinned" — same as omitting it entirely.
+    p = sample_params(
+        seed=1,
+        q_type=[],
+        assigned_q_type=QuestionType("選擇題"),
+    )
+    assert [t.value for t in p.題型] == ["選擇題"]
+
+
+def test_empty_q_type_list_without_assignment_falls_back_to_full_pool() -> None:
+    # No crash: q_type=[] with no assignment should draw from the full enum,
+    # not attempt rng.sample/rng.randint on an empty pool.
+    p = sample_params(seed=1, q_type=[])
+    assert set(t.value for t in p.題型) <= {t.value for t in QuestionType}
+    assert len(p.題型) >= 1
+
+
 def test_default_call_unchanged_without_assignments() -> None:
     p1 = sample_params(seed=42)
     p2 = sample_params(seed=42)

@@ -92,7 +92,7 @@ def sample_params(
     # Interaction rule: assigned_q_type only kicks in when the caller left
     # 題型 entirely random (no q_type pool, no subquestion_configs).
     user_pinned_qtype = bool(q_type) or bool(subquestion_configs)
-    if q_type is not None:
+    if q_type:
         q_type_pool = q_type
     elif assigned_q_type is not None and not user_pinned_qtype:
         q_type_pool = [assigned_q_type]
