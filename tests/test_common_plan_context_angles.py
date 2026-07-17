@@ -9,7 +9,6 @@ import pytest
 from src.common.planner import plan_context_angles
 from src.social_studies.schemas import CreativeBrief
 
-
 _SYSTEM = "test-system-prompt (n={n})"
 _USER = (
     "contexts={contexts}\n"
