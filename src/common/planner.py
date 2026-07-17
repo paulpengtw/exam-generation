@@ -6,9 +6,12 @@ Subject-agnostic: callers supply the system/user prompt templates.
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from src.llm_client import LLMClient
+
+logger = logging.getLogger(__name__)
 
 
 def plan_core_questions(
@@ -87,11 +90,17 @@ def plan_context_angles(
 ) -> list:
     """Ask the planning model for `count` mutually-distinct 題材 briefs.
 
-    Returns a list of `src.social_studies.schemas.CreativeBrief` objects of
-    length `count` (padded from survivors) or an empty list when none of the
-    LLM's briefs pass validation. Raises `ValueError` when the LLM response
-    cannot be parsed as a JSON array at all — callers must catch and fall
-    back to briefless prompts.
+    Never raises. Per issue #128 Global Constraints, planning failures must
+    never block generation: Opus errors, malformed JSON, out-of-set
+    contexts, or any other per-entry invalidity degrade to a `None` in that
+    slot rather than raising or duplicating a brief into another slot.
+
+    Always returns a list of length exactly `count`, positionally aligned
+    with the LLM's response order where possible (`result[i]` reflects the
+    i-th returned entry, or `None` if that entry was missing/invalid).
+    Slots are never filled by duplicating another slot's brief — a caller
+    that needs `count` briefs and gets fewer valid ones must treat the
+    `None` slots as "use a briefless prompt for this question".
     """
     from src.social_studies.schemas import CreativeBrief
 
@@ -103,41 +112,50 @@ def plan_context_angles(
         core_question=core_question or "（未指定）",
     )
 
-    raw = client.plan(system, user, purpose="plan_context_angles")
-    entries = _parse_brief_candidates(raw)
+    try:
+        raw = client.plan(system, user, purpose="plan_context_angles")
+        entries = _parse_brief_candidates(raw)
+    except Exception as exc:
+        logger.warning(
+            "plan_context_angles: planning call failed (%s); "
+            "falling back to briefless prompts for all %d slot(s)",
+            exc,
+            count,
+        )
+        return [None] * count
 
     allowed = set(sampled_contexts)
-    survivors: list[CreativeBrief] = []
-    for entry in entries:
+    result: list[CreativeBrief | None] = []
+    for i in range(count):
+        entry = entries[i] if i < len(entries) else None
         if not isinstance(entry, dict):
+            result.append(None)
             continue
         ctx = entry.get("selected_context")
         angle = entry.get("題材_angle") or entry.get("題材角度") or ""
         hooks = entry.get("framing_hooks") or []
         if not ctx or ctx not in allowed or not angle:
+            result.append(None)
             continue
         if not isinstance(hooks, list):
             hooks = []
         try:
-            survivors.append(CreativeBrief(
+            result.append(CreativeBrief(
                 selected_context=ctx,
                 題材_angle=str(angle),
                 framing_hooks=[str(h) for h in hooks if h],
             ))
         except Exception:
-            continue
+            result.append(None)
 
-    if not survivors:
-        return []
-    if len(survivors) >= count:
-        return survivors[:count]
-    # Pad the tail by cycling through survivors so every slot has a brief.
-    padded = list(survivors)
-    i = 0
-    while len(padded) < count:
-        padded.append(survivors[i % len(survivors)])
-        i += 1
-    return padded
+    if all(b is None for b in result):
+        logger.warning(
+            "plan_context_angles: no valid briefs among %d LLM entries "
+            "for %d slot(s); falling back to briefless prompts",
+            len(entries),
+            count,
+        )
+    return result
 
 
 def _parse_brief_candidates(raw: str) -> list:

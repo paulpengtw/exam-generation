@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from src.common.planner import plan_context_angles
 from src.social_studies.schemas import CreativeBrief
 
@@ -51,7 +49,7 @@ def test_parses_n_briefs_and_returns_exact_count() -> None:
     assert client.calls[0][2] == "plan_context_angles"
 
 
-def test_drops_briefs_with_out_of_set_context_and_pads_from_survivors() -> None:
+def test_drops_out_of_set_context_to_none_preserving_position() -> None:
     payload = json.dumps([
         {"selected_context": "個人", "題材_angle": "有效角度一", "framing_hooks": []},
         {"selected_context": "教育", "題材_angle": "非法情境, 應該被丟", "framing_hooks": []},
@@ -66,41 +64,65 @@ def test_drops_briefs_with_out_of_set_context_and_pads_from_survivors() -> None:
         system_prompt=_SYSTEM,
         user_prompt_template=_USER,
     )
-    # Only 2 survive; result is padded to 3 by reusing survivors from the front.
+    # Positional alignment: slot 1 (out-of-set) becomes None, never a
+    # duplicate of another slot's brief.
     assert len(briefs) == 3
-    assert {b.selected_context for b in briefs} <= {"個人", "公共"}
+    assert isinstance(briefs[0], CreativeBrief)
     assert briefs[0].題材_angle == "有效角度一"
-    assert briefs[1].題材_angle == "有效角度二"
-    assert briefs[2].題材_angle in {"有效角度一", "有效角度二"}
+    assert briefs[1] is None
+    assert isinstance(briefs[2], CreativeBrief)
+    assert briefs[2].題材_angle == "有效角度二"
 
 
-def test_returns_empty_list_when_all_briefs_out_of_set() -> None:
+def test_returns_all_none_when_all_briefs_out_of_set(caplog) -> None:
     payload = json.dumps([
         {"selected_context": "教育", "題材_angle": "x", "framing_hooks": []},
     ])
     client = _StubClient(payload)
-    briefs = plan_context_angles(
-        client,
-        count=2,
-        sampled_contexts=["個人", "公共"],
-        learning_content_pool=[],
-        system_prompt=_SYSTEM,
-        user_prompt_template=_USER,
-    )
-    assert briefs == []
-
-
-def test_raises_when_llm_output_is_not_a_json_array() -> None:
-    client = _StubClient("not-json-at-all")
-    with pytest.raises(ValueError):
-        plan_context_angles(
+    with caplog.at_level("WARNING"):
+        briefs = plan_context_angles(
             client,
-            count=1,
+            count=2,
+            sampled_contexts=["個人", "公共"],
+            learning_content_pool=[],
+            system_prompt=_SYSTEM,
+            user_prompt_template=_USER,
+        )
+    assert briefs == [None, None]
+    assert any("plan_context_angles" in r.message for r in caplog.records)
+
+
+def test_malformed_json_logs_warning_and_returns_none_slots(caplog) -> None:
+    client = _StubClient("not-json-at-all")
+    with caplog.at_level("WARNING"):
+        briefs = plan_context_angles(
+            client,
+            count=3,
             sampled_contexts=["個人"],
             learning_content_pool=[],
             system_prompt=_SYSTEM,
             user_prompt_template=_USER,
         )
+    assert briefs == [None, None, None]
+    assert any("plan_context_angles" in r.message for r in caplog.records)
+
+
+def test_client_raising_logs_warning_and_returns_none_slots(caplog) -> None:
+    class _RaisingClient:
+        def plan(self, system: str, user: str, purpose: str = "plan") -> str:
+            raise RuntimeError("Opus is down")
+
+    with caplog.at_level("WARNING"):
+        briefs = plan_context_angles(
+            _RaisingClient(),
+            count=2,
+            sampled_contexts=["個人"],
+            learning_content_pool=[],
+            system_prompt=_SYSTEM,
+            user_prompt_template=_USER,
+        )
+    assert briefs == [None, None]
+    assert any("plan_context_angles" in r.message for r in caplog.records)
 
 
 def test_user_prompt_includes_core_question_when_present() -> None:

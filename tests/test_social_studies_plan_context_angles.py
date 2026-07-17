@@ -44,7 +44,7 @@ def test_shim_uses_social_studies_prompt_templates() -> None:
     assert "如何理解青少年參與公共事務？" in client.calls[0][1]
 
 
-def test_shim_returns_empty_list_when_all_out_of_set() -> None:
+def test_shim_returns_none_slots_when_all_out_of_set() -> None:
     payload = json.dumps([
         {"selected_context": "教育", "題材_angle": "x", "framing_hooks": []},
     ])
@@ -54,7 +54,7 @@ def test_shim_returns_empty_list_when_all_out_of_set() -> None:
         count=1,
         sampled_contexts=["個人"],
         learning_content_pool=[],
-    ) == []
+    ) == [None]
 
 
 def test_templates_carry_n_and_learning_stage_placeholders() -> None:
