@@ -375,3 +375,97 @@ def test_ss_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
     text_prompts = [p for p in client.user_prompts if "## 已生成題目" in p]
     assert text_prompts, "expected at least one prompt to carry the dedup block"
     assert "1. 核心問題：社會核心問題 1；學習內容：歷Ka-Ⅳ-1" in text_prompts[0]
+
+
+def test_ns_build_text_user_prompt_no_scopes_is_byte_identical(tmp_path) -> None:
+    from src.common.batch_dedup import PriorScope
+    from src.natural_sciences.context_builder import build_text_user_prompt
+    from src.natural_sciences.sampler import sample_params
+
+    params = sample_params(seed=7)
+
+    baseline, _ = build_text_user_prompt(params, tmp_path)
+    with_none, _ = build_text_user_prompt(params, tmp_path, prior_scopes=None)
+    with_empty, _ = build_text_user_prompt(params, tmp_path, prior_scopes=[])
+    assert baseline == with_none == with_empty
+    assert "已生成題目" not in baseline
+
+
+def test_ns_build_text_user_prompt_renders_prior_scopes_block(tmp_path) -> None:
+    from src.common.batch_dedup import PriorScope
+    from src.natural_sciences.context_builder import build_text_user_prompt
+    from src.natural_sciences.sampler import sample_params
+
+    params = sample_params(seed=7)
+    scopes = [PriorScope(summary="海洋酸化對生態的影響", codes=["INc-Ⅳ-1"])]
+
+    prompt, _ = build_text_user_prompt(params, tmp_path, prior_scopes=scopes)
+    assert "## 已生成題目（請避免相似範圍）" in prompt
+    assert "1. 核心問題：海洋酸化對生態的影響；學習內容：INc-Ⅳ-1" in prompt
+
+
+def test_ns_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
+    from pathlib import Path
+
+    from src.common.batch_dedup import PriorScope, extract_ns_prior_scope
+    from src.config import Config
+    from src.natural_sciences.cli import generate_with_corrections
+    from src.natural_sciences.sampler import sample_params
+
+    class _RecordingNSClient:
+        def __init__(self) -> None:
+            self.user_prompts: list[str] = []
+
+        def get_observer(self):
+            return None
+
+        def generate_json(self, _system, user, *_args, **_kwargs):
+            self.user_prompts.append(user)
+            idx = len(self.user_prompts)
+            return {
+                "核心問題": f"科學核心問題 {idx}",
+                "文本": "科學測試文本",
+                "取材來源": [],
+                "subquestions": [
+                    {
+                        "序號": 1,
+                        "年級": 8,
+                        "科目": ["自然科學"],
+                        "科學能力": ["能力一"],
+                        "核心素養": [],
+                        "學習內容": [{"編碼": f"INc-Ⅳ-{idx}", "說明": "測試"}],
+                        "學習表現": [{"編碼": "tr-Ⅳ-1", "說明": "測試"}],
+                        "出題概念": "測試",
+                        "題型": "Simple-multiple-choice",
+                        "題目": "測試題目",
+                        "答案": "A",
+                        "答案解析": "測試",
+                        "評分規準": [],
+                    }
+                ],
+                "題目": ["文本", "測試"],
+                "正確解題分析": ["A"],
+            }
+
+    config = Config(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    client = _RecordingNSClient()
+
+    prior_scopes: list[PriorScope] = []
+    for i in range(2):
+        params = sample_params(seed=300 + i)
+        result = generate_with_corrections(
+            config=config,
+            client=client,
+            params=params,
+            question_id=f"ns_test_{i+1:03d}",
+            max_retries=0,
+            skip_verify=True,
+            prior_scopes=list(prior_scopes),
+        )
+        scope = extract_ns_prior_scope(result)
+        assert scope is not None
+        prior_scopes.append(scope)
+
+    text_prompts = [p for p in client.user_prompts if "## 已生成題目" in p]
+    assert text_prompts, "expected at least one prompt to carry the dedup block"
+    assert "1. 核心問題：科學核心問題 1；學習內容：INc-Ⅳ-1" in text_prompts[0]
