@@ -157,6 +157,10 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/verifier.py` (math) | Independent answer verification pass. Module-level `_CURRICULUM_PREFIX` (~93 KB curriculum context) mirrors social studies. Keeps math's stricter "明確錯誤" verification stance — NOT loosened to social studies' "寬鬆通過". |
 | `src/corrector.py` (math) | Targeted correction pass. Frozen-fields list extended with 核心素養, 學習內容, 學習表現, 出題概念, 題目內容類型 (alongside existing 情境/題型種類/題型/數學思考). |
 | `server/generate/routes.py` `/api/plan-core-questions` | Branches on `body.subject` (`"math"` \| `"social_studies"` \| `"natural_sciences"`, default `"social_studies"`). Math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage`. Natural sciences uses `src.natural_sciences.planner.plan_core_questions`. |
+| `server/generate/exchange_recorder.py` | `ExchangeRecorder` observer — buffers `llm_request` events per-agent and writes one `LLMExchange` row on the matching `llm_response`. Thread-safe (parallel `sub_generator#i` workers share one recorder). Persistence failures log a warning and never raise. |
+| `server/models.py` `LLMExchange` | New table `llm_exchanges` (FK → `generation_logs.id`, indexed). Columns: `id`, `generation_log_id`, `exchange_order`, `agent`, `purpose`, `request_body`, `response_body`, `model_used`, `prompt_tokens`, `completion_tokens`, `created_at`. |
+| `server/generate/routes.py` `/api/generation-logs/{id}/exchanges` | Auth-guarded GET; returns the LLM exchanges owned by the caller, ordered by `exchange_order`. Returns 404 for other users' logs (existence-hiding). |
+| `server/app.py` `prune_expired_llm_exchanges` | Startup helper that deletes `llm_exchanges` rows older than `LLM_EXCHANGE_RETENTION_DAYS` (default 30). `0` disables persistence entirely — the recorder is not attached at request time and pruning is skipped. |
 | `server/generate/models.py` `GenerateParams` | Accepts all three subjects. NS-specific fields: `sub_context: str \| None`, `science_competency: list[str] \| None`. Per-小題 fields (social studies and natural sciences): `sub_question_count` (3-7), `question_word_limit`, `option_word_limit`, and `subquestion_configs` JSON string; each row may include `question_type`, `instruction`, `learning_content`, and `learning_performance` (empty lists fall back to the global sampled pool), with blank question types sampled per 小題 (PISA-Science pool for NS). `disable_reference_fewshot: bool = False` (SS/NS only; when true, skips `load_few_shot_example_groups` in both 文本生成器 and 子題產生器 stages and falls back to the 暫無範例 string). `subject` is plain `str` (accepts `"natural_sciences"`). `PlanCoreQuestionsRequest.subject` is `Literal["math", "social_studies", "natural_sciences"]`. |
 | `server/utility/routes.py` `/api/schemas?subject=...` | `subject=math` augments base math schema with `科目` (4 strands), `題目內容類型` (4 entries), and `學習表現` filtered by 學習階段. `subject=natural_sciences` builds schema from `schema_parameters.csv` + curriculum JSON (PISA-Science dimensions: 情境/情境子類別/科學能力/題型/題目內容類型 with 學習表現 and 學習內容 pools). |
 | `server/config.py` `ServerConfig.math_curriculum_dir` | Env `MATH_CURRICULUM_DIR`, parallel to `social_studies_curriculum_dir`. `natural_sciences_curriculum_dir` env `NATURAL_SCIENCES_CURRICULUM_DIR` added alongside. |
@@ -377,6 +381,10 @@ uv run pytest
 # Lint
 uv run ruff check src/
 ```
+
+### Environment Variables
+
+- `LLM_EXCHANGE_RETENTION_DAYS` (default `30`) — window in days for retaining `llm_exchanges` rows. Set to `0` to disable persistence entirely (no rows written, no pruning).
 
 ## Execution Logic
 
