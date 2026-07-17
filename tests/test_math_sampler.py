@@ -60,3 +60,38 @@ def test_sample_params_subject_filter_stored():
 def test_sample_params_unknown_grade_raises():
     with pytest.raises(ValueError):
         sample_params(grade=99, seed=0)
+
+
+def test_sample_params_difficulty_defaults_to_medium():
+    from src.common.difficulty import Difficulty
+    from src.sampler import sample_params
+
+    p = sample_params(grade=8, seed=0)
+    assert p.difficulty is Difficulty.medium
+
+
+def test_sample_params_difficulty_passthrough_string():
+    from src.common.difficulty import Difficulty
+    from src.sampler import sample_params
+
+    for v in ("easy", "medium", "hard"):
+        p = sample_params(grade=8, seed=0, difficulty=v)
+        assert p.difficulty is Difficulty(v)
+
+
+def test_sample_params_difficulty_passthrough_enum():
+    from src.common.difficulty import Difficulty
+    from src.sampler import sample_params
+
+    p = sample_params(grade=8, seed=0, difficulty=Difficulty.hard)
+    assert p.difficulty is Difficulty.hard
+
+
+def test_sample_params_difficulty_is_not_randomized():
+    from src.common.difficulty import Difficulty
+    from src.sampler import sample_params
+
+    # Every seed must yield the caller-supplied difficulty verbatim.
+    for seed in range(50):
+        assert sample_params(grade=8, seed=seed).difficulty is Difficulty.medium
+        assert sample_params(grade=8, seed=seed, difficulty="hard").difficulty is Difficulty.hard

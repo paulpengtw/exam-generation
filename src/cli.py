@@ -108,6 +108,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="題目內容類型",
     )
     gen.add_argument(
+        "--difficulty",
+        type=str,
+        choices=["easy", "medium", "hard"],
+        default=None,
+        help="題目難度（easy / medium / hard；預設 medium，純粹傳遞不參與隨機抽樣）",
+    )
+    gen.add_argument(
         "--image-generation-mode",
         choices=["html", "gpt_image"],
         default="html",
@@ -450,6 +457,7 @@ def _parse_question(
             style=params.style,
             model=model,
             seed=None,
+            difficulty=params.difficulty,
         ),
     )
 
@@ -536,6 +544,7 @@ def main(argv: list[str] | None = None) -> None:
                 learning_performance=learning_performance_override,
                 content_type=content_type_override,
                 subject_filter=subject_filter_override,
+                difficulty=args.difficulty,
             )
 
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
