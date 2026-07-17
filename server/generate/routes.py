@@ -7,7 +7,7 @@ import logging
 import traceback
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import update
@@ -54,6 +54,7 @@ async def generate_endpoint(
     disable_reference_fewshot: bool = Query(default=False),
     seed: int | None = Query(default=None),
     image_generation_mode: ImageGenerationMode = Query(default="html"),
+    difficulty: Literal["easy", "medium", "hard"] | None = Query(default=None),
     subject_filter: list[str] | None = Query(default=None),
     content_type: str | None = Query(default=None),
     passage: str | None = Query(default=None),
@@ -91,6 +92,7 @@ async def generate_endpoint(
         disable_reference_fewshot=disable_reference_fewshot,
         seed=seed,
         image_generation_mode=image_generation_mode,
+        difficulty=difficulty,
         subject_filter=subject_filter,
         content_type=content_type,
         passage=passage,

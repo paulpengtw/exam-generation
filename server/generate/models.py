@@ -28,6 +28,7 @@ class GenerateParams(BaseModel):
     seed: int | None = None
     max_retries: int = 3
     image_generation_mode: ImageGenerationMode = "html"
+    difficulty: Literal["easy", "medium", "hard"] | None = None
     subject_filter: list[str] | None = None
     content_type: str | None = None
     passage: str | None = None
