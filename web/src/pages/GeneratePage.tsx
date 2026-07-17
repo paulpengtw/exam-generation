@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
 import ParamForm, { type GenerateParams as FormParams } from "../components/ParamForm";
@@ -27,6 +27,10 @@ function downloadBlob(blob: Blob, filename: string): void {
 
 export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const prefillParams =
+    (location.state as { prefillParams?: Record<string, unknown> } | null)
+      ?.prefillParams ?? null;
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
@@ -160,7 +164,12 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
       <main className="mx-auto max-w-5xl space-y-6 px-3 py-4 sm:px-4 sm:py-6">
         <section className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
-          <ParamForm subject={subject} onSubmit={handleSubmit} disabled={status === "generating" || status === "queued"} />
+          <ParamForm
+            subject={subject}
+            onSubmit={handleSubmit}
+            disabled={status === "generating" || status === "queued"}
+            initialParams={prefillParams ?? undefined}
+          />
         </section>
 
         {agentLanes.length > 0 && (
