@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import traceback
@@ -190,6 +191,11 @@ async def plan_core_questions_endpoint(
     from src.llm_client import LLMClient
 
     src_config = SrcConfig.from_env()
+    src_config = dataclasses.replace(
+        src_config,
+        model_plan=body.model_plan or src_config.model_plan,
+        model_execute=body.model_execute or src_config.model_execute,
+    )
     client = LLMClient(src_config)
 
     if body.subject == "math":
