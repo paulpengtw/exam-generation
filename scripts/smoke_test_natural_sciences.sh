@@ -122,5 +122,28 @@ summary() {
 trap summary EXIT
 
 ###############################################################################
+# CHECK 1: FRONTEND — /generate/natural_sciences returns 200 with SPA shell
+###############################################################################
+
+step "CHECK 1 [FRONTEND]: GET $BASE_URL/generate/natural_sciences"
+
+FRONT_TMP=$(mktemp)
+FRONT_CODE=$(curl -s -o "$FRONT_TMP" -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/generate/natural_sciences" 2>/dev/null || true)
+
+if [[ "$FRONT_CODE" != "200" ]]; then
+  fail "FRONTEND" "GET /generate/natural_sciences returned HTTP $FRONT_CODE (expected 200)"
+elif ! grep -qi '<div id="root"\|<title' "$FRONT_TMP"; then
+  fail "FRONTEND" "GET /generate/natural_sciences returned 200 but body does not look like the SPA shell (missing <div id=\"root\"> or <title>)"
+  info "First 200 bytes of response:"
+  head -c 200 "$FRONT_TMP" || true
+  echo ""
+else
+  pass "FRONTEND: /generate/natural_sciences serves the SPA shell"
+fi
+
+rm -f "$FRONT_TMP"
+
+###############################################################################
 # Checks are appended by later tasks
 ###############################################################################
