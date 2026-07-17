@@ -1,4 +1,11 @@
-"""Assemble LLM prompts with curriculum context and few-shot examples."""
+"""Assemble LLM prompts with curriculum context and few-shot examples.
+
+Figure routing: any `chart_spec` this module instructs the model to emit must
+follow the rule in ``docs/figure-rendering-policy.md`` — precise/quantitative
+statistical charts use ``render_mode: "chart"`` (matplotlib); illustrative
+figures use ``render_mode: "html"`` (LLM-HTML + Playwright). See
+``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``題目內容類型`` mapping.
+"""
 
 from __future__ import annotations
 
