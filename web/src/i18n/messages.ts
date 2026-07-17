@@ -165,6 +165,10 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "error.desc": "An unexpected error occurred. Try reloading the page.",
     "error.btn_reload": "Reload",
     "error.btn_retry": "Try again",
+
+    "params.model_plan_label": "Planner model",
+    "params.model_execute_label": "Execution model",
+    "params.model_default_option": "Default",
   },
   "zh-TW": {
     "login.title": "登入",
@@ -328,5 +332,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "error.desc": "發生意外錯誤，請重新載入頁面。",
     "error.btn_reload": "重新載入",
     "error.btn_retry": "再試一次",
+
+    "params.model_plan_label": "規劃模型",
+    "params.model_execute_label": "出題模型",
+    "params.model_default_option": "預設",
   },
 };
