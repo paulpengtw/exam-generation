@@ -26,7 +26,7 @@ from src.social_studies.schema_loader import (
     load_learning_stage,
     load_schemas,
 )
-from src.social_studies.schemas import SampledParams, SubQuestionConfig
+from src.social_studies.schemas import CreativeBrief, SampledParams, SubQuestionConfig
 
 _schemas = load_schemas()
 _INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
@@ -74,6 +74,43 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
         "但圖表中的數值、標籤與分類仍必須完全對應 `data` 內容。"
     ),
 }
+
+_CREATIVE_BRIEF_SYSTEM_BLOCK = """\
+
+### 創意指引
+
+- 本批次題組已由前置規劃器指定「情境-題材角度」與「參考取材點」，請以此為文本取材主軸。
+- 不得直接沿用範例題材（few-shot）中的題材、機構名、資料形式；請以指定角度重新設計素材。
+- 題材角度必須具體落地在文本中（不是抽象口號）；至少一項 framing hook 應成為文本或素材的組成元素。
+"""
+
+
+def _render_brief_context_suffix(brief: CreativeBrief | None) -> str:
+    """Return the parenthetical creative suffix appended to the 情境 line."""
+    if brief is None:
+        return ""
+    parts = [f"創意取材角度：{brief.題材_angle}"]
+    if brief.framing_hooks:
+        parts.append("參考取材點：" + "、".join(brief.framing_hooks))
+    return "（" + "；".join(parts) + "）"
+
+
+def _render_brief_guidance_section(brief: CreativeBrief | None) -> str:
+    """Return a `## 創意指引` user-prompt section for the given brief."""
+    if brief is None:
+        return ""
+    hook_line = (
+        f"\n- 建議取材點：{'、'.join(brief.framing_hooks)}"
+        if brief.framing_hooks else ""
+    )
+    return (
+        "\n## 創意指引\n\n"
+        f"- 情境：{brief.selected_context}\n"
+        f"- 題材角度：{brief.題材_angle}"
+        f"{hook_line}\n"
+        "- 請以上述題材角度為文本取材主軸，避免直接複製參考範例的題材或格式。\n"
+    )
+
 
 SYSTEM_PROMPT_TEMPLATE = """\
 你是一位資深的108課綱社會領域命題教師，專門為{learning_stage}（{grade_names}）設計「社會領域素養導向」考試題目。
@@ -511,11 +548,20 @@ def build_user_prompt(
         if params.sub_question_count else "3–7（由命題教師自行決定）"
     )
 
+    brief = getattr(params, "creative_brief", None)
+    if topic_override:
+        context_line = topic_override
+    elif brief is not None:
+        suffix = _render_brief_context_suffix(brief)
+        context_line = f"{brief.selected_context}{suffix}"
+    else:
+        context_line = "、".join(c.value for c in params.情境)
+
     text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         learning_stage=_LEARNING_STAGE,
         subject=params.科目.value,
-        context=topic_override or "、".join(c.value for c in params.情境),
+        context=context_line,
         set_type=params.題型種類.value,
         q_types=q_types_str,
         sub_question_count=sub_q_count_str,
@@ -854,6 +900,7 @@ def build_text_system_prompt(
     learning_stage: str | None = None,
     content_text: str | None = None,
     performance_text: str | None = None,
+    creative_brief: CreativeBrief | None = None,
 ) -> str:
     prompt = build_system_prompt(
         grades=grades,
@@ -862,7 +909,7 @@ def build_text_system_prompt(
         performance_text=performance_text,
     )
     prompt_intro = prompt.split("## 輸出格式", 1)[0].rstrip()
-    return prompt_intro + """
+    body = prompt_intro + """
 
 ## 輸出格式
 
@@ -885,6 +932,9 @@ def build_text_system_prompt(
 
 `subquestions` 陣列為各小題的出題規劃，每筆只需序號、題型與一句出題概念說明；詳細題目與答案將由後續子題產生器負責。請只輸出 JSON，不要輸出其他文字。
 """
+    if creative_brief is not None:
+        body += _CREATIVE_BRIEF_SYSTEM_BLOCK
+    return body
 
 
 def build_text_user_prompt(
@@ -909,6 +959,9 @@ def build_text_user_prompt(
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
     )
+    brief = getattr(params, "creative_brief", None)
+    if brief is not None:
+        text += _render_brief_guidance_section(brief)
     text = text.replace(
         """\
 6. 評分代號請使用：2（滿分）/ 1（部分得分，限開放式）/ 0（零分）/ 0X（未作答）。
