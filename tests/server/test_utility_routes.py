@@ -101,3 +101,56 @@ def test_natural_sciences_schemas_include_pisa_science_dimensions() -> None:
     assert len(learning_performance) == 20
     assert {"value", "instruction", "科目"} <= set(learning_performance[0])
     assert "tr-Ⅳ-1" in {entry["value"] for entry in learning_performance}
+
+
+def test_models_endpoint_returns_allowlist_and_defaults() -> None:
+    app = create_app()
+    cfg = ServerConfig(
+        api_key="x",
+        jwt_secret="test-secret",
+        model_plan="claude-opus-4-6",
+        model_execute="claude-sonnet-4-6",
+        llm_models_allowed=(
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-6",
+        ),
+    )
+    app.dependency_overrides[get_config] = lambda: cfg
+    with TestClient(app) as client:
+        r = client.get("/api/models")
+    assert r.status_code == 200
+    assert r.json() == {
+        "allowed": [
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-6",
+        ],
+        "defaults": {
+            "plan": "claude-opus-4-6",
+            "execute": "claude-sonnet-4-6",
+        },
+    }
+
+
+def test_models_endpoint_falls_back_to_defaults_only() -> None:
+    app = create_app()
+    cfg = ServerConfig(
+        api_key="x",
+        jwt_secret="test-secret",
+        model_plan="claude-opus-4-6",
+        model_execute="claude-sonnet-4-6",
+        # Explicitly empty allowlist to mirror the "env unset" default before
+        # from_env fills it in — the endpoint must still return both defaults.
+        llm_models_allowed=("claude-opus-4-6", "claude-sonnet-4-6"),
+    )
+    app.dependency_overrides[get_config] = lambda: cfg
+    with TestClient(app) as client:
+        r = client.get("/api/models")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["defaults"] == {
+        "plan": "claude-opus-4-6",
+        "execute": "claude-sonnet-4-6",
+    }
+    assert body["allowed"] == ["claude-opus-4-6", "claude-sonnet-4-6"]
