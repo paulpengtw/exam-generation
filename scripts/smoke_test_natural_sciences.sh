@@ -145,5 +145,97 @@ fi
 rm -f "$FRONT_TMP"
 
 ###############################################################################
+# CHECK 2: API — /api/schemas?subject=natural_sciences carries PISA dimensions
+###############################################################################
+
+step "CHECK 2 [API]: GET $API_URL/api/schemas?subject=natural_sciences"
+
+SCHEMA_TMP=$(mktemp)
+SCHEMA_CODE=$(curl -s -o "$SCHEMA_TMP" -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/schemas?subject=natural_sciences" 2>/dev/null || true)
+
+if [[ "$SCHEMA_CODE" != "200" ]]; then
+  fail "API" "GET /api/schemas?subject=natural_sciences returned HTTP $SCHEMA_CODE (expected 200)"
+  info "First 200 bytes of response:"
+  head -c 200 "$SCHEMA_TMP" || true
+  echo ""
+else
+  SCHEMA_REPORT=$(python3 - "$SCHEMA_TMP" <<'PY'
+import json, sys
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+
+def values(cat):
+    entries = data.get(cat) or []
+    out = []
+    for entry in entries:
+        if isinstance(entry, dict) and "value" in entry:
+            out.append(entry["value"])
+        elif isinstance(entry, str):
+            out.append(entry)
+    return out
+
+errors = []
+
+context_vals = values("情境")
+for expected in ("Personal", "Local and national", "Global"):
+    if expected not in context_vals:
+        errors.append(f"情境 missing '{expected}' (got {context_vals!r})")
+
+subctx_vals = values("情境子類別")
+if not subctx_vals:
+    errors.append("情境子類別 is empty")
+
+cap_vals = values("科學能力")
+if len(cap_vals) != 6:
+    errors.append(f"科學能力 has {len(cap_vals)} entries, expected 6")
+required_cap_prefixes = ("能力一", "能力二", "能力三",
+                         "環境能力一", "環境能力二", "環境能力三")
+for prefix in required_cap_prefixes:
+    if not any(v.startswith(prefix) for v in cap_vals):
+        errors.append(f"科學能力 missing entry starting with '{prefix}' (got {cap_vals!r})")
+
+qtype_vals = values("題型")
+for expected in ("Simple multiple-choice",
+                 "Complex multiple-choice",
+                 "Constructed response"):
+    if expected not in qtype_vals:
+        errors.append(f"題型 missing '{expected}' (got {qtype_vals!r})")
+
+lc_vals = values("學習內容")
+if not lc_vals:
+    errors.append("學習內容 pool is empty")
+
+lp_vals = values("學習表現")
+if not lp_vals:
+    errors.append("學習表現 pool is empty")
+
+if errors:
+    print("FAIL")
+    for e in errors:
+        print(e)
+else:
+    print("OK")
+    print(f"情境={len(context_vals)} 情境子類別={len(subctx_vals)} "
+          f"科學能力={len(cap_vals)} 題型={len(qtype_vals)} "
+          f"學習內容={len(lc_vals)} 學習表現={len(lp_vals)}")
+PY
+)
+  SCHEMA_STATUS=$(echo "$SCHEMA_REPORT" | head -1)
+  if [[ "$SCHEMA_STATUS" == "OK" ]]; then
+    pass "API: /api/schemas returns all six PISA dimensions"
+    info "$(echo "$SCHEMA_REPORT" | tail -1)"
+  else
+    fail "API" "/api/schemas payload is missing PISA fields:"
+    echo "$SCHEMA_REPORT" | tail -n +2 | while IFS= read -r line; do
+      info "  $line"
+    done
+  fi
+fi
+
+rm -f "$SCHEMA_TMP"
+
+###############################################################################
 # Checks are appended by later tasks
 ###############################################################################
