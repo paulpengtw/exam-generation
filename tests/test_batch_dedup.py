@@ -469,3 +469,94 @@ def test_ns_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
     text_prompts = [p for p in client.user_prompts if "## 已生成題目" in p]
     assert text_prompts, "expected at least one prompt to carry the dedup block"
     assert "1. 核心問題：科學核心問題 1；學習內容：INc-Ⅳ-1" in text_prompts[0]
+
+
+def test_server_generate_stream_accumulates_prior_scopes_across_math_workers(tmp_path) -> None:
+    """Two sequentially-completing math workers: the second must receive scope 1.
+
+    `generate_question_stream` dispatches all workers concurrently via
+    `loop.run_in_executor(None, ...)`, so with the default executor pool
+    (several idle threads) both workers can reach their pre-call snapshot
+    within microseconds of each other, before either has appended its
+    scope. That is expected best-effort behavior per the design (early
+    workers may see an empty snapshot). To deterministically exercise the
+    "later worker observes an earlier worker's completed scope" path, this
+    test pins the loop's default executor to a single worker thread, which
+    forces strictly sequential execution of `worker_one` for the two
+    dispatched questions.
+    """
+    import asyncio
+    import concurrent.futures
+    import threading
+    import types
+    from pathlib import Path
+
+    from server.config import ServerConfig
+    from server.generate import service
+    from server.generate.models import GenerateParams
+    from src.common.batch_dedup import PriorScope
+
+    captured: dict[int, list[PriorScope] | None] = {}
+    order_lock = threading.Lock()
+    counter = {"n": 0}
+
+    def fake_math_gwc(**kwargs):
+        idx = kwargs.get("question_id", "")
+        prior = kwargs.get("prior_scopes")
+        with order_lock:
+            counter["n"] += 1
+            captured[counter["n"]] = list(prior) if prior is not None else None
+        from src.schemas import ExamQuestion, LearningContentItem
+        return ExamQuestion.model_construct(
+            id=idx,
+            情境=[],
+            題型種類="單一題",
+            題型="選擇題",
+            數學思考=[],
+            學習內容=[LearningContentItem(編碼=f"N-7-{counter['n']}", 說明="測試")],
+            題目=[],
+            正確解題分析=[],
+            出題概念=f"概念 {counter['n']}",
+            metadata=None,
+        )
+
+    original = service.math_generate_with_corrections
+    service.math_generate_with_corrections = fake_math_gwc  # type: ignore[assignment]
+
+    app_state = types.SimpleNamespace(
+        renderer_pool=None,
+        curriculum=[],
+        performance={},
+        intro_text="",
+        grade_content={7: [], 8: [], 9: []},
+    )
+    config = ServerConfig(
+        output_dir=tmp_path,
+        data_dir=Path("data"),
+        api_key="x",
+        base_url="http://x",
+        model_plan="p",
+        model_execute="e",
+        log_truncate=200,
+        max_retries=0,
+        subgen_max_concurrency=1,
+    )
+    params = GenerateParams(subject="math", count=2, skip_verify=True, seed=42)
+
+    async def _drive() -> list[dict]:
+        loop = asyncio.get_running_loop()
+        loop.set_default_executor(concurrent.futures.ThreadPoolExecutor(max_workers=1))
+        events: list[dict] = []
+        async for evt in service.generate_question_stream(params, config, app_state):
+            events.append(evt)
+        return events
+
+    try:
+        asyncio.run(_drive())
+    finally:
+        service.math_generate_with_corrections = original  # type: ignore[assignment]
+
+    # 2 workers ran sequentially; the second must see the first's scope.
+    assert len(captured) == 2
+    assert captured[1] == []
+    assert captured[2] and captured[2][0].codes == ["N-7-1"]

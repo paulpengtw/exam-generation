@@ -10,6 +10,7 @@ import asyncio
 import base64
 import json
 import logging
+import threading
 import traceback
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -18,6 +19,12 @@ from typing import Any
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
 from src.cli import generate_with_corrections as math_generate_with_corrections
+from src.common.batch_dedup import (
+    PriorScope,
+    extract_math_prior_scope,
+    extract_ns_prior_scope,
+    extract_ss_prior_scope,
+)
 from src.llm_client import LLMClient, LLMObserver
 from src.natural_sciences.cli import generate_with_corrections as ns_generate_with_corrections
 from src.natural_sciences.sampler import sample_params as ns_sample_params
@@ -200,6 +207,9 @@ async def generate_question_stream(
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
+    prior_scopes: list[PriorScope] = []
+    prior_scopes_lock = threading.Lock()
+
     _EVENT_TYPE_MAP = {
         "llm_request": "llm_request",
         "llm_reasoning_delta": "llm_thinking",
@@ -250,6 +260,8 @@ async def generate_question_stream(
         question_client.set_observer(_make_queue_observer(loop, queue))
         emit_question_update = _make_question_update_emitter(i)
         _emit_pipeline("question_start", index=i, total=count)
+        with prior_scopes_lock:
+            prior_snapshot = list(prior_scopes)
         try:
             if is_social_studies:
                 rng_params = ss_sample_params(
@@ -285,6 +297,7 @@ async def generate_question_stream(
                     user_topic=params.topic,
                     user_core_question=params.core_question,
                     on_question_update=emit_question_update,
+                    prior_scopes=prior_snapshot,
                 )
             elif is_natural_sciences:
                 rng_params = ns_sample_params(
@@ -322,6 +335,7 @@ async def generate_question_stream(
                     user_topic=params.topic,
                     user_core_question=params.core_question,
                     on_question_update=emit_question_update,
+                    prior_scopes=prior_snapshot,
                 )
             else:
                 # math sampler accepts a single 科目 string; take first if list provided
@@ -361,11 +375,21 @@ async def generate_question_stream(
                     user_options=params.options,
                     user_core_question=params.core_question or "",
                     on_question_update=emit_question_update,
+                    prior_scopes=prior_snapshot,
                 )
             assert isinstance(
                 question,
                 (MathExamQuestion, SSExamQuestion, NSExamQuestion),
             )
+            if is_social_studies:
+                new_scope = extract_ss_prior_scope(question)
+            elif is_natural_sciences:
+                new_scope = extract_ns_prior_scope(question)
+            else:
+                new_scope = extract_math_prior_scope(question)
+            if new_scope is not None:
+                with prior_scopes_lock:
+                    prior_scopes.append(new_scope)
             _emit_pipeline("question_end", index=i, total=count)
             loop.call_soon_threadsafe(
                 queue.put_nowait,
