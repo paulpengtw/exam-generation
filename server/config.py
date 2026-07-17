@@ -33,6 +33,7 @@ class ServerConfig(Config):
         Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"
     )
     email_whitelist: tuple[str, ...] = ()
+    llm_exchange_retention_days: int = 30
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -94,6 +95,9 @@ class ServerConfig(Config):
                     "MATH_CURRICULUM_DIR",
                     str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
+            ),
+            llm_exchange_retention_days=int(
+                os.environ.get("LLM_EXCHANGE_RETENTION_DAYS", "30")
             ),
         )
 
