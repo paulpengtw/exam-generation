@@ -178,3 +178,42 @@ def test_extract_ns_uses_核心問題_and_aggregated_subquestion_codes() -> None
     assert scope is not None
     assert scope.summary == "海洋酸化對生態的影響"
     assert scope.codes == ["INc-Ⅳ-1"]
+
+
+def test_math_build_user_prompt_no_scopes_is_byte_identical(tmp_path) -> None:
+    import random
+
+    from src.common.batch_dedup import PriorScope
+    from src.context_builder import build_user_prompt
+    from src.sampler import sample_params
+
+    grade_content = {g: [] for g in [7, 8, 9]}
+    params = sample_params(grade_content=grade_content, seed=1)
+
+    baseline, _ = build_user_prompt(params, tmp_path, rng=random.Random(2))
+    with_none, _ = build_user_prompt(
+        params, tmp_path, rng=random.Random(2), prior_scopes=None,
+    )
+    with_empty, _ = build_user_prompt(
+        params, tmp_path, rng=random.Random(2), prior_scopes=[],
+    )
+    assert baseline == with_none == with_empty
+    assert "已生成題目" not in baseline
+
+
+def test_math_build_user_prompt_renders_prior_scopes_block(tmp_path) -> None:
+    import random
+
+    from src.common.batch_dedup import PriorScope
+    from src.context_builder import build_user_prompt
+    from src.sampler import sample_params
+
+    grade_content = {g: [] for g in [7, 8, 9]}
+    params = sample_params(grade_content=grade_content, seed=1)
+    scopes = [PriorScope(summary="比較有理數大小", codes=["N-7-1", "N-7-2"])]
+
+    prompt, _ = build_user_prompt(
+        params, tmp_path, rng=random.Random(2), prior_scopes=scopes,
+    )
+    assert "## 已生成題目（請避免相似範圍）" in prompt
+    assert "1. 核心問題：比較有理數大小；學習內容：N-7-1, N-7-2" in prompt
