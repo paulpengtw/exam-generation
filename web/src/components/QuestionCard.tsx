@@ -90,6 +90,37 @@ const RUBRIC_TONE: Record<string, string> = {
   "0X": "bg-gray-100 text-gray-500",
 };
 
+function DistractorPanel({ analysis }: { analysis: Record<string, string> }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const entries = Object.entries(analysis);
+  if (entries.length === 0) return null;
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-sm font-medium text-amber-700 hover:text-amber-800"
+      >
+        {open ? t("card.hideDistractor") : t("card.showDistractor")}
+      </button>
+      {open && (
+        <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-3 space-y-1 text-sm">
+          <div className="font-medium text-amber-800 mb-1">{t("card.distractorAnalysis")}</div>
+          {entries.map(([label, note]) => (
+            <div key={label} className="flex gap-2 items-start">
+              <span className="inline-flex shrink-0 items-center rounded bg-amber-200 px-1.5 py-0.5 text-xs font-bold text-amber-900">
+                {label}
+              </span>
+              <span className="whitespace-pre-wrap text-amber-900">{note}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuestion; showAnswersByDefault?: boolean }) {
   const t = useT();
   const [showAnswer, setShowAnswer] = useState(showAnswersByDefault);
@@ -175,6 +206,9 @@ function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuest
                   ))}
                 </div>
               </div>
+            )}
+            {sub.誘答分析 && Object.keys(sub.誘答分析).length > 0 && (
+              <DistractorPanel analysis={sub.誘答分析} />
             )}
           </div>
         )}
@@ -357,6 +391,9 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
                     {line}
                   </p>
                 ))}
+                {question.誘答分析 && Object.keys(question.誘答分析).length > 0 && (
+                  <DistractorPanel analysis={question.誘答分析} />
+                )}
               </div>
             )}
           </div>

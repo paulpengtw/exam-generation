@@ -4,6 +4,9 @@ import './index.css'
 import App from './App.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 import { useLangStore } from './store/langStore.ts'
+import { initSentry } from './sentry.ts'
+
+initSentry();
 
 // Keep <html lang> in sync with persisted language choice
 useLangStore.subscribe((state) => {

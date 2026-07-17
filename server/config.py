@@ -32,7 +32,11 @@ class ServerConfig(Config):
     math_curriculum_dir: Path = (
         Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"
     )
+    generation_history_retention_days: int = 0
     email_whitelist: tuple[str, ...] = ()
+    llm_models_allowed: tuple[str, ...] = ()
+    llm_exchange_retention_days: int = 30
+    creative_planning: bool = True
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -42,7 +46,7 @@ class ServerConfig(Config):
         else:
             load_dotenv()
 
-        return cls(
+        cfg = cls(
             api_key=os.environ.get("LLM_API_KEY", ""),
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
             model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-opus-4-6"),
@@ -95,7 +99,34 @@ class ServerConfig(Config):
                     str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
             ),
+            generation_history_retention_days=int(
+                os.environ.get("GENERATION_HISTORY_RETENTION_DAYS", "0")
+            ),
+            llm_models_allowed=tuple(
+                m.strip()
+                for m in os.environ.get("LLM_MODELS_ALLOWED", "").split(",")
+                if m.strip()
+            ),
+            llm_exchange_retention_days=int(
+                os.environ.get("LLM_EXCHANGE_RETENTION_DAYS", "30")
+            ),
+            web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "none"),
+            web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
+            creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
+            not in ("0", "false", "False", ""),
         )
+        seen: dict[str, None] = {}
+        for m in cfg.llm_models_allowed:
+            if m and m not in seen:
+                seen[m] = None
+        # Always ensure the configured default models are present so
+        # GET /api/models never advertises a default that the 422 gate
+        # would then reject.
+        for m in (cfg.model_plan, cfg.model_execute):
+            if m and m not in seen:
+                seen[m] = None
+        cfg.llm_models_allowed = tuple(seen)
+        return cfg
 
     def validate(self) -> None:
         """Check that required server config values are present."""

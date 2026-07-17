@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import traceback
+import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -18,13 +20,14 @@ from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
 from server.generate.models import (
+    CoverageMode,
     GenerateParams,
     ImageGenerationMode,
     PlanCoreQuestionsRequest,
     PlanCoreQuestionsResponse,
 )
 from server.generate.service import generate_question_stream
-from server.models import GenerationLog, User
+from server.models import GenerationLog, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
 
 logger = logging.getLogger(__name__)
@@ -37,6 +40,18 @@ def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, str):
         data = json.dumps(data, ensure_ascii=False)
     return {"event": event["event"], "data": data}
+
+
+def _check_model_allowed(model: str | None, config: ServerConfig, field: str) -> None:
+    """Raise HTTPException(422) when a submitted model is outside the allowlist."""
+    if not model:
+        return
+    if model not in config.llm_models_allowed:
+        allowed = ", ".join(config.llm_models_allowed)
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field}: model '{model}' not in allowlist: [{allowed}]",
+        )
 
 
 @router.get("/generate")
@@ -54,6 +69,7 @@ async def generate_endpoint(
     disable_reference_fewshot: bool = Query(default=False),
     seed: int | None = Query(default=None),
     image_generation_mode: ImageGenerationMode = Query(default="html"),
+    coverage_mode: CoverageMode = Query(default="balanced"),
     subject_filter: list[str] | None = Query(default=None),
     content_type: str | None = Query(default=None),
     passage: str | None = Query(default=None),
@@ -70,6 +86,8 @@ async def generate_endpoint(
     option_word_limit: int | None = Query(default=None, ge=1),
     text_word_limit: int | None = Query(default=None, ge=1),
     subquestion_configs: str | None = Query(default=None),
+    model_plan: str | None = Query(default=None),
+    model_execute: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -79,6 +97,8 @@ async def generate_endpoint(
     Logs the request to `generation_log` at start and updates the row to
     `completed` or `failed` when the stream ends.
     """
+    _check_model_allowed(model_plan, config, "model_plan")
+    _check_model_allowed(model_execute, config, "model_execute")
     params = GenerateParams(
         subject=subject,
         grade=grade,
@@ -91,6 +111,7 @@ async def generate_endpoint(
         disable_reference_fewshot=disable_reference_fewshot,
         seed=seed,
         image_generation_mode=image_generation_mode,
+        coverage_mode=coverage_mode,
         subject_filter=subject_filter,
         content_type=content_type,
         passage=passage,
@@ -107,6 +128,8 @@ async def generate_endpoint(
         option_word_limit=option_word_limit,
         text_word_limit=text_word_limit,
         subquestion_configs=subquestion_configs,
+        model_plan=model_plan,
+        model_execute=model_execute,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 
@@ -126,7 +149,9 @@ async def generate_endpoint(
         status = "completed"
         error_msg: str | None = None
         try:
-            async for event in generate_question_stream(params, config, app_state):
+            async for event in generate_question_stream(
+                params, config, app_state, user_id=user.id, generation_log_id=log_id
+            ):
                 if event["event"] == "error":
                     status = "failed"
                     error_msg = str(event.get("data", ""))
@@ -166,10 +191,17 @@ async def plan_core_questions_endpoint(
     config: ServerConfig = Depends(get_config),
 ) -> PlanCoreQuestionsResponse:
     """Return three candidate 核心問題 for a given topic (Opus single call)."""
+    _check_model_allowed(body.model_plan, config, "model_plan")
+    _check_model_allowed(body.model_execute, config, "model_execute")
     from src.config import Config as SrcConfig
     from src.llm_client import LLMClient
 
     src_config = SrcConfig.from_env()
+    src_config = dataclasses.replace(
+        src_config,
+        model_plan=body.model_plan or src_config.model_plan,
+        model_execute=body.model_execute or src_config.model_execute,
+    )
     client = LLMClient(src_config)
 
     if body.subject == "math":
@@ -254,3 +286,52 @@ async def plan_core_questions_endpoint(
                 detail="Planner upstream returned malformed candidates",
             ) from exc
     return PlanCoreQuestionsResponse(candidates=candidates)
+
+
+@router.get("/generation-logs/{log_id}/exchanges")
+async def list_generation_log_exchanges(
+    log_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> list[dict[str, Any]]:
+    """Return LLM exchanges for a generation the caller owns, ordered by exchange_order.
+
+    404 on missing/other-user logs (existence-hiding — never 403).
+    """
+    log_row = (
+        await session.execute(
+            select(GenerationLog).where(
+                GenerationLog.id == log_id, GenerationLog.user_id == user.id
+            )
+        )
+    ).scalar_one_or_none()
+    if log_row is None:
+        raise HTTPException(status_code=404, detail="generation log not found")
+
+    rows = (
+        (
+            await session.execute(
+                select(LLMExchange)
+                .where(LLMExchange.generation_log_id == log_id)
+                .order_by(LLMExchange.exchange_order.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return [
+        {
+            "id": str(row.id),
+            "exchange_order": row.exchange_order,
+            "agent": row.agent,
+            "purpose": row.purpose,
+            "request_body": row.request_body,
+            "response_body": row.response_body,
+            "model_used": row.model_used,
+            "prompt_tokens": row.prompt_tokens,
+            "completion_tokens": row.completion_tokens,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]

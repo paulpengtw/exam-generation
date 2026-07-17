@@ -186,6 +186,14 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
             paras.push(`<text:p text:style-name="Standard">${xmlEscape(`[${r.code}] ${r.規準說明}`)}</text:p>`);
           });
         }
+        if (sub.誘答分析 && Object.keys(sub.誘答分析).length > 0) {
+          paras.push(`<text:p text:style-name="MetaLine">${xmlEscape("誘答分析：")}</text:p>`);
+          Object.entries(sub.誘答分析).forEach(([label, note]) => {
+            paras.push(
+              `<text:p text:style-name="Standard">${xmlEscape(`[${label}] ${note}`)}</text:p>`,
+            );
+          });
+        }
       });
     } else {
       // Math: flat question + solution
@@ -197,6 +205,14 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
       question.正確解題分析.forEach((line) => {
         paras.push(`<text:p text:style-name="Standard">${xmlEscape(line)}</text:p>`);
       });
+      if (question.誘答分析 && Object.keys(question.誘答分析).length > 0) {
+        paras.push(`<text:p text:style-name="Heading2">${xmlEscape("誘答分析")}</text:p>`);
+        Object.entries(question.誘答分析).forEach(([label, note]) => {
+          paras.push(
+            `<text:p text:style-name="Standard">${xmlEscape(`[${label}] ${note}`)}</text:p>`,
+          );
+        });
+      }
     }
   });
 

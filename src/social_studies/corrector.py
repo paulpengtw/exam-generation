@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 
 from src.llm_client import LLMClient, extract_json
-from src.social_studies.context_builder import _build_curriculum_section, _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
+from src.social_studies.context_builder import (
+    _CONTENT_TEXT,
+    _PERFORMANCE_INTRO,
+    _PERFORMANCE_TEXT,
+    _build_curriculum_section,
+)
 from src.social_studies.schemas import ExamQuestion, ImageSpec, VerificationResult
 
 _CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO)
@@ -23,6 +28,7 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
   保留 render_mode、chart_type 不變。
 - 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、id、metadata、
   各小題的 學習內容/學習表現/核心素養/出題概念/出題指示/科目/年級。
+- 若某小題的答案或選項有改動，該小題的 `誘答分析` 必須同步反映新的正解與誘答陷阱：正解鍵改為「正確答案：…」，其他鍵改為新的誤解描述。選項標籤必須與新題目一致；若題目沒有 (A)-(D) 標籤，可留空 `{}`。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
 """
@@ -147,6 +153,11 @@ def correct_question(
                     ),
                     圖片=original.圖片 if original else sq_raw.get("圖片"),
                     chart_spec=original.chart_spec if original else None,
+                    誘答分析=(
+                        {str(k): str(v) for k, v in sq_raw.get("誘答分析", {}).items()}
+                        if isinstance(sq_raw.get("誘答分析"), dict)
+                        else (original.誘答分析 if original else {})
+                    ),
                 )
                 new_sqs.append(sq)
             except Exception:

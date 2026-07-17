@@ -5,30 +5,36 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import logging
+import random
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.batch_sampler import BatchSampler
+from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
 from src.config import Config
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
 from src.social_studies.context_builder import (
+    _LEARNING_STAGE,
     LC_INSTRUCTIONS,
     LP_INSTRUCTIONS,
-    _LEARNING_STAGE,
     build_subquestion_system_prompt,
     build_subquestion_user_prompt,
     build_text_system_prompt,
     build_text_user_prompt,
 )
 from src.social_studies.corrector import correct_question
+from src.social_studies.planner import plan_context_angles
 from src.social_studies.sampler import sample_params
 from src.social_studies.schema_loader import load_grades, load_schemas
 from src.social_studies.schemas import (
     CoreCompetency,
+    CreativeBrief,
     ExamQuestion,
     ImageSpec,
     LearningContentRef,
@@ -43,6 +49,8 @@ from src.social_studies.schemas import (
     SubQuestionConfig,
 )
 from src.social_studies.verifier import verify_question
+
+logger = logging.getLogger(__name__)
 
 _GRADES: list[int] = load_grades(load_schemas())
 _VISUAL_CONTENT_TYPES = {"含圖片", "graphs/charts/tables"}
@@ -153,6 +161,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--count", type=int, default=1, help="Number of question sets to generate")
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
+    gen.add_argument(
+        "--coverage-mode",
+        choices=["balanced", "random"],
+        default="balanced",
+        help="出題模式：balanced（跨題目平均分配題型/學習內容）或 random（每題獨立隨機）",
+    )
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
     gen.add_argument("--max-retries", type=int, default=None,
                      help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)")
@@ -351,6 +365,11 @@ def _parse_subquestion(
                 sq_chart_spec = ImageSpec(**raw_sq_spec)
             except Exception:
                 sq_chart_spec = None
+        raw_distractor = sq_raw.get("誘答分析", {})
+        if isinstance(raw_distractor, dict):
+            distractor = {str(k): str(v) for k, v in raw_distractor.items()}
+        else:
+            distractor = {}
         return SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
@@ -368,6 +387,7 @@ def _parse_subquestion(
             答案=sq_raw.get("答案", ""),
             答案解析=sq_raw.get("答案解析", ""),
             評分規準=rubric,
+            誘答分析=distractor,
             題目內容類型=sq_raw.get("題目內容類型"),
             image_generation_mode=sq_raw.get("image_generation_mode"),
             圖片=sq_raw.get("圖片"),
@@ -531,6 +551,67 @@ def _render_subquestion_images(
     return rendered_paths
 
 
+def _plan_batch_briefs(
+    client: LLMClient | None,
+    config: Config,
+    params_list: list[SampledParams],
+) -> list[CreativeBrief | None]:
+    """One Opus planning call for the whole batch; length matches params_list.
+
+    Returns `[None] * n` when planning is disabled, the client is unavailable,
+    the batch is empty, no shared 情境 remain, the LLM raises, or every
+    returned brief is out-of-set. Never raises — planning must never block
+    generation.
+    """
+    n = len(params_list)
+    if n == 0:
+        return []
+    if not config.creative_planning or client is None:
+        return [None] * n
+
+    # Union of sampled 情境 across the batch — Opus is free to pick any of them.
+    contexts: list[str] = []
+    for params in params_list:
+        for c in params.情境:
+            if c.value not in contexts:
+                contexts.append(c.value)
+    if not contexts:
+        return [None] * n
+
+    # Use the first question's 學習內容_pool as the shared grounding; SS batches
+    # typically share stage/subject so this is a reasonable representative pool.
+    learning_content_pool = list(params_list[0].學習內容_pool)
+
+    try:
+        briefs = plan_context_angles(
+            client,
+            count=n,
+            sampled_contexts=contexts,
+            learning_content_pool=learning_content_pool,
+            core_question=None,
+        )
+    except Exception as exc:
+        # plan_context_angles (src/common/planner.py) already catches its own
+        # LLM/parse failures internally and returns [None] * count instead of
+        # raising, so this branch is unreachable in practice today. It is kept
+        # as defense-in-depth in case that contract changes upstream.
+        logger.warning("Creative planning failed; falling back to briefless prompts: %s", exc)
+        return [None] * n
+
+    if not briefs:
+        logger.warning(
+            "Creative planning returned no valid briefs; falling back to briefless prompts"
+        )
+        return [None] * n
+
+    # briefs already has length n (padded by plan_context_angles), but guard
+    # against future changes by explicitly filling the tail with None.
+    result: list[CreativeBrief | None] = list(briefs[:n])
+    while len(result) < n:
+        result.append(None)
+    return result
+
+
 def generate_one(
     config: Config,
     client: LLMClient | None,
@@ -548,12 +629,13 @@ def generate_one(
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     few_shot_dir = config.data_dir / "social_studies" / "few_shot"
     params = _with_text_word_limit(params, text_word_limit)
     if dry_run:
-        text_system = build_text_system_prompt()
+        text_system = build_text_system_prompt(creative_brief=params.creative_brief)
         text_user, text_images = build_text_user_prompt(
             params,
             few_shot_dir,
@@ -563,6 +645,7 @@ def generate_one(
             user_topic=user_topic,
             user_core_question=user_core_question,
             disable_reference_fewshot=disable_reference_fewshot,
+            prior_scopes=prior_scopes,
         )
         img_note = f" ({len(text_images)} few-shot images)" if text_images else ""
         return (
@@ -574,7 +657,7 @@ def generate_one(
 
     print(f"  Generating question {question_id}...", file=sys.stderr)
 
-    text_system = build_text_system_prompt()
+    text_system = build_text_system_prompt(creative_brief=params.creative_brief)
     text_user, text_images = build_text_user_prompt(
         params,
         few_shot_dir,
@@ -584,6 +667,7 @@ def generate_one(
         user_topic=user_topic,
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
+        prior_scopes=prior_scopes,
     )
     emit_stage(obs, "generator", "llm_generate", "start")
     text_raw = client.generate_json(text_system, text_user, images=text_images or None)
@@ -732,6 +816,7 @@ def generate_with_corrections(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     question = generate_one(
@@ -750,6 +835,7 @@ def generate_with_corrections(
         user_topic=user_topic,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        prior_scopes=prior_scopes,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -856,14 +942,35 @@ def main(argv: list[str] | None = None) -> None:
     content_type_override = args.content_type if args.content_type else None
 
     results = []
+    prior_scopes: list[PriorScope] = []
     base_seed = args.seed
     max_retries = args.max_retries if args.max_retries is not None else config.max_retries
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    batch_sampler: BatchSampler | None = None
+    if args.count > 1 and args.coverage_mode == "balanced":
+        user_pinned_qtype = bool(args.q_type)
+        batch_rng = random.Random(base_seed if base_seed is not None else 0)
+        q_pool = (
+            [_resolve_enum(v, QuestionType) for v in args.q_type]
+            if user_pinned_qtype else list(QuestionType)
+        )
+        # CLI is the single-operator path; stage-wide 學習內容 stratification
+        # is exercised via the API in Task 5, so the pool stays empty here
+        # (BatchSampler.learning_content_assignments then falls back to []
+        # per question, which sample_params() treats as no override).
+        lc_pool: list[str] = []
+        batch_sampler = BatchSampler(
+            count=args.count,
+            q_type_pool=q_pool,
+            learning_content_pool=lc_pool,
+            rng=batch_rng,
+        )
+
     try:
+        params_list: list[SampledParams] = []
         for i in range(args.count):
             seed = (base_seed + i) if base_seed is not None else None
-            question_id = f"ss_{timestamp}_{i+1:03d}"
-
             params = sample_params(
                 grade=args.grade,
                 context=context_override,
@@ -875,7 +982,24 @@ def main(argv: list[str] | None = None) -> None:
                 learning_performance=learning_performance_override,
                 content_type=content_type_override,
                 seed=seed,
+                assigned_q_type=(
+                    batch_sampler.q_type_assignments[i] if batch_sampler else None
+                ),
+                assigned_learning_content=(
+                    batch_sampler.learning_content_assignments[i]
+                    if batch_sampler and batch_sampler.learning_content_assignments[i]
+                    else None
+                ),
             )
+            params_list.append(params)
+
+        briefs = _plan_batch_briefs(client, config, params_list)
+        for i, brief in enumerate(briefs):
+            if brief is not None:
+                params_list[i] = params_list[i].model_copy(update={"creative_brief": brief})
+
+        for i, params in enumerate(params_list):
+            question_id = f"ss_{timestamp}_{i+1:03d}"
 
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
                   f"科目={params.科目.value}, "
@@ -883,7 +1007,8 @@ def main(argv: list[str] | None = None) -> None:
                   f"題型={'、'.join(t.value for t in params.題型)}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
                   f"文本形式={params.文本形式.value}, "
                   f"題目內容類型={params.題目內容類型}, "
-                  f"核心素養={'、'.join(c.value for c in params.核心素養)}", file=sys.stderr)
+                  f"核心素養={'、'.join(c.value for c in params.核心素養)}, "
+                  f"creative_brief={'yes' if params.creative_brief else 'no'}", file=sys.stderr)
 
             result = generate_with_corrections(
                 config=config,
@@ -895,6 +1020,7 @@ def main(argv: list[str] | None = None) -> None:
                 html_renderer=html_renderer,
                 image_generation_mode=args.image_generation_mode,
                 dry_run=args.dry_run,
+                prior_scopes=list(prior_scopes),
             )
 
             if args.dry_run:
@@ -903,7 +1029,24 @@ def main(argv: list[str] | None = None) -> None:
 
             question = result
             assert isinstance(question, ExamQuestion)
+
+            effective_mode = "balanced" if batch_sampler is not None else "random"
+            if question.metadata is None:
+                question.metadata = QuestionMetadata(
+                    grade=params.grade,
+                    model="",
+                    coverage_mode_used=effective_mode,
+                )
+            else:
+                question.metadata = question.metadata.model_copy(
+                    update={"coverage_mode_used": effective_mode}
+                )
+
             results.append(question)
+
+            scope = extract_ss_prior_scope(question)
+            if scope is not None:
+                prior_scopes.append(scope)
 
             if not args.batch:
                 out_path = config.output_dir / f"{question_id}.json"

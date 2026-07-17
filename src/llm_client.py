@@ -12,6 +12,7 @@ from typing import Callable
 
 from anthropic import Anthropic
 from openai import OpenAI
+from pydantic import BaseModel
 
 from src.config import Config
 
@@ -25,6 +26,14 @@ _PURPOSE_TO_AGENT: dict[str, str] = {
     "gpt_image": "image_agent",
     "plan": "planner",
 }
+_PURPOSE_TO_AGENT["fact_check"] = "fact_checker"
+
+
+class Citation(BaseModel):
+    """A single web-search source cited by the model in its final response."""
+
+    url: str
+    title: str = ""
 
 
 def emit_stage(
@@ -485,6 +494,100 @@ class LLMClient:
             "usage": None,
         })
         return str(output)
+
+    def generate_with_tools(
+        self,
+        system: str,
+        user: str,
+        tools: list[dict],
+        purpose: str = "generate",
+        max_iterations: int = 3,
+        model: str | None = None,
+    ) -> tuple[str, list[Citation]]:
+        """Run an Anthropic ``messages.create`` loop with server-side tools.
+
+        The Anthropic native ``web_search_20250305`` tool executes searches
+        server-side, so this loop mainly handles ``pause_turn`` continuations
+        and terminates on ``end_turn`` (or after ``max_iterations`` — treated
+        as inconclusive; callers should fail-open). Returns the concatenated
+        final text and a deduplicated list of :class:`Citation`.
+        """
+        if self.config.rate_limit_delay > 0:
+            time.sleep(self.config.rate_limit_delay)
+        call_model = model or self.config.model_execute
+        agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
+
+        system_param = (
+            [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+            if system else []
+        )
+        messages: list[dict] = [{"role": "user", "content": user}]
+        collected_text: list[str] = []
+        collected_citations: list[Citation] = []
+        seen_urls: set[str] = set()
+
+        def _record_citation(url: str, title: str = "") -> None:
+            if not url or url in seen_urls:
+                return
+            seen_urls.add(url)
+            collected_citations.append(Citation(url=url, title=title or ""))
+
+        def _field(obj: object, name: str) -> str:
+            if isinstance(obj, dict):
+                return obj.get(name, "") or ""
+            return getattr(obj, name, "") or ""
+
+        if self._observer:
+            self._emit({
+                "type": "llm_request",
+                "purpose": purpose,
+                "agent": agent,
+                "model": call_model,
+                "messages": [{"role": "system", "content": system}, *messages],
+                "params": {"max_tokens": 8192, "temperature": 0.7, "tools": tools},
+            })
+
+        for iteration in range(max_iterations):
+            response = self.client.messages.create(
+                model=call_model,
+                max_tokens=8192,
+                temperature=0.7,
+                system=system_param,
+                messages=messages,  # type: ignore[arg-type]
+                tools=tools,  # type: ignore[arg-type]
+            )
+            assistant_blocks: list = list(response.content)
+            for block in assistant_blocks:
+                btype = getattr(block, "type", None)
+                if btype == "text":
+                    collected_text.append(getattr(block, "text", "") or "")
+                    for cit in getattr(block, "citations", None) or []:
+                        _record_citation(_field(cit, "url"), _field(cit, "title"))
+                elif btype == "web_search_tool_result":
+                    for item in getattr(block, "content", None) or []:
+                        _record_citation(_field(item, "url"), _field(item, "title"))
+
+            stop_reason = getattr(response, "stop_reason", "end_turn")
+            if stop_reason != "pause_turn":
+                break
+            # Continue the same turn: the assistant blocks are appended, and
+            # the server executes any additional tool_use it produced.
+            messages.append({"role": "assistant", "content": assistant_blocks})
+            if iteration == max_iterations - 1:
+                break
+
+        final_text = "".join(collected_text)
+        if self._observer:
+            self._emit({
+                "type": "llm_response",
+                "purpose": purpose,
+                "agent": agent,
+                "model": call_model,
+                "content": final_text,
+                "reasoning": None,
+                "usage": None,
+            })
+        return final_text, collected_citations
 
 
 def _try_loads(text: str) -> dict:

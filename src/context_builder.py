@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import json
 import random
+from collections.abc import Sequence
 from pathlib import Path
 
+from src.common.batch_dedup import PriorScope, format_prior_scopes_block
 from src.common.core_competency_loader import (
     competency_instructions,
     load_core_competencies,
@@ -25,6 +27,7 @@ from src.common.curriculum_loader import (
     load_performance_intro,
     performance_instructions,
 )
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.data_loader import load_few_shot_examples
 from src.schema_loader import build_instructions, load_grades, load_learning_stage, load_schemas
 from src.schemas import SampledParams
@@ -65,10 +68,16 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     "含圖片": (
         "本題目必須包含圖片或視覺示意素材（幾何圖形、示意圖、版面等）。"
         "請輸出 `chart_spec`，優先使用 `render_mode: \"html\"`，並在 `description` 與 `data` 中完整描述版面與內容。"
+        f"（示意圖聲明）本題所有圖片皆為示意用途，非完全等比例繪製；"
+        f"請在 `chart_spec.description` 中明確要求下游 HTML 產生器"
+        f"將「{IMAGE_DISCLAIMER}」以 caption 形式呈現在圖片下緣或版面空白處。"
     ),
     "graphs/charts/tables": (
         "本題目必須包含圖表或表格素材。統計圖（直方圖、折線圖、圓餅圖等）請使用 `render_mode: \"chart\"`；"
         "表格或複合資料表請使用 `render_mode: \"html\"`，並在 `data` 中提供完整欄列資料。"
+        f"（示意圖聲明）圖表軸線、格線與座標比例僅為示意，非完全等比例繪製；"
+        f"請在 `chart_spec.description` 或圖表 caption 中加註「{IMAGE_DISCLAIMER}」，"
+        "但圖表中的數值、標籤與分類仍必須完全對應 `data` 內容。"
     ),
     "customized": (
         "本題目內容類型由使用者自訂，請依照使用者提供的素材與指示生成題目。"
@@ -88,6 +97,25 @@ SYSTEM_PROMPT_TEMPLATE = """\
 4. 選項設計應包含合理的誘答選項，針對學生常見的錯誤概念。
 5. 解題分析必須完整、正確，包含逐步推導過程。
 6. 題目可選擇填入 `核心素養`（代號清單）、`學習表現`（編碼+說明）、`題目內容類型`、`出題概念`（一句話評量目標），協助課綱對齊；保留math單題（非題組）輸出結構。
+
+## 誘答分析的設計
+
+`誘答分析` 是一個以「選項標籤」為鍵、對應誘答描述為值的 JSON dict：
+
+- **選擇題**：鍵為 `"A"` / `"B"` / `"C"` / `"D"`。錯誤選項描述其針對的認知陷阱（誤讀題意 / 概念混淆 / 部分正確誘騙 / 過度推論 …），正確選項的值為一句 「正確答案：…」。
+- **是非題**：鍵為 `"是"` / `"非"`。正確項填「正確答案：…」，錯誤項描述學生常見誤解。
+- **建構反應題（封閉式 / 開放式）**：可留空 `{{}}`，或提供 `{{"常見錯誤": "…"}}` 描述一項最常見的錯誤。
+
+範例：
+
+```json
+"誘答分析": {{
+  "A": "誤讀題意：將『加權平均』誤算為算術平均。",
+  "B": "正確答案：74 分鐘（依人數比計算加權平均）。",
+  "C": "概念混淆：把加權係數誤用為比例分子的相反值。",
+  "D": "過度推論：只取最大群組的平均值代表整體。"
+}}
+```
 
 ## 課程綱要參考
 
@@ -112,6 +140,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
   "核心素養": ["數-{stage_code}-A2"],
   "題目內容類型": "純文字 / 含圖片 / graphs/charts/tables / customized",
   "出題概念": "評量學生能否……（一句話）",
+  "誘答分析": {{"A": "...", "B": "正確答案：...", "C": "...", "D": "..."}},
   "題目": ["題目文字", "選項或子題..."],
   "正確解題分析": ["步驟一...", "步驟二..."],
   "chart_spec": {{...}}
@@ -135,13 +164,15 @@ SYSTEM_PROMPT_TEMPLATE = """\
 ```json
 {{
   "render_mode": "html",
-  "description": "詳細描述圖片內容，包含形狀、尺寸、標籤、顏色、文字等，讓 AI 能正確生成圖片",
+  "description": "詳細描述圖片內容，包含形狀、尺寸、標籤、顏色、文字等，讓 AI 能正確生成圖片。請在 description 結尾指示下游 HTML 產生器在圖片下緣加註 caption：「{image_disclaimer}」。",
   "title": "圖片標題（選填）",
   "data": {{ "key": "value" }}
 }}
 ```
 
-`render_mode: "html"` 的 `description` 請盡量詳細。如果題目不需要圖表，則不要包含 `chart_spec` 欄位。
+`render_mode: "html"` 的 `description` 請盡量詳細。
+所有 `render_mode: "html"` 或 `render_mode: "chart"` 的圖片皆為示意用途、非完全等比例繪製，
+因此 `description` 中務必加入 caption 指示「{image_disclaimer}」；文字題不需要 `chart_spec` 欄位。
 
 請只輸出 JSON，不要輸出其他文字。
 """
@@ -165,7 +196,7 @@ USER_PROMPT_TEMPLATE = """\
 ## 題目風格
 
 {style_instruction}
-{user_materials}
+{user_materials}{prior_scopes_block}
 ## 參考範例
 
 以下是符合類似風格的範例題目，供你參考格式和難度水準：
@@ -182,6 +213,7 @@ USER_PROMPT_TEMPLATE = """\
 6. 題目的 `情境` 欄位**必須完全使用「指定條件 → 情境」中列出的列舉值之一**（合法值僅為：個人 / 社會時事 / 科學 / 職業 / 建築與藝術 / 數學文字情境），不可改寫成題目主題、場景描述、或情境名稱。題目主題若需呈現，請放入題目內文，而不是 `情境` 欄位。
 7. 維持單題輸出結構（不是題組）：不要產生 `subquestions`、`核心問題`、`文本`、`評分規準` 等題組欄位。
 8. 只輸出 JSON 格式的結果。
+9. **誘答分析**：本題若為 選擇題 或 是非題，`誘答分析` **必須**同時涵蓋所有選項標籤（選擇題的 A/B/C/D 或是非題的「是」/「非」）；正確選項填「正確答案：…」，其餘選項描述其針對的錯誤概念。若為 封閉式 / 開放式建構反應題，`誘答分析` 可為空 `{{}}` 或使用 `{{"常見錯誤": "..."}}` 描述一項最常見錯誤。
 """
 
 _CURRICULUM_EMPTY_NOTICE = "（課程綱要資料待研究人員補充至 data/math/curriculum/）"
@@ -232,6 +264,7 @@ def build_system_prompt(
         grade_names=grade_names,
         curriculum_section=curriculum_section,
         stage_code=sc,
+        image_disclaimer=IMAGE_DISCLAIMER,
     )
 
 
@@ -244,6 +277,7 @@ def build_user_prompt(
     user_passage: str = "",
     user_options: list[str] | None = None,
     user_core_question: str = "",
+    prior_scopes: "Sequence[PriorScope] | None" = None,
 ) -> tuple[str, list[Path]]:
     """Build the user prompt with sampled parameters and few-shot examples.
 
@@ -374,6 +408,9 @@ def build_user_prompt(
         few_shot_text = "（此風格暫無範例，請根據指定條件自行設計。）"
 
     grade_range = f"{min(_GRADES)}-{max(_GRADES)}年級"
+    prior_scopes_block = (
+        "\n" + format_prior_scopes_block(prior_scopes) if prior_scopes else ""
+    )
     text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         grade_range=grade_range,
@@ -389,6 +426,7 @@ def build_user_prompt(
         param_instructions=param_instructions,
         style_instruction=style_instruction,
         user_materials=user_materials,
+        prior_scopes_block=prior_scopes_block,
         few_shot_examples=few_shot_text,
     )
     return text, []

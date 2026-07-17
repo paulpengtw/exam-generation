@@ -32,7 +32,16 @@ def _make_app_and_token():
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(
+        api_key="x",
+        jwt_secret="test-secret",
+        llm_models_allowed=(
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+            "claude-haiku-4-6",
+        ),
+    )
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -206,3 +215,68 @@ def test_plan_core_questions_natural_sciences(monkeypatch) -> None:
         "learning_stage": "第四學習階段",
         "grade": 8,
     }
+
+
+def test_plan_core_questions_forwards_model_plan_override(monkeypatch) -> None:
+    """When model_plan is submitted, the LLMClient used by the planner sees it."""
+    app, token, engine = _make_app_and_token()
+
+    captured: dict = {}
+
+    def fake_math_plan(client, topic, **kwargs):
+        captured["model_plan"] = client.config.model_plan
+        captured["model_execute"] = client.config.model_execute
+        return ["核心問題一", "核心問題二", "核心問題三"]
+
+    monkeypatch.setattr("src.planner.plan_core_questions", fake_math_plan)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/plan-core-questions",
+                json={
+                    "topic": "統計",
+                    "subject": "math",
+                    "model_plan": "claude-haiku-4-5",
+                    "model_execute": "claude-haiku-4-6",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200
+    # Distinct from SrcConfig.from_env() defaults (opus-4-6 / sonnet-4-6) so this
+    # actually discriminates override-applied from override-ignored.
+    assert captured["model_plan"] == "claude-haiku-4-5"
+    assert captured["model_execute"] == "claude-haiku-4-6"
+
+
+def test_plan_core_questions_absent_override_keeps_defaults(monkeypatch) -> None:
+    app, token, engine = _make_app_and_token()
+
+    captured: dict = {}
+
+    def fake_ss_plan(client, topic, **kwargs):
+        captured["model_plan"] = client.config.model_plan
+        captured["model_execute"] = client.config.model_execute
+        return ["問題一", "問題二", "問題三"]
+
+    monkeypatch.setattr("src.social_studies.planner.plan_core_questions", fake_ss_plan)
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/plan-core-questions",
+                json={"topic": "民主政治"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200
+    # Defaults from SrcConfig.from_env() — not user-supplied.
+    assert captured["model_plan"] == "claude-opus-4-6"
+    assert captured["model_execute"] == "claude-sonnet-4-6"

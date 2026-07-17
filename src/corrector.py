@@ -29,6 +29,7 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 - 若 chart_verification 指出圖表錯誤 → 只修正 image_spec/chart_spec 的 data/labels，
   保留 description、title、render_mode、chart_type 不變（除非審核明確要求）。
 - 絕對不可修改：情境、題型種類、題型、數學思考、學習內容、學習表現、核心素養、出題概念、題目內容類型、id、metadata。
+- 若答案或選項有改動，`誘答分析` 必須同步反映新的正解與誘答陷阱：正解鍵改為「正確答案：…」，其他鍵改為對應新誘答的錯誤概念。選項標籤必須與新的題目一致；若題目沒有 (A)-(D) 標籤，可留空 `{}`。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同（含所有原欄位）。只輸出 JSON，不要輸出其他文字。
 """
@@ -130,6 +131,10 @@ def correct_question(
             update["chart_spec"] = ImageSpec(**raw_spec)
         except Exception:
             pass  # keep original chart_spec on parse failure
+
+    raw_distractor = corrected_data.get("誘答分析")
+    if isinstance(raw_distractor, dict):
+        update["誘答分析"] = {str(k): str(v) for k, v in raw_distractor.items()}
 
     # Restore all frozen fields from original and clear stale verification
     update["verification"] = None
