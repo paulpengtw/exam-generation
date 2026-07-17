@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import random
+from collections.abc import Sequence
 from pathlib import Path
 
+from src.common.batch_dedup import PriorScope, format_prior_scopes_block
 from src.social_studies.core_competency_loader import (
     competency_instructions,
     load_core_competencies,
@@ -284,6 +286,7 @@ def build_user_prompt(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     disable_reference_fewshot: bool = False,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
     if rng is None:
         rng = random.Random()
@@ -496,6 +499,10 @@ def build_user_prompt(
             + options_list
         )
     user_materials = ("\n" + "\n\n".join(user_materials_parts) + "\n") if user_materials_parts else ""
+
+    if prior_scopes:
+        prior_scopes_text = format_prior_scopes_block(prior_scopes)
+        user_materials = (user_materials or "\n") + "\n" + prior_scopes_text
 
     q_types_str = "、".join(t.value for t in params.題型)
     sub_q_count_str = (
@@ -889,6 +896,7 @@ def build_text_user_prompt(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     disable_reference_fewshot: bool = False,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
     text, image_paths = build_user_prompt(
         params=params,
@@ -900,6 +908,7 @@ def build_text_user_prompt(
         user_topic=user_topic,
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
+        prior_scopes=prior_scopes,
     )
     text = text.replace(
         """\

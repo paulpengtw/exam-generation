@@ -276,3 +276,102 @@ def test_math_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> Non
     # First prompt has no dedup block; second must show question 1's summary + code.
     assert "已生成題目" not in client.user_prompts[0]
     assert "1. 核心問題：評量概念 1；學習內容：N-7-1" in client.user_prompts[1]
+
+
+def test_ss_build_text_user_prompt_no_scopes_is_byte_identical(tmp_path) -> None:
+    from src.common.batch_dedup import PriorScope
+    from src.social_studies.context_builder import build_text_user_prompt
+    from src.social_studies.sampler import sample_params
+
+    params = sample_params(seed=5)
+
+    baseline, _ = build_text_user_prompt(params, tmp_path)
+    with_none, _ = build_text_user_prompt(params, tmp_path, prior_scopes=None)
+    with_empty, _ = build_text_user_prompt(params, tmp_path, prior_scopes=[])
+    assert baseline == with_none == with_empty
+    assert "已生成題目" not in baseline
+
+
+def test_ss_build_text_user_prompt_renders_prior_scopes_block(tmp_path) -> None:
+    from src.common.batch_dedup import PriorScope
+    from src.social_studies.context_builder import build_text_user_prompt
+    from src.social_studies.sampler import sample_params
+
+    params = sample_params(seed=5)
+    scopes = [
+        PriorScope(summary="工業革命如何改變勞動條件？", codes=["歷Ka-Ⅳ-1", "公Ab-Ⅳ-2"]),
+    ]
+
+    prompt, _ = build_text_user_prompt(params, tmp_path, prior_scopes=scopes)
+    assert "## 已生成題目（請避免相似範圍）" in prompt
+    assert "1. 核心問題：工業革命如何改變勞動條件？；學習內容：歷Ka-Ⅳ-1, 公Ab-Ⅳ-2" in prompt
+
+
+def test_ss_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
+    from pathlib import Path
+
+    from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
+    from src.config import Config
+    from src.social_studies.cli import generate_with_corrections
+    from src.social_studies.sampler import sample_params
+
+    class _RecordingSSClient:
+        def __init__(self) -> None:
+            self.user_prompts: list[str] = []
+
+        def get_observer(self):
+            return None
+
+        def generate_json(self, _system, user, *_args, **_kwargs):
+            self.user_prompts.append(user)
+            idx = len(self.user_prompts)
+            return {
+                "核心問題": f"社會核心問題 {idx}",
+                "文本": "測試文本",
+                "取材來源": [],
+                "subquestions": [
+                    {
+                        "序號": 1,
+                        "年級": 8,
+                        "科目": ["歷史"],
+                        "核心素養": ["社-J-A2"],
+                        "學習內容": [{"編碼": f"歷Ka-Ⅳ-{idx}", "說明": "測試"}],
+                        "學習表現": [{"編碼": "社1b-Ⅳ-1", "說明": "測試"}],
+                        "出題概念": "測試",
+                        "題型": "選擇題",
+                        "題目": "測試題目",
+                        "答案": "A",
+                        "答案解析": "測試",
+                        "評分規準": [],
+                    }
+                ],
+                "題目": ["文本", "測試"],
+                "正確解題分析": ["A"],
+            }
+
+    config = Config(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    client = _RecordingSSClient()
+
+    prior_scopes: list[PriorScope] = []
+    for i in range(2):
+        params = sample_params(seed=200 + i)
+        result = generate_with_corrections(
+            config=config,
+            client=client,
+            params=params,
+            question_id=f"ss_test_{i+1:03d}",
+            max_retries=0,
+            skip_verify=True,
+            prior_scopes=list(prior_scopes),
+        )
+        scope = extract_ss_prior_scope(result)
+        assert scope is not None
+        prior_scopes.append(scope)
+
+    # `_RecordingSSClient` is used for both the 文本生成器 call and the sub_generator
+    # calls. The first captured prompt (index 0) is the 文本生成器 prompt for question 1;
+    # locate the 文本生成器 prompt for question 2 — the first prompt captured AFTER
+    # question 1 finished — and confirm it carries the dedup block.
+    text_prompts = [p for p in client.user_prompts if "## 已生成題目" in p]
+    assert text_prompts, "expected at least one prompt to carry the dedup block"
+    assert "1. 核心問題：社會核心問題 1；學習內容：歷Ka-Ⅳ-1" in text_prompts[0]
