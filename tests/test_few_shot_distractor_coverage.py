@@ -95,12 +95,33 @@ def _count_with_distractor(questions: list[dict]) -> int:
     return n
 
 
+def _count_ss_subquestion_distractor(questions: list[dict]) -> int:
+    """Count SS questions that have 誘答分析 exclusively inside subquestions[*]."""
+    n = 0
+    for q in questions:
+        assert "誘答分析" not in q, (
+            "SS few-shot 誘答分析 must live on subquestions[*], not on the top-level "
+            f"question dict. Found top-level 誘答分析 with keys: {list(q['誘答分析'].keys())}"
+        )
+        for sq in q.get("subquestions", []) or []:
+            sq_distractor = sq.get("誘答分析") if isinstance(sq, dict) else None
+            if isinstance(sq_distractor, dict) and sq_distractor:
+                assert _is_conformant(sq_distractor), (
+                    f"誘答分析 keys must be flat and match {_ALLOWED_KEY.pattern!r}, "
+                    f"got keys: {list(sq_distractor.keys())}"
+                )
+                n += 1
+                break
+    return n
+
+
 def test_math_few_shot_has_at_least_two_distractor_examples() -> None:
     assert _count_with_distractor(_iter_math_questions()) >= 2
 
 
 def test_ss_few_shot_has_at_least_two_distractor_examples() -> None:
-    assert _count_with_distractor(_iter_ss_questions()) >= 2
+    # 誘答分析 must live on subquestions[*] for SS (not top-level question dict)
+    assert _count_ss_subquestion_distractor(_iter_ss_questions()) >= 2
 
 
 def test_ns_few_shot_has_at_least_two_distractor_examples() -> None:

@@ -70,6 +70,20 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/api/models")
+async def get_models(
+    config: ServerConfig = Depends(get_config),
+) -> dict:
+    """Return the LLM model allowlist and the server-side defaults."""
+    return {
+        "allowed": list(config.llm_models_allowed),
+        "defaults": {
+            "plan": config.model_plan,
+            "execute": config.model_execute,
+        },
+    }
+
+
 @router.get("/api/schemas")
 async def get_schemas(
     subject: str = Query(default="math"),

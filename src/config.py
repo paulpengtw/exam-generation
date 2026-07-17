@@ -25,6 +25,10 @@ class Config:
     subgen_max_concurrency: int = 6
     llm_stream: bool = True  # use streaming API when observer is set
     log_truncate: int | None = None  # max chars per message in llm_request events; None = no limit
+    web_search_provider: str = "none"  # "anthropic" | "none" (default: opt-in disabled)
+    web_search_max_uses: int = 5
+    # per-batch Opus 情境-題材 planning (SS only); env CREATIVE_PLANNING
+    creative_planning: bool = True
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> Config:
@@ -49,6 +53,10 @@ class Config:
             subgen_max_concurrency=int(os.environ.get("SUBGEN_MAX_CONCURRENCY", "6")),
             llm_stream=os.environ.get("LLM_STREAM", "1") not in ("0", "false", "False"),
             log_truncate=int(os.environ["LLM_LOG_TRUNCATE"]) if os.environ.get("LLM_LOG_TRUNCATE") else None,
+            web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "none"),
+            web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
+            creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
+            not in ("0", "false", "False", ""),
         )
 
     def validate(self) -> None:

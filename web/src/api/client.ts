@@ -128,3 +128,66 @@ export async function planCoreQuestions(
   });
   return (await res.json()) as PlanCoreQuestionsResponse;
 }
+
+export interface AvailableModels {
+  allowed: string[];
+  defaults: { plan: string; execute: string };
+}
+
+export async function getAvailableModels(): Promise<AvailableModels> {
+  const res = await apiFetch("/api/models");
+  return (await res.json()) as AvailableModels;
+}
+
+export interface HistoryListItem {
+  id: string;
+  subject: string;
+  question_id: string;
+  created_at: string;
+  preview: string;
+  verified: boolean;
+}
+
+export interface HistoryListResponse {
+  total: number;
+  items: HistoryListItem[];
+}
+
+export interface HistoryDetail {
+  id: string;
+  subject: string;
+  question_id: string;
+  created_at: string;
+  params_json: Record<string, unknown>;
+  question_json: Record<string, unknown>;
+}
+
+export interface ListHistoryOpts {
+  limit?: number;
+  offset?: number;
+  subject?: string;
+}
+
+export async function listHistory(
+  opts: ListHistoryOpts = {},
+): Promise<HistoryListResponse> {
+  const params = new URLSearchParams();
+  if (opts.limit != null) params.set("limit", String(opts.limit));
+  if (opts.offset != null) params.set("offset", String(opts.offset));
+  if (opts.subject) params.set("subject", opts.subject);
+  const suffix = params.toString();
+  const res = await apiFetch(
+    suffix ? `/api/history?${suffix}` : "/api/history",
+  );
+  return (await res.json()) as HistoryListResponse;
+}
+
+export async function getHistoryDetail(id: string): Promise<HistoryDetail> {
+  const res = await apiFetch(`/api/history/${encodeURIComponent(id)}`);
+  return (await res.json()) as HistoryDetail;
+}
+
+export async function downloadHistoryJson(id: string): Promise<Blob> {
+  const res = await apiFetch(`/api/history/${encodeURIComponent(id)}/download`);
+  return await res.blob();
+}
