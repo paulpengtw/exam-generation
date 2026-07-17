@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import types
 
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.social_studies.schemas import (
     ExamQuestion,
     FactCheckResult,
@@ -250,3 +251,11 @@ def test_verify_leaves_details_untouched_when_fact_check_returns_none(monkeypatc
     assert result.passed is True
     assert result.fact_check is None
     assert result.details == "教師端通過。"
+
+
+def test_social_studies_verifier_prompt_contains_illustrative_figure_leniency_line() -> None:
+    assert "示意圖" in VERIFICATION_SYSTEM_PROMPT
+    assert IMAGE_DISCLAIMER in VERIFICATION_SYSTEM_PROMPT
+    assert "不得僅因" in VERIFICATION_SYSTEM_PROMPT
+    assert "數值" in VERIFICATION_SYSTEM_PROMPT
+    assert "標籤" in VERIFICATION_SYSTEM_PROMPT

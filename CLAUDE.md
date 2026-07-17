@@ -395,6 +395,18 @@ uv run pytest
 uv run ruff check src/
 ```
 
+### Staging smoke tests
+
+```bash
+# End-to-end staging smoke tests (env-driven; no committed secrets).
+bash scripts/smoke_test.sh                          # Full docker-compose auth+generate
+BASE_URL=https://examgen-staging.cpeng.me \
+  bash scripts/smoke_test_natural_sciences.sh       # Natural-sciences layer probe (issue #94)
+```
+
+Each script prints `FRONTEND` / `API` / `PROVIDER` layer prefixes on failure so
+red output names the failing layer.
+
 ## Execution Logic
 
 Complete waterfall trace of `uv run python -m src.cli generate`. Full reference: [`LOGIC.md`](LOGIC.md). For the web request lifecycle (SSE queue, worker thread, DB logging), see [`FLOW.md`](FLOW.md).
