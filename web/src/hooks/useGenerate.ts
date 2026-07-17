@@ -59,6 +59,7 @@ export interface SubQuestion {
   答案: string;
   答案解析: string;
   評分規準?: RubricEntry[];
+  誘答分析?: Record<string, string>;
   題目內容類型?: string;
   image_generation_mode?: "html" | "gpt_image";
   圖片?: string | null;
@@ -83,6 +84,8 @@ export interface ExamQuestion {
   subquestions?: SubQuestion[];
   題目: string[];
   正確解題分析: string[];
+  出題概念?: string;
+  誘答分析?: Record<string, string>;
   圖片?: string | null;
   chart_spec?: unknown;
   verification?: unknown;
