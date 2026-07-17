@@ -14,8 +14,12 @@ would never be emitted for this failure path.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from src.config import Config
-from src.social_studies.cli import _plan_batch_briefs
+from src.social_studies.cli import _plan_batch_briefs, generate_one
+from src.social_studies.context_builder import _CREATIVE_BRIEF_SYSTEM_BLOCK
 from src.social_studies.sampler import sample_params
 from src.social_studies.schemas import CreativeBrief
 
@@ -96,3 +100,47 @@ def test_pads_missing_slots_with_none_when_planner_returns_empty() -> None:
     p_only_person = p.model_copy(update={"情境": [QuestionContext("個人")]})
     briefs = _plan_batch_briefs(_EmptyClient(), cfg, [p_only_person, p_only_person])
     assert briefs == [None, None]
+
+
+def _extract_system_chars(dry_run_output: str) -> int:
+    match = re.search(r"=== TEXT SYSTEM PROMPT \((\d+) chars\) ===", dry_run_output)
+    assert match, f"could not find TEXT SYSTEM PROMPT char count in: {dry_run_output[:200]}"
+    return int(match.group(1))
+
+
+def test_generate_one_dry_run_forwards_creative_brief_into_system_prompt(tmp_path) -> None:
+    """Regression for the integration gap where generate_one() built the 文本生成器
+
+    system prompt via `build_text_system_prompt()` without `creative_brief=params.creative_brief`
+    at both the dry-run and real call sites, so the ### 創意指引 system-prompt block
+    (added by build_text_system_prompt when creative_brief is not None) never fired in
+    production even when a brief was attached to params.
+
+    generate_one's dry-run output truncates the printed system prompt preview to 2000
+    chars (`text_system[:2000]`), and the curriculum-heavy system prompt is ~93KB, so the
+    appended 創意指引 marker itself falls outside the preview window and can't be asserted
+    as a literal substring here. Instead this test asserts on the untruncated `len(text_system)`
+    reported in the dry-run header: with a brief attached, the header count must be exactly
+    `len(_CREATIVE_BRIEF_SYSTEM_BLOCK)` chars larger than without one — which only happens if
+    generate_one actually threads `creative_brief` into `build_text_system_prompt()`.
+    The underlying substring behavior of build_text_system_prompt() itself is covered directly
+    by `test_system_prompt_appends_創意指引_block_only_with_brief` in
+    tests/test_social_studies_creative_brief_prompt.py.
+    """
+    config = Config(data_dir=Path("data"))
+    params = sample_params(seed=7)
+    brief = CreativeBrief(
+        selected_context=params.情境[0].value,
+        題材_angle="以居家防疫日記串起個人與公共衛生決策",
+        framing_hooks=["病患日記"],
+    )
+    params_with_brief = params.model_copy(update={"creative_brief": brief})
+    params_without_brief = params.model_copy(update={"creative_brief": None})
+
+    out_with = generate_one(config, None, params_with_brief, "ss_test_001", dry_run=True)
+    out_without = generate_one(config, None, params_without_brief, "ss_test_002", dry_run=True)
+
+    chars_with = _extract_system_chars(out_with)
+    chars_without = _extract_system_chars(out_without)
+
+    assert chars_with - chars_without == len(_CREATIVE_BRIEF_SYSTEM_BLOCK)

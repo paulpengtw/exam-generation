@@ -619,7 +619,7 @@ def generate_one(
     few_shot_dir = config.data_dir / "social_studies" / "few_shot"
     params = _with_text_word_limit(params, text_word_limit)
     if dry_run:
-        text_system = build_text_system_prompt()
+        text_system = build_text_system_prompt(creative_brief=params.creative_brief)
         text_user, text_images = build_text_user_prompt(
             params,
             few_shot_dir,
@@ -640,7 +640,7 @@ def generate_one(
 
     print(f"  Generating question {question_id}...", file=sys.stderr)
 
-    text_system = build_text_system_prompt()
+    text_system = build_text_system_prompt(creative_brief=params.creative_brief)
     text_user, text_images = build_text_user_prompt(
         params,
         few_shot_dir,
