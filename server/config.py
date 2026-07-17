@@ -95,6 +95,8 @@ class ServerConfig(Config):
                     str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
             ),
+            web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "none"),
+            web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
         )
 
     def validate(self) -> None:

@@ -160,8 +160,12 @@ def fact_check_question(
     issues_raw = payload.get("issues") if isinstance(payload, dict) else []
     issues: list[str] = [str(x) for x in issues_raw] if isinstance(issues_raw, list) else []
 
-    return FactCheckResult(
-        verified=verified_raw,
-        citations=[c.url for c in citations if getattr(c, "url", "")],
-        issues=issues,
-    )
+    try:
+        return FactCheckResult(
+            verified=verified_raw,
+            citations=[c.url for c in citations if getattr(c, "url", "")],
+            issues=issues,
+        )
+    except Exception as exc:  # noqa: BLE001 — fail-open by design
+        logger.warning("fact_check_question could not construct FactCheckResult: %s", exc)
+        return None

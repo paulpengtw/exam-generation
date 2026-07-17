@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from src.social_studies.fact_check import fact_check_question, is_current_events
 from src.social_studies.schemas import (
     ExamQuestion,
@@ -167,6 +169,23 @@ def test_fact_check_question_fails_open_on_client_exception() -> None:
 
 def test_fact_check_question_fails_open_on_malformed_json() -> None:
     client = _StubClient(text="not json at all")
+    result = fact_check_question(
+        client, _question(), provider="anthropic", max_uses=5,
+    )
+    assert result is None
+
+
+def test_fact_check_question_fails_open_on_result_construction_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even a broken FactCheckResult(...) construction must not raise."""
+    import src.social_studies.fact_check as fact_check_module
+
+    def _boom(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(fact_check_module, "FactCheckResult", _boom)
+    client = _StubClient(text=json.dumps({"verified": True, "issues": []}))
     result = fact_check_question(
         client, _question(), provider="anthropic", max_uses=5,
     )
