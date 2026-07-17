@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import json
 import logging
 import traceback
@@ -380,7 +381,15 @@ async def generate_question_stream(
             logger.exception("worker_one error (index=%d)", i)
 
     _emit_pipeline("pipeline_start", total=count)
-    question_clients = [LLMClient(config) for _ in range(count)]
+    # #105: per-request model overrides are baked into each LLMClient's config so
+    # downstream `client.generate*` / `client.plan` calls transparently use the
+    # chosen model without changing subject-CLI signatures.
+    client_config = dataclasses.replace(
+        config,
+        model_execute=params.model_execute or config.model_execute,
+        model_plan=params.model_plan or config.model_plan,
+    )
+    question_clients = [LLMClient(client_config) for _ in range(count)]
     futures = [
         loop.run_in_executor(None, worker_one, i, question_clients[i])
         for i in range(count)
