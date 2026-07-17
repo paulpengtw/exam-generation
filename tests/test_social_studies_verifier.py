@@ -79,3 +79,33 @@ def test_verify_question_preserves_clear_failure() -> None:
     assert result.passed is False
     assert result.answer_match is False
     assert "明顯矛盾" in result.details
+
+
+def test_verify_question_threads_chart_image_path_and_prompts_附圖(tmp_path) -> None:
+    """When a chart image path is provided, verify_question must:
+       (a) pass it through as `image_path` to the client, and
+       (b) inject the 「## 附圖」 section into the user prompt."""
+    png_path = tmp_path / "chart.png"
+    png_path.write_bytes(b"\x89PNG\r\n\x1a\n")  # bytes irrelevant; FakeClient does not read
+
+    client = FakeClient(
+        {
+            "my_answer": "作者支持擴大公共運輸。",
+            "provided_answer": "作者支持擴大公共運輸。",
+            "answer_match": True,
+            "passed": True,
+            "details": "素材圖片與文本一致。",
+            "chart_verification": {
+                "chart_data_match": True,
+                "chart_labels_correct": True,
+                "chart_details": "圖表標籤與題目描述一致。",
+            },
+        }
+    )
+
+    result = verify_question(client, _question(), chart_image_path=str(png_path))
+
+    assert client.image_path == str(png_path)
+    assert "## 附圖" in client.user_prompt
+    assert result.chart_verification is not None
+    assert result.chart_verification.chart_data_match is True
