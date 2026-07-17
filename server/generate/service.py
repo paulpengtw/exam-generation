@@ -284,10 +284,12 @@ async def generate_question_stream(
 
         return emit_question_update
 
+    shared_recorder = _make_recorder()
+
     def worker_one(i: int, question_client: LLMClient) -> None:
         seed = (base_seed + i) if base_seed is not None else None
         question_client.set_observer(
-            _make_observer(_make_queue_observer(loop, queue), _make_recorder())
+            _make_observer(_make_queue_observer(loop, queue), shared_recorder)
         )
         emit_question_update = _make_question_update_emitter(i)
         _emit_pipeline("question_start", index=i, total=count)

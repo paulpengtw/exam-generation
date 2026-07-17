@@ -92,7 +92,9 @@ def test_owner_lists_exchanges_sorted_by_order(app_ctx):
     data = resp.json()
     assert [row["exchange_order"] for row in data] == [1, 2, 3]
     assert data[0]["model_used"] == "claude-sonnet-4-6"
-    assert data[0]["request_body"]["messages"][0]["content"] in {"q0", "q1", "q2"}
+    # exchange_order = exchanges - i = 3 - i, so order=1 corresponds to i=2,
+    # which is deterministically the first row after ORDER BY exchange_order ASC.
+    assert data[0]["request_body"]["messages"][0]["content"] == "q2"
 
 
 def test_other_user_gets_404(app_ctx):
