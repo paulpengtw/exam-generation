@@ -48,7 +48,7 @@ def test_generate_route_forwards_social_studies_options() -> None:
 
     captured = {}
 
-    async def fake_stream(params, *_args):
+    async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
         yield {"event": "done", "data": ""}
 
@@ -145,7 +145,7 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
 
     captured = {}
 
-    async def fake_stream(params, *_args):
+    async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
         yield {"event": "done", "data": ""}
 
@@ -242,3 +242,208 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
     assert updates[0]["data"]["question"]["image_base64"] == "ZHJhZnQtcG5n"
     assert len(results) == 1
     assert results[0]["data"]["image_base64"] == "ZHJhZnQtcG5n"
+
+
+def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from server.generate import service
+    from server.generate.models import GenerateParams
+    from server.models import Base, LLMExchange
+    from src.social_studies.schemas import ExamQuestion
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def _init() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_init())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    # Patch service.AsyncSessionLocal so the recorder's write path uses our engine.
+    original_sessionmaker = service.AsyncSessionLocal
+    service.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
+
+    log_id = uuid.uuid4()
+    config = ServerConfig(
+        api_key="x",
+        output_dir=tmp_path,
+        data_dir=Path("data"),
+        llm_exchange_retention_days=30,
+    )
+    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+
+    def fake_generate_with_corrections(**kwargs):
+        question_id = kwargs["question_id"]
+        sampled = kwargs["params"]
+        obs = kwargs["client"].get_observer()
+        # Simulate two LLM calls (generator + verifier) coming through the observer.
+        obs({
+            "type": "llm_request", "agent": "generator", "purpose": "generate",
+            "model": "claude-sonnet-4-6",
+            "messages": [{"role": "user", "content": "hi"}],
+            "params": {"max_tokens": 8192, "temperature": 0.7},
+        })
+        obs({
+            "type": "llm_response", "agent": "generator", "purpose": "generate",
+            "model": "claude-sonnet-4-6", "content": "ok", "reasoning": None,
+            "usage": {"input": 10, "output": 5, "cache_read": 0, "cache_creation": 0},
+        })
+        obs({
+            "type": "llm_request", "agent": "verifier", "purpose": "verify",
+            "model": "claude-sonnet-4-6",
+            "messages": [{"role": "user", "content": "verify"}],
+            "params": {"max_tokens": 8192, "temperature": 0.7},
+        })
+        obs({
+            "type": "llm_response", "agent": "verifier", "purpose": "verify",
+            "model": "claude-sonnet-4-6", "content": "{\"passed\": true}",
+            "reasoning": None,
+            "usage": {"input": 7, "output": 2, "cache_read": 0, "cache_creation": 0},
+        })
+        return ExamQuestion(
+            id=question_id,
+            核心問題="c",
+            文本="p",
+            subquestions=[],
+            情境=[c.value for c in sampled.情境],
+            題型種類=sampled.題型種類.value,
+            題型=sampled.題型[0].value,
+            閱讀歷程=[p.value for p in sampled.閱讀歷程],
+            文本形式=sampled.文本形式.value,
+            題目=["q"],
+            正確解題分析=["a"],
+        )
+
+    original = service.ss_generate_with_corrections
+    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
+
+    async def _drive() -> None:
+        async for _ in service.generate_question_stream(
+            params,
+            config,
+            SimpleNamespace(html_renderer=None, renderer_pool=None),
+            generation_log_id=log_id,
+        ):
+            pass
+
+    try:
+        asyncio.run(_drive())
+    finally:
+        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+        service.AsyncSessionLocal = original_sessionmaker  # type: ignore[assignment]
+
+    async def _read() -> list[LLMExchange]:
+        async with SessionLocal() as s:
+            result = await s.execute(
+                select(LLMExchange)
+                .where(LLMExchange.generation_log_id == log_id)
+                .order_by(LLMExchange.exchange_order)
+            )
+            return list(result.scalars().all())
+
+    rows = asyncio.run(_read())
+    asyncio.run(engine.dispose())
+
+    assert [r.agent for r in rows] == ["generator", "verifier"]
+    assert [r.exchange_order for r in rows] == [1, 2]
+    assert rows[0].purpose == "generate"
+    assert rows[0].prompt_tokens == 10
+    assert rows[0].completion_tokens == 5
+    assert rows[1].purpose == "verify"
+    assert rows[1].model_used == "claude-sonnet-4-6"
+
+
+def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from server.generate import service
+    from server.generate.models import GenerateParams
+    from server.models import Base, LLMExchange
+    from src.social_studies.schemas import ExamQuestion
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def _init() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_init())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    original_sessionmaker = service.AsyncSessionLocal
+    service.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
+
+    log_id = uuid.uuid4()
+    config = ServerConfig(
+        api_key="x",
+        output_dir=tmp_path,
+        data_dir=Path("data"),
+        llm_exchange_retention_days=0,
+    )
+    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+
+    def fake_generate_with_corrections(**kwargs):
+        obs = kwargs["client"].get_observer()
+        # Recorder must not be attached; if it were, this would insert.
+        if obs is not None:
+            obs({
+                "type": "llm_request", "agent": "generator", "purpose": "generate",
+                "model": "m", "messages": [], "params": {},
+            })
+            obs({
+                "type": "llm_response", "agent": "generator", "purpose": "generate",
+                "model": "m", "content": "x", "reasoning": None, "usage": {},
+            })
+        sampled = kwargs["params"]
+        return ExamQuestion(
+            id=kwargs["question_id"],
+            核心問題="c", 文本="p", subquestions=[],
+            情境=[c.value for c in sampled.情境],
+            題型種類=sampled.題型種類.value,
+            題型=sampled.題型[0].value,
+            閱讀歷程=[p.value for p in sampled.閱讀歷程],
+            文本形式=sampled.文本形式.value,
+            題目=["q"], 正確解題分析=["a"],
+        )
+
+    original = service.ss_generate_with_corrections
+    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
+
+    async def _drive() -> None:
+        async for _ in service.generate_question_stream(
+            params,
+            config,
+            SimpleNamespace(html_renderer=None, renderer_pool=None),
+            generation_log_id=log_id,
+        ):
+            pass
+
+    try:
+        asyncio.run(_drive())
+    finally:
+        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+        service.AsyncSessionLocal = original_sessionmaker  # type: ignore[assignment]
+
+    async def _read_count() -> int:
+        async with SessionLocal() as s:
+            result = await s.execute(select(LLMExchange))
+            return len(list(result.scalars().all()))
+
+    count = asyncio.run(_read_count())
+    asyncio.run(engine.dispose())
+    assert count == 0

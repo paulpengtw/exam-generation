@@ -11,12 +11,16 @@ import base64
 import json
 import logging
 import traceback
+import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
 from server.config import ServerConfig
+from server.db import AsyncSessionLocal
+from server.generate.exchange_recorder import ExchangeRecorder
 from server.generate.models import GenerateParams
+from server.models import LLMExchange
 from src.cli import generate_with_corrections as math_generate_with_corrections
 from src.llm_client import LLMClient, LLMObserver
 from src.natural_sciences.cli import generate_with_corrections as ns_generate_with_corrections
@@ -125,6 +129,7 @@ async def generate_question_stream(
     params: GenerateParams,
     config: ServerConfig,
     app_state: Any,
+    generation_log_id: uuid.UUID | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Async generator yielding SSE event dicts for one or more questions.
 
@@ -220,6 +225,40 @@ async def generate_question_stream(
                 )
         return observer
 
+    def _make_recorder() -> ExchangeRecorder | None:
+        if generation_log_id is None or config.llm_exchange_retention_days <= 0:
+            return None
+
+        async def _insert(row: dict[str, Any]) -> None:
+            async with AsyncSessionLocal() as sess:
+                sess.add(LLMExchange(**row))
+                await sess.commit()
+
+        def _write_row(row: dict[str, Any]) -> None:
+            future = asyncio.run_coroutine_threadsafe(_insert(row), loop)
+            try:
+                future.result(timeout=10)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("llm_exchanges insert failed: %s", exc)
+
+        return ExchangeRecorder(generation_log_id, _write_row)
+
+    def _make_observer(
+        queue_obs: LLMObserver,
+        recorder: ExchangeRecorder | None,
+    ) -> LLMObserver:
+        def observer(event: dict) -> None:
+            try:
+                queue_obs(event)
+            except Exception:
+                pass
+            if recorder is not None:
+                try:
+                    recorder(event)
+                except Exception:
+                    pass
+        return observer
+
     def _emit_pipeline(event_name: str, **data: object) -> None:
         import time as _time
 
@@ -247,7 +286,9 @@ async def generate_question_stream(
 
     def worker_one(i: int, question_client: LLMClient) -> None:
         seed = (base_seed + i) if base_seed is not None else None
-        question_client.set_observer(_make_queue_observer(loop, queue))
+        question_client.set_observer(
+            _make_observer(_make_queue_observer(loop, queue), _make_recorder())
+        )
         emit_question_update = _make_question_update_emitter(i)
         _emit_pipeline("question_start", index=i, total=count)
         try:
