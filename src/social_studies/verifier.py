@@ -6,7 +6,12 @@ import json
 
 from src.common.distractor import validate_distractor_keys
 from src.llm_client import LLMClient, extract_json
-from src.social_studies.context_builder import _build_curriculum_section, _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
+from src.social_studies.context_builder import (
+    _CONTENT_TEXT,
+    _PERFORMANCE_INTRO,
+    _PERFORMANCE_TEXT,
+    _build_curriculum_section,
+)
 from src.social_studies.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
 
 _CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO)

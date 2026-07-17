@@ -42,7 +42,8 @@ def test_math_verifier_appends_distractor_warning_when_keys_mismatch() -> None:
 
 
 def test_ss_verifier_appends_distractor_warning() -> None:
-    from src.social_studies.schemas import ExamQuestion as SSExamQuestion, SubQuestion
+    from src.social_studies.schemas import ExamQuestion as SSExamQuestion
+    from src.social_studies.schemas import SubQuestion
     from src.social_studies.verifier import verify_question
 
     q = SSExamQuestion(
@@ -63,7 +64,8 @@ def test_ss_verifier_appends_distractor_warning() -> None:
 
 
 def test_ns_verifier_appends_distractor_warning() -> None:
-    from src.natural_sciences.schemas import ExamQuestion as NSExamQuestion, SubQuestion
+    from src.natural_sciences.schemas import ExamQuestion as NSExamQuestion
+    from src.natural_sciences.schemas import SubQuestion
     from src.natural_sciences.verifier import verify_question
 
     q = NSExamQuestion(
@@ -94,7 +96,8 @@ def test_verifier_leaves_details_unchanged_when_no_warnings(subject: str) -> Non
             題目=["Q?"], 正確解題分析=["A"],
         )
     elif subject == "ss":
-        from src.social_studies.schemas import ExamQuestion as SSQ, SubQuestion
+        from src.social_studies.schemas import ExamQuestion as SSQ
+        from src.social_studies.schemas import SubQuestion
         from src.social_studies.verifier import verify_question
         q = SSQ(
             情境=["公共"], 題型種類="題組題", 題型="選擇題",
@@ -102,7 +105,8 @@ def test_verifier_leaves_details_unchanged_when_no_warnings(subject: str) -> Non
             subquestions=[SubQuestion(序號=1, 題型="選擇題", 題目="Q?", 答案="A")],
         )
     else:
-        from src.natural_sciences.schemas import ExamQuestion as NSQ, SubQuestion
+        from src.natural_sciences.schemas import ExamQuestion as NSQ
+        from src.natural_sciences.schemas import SubQuestion
         from src.natural_sciences.verifier import verify_question
         q = NSQ(
             情境=["Personal"], 題型種類="題組題", 題型="Simple multiple-choice",

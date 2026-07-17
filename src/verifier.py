@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 
+from src.common.distractor import validate_distractor_keys
 from src.context_builder import (
     _CONTENT_TEXT,
     _PERFORMANCE_INTRO,
     _PERFORMANCE_TEXT,
     _build_curriculum_section,
 )
-from src.common.distractor import validate_distractor_keys
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
 
