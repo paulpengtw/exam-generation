@@ -11,12 +11,15 @@ import base64
 import json
 import logging
 import traceback
+import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
 from server.config import ServerConfig
+from server.db import AsyncSessionLocal
 from server.generate.models import GenerateParams
+from server.models import GenerationRecord
 from src.cli import generate_with_corrections as math_generate_with_corrections
 from src.llm_client import LLMClient, LLMObserver
 from src.natural_sciences.cli import generate_with_corrections as ns_generate_with_corrections
@@ -121,10 +124,67 @@ def _question_to_event(
     return payload
 
 
+def _extract_image_files(payload: dict[str, Any]) -> list[str]:
+    """Collect top-level + per-subquestion image filenames (no base64)."""
+    files: list[str] = []
+    top = payload.get("圖片")
+    if top:
+        files.append(top)
+    for sub in payload.get("subquestions", []) or []:
+        if isinstance(sub, dict):
+            sub_img = sub.get("圖片")
+            if sub_img:
+                files.append(sub_img)
+    return files
+
+
+def _strip_image_base64(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of a result-event payload with all image_base64 fields removed."""
+    cleaned = {k: v for k, v in payload.items() if k != "image_base64"}
+    subs = cleaned.get("subquestions")
+    if isinstance(subs, list):
+        cleaned["subquestions"] = [
+            {k: v for k, v in sub.items() if k != "image_base64"}
+            if isinstance(sub, dict)
+            else sub
+            for sub in subs
+        ]
+    return cleaned
+
+
+async def _persist_generation_record(
+    *,
+    user_id: uuid.UUID,
+    generation_log_id: uuid.UUID | None,
+    subject: str,
+    params: GenerateParams,
+    payload: dict[str, Any],
+) -> None:
+    """Insert one generation_records row; log-and-swallow on failure so
+    persistence never breaks generation."""
+    try:
+        record = GenerationRecord(
+            user_id=user_id,
+            generation_log_id=generation_log_id,
+            subject=subject,
+            question_id=payload.get("id", ""),
+            params_json=params.model_dump(mode="json"),
+            question_json=_strip_image_base64(payload),
+            image_files=_extract_image_files(payload),
+        )
+        async with AsyncSessionLocal() as session:
+            session.add(record)
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001 — best-effort persistence
+        logger.warning("failed to persist generation_record: %s", exc)
+
+
 async def generate_question_stream(
     params: GenerateParams,
     config: ServerConfig,
     app_state: Any,
+    user_id: uuid.UUID | None = None,
+    generation_log_id: uuid.UUID | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Async generator yielding SSE event dicts for one or more questions.
 
@@ -395,6 +455,18 @@ async def generate_question_stream(
     try:
         while True:
             event = await queue.get()
+            if (
+                event["event"] == "result"
+                and user_id is not None
+                and isinstance(event["data"], dict)
+            ):
+                await _persist_generation_record(
+                    user_id=user_id,
+                    generation_log_id=generation_log_id,
+                    subject=params.subject,
+                    params=params,
+                    payload=event["data"],
+                )
             yield event
             if event["event"] in ("done", "error"):
                 break

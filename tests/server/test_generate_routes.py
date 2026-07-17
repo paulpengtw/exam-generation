@@ -48,7 +48,7 @@ def test_generate_route_forwards_social_studies_options() -> None:
 
     captured = {}
 
-    async def fake_stream(params, *_args):
+    async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
         yield {"event": "done", "data": ""}
 
@@ -145,7 +145,7 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
 
     captured = {}
 
-    async def fake_stream(params, *_args):
+    async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
         yield {"event": "done", "data": ""}
 

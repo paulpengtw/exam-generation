@@ -126,7 +126,9 @@ async def generate_endpoint(
         status = "completed"
         error_msg: str | None = None
         try:
-            async for event in generate_question_stream(params, config, app_state):
+            async for event in generate_question_stream(
+                params, config, app_state, user_id=user.id, generation_log_id=log_id
+            ):
                 if event["event"] == "error":
                     status = "failed"
                     error_msg = str(event.get("data", ""))
