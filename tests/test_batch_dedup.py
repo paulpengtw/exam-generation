@@ -217,3 +217,62 @@ def test_math_build_user_prompt_renders_prior_scopes_block(tmp_path) -> None:
     )
     assert "## 已生成題目（請避免相似範圍）" in prompt
     assert "1. 核心問題：比較有理數大小；學習內容：N-7-1, N-7-2" in prompt
+
+
+def test_math_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
+    """After question 1 completes, question 2's user prompt sees question 1's scope."""
+    from pathlib import Path
+
+    from src.cli import generate_with_corrections
+    from src.common.batch_dedup import PriorScope, extract_math_prior_scope
+    from src.config import Config
+    from src.sampler import sample_params
+
+    class _RecordingClient:
+        def __init__(self) -> None:
+            self.user_prompts: list[str] = []
+
+        def get_observer(self):
+            return None
+
+        def generate_json(self, _system, user, *_args, **_kwargs):
+            self.user_prompts.append(user)
+            idx = len(self.user_prompts)
+            return {
+                "情境": ["個人"],
+                "題型種類": "單一題",
+                "題型": "選擇題",
+                "數學思考": ["運用"],
+                "學習內容": [{"編碼": f"N-7-{idx}", "說明": "測試"}],
+                "題目": [f"題 {idx}"],
+                "正確解題分析": [f"解 {idx}"],
+                "出題概念": f"評量概念 {idx}",
+            }
+
+    config = Config(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    grade_content = {g: [] for g in [7, 8, 9]}
+    client = _RecordingClient()
+
+    prior_scopes: list[PriorScope] = []
+    for i in range(2):
+        params = sample_params(grade_content=grade_content, seed=100 + i)
+        result = generate_with_corrections(
+            config=config,
+            client=client,
+            curriculum=[],
+            performance={},
+            intro_text="",
+            grade_content=grade_content,
+            params=params,
+            question_id=f"q_test_{i+1:03d}",
+            max_retries=0,
+            skip_verify=True,
+            prior_scopes=list(prior_scopes),
+        )
+        scope = extract_math_prior_scope(result)
+        assert scope is not None
+        prior_scopes.append(scope)
+
+    # First prompt has no dedup block; second must show question 1's summary + code.
+    assert "已生成題目" not in client.user_prompts[0]
+    assert "1. 核心問題：評量概念 1；學習內容：N-7-1" in client.user_prompts[1]
