@@ -39,6 +39,18 @@ def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
     return {"event": event["event"], "data": data}
 
 
+def _check_model_allowed(model: str | None, config: ServerConfig, field: str) -> None:
+    """Raise HTTPException(422) when a submitted model is outside the allowlist."""
+    if model is None:
+        return
+    if model not in config.llm_models_allowed:
+        allowed = ", ".join(config.llm_models_allowed)
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field}: model '{model}' not in allowlist: [{allowed}]",
+        )
+
+
 @router.get("/generate")
 @limiter.limit("10/hour", key_func=jwt_user_key)
 async def generate_endpoint(
@@ -70,6 +82,8 @@ async def generate_endpoint(
     option_word_limit: int | None = Query(default=None, ge=1),
     text_word_limit: int | None = Query(default=None, ge=1),
     subquestion_configs: str | None = Query(default=None),
+    model_plan: str | None = Query(default=None),
+    model_execute: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -79,6 +93,8 @@ async def generate_endpoint(
     Logs the request to `generation_log` at start and updates the row to
     `completed` or `failed` when the stream ends.
     """
+    _check_model_allowed(model_plan, config, "model_plan")
+    _check_model_allowed(model_execute, config, "model_execute")
     params = GenerateParams(
         subject=subject,
         grade=grade,
@@ -107,6 +123,8 @@ async def generate_endpoint(
         option_word_limit=option_word_limit,
         text_word_limit=text_word_limit,
         subquestion_configs=subquestion_configs,
+        model_plan=model_plan,
+        model_execute=model_execute,
     )
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 
@@ -166,6 +184,8 @@ async def plan_core_questions_endpoint(
     config: ServerConfig = Depends(get_config),
 ) -> PlanCoreQuestionsResponse:
     """Return three candidate 核心問題 for a given topic (Opus single call)."""
+    _check_model_allowed(body.model_plan, config, "model_plan")
+    _check_model_allowed(body.model_execute, config, "model_execute")
     from src.config import Config as SrcConfig
     from src.llm_client import LLMClient
 
