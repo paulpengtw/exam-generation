@@ -1,7 +1,7 @@
 # Figure Rendering Policy
 
 Owner: exam-generation. Status: authoritative — the three `src/**/context_builder.py`
-modules and the Pydantic `ImageSpec` schemas cite this file. Related GitHub
+modules cite this file. Related GitHub
 issues: #108 (frontend TS renderer evaluation), #110 (routing policy).
 
 ## The rule
