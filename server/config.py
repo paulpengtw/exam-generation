@@ -32,6 +32,7 @@ class ServerConfig(Config):
     math_curriculum_dir: Path = (
         Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"
     )
+    generation_history_retention_days: int = 0
     email_whitelist: tuple[str, ...] = ()
     llm_exchange_retention_days: int = 30
     creative_planning: bool = True
@@ -96,6 +97,9 @@ class ServerConfig(Config):
                     "MATH_CURRICULUM_DIR",
                     str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
+            ),
+            generation_history_retention_days=int(
+                os.environ.get("GENERATION_HISTORY_RETENTION_DAYS", "0")
             ),
             llm_exchange_retention_days=int(
                 os.environ.get("LLM_EXCHANGE_RETENTION_DAYS", "30")

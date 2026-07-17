@@ -16,13 +16,15 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth.dependencies import get_config
 from server.auth.routes import router as auth_router
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.routes import router as generate_router
-from server.models import LLMExchange
+from server.history.routes import router as history_router
+from server.models import GenerationRecord, LLMExchange
 from server.rate_limit import limiter
 from server.utility.routes import router as utility_router
 from src.data_loader import (
@@ -33,6 +35,21 @@ from src.data_loader import (
 )
 from src.html_renderer import PlaywrightRenderer
 from src.schema_loader import load_grades, load_schemas
+
+
+async def _prune_generation_records(session: AsyncSession, retention_days: int) -> None:
+    """Delete generation_records older than retention_days.
+
+    retention_days == 0 keeps every row (default). Failures are logged
+    by the caller so startup never aborts on a prune error.
+    """
+    if retention_days <= 0:
+        return
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    await session.execute(
+        delete(GenerationRecord).where(GenerationRecord.created_at < cutoff)
+    )
+    await session.commit()
 
 
 async def prune_expired_llm_exchanges(
@@ -77,6 +94,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         # alembic env.py uses asyncio.run; run in a worker thread so it gets its own loop.
         await asyncio.to_thread(_run_alembic)
+
+        try:
+            async with AsyncSessionLocal() as session:
+                await _prune_generation_records(
+                    session, config.generation_history_retention_days
+                )
+        except Exception as exc:  # pragma: no cover - best effort on startup
+            print(
+                f"Warning: generation_records prune failed: {exc}", file=sys.stderr
+            )
     except Exception as exc:  # pragma: no cover - best effort on startup
         print(f"Warning: alembic upgrade failed: {exc}", file=sys.stderr)
 
@@ -162,6 +189,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(generate_router)
+    app.include_router(history_router)
     app.include_router(utility_router)
     return app
 
