@@ -1,0 +1,164 @@
+"""GET /api/history — user-scoped generation history browse + detail + download."""
+
+from __future__ import annotations
+
+import base64
+import json
+import logging
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from server.auth.dependencies import get_config, get_current_user
+from server.config import ServerConfig
+from server.db import get_async_session
+from server.models import GenerationRecord, User
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api", tags=["history"])
+
+
+def _preview(question_json: dict) -> str:
+    """One-line preview: 核心問題 if present, otherwise first 題目 line, capped to 120 chars."""
+    core = question_json.get("核心問題")
+    if isinstance(core, str) and core.strip():
+        return core.strip()[:120]
+    subs = question_json.get("subquestions")
+    if isinstance(subs, list) and subs:
+        first_body = subs[0].get("題目")
+        if isinstance(first_body, str) and first_body.strip():
+            return first_body.strip().splitlines()[0][:120]
+    body = question_json.get("題目")
+    if isinstance(body, list) and body:
+        first = body[0]
+        if isinstance(first, str):
+            return first.strip()[:120]
+    return ""
+
+
+def _verified(question_json: dict) -> bool:
+    ver = question_json.get("verification")
+    return bool(isinstance(ver, dict) and ver.get("passed"))
+
+
+@router.get("/history")
+async def list_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    subject: str | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict:
+    """Return the user's records newest-first with a short preview per row."""
+    stmt = select(GenerationRecord).where(GenerationRecord.user_id == user.id)
+    count_stmt = select(func.count()).select_from(GenerationRecord).where(
+        GenerationRecord.user_id == user.id
+    )
+    if subject:
+        stmt = stmt.where(GenerationRecord.subject == subject)
+        count_stmt = count_stmt.where(GenerationRecord.subject == subject)
+    stmt = stmt.order_by(GenerationRecord.created_at.desc()).limit(limit).offset(offset)
+
+    rows = (await session.execute(stmt)).scalars().all()
+    total = (await session.execute(count_stmt)).scalar_one()
+
+    items = [
+        {
+            "id": str(r.id),
+            "subject": r.subject,
+            "question_id": r.question_id,
+            "created_at": r.created_at.isoformat(),
+            "preview": _preview(r.question_json or {}),
+            "verified": _verified(r.question_json or {}),
+        }
+        for r in rows
+    ]
+    return {"total": int(total), "items": items}
+
+
+async def _load_owned(
+    record_id: str, user: User, session: AsyncSession
+) -> GenerationRecord:
+    try:
+        rid = uuid.UUID(record_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Not found") from exc
+    row = (
+        await session.execute(
+            select(GenerationRecord).where(
+                GenerationRecord.id == rid,
+                GenerationRecord.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return row
+
+
+def _embed_images(question_json: dict, config: ServerConfig) -> dict:
+    """Copy question_json and embed image_base64 for any PNG still on disk.
+
+    Missing files are silently skipped — the record renders without them.
+    """
+    out = dict(question_json)
+    top = out.get("圖片")
+    if isinstance(top, str) and top:
+        path = config.output_dir / top
+        if path.exists():
+            out["image_base64"] = base64.b64encode(path.read_bytes()).decode("ascii")
+    subs = out.get("subquestions")
+    if isinstance(subs, list):
+        new_subs = []
+        for sub in subs:
+            if not isinstance(sub, dict):
+                new_subs.append(sub)
+                continue
+            sub_copy = dict(sub)
+            sub_img = sub_copy.get("圖片")
+            if isinstance(sub_img, str) and sub_img:
+                path = config.output_dir / sub_img
+                if path.exists():
+                    sub_copy["image_base64"] = base64.b64encode(
+                        path.read_bytes()
+                    ).decode("ascii")
+            new_subs.append(sub_copy)
+        out["subquestions"] = new_subs
+    return out
+
+
+@router.get("/history/{record_id}")
+async def get_history_detail(
+    record_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+    config: ServerConfig = Depends(get_config),
+) -> dict:
+    row = await _load_owned(record_id, user, session)
+    return {
+        "id": str(row.id),
+        "subject": row.subject,
+        "question_id": row.question_id,
+        "created_at": row.created_at.isoformat(),
+        "params_json": row.params_json or {},
+        "question_json": _embed_images(row.question_json or {}, config),
+    }
+
+
+@router.get("/history/{record_id}/download")
+async def download_history(
+    record_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> Response:
+    row = await _load_owned(record_id, user, session)
+    body = json.dumps(row.question_json or {}, ensure_ascii=False, indent=2)
+    filename = f"{row.question_id or row.id}.json"
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

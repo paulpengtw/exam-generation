@@ -23,6 +23,7 @@ from server.auth.routes import router as auth_router
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.routes import router as generate_router
+from server.history.routes import router as history_router
 from server.models import GenerationRecord
 from server.rate_limit import limiter
 from server.utility.routes import router as utility_router
@@ -156,6 +157,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(generate_router)
+    app.include_router(history_router)
     app.include_router(utility_router)
     return app
 
