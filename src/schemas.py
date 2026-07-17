@@ -13,6 +13,7 @@ from src.common.core_competency_loader import (
     build_core_competency_enum,
     load_core_competencies,
 )
+from src.common.difficulty import DEFAULT_DIFFICULTY, Difficulty
 from src.schema_loader import build_enums, load_grades, load_schemas
 
 # Load enum values from question_schemas.json at import time
@@ -91,6 +92,7 @@ class QuestionMetadata(BaseModel):
     model: str
     generated_at: datetime = Field(default_factory=datetime.now)
     seed: int | None = None
+    difficulty: Difficulty = DEFAULT_DIFFICULTY
 
 
 class ExamQuestion(BaseModel):
@@ -137,3 +139,5 @@ class SampledParams(BaseModel):
     題目內容類型: str | None = None
     出題概念: str = ""
     subject_filter: str | None = None
+    # Issue #116: explicit difficulty (pure passthrough — never randomized).
+    difficulty: Difficulty = DEFAULT_DIFFICULTY

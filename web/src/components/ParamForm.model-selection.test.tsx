@@ -82,7 +82,7 @@ describe("ParamForm — model selection dropdowns", () => {
     // pre-existing i18n gap unrelated to this task), so it is targeted by
     // its actual rendered text here.
     await user.click(screen.getByRole("button", { name: /generate/i }));
-    await user.click(await screen.findByRole("button", { name: "確定發送" }));
+    await user.click(await screen.findByRole("button", { name: /confirm/i }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     const submitted = onSubmit.mock.calls[0][0];
@@ -131,7 +131,7 @@ describe("ParamForm — model selection dropdowns", () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /generate/i }));
-    await user.click(await screen.findByRole("button", { name: "確定發送" }));
+    await user.click(await screen.findByRole("button", { name: /confirm/i }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     const submitted = onSubmit.mock.calls[0][0];
@@ -154,7 +154,7 @@ describe("ParamForm — model selection dropdowns", () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /generate/i }));
-    await user.click(await screen.findByRole("button", { name: "確定發送" }));
+    await user.click(await screen.findByRole("button", { name: /confirm/i }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     const submitted = onSubmit.mock.calls[0][0];

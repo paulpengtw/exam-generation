@@ -84,6 +84,8 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     ),
 }
 
+DIFFICULTY_INSTRUCTIONS: dict[str, str] = _INSTRUCTIONS.get("難度", {})
+
 
 SYSTEM_PROMPT_TEMPLATE = """\
 你是一位資深的台灣國中數學命題教師，專門為{learning_stage}（{grade_names}）的學生設計考試題目。
@@ -192,7 +194,7 @@ USER_PROMPT_TEMPLATE = """\
 - **核心素養（限定使用）**：{core_competencies}
 - **必須涵蓋的學習內容**：
 {content_list}
-{lp_pool_lines}{param_instructions}
+{lp_pool_lines}{param_instructions}{difficulty_section}
 ## 題目風格
 
 {style_instruction}
@@ -351,6 +353,18 @@ def build_user_prompt(
         if param_instruction_lines else ""
     )
 
+    # Difficulty is a pure passthrough; the resolved value lives on params.difficulty.
+    difficulty_value = params.difficulty.value
+    difficulty_instr = DIFFICULTY_INSTRUCTIONS.get(
+        difficulty_value,
+        "本題無指定難度說明；請以中等難度作為預設。",
+    )
+    difficulty_section = (
+        f"\n## 難度要求\n\n"
+        f"- **難度等級**：{difficulty_value}\n"
+        f"- **命題指示**：{difficulty_instr}\n"
+    )
+
     # Style instruction
     style_instruction = _INSTRUCTIONS.get("question_style", {}).get(params.style.value, "")
 
@@ -424,6 +438,7 @@ def build_user_prompt(
         content_list=content_list,
         lp_pool_lines=lp_pool_lines,
         param_instructions=param_instructions,
+        difficulty_section=difficulty_section,
         style_instruction=style_instruction,
         user_materials=user_materials,
         prior_scopes_block=prior_scopes_block,

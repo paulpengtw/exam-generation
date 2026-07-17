@@ -86,6 +86,23 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     ),
 }
 
+DIFFICULTY_INSTRUCTIONS: dict[str, str] = _INSTRUCTIONS.get("難度", {})
+
+
+def _difficulty_section(params: "SampledParams") -> str:
+    """Return the shared `## 難度要求` block for text + subquestion prompts."""
+    value = params.difficulty.value
+    instr = DIFFICULTY_INSTRUCTIONS.get(
+        value,
+        "本題組無指定難度說明；請以中等難度作為預設。",
+    )
+    return (
+        "\n## 難度要求\n\n"
+        f"- **難度等級**：{value}\n"
+        f"- **命題指示**：{instr}\n"
+    )
+
+
 _CREATIVE_BRIEF_SYSTEM_BLOCK = """\
 
 ### 創意指引
@@ -268,7 +285,7 @@ USER_PROMPT_TEMPLATE = """\
 - **文本素材類型**：{content_type}
 - **圖片生成模式**：{image_generation_mode}
 - **核心素養（限定使用）**：{core_competencies}
-{lc_pool_lines}{lp_pool_lines}{subquestion_config_lines}{param_instructions}{user_materials}
+{lc_pool_lines}{lp_pool_lines}{subquestion_config_lines}{param_instructions}{difficulty_section}{user_materials}
 ## 參考範例
 
 {few_shot_examples}
@@ -393,6 +410,8 @@ def build_user_prompt(
         "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
         if param_instruction_lines else ""
     )
+
+    difficulty_section = _difficulty_section(params)
 
     example_groups = (
         [] if disable_reference_fewshot else load_few_shot_example_groups(few_shot_dir)
@@ -590,6 +609,7 @@ def build_user_prompt(
         lp_pool_lines=lp_pool_lines,
         subquestion_config_lines=subquestion_config_lines,
         param_instructions=param_instructions,
+        difficulty_section=difficulty_section,
         user_materials=user_materials,
         few_shot_examples=few_shot_text,
     )
@@ -649,7 +669,7 @@ _TEXT_GENERATION_USER_PROMPT_TEMPLATE = """\
 - **文本素材類型**：{content_type}
 - **核心素養（限定本題組使用）**：{core_competencies}
 - **預計小題題型分布**：{slot_type_summary}
-{lc_pool_lines}{lp_pool_lines}{param_instructions}{user_materials}
+{lc_pool_lines}{lp_pool_lines}{param_instructions}{difficulty_section}{user_materials}
 ## 重要提醒
 
 1. 文本素材應貼近真實情境，語言自然，非教科書式；可使用新聞、報告、圖表、訪談摘要等真實素材形式。
@@ -724,7 +744,7 @@ _SUBQUESTION_USER_PROMPT_TEMPLATE = """\
 - **核心素養**：{slot_competencies}
 - **指定學習內容代號**：{lc_pool}
 - **指定學習表現代號**：{lp_pool}
-{slot_instruction_line}
+{slot_instruction_line}{difficulty_section}
 ## 重要提醒
 
 1. 題目必須根據上方文本作答，不得引入文本未提及的外部知識作為答題必要條件。
@@ -786,6 +806,8 @@ def build_text_generation_prompt(
         "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
     )
 
+    difficulty_section = _difficulty_section(params)
+
     if params.學習內容_pool:
         lc_codes = "、".join(params.學習內容_pool)
         lc_pool_lines = f"- **指定學習內容**：{lc_codes}\n"
@@ -832,6 +854,7 @@ def build_text_generation_prompt(
         lc_pool_lines=lc_pool_lines,
         lp_pool_lines=lp_pool_lines,
         param_instructions=param_instructions,
+        difficulty_section=difficulty_section,
         user_materials=user_materials,
     )
     return system_prompt, user_prompt
@@ -887,6 +910,8 @@ def build_subquestion_prompt(
     if cfg.instruction:
         slot_instruction_line = f"- **出題指示**：{cfg.instruction}\n"
 
+    difficulty_section = _difficulty_section(params).lstrip("\n")
+
     system_prompt = _SUBQUESTION_SYSTEM_PROMPT_TEMPLATE.format(
         learning_stage=stage,
         grade_names=grade_names,
@@ -907,6 +932,7 @@ def build_subquestion_prompt(
         lc_pool=lc_pool,
         lp_pool=lp_pool,
         slot_instruction_line=slot_instruction_line,
+        difficulty_section=difficulty_section,
     )
     return system_prompt, user_prompt
 
@@ -1169,6 +1195,7 @@ def build_subquestion_user_prompt(
         lp_pool_lines = "- **指定學習表現**：（依課綱自行選用）\n"
 
     source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
+    difficulty_section = _difficulty_section(params).lstrip("\n")
     return f"""\
 請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題：
 
@@ -1200,6 +1227,7 @@ def build_subquestion_user_prompt(
 - **科目焦點**：{subject_value}
 - **核心素養（限定使用）**：{core_competencies}
 {lc_pool_lines}{lp_pool_lines}
+{difficulty_section}
 ## 參考範例
 
 {few_shot_text}

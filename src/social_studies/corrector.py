@@ -26,7 +26,7 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 - 若問題在文本素材或小題敘述歧義 → 最小幅度澄清文本或小題題目，同步調整答案解析。
 - 若 chart_verification 指出非連續文本素材錯誤 → 只修正 chart_spec 的 data/labels/description，
   保留 render_mode、chart_type 不變。
-- 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、id、metadata、
+- 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、難度、id、metadata、
   各小題的 學習內容/學習表現/核心素養/出題概念/出題指示/科目/年級。
 - 若某小題的答案或選項有改動，該小題的 `誘答分析` 必須同步反映新的正解與誘答陷阱：正解鍵改為「正確答案：…」，其他鍵改為新的誤解描述。選項標籤必須與新題目一致；若題目沒有 (A)-(D) 標籤，可留空 `{}`。
 
@@ -174,5 +174,8 @@ def correct_question(
             pass
 
     update["verification"] = None
+
+    # Difficulty is frozen — force the original metadata (and thus difficulty) through.
+    update["metadata"] = question.metadata
 
     return question.model_copy(update=update)

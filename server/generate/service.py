@@ -454,6 +454,7 @@ async def generate_question_stream(
                     subquestion_configs=_decode_subquestion_configs(
                         params.subquestion_configs,
                     ),
+                    difficulty=params.difficulty,
                     assigned_q_type=assigned_qt,
                     assigned_learning_content=assigned_lc,
                 )
@@ -498,6 +499,7 @@ async def generate_question_stream(
                     subquestion_configs=_decode_subquestion_configs(
                         params.subquestion_configs,
                     ),
+                    difficulty=params.difficulty,
                 )
                 question_id = f"ns_{timestamp}_{i+1:03d}"
                 question = ns_generate_with_corrections(
@@ -536,6 +538,7 @@ async def generate_question_stream(
                     learning_performance=params.learning_performance,
                     content_type=params.content_type,
                     subject_filter=math_subject_filter,
+                    difficulty=params.difficulty,
                 )
                 question_id = f"q_{timestamp}_{i+1:03d}"
                 question = math_generate_with_corrections(

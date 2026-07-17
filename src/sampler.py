@@ -15,6 +15,7 @@ from src.common.curriculum_loader import (
     load_learning_content,
     load_learning_performance,
 )
+from src.common.difficulty import Difficulty, resolve_difficulty
 from src.schema_loader import load_grades, load_schemas
 from src.schemas import (
     CoreCompetency,
@@ -77,6 +78,7 @@ def sample_params(
     learning_performance: list[str] | None = None,
     content_type: str | None = None,
     subject_filter: str | None = None,
+    difficulty: Difficulty | str | None = None,
 ) -> SampledParams:
     """Sample random question parameters.
 
@@ -88,6 +90,8 @@ def sample_params(
     del grade_content  # legacy; curriculum data now loaded directly
 
     rng = random.Random(seed)
+
+    resolved_difficulty: Difficulty = resolve_difficulty(difficulty)
 
     # Grade
     selected_grade = grade if grade is not None else rng.choice(_GRADES)
@@ -190,4 +194,5 @@ def sample_params(
         學習表現=selected_performance,
         題目內容類型=selected_content_type,
         subject_filter=subject_filter,
+        difficulty=resolved_difficulty,
     )

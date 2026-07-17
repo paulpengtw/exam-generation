@@ -10,7 +10,7 @@ from pathlib import Path
 _DEFAULT_PATH = Path(__file__).parent.parent / "question_schemas.json"
 
 # All categories that use the {value, instruction?} object format.
-_CATEGORIES = ("情境", "題型種類", "題型", "數學思考", "question_style")
+_CATEGORIES = ("情境", "題型種類", "題型", "數學思考", "question_style", "難度")
 
 
 def _resolve_path(path: Path | None = None) -> Path:
