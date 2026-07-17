@@ -61,3 +61,85 @@ def test_to_anthropic_content_silently_drops_unknown_part_types() -> None:
     assert [p["type"] for p in result] == ["text", "image"]
     assert result[0]["text"] == "before"
     assert result[1]["source"]["data"] == _TINY_PNG_B64
+
+
+class _FakeAnthropicUsage:
+    input_tokens = 10
+    output_tokens = 5
+    cache_read_input_tokens = 0
+    cache_creation_input_tokens = 0
+
+
+class _FakeAnthropicTextBlock:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _FakeAnthropicResponse:
+    def __init__(self, text: str) -> None:
+        self.content = [_FakeAnthropicTextBlock(text)]
+        self.usage = _FakeAnthropicUsage()
+
+
+class _RecorderMessages:
+    """Stands in for `Anthropic.messages`; records `create` kwargs."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs) -> _FakeAnthropicResponse:
+        self.calls.append(kwargs)
+        return _FakeAnthropicResponse('{"ok": true}')
+
+
+def test_generate_with_image_sends_base64_image_block_to_sdk(tmp_path) -> None:
+    """End-to-end: `generate_with_image` must place a base64 image block into
+    the `messages` array reaching `Anthropic.messages.create`."""
+    from src.config import Config
+    from src.llm_client import LLMClient
+
+    png_path = tmp_path / "chart.png"
+    png_path.write_bytes(_TINY_PNG_BYTES)
+
+    # Non-streaming path: no observer + llm_stream=False -> messages.create is used.
+    client = LLMClient(Config(api_key="test-key", llm_stream=False))
+    recorder = _RecorderMessages()
+    client.client.messages = recorder  # type: ignore[assignment]
+
+    client.generate_with_image(
+        system="you are a verifier",
+        user="請看下方圖表並回答。",
+        image_path=png_path,
+        purpose="verify",
+    )
+
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+
+    # System is a cache-controlled block, not part of `messages`.
+    assert call["system"] == [
+        {
+            "type": "text",
+            "text": "you are a verifier",
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+
+    messages = call["messages"]
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+
+    user_content = messages[0]["content"]
+    assert isinstance(user_content, list)
+    image_blocks = [p for p in user_content if p.get("type") == "image"]
+    text_blocks = [p for p in user_content if p.get("type") == "text"]
+
+    assert len(image_blocks) == 1, "exactly one image block must reach the SDK"
+    assert len(text_blocks) == 1
+    assert text_blocks[0]["text"] == "請看下方圖表並回答。"
+
+    source = image_blocks[0]["source"]
+    assert source["type"] == "base64"
+    assert source["media_type"] == "image/png"
+    assert source["data"] == _TINY_PNG_B64
+    assert len(source["data"]) > 0
