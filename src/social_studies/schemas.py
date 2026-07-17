@@ -89,6 +89,7 @@ class SubQuestion(BaseModel):
     答案: str = ""
     答案解析: str = ""
     評分規準: list[RubricEntry] = Field(default_factory=list)
+    誘答分析: dict[str, str] = Field(default_factory=dict)
     題目內容類型: str | None = None
     image_generation_mode: Literal["html", "gpt_image"] | None = None
     圖片: str | None = None
