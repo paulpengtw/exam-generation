@@ -21,6 +21,23 @@ The web form always shows both 學習內容 and 學習表現 in the confirmation
 3. Second call (Sonnet, multimodal): independently solves the question, inspects PNG, returns `VerificationResult` with `passed`, `answer_match`, `details`, `my_answer`, `provided_answer`, and optional `chart_verification`.
 4. If `passed=False`, a correction pass sends the failed question + verifier feedback back to Sonnet for a minimal targeted fix (`src/corrector.py`). PNG re-renders only when `chart_spec` actually changes. Re-verify and loop up to `max_retries` (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
 
+### Fact-check pass (social studies only)
+
+Optional web-search fact-check runs after the teacher verify pass for
+時事-flagged social-studies questions (issue #104). Enable by setting
+`WEB_SEARCH_PROVIDER=anthropic` (default `none` — opt-in) and optionally
+`WEB_SEARCH_MAX_USES=N` (default `5`). The pass uses the Anthropic native
+`web_search_20250305` server tool via `LLMClient.generate_with_tools`. When
+enabled, `src/social_studies/verifier.py::verify_question` calls
+`src/social_studies/fact_check.py::fact_check_question` only when
+`is_current_events(question)` is True (heuristic: any subquestion's 學習內容
+編碼 starts with `公`, or `核心問題`/`文本` matches `近年|最近|今年|去年|本屆|
+現任|當前`). A definitive negative (`fact_check.verified is False`) forces
+`passed=False` and appends issues to `details` so the existing correction
+loop sees them. Any failure — provider disabled, endpoint rejects the tool,
+malformed JSON, exhausted iterations — fails open: `fact_check=None` and the
+teacher verdict is unchanged.
+
 ### OpenAI-compatible endpoint
 Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-opus-4-6` for planning, `claude-sonnet-4-6` for generation and verification.
 
@@ -377,6 +394,18 @@ uv run pytest
 # Lint
 uv run ruff check src/
 ```
+
+### Staging smoke tests
+
+```bash
+# End-to-end staging smoke tests (env-driven; no committed secrets).
+bash scripts/smoke_test.sh                          # Full docker-compose auth+generate
+BASE_URL=https://examgen-staging.cpeng.me \
+  bash scripts/smoke_test_natural_sciences.sh       # Natural-sciences layer probe (issue #94)
+```
+
+Each script prints `FRONTEND` / `API` / `PROVIDER` layer prefixes on failure so
+red output names the failing layer.
 
 ## Execution Logic
 

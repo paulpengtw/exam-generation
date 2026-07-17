@@ -1,15 +1,16 @@
-"""Tests for the natural-sciences verifier's multimodal payload wiring."""
+"""Tests for the natural-sciences verifier's multimodal payload wiring and disclaimer leniency."""
 
 from __future__ import annotations
 
 import json
 
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.natural_sciences.schemas import (
     ExamQuestion,
     LearningContentRef,
     SubQuestion,
 )
-from src.natural_sciences.verifier import verify_question
+from src.natural_sciences.verifier import VERIFICATION_SYSTEM_PROMPT, verify_question
 
 
 class FakeClient:
@@ -115,3 +116,11 @@ def test_ns_verifier_omits_附圖_when_no_image() -> None:
     assert client.image_path is None
     assert "## 附圖" not in client.user_prompt
     assert result.passed is True
+
+
+def test_natural_sciences_verifier_prompt_contains_illustrative_figure_leniency_line() -> None:
+    assert "示意圖" in VERIFICATION_SYSTEM_PROMPT
+    assert IMAGE_DISCLAIMER in VERIFICATION_SYSTEM_PROMPT
+    assert "不得僅因" in VERIFICATION_SYSTEM_PROMPT
+    assert "數值" in VERIFICATION_SYSTEM_PROMPT
+    assert "標籤" in VERIFICATION_SYSTEM_PROMPT
