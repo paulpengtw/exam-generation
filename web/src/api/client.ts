@@ -128,3 +128,13 @@ export async function planCoreQuestions(
   });
   return (await res.json()) as PlanCoreQuestionsResponse;
 }
+
+export interface AvailableModels {
+  allowed: string[];
+  defaults: { plan: string; execute: string };
+}
+
+export async function getAvailableModels(): Promise<AvailableModels> {
+  const res = await apiFetch("/api/models");
+  return (await res.json()) as AvailableModels;
+}
