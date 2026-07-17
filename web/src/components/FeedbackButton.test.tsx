@@ -10,6 +10,9 @@ const formMock = vi.hoisted(() => ({
 const createFormMock = vi.hoisted(() =>
   vi.fn(() => Promise.resolve(formMock)),
 );
+const getFeedbackMock = vi.hoisted(() =>
+  vi.fn(() => ({ createForm: createFormMock })),
+);
 
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (s: { lang: string }) => unknown) =>
@@ -21,7 +24,7 @@ vi.mock("../sentry", () => ({
 }));
 
 vi.mock("@sentry/react", () => ({
-  getFeedback: () => ({ createForm: createFormMock }),
+  getFeedback: getFeedbackMock,
 }));
 
 import FeedbackButton from "./FeedbackButton";
@@ -30,6 +33,7 @@ describe("FeedbackButton", () => {
   beforeEach(() => {
     sentryState.enabled = true;
     vi.clearAllMocks();
+    getFeedbackMock.mockReturnValue({ createForm: createFormMock });
   });
 
   it("renders nothing when Sentry is not configured", () => {
@@ -53,5 +57,32 @@ describe("FeedbackButton", () => {
       }),
     );
     expect(formMock.appendToDom).toHaveBeenCalled();
+  });
+
+  it("does nothing when Sentry.getFeedback() returns undefined", () => {
+    getFeedbackMock.mockReturnValueOnce(undefined);
+    render(<FeedbackButton />);
+    const btn = screen.getByRole("button", { name: "Report a problem" });
+
+    expect(() => fireEvent.click(btn)).not.toThrow();
+    expect(createFormMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a second click while the form is still being created", async () => {
+    let resolveForm: (value: typeof formMock) => void;
+    const pending = new Promise<typeof formMock>((resolve) => {
+      resolveForm = resolve;
+    });
+    createFormMock.mockReturnValueOnce(pending);
+
+    render(<FeedbackButton />);
+    const btn = screen.getByRole("button", { name: "Report a problem" });
+
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    resolveForm!(formMock);
+
+    await waitFor(() => expect(formMock.open).toHaveBeenCalled());
+    expect(createFormMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const initMock = vi.hoisted(() => vi.fn());
 const feedbackIntegrationMock = vi.hoisted(() =>
@@ -10,7 +10,17 @@ vi.mock("@sentry/react", () => ({
   feedbackIntegration: feedbackIntegrationMock,
 }));
 
-import { initSentry, isSentryEnabled } from "./sentry";
+// initSentry() now guards on a module-level `_initialized` flag, so each
+// test resets the module registry and re-imports fresh to keep tests
+// independent (otherwise the flag set by an earlier test would suppress
+// init in a later one).
+let initSentry: typeof import("./sentry").initSentry;
+let isSentryEnabled: typeof import("./sentry").isSentryEnabled;
+
+beforeEach(async () => {
+  vi.resetModules();
+  ({ initSentry, isSentryEnabled } = await import("./sentry"));
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -48,5 +58,13 @@ describe("sentry module", () => {
     expect(initMock).toHaveBeenCalledWith(
       expect.objectContaining({ environment: "staging" }),
     );
+  });
+
+  it("only initializes Sentry once across multiple calls (idempotent)", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    initSentry();
+    initSentry();
+    initSentry();
+    expect(initMock).toHaveBeenCalledTimes(1);
   });
 });

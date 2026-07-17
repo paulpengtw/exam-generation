@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import * as Sentry from "@sentry/react";
 import { useT } from "../i18n/useT";
 import { isSentryEnabled } from "../sentry";
@@ -9,11 +10,14 @@ import { isSentryEnabled } from "../sentry";
  */
 export default function FeedbackButton() {
   const t = useT();
+  const isOpeningRef = useRef(false);
   if (!isSentryEnabled()) return null;
 
   const openFeedback = async () => {
     const feedback = Sentry.getFeedback();
     if (!feedback) return;
+    if (isOpeningRef.current) return;
+    isOpeningRef.current = true;
     const form = await feedback.createForm({
       formTitle: t("feedback.form_title"),
       nameLabel: t("feedback.name_label"),
@@ -23,8 +27,14 @@ export default function FeedbackButton() {
       submitButtonLabel: t("feedback.submit_label"),
       cancelButtonLabel: t("feedback.cancel_label"),
       successMessageText: t("feedback.success_message"),
-      onFormClose: () => form.removeFromDom(),
-      onFormSubmitted: () => form.removeFromDom(),
+      onFormClose: () => {
+        isOpeningRef.current = false;
+        form.removeFromDom();
+      },
+      onFormSubmitted: () => {
+        isOpeningRef.current = false;
+        form.removeFromDom();
+      },
     });
     form.appendToDom();
     form.open();
