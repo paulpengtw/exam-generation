@@ -10,6 +10,7 @@ from src.context_builder import (
     _PERFORMANCE_TEXT,
     _build_curriculum_section,
 )
+from src.common.distractor import validate_distractor_keys
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
 
@@ -111,10 +112,17 @@ def verify_question(
                 chart_details=cv.get("chart_details", ""),
             )
 
+        # Non-blocking distractor-key audit (warnings only; never flips passed).
+        warnings = validate_distractor_keys(question_text, question.誘答分析)
+        details = result.get("details", "")
+        if warnings:
+            details = details.rstrip()
+            details += "\n\n[誘答分析提醒] " + " ".join(warnings)
+
         return VerificationResult(
             passed=result.get("passed", False),
             answer_match=result.get("answer_match", False),
-            details=result.get("details", ""),
+            details=details,
             my_answer=result.get("my_answer", ""),
             provided_answer=result.get("provided_answer", ""),
             chart_verification=chart_verif,
