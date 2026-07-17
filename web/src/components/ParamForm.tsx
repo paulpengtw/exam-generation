@@ -216,7 +216,10 @@ export default function ParamForm({
       fromInit<"html" | "gpt_image">("image_generation_mode", "html"),
     );
   const [subjectFilter, setSubjectFilter] = useState<string>(
-    fromInit<string>("subject_filter", ""),
+    (() => {
+      const v = fromInit<string | string[]>("subject_filter", "");
+      return Array.isArray(v) ? (v[0] ?? "") : v;
+    })(),
   );
   const [passage, setPassage] = useState<string>(fromInit<string>("passage", TEXT_HINT));
   const [textWordLimit, setTextWordLimit] = useState<number | undefined>(
@@ -263,7 +266,12 @@ export default function ParamForm({
     setOptions(
       fromInit<string[]>("options", [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]),
     );
-    setSubjectFilter(fromInit<string>("subject_filter", ""));
+    setSubjectFilter(
+      (() => {
+        const v = fromInit<string | string[]>("subject_filter", "");
+        return Array.isArray(v) ? (v[0] ?? "") : v;
+      })(),
+    );
     setSubContext(fromInit<string>("sub_context", ""));
     setScienceCompetency(fromInit<string[]>("science_competency", []));
     setLearningPerformance(fromInit<string[]>("learning_performance", []));

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import GenerationRecord, User
+from server.rate_limit import jwt_user_key, limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["history"])
@@ -45,7 +47,9 @@ def _verified(question_json: dict) -> bool:
 
 
 @router.get("/history")
+@limiter.limit("60/minute", key_func=jwt_user_key)
 async def list_history(
+    request: Request,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     subject: str | None = Query(default=None),
@@ -99,10 +103,12 @@ async def _load_owned(
     return row
 
 
-def _embed_images(question_json: dict, config: ServerConfig) -> dict:
+def _embed_images_sync(question_json: dict, config: ServerConfig) -> dict:
     """Copy question_json and embed image_base64 for any PNG still on disk.
 
     Missing files are silently skipped — the record renders without them.
+    Synchronous (blocking) file reads — call via `asyncio.to_thread` from
+    async handlers.
     """
     out = dict(question_json)
     top = out.get("圖片")
@@ -130,8 +136,15 @@ def _embed_images(question_json: dict, config: ServerConfig) -> dict:
     return out
 
 
+async def _embed_images(question_json: dict, config: ServerConfig) -> dict:
+    """Async wrapper offloading the blocking file reads to a worker thread."""
+    return await asyncio.to_thread(_embed_images_sync, question_json, config)
+
+
 @router.get("/history/{record_id}")
+@limiter.limit("60/minute", key_func=jwt_user_key)
 async def get_history_detail(
+    request: Request,
     record_id: str,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
@@ -144,12 +157,14 @@ async def get_history_detail(
         "question_id": row.question_id,
         "created_at": row.created_at.isoformat(),
         "params_json": row.params_json or {},
-        "question_json": _embed_images(row.question_json or {}, config),
+        "question_json": await _embed_images(row.question_json or {}, config),
     }
 
 
 @router.get("/history/{record_id}/download")
+@limiter.limit("30/minute", key_func=jwt_user_key)
 async def download_history(
+    request: Request,
     record_id: str,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
