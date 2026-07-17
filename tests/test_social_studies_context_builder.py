@@ -224,3 +224,45 @@ def test_build_subquestion_user_prompt_empty_cfg_uses_global_pool():
         cfg=cfg,
     )
     assert "不得替換或新增" not in prompt
+
+
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.social_studies.context_builder import (
+    CONTENT_TYPE_INSTRUCTIONS as SS_CONTENT_TYPE_INSTRUCTIONS,
+    build_system_prompt as ss_build_system_prompt,
+)
+
+
+def test_ss_content_type_instructions_include_disclaimer_for_image_types() -> None:
+    assert IMAGE_DISCLAIMER in SS_CONTENT_TYPE_INSTRUCTIONS["含圖片"]
+    assert IMAGE_DISCLAIMER in SS_CONTENT_TYPE_INSTRUCTIONS["graphs/charts/tables"]
+
+
+def test_ss_content_type_instructions_omit_disclaimer_for_text_only() -> None:
+    assert IMAGE_DISCLAIMER not in SS_CONTENT_TYPE_INSTRUCTIONS["純文字"]
+
+
+def test_ss_html_designer_guidance_carries_disclaimer() -> None:
+    prompt = ss_build_system_prompt()
+    assert "HTML排版素材" in prompt
+    assert IMAGE_DISCLAIMER in prompt
+
+
+def test_ss_user_prompt_carries_disclaimer_for_image_content_type(tmp_path) -> None:
+    import random
+    from src.social_studies.context_builder import build_user_prompt
+    from src.social_studies.sampler import sample_params
+
+    params = sample_params(seed=1, content_type="含圖片")
+    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    assert IMAGE_DISCLAIMER in prompt
+
+
+def test_ss_user_prompt_omits_disclaimer_for_text_only(tmp_path) -> None:
+    import random
+    from src.social_studies.context_builder import build_user_prompt
+    from src.social_studies.sampler import sample_params
+
+    params = sample_params(seed=1, content_type="純文字")
+    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    assert IMAGE_DISCLAIMER not in prompt

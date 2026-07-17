@@ -6,6 +6,7 @@ import json
 import random
 from pathlib import Path
 
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.social_studies.core_competency_loader import (
     competency_instructions,
     load_core_competencies,
@@ -59,6 +60,8 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
         "（重要）圖片必須是作答的必要條件：至少一道小題的答案必須直接依賴圖片中才有的資訊，無法僅憑文本回答。"
         "設計時請先確定「移除圖片後此題是否仍可作答」——若可以，請重新設計圖片，使其承載文本中未涵蓋的關鍵資訊"
         "（例如地圖上的地名/路線/分布、廣告上的價格/期限/規則、表單上的數據欄位）。"
+        f"（示意圖聲明）圖片為示意用途，非完全等比例繪製；請在 `chart_spec.description` 中要求下游 HTML 產生器"
+        f"將「{IMAGE_DISCLAIMER}」以 caption 呈現在圖片下緣或版面空白處。"
     ),
     "graphs/charts/tables": (
         "本題組必須包含圖表或表格素材。統計圖（直方圖、折線圖、圓餅圖等）請使用 `render_mode: \"chart\"`；"
@@ -66,6 +69,9 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
         "於 `data` 中提供完整欄列資料。"
         "（重要）圖表/表格必須是作答的必要條件：至少一道小題須讀取圖表中的具體數值、趨勢或分類才能回答，"
         "且這些數值不得在 `文本` 欄位中重複列出。若移除圖表後題目仍可回答，需重新設計使數據只存在於圖表中。"
+        f"（示意圖聲明）圖表軸線、格線與座標比例僅為示意，非完全等比例繪製；"
+        f"請在 `chart_spec.description` 或圖表 caption 加註「{IMAGE_DISCLAIMER}」，"
+        "但圖表中的數值、標籤與分類仍必須完全對應 `data` 內容。"
     ),
 }
 
@@ -182,11 +188,12 @@ SYSTEM_PROMPT_TEMPLATE = """\
 ```json
 {{
   "render_mode": "html",
-  "description": "詳細描述素材內容與版面結構",
+  "description": "詳細描述素材內容與版面結構。請在 description 結尾要求下游 HTML 產生器於素材下緣加註 caption：「{image_disclaimer}」。",
   "title": "素材標題（選填）",
   "data": {{ "key": "value" }}
 }}
 ```
+所有輸出的 `chart_spec` 圖片皆為示意用途、非完全等比例繪製；因此無論 `render_mode` 是 `chart` 或 `html`，`description` 都必須要求下游產生器附上 caption「{image_disclaimer}」。圖表中的數值、標籤與分類仍必須忠實對應 `data`。
 
 ### 圖片必要性原則
 - 凡輸出非 null 的 `chart_spec`，該圖片、圖表或表格必須承載至少一道小題作答所必需的資訊。
@@ -271,6 +278,7 @@ def build_system_prompt(
         grade_names=grade_names,
         curriculum_section=curriculum_section,
         stage_code=sc,
+        image_disclaimer=IMAGE_DISCLAIMER,
     )
 
 
