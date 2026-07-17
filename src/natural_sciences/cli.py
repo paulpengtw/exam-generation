@@ -277,6 +277,11 @@ def _parse_subquestion(
             for r in (sq_raw.get("評分規準") or sq_raw.get("評分標準") or [])
             if isinstance(r, dict)
         ]
+        raw_distractor = sq_raw.get("誘答分析", {})
+        if isinstance(raw_distractor, dict):
+            distractor = {str(k): str(v) for k, v in raw_distractor.items()}
+        else:
+            distractor = {}
         return SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
@@ -293,6 +298,7 @@ def _parse_subquestion(
             答案=sq_raw.get("答案", ""),
             答案解析=sq_raw.get("答案解析", ""),
             評分規準=rubric,
+            誘答分析=distractor,
         )
     except Exception:
         return None

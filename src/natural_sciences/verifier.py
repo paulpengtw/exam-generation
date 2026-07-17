@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 
+from src.common.distractor import validate_distractor_keys
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.llm_client import LLMClient, extract_json
 from src.natural_sciences.context_builder import (
@@ -150,10 +151,20 @@ def verify_question(
                 chart_details=cv.get("chart_details", ""),
             )
 
+        all_warnings: list[str] = []
+        for sq in question.subquestions:
+            warnings = validate_distractor_keys(sq.題目, sq.誘答分析)
+            for w in warnings:
+                all_warnings.append(f"第{sq.序號}題：{w}")
+        details = result.get("details", "")
+        if all_warnings:
+            details = details.rstrip()
+            details += "\n\n[誘答分析提醒] " + "；".join(all_warnings)
+
         return VerificationResult(
             passed=result.get("passed", False),
             answer_match=result.get("answer_match", False),
-            details=result.get("details", ""),
+            details=details,
             my_answer=result.get("my_answer", ""),
             provided_answer=result.get("provided_answer", ""),
             chart_verification=chart_verif,

@@ -112,6 +112,7 @@ class ExamQuestion(BaseModel):
     學習表現: list[LearningContentItem] = Field(default_factory=list)
     題目內容類型: str | None = None
     出題概念: str = ""
+    誘答分析: dict[str, str] = Field(default_factory=dict)
 
 
 class SampledParams(BaseModel):

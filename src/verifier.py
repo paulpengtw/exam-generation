@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from src.common.distractor import validate_distractor_keys
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.context_builder import (
     _CONTENT_TEXT,
@@ -118,10 +119,17 @@ def verify_question(
                 chart_details=cv.get("chart_details", ""),
             )
 
+        # Non-blocking distractor-key audit (warnings only; never flips passed).
+        warnings = validate_distractor_keys(question_text, question.誘答分析)
+        details = result.get("details", "")
+        if warnings:
+            details = details.rstrip()
+            details += "\n\n[誘答分析提醒] " + " ".join(warnings)
+
         return VerificationResult(
             passed=result.get("passed", False),
             answer_match=result.get("answer_match", False),
-            details=result.get("details", ""),
+            details=details,
             my_answer=result.get("my_answer", ""),
             provided_answer=result.get("provided_answer", ""),
             chart_verification=chart_verif,
