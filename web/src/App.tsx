@@ -4,6 +4,7 @@ import StagingBanner from "./components/StagingBanner";
 import LoginPage from "./pages/LoginPage";
 import VerifyPage from "./pages/VerifyPage";
 import GeneratePage from "./pages/GeneratePage";
+import HistoryPage from "./pages/HistoryPage";
 import SubjectSelectPage from "./pages/SubjectSelectPage";
 
 export default function App() {
@@ -42,6 +43,22 @@ export default function App() {
           element={
             <AuthGuard>
               <GeneratePage subject="natural_sciences" />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <AuthGuard>
+              <HistoryPage />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/history/:id"
+          element={
+            <AuthGuard>
+              <HistoryPage />
             </AuthGuard>
           }
         />

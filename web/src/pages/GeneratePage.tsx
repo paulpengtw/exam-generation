@@ -135,6 +135,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           </div>
           <div className="flex min-w-0 items-center gap-2 text-sm sm:gap-3">
             <LanguageSwitcher />
+            <button
+              type="button"
+              onClick={() => navigate("/history")}
+              className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {t("history.nav_link")}
+            </button>
             {user && (
               <span className="hidden max-w-[12rem] truncate text-gray-700 sm:inline">
                 {user.email}
