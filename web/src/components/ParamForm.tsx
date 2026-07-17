@@ -281,11 +281,24 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     let cancelled = false;
     getAvailableModels()
       .then((m) => {
-        if (!cancelled) setModels(m);
+        if (cancelled) return;
+        setModels(m);
+        // Reconcile any localStorage-hydrated selection against the live
+        // allowlist — a stale value (e.g. a model that was removed server
+        // side) must never be silently submitted.
+        const allowed = new Set(m.allowed);
+        setModelPlan((prev) => (prev && !allowed.has(prev) ? "" : prev));
+        setModelExecute((prev) => (prev && !allowed.has(prev) ? "" : prev));
       })
       .catch(() => {
-        // Discovery failure: hide the dropdowns; do not block the form.
-        if (!cancelled) setModels(null);
+        if (cancelled) return;
+        // Discovery failure: hide the dropdowns AND clear any selection —
+        // the binding is that no model_plan/model_execute is ever sent
+        // when /api/models fails, even for a returning user with a
+        // persisted choice.
+        setModels(null);
+        setModelPlan("");
+        setModelExecute("");
       });
     return () => {
       cancelled = true;

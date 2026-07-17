@@ -113,4 +113,52 @@ describe("ParamForm — model selection dropdowns", () => {
     expect((planSelect as HTMLSelectElement).value).toBe("claude-sonnet-4-6");
     expect((execSelect as HTMLSelectElement).value).toBe("claude-haiku-4-6");
   });
+
+  it("never submits model_plan/model_execute when /api/models fails, even with a persisted selection", async () => {
+    window.localStorage.setItem("model_plan", "claude-opus-4-6");
+    window.localStorage.setItem("model_execute", "claude-haiku-4-6");
+    getAvailableModelsMock.mockRejectedValueOnce(new Error("boom"));
+
+    const onSubmit = vi.fn();
+    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+
+    // Dropdowns must be hidden once discovery fails.
+    await screen.findByText("第四學習階段", { exact: false }).catch(() => {});
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Planner model")).toBeNull();
+      expect(screen.queryByLabelText("Execution model")).toBeNull();
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+    await user.click(await screen.findByRole("button", { name: "確定發送" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0];
+    expect(submitted.model_plan).toBeUndefined();
+    expect(submitted.model_execute).toBeUndefined();
+  });
+
+  it("drops a persisted selection that is no longer in the allowlist", async () => {
+    window.localStorage.setItem("model_plan", "claude-legacy-model");
+    window.localStorage.setItem("model_execute", "claude-sonnet-4-6");
+
+    const onSubmit = vi.fn();
+    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+
+    const planSelect = await screen.findByLabelText("Planner model");
+    const execSelect = await screen.findByLabelText("Execution model");
+    // The stale value is reset to "Default"; the still-valid value survives.
+    expect((planSelect as HTMLSelectElement).value).toBe("");
+    expect((execSelect as HTMLSelectElement).value).toBe("claude-sonnet-4-6");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+    await user.click(await screen.findByRole("button", { name: "確定發送" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const submitted = onSubmit.mock.calls[0][0];
+    expect(submitted.model_plan).toBeUndefined();
+    expect(submitted.model_execute).toBe("claude-sonnet-4-6");
+  });
 });
