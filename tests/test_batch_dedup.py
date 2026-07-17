@@ -183,7 +183,6 @@ def test_extract_ns_uses_核心問題_and_aggregated_subquestion_codes() -> None
 def test_math_build_user_prompt_no_scopes_is_byte_identical(tmp_path) -> None:
     import random
 
-    from src.common.batch_dedup import PriorScope
     from src.context_builder import build_user_prompt
     from src.sampler import sample_params
 
@@ -279,7 +278,6 @@ def test_math_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> Non
 
 
 def test_ss_build_text_user_prompt_no_scopes_is_byte_identical(tmp_path) -> None:
-    from src.common.batch_dedup import PriorScope
     from src.social_studies.context_builder import build_text_user_prompt
     from src.social_studies.sampler import sample_params
 
@@ -378,7 +376,6 @@ def test_ss_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
 
 
 def test_ns_build_text_user_prompt_no_scopes_is_byte_identical(tmp_path) -> None:
-    from src.common.batch_dedup import PriorScope
     from src.natural_sciences.context_builder import build_text_user_prompt
     from src.natural_sciences.sampler import sample_params
 
