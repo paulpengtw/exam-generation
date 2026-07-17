@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.social_studies.schemas import ExamQuestion, QuestionMetadata
 from src.social_studies.verifier import VERIFICATION_SYSTEM_PROMPT, verify_question
 
@@ -79,3 +80,11 @@ def test_verify_question_preserves_clear_failure() -> None:
     assert result.passed is False
     assert result.answer_match is False
     assert "明顯矛盾" in result.details
+
+
+def test_social_studies_verifier_prompt_contains_illustrative_figure_leniency_line() -> None:
+    assert "示意圖" in VERIFICATION_SYSTEM_PROMPT
+    assert IMAGE_DISCLAIMER in VERIFICATION_SYSTEM_PROMPT
+    assert "不得僅因" in VERIFICATION_SYSTEM_PROMPT
+    assert "數值" in VERIFICATION_SYSTEM_PROMPT
+    assert "標籤" in VERIFICATION_SYSTEM_PROMPT
