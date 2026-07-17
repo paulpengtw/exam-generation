@@ -33,6 +33,7 @@ class ServerConfig(Config):
         Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"
     )
     email_whitelist: tuple[str, ...] = ()
+    llm_exchange_retention_days: int = 30
     creative_planning: bool = True
 
     @classmethod
@@ -95,6 +96,9 @@ class ServerConfig(Config):
                     "MATH_CURRICULUM_DIR",
                     str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
+            ),
+            llm_exchange_retention_days=int(
+                os.environ.get("LLM_EXCHANGE_RETENTION_DAYS", "30")
             ),
             web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "none"),
             web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
