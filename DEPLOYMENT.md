@@ -267,6 +267,33 @@ Render's free tier puts services to sleep after 15 minutes of inactivity. The fi
 
 ---
 
+## Error reporting (Sentry, optional)
+
+The web app has a bottom-right "?" button that lets users report problems.
+It is powered by [Sentry](https://sentry.io) User Feedback and is **entirely
+optional** — when `VITE_SENTRY_DSN` is not set, the button is hidden and the
+app never contacts Sentry.
+
+One-time setup:
+
+1. Create a free account at sentry.io and create a project (platform:
+   **React**). Copy the project's **DSN** (a public client key, not a
+   secret).
+2. Set `VITE_SENTRY_DSN` to that DSN when building the frontend
+   (docker-compose reads it from the environment / `.env` file). Staging
+   builds are tagged with environment `staging` (via `VITE_IS_STAGING`),
+   production builds with `production`.
+3. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
+   integration and connect the `paulpengtw/exam-generation` repository.
+
+Triage flow: user feedback and captured errors appear in the Sentry project
+(User Feedback / Issues views). Open an item and use **Create GitHub Issue**
+to file a pre-filled, linked issue in the repository — issue creation is a
+deliberate one-click action, not automatic, to keep the tracker free of
+duplicates.
+
+---
+
 ## 13. Step 9 — Switch email delivery to AWS SES
 
 By default the backend only prints sign-in links to its logs (`EMAIL_BACKEND=console`). Teachers who were not given that link cannot sign in. This step wires up **AWS Simple Email Service (SES)** so the backend emails every teacher a real magic-link.

@@ -20,6 +20,7 @@ from src.common.curriculum_loader import (
     load_performance_intro,
     performance_instructions,
 )
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.data_loader import load_few_shot_examples
 from src.schema_loader import build_instructions, load_grades, load_learning_stage, load_schemas
 from src.schemas import SampledParams
@@ -60,10 +61,16 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     "含圖片": (
         "本題目必須包含圖片或視覺示意素材（幾何圖形、示意圖、版面等）。"
         "請輸出 `chart_spec`，優先使用 `render_mode: \"html\"`，並在 `description` 與 `data` 中完整描述版面與內容。"
+        f"（示意圖聲明）本題所有圖片皆為示意用途，非完全等比例繪製；"
+        f"請在 `chart_spec.description` 中明確要求下游 HTML 產生器"
+        f"將「{IMAGE_DISCLAIMER}」以 caption 形式呈現在圖片下緣或版面空白處。"
     ),
     "graphs/charts/tables": (
         "本題目必須包含圖表或表格素材。統計圖（直方圖、折線圖、圓餅圖等）請使用 `render_mode: \"chart\"`；"
         "表格或複合資料表請使用 `render_mode: \"html\"`，並在 `data` 中提供完整欄列資料。"
+        f"（示意圖聲明）圖表軸線、格線與座標比例僅為示意，非完全等比例繪製；"
+        f"請在 `chart_spec.description` 或圖表 caption 中加註「{IMAGE_DISCLAIMER}」，"
+        "但圖表中的數值、標籤與分類仍必須完全對應 `data` 內容。"
     ),
     "customized": (
         "本題目內容類型由使用者自訂，請依照使用者提供的素材與指示生成題目。"
@@ -130,13 +137,15 @@ SYSTEM_PROMPT_TEMPLATE = """\
 ```json
 {{
   "render_mode": "html",
-  "description": "詳細描述圖片內容，包含形狀、尺寸、標籤、顏色、文字等，讓 AI 能正確生成圖片",
+  "description": "詳細描述圖片內容，包含形狀、尺寸、標籤、顏色、文字等，讓 AI 能正確生成圖片。請在 description 結尾指示下游 HTML 產生器在圖片下緣加註 caption：「{image_disclaimer}」。",
   "title": "圖片標題（選填）",
   "data": {{ "key": "value" }}
 }}
 ```
 
-`render_mode: "html"` 的 `description` 請盡量詳細。如果題目不需要圖表，則不要包含 `chart_spec` 欄位。
+`render_mode: "html"` 的 `description` 請盡量詳細。
+所有 `render_mode: "html"` 或 `render_mode: "chart"` 的圖片皆為示意用途、非完全等比例繪製，
+因此 `description` 中務必加入 caption 指示「{image_disclaimer}」；文字題不需要 `chart_spec` 欄位。
 
 請只輸出 JSON，不要輸出其他文字。
 """
@@ -227,6 +236,7 @@ def build_system_prompt(
         grade_names=grade_names,
         curriculum_section=curriculum_section,
         stage_code=sc,
+        image_disclaimer=IMAGE_DISCLAIMER,
     )
 
 

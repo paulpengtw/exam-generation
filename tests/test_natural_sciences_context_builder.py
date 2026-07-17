@@ -3,6 +3,10 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.natural_sciences.context_builder import (
+    CONTENT_TYPE_INSTRUCTIONS as NS_CONTENT_TYPE_INSTRUCTIONS,
+)
 from src.natural_sciences.context_builder import build_user_prompt
 from src.natural_sciences.sampler import sample_params
 from src.natural_sciences.schema_loader import load_schemas
@@ -53,3 +57,30 @@ def test_natural_sciences_prompt_includes_pisa_and_curriculum(tmp_path: Path) ->
     assert "- **指定學習內容**：" in prompt
     assert "- **指定學習表現**：" in prompt
     assert "不得輸出 `chart_spec`" in prompt
+
+
+def test_ns_content_type_instructions_include_disclaimer_for_image_types() -> None:
+    assert IMAGE_DISCLAIMER in NS_CONTENT_TYPE_INSTRUCTIONS["含圖片"]
+    assert IMAGE_DISCLAIMER in NS_CONTENT_TYPE_INSTRUCTIONS["graphs/charts/tables"]
+
+
+def test_ns_content_type_instructions_omit_disclaimer_for_text_only() -> None:
+    assert IMAGE_DISCLAIMER not in NS_CONTENT_TYPE_INSTRUCTIONS["純文字"]
+
+
+def test_ns_user_prompt_carries_disclaimer_for_image_content_type(tmp_path) -> None:
+    params = sample_params(seed=1, content_type="含圖片")
+    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    assert IMAGE_DISCLAIMER in prompt
+
+
+def test_ns_user_prompt_carries_disclaimer_for_graphs_charts_tables(tmp_path) -> None:
+    params = sample_params(seed=1, content_type="graphs/charts/tables")
+    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    assert IMAGE_DISCLAIMER in prompt
+
+
+def test_ns_user_prompt_omits_disclaimer_for_text_only(tmp_path) -> None:
+    params = sample_params(seed=1, content_type="純文字")
+    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    assert IMAGE_DISCLAIMER not in prompt
