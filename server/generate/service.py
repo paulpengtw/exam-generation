@@ -8,16 +8,22 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import itertools
 import json
 import logging
 import random
+import threading
 import traceback
+import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Any
 
 from server.config import ServerConfig
+from server.db import AsyncSessionLocal
+from server.generate.exchange_recorder import ExchangeRecorder
 from server.generate.models import GenerateParams
+from server.models import LLMExchange
 from src.batch_sampler import BatchSampler
 from src.cli import generate_with_corrections as math_generate_with_corrections
 from src.llm_client import LLMClient, LLMObserver
@@ -57,8 +63,12 @@ from src.schemas import (
 from src.schemas import (
     QuestionType as MathQuestionType,
 )
+from src.social_studies.cli import _plan_batch_briefs as ss_plan_batch_briefs
 from src.social_studies.cli import generate_with_corrections as ss_generate_with_corrections
 from src.social_studies.sampler import sample_params as ss_sample_params
+from src.social_studies.schemas import (
+    CreativeBrief as SSCreativeBrief,
+)
 from src.social_studies.schemas import (
     ExamQuestion as SSExamQuestion,
 )
@@ -130,6 +140,7 @@ async def generate_question_stream(
     params: GenerateParams,
     config: ServerConfig,
     app_state: Any,
+    generation_log_id: uuid.UUID | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Async generator yielding SSE event dicts for one or more questions.
 
@@ -274,6 +285,47 @@ async def generate_question_stream(
                 )
         return observer
 
+    order_counter = itertools.count(1)
+    order_lock = threading.Lock()
+
+    def _next_order() -> int:
+        with order_lock:
+            return next(order_counter)
+
+    def _make_recorder() -> ExchangeRecorder | None:
+        if generation_log_id is None or config.llm_exchange_retention_days <= 0:
+            return None
+
+        async def _insert(row: dict[str, Any]) -> None:
+            async with AsyncSessionLocal() as sess:
+                sess.add(LLMExchange(**row))
+                await sess.commit()
+
+        def _write_row(row: dict[str, Any]) -> None:
+            future = asyncio.run_coroutine_threadsafe(_insert(row), loop)
+            try:
+                future.result(timeout=10)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("llm_exchanges insert failed: %s", exc)
+
+        return ExchangeRecorder(generation_log_id, _write_row, next_order=_next_order)
+
+    def _make_observer(
+        queue_obs: LLMObserver,
+        recorder: ExchangeRecorder | None,
+    ) -> LLMObserver:
+        def observer(event: dict) -> None:
+            try:
+                queue_obs(event)
+            except Exception:
+                pass
+            if recorder is not None:
+                try:
+                    recorder(event)
+                except Exception:
+                    pass
+        return observer
+
     def _emit_pipeline(event_name: str, **data: object) -> None:
         import time as _time
 
@@ -301,7 +353,10 @@ async def generate_question_stream(
 
     def worker_one(i: int, question_client: LLMClient) -> None:
         seed = (base_seed + i) if base_seed is not None else None
-        question_client.set_observer(_make_queue_observer(loop, queue))
+        worker_recorder = _make_recorder()
+        question_client.set_observer(
+            _make_observer(_make_queue_observer(loop, queue), worker_recorder)
+        )
         emit_question_update = _make_question_update_emitter(i)
         _emit_pipeline("question_start", index=i, total=count)
         try:
@@ -334,6 +389,10 @@ async def generate_question_stream(
                     assigned_q_type=assigned_qt,
                     assigned_learning_content=assigned_lc,
                 )
+                if i < len(ss_batch_briefs) and ss_batch_briefs[i] is not None:
+                    rng_params = rng_params.model_copy(
+                        update={"creative_brief": ss_batch_briefs[i]},
+                    )
                 question_id = f"ss_{timestamp}_{i+1:03d}"
                 question = ss_generate_with_corrections(
                     config=config,
@@ -459,6 +518,39 @@ async def generate_question_stream(
                 {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
             )
             logger.exception("worker_one error (index=%d)", i)
+
+    # #114: for SS batches, plan creative briefs once before spawning workers.
+    ss_batch_briefs: list[SSCreativeBrief | None] = []
+    if is_social_studies and count >= 1 and config.creative_planning:
+        # Sample all SS params up front so plan_context_angles sees the actual
+        # 情境 and 學習內容 pool that the workers will use. Workers re-sample
+        # with the same seed and receive the corresponding brief.
+        pre_params_list = []
+        for i in range(count):
+            seed = (base_seed + i) if base_seed is not None else None
+            pre_params_list.append(
+                ss_sample_params(
+                    grade=params.grade,
+                    context=context_override,
+                    set_type=set_type_override,
+                    q_type=q_type_override,
+                    subject=subject_override,
+                    content_type=params.content_type,
+                    learning_performance=params.learning_performance,
+                    seed=seed,
+                    sub_question_count=params.sub_question_count,
+                    question_word_limit=params.question_word_limit,
+                    option_word_limit=params.option_word_limit,
+                    subquestion_configs=_decode_subquestion_configs(
+                        params.subquestion_configs,
+                    ),
+                ),
+            )
+        # Use a dedicated planning client so worker observers stay clean.
+        planning_client = LLMClient(config)
+        ss_batch_briefs = ss_plan_batch_briefs(planning_client, config, pre_params_list)
+    elif is_social_studies:
+        ss_batch_briefs = [None] * count
 
     _emit_pipeline("pipeline_start", total=count)
     question_clients = [LLMClient(config) for _ in range(count)]

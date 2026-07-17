@@ -28,6 +28,16 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
 
     "staging.banner": "⚠ Staging environment — data may be reset at any time.",
 
+    "feedback.button_aria": "Report a problem",
+    "feedback.form_title": "Report a problem",
+    "feedback.name_label": "Name",
+    "feedback.email_label": "Email",
+    "feedback.message_label": "Description",
+    "feedback.message_placeholder": "What went wrong? What did you expect to happen?",
+    "feedback.submit_label": "Send report",
+    "feedback.cancel_label": "Cancel",
+    "feedback.success_message": "Thank you for your report!",
+
     "generate.title": "Math Exam Generator",
     "generate.title_ss": "Social Studies Generator",
     "generate.title_ns": "Natural Sciences Generator",
@@ -194,6 +204,16 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.ns_desc": "融合 PISA Science 與7-9年級自然科學課綱。",
 
     "staging.banner": "⚠ 此為測試環境，運作可能不穩定。",
+
+    "feedback.button_aria": "回報問題",
+    "feedback.form_title": "回報問題",
+    "feedback.name_label": "姓名",
+    "feedback.email_label": "電子郵件",
+    "feedback.message_label": "問題描述",
+    "feedback.message_placeholder": "發生了什麼問題？您預期的結果是什麼？",
+    "feedback.submit_label": "送出回報",
+    "feedback.cancel_label": "取消",
+    "feedback.success_message": "感謝您的回報！",
 
     "generate.title": "數學題目產生器",
     "generate.title_ss": "社會領域題目產生器",
