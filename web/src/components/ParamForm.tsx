@@ -39,6 +39,7 @@ export interface GenerateParams {
   learning_content?: string[];
   sub_question_count?: number;
   subquestion_configs?: string;
+  coverage_mode?: "balanced" | "random";
 }
 
 export interface ParamFormProps {
@@ -206,6 +207,7 @@ export default function ParamForm({
   const [setType, setSetType] = useState<string>(fromInit<string>("set_type", ""));
   const [qType, setQType] = useState<string[]>(fromInit<string[]>("q_type", []));
   const [count, setCount] = useState<number>(fromInit<number>("count", 1));
+  const [coverageMode, setCoverageMode] = useState<"balanced" | "random">("balanced");
   const [skipVerify, setSkipVerify] = useState<boolean>(
     fromInit<boolean>("skip_verify", false),
   );
@@ -531,6 +533,7 @@ export default function ParamForm({
       set_type: setType,
       q_type: subject === "social_studies" ? [] : qType,
       count,
+      coverage_mode: subject === "social_studies" ? coverageMode : undefined,
       skip_verify: skipVerify,
       disable_reference_fewshot: disableReferenceFewshot,
       image_generation_mode: imageGenerationMode,
@@ -594,6 +597,10 @@ export default function ParamForm({
         value: subject !== "social_studies" && p.q_type.length ? p.q_type.join(", ") : undefined,
       },
       { label: t("form.confirm_count"), value: String(p.count) },
+      {
+        label: t("form.confirm_coverage_mode"),
+        value: subject === "social_studies" ? p.coverage_mode : undefined,
+      },
       { label: t("form.confirm_passage"), value: p.passage },
       { label: t("form.confirm_options"), value: p.options?.join(", ") },
       {
@@ -1089,6 +1096,24 @@ export default function ParamForm({
           className="mt-1 block w-24 border rounded px-2 py-1"
         />
       </div>
+
+      {subject === "social_studies" && (
+        <div>
+          <label htmlFor="coverage-mode-select" className="block text-sm font-medium">
+            {t("form.coverage_mode")}
+          </label>
+          <select
+            id="coverage-mode-select"
+            aria-label="form.coverage_mode"
+            value={coverageMode}
+            onChange={(e) => setCoverageMode(e.target.value as "balanced" | "random")}
+            className="mt-1 block w-64 border rounded px-2 py-1"
+          >
+            <option value="balanced">{t("form.coverage_mode.balanced")}</option>
+            <option value="random">{t("form.coverage_mode.random")}</option>
+          </select>
+        </div>
+      )}
 
       {(subject === "social_studies" || subject === "natural_sciences") && (
         <div className="space-y-4 rounded-lg border border-gray-200 p-4">

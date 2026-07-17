@@ -24,7 +24,7 @@ from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.routes import router as generate_router
 from server.history.routes import router as history_router
-from server.models import GenerationRecord
+from server.models import GenerationRecord, LLMExchange
 from server.rate_limit import limiter
 from server.utility.routes import router as utility_router
 from src.data_loader import (
@@ -50,6 +50,31 @@ async def _prune_generation_records(session: AsyncSession, retention_days: int) 
         delete(GenerationRecord).where(GenerationRecord.created_at < cutoff)
     )
     await session.commit()
+
+
+async def prune_expired_llm_exchanges(
+    config: ServerConfig,
+    *,
+    session_maker=None,
+) -> int:
+    """Delete llm_exchanges rows older than `LLM_EXCHANGE_RETENTION_DAYS`.
+
+    Returns the number of rows deleted. When retention == 0, persistence is
+    disabled entirely — do not delete existing rows either (they remain
+    inspectable via the read endpoint until the operator raises retention
+    back above zero and old rows exit the window).
+    """
+    retention = config.llm_exchange_retention_days
+    if retention <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention)
+    sm = session_maker or AsyncSessionLocal
+    async with sm() as sess:
+        result = await sess.execute(
+            delete(LLMExchange).where(LLMExchange.created_at < cutoff)
+        )
+        await sess.commit()
+        return result.rowcount or 0
 
 
 @asynccontextmanager
@@ -81,6 +106,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
     except Exception as exc:  # pragma: no cover - best effort on startup
         print(f"Warning: alembic upgrade failed: {exc}", file=sys.stderr)
+
+    try:
+        deleted = await prune_expired_llm_exchanges(config)
+        if deleted:
+            print(f"Pruned {deleted} expired llm_exchanges rows")
+    except Exception as exc:  # pragma: no cover - best effort
+        print(f"Warning: llm_exchanges pruning failed: {exc}", file=sys.stderr)
 
     curriculum = load_curriculum(config.data_dir / "curriculum" / "學習內容.json")
     performance = load_performance_standards(config.data_dir / "curriculum" / "學習表現.json")

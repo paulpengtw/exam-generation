@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import traceback
+import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -18,13 +19,14 @@ from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
 from server.generate.models import (
+    CoverageMode,
     GenerateParams,
     ImageGenerationMode,
     PlanCoreQuestionsRequest,
     PlanCoreQuestionsResponse,
 )
 from server.generate.service import generate_question_stream
-from server.models import GenerationLog, User
+from server.models import GenerationLog, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
 
 logger = logging.getLogger(__name__)
@@ -54,6 +56,7 @@ async def generate_endpoint(
     disable_reference_fewshot: bool = Query(default=False),
     seed: int | None = Query(default=None),
     image_generation_mode: ImageGenerationMode = Query(default="html"),
+    coverage_mode: CoverageMode = Query(default="balanced"),
     subject_filter: list[str] | None = Query(default=None),
     content_type: str | None = Query(default=None),
     passage: str | None = Query(default=None),
@@ -91,6 +94,7 @@ async def generate_endpoint(
         disable_reference_fewshot=disable_reference_fewshot,
         seed=seed,
         image_generation_mode=image_generation_mode,
+        coverage_mode=coverage_mode,
         subject_filter=subject_filter,
         content_type=content_type,
         passage=passage,
@@ -256,3 +260,52 @@ async def plan_core_questions_endpoint(
                 detail="Planner upstream returned malformed candidates",
             ) from exc
     return PlanCoreQuestionsResponse(candidates=candidates)
+
+
+@router.get("/generation-logs/{log_id}/exchanges")
+async def list_generation_log_exchanges(
+    log_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> list[dict[str, Any]]:
+    """Return LLM exchanges for a generation the caller owns, ordered by exchange_order.
+
+    404 on missing/other-user logs (existence-hiding — never 403).
+    """
+    log_row = (
+        await session.execute(
+            select(GenerationLog).where(
+                GenerationLog.id == log_id, GenerationLog.user_id == user.id
+            )
+        )
+    ).scalar_one_or_none()
+    if log_row is None:
+        raise HTTPException(status_code=404, detail="generation log not found")
+
+    rows = (
+        (
+            await session.execute(
+                select(LLMExchange)
+                .where(LLMExchange.generation_log_id == log_id)
+                .order_by(LLMExchange.exchange_order.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return [
+        {
+            "id": str(row.id),
+            "exchange_order": row.exchange_order,
+            "agent": row.agent,
+            "purpose": row.purpose,
+            "request_body": row.request_body,
+            "response_body": row.response_body,
+            "model_used": row.model_used,
+            "prompt_tokens": row.prompt_tokens,
+            "completion_tokens": row.completion_tokens,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
