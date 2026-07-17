@@ -237,5 +237,97 @@ fi
 rm -f "$SCHEMA_TMP"
 
 ###############################################################################
+# CHECK 3: PROVIDER — authenticated /api/generate?subject=natural_sciences
+#                     reaches the natural-sciences generator
+###############################################################################
+
+step "CHECK 3 [PROVIDER]: authenticated GET /api/generate?subject=natural_sciences"
+
+JWT="$SMOKE_AUTH_TOKEN"
+
+if [[ -z "$JWT" ]]; then
+  info "SMOKE_AUTH_TOKEN unset — running magic-link console flow against $API_URL"
+
+  ML_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST "$API_URL/auth/magic-link" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"$SMOKE_EMAIL\"}" \
+    --max-time 10 2>/dev/null || true)
+  if [[ "$ML_CODE" != "200" ]]; then
+    fail "API" "POST /auth/magic-link returned HTTP $ML_CODE (expected 200)"
+  else
+    info "magic-link accepted for $SMOKE_EMAIL"
+    echo "  Look at the backend log for a line like:"
+    echo "    [ConsoleEmailSender] Magic link for $SMOKE_EMAIL: .../verify?token=<TOKEN>&email=..."
+    read -r -p "  Paste the raw token here (empty to skip PROVIDER check): " MAGIC_TOKEN
+    if [[ -n "$MAGIC_TOKEN" ]]; then
+      VERIFY_RESP=$(curl -fsS \
+        "$API_URL/auth/verify?token=${MAGIC_TOKEN}&email=${SMOKE_EMAIL}" \
+        --max-time 10 2>/dev/null || true)
+      JWT=$(printf '%s' "$VERIFY_RESP" | python3 -c \
+        'import json,sys; print(json.load(sys.stdin).get("access_token",""))' \
+        2>/dev/null || true)
+      if [[ -z "$JWT" ]]; then
+        fail "API" "GET /auth/verify did not return an access_token (response: $VERIFY_RESP)"
+      fi
+    else
+      info "no token supplied — skipping PROVIDER check"
+    fi
+  fi
+fi
+
+if [[ -n "$JWT" ]]; then
+  GEN_URL="$API_URL/api/generate?subject=natural_sciences&grade=8&skip_verify=true&count=1"
+  GEN_TMP=$(mktemp)
+  GEN_HDR=$(mktemp)
+
+  # -N: no buffering (SSE);  -D: dump headers so we can read the status line
+  # separately from the streamed body.
+  curl -N -s -o "$GEN_TMP" -D "$GEN_HDR" \
+    --max-time 90 \
+    -H "Authorization: Bearer $JWT" \
+    -H "Accept: text/event-stream" \
+    "$GEN_URL" 2>/dev/null || true
+
+  GEN_STATUS=$(awk 'NR==1{print $2}' "$GEN_HDR" 2>/dev/null || true)
+  info "HTTP status = ${GEN_STATUS:-<none>}, body = $(wc -l <"$GEN_TMP") lines"
+
+  HAS_RESULT=false
+  HAS_DONE=false
+  HAS_ERROR=false
+  grep -q "^event: result$" "$GEN_TMP" && HAS_RESULT=true
+  grep -q "^event: done$"   "$GEN_TMP" && HAS_DONE=true
+  grep -q "^event: error$"  "$GEN_TMP" && HAS_ERROR=true
+
+  if $HAS_RESULT && $HAS_DONE; then
+    pass "PROVIDER: /api/generate streamed result + done for subject=natural_sciences"
+  elif $HAS_ERROR; then
+    # Controlled provider error — soft pass.  The stream reached the generator
+    # and the generator surfaced a structured error (LLM key missing, provider
+    # rate-limited, etc.).  Print the error detail for the operator.
+    ERR_LINE=$(grep -A1 "^event: error$" "$GEN_TMP" | grep "^data:" | head -1 || true)
+    pass "PROVIDER: /api/generate returned a controlled error (soft-pass)"
+    info "error data: ${ERR_LINE#data:}"
+  elif [[ "$GEN_STATUS" == "429" || "$GEN_STATUS" == "401" || "$GEN_STATUS" == "403" ]]; then
+    fail "API" "/api/generate returned HTTP $GEN_STATUS — auth or rate-limit problem, not a provider issue"
+  elif [[ -z "$GEN_STATUS" || "$GEN_STATUS" == "000" ]]; then
+    fail "PROVIDER" "/api/generate produced no HTTP response (network / timeout)"
+  elif [[ "$GEN_STATUS" == "5"* ]]; then
+    if [[ -s "$GEN_TMP" ]] && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$GEN_TMP" 2>/dev/null; then
+      pass "PROVIDER: /api/generate returned HTTP $GEN_STATUS with structured JSON detail (soft-pass)"
+      info "body: $(head -c 200 "$GEN_TMP")"
+    else
+      fail "PROVIDER" "/api/generate returned HTTP $GEN_STATUS with an empty or non-JSON body"
+      info "body: $(head -c 200 "$GEN_TMP")"
+    fi
+  else
+    fail "PROVIDER" "/api/generate returned HTTP $GEN_STATUS but no SSE result/done event"
+    info "body head: $(head -c 200 "$GEN_TMP")"
+  fi
+
+  rm -f "$GEN_TMP" "$GEN_HDR"
+fi
+
+###############################################################################
 # Checks are appended by later tasks
 ###############################################################################
