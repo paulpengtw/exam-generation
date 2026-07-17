@@ -495,7 +495,10 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         value: subject !== "social_studies" && p.q_type.length ? p.q_type.join(", ") : undefined,
       },
       { label: t("form.confirm_count"), value: String(p.count) },
-      { label: t("form.confirm_coverage_mode"), value: p.coverage_mode },
+      {
+        label: t("form.confirm_coverage_mode"),
+        value: subject === "social_studies" ? p.coverage_mode : undefined,
+      },
       { label: t("form.confirm_passage"), value: p.passage },
       { label: t("form.confirm_options"), value: p.options?.join(", ") },
       {

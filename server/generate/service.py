@@ -216,9 +216,10 @@ async def generate_question_stream(
             if user_pinned_qtype and params.q_type
             else list(SSQuestionType)
         )
-        # 學習內容 pool: default is the whole stage pool for the (optional)
-        # subject filter; we let the sampler fill in a stage-appropriate pool
-        # if the user didn't pin subject_filter either.
+        # 學習內容 pool: keyed by 跨科 (the full cross-subject union) when the
+        # user didn't pin subject_filter. This is a pragmatic stand-in since
+        # the per-question 科目 isn't known at batch-planning time; per-question
+        # sampling may therefore draw an out-of-subject code — known v1 limitation.
         from src.social_studies.curriculum_loader import (
             allowed_learning_content,
             load_learning_content,
@@ -237,7 +238,11 @@ async def generate_question_stream(
 
         ss_batch_sampler = BatchSampler(
             count=params.count,
-            q_type_pool=q_pool if not user_pinned_qtype else [q_pool[0]],
+            # Always pass the full q_type pool: when user_pinned_qtype is True,
+            # sample_params() ignores these batch-planned q_type assignments and
+            # uses the user's pinned q_type/subquestion_configs instead, so the
+            # pool value here is a no-op in that case.
+            q_type_pool=q_pool,
             learning_content_pool=lc_pool,
             rng=batch_rng,
         )
