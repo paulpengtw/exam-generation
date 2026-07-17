@@ -28,6 +28,9 @@ def _fake_generate_with_corrections(**kwargs):
         閱讀歷程=params.閱讀歷程,
         文本形式=params.文本形式,
         題目內容類型=params.題目內容類型,
+        # Surface the sampler's resolved 學習內容_pool via 取材來源 (list[str])
+        # so tests can assert on it through the normal SSE result payload.
+        取材來源=list(params.學習內容_pool),
         metadata=QuestionMetadata(grade=params.grade, model="test-model"),
     )
 
@@ -111,3 +114,20 @@ def test_user_q_type_pool_wins_over_balanced_assignment(tmp_path) -> None:
     events = _run_stream(params, tmp_path)
     results = [e["data"] for e in events if e["event"] == "result"]
     assert {r["題型"] for r in results} == {"開放式建構反應題"}
+
+
+def test_user_learning_content_wins_over_balanced_assignment(tmp_path) -> None:
+    # User pinned 學習內容; balanced batch planning must never zero it out —
+    # every emitted question's sampled LC pool must equal the user's pin.
+    params = GenerateParams(
+        subject="social_studies",
+        count=2,
+        skip_verify=True,
+        coverage_mode="balanced",
+        learning_content=["公Aa-Ⅳ-1"],
+        seed=13,
+    )
+    events = _run_stream(params, tmp_path)
+    results = [e["data"] for e in events if e["event"] == "result"]
+    assert len(results) == 2
+    assert all(r["取材來源"] == ["公Aa-Ⅳ-1"] for r in results)

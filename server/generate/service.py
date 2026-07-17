@@ -200,6 +200,7 @@ async def generate_question_stream(
 
     # --- Balanced-coverage planning (SS only, count > 1, balanced mode) -----
     ss_batch_sampler: BatchSampler | None = None
+    ss_batch_user_pinned_lc = False
     if (
         is_social_studies
         and params.count > 1
@@ -209,6 +210,7 @@ async def generate_question_stream(
         # Interaction rule: only balance dimensions the user left random.
         user_pinned_qtype = bool(params.q_type) or bool(params.subquestion_configs)
         user_pinned_lc = bool(params.learning_content)
+        ss_batch_user_pinned_lc = user_pinned_lc
         q_pool = (
             [SSQuestionType(v) for v in params.q_type]
             if user_pinned_qtype and params.q_type
@@ -305,7 +307,8 @@ async def generate_question_stream(
                 )
                 assigned_lc = (
                     ss_batch_sampler.learning_content_assignments[i]
-                    if ss_batch_sampler is not None else None
+                    if ss_batch_sampler is not None and not ss_batch_user_pinned_lc
+                    else None
                 )
                 rng_params = ss_sample_params(
                     grade=params.grade,
@@ -314,6 +317,7 @@ async def generate_question_stream(
                     q_type=q_type_override,
                     subject=subject_override,
                     content_type=params.content_type,
+                    learning_content=params.learning_content,
                     learning_performance=params.learning_performance,
                     seed=seed,
                     sub_question_count=params.sub_question_count,
