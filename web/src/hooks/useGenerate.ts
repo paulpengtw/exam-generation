@@ -33,6 +33,7 @@ export interface GenerateParams {
   subquestion_configs?: string;
   model_plan?: string;
   model_execute?: string;
+  coverage_mode?: "balanced" | "random";
 }
 
 export interface LearningContentItem {
@@ -203,6 +204,7 @@ export function buildQueryString(params: GenerateParams): string {
   if (params.model_execute && params.model_execute.length > 0) {
     qs.append("model_execute", params.model_execute);
   }
+  if (params.coverage_mode !== undefined) qs.append("coverage_mode", params.coverage_mode);
   return qs.toString();
 }
 

@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ImageGenerationMode = Literal["html", "gpt_image"]
+CoverageMode = Literal["balanced", "random"]
 
 
 class GenerateParams(BaseModel):
@@ -28,6 +29,7 @@ class GenerateParams(BaseModel):
     seed: int | None = None
     max_retries: int = 3
     image_generation_mode: ImageGenerationMode = "html"
+    coverage_mode: CoverageMode = "balanced"
     subject_filter: list[str] | None = None
     content_type: str | None = None
     passage: str | None = None

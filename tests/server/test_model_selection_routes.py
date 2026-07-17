@@ -65,7 +65,7 @@ def test_generate_route_accepts_allowlisted_models_and_forwards_to_params() -> N
 
     captured: dict = {}
 
-    async def fake_stream(params, *_args):
+    async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
         yield {"event": "done", "data": ""}
 
@@ -98,7 +98,7 @@ def test_generate_route_rejects_unlisted_model_execute_with_422() -> None:
 
     called = {"count": 0}
 
-    async def fake_stream(params, *_args):
+    async def fake_stream(params, *_args, **_kwargs):
         called["count"] += 1
         yield {"event": "done", "data": ""}
 
@@ -129,7 +129,7 @@ def test_generate_route_absent_overrides_defaults_to_none() -> None:
 
     captured: dict = {}
 
-    async def fake_stream(params, *_args):
+    async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
         yield {"event": "done", "data": ""}
 
@@ -198,7 +198,7 @@ def test_generate_route_empty_string_model_execute_treated_as_absent() -> None:
 
     captured: dict = {}
 
-    async def fake_stream(params, *_args):
+    async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
         yield {"event": "done", "data": ""}
 

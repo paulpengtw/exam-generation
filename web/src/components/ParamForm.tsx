@@ -41,12 +41,14 @@ export interface GenerateParams {
   subquestion_configs?: string;
   model_plan?: string;
   model_execute?: string;
+  coverage_mode?: "balanced" | "random";
 }
 
 export interface ParamFormProps {
   subject?: string;
   onSubmit: (params: GenerateParams) => void;
   disabled: boolean;
+  initialParams?: Partial<GenerateParams> & { [key: string]: unknown };
 }
 
 const TEXT_HINT = "500 字";
@@ -179,7 +181,12 @@ function SearchPicker({
   );
 }
 
-export default function ParamForm({ subject = "math", onSubmit, disabled }: ParamFormProps) {
+export default function ParamForm({
+  subject = "math",
+  onSubmit,
+  disabled,
+  initialParams,
+}: ParamFormProps) {
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -187,32 +194,65 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
 
-  const [grade, setGrade] = useState<number | "">("");
-  const [style, setStyle] = useState<string>("");
-  const [contentType, setContentType] = useState<string>("純文字");
+  const ip = initialParams ?? {};
+  function fromInit<T>(key: string, fallback: T): T {
+    return (ip[key] as T | undefined) ?? fallback;
+  }
+
+  const [grade, setGrade] = useState<number | "">(fromInit<number | "">("grade", ""));
+  const [style, setStyle] = useState<string>(fromInit<string>("style", ""));
+  const [contentType, setContentType] = useState<string>(
+    fromInit<string>("content_type", "純文字"),
+  );
   const [customContentType, setCustomContentType] = useState<string>("");
-  const [context, setContext] = useState<string[]>([]);
-  const [setType, setSetType] = useState<string>("");
-  const [qType, setQType] = useState<string[]>([]);
-  const [count, setCount] = useState<number>(1);
-  const [skipVerify, setSkipVerify] = useState<boolean>(false);
+  const [context, setContext] = useState<string[]>(fromInit<string[]>("context", []));
+  const [setType, setSetType] = useState<string>(fromInit<string>("set_type", ""));
+  const [qType, setQType] = useState<string[]>(fromInit<string[]>("q_type", []));
+  const [count, setCount] = useState<number>(fromInit<number>("count", 1));
+  const [coverageMode, setCoverageMode] = useState<"balanced" | "random">("balanced");
+  const [skipVerify, setSkipVerify] = useState<boolean>(
+    fromInit<boolean>("skip_verify", false),
+  );
   const [disableReferenceFewshot, setDisableReferenceFewshot] =
-    useState<boolean>(false);
+    useState<boolean>(fromInit<boolean>("disable_reference_fewshot", false));
   const [imageGenerationMode, setImageGenerationMode] =
-    useState<"html" | "gpt_image">("html");
-  const [subjectFilter, setSubjectFilter] = useState<string>("");
-  const [passage, setPassage] = useState<string>(TEXT_HINT);
-  const [textWordLimit, setTextWordLimit] = useState<number | undefined>(undefined);
-  const [options, setOptions] = useState<string[]>([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
-  const [topic, setTopic] = useState<string>("");
-  const [coreQuestion, setCoreQuestion] = useState<string | null>(null);
-  const [subContext, setSubContext] = useState<string>("");
-  const [scienceCompetency, setScienceCompetency] = useState<string[]>([]);
-  const [learningPerformance, setLearningPerformance] = useState<string[]>([]);
-  const [learningContent, setLearningContent] = useState<string[]>([]);
+    useState<"html" | "gpt_image">(
+      fromInit<"html" | "gpt_image">("image_generation_mode", "html"),
+    );
+  const [subjectFilter, setSubjectFilter] = useState<string>(
+    (() => {
+      const v = fromInit<string | string[]>("subject_filter", "");
+      return Array.isArray(v) ? (v[0] ?? "") : v;
+    })(),
+  );
+  const [passage, setPassage] = useState<string>(fromInit<string>("passage", TEXT_HINT));
+  const [textWordLimit, setTextWordLimit] = useState<number | undefined>(
+    fromInit<number | undefined>("text_word_limit", undefined),
+  );
+  const [options, setOptions] = useState<string[]>(
+    fromInit<string[]>("options", [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]),
+  );
+  const [topic, setTopic] = useState<string>(fromInit<string>("topic", ""));
+  const [coreQuestion, setCoreQuestion] = useState<string | null>(
+    fromInit<string | null>("core_question", null),
+  );
+  const [subContext, setSubContext] = useState<string>(fromInit<string>("sub_context", ""));
+  const [scienceCompetency, setScienceCompetency] = useState<string[]>(
+    fromInit<string[]>("science_competency", []),
+  );
+  const [learningPerformance, setLearningPerformance] = useState<string[]>(
+    fromInit<string[]>("learning_performance", []),
+  );
+  const [learningContent, setLearningContent] = useState<string[]>(
+    fromInit<string[]>("learning_content", []),
+  );
   const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(false);
-  const [subQuestionCount, setSubQuestionCount] = useState<number | "">("");
-  const [subquestionConfigs, setSubquestionConfigs] = useState<SubQuestionConfig[]>([]);
+  const [subQuestionCount, setSubQuestionCount] = useState<number | "">(
+    fromInit<number | "">("sub_question_count", ""),
+  );
+  const [subquestionConfigs, setSubquestionConfigs] = useState<SubQuestionConfig[]>(
+    fromInit<SubQuestionConfig[]>("subquestion_configs", []),
+  );
   const [models, setModels] = useState<AvailableModels | null>(null);
   const [modelPlan, setModelPlan] = useState<string>(
     () => window.localStorage.getItem("model_plan") ?? "",
@@ -227,25 +267,38 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     let cancelled = false;
     setSchemas(null);
     setError(null);
-    setContext([]);
-    setQType([]);
-    setImageGenerationMode("html");
-    setPassage(TEXT_HINT);
-    setTextWordLimit(undefined);
-    setOptions([OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]);
-    setSubjectFilter("");
-    setSubContext("");
-    setScienceCompetency([]);
-    setLearningPerformance([]);
-    setLearningContent([]);
-    setSubQuestionCount("");
-    setSubquestionConfigs([]);
+    setContext(fromInit<string[]>("context", []));
+    setQType(fromInit<string[]>("q_type", []));
+    setImageGenerationMode(
+      fromInit<"html" | "gpt_image">("image_generation_mode", "html"),
+    );
+    setPassage(fromInit<string>("passage", TEXT_HINT));
+    setTextWordLimit(fromInit<number | undefined>("text_word_limit", undefined));
+    setOptions(
+      fromInit<string[]>("options", [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]),
+    );
+    setSubjectFilter(
+      (() => {
+        const v = fromInit<string | string[]>("subject_filter", "");
+        return Array.isArray(v) ? (v[0] ?? "") : v;
+      })(),
+    );
+    setSubContext(fromInit<string>("sub_context", ""));
+    setScienceCompetency(fromInit<string[]>("science_competency", []));
+    setLearningPerformance(fromInit<string[]>("learning_performance", []));
+    setLearningContent(fromInit<string[]>("learning_content", []));
+    setSubQuestionCount(fromInit<number | "">("sub_question_count", ""));
+    setSubquestionConfigs(fromInit<SubQuestionConfig[]>("subquestion_configs", []));
     getSchemas(subject)
       .then((s) => {
         if (cancelled) return;
         setSchemas(s);
-        if (s.grades.length > 0) setGrade(s.grades[0]);
-        if (subject === "natural_sciences" && s.情境.length > 0) {
+        if (s.grades.length > 0 && ip.grade === undefined) setGrade(s.grades[0]);
+        if (
+          subject === "natural_sciences" &&
+          s.情境.length > 0 &&
+          ip.sub_context === undefined
+        ) {
           setContext([s.情境[0].value]);
           const firstSub = (s.情境子類別 ?? []).find(
             (entry) => entry.parent === s.情境[0].value,
@@ -253,21 +306,25 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           setSubContext(firstSub?.value ?? "");
         }
         const questionStyles = s.question_style ?? [];
-        if (subject === "math" && questionStyles.length > 0) {
-          setStyle(questionStyles[0].value);
-        } else {
-          setStyle("");
+        if (ip.style === undefined) {
+          if (subject === "math" && questionStyles.length > 0) {
+            setStyle(questionStyles[0].value);
+          } else {
+            setStyle("");
+          }
         }
-        const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
-        setContentType(
-          isCurriculumSubject &&
-            Array.isArray(contentTypes) &&
-            contentTypes.length > 0
-            ? contentTypes[0].value
-            : "純文字",
-        );
+        if (ip.content_type === undefined) {
+          const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
+          setContentType(
+            isCurriculumSubject &&
+              Array.isArray(contentTypes) &&
+              contentTypes.length > 0
+              ? contentTypes[0].value
+              : "純文字",
+          );
+        }
         setCustomContentType("");
-        if (s.題型種類.length > 0) setSetType(s.題型種類[0].value);
+        if (s.題型種類.length > 0 && ip.set_type === undefined) setSetType(s.題型種類[0].value);
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message);
@@ -275,6 +332,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialParams intentionally only applied on mount/subject change, not re-run per keystroke
   }, [subject, isCurriculumSubject]);
 
   useEffect(() => {
@@ -311,6 +369,52 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
   useEffect(() => {
     window.localStorage.setItem("model_execute", modelExecute);
   }, [modelExecute]);
+
+  const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!schemas || !initialParams) return;
+    const missing: string[] = [];
+    const arr = (key: string): string[] => {
+      const raw = (initialParams as Record<string, unknown>)[key];
+      return Array.isArray(raw) ? (raw as string[]) : [];
+    };
+    const single = (key: string): string | undefined => {
+      const raw = (initialParams as Record<string, unknown>)[key];
+      return typeof raw === "string" ? raw : undefined;
+    };
+    const check = (
+      key: string,
+      values: string[],
+      allowed: string[] | undefined,
+    ): void => {
+      if (!allowed) return;
+      for (const v of values) if (!allowed.includes(v)) missing.push(`${key}: ${v}`);
+    };
+    check("情境", arr("context"), schemas.情境?.map((s) => s.value));
+    check("題型", arr("q_type"), schemas.題型?.map((s) => s.value));
+    const st = single("set_type");
+    if (st !== undefined) {
+      check("題型種類", [st], schemas.題型種類?.map((s) => s.value));
+    }
+    check(
+      "科目",
+      arr("subject_filter"),
+      schemas.科目?.map((s) => s.value),
+    );
+    if (missing.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciling initialParams against freshly-loaded schemas, matches existing HistoryPage/VerifyPage pattern
+      setPrefillNotice(t("history.prefill_notice"));
+      // Drop the missing entries so the form submits a clean payload.
+      const allowedCtx = new Set(schemas.情境?.map((s) => s.value));
+      setContext((prev) => prev.filter((v) => allowedCtx.has(v)));
+      const allowedQT = new Set(schemas.題型?.map((s) => s.value));
+      setQType((prev) => prev.filter((v) => allowedQT.has(v)));
+      const allowedST = new Set(schemas.題型種類?.map((s) => s.value));
+      setSetType((prev) => (allowedST.has(prev) ? prev : ""));
+    } else {
+      setPrefillNotice(null);
+    }
+  }, [schemas, initialParams, t]);
 
   // Re-fetch grade-dependent fields when grade changes so the correct learning stage is used.
   useEffect(() => {
@@ -473,6 +577,7 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       set_type: setType,
       q_type: subject === "social_studies" ? [] : qType,
       count,
+      coverage_mode: subject === "social_studies" ? coverageMode : undefined,
       skip_verify: skipVerify,
       disable_reference_fewshot: disableReferenceFewshot,
       image_generation_mode: imageGenerationMode,
@@ -538,6 +643,10 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
         value: subject !== "social_studies" && p.q_type.length ? p.q_type.join(", ") : undefined,
       },
       { label: t("form.confirm_count"), value: String(p.count) },
+      {
+        label: t("form.confirm_coverage_mode"),
+        value: subject === "social_studies" ? p.coverage_mode : undefined,
+      },
       { label: t("form.confirm_passage"), value: p.passage },
       { label: t("form.confirm_options"), value: p.options?.join(", ") },
       {
@@ -679,6 +788,11 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {prefillNotice && (
+        <div className="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">
+          {prefillNotice}
+        </div>
+      )}
       {isCurriculumSubject && (
         <div className="space-y-2">
           <label className="block text-sm font-medium">{t("form.topic_label")}</label>
@@ -708,8 +822,9 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
       )}
 
       <div>
-        <label className="block text-sm font-medium">{t("form.grade")}</label>
+        <label htmlFor="param-form-grade" className="block text-sm font-medium">{t("form.grade")}</label>
         <select
+          id="param-form-grade"
           value={grade}
           onChange={(e) => setGrade(Number(e.target.value))}
           className="mt-1 block w-full border rounded px-2 py-1"
@@ -1027,6 +1142,24 @@ export default function ParamForm({ subject = "math", onSubmit, disabled }: Para
           className="mt-1 block w-24 border rounded px-2 py-1"
         />
       </div>
+
+      {subject === "social_studies" && (
+        <div>
+          <label htmlFor="coverage-mode-select" className="block text-sm font-medium">
+            {t("form.coverage_mode")}
+          </label>
+          <select
+            id="coverage-mode-select"
+            aria-label="form.coverage_mode"
+            value={coverageMode}
+            onChange={(e) => setCoverageMode(e.target.value as "balanced" | "random")}
+            className="mt-1 block w-64 border rounded px-2 py-1"
+          >
+            <option value="balanced">{t("form.coverage_mode.balanced")}</option>
+            <option value="random">{t("form.coverage_mode.random")}</option>
+          </select>
+        </div>
+      )}
 
       {(subject === "social_studies" || subject === "natural_sciences") && (
         <div className="space-y-4 rounded-lg border border-gray-200 p-4">

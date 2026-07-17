@@ -32,8 +32,11 @@ class ServerConfig(Config):
     math_curriculum_dir: Path = (
         Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"
     )
+    generation_history_retention_days: int = 0
     email_whitelist: tuple[str, ...] = ()
     llm_models_allowed: tuple[str, ...] = ()
+    llm_exchange_retention_days: int = 30
+    creative_planning: bool = True
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -96,11 +99,21 @@ class ServerConfig(Config):
                     str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
             ),
+            generation_history_retention_days=int(
+                os.environ.get("GENERATION_HISTORY_RETENTION_DAYS", "0")
+            ),
             llm_models_allowed=tuple(
                 m.strip()
                 for m in os.environ.get("LLM_MODELS_ALLOWED", "").split(",")
                 if m.strip()
             ),
+            llm_exchange_retention_days=int(
+                os.environ.get("LLM_EXCHANGE_RETENTION_DAYS", "30")
+            ),
+            web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "none"),
+            web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
+            creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
+            not in ("0", "false", "False", ""),
         )
         seen: dict[str, None] = {}
         for m in cfg.llm_models_allowed:
