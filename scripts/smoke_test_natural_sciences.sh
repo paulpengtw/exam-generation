@@ -87,6 +87,7 @@ info "API_URL  = $API_URL"
 # Utility: wait for an HTTP endpoint to return the expected status code
 ###############################################################################
 
+# Reserved for future readiness-wait steps (not used by the current checks).
 wait_for_http() {
   local url="$1"
   local expected_code="${2:-200}"
@@ -255,6 +256,7 @@ if [[ -z "$JWT" ]]; then
     --max-time 10 2>/dev/null || true)
   if [[ "$ML_CODE" != "200" ]]; then
     fail "API" "POST /auth/magic-link returned HTTP $ML_CODE (expected 200)"
+    info "PROVIDER check skipped — no JWT obtained"
   else
     info "magic-link accepted for $SMOKE_EMAIL"
     echo "  Look at the backend log for a line like:"
