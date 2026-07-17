@@ -66,7 +66,7 @@ VERIFICATION_USER_TEMPLATE = """\
 ## 提供的解題分析
 
 {solution_text}
-"""
+{difficulty_line}"""
 
 
 def verify_question(
@@ -79,9 +79,18 @@ def verify_question(
     question_text = "\n".join(question.題目)
     solution_text = "\n".join(question.正確解題分析)
 
+    difficulty_value = (
+        question.metadata.difficulty.value if question.metadata is not None else "medium"
+    )
+    difficulty_line = (
+        f"\n## 難度（僅供參考，不得作為 pass/fail 判準）\n\n"
+        f"命題者要求的難度：{difficulty_value}\n"
+    )
+
     user_prompt = VERIFICATION_USER_TEMPLATE.format(
         question_text=question_text,
         solution_text=solution_text,
+        difficulty_line=difficulty_line,
     )
 
     if chart_image_path is not None:
