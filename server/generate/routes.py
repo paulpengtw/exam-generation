@@ -19,6 +19,7 @@ from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
 from server.generate.models import (
+    CoverageMode,
     GenerateParams,
     ImageGenerationMode,
     PlanCoreQuestionsRequest,
@@ -55,6 +56,7 @@ async def generate_endpoint(
     disable_reference_fewshot: bool = Query(default=False),
     seed: int | None = Query(default=None),
     image_generation_mode: ImageGenerationMode = Query(default="html"),
+    coverage_mode: CoverageMode = Query(default="balanced"),
     subject_filter: list[str] | None = Query(default=None),
     content_type: str | None = Query(default=None),
     passage: str | None = Query(default=None),
@@ -92,6 +94,7 @@ async def generate_endpoint(
         disable_reference_fewshot=disable_reference_fewshot,
         seed=seed,
         image_generation_mode=image_generation_mode,
+        coverage_mode=coverage_mode,
         subject_filter=subject_filter,
         content_type=content_type,
         passage=passage,

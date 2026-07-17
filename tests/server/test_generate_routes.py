@@ -244,6 +244,76 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
     assert results[0]["data"]["image_base64"] == "ZHJhZnQtcG5n"
 
 
+def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    from server.generate import routes as gen_routes
+
+    captured: dict = {}
+
+    async def fake_stream(params, *_args, **_kwargs):
+        captured["params"] = params
+        yield {"event": "done", "data": ""}
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    original = gen_routes.generate_question_stream
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            # No coverage_mode in the query → defaults to "balanced".
+            r_default = client.get(
+                "/api/generate?subject=social_studies&count=3",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert r_default.status_code == 200
+            assert captured["params"].coverage_mode == "balanced"
+
+            # Explicit random passes through.
+            r_random = client.get(
+                "/api/generate?subject=social_studies&count=3&coverage_mode=random",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert r_random.status_code == 200
+            assert captured["params"].coverage_mode == "random"
+
+            # Unknown value → 422 from Query Literal validation.
+            r_bad = client.get(
+                "/api/generate?subject=social_studies&count=3&coverage_mode=chaotic",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert r_bad.status_code == 422
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
 def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
     from types import SimpleNamespace
 

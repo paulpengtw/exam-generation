@@ -6,20 +6,22 @@ import argparse
 import concurrent.futures
 import json
 import logging
+import random
 import sys
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.batch_sampler import BatchSampler
 from src.config import Config
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
 from src.social_studies.context_builder import (
+    _LEARNING_STAGE,
     LC_INSTRUCTIONS,
     LP_INSTRUCTIONS,
-    _LEARNING_STAGE,
     build_subquestion_system_prompt,
     build_subquestion_user_prompt,
     build_text_system_prompt,
@@ -158,6 +160,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--count", type=int, default=1, help="Number of question sets to generate")
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
+    gen.add_argument(
+        "--coverage-mode",
+        choices=["balanced", "random"],
+        default="balanced",
+        help="出題模式：balanced（跨題目平均分配題型/學習內容）或 random（每題獨立隨機）",
+    )
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
     gen.add_argument("--max-retries", type=int, default=None,
                      help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)")
@@ -925,6 +933,27 @@ def main(argv: list[str] | None = None) -> None:
     base_seed = args.seed
     max_retries = args.max_retries if args.max_retries is not None else config.max_retries
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    batch_sampler: BatchSampler | None = None
+    if args.count > 1 and args.coverage_mode == "balanced":
+        user_pinned_qtype = bool(args.q_type)
+        batch_rng = random.Random(base_seed if base_seed is not None else 0)
+        q_pool = (
+            [_resolve_enum(v, QuestionType) for v in args.q_type]
+            if user_pinned_qtype else list(QuestionType)
+        )
+        # CLI is the single-operator path; stage-wide 學習內容 stratification
+        # is exercised via the API in Task 5, so the pool stays empty here
+        # (BatchSampler.learning_content_assignments then falls back to []
+        # per question, which sample_params() treats as no override).
+        lc_pool: list[str] = []
+        batch_sampler = BatchSampler(
+            count=args.count,
+            q_type_pool=q_pool,
+            learning_content_pool=lc_pool,
+            rng=batch_rng,
+        )
+
     try:
         params_list: list[SampledParams] = []
         for i in range(args.count):
@@ -940,6 +969,14 @@ def main(argv: list[str] | None = None) -> None:
                 learning_performance=learning_performance_override,
                 content_type=content_type_override,
                 seed=seed,
+                assigned_q_type=(
+                    batch_sampler.q_type_assignments[i] if batch_sampler else None
+                ),
+                assigned_learning_content=(
+                    batch_sampler.learning_content_assignments[i]
+                    if batch_sampler and batch_sampler.learning_content_assignments[i]
+                    else None
+                ),
             )
             params_list.append(params)
 
@@ -978,6 +1015,19 @@ def main(argv: list[str] | None = None) -> None:
 
             question = result
             assert isinstance(question, ExamQuestion)
+
+            effective_mode = "balanced" if batch_sampler is not None else "random"
+            if question.metadata is None:
+                question.metadata = QuestionMetadata(
+                    grade=params.grade,
+                    model="",
+                    coverage_mode_used=effective_mode,
+                )
+            else:
+                question.metadata = question.metadata.model_copy(
+                    update={"coverage_mode_used": effective_mode}
+                )
+
             results.append(question)
 
             if not args.batch:

@@ -31,6 +31,7 @@ export interface GenerateParams {
   question_word_limit?: number;
   option_word_limit?: number;
   subquestion_configs?: string;
+  coverage_mode?: "balanced" | "random";
 }
 
 export interface LearningContentItem {
@@ -195,6 +196,7 @@ function buildQueryString(params: GenerateParams): string {
   if (params.question_word_limit !== undefined) qs.append("question_word_limit", String(params.question_word_limit));
   if (params.option_word_limit !== undefined) qs.append("option_word_limit", String(params.option_word_limit));
   if (params.subquestion_configs) qs.append("subquestion_configs", params.subquestion_configs);
+  if (params.coverage_mode !== undefined) qs.append("coverage_mode", params.coverage_mode);
   return qs.toString();
 }
 
