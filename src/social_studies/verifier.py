@@ -6,7 +6,13 @@ import json
 
 from src.llm_client import LLMClient, extract_json
 from src.social_studies.context_builder import _build_curriculum_section, _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
-from src.social_studies.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
+from src.social_studies.fact_check import fact_check_question, is_current_events
+from src.social_studies.schemas import (
+    ChartVerificationResult,
+    ExamQuestion,
+    FactCheckResult,
+    VerificationResult,
+)
 
 _CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO)
 
@@ -134,7 +140,7 @@ def verify_question(
                 chart_details=cv.get("chart_details", ""),
             )
 
-        return VerificationResult(
+        verification = VerificationResult(
             passed=result.get("passed", False),
             answer_match=result.get("answer_match", False),
             details=result.get("details", ""),
@@ -143,8 +149,26 @@ def verify_question(
             chart_verification=chart_verif,
         )
     except (json.JSONDecodeError, ValueError, KeyError) as e:
-        return VerificationResult(
+        verification = VerificationResult(
             passed=False,
             answer_match=False,
             details=f"Verification failed to parse LLM response: {e}",
         )
+
+    # Additive fact-check pass — only for 時事 questions when the provider is enabled.
+    provider = getattr(getattr(client, "config", None), "web_search_provider", "none")
+    max_uses = int(getattr(getattr(client, "config", None), "web_search_max_uses", 5))
+    if provider == "anthropic" and is_current_events(question):
+        fc: FactCheckResult | None = fact_check_question(
+            client, question, provider=provider, max_uses=max_uses,
+        )
+        verification.fact_check = fc
+        if fc is not None and fc.verified is False:
+            joined_issues = "；".join(fc.issues) if fc.issues else "（未提供具體事項）"
+            appended = f"事實查證未通過：{joined_issues}"
+            verification.details = (
+                f"{verification.details}\n\n{appended}" if verification.details else appended
+            )
+            verification.passed = False
+
+    return verification
