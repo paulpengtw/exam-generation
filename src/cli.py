@@ -431,6 +431,12 @@ def _parse_question(
     else:
         core_competencies = list(params.核心素養)
 
+    raw_distractor = raw.get("誘答分析", {})
+    if isinstance(raw_distractor, dict):
+        distractor = {str(k): str(v) for k, v in raw_distractor.items()}
+    else:
+        distractor = {}
+
     return ExamQuestion(
         id=question_id,
         情境=raw.get("情境", [c.value for c in params.情境]),
@@ -445,6 +451,7 @@ def _parse_question(
         學習表現=parsed_lp,
         題目內容類型=raw.get("題目內容類型", params.題目內容類型),
         出題概念=raw.get("出題概念", ""),
+        誘答分析=distractor,
         metadata=QuestionMetadata(
             grade=params.grade,
             style=params.style,
