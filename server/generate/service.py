@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import itertools
 import json
 import logging
@@ -462,7 +463,7 @@ async def generate_question_stream(
                     )
                 question_id = f"ss_{timestamp}_{i+1:03d}"
                 question = ss_generate_with_corrections(
-                    config=config,
+                    config=client_config,
                     client=question_client,
                     params=rng_params,
                     question_id=question_id,
@@ -500,7 +501,7 @@ async def generate_question_stream(
                 )
                 question_id = f"ns_{timestamp}_{i+1:03d}"
                 question = ns_generate_with_corrections(
-                    config=config,
+                    config=client_config,
                     client=question_client,
                     params=rng_params,
                     question_id=question_id,
@@ -538,7 +539,7 @@ async def generate_question_stream(
                 )
                 question_id = f"q_{timestamp}_{i+1:03d}"
                 question = math_generate_with_corrections(
-                    config=config,
+                    config=client_config,
                     client=question_client,
                     curriculum=curriculum,
                     performance=performance,
@@ -632,7 +633,15 @@ async def generate_question_stream(
         ss_batch_briefs = [None] * count
 
     _emit_pipeline("pipeline_start", total=count)
-    question_clients = [LLMClient(config) for _ in range(count)]
+    # #105: per-request model overrides are baked into each LLMClient's config so
+    # downstream `client.generate*` / `client.plan` calls transparently use the
+    # chosen model without changing subject-CLI signatures.
+    client_config = dataclasses.replace(
+        config,
+        model_execute=params.model_execute or config.model_execute,
+        model_plan=params.model_plan or config.model_plan,
+    )
+    question_clients = [LLMClient(client_config) for _ in range(count)]
     futures = [
         loop.run_in_executor(None, worker_one, i, question_clients[i])
         for i in range(count)

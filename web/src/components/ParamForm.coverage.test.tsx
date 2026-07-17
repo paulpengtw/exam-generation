@@ -18,6 +18,7 @@ vi.mock("../api/client", () => ({
     學習內容: [],
     question_style: [],
   })),
+  getAvailableModels: vi.fn(async () => ({ allowed: [], defaults: { plan: "", execute: "" } })),
 }));
 
 vi.mock("../i18n/useT", () => ({

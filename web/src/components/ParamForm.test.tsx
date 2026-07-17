@@ -7,8 +7,10 @@ vi.mock("../store/langStore", () => ({
 }));
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
+const getAvailableModelsMock = vi.hoisted(() => vi.fn(async () => ({ allowed: [], defaults: { plan: "", execute: "" } })));
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
+  getAvailableModels: getAvailableModelsMock,
 }));
 
 import ParamForm from "./ParamForm";

@@ -48,6 +48,10 @@ class GenerateParams(BaseModel):
     text_word_limit: int | None = Field(default=None, ge=1)
     # #101: per-子題 configs as JSON string (array of {content_type, image_generation_mode, ...})
     subquestion_configs: str | None = None
+    # #105: per-request model overrides (validated against ServerConfig.llm_models_allowed
+    # at the route level).
+    model_plan: str | None = None
+    model_execute: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -57,6 +61,8 @@ class PlanCoreQuestionsRequest(BaseModel):
     subject_filter: list[str] | None = None
     grade: int | None = None
     subject: Literal["math", "social_studies", "natural_sciences"] = "social_studies"
+    model_plan: str | None = None
+    model_execute: str | None = None
 
 
 class PlanCoreQuestionsResponse(BaseModel):

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getSchemas, type Schemas } from "../api/client";
+import { getAvailableModels, getSchemas, type AvailableModels, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import CoreQuestionPicker from "./CoreQuestionPicker";
 
@@ -39,6 +39,8 @@ export interface GenerateParams {
   learning_content?: string[];
   sub_question_count?: number;
   subquestion_configs?: string;
+  model_plan?: string;
+  model_execute?: string;
   coverage_mode?: "balanced" | "random";
 }
 
@@ -251,6 +253,13 @@ export default function ParamForm({
   const [subquestionConfigs, setSubquestionConfigs] = useState<SubQuestionConfig[]>(
     fromInit<SubQuestionConfig[]>("subquestion_configs", []),
   );
+  const [models, setModels] = useState<AvailableModels | null>(null);
+  const [modelPlan, setModelPlan] = useState<string>(
+    () => window.localStorage.getItem("model_plan") ?? "",
+  );
+  const [modelExecute, setModelExecute] = useState<string>(
+    () => window.localStorage.getItem("model_execute") ?? "",
+  );
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
 
@@ -325,6 +334,41 @@ export default function ParamForm({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initialParams intentionally only applied on mount/subject change, not re-run per keystroke
   }, [subject, isCurriculumSubject]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAvailableModels()
+      .then((m) => {
+        if (cancelled) return;
+        setModels(m);
+        // Reconcile any localStorage-hydrated selection against the live
+        // allowlist — a stale value (e.g. a model that was removed server
+        // side) must never be silently submitted.
+        const allowed = new Set(m.allowed);
+        setModelPlan((prev) => (prev && !allowed.has(prev) ? "" : prev));
+        setModelExecute((prev) => (prev && !allowed.has(prev) ? "" : prev));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Discovery failure: hide the dropdowns AND clear any selection —
+        // the binding is that no model_plan/model_execute is ever sent
+        // when /api/models fails, even for a returning user with a
+        // persisted choice.
+        setModels(null);
+        setModelPlan("");
+        setModelExecute("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("model_plan", modelPlan);
+  }, [modelPlan]);
+  useEffect(() => {
+    window.localStorage.setItem("model_execute", modelExecute);
+  }, [modelExecute]);
 
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
   useEffect(() => {
@@ -559,6 +603,8 @@ export default function ParamForm({
         shouldSendSubquestionConfigs
           ? JSON.stringify(effectiveSubquestionConfigs)
           : undefined,
+      model_plan: modelPlan || undefined,
+      model_execute: modelExecute || undefined,
     });
   }
 
@@ -1375,6 +1421,47 @@ export default function ParamForm({
         <p role="status" className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
           ⚠ {t("form.topic_no_pick_warning")}
         </p>
+      )}
+
+      {models && models.allowed.length > 0 && (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-xs text-gray-700">
+            <span>{t("params.model_plan_label")}</span>
+            <select
+              aria-label={t("params.model_plan_label")}
+              value={modelPlan}
+              onChange={(e) => setModelPlan(e.target.value)}
+              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+            >
+              <option value="">
+                {t("params.model_default_option")} ({models.defaults.plan})
+              </option>
+              {models.allowed.map((m) => (
+                <option key={`plan-${m}`} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-gray-700">
+            <span>{t("params.model_execute_label")}</span>
+            <select
+              aria-label={t("params.model_execute_label")}
+              value={modelExecute}
+              onChange={(e) => setModelExecute(e.target.value)}
+              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+            >
+              <option value="">
+                {t("params.model_default_option")} ({models.defaults.execute})
+              </option>
+              {models.allowed.map((m) => (
+                <option key={`exec-${m}`} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       )}
 
       <button

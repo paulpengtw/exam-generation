@@ -31,6 +31,8 @@ export interface GenerateParams {
   question_word_limit?: number;
   option_word_limit?: number;
   subquestion_configs?: string;
+  model_plan?: string;
+  model_execute?: string;
   coverage_mode?: "balanced" | "random";
 }
 
@@ -165,7 +167,7 @@ function upsertDisplayResult(
   return updated.sort((a, b) => a.index - b.index);
 }
 
-function buildQueryString(params: GenerateParams): string {
+export function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
   if (params.subject !== undefined) qs.append("subject", params.subject);
   if (params.grade !== undefined) qs.append("grade", String(params.grade));
@@ -196,6 +198,12 @@ function buildQueryString(params: GenerateParams): string {
   if (params.question_word_limit !== undefined) qs.append("question_word_limit", String(params.question_word_limit));
   if (params.option_word_limit !== undefined) qs.append("option_word_limit", String(params.option_word_limit));
   if (params.subquestion_configs) qs.append("subquestion_configs", params.subquestion_configs);
+  if (params.model_plan && params.model_plan.length > 0) {
+    qs.append("model_plan", params.model_plan);
+  }
+  if (params.model_execute && params.model_execute.length > 0) {
+    qs.append("model_execute", params.model_execute);
+  }
   if (params.coverage_mode !== undefined) qs.append("coverage_mode", params.coverage_mode);
   return qs.toString();
 }
