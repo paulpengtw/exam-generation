@@ -28,7 +28,7 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 - 若問題在「題目敘述歧義」→ 最小幅度澄清 題目，並同步調整 正確解題分析。
 - 若 chart_verification 指出圖表錯誤 → 只修正 image_spec/chart_spec 的 data/labels，
   保留 description、title、render_mode、chart_type 不變（除非審核明確要求）。
-- 絕對不可修改：情境、題型種類、題型、數學思考、學習內容、學習表現、核心素養、出題概念、題目內容類型、id、metadata。
+- 絕對不可修改：情境、題型種類、題型、數學思考、學習內容、學習表現、核心素養、出題概念、題目內容類型、難度、id、metadata。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同（含所有原欄位）。只輸出 JSON，不要輸出其他文字。
 """
@@ -133,5 +133,8 @@ def correct_question(
 
     # Restore all frozen fields from original and clear stale verification
     update["verification"] = None
+
+    # Difficulty is frozen — force the original metadata (and thus difficulty) through.
+    update["metadata"] = question.metadata
 
     return question.model_copy(update=update)
