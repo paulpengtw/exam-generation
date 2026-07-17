@@ -10,6 +10,7 @@ import asyncio
 import base64
 import json
 import logging
+import random
 import traceback
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -17,6 +18,7 @@ from typing import Any
 
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
+from src.batch_sampler import BatchSampler
 from src.cli import generate_with_corrections as math_generate_with_corrections
 from src.llm_client import LLMClient, LLMObserver
 from src.natural_sciences.cli import generate_with_corrections as ns_generate_with_corrections
@@ -62,6 +64,9 @@ from src.social_studies.schemas import (
 )
 from src.social_studies.schemas import (
     QuestionContext as SSQuestionContext,
+)
+from src.social_studies.schemas import (
+    QuestionMetadata,
 )
 from src.social_studies.schemas import (
     QuestionSetType as SSQuestionSetType,
@@ -193,6 +198,48 @@ async def generate_question_stream(
             if params.q_type else None
         )
 
+    # --- Balanced-coverage planning (SS only, count > 1, balanced mode) -----
+    ss_batch_sampler: BatchSampler | None = None
+    if (
+        is_social_studies
+        and params.count > 1
+        and params.coverage_mode == "balanced"
+    ):
+        batch_rng = random.Random(params.seed if params.seed is not None else 0)
+        # Interaction rule: only balance dimensions the user left random.
+        user_pinned_qtype = bool(params.q_type) or bool(params.subquestion_configs)
+        user_pinned_lc = bool(params.learning_content)
+        q_pool = (
+            [SSQuestionType(v) for v in params.q_type]
+            if user_pinned_qtype and params.q_type
+            else list(SSQuestionType)
+        )
+        # 學習內容 pool: default is the whole stage pool for the (optional)
+        # subject filter; we let the sampler fill in a stage-appropriate pool
+        # if the user didn't pin subject_filter either.
+        from src.social_studies.curriculum_loader import (
+            allowed_learning_content,
+            load_learning_content,
+        )
+        from src.social_studies.sampler import _LEARNING_STAGE as _SS_STAGE
+
+        subj_key = (
+            params.subject_filter[0] if params.subject_filter else "跨科"
+        )
+        lc_entries = (
+            allowed_learning_content(load_learning_content(), _SS_STAGE, subj_key)
+            if not user_pinned_lc
+            else []
+        )
+        lc_pool = [e["value"] for e in lc_entries] if not user_pinned_lc else []
+
+        ss_batch_sampler = BatchSampler(
+            count=params.count,
+            q_type_pool=q_pool if not user_pinned_qtype else [q_pool[0]],
+            learning_content_pool=lc_pool,
+            rng=batch_rng,
+        )
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_seed = params.seed
     count = max(1, params.count)
@@ -252,6 +299,14 @@ async def generate_question_stream(
         _emit_pipeline("question_start", index=i, total=count)
         try:
             if is_social_studies:
+                assigned_qt = (
+                    ss_batch_sampler.q_type_assignments[i]
+                    if ss_batch_sampler is not None else None
+                )
+                assigned_lc = (
+                    ss_batch_sampler.learning_content_assignments[i]
+                    if ss_batch_sampler is not None else None
+                )
                 rng_params = ss_sample_params(
                     grade=params.grade,
                     context=context_override,
@@ -267,6 +322,8 @@ async def generate_question_stream(
                     subquestion_configs=_decode_subquestion_configs(
                         params.subquestion_configs,
                     ),
+                    assigned_q_type=assigned_qt,
+                    assigned_learning_content=assigned_lc,
                 )
                 question_id = f"ss_{timestamp}_{i+1:03d}"
                 question = ss_generate_with_corrections(
@@ -362,6 +419,21 @@ async def generate_question_stream(
                     user_core_question=params.core_question or "",
                     on_question_update=emit_question_update,
                 )
+            if is_social_studies and isinstance(question, SSExamQuestion):
+                effective_mode = (
+                    "balanced" if ss_batch_sampler is not None else "random"
+                )
+                if question.metadata is None:
+                    fallback_model = getattr(config, "model_execute", "unknown")
+                    question.metadata = QuestionMetadata(
+                        grade=rng_params.grade,
+                        model=fallback_model,
+                        coverage_mode_used=effective_mode,
+                    )
+                else:
+                    question.metadata = question.metadata.model_copy(
+                        update={"coverage_mode_used": effective_mode}
+                    )
             assert isinstance(
                 question,
                 (MathExamQuestion, SSExamQuestion, NSExamQuestion),
