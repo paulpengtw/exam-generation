@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from unittest.mock import MagicMock
-
-import pytest
 
 from server.config import ServerConfig
 from server.generate.models import GenerateParams

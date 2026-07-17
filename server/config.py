@@ -33,6 +33,7 @@ class ServerConfig(Config):
         Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"
     )
     email_whitelist: tuple[str, ...] = ()
+    creative_planning: bool = True
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -95,6 +96,8 @@ class ServerConfig(Config):
                     str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
             ),
+            creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
+            not in ("0", "false", "False", ""),
         )
 
     def validate(self) -> None:
