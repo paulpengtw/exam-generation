@@ -96,6 +96,8 @@ class ServerConfig(Config):
                     str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
                 )
             ),
+            web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "none"),
+            web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
             not in ("0", "false", "False", ""),
         )

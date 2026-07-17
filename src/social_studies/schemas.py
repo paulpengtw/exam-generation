@@ -38,6 +38,20 @@ class ChartVerificationResult(BaseModel):
     chart_details: str
 
 
+class FactCheckResult(BaseModel):
+    """Result of the web-search-backed fact-check pass (issue #104).
+
+    `verified=True` means the checker found no contradiction between the
+    question and the retrieved web sources. `verified=False` is a definitive
+    negative — the verifier should force `passed=False`. Skips/failures use
+    `VerificationResult.fact_check=None` instead of `verified=False`.
+    """
+
+    verified: bool
+    citations: list[str] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+
+
 class VerificationResult(BaseModel):
     passed: bool
     answer_match: bool
@@ -45,6 +59,7 @@ class VerificationResult(BaseModel):
     my_answer: str = ""
     provided_answer: str = ""
     chart_verification: ChartVerificationResult | None = None
+    fact_check: FactCheckResult | None = None
 
 
 class LearningContentRef(BaseModel):
