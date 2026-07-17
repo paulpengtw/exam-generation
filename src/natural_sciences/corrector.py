@@ -27,6 +27,7 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 - 若 chart_verification 指出素材錯誤，請只修正 chart_spec 的 data/labels/description，保留 render_mode。
 - 絕對不可修改：核心問題、情境、情境子類別、題型種類、題型、科學能力、難度、id、metadata，
   以及各小題的 學習內容/學習表現/科學能力/出題概念/科目/年級。
+- 若某小題的答案或選項有改動，該小題的 `誘答分析` 必須同步反映新的正解與誘答陷阱：正解鍵改為「正確答案：…」，其他鍵改為新的科學迷思描述。選項標籤必須與新題目一致；若題目為 Constructed-response 或沒有 (A)-(D) 標籤，可留空 `{}`。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
 """
@@ -147,6 +148,11 @@ def correct_question(
                     答案=sq_raw.get("答案", original.答案 if original else ""),
                     答案解析=sq_raw.get("答案解析", original.答案解析 if original else ""),
                     評分規準=rubric if rubric else (original.評分規準 if original else []),
+                    誘答分析=(
+                        {str(k): str(v) for k, v in sq_raw.get("誘答分析", {}).items()}
+                        if isinstance(sq_raw.get("誘答分析"), dict)
+                        else (original.誘答分析 if original else {})
+                    ),
                 )
                 new_sqs.append(sq)
             except Exception:

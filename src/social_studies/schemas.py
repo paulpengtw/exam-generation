@@ -8,7 +8,10 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 from src.common.difficulty import DEFAULT_DIFFICULTY, Difficulty
-from src.social_studies.core_competency_loader import build_core_competency_enum, load_core_competencies
+from src.social_studies.core_competency_loader import (
+    build_core_competency_enum,
+    load_core_competencies,
+)
 from src.social_studies.schema_loader import build_enums, load_grades, load_schemas
 
 _schemas = load_schemas()
@@ -36,6 +39,20 @@ class ChartVerificationResult(BaseModel):
     chart_details: str
 
 
+class FactCheckResult(BaseModel):
+    """Result of the web-search-backed fact-check pass (issue #104).
+
+    `verified=True` means the checker found no contradiction between the
+    question and the retrieved web sources. `verified=False` is a definitive
+    negative — the verifier should force `passed=False`. Skips/failures use
+    `VerificationResult.fact_check=None` instead of `verified=False`.
+    """
+
+    verified: bool
+    citations: list[str] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+
+
 class VerificationResult(BaseModel):
     passed: bool
     answer_match: bool
@@ -43,6 +60,7 @@ class VerificationResult(BaseModel):
     my_answer: str = ""
     provided_answer: str = ""
     chart_verification: ChartVerificationResult | None = None
+    fact_check: FactCheckResult | None = None
 
 
 class LearningContentRef(BaseModel):
@@ -74,6 +92,19 @@ class SubQuestionConfig(BaseModel):
     learning_performance: list[str] = Field(default_factory=list)
 
 
+class CreativeBrief(BaseModel):
+    """Opus-generated creative direction for one 題組 in a batch (issue #114).
+
+    - `selected_context` must be one of the batch's sampled 情境 values.
+    - `題材_angle` is a 1–2 sentence framing tying 核心問題 × 情境.
+    - `framing_hooks` are 1–2 concrete grounding devices (e.g. 病患日記,
+      決策會議紀錄) the 文本生成器 can weave into the passage.
+    """
+    selected_context: str
+    題材_angle: str
+    framing_hooks: list[str] = Field(default_factory=list)
+
+
 class SubQuestion(BaseModel):
     """One subquestion within a 題組, tagged with 108課綱 curriculum metadata."""
     id: str = ""
@@ -90,6 +121,7 @@ class SubQuestion(BaseModel):
     答案: str = ""
     答案解析: str = ""
     評分規準: list[RubricEntry] = Field(default_factory=list)
+    誘答分析: dict[str, str] = Field(default_factory=dict)
     題目內容類型: str | None = None
     image_generation_mode: Literal["html", "gpt_image"] | None = None
     圖片: str | None = None
@@ -102,6 +134,7 @@ class QuestionMetadata(BaseModel):
     generated_at: datetime = Field(default_factory=datetime.now)
     seed: int | None = None
     difficulty: Difficulty = DEFAULT_DIFFICULTY
+    coverage_mode_used: Literal["balanced", "random"] | None = None
 
 
 class ExamQuestion(BaseModel):
@@ -162,3 +195,5 @@ class SampledParams(BaseModel):
     subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)
     # Issue #116: explicit difficulty (pure passthrough — never randomized).
     difficulty: Difficulty = DEFAULT_DIFFICULTY
+    # #114: per-batch Opus 創意 brief; None when planning is disabled or unavailable
+    creative_brief: CreativeBrief | None = None

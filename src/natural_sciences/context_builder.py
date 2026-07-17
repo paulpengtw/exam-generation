@@ -1,12 +1,23 @@
 # ruff: noqa: E501
-"""Assemble LLM prompts for PISA Science + 108課綱自然科學 question generation."""
+"""Assemble LLM prompts for PISA Science + 108課綱自然科學 question generation.
+
+Figure routing: any `chart_spec` this module instructs the model to emit
+must follow the rule in ``docs/figure-rendering-policy.md`` —
+precise/quantitative statistical charts use ``render_mode: "chart"``
+(matplotlib); illustrative figures — 實驗裝置圖, 模型圖, 流程圖, 標籤圖,
+data tables — use ``render_mode: "html"`` (LLM-HTML + Playwright). See
+``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``題目內容類型`` mapping.
+"""
 
 from __future__ import annotations
 
 import json
 import random
+from collections.abc import Sequence
 from pathlib import Path
 
+from src.common.batch_dedup import PriorScope, format_prior_scopes_block
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.natural_sciences.curriculum_loader import (
     content_instructions,
     load_learning_content,
@@ -83,12 +94,17 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
         "（重要）圖片必須是作答的必要條件：至少一道小題的答案必須直接依賴圖片中才有的資訊，無法僅憑文本回答。"
         "設計時請先確定「移除圖片後此題是否仍可作答」——若可以，請重新設計圖片，使其承載文本中未涵蓋的關鍵資訊"
         "（例如實驗裝置的連接方式、模型圖的標示數據、流程圖的條件分支）。"
+        f"（示意圖聲明）圖片為示意用途，非完全等比例繪製；請在 `chart_spec.description` 中要求下游 HTML 產生器"
+        f"將「{IMAGE_DISCLAIMER}」以 caption 呈現在圖片下緣或版面空白處。"
     ),
     "graphs/charts/tables": (
         "本題組必須包含數據圖表或表格。統計圖請使用 `render_mode: \"chart\"`；"
         "實驗數據表、分類表或多欄比較表請使用 `render_mode: \"html\"`，並在 `data` 中提供完整資料。"
         "（重要）圖表/表格必須是作答的必要條件：至少一道小題須讀取圖表中的具體數值、趨勢或分類才能回答，"
         "且這些數值不得在 `文本` 欄位中重複列出。若移除圖表後題目仍可回答，需重新設計使數據只存在於圖表中。"
+        f"（示意圖聲明）圖表軸線、格線與座標比例僅為示意，非完全等比例繪製；"
+        f"請在 `chart_spec.description` 或圖表 caption 加註「{IMAGE_DISCLAIMER}」，"
+        "但圖表中的數值、標籤與分類仍必須完全對應 `data` 內容。"
     ),
 }
 
@@ -268,6 +284,7 @@ def build_user_prompt(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     disable_reference_fewshot: bool = False,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
     if rng is None:
         rng = random.Random()
@@ -432,6 +449,10 @@ def build_user_prompt(
         else ""
     )
 
+    if prior_scopes:
+        prior_scopes_text = format_prior_scopes_block(prior_scopes)
+        user_materials = (user_materials or "\n") + "\n" + prior_scopes_text
+
     text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
         learning_stage=_LEARNING_STAGE,
@@ -564,6 +585,7 @@ def build_text_user_prompt(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     disable_reference_fewshot: bool = False,
+    prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
     text, image_paths = build_user_prompt(
         params=params,
@@ -575,6 +597,7 @@ def build_text_user_prompt(
         user_topic=user_topic,
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
+        prior_scopes=prior_scopes,
     )
     text = text.replace(
         """\
@@ -626,7 +649,26 @@ def build_subquestion_system_prompt(
   "題目": "完整題目文字（含選項）",
   "答案": "A",
   "答案解析": "說明正答依據",
-  "評分規準": []
+  "評分規準": [],
+  "誘答分析": {{"A": "...", "B": "正確答案：...", "C": "...", "D": "..."}}
+}}
+```
+
+## 誘答分析的設計
+
+`誘答分析` 是一個以「選項標籤」為鍵、對應誘答描述為值的 JSON dict：
+
+- **Simple / Complex multiple-choice**：鍵為 `"A"` / `"B"` / `"C"` / `"D"`（Complex 的複選題請對每個獨立敘述使用 `"A是"` / `"A非"` 等鍵，或直接沿用 A/B/C/D）。錯誤選項描述其針對的科學迷思（概念混淆 / 誤讀證據 / 過度推論 / 忽略前提 …），正確選項的值為一句 「正確答案：…」。
+- **Constructed response**：可留空 `{{}}`，或提供 `{{"常見錯誤": "…"}}` 描述一項最常見的科學迷思。
+
+範例：
+
+```json
+"誘答分析": {{
+  "A": "誤讀證據：把長期趨勢誤解為短期波動。",
+  "B": "正確答案：能量守恆造成振幅衰減。",
+  "C": "概念混淆：把慣性誤讀為摩擦力效應。",
+  "D": "過度推論：從單一實驗推論到所有系統。"
 }}
 ```
 
@@ -782,5 +824,6 @@ def build_subquestion_user_prompt(
 1. 只撰寫序號 {sq_plan.get("序號", 1)} 的一道小題。
 2. 小題必須能依據共用文本作答，不要引入無法由文本支持的新情境。
 3. `學習內容` / `學習表現` 應優先使用上述指定代號；如需引入其他代號，仍以系統提供的課綱資料為限。
-4. 請只輸出一道小題的 JSON，不要輸出其他文字。
+4. **誘答分析**：本小題若為 `Simple multiple-choice` 或 `Complex multiple-choice`，`誘答分析` **必須**同時涵蓋題目所有選項標籤（預設 A/B/C/D）；正確選項填「正確答案：…」，其餘選項描述其針對的科學迷思。若為 `Constructed response`，可留空 `{{}}` 或使用 `{{"常見錯誤": "..."}}` 描述一項最常見的科學迷思。
+5. 請只輸出一道小題的 JSON，不要輸出其他文字。
 """, all_image_paths

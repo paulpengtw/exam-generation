@@ -3,6 +3,11 @@ import { useMemo, useState } from "react";
 import type { DraftPhase, ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
+import FigureRenderer, {
+  classifySpec,
+  isFrontendTsEnabled,
+  type ChartSpecInput,
+} from "./FigureRenderer";
 
 export interface QuestionCardProps {
   question: ExamQuestion;
@@ -38,6 +43,27 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
   return new Blob([bytes], { type: mimeType });
 }
 
+function pickFigure(
+  chartSpec: unknown,
+  imageBase64: string | undefined,
+  alt: string,
+): { kind: "ts"; spec: ChartSpecInput } | { kind: "png"; src: string } | null {
+  if (isFrontendTsEnabled() && chartSpec && typeof chartSpec === "object") {
+    const spec = chartSpec as ChartSpecInput;
+    if (classifySpec(spec) !== "unsupported") {
+      return { kind: "ts", spec };
+    }
+    // Log so fallback rate is trackable in the browser console.
+    console.warn("[figure-renderer-fallback] unsupported spec, using PNG", spec);
+  }
+  if (imageBase64) {
+    return { kind: "png", src: `data:image/png;base64,${imageBase64}` };
+  }
+  // Silence unused-var lint when neither branch fires.
+  void alt;
+  return null;
+}
+
 function getLearningContentCodes(question: ExamQuestion): string[] {
   return (question.學習內容 ?? []).map((item) => item.編碼).filter(Boolean);
 }
@@ -63,6 +89,37 @@ const RUBRIC_TONE: Record<string, string> = {
   "0": "bg-red-100 text-red-800",
   "0X": "bg-gray-100 text-gray-500",
 };
+
+function DistractorPanel({ analysis }: { analysis: Record<string, string> }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const entries = Object.entries(analysis);
+  if (entries.length === 0) return null;
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-sm font-medium text-amber-700 hover:text-amber-800"
+      >
+        {open ? t("card.hideDistractor") : t("card.showDistractor")}
+      </button>
+      {open && (
+        <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-3 space-y-1 text-sm">
+          <div className="font-medium text-amber-800 mb-1">{t("card.distractorAnalysis")}</div>
+          {entries.map(([label, note]) => (
+            <div key={label} className="flex gap-2 items-start">
+              <span className="inline-flex shrink-0 items-center rounded bg-amber-200 px-1.5 py-0.5 text-xs font-bold text-amber-900">
+                {label}
+              </span>
+              <span className="whitespace-pre-wrap text-amber-900">{note}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuestion; showAnswersByDefault?: boolean }) {
   const t = useT();
@@ -92,13 +149,24 @@ function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuest
         ))}
       </div>
 
-      {sub.image_base64 && (
-        <img
-          src={`data:image/png;base64,${sub.image_base64}`}
-          alt={`第${sub.序號}題素材圖片`}
-          className="max-w-full rounded border border-gray-200 bg-white"
-        />
-      )}
+      {(() => {
+        const figure = pickFigure(sub.chart_spec, sub.image_base64, `第${sub.序號}題素材圖片`);
+        if (!figure) return null;
+        if (figure.kind === "ts") {
+          return (
+            <div className="rounded border border-gray-200 bg-white p-2">
+              <FigureRenderer spec={figure.spec} alt={`第${sub.序號}題素材圖片`} />
+            </div>
+          );
+        }
+        return (
+          <img
+            src={figure.src}
+            alt={`第${sub.序號}題素材圖片`}
+            className="max-w-full rounded border border-gray-200 bg-white"
+          />
+        );
+      })()}
 
       <div className="text-sm leading-relaxed whitespace-pre-wrap">{sub.題目}</div>
 
@@ -138,6 +206,9 @@ function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuest
                   ))}
                 </div>
               </div>
+            )}
+            {sub.誘答分析 && Object.keys(sub.誘答分析).length > 0 && (
+              <DistractorPanel analysis={sub.誘答分析} />
             )}
           </div>
         )}
@@ -255,13 +326,24 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
         <VerificationBadge passed={passed} verifiedLabel={t("card.verified")} unverifiedLabel={t("card.unverified")} />
       </div>
 
-      {question.image_base64 && (
-        <img
-          src={`data:image/png;base64,${question.image_base64}`}
-          alt="Question diagram"
-          className="max-w-full rounded border border-gray-200"
-        />
-      )}
+      {(() => {
+        const figure = pickFigure(question.chart_spec, question.image_base64, "Question diagram");
+        if (!figure) return null;
+        if (figure.kind === "ts") {
+          return (
+            <div className="rounded border border-gray-200 p-2">
+              <FigureRenderer spec={figure.spec} alt="Question diagram" />
+            </div>
+          );
+        }
+        return (
+          <img
+            src={figure.src}
+            alt="Question diagram"
+            className="max-w-full rounded border border-gray-200"
+          />
+        );
+      })()}
 
       {/* Social studies: core question + passage + subquestions */}
       {isSocialStudies ? (
@@ -309,6 +391,9 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
                     {line}
                   </p>
                 ))}
+                {question.誘答分析 && Object.keys(question.誘答分析).length > 0 && (
+                  <DistractorPanel analysis={question.誘答分析} />
+                )}
               </div>
             )}
           </div>

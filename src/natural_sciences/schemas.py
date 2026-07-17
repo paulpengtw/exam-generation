@@ -96,6 +96,7 @@ class SubQuestion(BaseModel):
     答案: str = ""
     答案解析: str = ""
     評分規準: list[RubricEntry] = Field(default_factory=list)
+    誘答分析: dict[str, str] = Field(default_factory=dict)
 
 
 class QuestionMetadata(BaseModel):

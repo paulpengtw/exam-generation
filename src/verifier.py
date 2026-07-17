@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from src.common.distractor import validate_distractor_keys
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.context_builder import (
     _CONTENT_TEXT,
     _PERFORMANCE_INTRO,
@@ -17,7 +19,7 @@ _CURRICULUM_PREFIX: str = _build_curriculum_section(
     _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
 )
 
-_VERIFICATION_SYSTEM_PROMPT_CORE = """\
+_VERIFICATION_SYSTEM_PROMPT_CORE = f"""\
 你是一位數學教師，負責審核考試題目的正確性。你會收到一道數學題目，請你：
 
 1. 完全獨立地解這道題目（不要看提供的解答）。
@@ -30,21 +32,27 @@ _VERIFICATION_SYSTEM_PROMPT_CORE = """\
    - 題目敘述有歧義或矛盾
 4. 如果提供了圖表圖片，請一併檢查圖表是否正確呈現題目所描述的數據。
 
+## 示意圖判讀原則
+
+附上的圖表為示意圖（{IMAGE_DISCLAIMER}）。
+不得僅因圖形比例、線段長度、角度、軸距或版面留白不完全符合實際尺寸而判定 failed；
+但若圖表中的數值、標籤、單位、分類、資料點或關鍵標示錯誤，或與題目描述矛盾，仍應判定 failed。
+
 請以 JSON 格式回覆：
 
 ```json
-{
+{{
   "my_answer": "你獨立解題的答案",
   "provided_answer": "題目提供的答案",
   "answer_match": true/false,
   "passed": true/false,
   "details": "詳細說明（如有錯誤，指出具體問題）",
-  "chart_verification": {
+  "chart_verification": {{
     "chart_data_match": true/false,
     "chart_labels_correct": true/false,
     "chart_details": "圖表檢查說明"
-  }
-}
+  }}
+}}
 ```
 
 若題目未附圖表圖片，請省略 chart_verification 欄位。只輸出 JSON，不要輸出其他文字。
@@ -120,10 +128,17 @@ def verify_question(
                 chart_details=cv.get("chart_details", ""),
             )
 
+        # Non-blocking distractor-key audit (warnings only; never flips passed).
+        warnings = validate_distractor_keys(question_text, question.誘答分析)
+        details = result.get("details", "")
+        if warnings:
+            details = details.rstrip()
+            details += "\n\n[誘答分析提醒] " + " ".join(warnings)
+
         return VerificationResult(
             passed=result.get("passed", False),
             answer_match=result.get("answer_match", False),
-            details=result.get("details", ""),
+            details=details,
             my_answer=result.get("my_answer", ""),
             provided_answer=result.get("provided_answer", ""),
             chart_verification=chart_verif,

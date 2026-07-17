@@ -60,11 +60,19 @@ def sample_params(
     option_word_limit: int | None = None,
     subquestion_configs: list | None = None,
     difficulty: Difficulty | str | None = None,
+    assigned_q_type: QuestionType | None = None,
+    assigned_learning_content: list[str] | None = None,
 ) -> SampledParams:
     """Sample random PISA-reading question parameters.
 
     No grade_content needed — reading literacy has no K-12 curriculum code lookup.
     Sampler cardinality: 情境 1+, 文本形式 1, 閱讀歷程 1-2; 題型種類 forced 題組題.
+
+    `assigned_q_type` / `assigned_learning_content` are supplied by
+    `src.batch_sampler.BatchSampler` in balanced-coverage batches. They
+    override the random draw *only* when the caller did not pin the same
+    dimension via `q_type` / `subquestion_configs` (for 題型) or
+    `learning_content` (for 學習內容).
     """
     rng = random.Random(seed)
     resolved_difficulty: Difficulty = resolve_difficulty(difficulty)
@@ -84,7 +92,15 @@ def sample_params(
     if sub_question_count is not None and not 3 <= sub_question_count <= 7:
         raise ValueError("sub_question_count must be between 3 and 7")
 
-    q_type_pool = q_type or list(QuestionType)
+    # Interaction rule: assigned_q_type only kicks in when the caller left
+    # 題型 entirely random (no q_type pool, no subquestion_configs).
+    user_pinned_qtype = bool(q_type) or bool(subquestion_configs)
+    if q_type:
+        q_type_pool = q_type
+    elif assigned_q_type is not None and not user_pinned_qtype:
+        q_type_pool = [assigned_q_type]
+    else:
+        q_type_pool = list(QuestionType)
 
     # 閱讀歷程: pick 1-2
     all_processes = list(ReadingProcess)
@@ -127,6 +143,8 @@ def sample_params(
     subj_key = selected_subject.value
     if learning_content is not None:
         selected_lc_pool = learning_content
+    elif assigned_learning_content is not None:
+        selected_lc_pool = list(assigned_learning_content)
     else:
         lc_entries = allowed_learning_content(_LC_DATA, _LEARNING_STAGE, subj_key)
         lc_count = rng.randint(1, min(3, max(1, len(lc_entries))))

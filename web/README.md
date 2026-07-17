@@ -71,3 +71,13 @@ export default defineConfig([
   },
 ])
 ```
+
+## Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `VITE_IS_STAGING` | Non-empty value shows the staging banner and tags Sentry events with environment `staging`. |
+| `VITE_SENTRY_DSN` | Sentry DSN (public client key). Enables error monitoring and the bottom-right "?" feedback button. Leave unset to disable Sentry entirely. |
+
+Both are **build-time** Vite variables: set them before `npm run build` (or
+as Docker build args — see `web/Dockerfile` and `docker-compose.yml`).

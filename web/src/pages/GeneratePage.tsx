@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
 import ParamForm, { type GenerateParams as FormParams } from "../components/ParamForm";
@@ -27,6 +27,10 @@ function downloadBlob(blob: Blob, filename: string): void {
 
 export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const prefillParams =
+    (location.state as { prefillParams?: Record<string, unknown> } | null)
+      ?.prefillParams ?? null;
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
@@ -92,6 +96,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         subject === "social_studies" || subject === "natural_sciences" ? params.sub_question_count : undefined,
       subquestion_configs:
         subject === "social_studies" || subject === "natural_sciences" ? params.subquestion_configs : undefined,
+      model_plan: params.model_plan,
+      model_execute: params.model_execute,
     });
   };
 
@@ -135,6 +141,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           </div>
           <div className="flex min-w-0 items-center gap-2 text-sm sm:gap-3">
             <LanguageSwitcher />
+            <button
+              type="button"
+              onClick={() => navigate("/history")}
+              className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {t("history.nav_link")}
+            </button>
             {user && (
               <span className="hidden max-w-[12rem] truncate text-gray-700 sm:inline">
                 {user.email}
@@ -153,7 +166,12 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
       <main className="mx-auto max-w-5xl space-y-6 px-3 py-4 sm:px-4 sm:py-6">
         <section className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
-          <ParamForm subject={subject} onSubmit={handleSubmit} disabled={status === "generating" || status === "queued"} />
+          <ParamForm
+            subject={subject}
+            onSubmit={handleSubmit}
+            disabled={status === "generating" || status === "queued"}
+            initialParams={prefillParams ?? undefined}
+          />
         </section>
 
         {agentLanes.length > 0 && (
