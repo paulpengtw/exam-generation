@@ -26,24 +26,38 @@ question's subject, grade, or 學習內容 code.
   card). The HTML path lets the LLM invent layout details the schema does
   not encode; this is the correct trade-off for that family.
 
+## Renderer selection matrix
+
+> **Provisional (2026-07-18):** Derived from a 15-spec fidelity sample; revisit once
+> the census gate (≥30 real production questions per subject) is met.
+
+| Figure category | Default renderer | Rationale |
+|---|---|---|
+| Deterministic statistical chart (histogram/boxplot/line/pie, no domain overlays) | `render_mode: "chart"` (matplotlib) | Reproducibility; no LLM call |
+| Table (any subject) | `render_mode: "html"` | HTML+Playwright captures titles, semantic highlights, inline units, footnotes |
+| Chart with semantic overlays (projection dividers, threshold lines, domain-specific highlights, companion data tables) | `render_mode: "html"` | LLM-authored HTML/SVG reliably encodes semantic overlays gpt-image-2 flattens |
+| Realistic diagram (map with real coastlines, lab apparatus, biology cell/organism, geometry that must match real-world proportions) | `image_generation_mode: "gpt_image"` | 15-spec eval: 4/4 diagram_realistic wins for gpt-image-2; HTML+SVG reads as infographic |
+| Structured pedagogical figure (menu, tree diagram, PISA two-panel) | Case-by-case; prefer `html` if figure needs semantic annotation hooks, `gpt_image` if textbook-atlas aesthetic is primary | Split 1-2 in 15-spec eval |
+
 ## Phase A outcome (issue #108)
 
 The Phase A evaluation (`docs/figure-rendering-evaluation.md`) recorded a
 **NO-GO (for now)** decision for adding a frontend TS renderer.
 
-- **NO-GO (for now)**: `render_mode` stays `Literal["chart", "html"]` as the
-  shipped default. Task 10 of the plan (extending `render_mode` with
-  `"frontend_ts"`) is deferred pending production evidence. The frontend TS
-  prototype remains behind `VITE_ENABLE_FRONTEND_TS_RENDERER` for continued
-  experimentation. A full GO (triggering Task 10) requires both a production
-  census (≥30 questions per subject) and a live fidelity comparison with
-  measured fallback rates. When that evidence is collected, re-run Phase A;
-  if the outcome is GO or HYBRID, Task 10 extends `render_mode` with
-  `"frontend_ts"` for illustrative figures whose display can be done
-  client-side. Verifier and ODT export would still consume the server-side
-  PNG, so illustrative specs would also keep producing one — the frontend TS
-  renderer replaces the on-page `<img>` display only. `"html"` remains
-  permanently accepted as a legacy alias for already-generated questions.
+- **HYBRID (recorded 2026-07-18 by operator, provisional — census gate remains unmet)**:
+  The 15-spec fidelity evaluation (see `docs/figure-rendering-evaluation.md`) showed the
+  frontend TS renderer prototype produced usable output on only 2/15 illustrative specs and
+  never won head-to-head. LLM-HTML+Playwright and gpt-image-2 tied 7-7 (+1 tie) but
+  specialize on different figure categories: HTML wins tables and semantic-overlay charts
+  (6/7 in the sample); gpt-image-2 wins realistic diagrams / maps / lab apparatus /
+  biology (4/4). Decision: introduce category-based routing per the "Renderer selection
+  matrix" section below, and do NOT ship `render_mode: "frontend_ts"` as originally
+  planned in `docs/superpowers/plans/2026-07-18-frontend-ts-render-mode.md` (that plan is
+  now superseded). The `>=30 questions per subject` census gate remains unmet
+  (production has 2 records total on 2026-07-18); this decision is provisional and MUST
+  be revisited once production accumulates ~30 real questions per subject. `"html"`
+  remains permanently accepted as a legacy alias for already-generated questions;
+  `"frontend_ts"` is NOT introduced.
 
 ## Gate evidence collection and re-evaluation (issue #110)
 

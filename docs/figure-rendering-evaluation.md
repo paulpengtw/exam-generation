@@ -10,101 +10,51 @@ environment (headless dev container, no operator screenshots); all findings belo
 are either measured from the codebase or **reasoned-from-architecture** (labeled
 explicitly).
 
-## Historical coverage
+## Historical coverage (2026-07-18 provisional)
 
-Output of `uv run python scripts/analyze_chart_spec_coverage.py output/`:
+The census gate for this evaluation (>=30 real production questions per subject in the DB) was **not met** — production currently contains 2 questions total. In lieu of a census, we ran a **15-spec fidelity comparison** drawn from few-shot examples (7 math, 5 social studies, 3 hand-crafted natural sciences). This sample is small, table-heavy (4/15), and NS is hand-crafted rather than production-observed. Treat every number below as directional evidence, not a locked baseline. The full census gate should be revisited once production accumulates ~30 questions per subject.
 
-> **Unmeasured.** The `output/` directory is empty in this repository — no
-> previously generated questions are committed. The coverage script
-> (`scripts/analyze_chart_spec_coverage.py`) ran successfully and found 0 JSON
-> files to classify. Additionally, the few-shot corpora nest specs under a top-level
-> `question` key that the census script intentionally does not unwrap; those
-> entries are also excluded from counts.
->
-> **Conclusion:** No production distribution is available. All coverage claims in
-> this evaluation are architectural inferences, not measured percentages. A
-> meaningful census requires generating ≥30 questions per subject and re-running
-> the script.
+Category distribution of the 15-spec sample:
 
-| Metric | Value | Source |
-| --- | --- | --- |
-| JSON files scanned | 0 | measured |
-| chart_spec occurrences found | 0 | measured |
-| render_mode: "chart" | — | unmeasured |
-| render_mode: "html" | — | unmeasured |
-| render_mode: "frontend_ts" | — | unmeasured (enum not yet shipped) |
+| Category | Count | Notes |
+|---|---|---|
+| Table | 4 | Schedule, poll results, reservoir readings, material properties |
+| Chart | 4 | Stock line, side-by-side score tables, multi-series aging line, histogram |
+| Realistic diagram | 4 | Courtyard geometry, Falklands iceberg map, distillation apparatus, plant cell |
+| Structured other | 3 | Menu, PISA two-panel with animal timeline, labour tree |
 
-## Fidelity (side-by-side of real specs)
+## Fidelity (three-way, 15 specs)
 
-Live fidelity testing was **not performed** — the dev container is headless and no
-operator browser session was available to supply screenshots. The following table
-summarises what can be inferred from reading the prototype source:
+Each spec was rendered by three pipelines: (a) the frontend TS renderer prototype from PR #141, (b) the existing LLM-HTML + Playwright pipeline, and (c) gpt-image-2 with 3 candidate images per spec (best-of-3 selected). Quality was scored 1-5 by a rubric focused on spec fidelity, print-exam legibility, and textbook idiom.
 
-| # | 題目內容類型 | shape | TS render | server PNG | verdict |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 含圖片 | table | renders via `<table>` DOM | Playwright PNG | **reasoned: match** for simple grids |
-| 2 | 含圖片 | simple-geometry | renders SVG inline | Playwright PNG | **reasoned: match** for supported primitives |
-| 3 | 含圖片 | scenario-card | renders styled `<div>` | Playwright PNG | **reasoned: match** for text-card layouts |
-| 4 | 含圖片 | any other shape | returns `null` + logs `[figure-renderer-fallback]` | Playwright PNG | **broken** (falls back; no TS display) |
-| 5 | graphs/charts/tables | histogram / boxplot / line / pie | not covered by TS prototype | matplotlib PNG | **reasoned: match** (quantitative path unchanged) |
+| Renderer | Produced output | matches_spec (of produced) | Avg quality | Head-to-head wins |
+|---|---|---|---|---|
+| Frontend TS | 2/15 (13%) | 2/2 | 2.0 | 0 |
+| LLM-HTML + Playwright | 15/15 (100%) | 15/15 | 4.27 | 7 |
+| gpt-image-2 (best-of-3) | 15/15 (100%) | 15/15 | 4.47 | 7 (+1 tie with HTML) |
 
-No verdicts above are based on observed pixel output. They are annotated
-**reasoned** to distinguish them from measured results.
+**Category-conditioned wins:**
 
-## Latency
+| Category | HTML wins | GPT wins | Tie | TS wins |
+|---|---|---|---|---|
+| Table (n=4) | 3 | 0 | 1 | 0 |
+| Chart (n=4) | 3 | 1 | 0 | 0 |
+| Realistic diagram (n=4) | 0 | 4 | 0 | 0 |
+| Structured other (n=3) | 1 | 2 | 0 | 0 |
 
-- **LLM-HTML + Playwright path** (reasoned-from-architecture): each illustrative
-  render incurs one Sonnet HTML-generation LLM call (~1–3 s at p50 under normal
-  API latency) plus a Playwright screenshot (~0.5–1 s). Total round-trip typically
-  3–5 s per illustrative `chart_spec`. No live measurement was taken.
-- **Frontend TS path** (reasoned-from-architecture): zero LLM calls, zero server
-  round-trips beyond the initial JSON payload. Time-to-visible is bounded by
-  React render time, typically < 50 ms. Applies only to the three supported shapes;
-  unsupported shapes still pay the full server cost via the fallback.
+Where **HTML wins:** it consistently adds domain-specific semantic overlays that gpt-image-2 does not reliably reproduce — the 2020 推估值 vertical divider with dashed post-2020 projection segments on the multi-series aging chart, red highlights on 2021/5/31 drought values in the reservoir table, inline (%) header suffixes, the ※ ratio-meaning footnote, styled shaded headers, the week separator + companion data table on the stock chart, and compact side-by-side table layouts sized for exam print.
 
-No DevTools Performance measurements are available for this evaluation cycle.
+Where **gpt-image-2 wins:** it delivers textbook-atlas fidelity that HTML rendering does not currently achieve — realistic Patagonia and South Georgia coastlines with graticule on the Falklands map, correct distillation geometry (thermometer inserted through stopper, inclined water-cooled condenser, alcohol lamp under tripod) for the lab apparatus, cleanly labelled biology diagrams with balanced organelle placement, correctly proportioned geometry with legends citing ∠C=90°, and textbook-idiomatic histograms with arrow-tipped axes and filled bars. HTML in these categories reads as a stylized infographic (thermometer floating above flask, condenser as flat colored bar, coastline shapes reduced to schematic outlines, clipped/overlapping labels).
 
-## Cost
+**TS renderer status:** fell back to a placeholder on 13/15 specs. The two specs where it produced output were (i) the menu spec, where it dumped raw description text into a beige rounded box with no menu structure (quality 1), and (ii) the NS material-properties data table, where it rendered a functional but visually plain table with no title/footnote/hierarchy (quality 3). It never won a head-to-head comparison.
 
-Every illustrative render in the current path incurs one Sonnet HTML-image call
-(see `src/renderer.py::_generate_html_via_llm`). The TS path incurs zero for the
-three supported shapes. At current prototype coverage (3 shapes, unknown share of
-production traffic), estimated savings are **unmeasured**. A meaningful estimate
-requires a production census (see Historical coverage above).
+## Decision (provisional; supersede after census gate is met)
 
-## Coverage
+Given the 7-7 head-to-head split between HTML and gpt-image-2 with a clear category signal, and given that TS never won and rendered on only 13% of specs, the routing decision is **hybrid, not TS-first**:
 
-- Total illustrative specs observed in production output: **0** (empty `output/`).
-- TS component coverage by shape: table / simple-geometry / scenario-card → 3 shapes
-  supported; all other shapes → fallback (`[figure-renderer-fallback]` log line).
-- Fallback rate: **unmeasured** (no production distribution available).
-- The prototype is display-only (verifier and ODT export continue to consume the
-  server-side PNG `image_base64` regardless of this flag).
+1. **Tables and charts with semantic overlays** → `render_mode: "html"` (existing Playwright pipeline). HTML wins 6/8 in these categories on the strength of semantic annotations, compact print layouts, and title/footnote handling that gpt-image-2 does not reliably reproduce.
+2. **Realistic diagrams, maps, lab apparatus, biology, real-world-proportioned geometry** → `image_generation_mode: "gpt_image"` default. gpt-image-2 wins 4/4 diagram_realistic + 2/3 structured_other, with textbook-atlas fidelity that the HTML+SVG path does not currently deliver.
+3. **Deterministic statistical charts** (histogram, boxplot, line, pie without domain overlays) → `render_mode: "chart"` (matplotlib) remains the default for reproducibility; fall through to gpt_image only if the prompt explicitly requests a textbook aesthetic (as with the histogram spec where GPT c1 clearly beat matplotlib-style HTML).
+4. **Frontend TS renderer track** (docs/superpowers/plans/2026-07-18-frontend-ts-render-mode.md, Part B) — **do not proceed as planned**. The evidence does not justify shipping a `render_mode: "frontend_ts"` for illustrative content. Options: close the plan, or heavily re-scope it to only the simple-table category where TS was at least functional (quality 3) and even then HTML dominated by ~2 points.
 
-## Export constraint
-
-Verifier and ODT export both consume the server-side PNG (`image_base64`).
-Even in the "go" outcome, the server path stays for those flows — TS
-rendering only affects on-page display.
-
-## Decision
-
-**NO-GO (for now)** — No production distribution exists (empty `output/`, few-shot
-corpora not unwrapped by the census), and no live fidelity comparison was
-possible in the headless container. Under these conditions a GO is unjustified.
-The prototype's three supported shapes have no correctness risk (they are
-display-only behind a flag), so the prototype remains in-tree behind
-`VITE_ENABLE_FRONTEND_TS_RENDERER` for continued experimentation. However, Task 10
-of the plan (extending `render_mode` with `"frontend_ts"`) is deferred. A full GO
-requires a production census (≥30 questions per subject) and a live fidelity
-comparison with measured fallback rates. When those conditions are met, re-run
-Phase A; if the outcome is GO or HYBRID, Task 10 extends the `render_mode` enum
-with `"frontend_ts"` and updates `CONTENT_TYPE_INSTRUCTIONS`; the `"html"` value
-remains a permanent legacy alias.
-
-**Gate tooling (added 2026-07-18, issue #110 Part A):** the census now reads
-production `generation_records` via `scripts/census_chart_specs.py` (`--check`
-exits 1 while any subject is below 30 questions), and the live fidelity
-comparison is performed with `scripts/build_fidelity_manifest.py` plus the
-web `/fidelity-compare` page. Replace the "Unmeasured" blocks above with the
-Markdown those tools emit when re-running Phase A.
+Confidence: **medium-low**. The 15-spec sample is well under the >=30-per-subject census gate, table-heavy, and NS is hand-crafted. The direction (HTML for tables/overlays, gpt_image for realistic diagrams, TS not viable) is robust across the sample but the exact thresholds should be revisited once production accumulates ~30 questions per subject.
