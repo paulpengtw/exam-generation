@@ -153,6 +153,32 @@ def test_dispatch_gpt_image_mode_bypasses_render_mode(tmp_path) -> None:
     assert len(llm_client.image_calls) == 1
 
 
+def test_dispatch_gpt_image_render_mode_calls_llm_generate_image(tmp_path) -> None:
+    from src import renderer
+
+    html_renderer = _RecordingHtmlRenderer()
+    llm_client = _RecordingLlmClient()
+
+    out = tmp_path / "diagram.png"
+    result = renderer.render_image(
+        {
+            "render_mode": "gpt_image",
+            "description": "簡易蒸餾裝置示意圖",
+            "data": {"components": []},
+        },
+        out,
+        html_renderer=html_renderer,
+        llm_client=llm_client,
+        # caller does NOT override; spec-level render_mode drives the choice
+        image_generation_mode="html",
+    )
+
+    assert result == str(out)
+    assert html_renderer.calls == [], "html Playwright path must NOT be called"
+    assert llm_client.html_calls == [], "LLM HTML-generation path must NOT be called"
+    assert len(llm_client.image_calls) == 1, "generate_image must be called exactly once"
+
+
 def test_dispatch_unknown_render_mode_returns_none(tmp_path) -> None:
     from src import renderer
 
