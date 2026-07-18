@@ -53,7 +53,7 @@ class ImageSpec(BaseModel):
     - render_mode="chart": structured data rendered by matplotlib (histogram, boxplot, etc.)
     - render_mode="html": LLM generates HTML/CSS/SVG, rendered to PNG via Playwright
     """
-    render_mode: Literal["chart", "html"] = "chart"
+    render_mode: Literal["chart", "html", "gpt_image"] = "chart"
     # chart mode fields
     chart_type: Literal["histogram", "boxplot", "line_chart", "pie_chart"] | None = None
     title: str = ""

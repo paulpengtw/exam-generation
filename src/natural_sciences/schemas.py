@@ -18,7 +18,7 @@ _GRADES: list[int] = load_grades(_schemas)
 
 
 class ImageSpec(BaseModel):
-    render_mode: Literal["chart", "html"] = "chart"
+    render_mode: Literal["chart", "html", "gpt_image"] = "chart"
     chart_type: (
         Literal["histogram", "boxplot", "line_chart", "pie_chart", "scatter_plot"] | None
     ) = None
