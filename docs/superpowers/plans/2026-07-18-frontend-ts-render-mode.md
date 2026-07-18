@@ -1,3 +1,12 @@
+> **SUPERSEDED 2026-07-18.** The operator approved a **hybrid** decision instead of the
+> `frontend_ts` rollout planned here. See `docs/figure-rendering-policy.md` (Phase A
+> outcome, HYBRID entry) and `docs/figure-rendering-evaluation.md` (15-spec fidelity
+> comparison) for the evidence and decision. Part A tasks 1-5 already shipped as PR #147.
+> Part B tasks 6-12 are NOT to be executed; the new routing scope will live in a fresh
+> plan doc (to be authored in a later session).
+
+---
+
 # Frontend-TS Render Mode — Gate Evidence + Gated Rollout Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
