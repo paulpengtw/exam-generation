@@ -8,10 +8,11 @@ from src.common.difficulty import Difficulty, resolve_difficulty
 from src.natural_sciences.curriculum_loader import (
     allowed_learning_content,
     allowed_learning_performance,
+    grade_to_learning_stage,
     load_learning_content,
     load_learning_performance,
 )
-from src.natural_sciences.schema_loader import load_grades, load_learning_stage, load_schemas
+from src.natural_sciences.schema_loader import load_grades, load_schemas
 from src.natural_sciences.schemas import (
     QuestionContext,
     QuestionSetType,
@@ -23,7 +24,6 @@ from src.natural_sciences.schemas import (
 
 _schemas = load_schemas()
 _GRADES: list[int] = load_grades(_schemas)
-_LEARNING_STAGE: str = load_learning_stage(_schemas)
 _CONTENT_TYPE_VALUES: list[str] = [
     row["value"] for row in _schemas.get("題目內容類型", []) if row.get("value")
 ]
@@ -47,14 +47,17 @@ def _matching_subcontexts(context_values: set[str]) -> list[QuestionSubContext]:
     ]
 
 
-def _content_from_performance(performance_codes: list[str]) -> list[str]:
+def _content_from_performance(
+    performance_codes: list[str],
+    learning_stage: str,
+) -> list[str]:
     content_by_value = {
         entry["value"]: entry
-        for entry in allowed_learning_content(_LC_DATA, _LEARNING_STAGE)
+        for entry in allowed_learning_content(_LC_DATA, learning_stage)
     }
     performance_by_value = {
         entry["value"]: entry
-        for entry in allowed_learning_performance(_LP_DATA, _LEARNING_STAGE)
+        for entry in allowed_learning_performance(_LP_DATA, learning_stage)
     }
     result: list[str] = []
     seen: set[str] = set()
@@ -89,6 +92,7 @@ def sample_params(
     resolved_difficulty: Difficulty = resolve_difficulty(difficulty)
 
     selected_grade = grade if grade is not None else rng.choice(_GRADES)
+    learning_stage = grade_to_learning_stage(selected_grade)
 
     if context is not None:
         selected_context = context
@@ -124,7 +128,7 @@ def sample_params(
     if learning_performance is not None:
         selected_lp_pool = learning_performance
     else:
-        lp_entries = allowed_learning_performance(_LP_DATA, _LEARNING_STAGE)
+        lp_entries = allowed_learning_performance(_LP_DATA, learning_stage)
         lp_count = rng.randint(1, min(2, max(1, len(lp_entries))))
         selected_lp_pool = (
             [e["value"] for e in rng.sample(lp_entries, lp_count)]
@@ -135,12 +139,12 @@ def sample_params(
     if learning_content is not None:
         selected_lc_pool = learning_content
     else:
-        mapped_content = _content_from_performance(selected_lp_pool)
+        mapped_content = _content_from_performance(selected_lp_pool, learning_stage)
         if mapped_content:
             lc_count = rng.randint(1, min(3, len(mapped_content)))
             selected_lc_pool = rng.sample(mapped_content, lc_count)
         else:
-            lc_entries = allowed_learning_content(_LC_DATA, _LEARNING_STAGE)
+            lc_entries = allowed_learning_content(_LC_DATA, learning_stage)
             lc_count = rng.randint(1, min(3, max(1, len(lc_entries))))
             selected_lc_pool = (
                 [e["value"] for e in rng.sample(lc_entries, lc_count)]

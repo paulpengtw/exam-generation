@@ -20,9 +20,11 @@ from src.common.batch_dedup import PriorScope, format_prior_scopes_block
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.natural_sciences.curriculum_loader import (
     content_instructions,
+    grade_to_learning_stage,
     load_learning_content,
     load_learning_performance,
     performance_instructions,
+    relevant_cross_concepts,
 )
 from src.natural_sciences.data_loader import load_few_shot_example_groups
 from src.natural_sciences.reporting_scale import (
@@ -46,10 +48,17 @@ _PERFORMANCE_DATA: dict = load_learning_performance()
 _CONTENT_DATA: dict = load_learning_content()
 
 
-def _stage_filtered_content(data: dict, learning_stage: str) -> dict:
+def _stage_filtered_content(
+    data: dict,
+    learning_stage: str,
+    lc_codes: Sequence[str] | None = None,
+) -> dict:
+    cross_concepts = data.get("跨科概念", [])
+    if lc_codes:
+        cross_concepts = relevant_cross_concepts(cross_concepts, lc_codes)
     return {
         "學習階段_to_grades": data.get("學習階段_to_grades", {}),
-        "跨科概念": data.get("跨科概念", []),
+        "跨科概念": cross_concepts,
         "學習內容": [
             row for row in data.get("學習內容", [])
             if row.get("學習階段") == learning_stage
@@ -77,6 +86,30 @@ _CONTENT_TEXT: str = json.dumps(
     ensure_ascii=False,
     indent=2,
 )
+_STAGE_TO_GRADES: dict[str, list[int]] = _CONTENT_DATA.get("學習階段_to_grades", {})
+
+
+def curriculum_texts(
+    learning_stage: str,
+    lc_codes: Sequence[str] | None = None,
+) -> tuple[str, str]:
+    """Return (content_text, performance_text) JSON blocks for one 學習階段.
+
+    `lc_codes` narrows the injected 跨科概念 taxonomy to the concept groups
+    related to the sampled 學習內容 codes; empty or unknown codes fall back
+    to the full 48-entry taxonomy (issue #91).
+    """
+    content = json.dumps(
+        _stage_filtered_content(_CONTENT_DATA, learning_stage, lc_codes=lc_codes),
+        ensure_ascii=False,
+        indent=2,
+    )
+    performance = json.dumps(
+        _stage_filtered_performance(_PERFORMANCE_DATA, learning_stage),
+        ensure_ascii=False,
+        indent=2,
+    )
+    return content, performance
 _LC_INSTRUCTIONS: dict[str, str] = content_instructions(_CONTENT_DATA)
 _LP_INSTRUCTIONS: dict[str, str] = performance_instructions(_PERFORMANCE_DATA)
 LC_INSTRUCTIONS = _LC_INSTRUCTIONS
@@ -144,7 +177,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - **Constructed response**：短語、二到四句短段落、或簡單圖形／圖表／示意圖作答。繪圖題需描述簡易作答介面與評分重點。
 
 ## 各小題必須標記
-- `年級`：7、8 或 9
+- `年級`：{grade_names}其中之一
 - `科目`：自然科學
 - `科學能力`：從指定條件中的 PISA Science / Environmental Science competency 選擇
 - `學習內容`：108課綱自然科學學習內容編碼+說明
@@ -255,13 +288,23 @@ def _build_curriculum_section(
     return "\n\n".join(parts)
 
 
+def _grades_for(grades: list[int] | None, learning_stage: str | None) -> list[int]:
+    """Grade list for system prompts: explicit grades win, then the stage's
+    own grades (學習階段_to_grades), then the schema_meta default."""
+    if grades is not None:
+        return grades
+    if learning_stage is not None:
+        return _STAGE_TO_GRADES.get(learning_stage, _GRADES)
+    return _GRADES
+
+
 def build_system_prompt(
     grades: list[int] | None = None,
     learning_stage: str | None = None,
     content_text: str | None = None,
     performance_text: str | None = None,
 ) -> str:
-    g = grades if grades is not None else _GRADES
+    g = _grades_for(grades, learning_stage)
     stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
     grade_names = "、".join(f"{x}年級" for x in g)
     c_text = content_text if content_text is not None else _CONTENT_TEXT
@@ -378,7 +421,6 @@ def build_user_prompt(
             cfg.option_word_limit,
             cfg.learning_content, cfg.learning_performance,
         ))
-        has_config = has_structural_config or bool(cfg.text_word_limit)
         if cfg.question_type:
             cfg_parts.append(f"題型={cfg.question_type.value}")
         if cfg.instruction:
@@ -455,7 +497,7 @@ def build_user_prompt(
 
     text = USER_PROMPT_TEMPLATE.format(
         grade=params.grade,
-        learning_stage=_LEARNING_STAGE,
+        learning_stage=grade_to_learning_stage(params.grade),
         context=topic_override or "、".join(c.value for c in params.情境),
         sub_context=params.情境子類別.value,
         set_type=params.題型種類.value,
@@ -562,7 +604,7 @@ def build_text_system_prompt(
     content_text: str | None = None,
     performance_text: str | None = None,
 ) -> str:
-    g = grades if grades is not None else _GRADES
+    g = _grades_for(grades, learning_stage)
     stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
     grade_names = "、".join(f"{x}年級" for x in g)
     c_text = content_text if content_text is not None else _CONTENT_TEXT
@@ -809,7 +851,7 @@ def build_subquestion_user_prompt(
 
 ## 指定條件
 
-- **年級重心**：{params.grade}年級（{_LEARNING_STAGE}）
+- **年級重心**：{params.grade}年級（{grade_to_learning_stage(params.grade)}）
 - **情境**：{"、".join(c.value for c in params.情境)}
 - **情境子類別**：{params.情境子類別.value}
 - **科學能力**：{science_competencies}
