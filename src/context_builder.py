@@ -70,9 +70,17 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     ),
     "含圖片": (
         "本題目必須包含圖片或視覺示意素材（幾何圖形、示意圖、版面等）。"
-        "請輸出 `chart_spec`，優先使用 `render_mode: \"html\"`，並在 `description` 與 `data` 中完整描述版面與內容。"
+        "請輸出 `chart_spec`，並依圖片家族選擇 `render_mode`："
+        "\n"
+        "- **寫實圖 / 真實比例幾何** — 需符合真實比例的幾何、示意情境圖、需要接近寫實筆觸的插圖，"
+        "請使用 `render_mode: \"gpt_image\"`。"
+        "\n"
+        "- **結構化 / 語意版面** — 版面型的說明圖、附語意標註或表格化的比較，"
+        "請使用 `render_mode: \"html\"`。"
+        "\n"
+        "在 `description` 與 `data` 中完整描述版面與內容。"
         f"（示意圖聲明）本題所有圖片皆為示意用途，非完全等比例繪製；"
-        f"請在 `chart_spec.description` 中明確要求下游 HTML 產生器"
+        f"若使用 `render_mode: \"html\"`，請在 `chart_spec.description` 中明確要求下游 HTML 產生器"
         f"將「{IMAGE_DISCLAIMER}」以 caption 形式呈現在圖片下緣或版面空白處。"
     ),
     "graphs/charts/tables": (
