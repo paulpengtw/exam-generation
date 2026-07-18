@@ -16,15 +16,16 @@ from src.config import Config
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.natural_sciences.context_builder import (
-    _LEARNING_STAGE,
     LC_INSTRUCTIONS,
     LP_INSTRUCTIONS,
     build_subquestion_system_prompt,
     build_subquestion_user_prompt,
     build_text_system_prompt,
     build_text_user_prompt,
+    curriculum_texts,
 )
 from src.natural_sciences.corrector import correct_question
+from src.natural_sciences.curriculum_loader import grade_to_learning_stage
 from src.natural_sciences.sampler import sample_params
 from src.natural_sciences.schema_loader import load_grades, load_schemas
 from src.natural_sciences.schemas import (
@@ -387,8 +388,14 @@ def generate_one(
 ) -> ExamQuestion | str:
     """Generate a single PISA Science question set."""
     params = _with_text_word_limit(params, text_word_limit)
+    learning_stage = grade_to_learning_stage(params.grade)
+    content_text, performance_text = curriculum_texts(learning_stage, params.學習內容_pool)
     if dry_run:
-        text_system = build_text_system_prompt()
+        text_system = build_text_system_prompt(
+            learning_stage=learning_stage,
+            content_text=content_text,
+            performance_text=performance_text,
+        )
         text_user, text_images = build_text_user_prompt(
             params,
             config.data_dir / "natural_sciences" / "few_shot",
@@ -410,7 +417,11 @@ def generate_one(
 
     print(f"  Generating question {question_id}...", file=sys.stderr)
 
-    text_system = build_text_system_prompt()
+    text_system = build_text_system_prompt(
+        learning_stage=learning_stage,
+        content_text=content_text,
+        performance_text=performance_text,
+    )
     text_user, text_images = build_text_user_prompt(
         params,
         config.data_dir / "natural_sciences" / "few_shot",
@@ -435,7 +446,11 @@ def generate_one(
             for i in range(1, n + 1)
         ]
 
-    sub_system = build_subquestion_system_prompt(learning_stage=_LEARNING_STAGE)
+    sub_system = build_subquestion_system_prompt(
+        learning_stage=learning_stage,
+        content_text=content_text,
+        performance_text=performance_text,
+    )
     max_workers = min(len(sq_plans), config.subgen_max_concurrency)
     use_embedded_subquestions = (
         sub_client_factory is None and client is not None and not isinstance(client, LLMClient)
