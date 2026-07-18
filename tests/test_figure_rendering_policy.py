@@ -32,11 +32,19 @@ def test_plain_text_bans_chart_spec(subject: str, table: dict) -> None:
 
 
 @pytest.mark.parametrize("subject, table", _SUBJECT_TABLES)
-def test_illustrative_content_routes_to_html(subject: str, table: dict) -> None:
+def test_illustrative_content_routes_to_gpt_image_or_html(
+    subject: str, table: dict
+) -> None:
+    """含圖片 must route realistic diagrams to gpt_image and structured/semantic to html."""
     assert "含圖片" in table
     text = table["含圖片"]
+    assert 'render_mode: "gpt_image"' in text, (
+        f"{subject}: 含圖片 instruction must direct realistic diagrams to "
+        f'render_mode: "gpt_image"'
+    )
     assert 'render_mode: "html"' in text, (
-        f"{subject}: 含圖片 instruction must direct the model to render_mode: \"html\""
+        f"{subject}: 含圖片 instruction must direct structured/semantic content to "
+        f'render_mode: "html"'
     )
 
 
