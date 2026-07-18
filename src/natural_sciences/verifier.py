@@ -13,6 +13,7 @@ from src.natural_sciences.context_builder import (
     _PERFORMANCE_TEXT,
     _build_curriculum_section,
 )
+from src.natural_sciences.curriculum_codes import validate_question_codes
 from src.natural_sciences.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
 
 _CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT)
@@ -170,8 +171,17 @@ def verify_question(
             details = details.rstrip()
             details += "\n\n[誘答分析提醒] " + "；".join(all_warnings)
 
+        # Issue #92: deterministic curriculum-code check. Unlike the advisory
+        # distractor warnings above, unknown or missing 學習內容/學習表現
+        # codes are a hard reject — the LLM's lenient verdict cannot
+        # overrule the curriculum JSON.
+        code_issues = validate_question_codes(question)
+        if code_issues:
+            details = details.rstrip()
+            details += "\n\n[課綱代碼檢核] " + "；".join(code_issues)
+
         return VerificationResult(
-            passed=result.get("passed", False),
+            passed=result.get("passed", False) and not code_issues,
             answer_match=result.get("answer_match", False),
             details=details,
             my_answer=result.get("my_answer", ""),
