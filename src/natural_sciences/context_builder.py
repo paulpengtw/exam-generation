@@ -4,9 +4,10 @@
 Figure routing: any `chart_spec` this module instructs the model to emit
 must follow the rule in ``docs/figure-rendering-policy.md`` —
 precise/quantitative statistical charts use ``render_mode: "chart"``
-(matplotlib); illustrative figures — 實驗裝置圖, 模型圖, 流程圖, 標籤圖,
-data tables — use ``render_mode: "html"`` (LLM-HTML + Playwright). See
-``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``題目內容類型`` mapping.
+(matplotlib); structured data tables and semantic-overlay figures use
+``render_mode: "html"`` (LLM-HTML + Playwright); realistic diagrams (實驗裝置圖,
+模型圖, 標籤圖, 生物剖面, 地圖) use ``render_mode: "gpt_image"`` (OpenAI image
+API). See ``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``題目內容類型`` mapping.
 """
 
 from __future__ import annotations
