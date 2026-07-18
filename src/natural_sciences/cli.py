@@ -25,6 +25,7 @@ from src.natural_sciences.context_builder import (
     build_text_user_prompt,
 )
 from src.natural_sciences.corrector import correct_question
+from src.natural_sciences.curriculum_codes import repair_lc_refs, repair_lp_refs
 from src.natural_sciences.sampler import sample_params
 from src.natural_sciences.schema_loader import load_grades, load_schemas
 from src.natural_sciences.schemas import (
@@ -192,6 +193,8 @@ def _parse_question(
                 for r in sq_raw.get("學習表現", [])
                 if isinstance(r, dict) and r.get("編碼")
             ]
+            lc_refs = repair_lc_refs(lc_refs, params.學習內容_pool)
+            lp_refs = repair_lp_refs(lp_refs, params.學習表現_pool)
             rubric = [
                 RubricEntry(
                     code=str(r.get("code", "")),
@@ -271,11 +274,17 @@ def _parse_subquestion(
                 LearningContentRef(編碼=code, 說明=LC_INSTRUCTIONS.get(code, ""))
                 for code in cfg.learning_content
             ]
+        else:
+            # Issue #92: canonicalize LLM-emitted codes; unknown codes are
+            # dropped and an empty result falls back to the sampled pool.
+            lc_refs = repair_lc_refs(lc_refs, params.學習內容_pool)
         if cfg and cfg.learning_performance:
             lp_refs = [
                 LearningContentRef(編碼=code, 說明=LP_INSTRUCTIONS.get(code, ""))
                 for code in cfg.learning_performance
             ]
+        else:
+            lp_refs = repair_lp_refs(lp_refs, params.學習表現_pool)
         rubric = [
             RubricEntry(
                 code=str(r.get("code", "")),

@@ -430,7 +430,7 @@ def test_ns_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
                         "科目": ["自然科學"],
                         "科學能力": ["能力一"],
                         "核心素養": [],
-                        "學習內容": [{"編碼": f"INc-Ⅳ-{idx}", "說明": "測試"}],
+                        "學習內容": [{"編碼": f"Ab-Ⅳ-{idx}", "說明": "測試"}],
                         "學習表現": [{"編碼": "tr-Ⅳ-1", "說明": "測試"}],
                         "出題概念": "測試",
                         "題型": "Simple multiple-choice",
@@ -465,7 +465,7 @@ def test_ns_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
 
     text_prompts = [p for p in client.user_prompts if "## 已生成題目" in p]
     assert text_prompts, "expected at least one prompt to carry the dedup block"
-    assert "1. 核心問題：科學核心問題 1；學習內容：INc-Ⅳ-1" in text_prompts[0]
+    assert "1. 核心問題：科學核心問題 1；學習內容：Ab-Ⅳ-1" in text_prompts[0]
 
 
 def test_server_generate_stream_accumulates_prior_scopes_across_math_workers(tmp_path) -> None:
