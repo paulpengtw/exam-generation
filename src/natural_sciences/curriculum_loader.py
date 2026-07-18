@@ -11,6 +11,24 @@ from src.common import curriculum_loader as _base
 _DATA_DIR = Path(__file__).parent.parent.parent / "data" / "natural_sciences" / "curriculum"
 
 
+def grade_to_learning_stage(grade: int) -> str:
+    """Map a grade (3-12) to its 自然科學 學習階段.
+
+    Mirrors ``src.sampler.grade_to_learning_stage`` (math), but 自然科學 has
+    no 第一學習階段 — the subject starts at grade 3 (學習階段_to_grades in the
+    curriculum JSON covers stages 二/三/四/五 only).
+    """
+    if 3 <= grade <= 4:
+        return "第二學習階段"
+    if 5 <= grade <= 6:
+        return "第三學習階段"
+    if 7 <= grade <= 9:
+        return "第四學習階段"
+    if 10 <= grade <= 12:
+        return "第五學習階段"
+    raise ValueError(f"grade {grade} has no 自然科學 學習階段 (must be 3-12)")
+
+
 def _load_json(path: Path) -> dict:
     with open(path, encoding="utf-8") as f:
         return json.load(f)
