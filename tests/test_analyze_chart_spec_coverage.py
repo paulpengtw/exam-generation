@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.analyze_chart_spec_coverage import classify_spec, iter_specs, summarize
+from scripts.analyze_chart_spec_coverage import (
+    classify_spec,
+    iter_item_specs,
+    iter_specs,
+    summarize,
+)
 
 
 def test_classify_chart_by_render_mode_and_chart_type() -> None:
@@ -70,3 +75,17 @@ def test_summarize_returns_markdown_with_counts_and_percentages() -> None:
     assert "| chart | 1 | 33.3% |" in md
     assert "| table | 1 | 33.3% |" in md
     assert "| other | 1 | 33.3% |" in md
+
+
+def test_iter_item_specs_yields_top_level_and_subquestion_specs() -> None:
+    item = {
+        "chart_spec": {"render_mode": "chart", "chart_type": "boxplot", "data": {}},
+        "subquestions": [
+            {"chart_spec": {"render_mode": "html", "description": "表格", "data": {"rows": []}}},
+            {"chart_spec": None},
+            "not-a-dict",
+        ],
+    }
+    specs = list(iter_item_specs(item))
+    assert len(specs) == 2
+    assert {classify_spec(s) for s in specs} == {"chart", "table"}
