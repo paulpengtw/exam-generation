@@ -37,7 +37,7 @@ question's subject, grade, or 學習內容 code.
 | Deterministic statistical chart (histogram/boxplot/line/pie, no domain overlays) | `render_mode: "chart"` (matplotlib) | Reproducibility; no LLM call |
 | Table (any subject) | `render_mode: "html"` | HTML+Playwright captures titles, semantic highlights, inline units, footnotes |
 | Chart with semantic overlays (projection dividers, threshold lines, domain-specific highlights, companion data tables) | `render_mode: "html"` | LLM-authored HTML/SVG reliably encodes semantic overlays gpt-image-2 flattens |
-| Realistic diagram (map with real coastlines, lab apparatus, biology cell/organism, geometry that must match real-world proportions) | `image_generation_mode: "gpt_image"` | 15-spec eval: 4/4 diagram_realistic wins for gpt-image-2; HTML+SVG reads as infographic |
+| Realistic diagram (map with real coastlines, lab apparatus, biology cell/organism, geometry that must match real-world proportions) | `render_mode: "gpt_image"` | 15-spec eval: 4/4 diagram_realistic wins for gpt-image-2; HTML+SVG reads as infographic |
 | Structured pedagogical figure (menu, tree diagram, PISA two-panel) | Case-by-case; prefer `html` if figure needs semantic annotation hooks, `gpt_image` if textbook-atlas aesthetic is primary | Split 1-2 in 15-spec eval |
 
 ## Phase A outcome (issue #108)

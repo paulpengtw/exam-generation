@@ -187,6 +187,55 @@ def test_dispatch_gpt_image_render_mode_calls_llm_generate_image(tmp_path) -> No
     assert len(llm_client.image_calls) == 1, "generate_image must be called exactly once"
 
 
+def test_dispatch_gpt_image_render_mode_returns_none_when_llm_client_missing(tmp_path) -> None:
+    from src import renderer
+
+    html_renderer = _RecordingHtmlRenderer()
+
+    out = tmp_path / "diagram.png"
+    result = renderer.render_image(
+        {
+            "render_mode": "gpt_image",
+            "description": "示意圖",
+            "data": {},
+        },
+        out,
+        html_renderer=html_renderer,
+        llm_client=None,
+        image_generation_mode="html",
+    )
+
+    assert result is None
+    assert html_renderer.calls == []
+
+
+def test_dispatch_gpt_image_render_mode_returns_none_on_generate_image_exception(tmp_path) -> None:
+    from src import renderer
+
+    class _RaisingLlmClient(_RecordingLlmClient):
+        def generate_image(self, prompt, output_path):  # type: ignore[override]
+            raise RuntimeError("simulated image API failure")
+
+    html_renderer = _RecordingHtmlRenderer()
+    llm_client = _RaisingLlmClient()
+
+    out = tmp_path / "diagram.png"
+    result = renderer.render_image(
+        {
+            "render_mode": "gpt_image",
+            "description": "示意圖",
+            "data": {},
+        },
+        out,
+        html_renderer=html_renderer,
+        llm_client=llm_client,
+        image_generation_mode="html",
+    )
+
+    assert result is None
+    assert html_renderer.calls == []
+
+
 def test_dispatch_unknown_render_mode_returns_none(tmp_path) -> None:
     from src import renderer
 

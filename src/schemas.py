@@ -49,9 +49,10 @@ class LearningContentItem(BaseModel):
 class ImageSpec(BaseModel):
     """Specification for generating a question image.
 
-    Two render modes:
+    Three render modes (see docs/figure-rendering-policy.md):
     - render_mode="chart": structured data rendered by matplotlib (histogram, boxplot, etc.)
     - render_mode="html": LLM generates HTML/CSS/SVG, rendered to PNG via Playwright
+    - render_mode="gpt_image": OpenAI image API renders the spec directly (realistic diagrams)
     """
     render_mode: Literal["chart", "html", "gpt_image"] = "chart"
     # chart mode fields
