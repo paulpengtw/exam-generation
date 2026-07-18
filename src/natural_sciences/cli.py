@@ -25,6 +25,7 @@ from src.natural_sciences.context_builder import (
     curriculum_texts,
 )
 from src.natural_sciences.corrector import correct_question
+from src.natural_sciences.curriculum_codes import repair_lc_refs, repair_lp_refs
 from src.natural_sciences.curriculum_loader import grade_to_learning_stage
 from src.natural_sciences.sampler import sample_params
 from src.natural_sciences.schema_loader import load_grades, load_schemas
@@ -193,6 +194,8 @@ def _parse_question(
                 for r in sq_raw.get("學習表現", [])
                 if isinstance(r, dict) and r.get("編碼")
             ]
+            lc_refs = repair_lc_refs(lc_refs, params.學習內容_pool)
+            lp_refs = repair_lp_refs(lp_refs, params.學習表現_pool)
             rubric = [
                 RubricEntry(
                     code=str(r.get("code", "")),
@@ -272,11 +275,17 @@ def _parse_subquestion(
                 LearningContentRef(編碼=code, 說明=LC_INSTRUCTIONS.get(code, ""))
                 for code in cfg.learning_content
             ]
+        else:
+            # Issue #92: canonicalize LLM-emitted codes; unknown codes are
+            # dropped and an empty result falls back to the sampled pool.
+            lc_refs = repair_lc_refs(lc_refs, params.學習內容_pool)
         if cfg and cfg.learning_performance:
             lp_refs = [
                 LearningContentRef(編碼=code, 說明=LP_INSTRUCTIONS.get(code, ""))
                 for code in cfg.learning_performance
             ]
+        else:
+            lp_refs = repair_lp_refs(lp_refs, params.學習表現_pool)
         rubric = [
             RubricEntry(
                 code=str(r.get("code", "")),
@@ -462,9 +471,6 @@ def generate_one(
         if use_embedded_subquestions:
             return _parse_subquestion(sq_plan, question_id, params, idx)
 
-        sub_client = sub_client_factory() if sub_client_factory is not None else LLMClient(config)
-        if hasattr(sub_client, "set_observer"):
-            sub_client.set_observer(obs)
         slot_cfg = (
             params.subquestion_configs[idx - 1]
             if idx - 1 < len(params.subquestion_configs) else None
@@ -480,20 +486,43 @@ def generate_one(
             cfg=slot_cfg,
             disable_reference_fewshot=disable_reference_fewshot,
         )
-        emit_stage(obs, agent_id, "llm_generate", "start")
-        try:
-            sq_raw = sub_client.generate_json(
-                sub_system,
-                sub_user,
-                images=sub_images or None,
-                agent_override=agent_id,
+
+        attempts = 1 + max(0, config.subgen_retries)
+        result: SubQuestion | None = None
+        for attempt in range(1, attempts + 1):
+            sub_client = (
+                sub_client_factory() if sub_client_factory is not None else LLMClient(config)
             )
-            result = _parse_subquestion(sq_raw, question_id, params, idx)
-        except Exception as e:
-            print(f"  Sub-generator {agent_id} failed: {e}", file=sys.stderr)
-            result = None
-        emit_stage(obs, agent_id, "llm_generate", "end")
-        return result
+            if hasattr(sub_client, "set_observer"):
+                sub_client.set_observer(obs)
+            emit_stage(obs, agent_id, "llm_generate", "start", attempt=attempt)
+            try:
+                sq_raw = sub_client.generate_json(
+                    sub_system,
+                    sub_user,
+                    images=sub_images or None,
+                    agent_override=agent_id,
+                )
+                result = _parse_subquestion(sq_raw, question_id, params, idx)
+            except Exception as e:
+                print(
+                    f"  Sub-generator {agent_id} attempt {attempt}/{attempts} failed: {e}",
+                    file=sys.stderr,
+                )
+                result = None
+            emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
+            if result is not None:
+                return result
+            if attempt < attempts:
+                print(
+                    f"  Retrying sub-generator {agent_id} (attempt {attempt + 1}/{attempts})...",
+                    file=sys.stderr,
+                )
+        print(
+            f"  Sub-generator {agent_id} dropped after {attempts} attempt(s)",
+            file=sys.stderr,
+        )
+        return None
 
     sq_results: dict[int, SubQuestion] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

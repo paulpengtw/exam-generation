@@ -45,6 +45,53 @@ The Phase A evaluation (`docs/figure-rendering-evaluation.md`) recorded a
   renderer replaces the on-page `<img>` display only. `"html"` remains
   permanently accepted as a legacy alias for already-generated questions.
 
+## Gate evidence collection and re-evaluation (issue #110)
+
+Two tools collect the evidence the NO-GO above requires. Both are safe to run
+against staging or production data at any time.
+
+1. **Production census** — classifies every `chart_spec` stored in
+   `generation_records` (per-user history, `server/models.py`):
+
+   ```bash
+   DATABASE_URL=<staging-or-prod-url> uv run python scripts/census_chart_specs.py
+   # gate-check mode (exit 1 while the gate is unmet):
+   DATABASE_URL=<url> uv run python scripts/census_chart_specs.py --check
+   ```
+
+   The gate requires **>= 30 questions per subject** (math, social_studies,
+   natural_sciences). Paste the emitted Markdown into
+   `docs/figure-rendering-evaluation.md` under "Historical coverage".
+
+2. **Live fidelity comparison** — renders every illustrative spec through the
+   server path and reviews it side-by-side with the frontend TS prototype:
+
+   ```bash
+   DATABASE_URL=<url> uv run python scripts/build_fidelity_manifest.py --limit 12
+   ```
+
+   Then open `/fidelity-compare` in a frontend built with
+   `VITE_ENABLE_FRONTEND_TS_RENDERER=1`, load `fidelity/manifest.json`, rate
+   each pair (match / minor-diff / broken), and paste the exported Markdown
+   into `docs/figure-rendering-evaluation.md` under "Fidelity". The measured
+   fallback rate is the share of rows marked `fallback (PNG)`.
+
+### Re-running Phase A
+
+When the census gate is MET and the fidelity table holds measured verdicts,
+the operator re-evaluates:
+
+- **GO / HYBRID** — record the dated decision in this file (replacing the
+  NO-GO bullet above), then execute Part B of
+  `docs/superpowers/plans/2026-07-18-frontend-ts-render-mode.md` in its task
+  order: this policy file first, then the context-builder docstrings, then the
+  `CONTENT_TYPE_INSTRUCTIONS` tables, per the update rule this repo codifies.
+- **NO-GO again** — record the dated decision in
+  `docs/figure-rendering-evaluation.md` and leave `render_mode` unchanged.
+
+The decision is made by a human operator, not by an agent: an agent may
+prepare the evidence but must not self-declare GO.
+
 ## What each subject's prompt must instruct
 
 The three prompt assemblers already encode this rule in their
@@ -62,13 +109,17 @@ The three prompt assemblers already encode this rule in their
 
 ## Enforcement
 
-- `tests/test_figure_rendering_policy.py::test_prompt_routes_illustrative_to_html`
-  and `::test_prompt_routes_quantitative_to_chart` assert the
+- `tests/test_figure_rendering_policy.py::test_plain_text_bans_chart_spec`,
+  `::test_illustrative_content_routes_to_html`, and
+  `::test_quantitative_content_routes_to_chart_and_html_for_tables` assert the
   `CONTENT_TYPE_INSTRUCTIONS` strings for each of the three subjects contain
-  the correct `render_mode:"…"` fragment.
-- `tests/test_figure_rendering_policy.py::test_dispatch_matches_render_mode`
-  fixture-tests that `render_image()` in `src/renderer.py` dispatches each
-  ImageSpec to the intended renderer.
+  the correct `render_mode: "…"` fragment.
+- `tests/test_figure_rendering_policy.py::test_dispatch_chart_render_mode_uses_matplotlib`,
+  `::test_dispatch_html_render_mode_uses_playwright`,
+  `::test_dispatch_gpt_image_mode_bypasses_render_mode`, and
+  `::test_dispatch_unknown_render_mode_returns_none` fixture-test that
+  `render_image()` in `src/renderer.py` dispatches each ImageSpec to the
+  intended renderer.
 
 ## Out of scope of this policy
 

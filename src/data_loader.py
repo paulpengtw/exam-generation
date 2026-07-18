@@ -1,4 +1,12 @@
-"""Load and index curriculum data from JSON files."""
+"""Load and index curriculum data from JSON files.
+
+Few-shot examples for math live under ``data/few_shot/{style}/`` and are
+loaded by :func:`load_few_shot_examples`. To add a new sample, see the
+onboarding guide at ``docs/ADDING_SAMPLES.md`` (zh-TW), which documents
+the directory layout, required fields per 題型, validation rules
+(e.g. malformed ``chart_spec`` is silently dropped), and the one-liner
+verification command for all three subject pipelines.
+"""
 
 from __future__ import annotations
 

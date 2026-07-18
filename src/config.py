@@ -23,6 +23,7 @@ class Config:
     rate_limit_delay: float = 0.0  # seconds between API calls
     max_retries: int = 3  # retries when verification fails (0 = no retry)
     subgen_max_concurrency: int = 6
+    subgen_retries: int = 1  # extra fresh 子題 calls per failed slot (0 = drop on first)
     llm_stream: bool = True  # use streaming API when observer is set
     log_truncate: int | None = None  # max chars per message in llm_request events; None = no limit
     web_search_provider: str = "none"  # "anthropic" | "none" (default: opt-in disabled)
@@ -51,6 +52,7 @@ class Config:
             rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),
             max_retries=int(os.environ.get("LLM_MAX_RETRIES", "3")),
             subgen_max_concurrency=int(os.environ.get("SUBGEN_MAX_CONCURRENCY", "6")),
+            subgen_retries=int(os.environ.get("SUBGEN_RETRIES", "1")),
             llm_stream=os.environ.get("LLM_STREAM", "1") not in ("0", "false", "False"),
             log_truncate=int(os.environ["LLM_LOG_TRUNCATE"]) if os.environ.get("LLM_LOG_TRUNCATE") else None,
             web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "none"),

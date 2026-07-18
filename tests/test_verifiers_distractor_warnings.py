@@ -65,7 +65,7 @@ def test_ss_verifier_appends_distractor_warning() -> None:
 
 def test_ns_verifier_appends_distractor_warning() -> None:
     from src.natural_sciences.schemas import ExamQuestion as NSExamQuestion
-    from src.natural_sciences.schemas import SubQuestion
+    from src.natural_sciences.schemas import LearningContentRef, SubQuestion
     from src.natural_sciences.verifier import verify_question
 
     q = NSExamQuestion(
@@ -75,6 +75,8 @@ def test_ns_verifier_appends_distractor_warning() -> None:
                 序號=1, 題型="Simple multiple-choice",
                 題目="Q? (A) x (B) y (C) z (D) w",
                 答案="A", 誘答分析={"A": "正確答案：x。"},
+                學習內容=[LearningContentRef(編碼="Ab-Ⅳ-1")],
+                學習表現=[LearningContentRef(編碼="tr-Ⅳ-1")],
             ),
         ],
     )
@@ -106,11 +108,17 @@ def test_verifier_leaves_details_unchanged_when_no_warnings(subject: str) -> Non
         )
     else:
         from src.natural_sciences.schemas import ExamQuestion as NSQ
-        from src.natural_sciences.schemas import SubQuestion
+        from src.natural_sciences.schemas import LearningContentRef, SubQuestion
         from src.natural_sciences.verifier import verify_question
         q = NSQ(
             情境=["Personal"], 題型種類="題組題", 題型="Simple multiple-choice",
-            subquestions=[SubQuestion(序號=1, 題型="Simple multiple-choice", 題目="Q?", 答案="A")],
+            subquestions=[
+                SubQuestion(
+                    序號=1, 題型="Simple multiple-choice", 題目="Q?", 答案="A",
+                    學習內容=[LearningContentRef(編碼="Ab-Ⅳ-1")],
+                    學習表現=[LearningContentRef(編碼="tr-Ⅳ-1")],
+                ),
+            ],
         )
     client = _FakeVerifierClient(payload)
     result = verify_question(client, q)

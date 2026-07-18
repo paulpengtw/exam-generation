@@ -7,6 +7,7 @@ import VerifyPage from "./pages/VerifyPage";
 import GeneratePage from "./pages/GeneratePage";
 import HistoryPage from "./pages/HistoryPage";
 import SubjectSelectPage from "./pages/SubjectSelectPage";
+import FidelityComparePage from "./pages/FidelityComparePage";
 
 export default function App() {
   return (
@@ -64,6 +65,7 @@ export default function App() {
             </AuthGuard>
           }
         />
+        <Route path="/fidelity-compare" element={<FidelityComparePage />} />
       </Routes>
     </BrowserRouter>
   );

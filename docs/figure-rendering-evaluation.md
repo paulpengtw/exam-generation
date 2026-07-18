@@ -101,3 +101,10 @@ comparison with measured fallback rates. When those conditions are met, re-run
 Phase A; if the outcome is GO or HYBRID, Task 10 extends the `render_mode` enum
 with `"frontend_ts"` and updates `CONTENT_TYPE_INSTRUCTIONS`; the `"html"` value
 remains a permanent legacy alias.
+
+**Gate tooling (added 2026-07-18, issue #110 Part A):** the census now reads
+production `generation_records` via `scripts/census_chart_specs.py` (`--check`
+exits 1 while any subject is below 30 questions), and the live fidelity
+comparison is performed with `scripts/build_fidelity_manifest.py` plus the
+web `/fidelity-compare` page. Replace the "Unmeasured" blocks above with the
+Markdown those tools emit when re-running Phase A.

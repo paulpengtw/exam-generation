@@ -11,7 +11,13 @@ from src.natural_sciences.context_builder import (
     _PERFORMANCE_TEXT,
     _build_curriculum_section,
 )
-from src.natural_sciences.schemas import ExamQuestion, ImageSpec, VerificationResult
+from src.natural_sciences.curriculum_codes import repair_lc_refs, repair_lp_refs
+from src.natural_sciences.schemas import (
+    ExamQuestion,
+    ImageSpec,
+    LearningContentRef,
+    VerificationResult,
+)
 
 _CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT)
 
@@ -51,6 +57,17 @@ CORRECTION_USER_TEMPLATE = """\
 {answer_block}{chart_details_block}
 請輸出修正後的題目 JSON。
 """
+
+
+def _refs_from_raw(raw: object) -> list[LearningContentRef]:
+    """Best-effort parse of a raw LLM 學習內容/學習表現 list into refs."""
+    if not isinstance(raw, list):
+        return []
+    return [
+        LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
+        for r in raw
+        if isinstance(r, dict) and r.get("編碼")
+    ]
 
 
 def correct_question(
@@ -140,8 +157,20 @@ def correct_question(
                     科目=original.科目 if original else sq_raw.get("科目", []),
                     科學能力=original.科學能力 if original else sq_raw.get("科學能力", []),
                     核心素養=original.核心素養 if original else sq_raw.get("核心素養", []),
-                    學習內容=original.學習內容 if original else [],
-                    學習表現=original.學習表現 if original else [],
+                    # Frozen when an original exists (post issue-#92 parse
+                    # repair the originals are always valid); LLM-added rows
+                    # get deterministic canonicalization instead (no pool
+                    # here, so unknown codes are dropped, not replaced).
+                    學習內容=(
+                        original.學習內容
+                        if original
+                        else repair_lc_refs(_refs_from_raw(sq_raw.get("學習內容")), [])
+                    ),
+                    學習表現=(
+                        original.學習表現
+                        if original
+                        else repair_lp_refs(_refs_from_raw(sq_raw.get("學習表現")), [])
+                    ),
                     出題概念=original.出題概念 if original else sq_raw.get("出題概念", ""),
                     題型=original.題型 if original else sq_raw.get("題型", ""),
                     題目=sq_raw.get("題目", original.題目 if original else ""),

@@ -708,9 +708,6 @@ def generate_one(
         if use_embedded_subquestions:
             return _parse_subquestion(sq_plan, question_id, params, idx)
 
-        sub_client = sub_client_factory() if sub_client_factory is not None else LLMClient(config)
-        if hasattr(sub_client, "set_observer"):
-            sub_client.set_observer(obs)
         slot_cfg = (
             params.subquestion_configs[idx - 1]
             if idx - 1 < len(params.subquestion_configs) else None
@@ -726,20 +723,43 @@ def generate_one(
             cfg=slot_cfg,
             disable_reference_fewshot=disable_reference_fewshot,
         )
-        emit_stage(obs, agent_id, "llm_generate", "start")
-        try:
-            sq_raw = sub_client.generate_json(
-                sub_system,
-                sub_user,
-                images=sub_images or None,
-                agent_override=agent_id,
+
+        attempts = 1 + max(0, config.subgen_retries)
+        result: SubQuestion | None = None
+        for attempt in range(1, attempts + 1):
+            sub_client = (
+                sub_client_factory() if sub_client_factory is not None else LLMClient(config)
             )
-            result = _parse_subquestion(sq_raw, question_id, params, idx)
-        except Exception as e:
-            print(f"  Sub-generator {agent_id} failed: {e}", file=sys.stderr)
-            result = None
-        emit_stage(obs, agent_id, "llm_generate", "end")
-        return result
+            if hasattr(sub_client, "set_observer"):
+                sub_client.set_observer(obs)
+            emit_stage(obs, agent_id, "llm_generate", "start", attempt=attempt)
+            try:
+                sq_raw = sub_client.generate_json(
+                    sub_system,
+                    sub_user,
+                    images=sub_images or None,
+                    agent_override=agent_id,
+                )
+                result = _parse_subquestion(sq_raw, question_id, params, idx)
+            except Exception as e:
+                print(
+                    f"  Sub-generator {agent_id} attempt {attempt}/{attempts} failed: {e}",
+                    file=sys.stderr,
+                )
+                result = None
+            emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
+            if result is not None:
+                return result
+            if attempt < attempts:
+                print(
+                    f"  Retrying sub-generator {agent_id} (attempt {attempt + 1}/{attempts})...",
+                    file=sys.stderr,
+                )
+        print(
+            f"  Sub-generator {agent_id} dropped after {attempts} attempt(s)",
+            file=sys.stderr,
+        )
+        return None
 
     sq_results: dict[int, SubQuestion] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:

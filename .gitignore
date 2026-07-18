@@ -11,3 +11,5 @@ build/
 .ruff_cache/
 .pytest_cache/
 dev.db
+fidelity/
+.superpowers/

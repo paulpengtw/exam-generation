@@ -46,7 +46,7 @@ The `"html"` path handles geometry diagrams, coordinate planes, tables, and any 
 
 - **No RAG.** All curriculum data and few-shot examples are injected directly as context.
 - **Randomness is script-side.** The program selects grade, question type, context, learning content — not the LLM.
-- **Two-stage generation (社會 / 自然).** For social studies and natural sciences, question generation runs a two-stage pipeline: a **文本生成器** call produces the shared 核心問題, 文本, and 取材來源 plus an N-entry 子題 plan; then N **子題產生器** calls each write one full 子題 concurrently (`ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6). The assembled 題組 then flows through image rendering → verification → correction unchanged. Math generation stays a single flat call.
+- **Two-stage generation (社會 / 自然).** For social studies and natural sciences, question generation runs a two-stage pipeline: a **文本生成器** call produces the shared 核心問題, 文本, and 取材來源 plus an N-entry 子題 plan; then N **子題產生器** calls each write one full 子題 concurrently (`ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6). A 子題產生器 call that raises or returns unparseable output is retried with a fresh LLM call for that slot only, up to `SUBGEN_RETRIES` times (default 1), before the slot is dropped. The assembled 題組 then flows through image rendering → verification → correction unchanged. Math generation stays a single flat call.
 - **Verify + correct loop.** Sonnet generates → Sonnet verifies → on failure, Sonnet applies a minimal targeted correction and re-verifies (up to `max_retries` times). Only the wrong field changes; classification, metadata, and correct fields are preserved.
 - **OpenAI-compatible endpoint.** Uses the `openai` SDK for endpoint diversity. Opus plans, Sonnet executes.
 
@@ -230,6 +230,7 @@ Environment variables (set in `.env` or export directly):
 | `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
 | `LLM_MAX_RETRIES` | CLI + server | Max correction attempts when verification fails | `3` |
 | `SUBGEN_MAX_CONCURRENCY` | CLI + server | Max concurrent 子題產生器 LLM calls per 題組 (SS/NS only) | `6` |
+| `SUBGEN_RETRIES` | CLI + server | Extra fresh-call attempts for a failed/unparseable 子題產生器 slot before that 子題 is dropped (SS/NS only; `0` = drop on first failure) | `1` |
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |
 | `QUESTION_SCHEMAS_PATH` | CLI + server | Path to question parameter config JSON | `./question_schemas.json` |
 | `SOCIAL_STUDIES_CURRICULUM_DIR` | CLI + server | Directory containing social-studies curriculum CSVs | `./data/social_studies/curriculum` |
@@ -634,6 +635,11 @@ Performance standards organized by learning stage (第一~第五學習階段), d
 - **creative_scenario**: Real-world context questions (menus, stock prices, delivery plans)
 
 **Social studies** (`data/social_studies/few_shot/`): each root-level JSON file is one few-shot sampling group; `few_shot_examples.csv` is a long-format CSV, one row per subquestion, grouped by `範例編號`. Key CSV columns beyond the base set: `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準` (JSON-encoded rubric array with codes `2/1/0/0X`). The checked-in CSV includes mixed-type 題組 examples so the prompt demonstrates per-小題 題型 variation. Reference: `data/social_studies/csv_填寫指南.md`.
+
+> **想新增一則 few-shot 範例？** 三個科目的目錄結構、每個題型的必要欄位、隱性失敗
+> （例如 `chart_spec` JSON 格式錯誤會被靜默丟棄）以及「一行指令確認 loader 有讀到你的範例」
+> 都彙整在 **[`docs/ADDING_SAMPLES.md`](docs/ADDING_SAMPLES.md)** (zh-TW)。加入或修改
+> 範例後**下一次執行即生效**，無須重啟服務或重新 build。
 
 ### Past Exams
 

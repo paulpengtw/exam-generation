@@ -41,6 +41,19 @@ def classify_spec(spec: dict) -> str:
     return "other"
 
 
+def iter_item_specs(item: dict) -> Iterable[dict]:
+    """Yield every non-null chart_spec on one question item (top-level + subquestions)."""
+    top = item.get("chart_spec")
+    if isinstance(top, dict):
+        yield top
+    for sq in item.get("subquestions") or []:
+        if not isinstance(sq, dict):
+            continue
+        sub = sq.get("chart_spec")
+        if isinstance(sub, dict):
+            yield sub
+
+
 def iter_specs(root: Path) -> Iterable[dict]:
     """Yield every non-null chart_spec found under root (top-level + subquestions)."""
     for path in sorted(root.rglob("*.json")):
@@ -52,15 +65,7 @@ def iter_specs(root: Path) -> Iterable[dict]:
         for item in payloads:
             if not isinstance(item, dict):
                 continue
-            top = item.get("chart_spec")
-            if isinstance(top, dict):
-                yield top
-            for sq in item.get("subquestions") or []:
-                if not isinstance(sq, dict):
-                    continue
-                sub = sq.get("chart_spec")
-                if isinstance(sub, dict):
-                    yield sub
+            yield from iter_item_specs(item)
 
 
 def summarize(specs: list[dict]) -> str:
