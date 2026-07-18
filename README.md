@@ -635,6 +635,11 @@ Performance standards organized by learning stage (第一~第五學習階段), d
 
 **Social studies** (`data/social_studies/few_shot/`): each root-level JSON file is one few-shot sampling group; `few_shot_examples.csv` is a long-format CSV, one row per subquestion, grouped by `範例編號`. Key CSV columns beyond the base set: `小題序號`, `小題年級`, `小題科目`, `核心素養`, `學習內容`, `學習表現`, `出題概念`, `小題題型`, `答案`, `答案解析`, `評分規準` (JSON-encoded rubric array with codes `2/1/0/0X`). The checked-in CSV includes mixed-type 題組 examples so the prompt demonstrates per-小題 題型 variation. Reference: `data/social_studies/csv_填寫指南.md`.
 
+> **想新增一則 few-shot 範例？** 三個科目的目錄結構、每個題型的必要欄位、隱性失敗
+> （例如 `chart_spec` JSON 格式錯誤會被靜默丟棄）以及「一行指令確認 loader 有讀到你的範例」
+> 都彙整在 **[`docs/ADDING_SAMPLES.md`](docs/ADDING_SAMPLES.md)** (zh-TW)。加入或修改
+> 範例後**下一次執行即生效**，無須重啟服務或重新 build。
+
 ### Past Exams
 
 PDF files of actual national exam question sets (years 112-114) for reference style and difficulty calibration.
