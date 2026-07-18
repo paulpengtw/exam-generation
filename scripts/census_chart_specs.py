@@ -13,6 +13,9 @@ Run (aiosqlite dev DB by default; point DATABASE_URL at staging/production):
 
 from __future__ import annotations
 
+import argparse
+import asyncio
+import os
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
@@ -99,3 +102,53 @@ def render_census_markdown(result: CensusResult) -> str:
         f"for {', '.join(GATE_SUBJECTS)}.",
     ]
     return "\n".join(lines)
+
+
+def default_database_url() -> str:
+    """Same default as server/db.py: env DATABASE_URL or the local aiosqlite dev DB."""
+    return os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
+
+
+async def load_records(database_url: str) -> list[tuple[str, dict]]:
+    """Load every (subject, question_json) row from generation_records."""
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from server.models import GenerationRecord
+
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                select(GenerationRecord.subject, GenerationRecord.question_json)
+            )
+            return [(row[0], row[1]) for row in result.all()]
+    finally:
+        await engine.dispose()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Census of chart_spec usage across generation_records (issue #110 gate)."
+    )
+    parser.add_argument(
+        "--database-url",
+        default=default_database_url(),
+        help="SQLAlchemy async URL (default: env DATABASE_URL or the local dev.db)",
+    )
+    parser.add_argument("--min-per-subject", type=int, default=DEFAULT_MIN_PER_SUBJECT)
+    parser.add_argument(
+        "--check", action="store_true", help="exit 1 while the census gate is not met"
+    )
+    args = parser.parse_args(argv)
+
+    rows = asyncio.run(load_records(args.database_url))
+    result = summarize_census(rows, min_per_subject=args.min_per_subject)
+    print(render_census_markdown(result))
+    if args.check and not result.gate_met:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
