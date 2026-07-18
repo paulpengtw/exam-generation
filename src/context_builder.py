@@ -2,9 +2,12 @@
 
 Figure routing: any `chart_spec` this module instructs the model to emit must
 follow the rule in ``docs/figure-rendering-policy.md`` — precise/quantitative
-statistical charts use ``render_mode: "chart"`` (matplotlib); illustrative
-figures use ``render_mode: "html"`` (LLM-HTML + Playwright). See
-``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``題目內容類型`` mapping.
+statistical charts use ``render_mode: "chart"`` (matplotlib); structured or
+semantic illustrative figures (menus, scenario cards, tables with annotations)
+use ``render_mode: "html"`` (LLM-HTML + Playwright); realistic diagrams (maps,
+lab apparatus, biology, real-world-proportion geometry) use
+``render_mode: "gpt_image"`` (OpenAI image API). See ``CONTENT_TYPE_INSTRUCTIONS``
+below for the per-``題目內容類型`` mapping.
 """
 
 from __future__ import annotations
