@@ -1,4 +1,14 @@
-"""Data loading for natural-sciences few-shot examples."""
+"""Data loading for natural-sciences few-shot examples.
+
+Examples live in one folder per PISA-Science 題型 under
+``data/natural_sciences/few_shot/``: ``Simple-multiple-choice/``,
+``Complex-multiple-choice/``, ``Constructed-response/``. The folder name
+is derived from the 題型 string via :data:`_TYPE_TO_FOLDER` (spaces →
+hyphens). When 題型 is ``None``, all subdirectories are scanned. To add
+a new sample, see ``docs/ADDING_SAMPLES.md`` (zh-TW) — it documents the
+mapping, the ``評分規準`` JSON-array requirement for ``Constructed
+response`` items, and the one-liner verification command.
+"""
 
 from __future__ import annotations
 

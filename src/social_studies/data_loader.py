@@ -1,4 +1,12 @@
-"""Data loading for social studies — few-shot examples and CSV-driven curriculum."""
+"""Data loading for social studies — few-shot examples and CSV-driven curriculum.
+
+Few-shot examples live under ``data/social_studies/few_shot/``: each root
+JSON file is one sampling group, and ``few_shot_examples.csv`` groups rows
+by ``範例編號``. ``範例_``-prefixed files are never loaded. To add a new
+sample, see ``docs/ADDING_SAMPLES.md`` (zh-TW) — it covers the JSON vs CSV
+tradeoff, required fields per 題型, silent-drop behaviors (malformed
+``chart_spec``, CSV encoding), and the one-liner verification command.
+"""
 
 from __future__ import annotations
 
