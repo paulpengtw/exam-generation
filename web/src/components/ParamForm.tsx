@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getAvailableModels, getSchemas, type AvailableModels, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
+import { drawRandomSubset } from "../utils/drawRandomSubset";
 import CoreQuestionPicker from "./CoreQuestionPicker";
 
 export interface SubQuestionConfig {
@@ -548,9 +549,11 @@ export default function ParamForm({
     let autoDrawn = false;
     if (isCurriculumSubject && learningPerformance.length === 0 && availableLearningPerformance.length > 0) {
       const maxDraw = subject === "math" ? 3 : 2;
-      const drawCount = Math.floor(Math.random() * Math.min(maxDraw, availableLearningPerformance.length)) + 1;
-      const shuffled = [...availableLearningPerformance].sort(() => Math.random() - 0.5);
-      finalLp = shuffled.slice(0, drawCount).map((e) => e.value);
+      finalLp = drawRandomSubset(
+        availableLearningPerformance.map((e) => e.value),
+        1,
+        maxDraw,
+      );
       autoDrawn = true;
     } else if (isCurriculumSubject && learningPerformance.length > 0) {
       finalLp = learningPerformance;
@@ -564,9 +567,11 @@ export default function ParamForm({
       learningContent.length === 0 &&
       availableLearningContent.length > 0
     ) {
-      const drawCount = Math.floor(Math.random() * Math.min(3, availableLearningContent.length)) + 1;
-      const shuffled = [...availableLearningContent].sort(() => Math.random() - 0.5);
-      finalLc = shuffled.slice(0, drawCount).map((e) => e.value);
+      finalLc = drawRandomSubset(
+        availableLearningContent.map((e) => e.value),
+        1,
+        3,
+      );
       lcAutoDrawn = true;
     } else if (
       (subject === "natural_sciences" || subject === "social_studies") &&
