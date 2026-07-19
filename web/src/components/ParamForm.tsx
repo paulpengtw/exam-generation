@@ -195,6 +195,9 @@ export default function ParamForm({
   const [pendingParams, setPendingParams] = useState<GenerateParams | null>(null);
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
+  const [pendingResolvedSubquestionConfigs, setPendingResolvedSubquestionConfigs] = useState<
+    (SubQuestionConfig & { _lcWasAutoDrawn?: boolean; _lpWasAutoDrawn?: boolean })[]
+  >([]);
 
   const ip = initialParams ?? {};
   function fromInit<T>(key: string, fallback: T): T {
@@ -521,21 +524,52 @@ export default function ParamForm({
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
     if (isCurriculumSubject && !effectiveContentType) return;
-    const effectiveSubquestionConfigs =
-      (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== ""
-        ? subquestionConfigs.slice(0, subQuestionCount).map((cfg) => ({
-            question_type: cfg.question_type || undefined,
-            instruction: cfg.instruction?.trim() || undefined,
-            content_type: cfg.content_type || undefined,
-            image_generation_mode: cfg.image_generation_mode || undefined,
-            question_word_limit: cfg.question_word_limit,
-            option_word_limit: cfg.option_word_limit,
-            text_word_limit: cfg.text_word_limit,
-            reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
-            learning_content: cfg.learning_content?.length ? cfg.learning_content : undefined,
-            learning_performance: cfg.learning_performance?.length ? cfg.learning_performance : undefined,
-          }))
-        : [];
+    const lcPool = availableLearningContent.map((e) => e.value);
+    const lpPool = availableLearningPerformance.map((e) => e.value);
+    const shouldDrawPerSubq =
+      (subject === "social_studies" || subject === "natural_sciences") &&
+      subQuestionCount !== "";
+
+    const effectiveSubquestionConfigsInternal: (SubQuestionConfig & {
+      _lcWasAutoDrawn?: boolean;
+      _lpWasAutoDrawn?: boolean;
+    })[] = shouldDrawPerSubq
+      ? subquestionConfigs
+          .slice(0, subQuestionCount as number)
+          .map((cfg) => {
+            const hasExplicitLc = (cfg.learning_content?.length ?? 0) > 0;
+            const hasExplicitLp = (cfg.learning_performance?.length ?? 0) > 0;
+            const resolvedLc = hasExplicitLc
+              ? cfg.learning_content
+              : lcPool.length > 0
+                ? drawRandomSubset(lcPool, 1, 3)
+                : undefined;
+            const resolvedLp = hasExplicitLp
+              ? cfg.learning_performance
+              : lpPool.length > 0
+                ? drawRandomSubset(lpPool, 1, 2)
+                : undefined;
+            return {
+              question_type: cfg.question_type || undefined,
+              instruction: cfg.instruction?.trim() || undefined,
+              content_type: cfg.content_type || undefined,
+              image_generation_mode: cfg.image_generation_mode || undefined,
+              question_word_limit: cfg.question_word_limit,
+              option_word_limit: cfg.option_word_limit,
+              text_word_limit: cfg.text_word_limit,
+              reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
+              learning_content: resolvedLc?.length ? resolvedLc : undefined,
+              learning_performance: resolvedLp?.length ? resolvedLp : undefined,
+              _lcWasAutoDrawn: !hasExplicitLc && !!resolvedLc?.length,
+              _lpWasAutoDrawn: !hasExplicitLp && !!resolvedLp?.length,
+            };
+          })
+      : [];
+
+    const effectiveSubquestionConfigs: SubQuestionConfig[] = effectiveSubquestionConfigsInternal.map(
+      ({ _lcWasAutoDrawn: _lc, _lpWasAutoDrawn: _lp, ...rest }) => rest,
+    );
+
     const hasSubquestionConfig = effectiveSubquestionConfigs.some(
       (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.reporting_scale || c.learning_content?.length || c.learning_performance?.length,
     );
@@ -581,6 +615,7 @@ export default function ParamForm({
     }
 
     setLcWasAutoDrawn(lcAutoDrawn);
+    setPendingResolvedSubquestionConfigs(effectiveSubquestionConfigsInternal);
     setPendingParams({
       grade,
       style: subject === "math" ? style : undefined,
