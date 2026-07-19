@@ -19,6 +19,17 @@ When a batch generates `count > 1` questions, each subject's batch loop accumula
 ### Web confirmation dialog pre-draw
 The web form always shows both 學習內容 and 學習表現 in the confirmation step before submission. If the user made no manual selection, the frontend pre-draws a random subset (1–3 items for 學習內容, 1–2 for 學習表現) from the available pool before displaying the confirmation screen. What is shown is exactly what will be sent to the backend — no further randomness happens on the backend for those fields when they are present.
 
+For 社會領域 and 自然科學 requests that specify `sub_question_count`, the
+frontend also pre-draws per-小題 學習內容 (1–3) and 學習表現 (1–2) from
+the currently-active global pool whenever a 子題's per-小題 selection is
+empty. The drawn codes appear in the confirmation screen under a
+"各小題配置" section (one card per 小題) and are sent to the backend as
+`subquestion_configs[*].learning_content` / `learning_performance`.
+Explicit per-小題 selections are preserved verbatim and never
+overwritten. Empty global pools disable per-小題 auto-draw for that
+field, in which case the backend's `or global pool` prompt-build
+fallback still applies at generation time.
+
 ### Verify + correct loop
 1. First call (Sonnet): generates the question and solution. **For math,** this is a single call producing the full question. **For social studies and natural sciences,** this is a two-stage pipeline: a **文本生成器** call produces the shared 核心問題/文本/取材來源 plus an N-entry 子題 plan, then N concurrent **子題產生器** calls each write one complete 子題 (via `ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6; failed/unparseable 子題 calls get up to `SUBGEN_RETRIES` fresh retries, default 1, before the slot is dropped); the assembled 題組 then enters the verify/correct loop.
 2. Chart/image specs are rendered to PNG before verification so the verifier can see them. Math and natural sciences render top-level `chart_spec`; social studies also renders `subquestions[*].chart_spec` to per-小題 PNGs.
