@@ -567,6 +567,7 @@ export default function ParamForm({
       : [];
 
     const effectiveSubquestionConfigs: SubQuestionConfig[] = effectiveSubquestionConfigsInternal.map(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       ({ _lcWasAutoDrawn: _lc, _lpWasAutoDrawn: _lp, ...rest }) => rest,
     );
 
@@ -708,7 +709,6 @@ export default function ParamForm({
         value: p.disable_reference_fewshot ? "✓" : undefined,
       },
       { label: "小題數量", value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined },
-      { label: "各小題配置", value: p.subquestion_configs },
     ];
 
     const lpHeading = lpWasAutoDrawn
@@ -782,6 +782,62 @@ export default function ParamForm({
             </dd>
           </div>
         </dl>
+        {pendingResolvedSubquestionConfigs.length > 0 && (
+          <section className="confirm-subquestion-block">
+            <h3>{t("form.confirm_subquestion_heading")}</h3>
+            <ol>
+              {pendingResolvedSubquestionConfigs.map((row, i) => (
+                <li key={i}>
+                  <h4>{t("form.confirm_subquestion_row_title", { n: i + 1 })}</h4>
+                  {row.question_type && <div>題型: {row.question_type}</div>}
+                  {row.instruction && <div>出題指示: {row.instruction}</div>}
+                  <div>
+                    {row.learning_performance && row.learning_performance.length > 0 ? (
+                      <>
+                        <div>
+                          {t(
+                            row._lpWasAutoDrawn
+                              ? "form.confirm_subq_lp_random_pool"
+                              : "form.confirm_subq_lp_selected",
+                            { n: row.learning_performance.length },
+                          )}
+                        </div>
+                        <ul>
+                          {row.learning_performance.map((code) => (
+                            <li key={code}>{code}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <div>{t("form.confirm_subq_lp_empty")}</div>
+                    )}
+                  </div>
+                  <div>
+                    {row.learning_content && row.learning_content.length > 0 ? (
+                      <>
+                        <div>
+                          {t(
+                            row._lcWasAutoDrawn
+                              ? "form.confirm_subq_lc_random_pool"
+                              : "form.confirm_subq_lc_selected",
+                            { n: row.learning_content.length },
+                          )}
+                        </div>
+                        <ul>
+                          {row.learning_content.map((code) => (
+                            <li key={code}>{code}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <div>{t("form.confirm_subq_lc_empty")}</div>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
         <div className="flex flex-wrap gap-3 pt-1">
           <button
             type="button"

@@ -88,4 +88,27 @@ describe("per-子題 pre-draw (natural_sciences)", () => {
       expect(row).not.toHaveProperty("_lpWasAutoDrawn");
     }
   });
+
+  it("renders each 子題's pre-drawn LC/LP codes in the confirmation screen", async () => {
+    const onSubmit = vi.fn();
+    render(<ParamForm subject="natural_sciences" onSubmit={onSubmit} />);
+    await screen.findByPlaceholderText("自動 3-7");
+    fireEvent.change(screen.getByPlaceholderText("自動 3-7"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: /form\.btn_generate/i }));
+
+    await screen.findByText("form.confirm_subquestion_heading");
+    expect(screen.getByText("form.confirm_subquestion_row_title:1")).toBeInTheDocument();
+    expect(screen.getByText("form.confirm_subquestion_row_title:2")).toBeInTheDocument();
+
+    const section = screen
+      .getByText("form.confirm_subquestion_heading")
+      .closest("section")!;
+    const html = section.innerHTML;
+    const lcVisible = ["INc-IV-1", "INc-IV-2", "INc-IV-3", "INc-IV-4"].some((c) =>
+      html.includes(c),
+    );
+    const lpVisible = ["tr-IV-1", "tr-IV-2", "tr-IV-3"].some((c) => html.includes(c));
+    expect(lcVisible).toBe(true);
+    expect(lpVisible).toBe(true);
+  });
 });
