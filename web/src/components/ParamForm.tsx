@@ -524,8 +524,40 @@ export default function ParamForm({
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
     if (isCurriculumSubject && !effectiveContentType) return;
-    const lcPool = availableLearningContent.map((e) => e.value);
-    const lpPool = availableLearningPerformance.map((e) => e.value);
+    const lpPoolValues = availableLearningPerformance.map((e) => e.value);
+    const lcPoolValues = availableLearningContent.map((e) => e.value);
+
+    // If no learning_performance selected, pre-draw randomly to match backend sampling
+    let finalLp: string[] | undefined;
+    let autoDrawn = false;
+    if (isCurriculumSubject && learningPerformance.length === 0 && lpPoolValues.length > 0) {
+      const maxDraw = subject === "math" ? 3 : 2;
+      finalLp = drawRandomSubset(lpPoolValues, 1, maxDraw);
+      autoDrawn = true;
+    } else if (isCurriculumSubject && learningPerformance.length > 0) {
+      finalLp = learningPerformance;
+    }
+
+    setLpWasAutoDrawn(autoDrawn);
+    let finalLc: string[] | undefined;
+    let lcAutoDrawn = false;
+    if (
+      (subject === "natural_sciences" || subject === "social_studies") &&
+      learningContent.length === 0 &&
+      lcPoolValues.length > 0
+    ) {
+      finalLc = drawRandomSubset(lcPoolValues, 1, 3);
+      lcAutoDrawn = true;
+    } else if (
+      (subject === "natural_sciences" || subject === "social_studies") &&
+      learningContent.length > 0
+    ) {
+      finalLc = learningContent;
+    }
+
+    setLcWasAutoDrawn(lcAutoDrawn);
+    const perSubqLpPool = learningPerformance.length > 0 ? learningPerformance : (finalLp ?? []);
+    const perSubqLcPool = learningContent.length > 0 ? learningContent : (finalLc ?? []);
     const shouldDrawPerSubq =
       (subject === "social_studies" || subject === "natural_sciences") &&
       subQuestionCount !== "";
@@ -541,13 +573,13 @@ export default function ParamForm({
             const hasExplicitLp = (cfg.learning_performance?.length ?? 0) > 0;
             const resolvedLc = hasExplicitLc
               ? cfg.learning_content
-              : lcPool.length > 0
-                ? drawRandomSubset(lcPool, 1, 3)
+              : perSubqLcPool.length > 0
+                ? drawRandomSubset(perSubqLcPool, 1, 3)
                 : undefined;
             const resolvedLp = hasExplicitLp
               ? cfg.learning_performance
-              : lpPool.length > 0
-                ? drawRandomSubset(lpPool, 1, 2)
+              : perSubqLpPool.length > 0
+                ? drawRandomSubset(perSubqLpPool, 1, 2)
                 : undefined;
             return {
               question_type: cfg.question_type || undefined,
@@ -579,43 +611,6 @@ export default function ParamForm({
         hasSubquestionConfig || effectiveSubquestionConfigs.length > 0
       );
 
-    // If no learning_performance selected, pre-draw randomly to match backend sampling
-    let finalLp: string[] | undefined;
-    let autoDrawn = false;
-    if (isCurriculumSubject && learningPerformance.length === 0 && availableLearningPerformance.length > 0) {
-      const maxDraw = subject === "math" ? 3 : 2;
-      finalLp = drawRandomSubset(
-        availableLearningPerformance.map((e) => e.value),
-        1,
-        maxDraw,
-      );
-      autoDrawn = true;
-    } else if (isCurriculumSubject && learningPerformance.length > 0) {
-      finalLp = learningPerformance;
-    }
-
-    setLpWasAutoDrawn(autoDrawn);
-    let finalLc: string[] | undefined;
-    let lcAutoDrawn = false;
-    if (
-      (subject === "natural_sciences" || subject === "social_studies") &&
-      learningContent.length === 0 &&
-      availableLearningContent.length > 0
-    ) {
-      finalLc = drawRandomSubset(
-        availableLearningContent.map((e) => e.value),
-        1,
-        3,
-      );
-      lcAutoDrawn = true;
-    } else if (
-      (subject === "natural_sciences" || subject === "social_studies") &&
-      learningContent.length > 0
-    ) {
-      finalLc = learningContent;
-    }
-
-    setLcWasAutoDrawn(lcAutoDrawn);
     setPendingResolvedSubquestionConfigs(effectiveSubquestionConfigsInternal);
     setPendingParams({
       grade,
@@ -783,54 +778,60 @@ export default function ParamForm({
           </div>
         </dl>
         {pendingResolvedSubquestionConfigs.length > 0 && (
-          <section className="confirm-subquestion-block">
-            <h3>{t("form.confirm_subquestion_heading")}</h3>
-            <ol>
+          <section className="space-y-3 pt-4 border-t">
+            <h3 className="text-sm font-semibold text-gray-700">{t("form.confirm_subquestion_heading")}</h3>
+            <ol className="space-y-3">
               {pendingResolvedSubquestionConfigs.map((row, i) => (
-                <li key={i}>
-                  <h4>{t("form.confirm_subquestion_row_title", { n: i + 1 })}</h4>
-                  {row.question_type && <div>題型: {row.question_type}</div>}
-                  {row.instruction && <div>出題指示: {row.instruction}</div>}
+                <li key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <h4 className="text-xs font-semibold text-gray-600 mb-2">
+                    {t("form.confirm_subquestion_row_title").replace("{n}", String(i + 1))}
+                  </h4>
+                  {row.question_type && <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type}</div>}
+                  {row.instruction && <div className="text-sm text-gray-700">{t("form.confirm_subq_instruction")} {row.instruction}</div>}
+                  {row.content_type && <div className="text-sm text-gray-700">{t("form.confirm_subq_content_type")} {row.content_type}</div>}
+                  {row.image_generation_mode && <div className="text-sm text-gray-700">{t("form.confirm_subq_image_mode")} {row.image_generation_mode}</div>}
+                  {row.question_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_q_word_limit")} {row.question_word_limit}</div>}
+                  {row.option_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_o_word_limit")} {row.option_word_limit}</div>}
+                  {row.text_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_text_word_limit")} {row.text_word_limit}</div>}
+                  {row.reporting_scale && <div className="text-sm text-gray-700">{t("form.confirm_subq_reporting_scale")} {row.reporting_scale}</div>}
                   <div>
                     {row.learning_performance && row.learning_performance.length > 0 ? (
                       <>
-                        <div>
+                        <div className="text-xs font-medium text-gray-600 mt-2">
                           {t(
                             row._lpWasAutoDrawn
                               ? "form.confirm_subq_lp_random_pool"
                               : "form.confirm_subq_lp_selected",
-                            { n: row.learning_performance.length },
-                          )}
+                          ).replace("{n}", String(row.learning_performance.length))}
                         </div>
-                        <ul>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
                           {row.learning_performance.map((code) => (
                             <li key={code}>{code}</li>
                           ))}
                         </ul>
                       </>
                     ) : (
-                      <div>{t("form.confirm_subq_lp_empty")}</div>
+                      <div className="text-sm text-gray-700">{t("form.confirm_subq_lp_empty")}</div>
                     )}
                   </div>
                   <div>
                     {row.learning_content && row.learning_content.length > 0 ? (
                       <>
-                        <div>
+                        <div className="text-xs font-medium text-gray-600 mt-2">
                           {t(
                             row._lcWasAutoDrawn
                               ? "form.confirm_subq_lc_random_pool"
                               : "form.confirm_subq_lc_selected",
-                            { n: row.learning_content.length },
-                          )}
+                          ).replace("{n}", String(row.learning_content.length))}
                         </div>
-                        <ul>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
                           {row.learning_content.map((code) => (
                             <li key={code}>{code}</li>
                           ))}
                         </ul>
                       </>
                     ) : (
-                      <div>{t("form.confirm_subq_lc_empty")}</div>
+                      <div className="text-sm text-gray-700">{t("form.confirm_subq_lc_empty")}</div>
                     )}
                   </div>
                 </li>
