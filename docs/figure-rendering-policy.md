@@ -13,7 +13,8 @@ question's subject, grade, or 學習內容 code.
 | Figure family | Examples | `render_mode` | Renderer |
 | --- | --- | --- | --- |
 | Precise / quantitative statistical charts | 直方圖, 盒鬚圖, 折線圖, 圓餅圖, 未來加入的任何座標軸帶刻度的統計圖 | `"chart"` | matplotlib (`src/renderer.py::render_chart`) |
-| Illustrative figures | 幾何示意圖, 座標平面, 數線, 表格, 菜單, 廣告, 海報, 情境卡, 流程圖 | `"html"` (or `"frontend_ts"` — see below) | LLM-HTML + Playwright (`src/renderer.py::_generate_html_via_llm` + `src/html_renderer.py`) |
+| Illustrative figures — structured / semantic | 菜單, 情境卡, 廣告, 版面, 表單, 帶語意標註的表格 | `"html"` | LLM-HTML + Playwright (`src/renderer.py::_generate_html_via_llm` + `src/html_renderer.py`) |
+| Illustrative figures — realistic diagram | 地圖 (含真實海岸線/經緯線), 實驗裝置, 生物模型/標籤圖, 需符合真實比例的幾何, 情境寫實圖 | `"gpt_image"` | OpenAI image API via `src/llm_client.py::generate_image` |
 
 ### Why this split
 
@@ -36,7 +37,7 @@ question's subject, grade, or 學習內容 code.
 | Deterministic statistical chart (histogram/boxplot/line/pie, no domain overlays) | `render_mode: "chart"` (matplotlib) | Reproducibility; no LLM call |
 | Table (any subject) | `render_mode: "html"` | HTML+Playwright captures titles, semantic highlights, inline units, footnotes |
 | Chart with semantic overlays (projection dividers, threshold lines, domain-specific highlights, companion data tables) | `render_mode: "html"` | LLM-authored HTML/SVG reliably encodes semantic overlays gpt-image-2 flattens |
-| Realistic diagram (map with real coastlines, lab apparatus, biology cell/organism, geometry that must match real-world proportions) | `image_generation_mode: "gpt_image"` | 15-spec eval: 4/4 diagram_realistic wins for gpt-image-2; HTML+SVG reads as infographic |
+| Realistic diagram (map with real coastlines, lab apparatus, biology cell/organism, geometry that must match real-world proportions) | `render_mode: "gpt_image"` | 15-spec eval: 4/4 diagram_realistic wins for gpt-image-2; HTML+SVG reads as infographic |
 | Structured pedagogical figure (menu, tree diagram, PISA two-panel) | Case-by-case; prefer `html` if figure needs semantic annotation hooks, `gpt_image` if textbook-atlas aesthetic is primary | Split 1-2 in 15-spec eval |
 
 ## Phase A outcome (issue #108)
@@ -117,14 +118,14 @@ The three prompt assemblers already encode this rule in their
 | 題目內容類型 | Instruction MUST direct the model to |
 | --- | --- |
 | `純文字` | Omit `chart_spec` entirely. |
-| `含圖片` | Emit `chart_spec` with `render_mode: "html"` (illustrative path). |
-| `graphs/charts/tables` | Emit `chart_spec` with `render_mode: "chart"` when a listed statistical chart applies; otherwise `render_mode: "html"` for tables. |
+| `含圖片` | Emit `chart_spec` with `render_mode: "gpt_image"` for realistic diagrams (maps, lab apparatus, biology, real-world-proportion geometry) and `render_mode: "html"` for structured/semantic content (menus, scenario cards, layouts, forms). |
+| `graphs/charts/tables` | Emit `chart_spec` with `render_mode: "chart"` for statistical charts; `render_mode: "html"` for tables and semantic-overlay charts. |
 | `customized` | Follow the user-supplied instruction verbatim; no default. |
 
 ## Enforcement
 
 - `tests/test_figure_rendering_policy.py::test_plain_text_bans_chart_spec`,
-  `::test_illustrative_content_routes_to_html`, and
+  `::test_illustrative_content_routes_to_gpt_image_or_html`, and
   `::test_quantitative_content_routes_to_chart_and_html_for_tables` assert the
   `CONTENT_TYPE_INSTRUCTIONS` strings for each of the three subjects contain
   the correct `render_mode: "…"` fragment.
@@ -134,6 +135,10 @@ The three prompt assemblers already encode this rule in their
   `::test_dispatch_unknown_render_mode_returns_none` fixture-test that
   `render_image()` in `src/renderer.py` dispatches each ImageSpec to the
   intended renderer.
+- `tests/test_figure_rendering_policy.py::test_dispatch_gpt_image_render_mode_calls_llm_generate_image`
+  asserts `render_mode: "gpt_image"` routes to `LLMClient.generate_image()`.
+- `tests/test_hybrid_routing_schema.py::test_imagespec_accepts_gpt_image_render_mode`
+  asserts the schema Literal accepts `"gpt_image"` across all three subjects.
 
 ## Out of scope of this policy
 

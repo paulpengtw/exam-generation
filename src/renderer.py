@@ -299,6 +299,18 @@ def render_image(
             print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
             return None
 
+    if render_mode == "gpt_image":
+        if llm_client is None:
+            print("  Warning: render_mode='gpt_image' requires LLMClient", file=sys.stderr)
+            return None
+        try:
+            prompt = _build_gpt_image_prompt(image_spec, question_text)
+            print("  Generating image via GPT image model (spec-driven)...", file=sys.stderr)
+            return llm_client.generate_image(prompt, output_path)
+        except Exception as e:
+            print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
+            return None
+
     if render_mode == "chart":
         return render_chart(image_spec, output_path)
 

@@ -32,11 +32,19 @@ def test_plain_text_bans_chart_spec(subject: str, table: dict) -> None:
 
 
 @pytest.mark.parametrize("subject, table", _SUBJECT_TABLES)
-def test_illustrative_content_routes_to_html(subject: str, table: dict) -> None:
+def test_illustrative_content_routes_to_gpt_image_or_html(
+    subject: str, table: dict
+) -> None:
+    """含圖片 must route realistic diagrams to gpt_image and structured/semantic to html."""
     assert "含圖片" in table
     text = table["含圖片"]
+    assert 'render_mode: "gpt_image"' in text, (
+        f"{subject}: 含圖片 instruction must direct realistic diagrams to "
+        f'render_mode: "gpt_image"'
+    )
     assert 'render_mode: "html"' in text, (
-        f"{subject}: 含圖片 instruction must direct the model to render_mode: \"html\""
+        f"{subject}: 含圖片 instruction must direct structured/semantic content to "
+        f'render_mode: "html"'
     )
 
 
@@ -151,6 +159,81 @@ def test_dispatch_gpt_image_mode_bypasses_render_mode(tmp_path) -> None:
     assert html_renderer.calls == []
     assert llm_client.html_calls == []
     assert len(llm_client.image_calls) == 1
+
+
+def test_dispatch_gpt_image_render_mode_calls_llm_generate_image(tmp_path) -> None:
+    from src import renderer
+
+    html_renderer = _RecordingHtmlRenderer()
+    llm_client = _RecordingLlmClient()
+
+    out = tmp_path / "diagram.png"
+    result = renderer.render_image(
+        {
+            "render_mode": "gpt_image",
+            "description": "簡易蒸餾裝置示意圖",
+            "data": {"components": []},
+        },
+        out,
+        html_renderer=html_renderer,
+        llm_client=llm_client,
+        # caller does NOT override; spec-level render_mode drives the choice
+        image_generation_mode="html",
+    )
+
+    assert result == str(out)
+    assert html_renderer.calls == [], "html Playwright path must NOT be called"
+    assert llm_client.html_calls == [], "LLM HTML-generation path must NOT be called"
+    assert len(llm_client.image_calls) == 1, "generate_image must be called exactly once"
+
+
+def test_dispatch_gpt_image_render_mode_returns_none_when_llm_client_missing(tmp_path) -> None:
+    from src import renderer
+
+    html_renderer = _RecordingHtmlRenderer()
+
+    out = tmp_path / "diagram.png"
+    result = renderer.render_image(
+        {
+            "render_mode": "gpt_image",
+            "description": "示意圖",
+            "data": {},
+        },
+        out,
+        html_renderer=html_renderer,
+        llm_client=None,
+        image_generation_mode="html",
+    )
+
+    assert result is None
+    assert html_renderer.calls == []
+
+
+def test_dispatch_gpt_image_render_mode_returns_none_on_generate_image_exception(tmp_path) -> None:
+    from src import renderer
+
+    class _RaisingLlmClient(_RecordingLlmClient):
+        def generate_image(self, prompt, output_path):  # type: ignore[override]
+            raise RuntimeError("simulated image API failure")
+
+    html_renderer = _RecordingHtmlRenderer()
+    llm_client = _RaisingLlmClient()
+
+    out = tmp_path / "diagram.png"
+    result = renderer.render_image(
+        {
+            "render_mode": "gpt_image",
+            "description": "示意圖",
+            "data": {},
+        },
+        out,
+        html_renderer=html_renderer,
+        llm_client=llm_client,
+        image_generation_mode="html",
+    )
+
+    assert result is None
+    assert html_renderer.calls == []
 
 
 def test_dispatch_unknown_render_mode_returns_none(tmp_path) -> None:
