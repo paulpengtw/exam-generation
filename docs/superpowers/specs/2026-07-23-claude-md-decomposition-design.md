@@ -228,20 +228,20 @@ Applies to prompt builders, renderers, backend image embedding, relevant fronten
 - keep all subject context-builder docstrings and content-type instructions aligned;
 - preserve renderer/backend precedence and test coverage.
 
-Representative frontmatter shape:
+Frontmatter syntax and required core matches:
 
 ```md
 ---
 paths:
   - "src/**/*context_builder.py"
   - "src/{renderer,html_renderer}.py"
-  - "server/generate/**/*.py"
-  - "web/src/**/*.{ts,tsx}"
-  - "tests/**/*render*.py"
+  - "tests/test_figure_rendering_policy.py"
+  - "tests/test_context_builder_docstrings.py"
+  # Add the exact current backend and frontend consumers found during migration.
 ---
 ```
 
-The implementation may narrow broad frontend/backend patterns after locating the exact current consumers, but must not broaden them beyond files participating in the contract.
+Before committing Phase 1, the migration must locate the current backend and frontend consumers and add them as exact files or narrow globs. Broad catch-all patterns such as `server/generate/**/*.py` or `web/src/**/*.{ts,tsx}` are prohibited unless every matched file participates in the rendering contract.
 
 ### `.claude/rules/question-contracts.md`
 
