@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field
 ImageGenerationMode = Literal["html", "gpt_image"]
 CoverageMode = Literal["balanced", "random"]
 
+# Canonical set of valid subject values shared across all routes that accept a subject.
+ALLOWED_SUBJECTS: frozenset[str] = frozenset({"math", "social_studies", "natural_sciences"})
+
 
 class GenerateParams(BaseModel):
     """Optional overrides for a generation request.
