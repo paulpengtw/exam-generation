@@ -171,6 +171,37 @@ function upsertDisplayResult(
   return updated.sort((a, b) => a.index - b.index);
 }
 
+/**
+ * Parse an SSE error event's raw data string into a human-readable message.
+ *
+ * The server now emits structured JSON: `{"code": "...", "message": "..."}`.
+ * Older or third-party error sources may still send a plain string.  This
+ * helper handles both so the UI always has something useful to display.
+ *
+ * Rules:
+ * - Valid JSON with a non-empty `.message` string → return `.message`.
+ * - Anything else (invalid JSON, missing/non-string message) → return the
+ *   raw string unchanged, or "Unknown error" when the raw string is empty.
+ */
+export function parseErrorEventData(raw: string): string {
+  if (!raw) return "Unknown error";
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "message" in parsed &&
+      typeof (parsed as Record<string, unknown>).message === "string" &&
+      (parsed as Record<string, unknown>).message !== ""
+    ) {
+      return (parsed as Record<string, string>).message;
+    }
+  } catch {
+    // not JSON — fall through
+  }
+  return raw;
+}
+
 export function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
   if (params.subject !== undefined) qs.append("subject", params.subject);
@@ -447,7 +478,7 @@ export function useGenerate(): UseGenerateReturn {
             }
             break;
           case "error":
-            setErrorMessage(ev.data || "Unknown error");
+            setErrorMessage(parseErrorEventData(ev.data ?? ""));
             setStatus("error");
             break;
           case "done":

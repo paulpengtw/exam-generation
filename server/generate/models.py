@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 ImageGenerationMode = Literal["html", "gpt_image"]
 CoverageMode = Literal["balanced", "random"]
+
+
+def build_sse_error(code: str, message: str) -> dict[str, Any]:
+    """Return a structured SSE error payload dict.
+
+    Both raise sites (per-question worker and outer stream) call this helper so
+    the shape is defined in exactly one place.  The payload is serialised to JSON
+    by ``_serialize_event`` in routes.py (non-str data is json.dumps'd there).
+
+    Codes in use:
+    - ``generation_failed``: the per-question worker ``except Exception`` block.
+    - ``stream_failed``:     the outer ``event_generator`` ``except Exception`` block.
+
+    The *message* must never contain ``traceback.format_exc()`` output; callers
+    must pass a short human-readable sentence (optionally with the exception class
+    name, which is safe) and log the full traceback separately via
+    ``logger.exception``.
+    """
+    return {"code": code, "message": message}
 
 # Canonical set of valid subject values shared across all routes that accept a subject.
 ALLOWED_SUBJECTS: frozenset[str] = frozenset({"math", "social_studies", "natural_sciences"})

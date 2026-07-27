@@ -14,7 +14,6 @@ import json
 import logging
 import random
 import threading
-import traceback
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -23,7 +22,7 @@ from typing import Any
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.exchange_recorder import ExchangeRecorder
-from server.generate.models import GenerateParams
+from server.generate.models import GenerateParams, build_sse_error
 from server.models import GenerationRecord, LLMExchange
 from src.batch_sampler import BatchSampler
 from src.cli import generate_with_corrections as math_generate_with_corrections
@@ -595,10 +594,15 @@ async def generate_question_stream(
                 {"event": "result", "data": _question_to_event(question, config)},
             )
         except Exception as exc:
-            tb = traceback.format_exc()
             loop.call_soon_threadsafe(
                 queue.put_nowait,
-                {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
+                {
+                    "event": "error",
+                    "data": build_sse_error(
+                        "generation_failed",
+                        f"Question generation failed ({type(exc).__name__})",
+                    ),
+                },
             )
             logger.exception("worker_one error (index=%d)", i)
 

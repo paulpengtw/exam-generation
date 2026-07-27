@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
-import traceback
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
@@ -26,6 +25,7 @@ from server.generate.models import (
     ImageGenerationMode,
     PlanCoreQuestionsRequest,
     PlanCoreQuestionsResponse,
+    build_sse_error,
 )
 from server.generate.service import generate_question_stream
 from server.models import GenerationLog, LLMExchange, User
@@ -168,14 +168,22 @@ async def generate_endpoint(
             ):
                 if event["event"] == "error":
                     status = "failed"
-                    error_msg = str(event.get("data", ""))
+                    data = event.get("data", "")
+                    error_msg = (
+                        data.get("message", str(data))
+                        if isinstance(data, dict)
+                        else str(data)
+                    )
                 yield _serialize_event(event)
         except Exception as exc:
             status = "failed"
-            tb = traceback.format_exc()
-            error_msg = f"{type(exc).__name__}: {exc}\n\n{tb}"
+            error_payload = build_sse_error(
+                "stream_failed",
+                f"Stream error ({type(exc).__name__})",
+            )
+            error_msg = error_payload["message"]
             logger.exception("generate_endpoint stream error")
-            yield {"event": "error", "data": error_msg}
+            yield _serialize_event({"event": "error", "data": error_payload})
             yield {"event": "done", "data": ""}
         finally:
             async with AsyncSessionLocal() as s:
