@@ -258,6 +258,9 @@ async def generate_question_stream(
         performance = app_state.performance
         intro_text = app_state.intro_text
         grade_content = app_state.grade_content
+        # Built once at app startup (server/app.py); None in test stubs that
+        # don't set it — callers of generate_with_corrections handle None.
+        math_curriculum_context = getattr(app_state, "math_curriculum_context", None)
         style_override = (
             [MathQuestionStyle(v) for v in params.style] if params.style else None
         )
@@ -559,6 +562,7 @@ async def generate_question_stream(
                     user_core_question=params.core_question or "",
                     on_question_update=emit_question_update,
                     prior_scopes=prior_snapshot,
+                    curriculum_context=math_curriculum_context,
                 )
             if is_social_studies and isinstance(question, SSExamQuestion):
                 effective_mode = (

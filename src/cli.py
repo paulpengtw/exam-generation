@@ -13,14 +13,13 @@ from pathlib import Path
 from src.common.batch_dedup import PriorScope, extract_math_prior_scope
 from src.config import Config
 from src.corrector import correct_question
+from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.schema_loader import load_grades, load_schemas
 
 _GRADES: list[int] = load_grades(load_schemas())
 
 from src.context_builder import build_system_prompt, build_user_prompt
 from src.data_loader import (
-    get_full_curriculum_text,
-    get_full_performance_text,
     get_grade_content,
     load_curriculum,
     load_intro_text,
@@ -167,16 +166,23 @@ def generate_one(
     user_core_question: str = "",
     on_question_update: QuestionUpdateCallback | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
     """Generate a single exam question.
 
     Returns ExamQuestion on success, or the prompt string if dry_run=True.
-    """
-    # Build prompts
-    curriculum_text = get_full_curriculum_text(curriculum)
-    performance_text = get_full_performance_text(performance)
 
-    system_prompt = build_system_prompt(curriculum_text, performance_text, intro_text)
+    Args:
+        curriculum_context: When supplied, used as the canonical curriculum corpus
+            for the generator system prompt and threaded through to the verifier.
+            When ``None``, ``build_system_prompt`` falls back to its own
+            module-level math corpus defaults.
+    """
+    # Build prompts using the canonical math curriculum corpus.
+    # The legacy ``curriculum`` / ``performance`` / ``intro_text`` positional
+    # params are retained for backward compat (grade_content derivation) but
+    # are no longer injected into the system prompt.
+    system_prompt = build_system_prompt(curriculum_context=curriculum_context)
     user_prompt, few_shot_images = build_user_prompt(
         params,
         config.data_dir / "few_shot",
@@ -234,7 +240,7 @@ def generate_one(
         result = verify_question(
             client, question,
             chart_image_path=chart_image_path,
-            curriculum_context=None,
+            curriculum_context=curriculum_context,
         )
         emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
@@ -265,12 +271,19 @@ def generate_with_corrections(
     user_core_question: str = "",
     on_question_update: QuestionUpdateCallback | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
     On each failed verification, sends the question + verifier details back to
     the LLM to produce a minimal targeted fix rather than regenerating from scratch.
     Image is only re-rendered when chart_spec actually changes.
+
+    Args:
+        curriculum_context: The canonical curriculum corpus for this run.
+            Threaded into the generator, verifier, and corrector so all three
+            see the same curriculum section.  When ``None``, each component
+            falls back to its own defaults.
     """
     question = generate_one(
         config=config,
@@ -291,6 +304,7 @@ def generate_with_corrections(
         user_core_question=user_core_question,
         on_question_update=on_question_update,
         prior_scopes=prior_scopes,
+        curriculum_context=curriculum_context,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -321,7 +335,7 @@ def generate_with_corrections(
         question = correct_question(
             client, question, question.verification,
             chart_image_path=chart_image_path,
-            curriculum_context=None,
+            curriculum_context=curriculum_context,
         )
         emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
         _emit_question_update(on_question_update, question, "corrected")
@@ -354,7 +368,7 @@ def generate_with_corrections(
             result = verify_question(
                 client, question,
                 chart_image_path=new_chart_image_path,
-                curriculum_context=None,
+                curriculum_context=curriculum_context,
             )
             emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
@@ -496,8 +510,11 @@ def main(argv: list[str] | None = None) -> None:
     performance = load_performance_standards(config.data_dir / "curriculum" / "學習表現.json")
     intro_text = load_intro_text(Path("Introduction to \"學習表現\" and \"學習階段\".md"))
 
-    # Build grade content index
+    # Build grade content index (still uses the legacy per-grade sampler source)
     grade_content = {g: get_grade_content(curriculum, g) for g in _GRADES}
+
+    # Build the canonical curriculum context once; all pipeline stages share it.
+    math_curriculum_context = load_curriculum_context()
 
     # Initialize LLM client (skip for dry-run)
     client = None if args.dry_run else LLMClient(config)
@@ -584,6 +601,7 @@ def main(argv: list[str] | None = None) -> None:
                 user_options=args.options,
                 user_core_question=args.core_question or "",
                 prior_scopes=list(prior_scopes),
+                curriculum_context=math_curriculum_context,
             )
 
             if args.dry_run:
