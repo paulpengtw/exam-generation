@@ -12,7 +12,6 @@ import dataclasses
 import itertools
 import json
 import logging
-import random
 import threading
 import uuid
 from collections.abc import AsyncIterator
@@ -23,87 +22,34 @@ from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.exchange_recorder import ExchangeRecorder
 from server.generate.models import GenerateParams, build_sse_error
+from server.generate.subjects import SUBJECTS
 from server.models import GenerationRecord, LLMExchange
-from src.batch_sampler import BatchSampler
-from src.cli import generate_with_corrections as math_generate_with_corrections
-from src.common.batch_dedup import (
-    PriorScope,
-    extract_math_prior_scope,
-    extract_ns_prior_scope,
-    extract_ss_prior_scope,
+from src.cli import (
+    generate_with_corrections as math_generate_with_corrections,  # noqa: F401 — monkeypatch seam
 )
+from src.common.batch_dedup import PriorScope
 from src.llm_client import LLMClient, LLMObserver
-from src.natural_sciences.cli import generate_with_corrections as ns_generate_with_corrections
-from src.natural_sciences.sampler import sample_params as ns_sample_params
-from src.natural_sciences.schemas import (
-    ExamQuestion as NSExamQuestion,
+from src.natural_sciences.cli import (
+    generate_with_corrections as ns_generate_with_corrections,  # noqa: F401 — monkeypatch seam
 )
-from src.natural_sciences.schemas import (
-    QuestionContext as NSQuestionContext,
+from src.natural_sciences.sampler import (
+    sample_params as ns_sample_params,  # noqa: F401 — monkeypatch seam
 )
-from src.natural_sciences.schemas import (
-    QuestionSetType as NSQuestionSetType,
+from src.natural_sciences.schemas import ExamQuestion as NSExamQuestion
+from src.sampler import sample_params as math_sample_params  # noqa: F401 — monkeypatch seam
+from src.schemas import ExamQuestion as MathExamQuestion
+from src.social_studies.cli import (
+    _plan_batch_briefs as ss_plan_batch_briefs,  # noqa: F401 — monkeypatch seam
 )
-from src.natural_sciences.schemas import (
-    QuestionSubContext as NSQuestionSubContext,
+from src.social_studies.cli import (
+    generate_with_corrections as ss_generate_with_corrections,  # noqa: F401 — monkeypatch seam
 )
-from src.natural_sciences.schemas import (
-    QuestionType as NSQuestionType,
+from src.social_studies.sampler import (
+    sample_params as ss_sample_params,  # noqa: F401 — monkeypatch seam
 )
-from src.natural_sciences.schemas import (
-    ScienceCompetency as NSScienceCompetency,
-)
-from src.sampler import sample_params as math_sample_params
-from src.schemas import (
-    ExamQuestion as MathExamQuestion,
-)
-from src.schemas import (
-    QuestionContext as MathQuestionContext,
-)
-from src.schemas import (
-    QuestionSetType as MathQuestionSetType,
-)
-from src.schemas import (
-    QuestionStyle as MathQuestionStyle,
-)
-from src.schemas import (
-    QuestionType as MathQuestionType,
-)
-from src.social_studies.cli import _plan_batch_briefs as ss_plan_batch_briefs
-from src.social_studies.cli import generate_with_corrections as ss_generate_with_corrections
-from src.social_studies.sampler import sample_params as ss_sample_params
-from src.social_studies.schemas import (
-    CreativeBrief as SSCreativeBrief,
-)
-from src.social_studies.schemas import (
-    ExamQuestion as SSExamQuestion,
-)
-from src.social_studies.schemas import (
-    QuestionContext as SSQuestionContext,
-)
-from src.social_studies.schemas import (
-    QuestionMetadata,
-)
-from src.social_studies.schemas import (
-    QuestionSetType as SSQuestionSetType,
-)
-from src.social_studies.schemas import (
-    QuestionSubject as SSQuestionSubject,
-)
-from src.social_studies.schemas import (
-    QuestionType as SSQuestionType,
-)
+from src.social_studies.schemas import ExamQuestion as SSExamQuestion
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_enum(value: str | None, enum_cls: type) -> Any:
-    if value is None:
-        return None
-    for member in enum_cls:
-        if member.value == value:
-            return member
-    raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
 
 
 def _decode_subquestion_configs(raw: str | None) -> list[dict] | None:
@@ -221,107 +167,15 @@ async def generate_question_stream(
 
     renderer_pool = getattr(app_state, "renderer_pool", None)
     html_renderer = await renderer_pool.get() if renderer_pool else None
-    is_social_studies = params.subject == "social_studies"
-    is_natural_sciences = params.subject == "natural_sciences"
 
-    if is_social_studies:
-        context_override = (
-            [_resolve_enum(v, SSQuestionContext) for v in params.context]
-            if params.context else None
-        )
-        set_type_override = _resolve_enum(params.set_type, SSQuestionSetType)
-        q_type_override = (
-            [_resolve_enum(v, SSQuestionType) for v in params.q_type]
-            if params.q_type else None
-        )
-        subject_override = (
-            [SSQuestionSubject(v) for v in params.subject_filter]
-            if params.subject_filter else None
-        )
-    elif is_natural_sciences:
-        context_override = (
-            [_resolve_enum(v, NSQuestionContext) for v in params.context]
-            if params.context else None
-        )
-        sub_context_override = _resolve_enum(params.sub_context, NSQuestionSubContext)
-        set_type_override = _resolve_enum(params.set_type, NSQuestionSetType)
-        q_type_override = (
-            [_resolve_enum(v, NSQuestionType) for v in params.q_type]
-            if params.q_type else None
-        )
-        science_competency_override = (
-            [_resolve_enum(v, NSScienceCompetency) for v in params.science_competency]
-            if params.science_competency else None
-        )
-    else:
-        curriculum = app_state.curriculum
-        performance = app_state.performance
-        intro_text = app_state.intro_text
-        grade_content = app_state.grade_content
-        # Built once at app startup (server/app.py); None in test stubs that
-        # don't set it — callers of generate_with_corrections handle None.
-        math_curriculum_context = getattr(app_state, "math_curriculum_context", None)
-        style_override = (
-            [MathQuestionStyle(v) for v in params.style] if params.style else None
-        )
-        context_override = (
-            [_resolve_enum(v, MathQuestionContext) for v in params.context]
-            if params.context else None
-        )
-        set_type_override = _resolve_enum(params.set_type, MathQuestionSetType)
-        q_type_override = (
-            [_resolve_enum(v, MathQuestionType) for v in params.q_type]
-            if params.q_type else None
-        )
+    # --- Registry lookup — replaces all is_social_studies / is_natural_sciences checks ---
+    spec = SUBJECTS[params.subject]
 
-    # --- Balanced-coverage planning (SS only, count > 1, balanced mode) -----
-    ss_batch_sampler: BatchSampler | None = None
-    ss_batch_user_pinned_lc = False
-    if (
-        is_social_studies
-        and params.count > 1
-        and params.coverage_mode == "balanced"
-    ):
-        batch_rng = random.Random(params.seed if params.seed is not None else 0)
-        # Interaction rule: only balance dimensions the user left random.
-        user_pinned_qtype = bool(params.q_type) or bool(params.subquestion_configs)
-        user_pinned_lc = bool(params.learning_content)
-        ss_batch_user_pinned_lc = user_pinned_lc
-        q_pool = (
-            [SSQuestionType(v) for v in params.q_type]
-            if user_pinned_qtype and params.q_type
-            else list(SSQuestionType)
-        )
-        # 學習內容 pool: keyed by 跨科 (the full cross-subject union) when the
-        # user didn't pin subject_filter. This is a pragmatic stand-in since
-        # the per-question 科目 isn't known at batch-planning time; per-question
-        # sampling may therefore draw an out-of-subject code — known v1 limitation.
-        from src.social_studies.curriculum_loader import (
-            allowed_learning_content,
-            load_learning_content,
-        )
-        from src.social_studies.sampler import _LEARNING_STAGE as _SS_STAGE
+    # Site 1: enum coercion + subject-specific app_state extraction
+    overrides = spec.coerce_overrides(params, app_state)
 
-        subj_key = (
-            params.subject_filter[0] if params.subject_filter else "跨科"
-        )
-        lc_entries = (
-            allowed_learning_content(load_learning_content(), _SS_STAGE, subj_key)
-            if not user_pinned_lc
-            else []
-        )
-        lc_pool = [e["value"] for e in lc_entries] if not user_pinned_lc else []
-
-        ss_batch_sampler = BatchSampler(
-            count=params.count,
-            # Always pass the full q_type pool: when user_pinned_qtype is True,
-            # sample_params() ignores these batch-planned q_type assignments and
-            # uses the user's pinned q_type/subquestion_configs instead, so the
-            # pool value here is a no-op in that case.
-            q_type_pool=q_pool,
-            learning_content_pool=lc_pool,
-            rng=batch_rng,
-        )
+    # Site 2 (partial): balanced-coverage batch-sampler setup (SS only; others return (None, False))
+    batch_sampler, batch_user_pinned_lc = spec.setup_batch_sampler(params, overrides)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_seed = params.seed
@@ -419,6 +273,8 @@ async def generate_question_stream(
 
         return emit_question_update
 
+    decoded_subquestion_configs = _decode_subquestion_configs(params.subquestion_configs)
+
     def worker_one(i: int, question_client: LLMClient) -> None:
         seed = (base_seed + i) if base_seed is not None else None
         worker_recorder = _make_recorder()
@@ -430,165 +286,58 @@ async def generate_question_stream(
         with prior_scopes_lock:
             prior_snapshot = list(prior_scopes)
         try:
-            if is_social_studies:
-                assigned_qt = (
-                    ss_batch_sampler.q_type_assignments[i]
-                    if ss_batch_sampler is not None else None
-                )
-                assigned_lc = (
-                    ss_batch_sampler.learning_content_assignments[i]
-                    if ss_batch_sampler is not None and not ss_batch_user_pinned_lc
-                    else None
-                )
-                rng_params = ss_sample_params(
-                    grade=params.grade,
-                    context=context_override,
-                    set_type=set_type_override,
-                    q_type=q_type_override,
-                    subject=subject_override,
-                    content_type=params.content_type,
-                    learning_content=params.learning_content,
-                    learning_performance=params.learning_performance,
-                    seed=seed,
-                    sub_question_count=params.sub_question_count,
-                    question_word_limit=params.question_word_limit,
-                    option_word_limit=params.option_word_limit,
-                    subquestion_configs=_decode_subquestion_configs(
-                        params.subquestion_configs,
-                    ),
-                    difficulty=params.difficulty,
-                    assigned_q_type=assigned_qt,
-                    assigned_learning_content=assigned_lc,
-                )
-                if i < len(ss_batch_briefs) and ss_batch_briefs[i] is not None:
-                    rng_params = rng_params.model_copy(
-                        update={"creative_brief": ss_batch_briefs[i]},
-                    )
-                question_id = f"ss_{timestamp}_{i+1:03d}"
-                question = ss_generate_with_corrections(
-                    config=client_config,
-                    client=question_client,
-                    params=rng_params,
-                    question_id=question_id,
-                    max_retries=max_retries,
-                    skip_verify=params.skip_verify,
-                    disable_reference_fewshot=params.disable_reference_fewshot,
-                    html_renderer=html_renderer,
-                    image_generation_mode=params.image_generation_mode,
-                    user_passage=params.passage,
-                    text_word_limit=params.text_word_limit,
-                    user_options=params.options,
-                    user_topic=params.topic,
-                    user_core_question=params.core_question,
-                    on_question_update=emit_question_update,
-                    prior_scopes=prior_snapshot,
-                )
-            elif is_natural_sciences:
-                rng_params = ns_sample_params(
-                    grade=params.grade,
-                    context=context_override,
-                    sub_context=sub_context_override,
-                    set_type=set_type_override,
-                    q_type=q_type_override,
-                    science_competency=science_competency_override,
-                    content_type=params.content_type,
-                    learning_content=params.learning_content,
-                    learning_performance=params.learning_performance,
-                    seed=seed,
-                    sub_question_count=params.sub_question_count,
-                    question_word_limit=params.question_word_limit,
-                    option_word_limit=params.option_word_limit,
-                    subquestion_configs=_decode_subquestion_configs(
-                        params.subquestion_configs,
-                    ),
-                    difficulty=params.difficulty,
-                )
-                question_id = f"ns_{timestamp}_{i+1:03d}"
-                question = ns_generate_with_corrections(
-                    config=client_config,
-                    client=question_client,
-                    params=rng_params,
-                    question_id=question_id,
-                    max_retries=max_retries,
-                    skip_verify=params.skip_verify,
-                    disable_reference_fewshot=params.disable_reference_fewshot,
-                    html_renderer=html_renderer,
-                    image_generation_mode=params.image_generation_mode,
-                    user_passage=params.passage,
-                    text_word_limit=params.text_word_limit,
-                    user_options=params.options,
-                    user_topic=params.topic,
-                    user_core_question=params.core_question,
-                    on_question_update=emit_question_update,
-                    prior_scopes=prior_snapshot,
-                )
-            else:
-                # math sampler accepts a single 科目 string; take first if list provided
-                math_subject_filter: str | None = None
-                if params.subject_filter:
-                    math_subject_filter = params.subject_filter[0]
-                rng_params = math_sample_params(
-                    grade_content=grade_content,
-                    grade=params.grade,
-                    style=style_override,
-                    context=context_override,
-                    set_type=set_type_override,
-                    q_type=q_type_override,
-                    seed=seed,
-                    core_competency=params.core_competency,
-                    learning_content=params.learning_content,
-                    learning_performance=params.learning_performance,
-                    content_type=params.content_type,
-                    subject_filter=math_subject_filter,
-                    difficulty=params.difficulty,
-                )
-                question_id = f"q_{timestamp}_{i+1:03d}"
-                question = math_generate_with_corrections(
-                    config=client_config,
-                    client=question_client,
-                    curriculum=curriculum,
-                    performance=performance,
-                    intro_text=intro_text,
-                    grade_content=grade_content,
-                    params=rng_params,
-                    question_id=question_id,
-                    max_retries=max_retries,
-                    skip_verify=params.skip_verify,
-                    html_renderer=html_renderer,
-                    image_generation_mode=params.image_generation_mode,
-                    user_topic=params.topic or "",
-                    user_passage=params.passage or "",
-                    user_options=params.options,
-                    user_core_question=params.core_question or "",
-                    on_question_update=emit_question_update,
-                    prior_scopes=prior_snapshot,
-                    curriculum_context=math_curriculum_context,
-                )
-            if is_social_studies and isinstance(question, SSExamQuestion):
-                effective_mode = (
-                    "balanced" if ss_batch_sampler is not None else "random"
-                )
-                if question.metadata is None:
-                    fallback_model = getattr(config, "model_execute", "unknown")
-                    question.metadata = QuestionMetadata(
-                        grade=rng_params.grade,
-                        model=fallback_model,
-                        coverage_mode_used=effective_mode,
-                    )
-                else:
-                    question.metadata = question.metadata.model_copy(
-                        update={"coverage_mode_used": effective_mode}
-                    )
-            assert isinstance(
-                question,
-                (MathExamQuestion, SSExamQuestion, NSExamQuestion),
+            # Site 1+3: sample params via registry (replaces if/elif per-subject sampler calls)
+            assigned_qt = batch_sampler.q_type_assignments[i] if batch_sampler is not None else None
+            assigned_lc = (
+                batch_sampler.learning_content_assignments[i]
+                if batch_sampler is not None and not batch_user_pinned_lc
+                else None
             )
-            if is_social_studies:
-                new_scope = extract_ss_prior_scope(question)
-            elif is_natural_sciences:
-                new_scope = extract_ns_prior_scope(question)
-            else:
-                new_scope = extract_math_prior_scope(question)
+            rng_params = spec.do_sample_params(
+                params,
+                overrides,
+                seed=seed,
+                assigned_q_type=assigned_qt,
+                assigned_lc=assigned_lc,
+                subquestion_configs_decoded=decoded_subquestion_configs,
+            )
+
+            # Site 2: apply creative brief when available (SS only in practice)
+            if i < len(batch_briefs) and batch_briefs[i] is not None:
+                rng_params = rng_params.model_copy(
+                    update={"creative_brief": batch_briefs[i]},
+                )
+
+            # Site 3: generate via registry (replaces if/elif generate calls)
+            question_id = f"{spec.question_id_prefix}{timestamp}_{i+1:03d}"
+            question = spec.do_generate(
+                rng_params,
+                overrides,
+                config=client_config,
+                client=question_client,
+                question_id=question_id,
+                max_retries=max_retries,
+                skip_verify=params.skip_verify,
+                disable_reference_fewshot=params.disable_reference_fewshot,
+                html_renderer=html_renderer,
+                image_generation_mode=params.image_generation_mode,
+                user_passage=params.passage,
+                text_word_limit=params.text_word_limit,
+                user_options=params.options,
+                user_topic=params.topic,
+                user_core_question=params.core_question,
+                on_question_update=emit_question_update,
+                prior_scopes=prior_snapshot,
+            )
+
+            # Site 4: metadata patching (SS only; other specs have patch_metadata=None)
+            if spec.patch_metadata is not None:
+                question = spec.patch_metadata(question, batch_sampler)
+
+            assert isinstance(question, spec.exam_question_cls)
+
+            # Site 5: prior-scope extraction via registry
+            new_scope = spec.extract_prior_scope(question)
             if new_scope is not None:
                 with prior_scopes_lock:
                     prior_scopes.append(new_scope)
@@ -610,38 +359,18 @@ async def generate_question_stream(
             )
             logger.exception("worker_one error (index=%d)", i)
 
-    # #114: for SS batches, plan creative briefs once before spawning workers.
-    ss_batch_briefs: list[SSCreativeBrief | None] = []
-    if is_social_studies and count >= 1 and config.creative_planning:
-        # Sample all SS params up front so plan_context_angles sees the actual
-        # 情境 and 學習內容 pool that the workers will use. Workers re-sample
-        # with the same seed and receive the corresponding brief.
-        pre_params_list = []
-        for i in range(count):
-            seed = (base_seed + i) if base_seed is not None else None
-            pre_params_list.append(
-                ss_sample_params(
-                    grade=params.grade,
-                    context=context_override,
-                    set_type=set_type_override,
-                    q_type=q_type_override,
-                    subject=subject_override,
-                    content_type=params.content_type,
-                    learning_performance=params.learning_performance,
-                    seed=seed,
-                    sub_question_count=params.sub_question_count,
-                    question_word_limit=params.question_word_limit,
-                    option_word_limit=params.option_word_limit,
-                    subquestion_configs=_decode_subquestion_configs(
-                        params.subquestion_configs,
-                    ),
-                ),
-            )
-        # Use a dedicated planning client so worker observers stay clean.
-        planning_client = LLMClient(config)
-        ss_batch_briefs = ss_plan_batch_briefs(planning_client, config, pre_params_list)
-    elif is_social_studies:
-        ss_batch_briefs = [None] * count
+    # Site 2 (creative-brief / coverage planning): delegated to spec
+    # SS: plans briefs when creative_planning=True; returns [None]*count otherwise.
+    # Math / NS: always returns [] so the brief-application check is a no-op.
+    batch_briefs = spec.plan_all_batch_briefs(
+        params,
+        count,
+        base_seed,
+        overrides,
+        config,
+        config.creative_planning,
+        decoded_subquestion_configs,
+    )
 
     _emit_pipeline("pipeline_start", total=count)
     # #105: per-request model overrides are baked into each LLMClient's config so

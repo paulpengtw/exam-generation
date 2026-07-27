@@ -28,8 +28,15 @@ def build_sse_error(code: str, message: str) -> dict[str, Any]:
     """
     return {"code": code, "message": message}
 
-# Canonical set of valid subject values shared across all routes that accept a subject.
-ALLOWED_SUBJECTS: frozenset[str] = frozenset({"math", "social_studies", "natural_sciences"})
+# Canonical set of valid subject values — derived from the SubjectSpec registry so
+# there is exactly ONE declaration point.  Import is deferred to avoid a heavy
+# src.* import cascade in modules that only need ALLOWED_SUBJECTS.
+def _build_allowed_subjects() -> frozenset[str]:
+    from server.generate.subjects import SUBJECTS  # noqa: PLC0415
+    return frozenset(SUBJECTS)
+
+
+ALLOWED_SUBJECTS: frozenset[str] = _build_allowed_subjects()
 
 
 class GenerateParams(BaseModel):
