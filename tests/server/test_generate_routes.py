@@ -814,3 +814,127 @@ def test_generate_route_valid_subjects_still_accepted() -> None:
         gen_routes.generate_question_stream = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
+
+
+# ---------------------------------------------------------------------------
+# Issue #153 — structured SSE error events (no tracebacks to browser)
+# ---------------------------------------------------------------------------
+
+
+def test_build_sse_error_returns_structured_payload() -> None:
+    """build_sse_error must return a dict with stable 'code' and 'message' keys."""
+    from server.generate.models import build_sse_error
+
+    payload = build_sse_error("generation_failed", "Question generation failed (ValueError)")
+    assert payload["code"] == "generation_failed"
+    assert payload["message"] == "Question generation failed (ValueError)"
+    assert "Traceback" not in payload["message"]
+    assert '  File "' not in payload["message"]
+
+
+def test_service_worker_error_event_is_structured(tmp_path) -> None:
+    """The per-question worker exception path must emit a structured error dict."""
+    from types import SimpleNamespace
+
+    from server.generate import service
+    from server.generate.models import GenerateParams
+
+    config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+
+    def fake_generate_raises(**kwargs):
+        raise RuntimeError("boom")
+
+    original = service.ss_generate_with_corrections
+    service.ss_generate_with_corrections = fake_generate_raises  # type: ignore[assignment]
+
+    async def collect_events():
+        events = []
+        async for event in service.generate_question_stream(
+            params,
+            config,
+            SimpleNamespace(html_renderer=None, renderer_pool=None),
+        ):
+            events.append(event)
+        return events
+
+    try:
+        events = asyncio.run(collect_events())
+    finally:
+        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+
+    error_events = [e for e in events if e["event"] == "error"]
+    assert len(error_events) == 1, f"expected 1 error event, got: {error_events}"
+    data = error_events[0]["data"]
+    # data must be a dict with code and message
+    assert isinstance(data, dict), f"expected dict, got {type(data)}: {data!r}"
+    assert data["code"] == "generation_failed"
+    assert "message" in data
+    assert "Traceback (most recent call last)" not in data["message"]
+    assert '  File "' not in data["message"]
+
+
+def test_route_outer_error_event_is_structured() -> None:
+    """The outer event_generator exception path must emit a structured error dict."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    from server.generate import routes as gen_routes
+
+    async def exploding_stream(params, *_args, **_kwargs):
+        raise RuntimeError("outer stream boom")
+        yield  # make it a generator
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    original = gen_routes.generate_question_stream
+    gen_routes.generate_question_stream = exploding_stream  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/generate?subject=math",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200
+    # Parse the SSE stream body to find the error event
+    body = response.text
+    error_data: str | None = None
+    for line in body.splitlines():
+        if line.startswith("data:") and "stream_failed" in line:
+            error_data = line[len("data:"):].strip()
+            break
+    assert error_data is not None, f"No stream_failed error event found in: {body!r}"
+    import json as _json
+    parsed = _json.loads(error_data)
+    assert parsed["code"] == "stream_failed"
+    assert "Traceback (most recent call last)" not in parsed["message"]
+    assert '  File "' not in parsed["message"]
