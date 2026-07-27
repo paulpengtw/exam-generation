@@ -63,3 +63,34 @@ describe("useGenerate — parseErrorEventData", () => {
     expect(parseErrorEventData("plain error text")).toBe("plain error text");
   });
 });
+
+describe("buildQueryString — text_word_limit serialization", () => {
+  it("serializes text_word_limit when set", () => {
+    const qs = buildQueryString({ subject: "social_studies", text_word_limit: 500 });
+    expect(new URLSearchParams(qs).get("text_word_limit")).toBe("500");
+  });
+
+  it("omits text_word_limit when undefined", () => {
+    const qs = buildQueryString({ subject: "math" });
+    expect(qs).not.toContain("text_word_limit");
+  });
+});
+
+describe("buildQueryString — subject_filter as repeated keys", () => {
+  it("sends subject_filter as two repeated keys for a two-element array", () => {
+    const qs = buildQueryString({ subject: "social_studies", subject_filter: ["歷史", "地理"] });
+    const params = new URLSearchParams(qs);
+    expect(params.getAll("subject_filter")).toEqual(["歷史", "地理"]);
+  });
+
+  it("sends a single subject_filter as a single repeated key", () => {
+    const qs = buildQueryString({ subject: "social_studies", subject_filter: ["歷史"] });
+    const params = new URLSearchParams(qs);
+    expect(params.getAll("subject_filter")).toEqual(["歷史"]);
+  });
+
+  it("omits subject_filter when the array is empty", () => {
+    const qs = buildQueryString({ subject: "math", subject_filter: [] });
+    expect(qs).not.toContain("subject_filter");
+  });
+});
