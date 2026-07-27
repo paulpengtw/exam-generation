@@ -4,18 +4,9 @@ from __future__ import annotations
 
 import json
 
-from src.context_builder import (
-    _CONTENT_TEXT,
-    _PERFORMANCE_INTRO,
-    _PERFORMANCE_TEXT,
-    _build_curriculum_section,
-)
+from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ExamQuestion, ImageSpec, VerificationResult
-
-_CURRICULUM_PREFIX: str = _build_curriculum_section(
-    _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
-)
 
 _CORRECTION_SYSTEM_PROMPT_CORE = """\
 你是一位數學教師，剛剛收到審核老師對一道考試題目的意見回饋。
@@ -34,11 +25,7 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 請輸出修正後完整的題目 JSON，格式與原題目相同（含所有原欄位）。只輸出 JSON，不要輸出其他文字。
 """
 
-CORRECTION_SYSTEM_PROMPT = (
-    f"{_CURRICULUM_PREFIX}\n\n---\n\n{_CORRECTION_SYSTEM_PROMPT_CORE}"
-    if _CURRICULUM_PREFIX
-    else _CORRECTION_SYSTEM_PROMPT_CORE
-)
+CORRECTION_SYSTEM_PROMPT = _CORRECTION_SYSTEM_PROMPT_CORE
 
 CORRECTION_USER_TEMPLATE = """\
 ## 原始題目（JSON）
@@ -60,13 +47,18 @@ def correct_question(
     question: ExamQuestion,
     verification: VerificationResult,
     chart_image_path: str | None = None,
-    curriculum_context: str | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion:
     """Apply verification feedback to produce a minimally corrected question.
 
     Only 題目, 正確解題分析, and chart_spec may be updated; all classification
     and metadata fields are restored from the original regardless of LLM output.
     Returns the original question unchanged if the LLM output cannot be parsed.
+
+    Args:
+        curriculum_context: When supplied, the curriculum section is prepended
+            to the system prompt so the corrector is grounded in the same corpus
+            as the generator.  Pass ``None`` to omit the curriculum prefix.
     """
     # Serialize without ephemeral fields so the corrector sees clean source
     question_data = json.loads(
@@ -98,11 +90,15 @@ def correct_question(
         chart_details_block=chart_details_block,
     )
 
-    system = (
-        f"{curriculum_context}\n\n---\n\n{CORRECTION_SYSTEM_PROMPT}"
-        if curriculum_context
-        else CORRECTION_SYSTEM_PROMPT
-    )
+    if curriculum_context is not None:
+        curriculum_prefix = build_curriculum_section(curriculum_context)
+        system = (
+            f"{curriculum_prefix}\n\n---\n\n{CORRECTION_SYSTEM_PROMPT}"
+            if curriculum_prefix
+            else CORRECTION_SYSTEM_PROMPT
+        )
+    else:
+        system = CORRECTION_SYSTEM_PROMPT
 
     try:
         # Use multimodal when chart has issues and PNG exists
