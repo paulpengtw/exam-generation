@@ -155,8 +155,6 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_subq_lp_empty": "Learning performance: falls back to global pool at generation time",
     "form.confirm_subq_lc_empty": "Learning content: falls back to global pool at generation time",
 
-    "progress.queued": "Queued",
-    "progress.queued_detail": "There are {n} jobs ahead of you. Please wait…",
     "progress.generating": "Generating…",
     "progress.done": "Done",
     "progress.error": "Error",
@@ -378,8 +376,6 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_subq_lp_empty": "學習表現：生成時將沿用全域抽樣池",
     "form.confirm_subq_lc_empty": "學習內容：生成時將沿用全域抽樣池",
 
-    "progress.queued": "排隊中",
-    "progress.queued_detail": "目前有 {n} 個任務排在你前面，請稍候…",
     "progress.generating": "產生中…",
     "progress.done": "完成",
     "progress.error": "錯誤",
