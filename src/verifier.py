@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from src.common.distractor import validate_distractor_keys
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
@@ -84,6 +85,10 @@ def verify_question(
     curriculum_context: str | None = None,
 ) -> VerificationResult:
     """Run a second LLM pass to independently verify the question and answer."""
+    # Fall back to text-only when the image file is absent or unreadable.
+    if chart_image_path is not None and not Path(chart_image_path).exists():
+        chart_image_path = None
+
     question_text = "\n".join(question.題目)
     solution_text = "\n".join(question.正確解題分析)
 
