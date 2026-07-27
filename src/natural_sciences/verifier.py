@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from src.common.distractor import validate_distractor_keys
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
@@ -116,6 +117,10 @@ def verify_question(
     question: ExamQuestion,
     chart_image_path: str | None = None,
 ) -> VerificationResult:
+    # Fall back to text-only when the image file is absent or unreadable.
+    if chart_image_path is not None and not Path(chart_image_path).exists():
+        chart_image_path = None
+
     core_q, passage_text, subquestions_text = _build_question_text(question)
     if not subquestions_text:
         subquestions_text = "\n".join(question.題目)
