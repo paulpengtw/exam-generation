@@ -20,6 +20,7 @@ from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
 from server.generate.models import (
+    ALLOWED_SUBJECTS,
     CoverageMode,
     GenerateParams,
     ImageGenerationMode,
@@ -51,6 +52,16 @@ def _check_model_allowed(model: str | None, config: ServerConfig, field: str) ->
         raise HTTPException(
             status_code=422,
             detail=f"{field}: model '{model}' not in allowlist: [{allowed}]",
+        )
+
+
+def _check_subject_allowed(subject: str) -> None:
+    """Raise HTTPException(422) when subject is not a recognised value."""
+    if subject not in ALLOWED_SUBJECTS:
+        allowed = ", ".join(sorted(ALLOWED_SUBJECTS))
+        raise HTTPException(
+            status_code=422,
+            detail=f"subject: subject '{subject}' not in allowlist: [{allowed}]",
         )
 
 
@@ -100,6 +111,7 @@ async def generate_endpoint(
     """
     _check_model_allowed(model_plan, config, "model_plan")
     _check_model_allowed(model_execute, config, "model_execute")
+    _check_subject_allowed(subject)
     params = GenerateParams(
         subject=subject,
         grade=grade,

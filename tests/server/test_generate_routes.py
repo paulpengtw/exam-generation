@@ -16,7 +16,7 @@ from server.auth.dependencies import get_config
 from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
-from server.models import Base, User
+from server.models import Base, GenerationLog, User
 from server.rate_limit import limiter
 
 
@@ -703,3 +703,114 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
     count = asyncio.run(_read_count())
     asyncio.run(engine.dispose())
     assert count == 0
+
+
+def test_generate_route_rejects_unknown_subject_422() -> None:
+    """Unknown subject returns 422 before any DB write (no generation_log row)."""
+    from sqlalchemy import select
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/generate?subject=typo",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        # Error must name the offending value and list allowed subjects.
+        assert "typo" in detail
+        assert "math" in detail
+
+        # No generation_log row must have been written.
+        async def count_logs() -> int:
+            async with SessionLocal() as s:
+                result = await s.execute(select(GenerationLog))
+                return len(list(result.scalars().all()))
+
+        log_count = asyncio.run(count_logs())
+        assert log_count == 0, "generation_log row must not be created for an unknown subject"
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_generate_route_valid_subjects_still_accepted() -> None:
+    """math, social_studies, and natural_sciences are all accepted (no regression)."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    from server.generate import routes as gen_routes
+
+    async def fake_stream(params, *_args, **_kwargs):
+        yield {"event": "done", "data": ""}
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    original = gen_routes.generate_question_stream
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            for subject in ("math", "social_studies", "natural_sciences"):
+                r = client.get(
+                    f"/api/generate?subject={subject}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                assert r.status_code == 200, f"expected 200 for subject={subject!r}"
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())

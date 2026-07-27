@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from server.auth.dependencies import get_config
 from server.config import ServerConfig
+from server.generate.models import ALLOWED_SUBJECTS
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
 from src.natural_sciences.curriculum_loader import (
     load_learning_content as load_ns_learning_content,
@@ -90,6 +91,13 @@ async def get_schemas(
     grade: int | None = Query(default=None),
     config: ServerConfig = Depends(get_config),
 ) -> dict:
+    if subject not in ALLOWED_SUBJECTS:
+        allowed = ", ".join(sorted(ALLOWED_SUBJECTS))
+        raise HTTPException(
+            status_code=422,
+            detail=f"subject: subject '{subject}' not in allowlist: [{allowed}]",
+        )
+
     from src.sampler import grade_to_learning_stage
 
     def _resolve_stage(schemas: dict, grade: int | None) -> str:
