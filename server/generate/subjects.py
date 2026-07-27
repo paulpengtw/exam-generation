@@ -1,0 +1,820 @@
+"""SubjectSpec registry — single declaration point for all per-subject dispatch.
+
+This module is the ONLY place in server/ where subject strings appear as keys.
+Every dispatch site in service.py, routes.py, and utility/routes.py must resolve
+behaviour through SUBJECTS[subject_key] rather than if/elif chains.
+
+Adapters for do_generate / do_sample_params use a lazy import of
+``server.generate.service`` at call time so that test monkeypatches applied to
+module-level names in service.py (e.g. ``service.ss_generate_with_corrections``)
+are still intercepted correctly.  The lazy import resolves at first call, after
+all modules are fully loaded, so there is no circular-import issue at load time.
+"""
+from __future__ import annotations
+
+import dataclasses
+import json
+import random
+from pathlib import Path
+from typing import Any, Callable
+
+from src.batch_sampler import BatchSampler
+from src.common.batch_dedup import (
+    extract_math_prior_scope,
+    extract_ns_prior_scope,
+    extract_ss_prior_scope,
+)
+from src.common.curriculum_loader import load_learning_performance as load_common_lp
+from src.natural_sciences.curriculum_loader import (
+    load_learning_content as load_ns_learning_content,
+)
+from src.natural_sciences.curriculum_loader import (
+    load_learning_performance as load_ns_learning_performance,
+)
+from src.natural_sciences.schema_loader import (
+    load_learning_stage as ns_load_learning_stage,
+)
+from src.natural_sciences.schema_loader import (
+    load_schemas as ns_load_schemas,
+)
+from src.natural_sciences.schemas import (
+    ExamQuestion as NSExamQuestion,
+)
+from src.natural_sciences.schemas import (
+    QuestionContext as NSQuestionContext,
+)
+from src.natural_sciences.schemas import (
+    QuestionSetType as NSQuestionSetType,
+)
+from src.natural_sciences.schemas import (
+    QuestionSubContext as NSQuestionSubContext,
+)
+from src.natural_sciences.schemas import (
+    QuestionType as NSQuestionType,
+)
+from src.natural_sciences.schemas import (
+    ScienceCompetency as NSScienceCompetency,
+)
+from src.sampler import grade_to_learning_stage
+from src.schemas import (
+    ExamQuestion as MathExamQuestion,
+)
+from src.schemas import (
+    QuestionContext as MathQuestionContext,
+)
+from src.schemas import (
+    QuestionSetType as MathQuestionSetType,
+)
+from src.schemas import (
+    QuestionStyle as MathQuestionStyle,
+)
+from src.schemas import (
+    QuestionType as MathQuestionType,
+)
+from src.social_studies.cli import _plan_batch_briefs as _ss_plan_batch_briefs
+from src.social_studies.curriculum_loader import (
+    allowed_learning_content,
+)
+from src.social_studies.curriculum_loader import (
+    load_learning_content as load_ss_learning_content,
+)
+from src.social_studies.curriculum_loader import (
+    load_learning_performance as load_ss_learning_performance,
+)
+from src.social_studies.sampler import _LEARNING_STAGE as _SS_STAGE
+from src.social_studies.sampler import sample_params as _ss_sample_params_direct
+from src.social_studies.schema_loader import (
+    load_learning_stage as ss_load_learning_stage,
+)
+from src.social_studies.schema_loader import (
+    load_schemas as ss_load_schemas,
+)
+from src.social_studies.schemas import (
+    ExamQuestion as SSExamQuestion,
+)
+from src.social_studies.schemas import (
+    QuestionContext as SSQuestionContext,
+)
+from src.social_studies.schemas import (
+    QuestionSetType as SSQuestionSetType,
+)
+from src.social_studies.schemas import (
+    QuestionSubject as SSQuestionSubject,
+)
+from src.social_studies.schemas import (
+    QuestionType as SSQuestionType,
+)
+
+# ── utility used by coerce_overrides ─────────────────────────────────────────
+
+def _resolve_enum(value: str | None, enum_cls: type) -> Any:
+    if value is None:
+        return None
+    for member in enum_cls:
+        if member.value == value:
+            return member
+    raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SubjectSpec dataclass
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclasses.dataclass
+class SubjectSpec:
+    """Encapsulates all per-subject dispatch logic.
+
+    Fields
+    ------
+    key                     Subject string key, e.g. ``"social_studies"``.
+    question_id_prefix      Prefix for generated question IDs (``"ss_"`` etc.).
+    exam_question_cls       The ExamQuestion class for this subject.
+    coerce_overrides        ``(params, app_state) -> dict`` of coerced enum values
+                            and subject-specific state drawn from app_state.
+    setup_batch_sampler     ``(params, overrides) -> (BatchSampler|None, bool)``
+                            Returns the batch sampler (or None) and the
+                            ``user_pinned_lc`` flag.  Non-SS subjects return
+                            ``(None, False)``.
+    plan_all_batch_briefs   ``(params, count, base_seed, overrides, config,
+                            creative_planning, decoded_subquestion_configs)
+                            -> list[brief|None]``
+                            Returns a list of creative briefs for each question
+                            index (None means no brief).  Returns ``[]`` for
+                            subjects that don't support creative planning so
+                            ``i < len([])`` is always False.
+    do_sample_params        ``(params, overrides, *, seed, assigned_q_type,
+                            assigned_lc, subquestion_configs_decoded)
+                            -> SampledParams``
+    do_generate             ``(rng_params, overrides, **common_kwargs)
+                            -> ExamQuestion``
+                            Adapters use a lazy import of service.py so that
+                            test monkeypatches are intercepted.
+    extract_prior_scope     ``(question) -> PriorScope | None``
+    patch_metadata          Optional ``(question, batch_sampler) -> question``
+                            for SS metadata patching.
+    plan_core_questions     ``(client, topic, **kwargs) -> list[str]``
+                            Used by the planner route.
+    load_planner_stage      ``(config_server, grade) -> str``
+                            Returns the learning-stage string for the planner.
+    build_schemas           ``(config_server, grade) -> dict``
+                            Returns the schemas dict for /api/schemas.
+    """
+
+    key: str
+    question_id_prefix: str
+    exam_question_cls: type
+
+    coerce_overrides: Callable
+    setup_batch_sampler: Callable
+    plan_all_batch_briefs: Callable
+    do_sample_params: Callable
+    do_generate: Callable
+    extract_prior_scope: Callable
+
+    patch_metadata: Callable | None
+
+    plan_core_questions: Callable
+    load_planner_stage: Callable
+    build_schemas: Callable
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Schema-building helpers shared by build_schemas callables
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _resolve_stage(schemas: dict, grade: int | None) -> str:
+    if grade is not None:
+        try:
+            return grade_to_learning_stage(grade)
+        except ValueError:
+            pass
+    return schemas.get("學習階段", "")
+
+
+_MATH_SUBJECTS = [
+    {
+        "value": "數與量",
+        "instruction": (
+            "題目主要涵蓋108課綱數學領域「數與量」主題（編碼前綴 N/n），"
+            "含整數、有理數、實數、估算、單位換算等。"
+        ),
+    },
+    {
+        "value": "代數",
+        "instruction": (
+            "題目主要涵蓋108課綱數學領域「代數」主題（編碼前綴 R/A/F），"
+            "含關係、方程式、函數、不等式等。"
+        ),
+    },
+    {
+        "value": "幾何",
+        "instruction": (
+            "題目主要涵蓋108課綱數學領域「幾何」主題（編碼前綴 S/G），"
+            "含平面與立體幾何、座標、變換等。"
+        ),
+    },
+    {
+        "value": "統計與機率",
+        "instruction": (
+            "題目主要涵蓋108課綱數學領域「統計與機率」主題（編碼前綴 D/P），"
+            "含資料整理、敘述統計、機率初步等。"
+        ),
+    },
+]
+
+_MATH_CONTENT_TYPES = [
+    {
+        "value": "純文字",
+        "instruction": (
+            "純文字題目，不需任何圖表或圖片。題目僅透過文字描述情境與數學問題，"
+            "不得輸出 chart_spec。"
+        ),
+    },
+    {
+        "value": "含圖片",
+        "instruction": (
+            "題目必須搭配圖片式或視覺式素材，如幾何圖形、示意圖、座標平面、數線等，"
+            "並以 chart_spec 描述素材。"
+        ),
+    },
+    {
+        "value": "graphs/charts/tables",
+        "instruction": (
+            "題目必須搭配圖表或表格素材，如統計圖、折線圖、圓餅圖、比較表或資料表，"
+            "並以 chart_spec 提供完整資料。"
+        ),
+    },
+    {
+        "value": "customized",
+        "instruction": (
+            "由使用者自行輸入題目內容類型；送出時以前端輸入文字作為實際內容類型。"
+        ),
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Social-studies (SS) adapters
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ss_coerce_overrides(params: Any, app_state: Any) -> dict:
+    context_override = (
+        [_resolve_enum(v, SSQuestionContext) for v in params.context]
+        if params.context else None
+    )
+    set_type_override = _resolve_enum(params.set_type, SSQuestionSetType)
+    q_type_override = (
+        [_resolve_enum(v, SSQuestionType) for v in params.q_type]
+        if params.q_type else None
+    )
+    subject_override = (
+        [SSQuestionSubject(v) for v in params.subject_filter]
+        if params.subject_filter else None
+    )
+    return {
+        "context_override": context_override,
+        "set_type_override": set_type_override,
+        "q_type_override": q_type_override,
+        "subject_override": subject_override,
+    }
+
+
+def _ss_setup_batch_sampler(params: Any, overrides: dict) -> tuple[BatchSampler | None, bool]:
+    if params.count <= 1 or params.coverage_mode != "balanced":
+        return None, False
+
+    batch_rng = random.Random(params.seed if params.seed is not None else 0)
+    user_pinned_qtype = bool(params.q_type) or bool(params.subquestion_configs)
+    user_pinned_lc = bool(params.learning_content)
+    q_pool = (
+        [SSQuestionType(v) for v in params.q_type]
+        if user_pinned_qtype and params.q_type
+        else list(SSQuestionType)
+    )
+    subj_key = params.subject_filter[0] if params.subject_filter else "跨科"
+    lc_entries = (
+        allowed_learning_content(load_ss_learning_content(), _SS_STAGE, subj_key)
+        if not user_pinned_lc
+        else []
+    )
+    lc_pool = [e["value"] for e in lc_entries] if not user_pinned_lc else []
+
+    batch_sampler = BatchSampler(
+        count=params.count,
+        q_type_pool=q_pool,
+        learning_content_pool=lc_pool,
+        rng=batch_rng,
+    )
+    return batch_sampler, user_pinned_lc
+
+
+def _ss_plan_all_batch_briefs(
+    params: Any,
+    count: int,
+    base_seed: int | None,
+    overrides: dict,
+    config: Any,
+    creative_planning: bool,
+    decoded_subquestion_configs: list[dict] | None,
+) -> list:
+    if count < 1:
+        return []
+    if not creative_planning:
+        return [None] * count
+
+    from src.llm_client import LLMClient
+
+    context_override = overrides["context_override"]
+    set_type_override = overrides["set_type_override"]
+    q_type_override = overrides["q_type_override"]
+    subject_override = overrides["subject_override"]
+
+    pre_params_list = []
+    for i in range(count):
+        seed = (base_seed + i) if base_seed is not None else None
+        pre_params_list.append(
+            _ss_sample_params_direct(
+                grade=params.grade,
+                context=context_override,
+                set_type=set_type_override,
+                q_type=q_type_override,
+                subject=subject_override,
+                content_type=params.content_type,
+                learning_performance=params.learning_performance,
+                seed=seed,
+                sub_question_count=params.sub_question_count,
+                question_word_limit=params.question_word_limit,
+                option_word_limit=params.option_word_limit,
+                subquestion_configs=decoded_subquestion_configs,
+            ),
+        )
+    planning_client = LLMClient(config)
+    return _ss_plan_batch_briefs(planning_client, config, pre_params_list)
+
+
+def _ss_do_sample_params(
+    params: Any,
+    overrides: dict,
+    *,
+    seed: int | None,
+    assigned_q_type: Any,
+    assigned_lc: Any,
+    subquestion_configs_decoded: list[dict] | None,
+) -> Any:
+    # Lazy import so test monkeypatches on service.ss_sample_params are seen.
+    import server.generate.service as _svc  # noqa: PLC0415
+
+    return _svc.ss_sample_params(
+        grade=params.grade,
+        context=overrides["context_override"],
+        set_type=overrides["set_type_override"],
+        q_type=overrides["q_type_override"],
+        subject=overrides["subject_override"],
+        content_type=params.content_type,
+        learning_content=params.learning_content,
+        learning_performance=params.learning_performance,
+        seed=seed,
+        sub_question_count=params.sub_question_count,
+        question_word_limit=params.question_word_limit,
+        option_word_limit=params.option_word_limit,
+        subquestion_configs=subquestion_configs_decoded,
+        difficulty=params.difficulty,
+        assigned_q_type=assigned_q_type,
+        assigned_learning_content=assigned_lc,
+    )
+
+
+def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
+    # Lazy import so test monkeypatches on service.ss_generate_with_corrections are seen.
+    import server.generate.service as _svc  # noqa: PLC0415
+
+    return _svc.ss_generate_with_corrections(
+        config=kwargs["config"],
+        client=kwargs["client"],
+        params=rng_params,
+        question_id=kwargs["question_id"],
+        max_retries=kwargs["max_retries"],
+        skip_verify=kwargs["skip_verify"],
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
+        html_renderer=kwargs["html_renderer"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_passage=kwargs["user_passage"],
+        text_word_limit=kwargs["text_word_limit"],
+        user_options=kwargs["user_options"],
+        user_topic=kwargs["user_topic"],
+        user_core_question=kwargs["user_core_question"],
+        on_question_update=kwargs["on_question_update"],
+        prior_scopes=kwargs["prior_scopes"],
+    )
+
+
+def _ss_patch_metadata(question: Any, batch_sampler: Any) -> Any:
+    from src.social_studies.schemas import ExamQuestion as _SSExamQuestion  # noqa: PLC0415
+    from src.social_studies.schemas import QuestionMetadata as _QM  # noqa: PLC0415
+
+    if not isinstance(question, _SSExamQuestion):
+        return question
+    effective_mode = "balanced" if batch_sampler is not None else "random"
+    if question.metadata is None:
+        # Fall back to a minimal metadata object; model attribute may not be
+        # available on all config types, so use "unknown" as sentinel.
+        question.metadata = _QM(
+            grade=question.subquestions[0].年級 if question.subquestions else 0,
+            model="unknown",
+            coverage_mode_used=effective_mode,
+        )
+    else:
+        question.metadata = question.metadata.model_copy(
+            update={"coverage_mode_used": effective_mode}
+        )
+    return question
+
+
+def _ss_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:
+    # Lazy import so test monkeypatches on src.social_studies.planner.plan_core_questions are seen.
+    import src.social_studies.planner as _m  # noqa: PLC0415
+    return _m.plan_core_questions(client, topic, **kwargs)
+
+
+def _ss_load_planner_stage(config_server: Any, grade: int | None) -> str:
+    schemas = ss_load_schemas()
+    return ss_load_learning_stage(schemas)
+
+
+def _ss_build_schemas(config_server: Any, grade: int | None) -> dict:
+    schemas = ss_load_schemas(config_server.social_studies_curriculum_dir)
+    performance_data = load_ss_learning_performance(
+        config_server.social_studies_curriculum_dir / "learning_performance.json"
+    )
+    learning_stage = _resolve_stage(schemas, grade)
+    schemas["學習表現"] = [
+        {
+            "value": entry["value"],
+            "instruction": entry.get("說明", ""),
+            "科目": entry.get("科目", ""),
+        }
+        for entry in performance_data.get("學習表現", [])
+        if entry.get("學習階段") == learning_stage
+    ]
+    content = load_ss_learning_content(
+        config_server.social_studies_curriculum_dir / "learning_content.json"
+    )
+    schemas["學習內容"] = [
+        {
+            "value": entry["value"],
+            "instruction": entry.get("條目說明", ""),
+            "科目": entry.get("科目", ""),
+        }
+        for entry in content.get("學習內容", [])
+        if entry.get("學習階段") == learning_stage
+    ]
+    return schemas
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Natural-sciences (NS) adapters
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ns_coerce_overrides(params: Any, app_state: Any) -> dict:
+    context_override = (
+        [_resolve_enum(v, NSQuestionContext) for v in params.context]
+        if params.context else None
+    )
+    sub_context_override = _resolve_enum(params.sub_context, NSQuestionSubContext)
+    set_type_override = _resolve_enum(params.set_type, NSQuestionSetType)
+    q_type_override = (
+        [_resolve_enum(v, NSQuestionType) for v in params.q_type]
+        if params.q_type else None
+    )
+    science_competency_override = (
+        [_resolve_enum(v, NSScienceCompetency) for v in params.science_competency]
+        if params.science_competency else None
+    )
+    return {
+        "context_override": context_override,
+        "sub_context_override": sub_context_override,
+        "set_type_override": set_type_override,
+        "q_type_override": q_type_override,
+        "science_competency_override": science_competency_override,
+    }
+
+
+def _ns_setup_batch_sampler(params: Any, overrides: dict) -> tuple[None, bool]:
+    return None, False
+
+
+def _ns_plan_all_batch_briefs(
+    params: Any,
+    count: int,
+    base_seed: int | None,
+    overrides: dict,
+    config: Any,
+    creative_planning: bool,
+    decoded_subquestion_configs: list[dict] | None,
+) -> list:
+    return []
+
+
+def _ns_do_sample_params(
+    params: Any,
+    overrides: dict,
+    *,
+    seed: int | None,
+    assigned_q_type: Any,
+    assigned_lc: Any,
+    subquestion_configs_decoded: list[dict] | None,
+) -> Any:
+    # Lazy import so test monkeypatches on service.ns_sample_params are seen.
+    import server.generate.service as _svc  # noqa: PLC0415
+
+    return _svc.ns_sample_params(
+        grade=params.grade,
+        context=overrides["context_override"],
+        sub_context=overrides["sub_context_override"],
+        set_type=overrides["set_type_override"],
+        q_type=overrides["q_type_override"],
+        science_competency=overrides["science_competency_override"],
+        content_type=params.content_type,
+        learning_content=params.learning_content,
+        learning_performance=params.learning_performance,
+        seed=seed,
+        sub_question_count=params.sub_question_count,
+        question_word_limit=params.question_word_limit,
+        option_word_limit=params.option_word_limit,
+        subquestion_configs=subquestion_configs_decoded,
+        difficulty=params.difficulty,
+    )
+
+
+def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
+    # Lazy import so test monkeypatches on service.ns_generate_with_corrections are seen.
+    import server.generate.service as _svc  # noqa: PLC0415
+
+    return _svc.ns_generate_with_corrections(
+        config=kwargs["config"],
+        client=kwargs["client"],
+        params=rng_params,
+        question_id=kwargs["question_id"],
+        max_retries=kwargs["max_retries"],
+        skip_verify=kwargs["skip_verify"],
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
+        html_renderer=kwargs["html_renderer"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_passage=kwargs["user_passage"],
+        text_word_limit=kwargs["text_word_limit"],
+        user_options=kwargs["user_options"],
+        user_topic=kwargs["user_topic"],
+        user_core_question=kwargs["user_core_question"],
+        on_question_update=kwargs["on_question_update"],
+        prior_scopes=kwargs["prior_scopes"],
+    )
+
+
+def _ns_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:
+    # Lazy import so test monkeypatches on src.natural_sciences.planner are seen.
+    import src.natural_sciences.planner as _m  # noqa: PLC0415
+    return _m.plan_core_questions(client, topic, **kwargs)
+
+
+def _ns_load_planner_stage(config_server: Any, grade: int | None) -> str:
+    schemas = ns_load_schemas()
+    if grade is not None:
+        try:
+            return grade_to_learning_stage(grade)
+        except ValueError:
+            pass
+    return ns_load_learning_stage(schemas)
+
+
+def _ns_build_schemas(config_server: Any, grade: int | None) -> dict:
+    schemas = ns_load_schemas(config_server.natural_sciences_curriculum_dir)
+    learning_stage = _resolve_stage(schemas, grade)
+    performance = load_ns_learning_performance(
+        config_server.natural_sciences_curriculum_dir / "learning_performance.json"
+    )
+    content = load_ns_learning_content(
+        config_server.natural_sciences_curriculum_dir / "learning_content.json"
+    )
+    schemas["學習表現"] = [
+        {
+            "value": entry["value"],
+            "instruction": entry.get("說明", ""),
+            "科目": entry.get("科目", ""),
+        }
+        for entry in performance.get("學習表現", [])
+        if entry.get("學習階段") == learning_stage
+    ]
+    schemas["學習內容"] = [
+        {
+            "value": entry["value"],
+            "instruction": entry.get("條目說明", ""),
+            "科目": entry.get("科目", ""),
+        }
+        for entry in content.get("學習內容", [])
+        if entry.get("學習階段") == learning_stage
+    ]
+    ns_subjects = sorted({
+        entry["科目"] for entry in schemas["學習內容"] if entry.get("科目")
+    })
+    if ns_subjects:
+        schemas["科目"] = [{"value": s, "instruction": ""} for s in ns_subjects]
+    return schemas
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Math adapters
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _math_coerce_overrides(params: Any, app_state: Any) -> dict:
+    curriculum = app_state.curriculum
+    performance = app_state.performance
+    intro_text = app_state.intro_text
+    grade_content = app_state.grade_content
+    math_curriculum_context = getattr(app_state, "math_curriculum_context", None)
+    style_override = (
+        [MathQuestionStyle(v) for v in params.style] if params.style else None
+    )
+    context_override = (
+        [_resolve_enum(v, MathQuestionContext) for v in params.context]
+        if params.context else None
+    )
+    set_type_override = _resolve_enum(params.set_type, MathQuestionSetType)
+    q_type_override = (
+        [_resolve_enum(v, MathQuestionType) for v in params.q_type]
+        if params.q_type else None
+    )
+    return {
+        "curriculum": curriculum,
+        "performance": performance,
+        "intro_text": intro_text,
+        "grade_content": grade_content,
+        "math_curriculum_context": math_curriculum_context,
+        "style_override": style_override,
+        "context_override": context_override,
+        "set_type_override": set_type_override,
+        "q_type_override": q_type_override,
+    }
+
+
+def _math_setup_batch_sampler(params: Any, overrides: dict) -> tuple[None, bool]:
+    return None, False
+
+
+def _math_plan_all_batch_briefs(
+    params: Any,
+    count: int,
+    base_seed: int | None,
+    overrides: dict,
+    config: Any,
+    creative_planning: bool,
+    decoded_subquestion_configs: list[dict] | None,
+) -> list:
+    return []
+
+
+def _math_do_sample_params(
+    params: Any,
+    overrides: dict,
+    *,
+    seed: int | None,
+    assigned_q_type: Any,
+    assigned_lc: Any,
+    subquestion_configs_decoded: list[dict] | None,
+) -> Any:
+    # Lazy import so test monkeypatches on service.math_sample_params are seen.
+    import server.generate.service as _svc  # noqa: PLC0415
+
+    math_subject_filter: str | None = None
+    if params.subject_filter:
+        math_subject_filter = params.subject_filter[0]
+
+    return _svc.math_sample_params(
+        grade_content=overrides["grade_content"],
+        grade=params.grade,
+        style=overrides["style_override"],
+        context=overrides["context_override"],
+        set_type=overrides["set_type_override"],
+        q_type=overrides["q_type_override"],
+        seed=seed,
+        core_competency=params.core_competency,
+        learning_content=params.learning_content,
+        learning_performance=params.learning_performance,
+        content_type=params.content_type,
+        subject_filter=math_subject_filter,
+        difficulty=params.difficulty,
+    )
+
+
+def _math_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
+    # Lazy import so test monkeypatches on service.math_generate_with_corrections are seen.
+    import server.generate.service as _svc  # noqa: PLC0415
+
+    return _svc.math_generate_with_corrections(
+        config=kwargs["config"],
+        client=kwargs["client"],
+        curriculum=overrides["curriculum"],
+        performance=overrides["performance"],
+        intro_text=overrides["intro_text"],
+        grade_content=overrides["grade_content"],
+        params=rng_params,
+        question_id=kwargs["question_id"],
+        max_retries=kwargs["max_retries"],
+        skip_verify=kwargs["skip_verify"],
+        html_renderer=kwargs["html_renderer"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_topic=kwargs["user_topic"] or "",
+        user_passage=kwargs["user_passage"] or "",
+        user_options=kwargs["user_options"],
+        user_core_question=kwargs["user_core_question"] or "",
+        on_question_update=kwargs["on_question_update"],
+        prior_scopes=kwargs["prior_scopes"],
+        curriculum_context=overrides["math_curriculum_context"],
+    )
+
+
+def _math_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:
+    # Lazy import so test monkeypatches on src.planner.plan_core_questions are seen.
+    import src.planner as _m  # noqa: PLC0415
+    return _m.plan_core_questions(client, topic, **kwargs)
+
+
+def _math_load_planner_stage(config_server: Any, grade: int | None) -> str:
+    if grade is not None:
+        try:
+            return grade_to_learning_stage(grade)
+        except ValueError:
+            pass
+    return "第四學習階段"
+
+
+def _math_build_schemas(config_server: Any, grade: int | None) -> dict:
+    path: Path = config_server.question_schemas_path
+    with path.open("r", encoding="utf-8") as f:
+        schemas = json.load(f)
+    schemas["科目"] = list(_MATH_SUBJECTS)
+    schemas["題目內容類型"] = list(_MATH_CONTENT_TYPES)
+    learning_stage = _resolve_stage(schemas, grade)
+    performance = load_common_lp(config_server.math_curriculum_dir)
+    schemas["學習表現"] = [
+        {
+            "value": entry["value"],
+            "instruction": entry.get("說明", ""),
+            "科目": entry.get("科目", ""),
+        }
+        for entry in performance.get("學習表現", [])
+        if entry.get("學習階段") == learning_stage
+    ]
+    return schemas
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Registry — the ONLY place subject key strings appear in server/
+# ─────────────────────────────────────────────────────────────────────────────
+
+SUBJECTS: dict[str, SubjectSpec] = {
+    "social_studies": SubjectSpec(
+        key="social_studies",
+        question_id_prefix="ss_",
+        exam_question_cls=SSExamQuestion,
+        coerce_overrides=_ss_coerce_overrides,
+        setup_batch_sampler=_ss_setup_batch_sampler,
+        plan_all_batch_briefs=_ss_plan_all_batch_briefs,
+        do_sample_params=_ss_do_sample_params,
+        do_generate=_ss_do_generate,
+        extract_prior_scope=extract_ss_prior_scope,
+        patch_metadata=_ss_patch_metadata,
+        plan_core_questions=_ss_plan_core_questions,
+        load_planner_stage=_ss_load_planner_stage,
+        build_schemas=_ss_build_schemas,
+    ),
+    "natural_sciences": SubjectSpec(
+        key="natural_sciences",
+        question_id_prefix="ns_",
+        exam_question_cls=NSExamQuestion,
+        coerce_overrides=_ns_coerce_overrides,
+        setup_batch_sampler=_ns_setup_batch_sampler,
+        plan_all_batch_briefs=_ns_plan_all_batch_briefs,
+        do_sample_params=_ns_do_sample_params,
+        do_generate=_ns_do_generate,
+        extract_prior_scope=extract_ns_prior_scope,
+        patch_metadata=None,
+        plan_core_questions=_ns_plan_core_questions,
+        load_planner_stage=_ns_load_planner_stage,
+        build_schemas=_ns_build_schemas,
+    ),
+    "math": SubjectSpec(
+        key="math",
+        question_id_prefix="q_",
+        exam_question_cls=MathExamQuestion,
+        coerce_overrides=_math_coerce_overrides,
+        setup_batch_sampler=_math_setup_batch_sampler,
+        plan_all_batch_briefs=_math_plan_all_batch_briefs,
+        do_sample_params=_math_do_sample_params,
+        do_generate=_math_do_generate,
+        extract_prior_scope=extract_math_prior_scope,
+        patch_metadata=None,
+        plan_core_questions=_math_plan_core_questions,
+        load_planner_stage=_math_load_planner_stage,
+        build_schemas=_math_build_schemas,
+    ),
+}

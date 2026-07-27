@@ -28,6 +28,7 @@ from server.generate.models import (
     build_sse_error,
 )
 from server.generate.service import generate_question_stream
+from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
 
@@ -226,87 +227,23 @@ async def plan_core_questions_endpoint(
     )
     client = LLMClient(src_config)
 
-    if body.subject == "math":
-        from src.planner import plan_core_questions as math_plan_core_questions
-        from src.sampler import grade_to_learning_stage
-
-        if body.grade is not None:
-            try:
-                learning_stage = grade_to_learning_stage(body.grade)
-            except ValueError:
-                learning_stage = "第四學習階段"
-        else:
-            learning_stage = "第四學習階段"
-
-        try:
-            candidates = math_plan_core_questions(
-                client,
-                body.topic,
-                subject_filter=body.subject_filter,
-                grade=body.grade,
-                learning_stage=learning_stage,
-            )
-        except ValueError as exc:
-            logger.warning("Planner returned malformed candidates: %s", exc)
-            raise HTTPException(
-                status_code=502,
-                detail="Planner upstream returned malformed candidates",
-            ) from exc
-    elif body.subject == "natural_sciences":
-        from src.natural_sciences.planner import plan_core_questions as ns_plan_core_questions
-        from src.natural_sciences.schema_loader import (
-            load_learning_stage,
-            load_schemas,
+    # Site 6: planner dispatch via registry (replaces if/elif per-subject branches)
+    spec = SUBJECTS[body.subject]
+    learning_stage = spec.load_planner_stage(None, body.grade)
+    try:
+        candidates = spec.plan_core_questions(
+            client,
+            body.topic,
+            subject_filter=body.subject_filter,
+            grade=body.grade,
+            learning_stage=learning_stage,
         )
-
-        schemas = load_schemas()
-        if body.grade is not None:
-            from src.sampler import grade_to_learning_stage
-            try:
-                learning_stage = grade_to_learning_stage(body.grade)
-            except ValueError:
-                learning_stage = load_learning_stage(schemas)
-        else:
-            learning_stage = load_learning_stage(schemas)
-
-        try:
-            candidates = ns_plan_core_questions(
-                client,
-                body.topic,
-                subject_filter=body.subject_filter,
-                grade=body.grade,
-                learning_stage=learning_stage,
-            )
-        except ValueError as exc:
-            logger.warning("Planner returned malformed candidates: %s", exc)
-            raise HTTPException(
-                status_code=502,
-                detail="Planner upstream returned malformed candidates",
-            ) from exc
-    else:
-        from src.social_studies.planner import plan_core_questions as ss_plan_core_questions
-        from src.social_studies.schema_loader import (
-            load_learning_stage,
-            load_schemas,
-        )
-
-        schemas = load_schemas()
-        learning_stage = load_learning_stage(schemas)
-
-        try:
-            candidates = ss_plan_core_questions(
-                client,
-                body.topic,
-                subject_filter=body.subject_filter,
-                grade=body.grade,
-                learning_stage=learning_stage,
-            )
-        except ValueError as exc:
-            logger.warning("Planner returned malformed candidates: %s", exc)
-            raise HTTPException(
-                status_code=502,
-                detail="Planner upstream returned malformed candidates",
-            ) from exc
+    except ValueError as exc:
+        logger.warning("Planner returned malformed candidates: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Planner upstream returned malformed candidates",
+        ) from exc
     return PlanCoreQuestionsResponse(candidates=candidates)
 
 
