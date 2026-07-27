@@ -505,3 +505,17 @@ Calls 3 + 4 may repeat up to `max_retries` times (default 3, via `LLM_MAX_RETRIE
 ### Randomness Summary
 
 All RNG is `random.Random(seed)` per question. Points: grade from `_GRADES` (sampler.py:38), 情境 (41-46), 題型種類 (49), 題型 (52), 數學思考 (55-57), 學習內容 (60-64), style (67), few-shot pick (context_builder.py:208-209).
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues at `paulpengtw/exam-generation`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary, label string equals role name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
