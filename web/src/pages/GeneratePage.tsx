@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
-import ParamForm, { type GenerateParams as FormParams } from "../components/ParamForm";
+import ParamForm, { type FormParams } from "../components/ParamForm";
 import ProgressLog from "../components/ProgressLog";
 import QuestionCard from "../components/QuestionCard";
 import { useGenerate } from "../hooks/useGenerate";

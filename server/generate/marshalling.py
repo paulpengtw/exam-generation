@@ -57,6 +57,25 @@ class SSEEventName(str, Enum):
     STAGE = "stage"
 
 
+# Canonical set of event names the server actually emits at runtime.
+# PROGRESS is declared in SSEEventName (for wire-contract completeness, issue #162)
+# but deliberately omitted here because the server never produces it.
+# If "progress" starts being emitted, add it here and update test_marshalling.py.
+EMITTED_EVENT_NAMES: frozenset[str] = frozenset({
+    "started",
+    "question_update",
+    "result",
+    "error",
+    "done",
+    "pipeline",
+    "llm_request",
+    "llm_thinking",
+    "llm_content",
+    "llm_response",
+    "stage",
+})
+
+
 # Maps internal LLM-observer event ``type`` fields to SSE event names.
 _OBSERVER_TYPE_MAP: dict[str, SSEEventName] = {
     "llm_request": SSEEventName.LLM_REQUEST,
