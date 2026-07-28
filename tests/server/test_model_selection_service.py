@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from pathlib import Path
 from types import SimpleNamespace
 
 from server.config import ServerConfig
-from server.generate import service
 from server.generate.models import GenerateParams
+from server.generate.service import generate_question_stream
+from server.generate.subjects import SUBJECTS
 from src.social_studies.schemas import ExamQuestion
+
+
+def _fake_ss_spec(fake_generate_fn):
+    """Return a copy of the SS SubjectSpec with do_generate replaced by fake_generate_fn.
+
+    fake_generate_fn receives the same **kwargs the real ss_generate_with_corrections
+    would receive, plus params=rng_params.
+    """
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_fn(params=rng_params, **kwargs)
+
+    return dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
 
 def test_model_execute_override_is_baked_into_llmclient_config(tmp_path: Path) -> None:
@@ -56,20 +70,16 @@ def test_model_execute_override_is_baked_into_llmclient_config(tmp_path: Path) -
 
     async def collect_events():
         events = []
-        async for event in service.generate_question_stream(
+        async for event in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
+            subjects={"social_studies": _fake_ss_spec(fake_generate_with_corrections)},
         ):
             events.append(event)
         return events
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
-    try:
-        asyncio.run(collect_events())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+    asyncio.run(collect_events())
 
     assert captured["model_execute"] == "claude-haiku-4-6"
     assert captured["model_plan"] == "claude-opus-4-6"
@@ -108,20 +118,16 @@ def test_model_override_absent_preserves_config_defaults(tmp_path: Path) -> None
 
     async def collect_events():
         events = []
-        async for event in service.generate_question_stream(
+        async for event in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
+            subjects={"social_studies": _fake_ss_spec(fake_generate_with_corrections)},
         ):
             events.append(event)
         return events
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
-    try:
-        asyncio.run(collect_events())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+    asyncio.run(collect_events())
 
     assert captured["model_execute"] == "claude-sonnet-4-6"
     assert captured["model_plan"] == "claude-opus-4-6"
@@ -172,19 +178,15 @@ def test_model_execute_override_reaches_ss_generate_config(tmp_path: Path) -> No
 
     async def collect_events():
         events = []
-        async for event in service.generate_question_stream(
+        async for event in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
+            subjects={"social_studies": _fake_ss_spec(fake_generate_with_corrections)},
         ):
             events.append(event)
         return events
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
-    try:
-        asyncio.run(collect_events())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+    asyncio.run(collect_events())
 
     assert captured["config"].model_execute == "claude-haiku-4-6"

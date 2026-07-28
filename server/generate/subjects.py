@@ -19,18 +19,23 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.batch_sampler import BatchSampler
+from src.cli import generate_with_corrections as _math_generate_with_corrections
 from src.common.batch_dedup import (
     extract_math_prior_scope,
     extract_ns_prior_scope,
     extract_ss_prior_scope,
 )
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
+from src.natural_sciences.cli import (
+    generate_with_corrections as _ns_generate_with_corrections,
+)
 from src.natural_sciences.curriculum_loader import (
     load_learning_content as load_ns_learning_content,
 )
 from src.natural_sciences.curriculum_loader import (
     load_learning_performance as load_ns_learning_performance,
 )
+from src.natural_sciences.sampler import sample_params as _ns_sample_params
 from src.natural_sciences.schema_loader import (
     load_learning_stage as ns_load_learning_stage,
 )
@@ -56,6 +61,7 @@ from src.natural_sciences.schemas import (
     ScienceCompetency as NSScienceCompetency,
 )
 from src.sampler import grade_to_learning_stage
+from src.sampler import sample_params as _math_sample_params
 from src.schemas import (
     ExamQuestion as MathExamQuestion,
 )
@@ -72,6 +78,9 @@ from src.schemas import (
     QuestionType as MathQuestionType,
 )
 from src.social_studies.cli import _plan_batch_briefs as _ss_plan_batch_briefs
+from src.social_studies.cli import (
+    generate_with_corrections as _ss_generate_with_corrections,
+)
 from src.social_studies.curriculum_loader import (
     allowed_learning_content,
 )
@@ -318,13 +327,16 @@ def _ss_plan_all_batch_briefs(
     config: Any,
     creative_planning: bool,
     decoded_subquestion_configs: list[dict] | None,
+    **kwargs: Any,
 ) -> list:
     if count < 1:
         return []
     if not creative_planning:
         return [None] * count
 
-    from src.llm_client import LLMClient
+    from src.llm_client import LLMClient as _LLMClient
+
+    client_factory = kwargs.get("client_factory") or _LLMClient
 
     context_override = overrides["context_override"]
     set_type_override = overrides["set_type_override"]
@@ -350,7 +362,7 @@ def _ss_plan_all_batch_briefs(
                 subquestion_configs=decoded_subquestion_configs,
             ),
         )
-    planning_client = LLMClient(config)
+    planning_client = client_factory(config)
     return _ss_plan_batch_briefs(planning_client, config, pre_params_list)
 
 
@@ -363,10 +375,7 @@ def _ss_do_sample_params(
     assigned_lc: Any,
     subquestion_configs_decoded: list[dict] | None,
 ) -> Any:
-    # Lazy import so test monkeypatches on service.ss_sample_params are seen.
-    import server.generate.service as _svc  # noqa: PLC0415
-
-    return _svc.ss_sample_params(
+    return _ss_sample_params_direct(
         grade=params.grade,
         context=overrides["context_override"],
         set_type=overrides["set_type_override"],
@@ -387,10 +396,7 @@ def _ss_do_sample_params(
 
 
 def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
-    # Lazy import so test monkeypatches on service.ss_generate_with_corrections are seen.
-    import server.generate.service as _svc  # noqa: PLC0415
-
-    return _svc.ss_generate_with_corrections(
+    return _ss_generate_with_corrections(
         config=kwargs["config"],
         client=kwargs["client"],
         params=rng_params,
@@ -516,6 +522,7 @@ def _ns_plan_all_batch_briefs(
     config: Any,
     creative_planning: bool,
     decoded_subquestion_configs: list[dict] | None,
+    **_kwargs: Any,
 ) -> list:
     return []
 
@@ -529,10 +536,7 @@ def _ns_do_sample_params(
     assigned_lc: Any,
     subquestion_configs_decoded: list[dict] | None,
 ) -> Any:
-    # Lazy import so test monkeypatches on service.ns_sample_params are seen.
-    import server.generate.service as _svc  # noqa: PLC0415
-
-    return _svc.ns_sample_params(
+    return _ns_sample_params(
         grade=params.grade,
         context=overrides["context_override"],
         sub_context=overrides["sub_context_override"],
@@ -552,10 +556,7 @@ def _ns_do_sample_params(
 
 
 def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
-    # Lazy import so test monkeypatches on service.ns_generate_with_corrections are seen.
-    import server.generate.service as _svc  # noqa: PLC0415
-
-    return _svc.ns_generate_with_corrections(
+    return _ns_generate_with_corrections(
         config=kwargs["config"],
         client=kwargs["client"],
         params=rng_params,
@@ -674,6 +675,7 @@ def _math_plan_all_batch_briefs(
     config: Any,
     creative_planning: bool,
     decoded_subquestion_configs: list[dict] | None,
+    **_kwargs: Any,
 ) -> list:
     return []
 
@@ -687,14 +689,11 @@ def _math_do_sample_params(
     assigned_lc: Any,
     subquestion_configs_decoded: list[dict] | None,
 ) -> Any:
-    # Lazy import so test monkeypatches on service.math_sample_params are seen.
-    import server.generate.service as _svc  # noqa: PLC0415
-
     math_subject_filter: str | None = None
     if params.subject_filter:
         math_subject_filter = params.subject_filter[0]
 
-    return _svc.math_sample_params(
+    return _math_sample_params(
         grade_content=overrides["grade_content"],
         grade=params.grade,
         style=overrides["style_override"],
@@ -712,10 +711,7 @@ def _math_do_sample_params(
 
 
 def _math_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
-    # Lazy import so test monkeypatches on service.math_generate_with_corrections are seen.
-    import server.generate.service as _svc  # noqa: PLC0415
-
-    return _svc.math_generate_with_corrections(
+    return _math_generate_with_corrections(
         config=kwargs["config"],
         client=kwargs["client"],
         curriculum=overrides["curriculum"],

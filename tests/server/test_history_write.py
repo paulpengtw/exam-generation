@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,8 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.config import ServerConfig
-from server.generate import service
 from server.generate.models import GenerateParams
+from server.generate.service import generate_question_stream
+from server.generate.subjects import SUBJECTS
 from server.models import Base, GenerationRecord, User
 from src.social_studies.schemas import ExamQuestion
 
@@ -25,7 +27,6 @@ def test_generate_stream_writes_generation_record(tmp_path, monkeypatch) -> None
             await conn.run_sync(Base.metadata.create_all)
     asyncio.run(init())
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    monkeypatch.setattr(service, "AsyncSessionLocal", SessionLocal)
 
     user_id = uuid.uuid4()
 
@@ -57,15 +58,20 @@ def test_generate_stream_writes_generation_record(tmp_path, monkeypatch) -> None
         (tmp_path / q.圖片).write_bytes(b"png")
         return q
 
-    monkeypatch.setattr(service, "ss_generate_with_corrections", fake_generate)
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
     async def run():
-        async for _ in service.generate_question_stream(
+        async for _ in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
             user_id=user_id,
             generation_log_id=None,
+            subjects={"social_studies": fake_spec},
+            session_factory=SessionLocal,
         ):
             pass
     asyncio.run(run())
