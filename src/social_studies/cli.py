@@ -15,7 +15,9 @@ from typing import Any
 
 from src.batch_sampler import BatchSampler
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
+from src.common.subject_spec import SOCIAL_STUDIES
 from src.config import Config
+from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
@@ -639,6 +641,7 @@ def generate_one(
     on_question_update: QuestionUpdateCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     few_shot_dir = config.data_dir / "social_studies" / "few_shot"
@@ -818,7 +821,11 @@ def generate_one(
     if not skip_verify:
         print(f"  Verifying question {question_id}...", file=sys.stderr)
         emit_stage(obs, "verifier", "verify", "start")
-        result = verify_question(client, question, chart_image_path=chart_image_path)
+        result = verify_question(
+            client, question,
+            chart_image_path=chart_image_path,
+            curriculum_context=curriculum_context,
+        )
         emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
         _emit_question_update(on_question_update, question, "verified")
@@ -846,6 +853,7 @@ def generate_with_corrections(
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     question = generate_one(
@@ -865,6 +873,7 @@ def generate_with_corrections(
         user_core_question=user_core_question,
         on_question_update=on_question_update,
         prior_scopes=prior_scopes,
+        curriculum_context=curriculum_context,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -891,8 +900,11 @@ def generate_with_corrections(
                 chart_image_path = str(p)
 
         emit_stage(obs, "corrector", "correct", "start", retry=attempt + 1)
-        question = correct_question(client, question, question.verification,
-                                    chart_image_path=chart_image_path)
+        question = correct_question(
+            client, question, question.verification,
+            chart_image_path=chart_image_path,
+            curriculum_context=curriculum_context,
+        )
         emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
         _emit_question_update(on_question_update, question, "corrected")
 
@@ -920,7 +932,11 @@ def generate_with_corrections(
 
         if not skip_verify:
             emit_stage(obs, "verifier", "verify", "start", retry=attempt + 1)
-            result = verify_question(client, question, chart_image_path=new_chart_image_path)
+            result = verify_question(
+                client, question,
+                chart_image_path=new_chart_image_path,
+                curriculum_context=curriculum_context,
+            )
             emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
             _emit_question_update(on_question_update, question, "verified")
@@ -969,6 +985,9 @@ def main(argv: list[str] | None = None) -> None:
     learning_content_override = args.learning_content if args.learning_content else None
     learning_performance_override = args.learning_performance if args.learning_performance else None
     content_type_override = args.content_type if args.content_type else None
+
+    # Build the canonical SS curriculum context once per run; all pipeline stages share it.
+    ss_curriculum_context = load_curriculum_context(SOCIAL_STUDIES.data_dir)
 
     results = []
     prior_scopes: list[PriorScope] = []
@@ -1051,6 +1070,7 @@ def main(argv: list[str] | None = None) -> None:
                 image_generation_mode=args.image_generation_mode,
                 dry_run=args.dry_run,
                 prior_scopes=list(prior_scopes),
+                curriculum_context=ss_curriculum_context,
             )
 
             if args.dry_run:

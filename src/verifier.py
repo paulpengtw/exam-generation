@@ -134,11 +134,12 @@ def verify_question(
             )
 
         # Non-blocking distractor-key audit (warnings only; never flips passed).
+        # Use "；" separator, consistent with the NS and SS verifiers.
         warnings = validate_distractor_keys(question_text, question.誘答分析)
         details = result.get("details", "")
         if warnings:
             details = details.rstrip()
-            details += "\n\n[誘答分析提醒] " + " ".join(warnings)
+            details += "\n\n[誘答分析提醒] " + "；".join(warnings)
 
         return VerificationResult(
             passed=result.get("passed", False),

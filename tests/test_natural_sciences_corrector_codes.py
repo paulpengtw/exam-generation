@@ -107,3 +107,28 @@ def test_corrector_drops_all_invalid_codes_on_llm_added_subquestion() -> None:
     issues = validate_question_codes(corrected)
     assert "第2小題：缺少學習內容編碼" in issues
     assert "第2小題：缺少學習表現編碼" in issues
+
+
+def test_ns_corrector_accepts_rubric_under_alternate_key_評分標準() -> None:
+    """AC3 regression: NS corrector must read rubrics under 評分標準 (alternate key).
+
+    SS's corrector already uses ``sq_raw.get('評分規準') or sq_raw.get('評分標準') or []``.
+    NS's corrector currently uses only ``sq_raw.get('評分規準', [])`` — it silently
+    drops rubrics the LLM emits under the alternate key '評分標準'.
+    This test is red until the NS corrector is fixed.
+    """
+    payload = {
+        "subquestions": [{
+            "序號": 1, "題型": "Constructed response",
+            "題目": "請說明光合作用的主要階段。", "答案": "見評分規準",
+            "答案解析": "光合作用分為光反應和暗反應兩階段。",
+            "評分標準": [  # alternate key — must be accepted same as 評分規準
+                {"code": "2", "規準說明": "能完整說明兩階段", "學生作答實例": ["光反應→暗反應"]},
+                {"code": "0", "規準說明": "無法說明", "學生作答實例": ["不知道"]},
+            ],
+        }],
+    }
+    corrected = correct_question(_client(payload), _base_question(), _VERIFICATION)
+    assert len(corrected.subquestions[0].評分規準) == 2, (
+        "NS corrector must read rubrics from 評分標準 key when 評分規準 is absent"
+    )
