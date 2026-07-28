@@ -2,8 +2,10 @@
 name: CI
 
 on:
+  # Only run on pushes to long-lived branches; PR branches are covered by the
+  # pull_request trigger below. Listing "**" here would double every run.
   push:
-    branches: ["**"]
+    branches: [staging, main]
   pull_request:
 
 jobs:
