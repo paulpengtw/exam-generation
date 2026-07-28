@@ -741,7 +741,27 @@ describe("ParamForm 發送前確認 display semantics", () => {
 
   it("does not render a 科目 row for 自然科學", async () => {
     getSchemasMock.mockResolvedValue(SCIENCE_SCHEMA);
-    await openConfirmation("natural_sciences");
-    expect(screen.queryByText("科目", { selector: "dt" })).not.toBeInTheDocument();
+    render(
+      <ParamForm
+        subject="natural_sciences"
+        onSubmit={vi.fn()}
+        disabled={false}
+        initialParams={{ count: 2 }}
+      />,
+    );
+    const subjectOption = await screen.findByRole("option", { name: "歷史" });
+    fireEvent.change(subjectOption.closest("select")!, { target: { value: "歷史" } });
+    fireEvent.click(screen.getByRole("button", { name: "產生" }));
+    await screen.findByRole("heading", { name: "發送前確認設定" });
+
+    const sections = [
+      screen.getByRole("region", { name: "共同設定" }),
+      screen.getByRole("region", { name: "第1題" }),
+      screen.getByRole("region", { name: "第2題" }),
+    ];
+    const subjectRows = sections.flatMap((section) =>
+      within(section).queryAllByText("科目", { selector: "dt" }),
+    );
+    expect(subjectRows).toHaveLength(0);
   });
 });
