@@ -73,7 +73,15 @@ def _sample_worker_params(
         if batch_sampler is not None and not batch_user_pinned_lc
         else None
     )
-    seed = (worker_params.seed + i) if worker_params.seed is not None else None
+    has_explicit_worker_seed = (
+        decoded_per_question_params is not None
+        and decoded_per_question_params[i].get("seed") is not None
+    )
+    seed = (
+        worker_params.seed
+        if has_explicit_worker_seed
+        else (worker_params.seed + i) if worker_params.seed is not None else None
+    )
     return spec.do_sample_params(
         worker_params,
         worker_overrides,

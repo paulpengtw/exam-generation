@@ -277,6 +277,7 @@ export default function ParamForm({
   const [setType, setSetType] = useState<string>(fromInit<string>("set_type", ""));
   const [qType, setQType] = useState<string[]>(fromInit<string[]>("q_type", []));
   const [count, setCount] = useState<number>(fromInit<number>("count", 1));
+  const configuredSeed = fromInit<number | undefined>("seed", undefined);
   const [coverageMode, setCoverageMode] = useState<"balanced" | "random">("balanced");
   const [skipVerify, setSkipVerify] = useState<boolean>(
     fromInit<boolean>("skip_verify", false),
@@ -760,7 +761,10 @@ export default function ParamForm({
       if (userChosenFields.current.has(key) || pool.length === 0) return undefined;
       return drawQuestionSubset(pool, 1, max, previousRandomValues[key]);
     };
-    const perQuestionParams = Array.from({ length: count }, () => {
+    const perQuestionParams = Array.from({ length: count }, (_, questionIndex) => {
+      const resolvedSeed = configuredSeed !== undefined
+        ? configuredSeed + questionIndex
+        : Math.floor(Math.random() * 2_147_483_648);
       const randomStyle = subject === "math"
         ? drawField("style", (schemas?.question_style ?? []).map((entry) => entry.value))
         : undefined;
@@ -829,6 +833,7 @@ export default function ParamForm({
       const result = {
         subject,
         ...baseParams,
+        seed: resolvedSeed,
         style: randomStyle ?? (baseParams.style ? [baseParams.style] : undefined),
         content_type: randomContentType?.[0] ?? baseParams.content_type,
         context: randomContext ?? baseParams.context,
@@ -863,6 +868,7 @@ export default function ParamForm({
     });
     setPerQuestionAutoFields(
       perQuestionParams.map(() => [
+        ...(configuredSeed === undefined ? ["seed"] : []),
         ...(!userChosenFields.current.has("style") && subject === "math" ? ["style"] : []),
         ...(!userChosenFields.current.has("content_type") ? ["content_type"] : []),
         ...(!userChosenFields.current.has("context") ? ["context"] : []),
@@ -920,6 +926,7 @@ export default function ParamForm({
       subquestion_configs: t("form.confirm_subquestion_heading"),
       model_plan: t("form.confirm_model_plan"),
       model_execute: t("form.confirm_model_execute"),
+      seed: t("form.confirm_seed"),
     };
 
     // Resolve full 學習表現 entries for display
@@ -1023,6 +1030,7 @@ export default function ParamForm({
                     .filter(([, value]) => value !== undefined)
                     .map(([key, value]) => {
                       const isRandom = perQuestionAutoFields[index]?.includes(key);
+                      const isPredrawnSeed = key === "seed" && isRandom;
                       const isPreGeneratedCoreQuestion =
                         key === "core_question" && coreQuestionResolution === "generated";
                       return (
@@ -1033,7 +1041,9 @@ export default function ParamForm({
                           <dd className="min-w-0 break-words text-gray-900">
                             <span>{Array.isArray(value) ? value.join(", ") : String(value)}</span>
                             <span className={`ml-2 text-xs font-medium ${isRandom || isPreGeneratedCoreQuestion ? "text-amber-700" : "text-green-700"}`}>
-                              {isPreGeneratedCoreQuestion
+                              {isPredrawnSeed
+                                ? t("form.confirm_seed_predrawn")
+                                : isPreGeneratedCoreQuestion
                                 ? t("form.confirm_core_question_pre_generated")
                                 : t(isRandom ? "form.confirm_badge_random" : "form.confirm_badge_user")}
                             </span>

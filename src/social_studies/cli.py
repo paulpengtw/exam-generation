@@ -511,6 +511,7 @@ def _ss_build_text_user(
     return build_text_user_prompt(
         params,
         few_shot_dir,
+        rng=random.Random(params.seed),
         image_generation_mode=image_generation_mode,
         user_passage=user_passage,
         user_options=user_options,

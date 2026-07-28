@@ -53,23 +53,8 @@ def _math_state(config: ServerConfig) -> SimpleNamespace:
     )
 
 
-# Issue #185: these three tests seed prompt-building random.Random() calls via
-# monkeypatch because production does not thread the request seed to them yet.
-# Once #185 lands, delete each monkeypatch; passing exact equality without it is
-# the issue's real acceptance evidence.
-def test_math_preview_is_byte_identical_to_submit_prompt_when_prompt_rng_is_seeded(
-    monkeypatch,
-) -> None:
-    import random
-
+def test_math_preview_is_byte_identical_to_submit_prompt() -> None:
     seed = 187
-    seeded_rng = random.Random
-    monkeypatch.setattr(
-        "src.context_builder.random.Random",
-        lambda supplied_seed=None: seeded_rng(
-            seed if supplied_seed is None else supplied_seed
-        ),
-    )
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = _math_state(config)
     params = GenerateParams(
@@ -107,19 +92,8 @@ def test_math_preview_is_byte_identical_to_submit_prompt_when_prompt_rng_is_seed
     assert preview["user_prompt"] == capture.prompts[1]
 
 
-def test_social_studies_preview_is_byte_identical_to_text_generator_prompt_when_prompt_rng_is_seeded(
-    monkeypatch,
-) -> None:
-    import random
-
+def test_social_studies_preview_is_byte_identical_to_text_generator_prompt() -> None:
     seed = 188
-    seeded_rng = random.Random
-    monkeypatch.setattr(
-        "src.social_studies.context_builder.random.Random",
-        lambda supplied_seed=None: seeded_rng(
-            seed if supplied_seed is None else supplied_seed
-        ),
-    )
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ss_curriculum_context=None)
     params = GenerateParams(
@@ -152,19 +126,8 @@ def test_social_studies_preview_is_byte_identical_to_text_generator_prompt_when_
     assert preview["user_prompt"] == capture.prompts[1]
 
 
-def test_natural_sciences_preview_is_byte_identical_to_text_generator_prompt_when_prompt_rng_is_seeded(
-    monkeypatch,
-) -> None:
-    import random
-
+def test_natural_sciences_preview_is_byte_identical_to_text_generator_prompt() -> None:
     seed = 189
-    seeded_rng = random.Random
-    monkeypatch.setattr(
-        "src.natural_sciences.context_builder.random.Random",
-        lambda supplied_seed=None: seeded_rng(
-            seed if supplied_seed is None else supplied_seed
-        ),
-    )
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ns_curriculum_context=None)
     params = GenerateParams(subject="natural_sciences", seed=seed)
@@ -190,6 +153,58 @@ def test_natural_sciences_preview_is_byte_identical_to_text_generator_prompt_whe
     assert capture.prompts is not None
     assert preview["system_prompt"] == capture.prompts[0]
     assert preview["user_prompt"] == capture.prompts[1]
+
+
+def test_same_confirmation_payload_builds_byte_identical_prompts_with_few_shots() -> None:
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = _math_state(config)
+    params = GenerateParams(
+        subject="math",
+        count=1,
+        seed=10,
+        per_question_params='[{"seed": 185}]',
+        disable_reference_fewshot=False,
+    )
+
+    first = build_prompt_previews(params, config, app_state)[0]
+    second = build_prompt_previews(params, config, app_state)[0]
+    sampled = sample_math(grade_content=app_state.grade_content, seed=185)
+    capture = _CapturingClient(
+        {
+            "情境": ["個人"],
+            "題型種類": "單一題",
+            "題型": "選擇題",
+            "數學思考": ["運用"],
+            "學習內容": [{"編碼": "N-7-1", "說明": "測試"}],
+            "題目": ["測試題目"],
+            "正確解題分析": ["測試解析"],
+        }
+    )
+    generate_math(
+        config=config,
+        client=capture,
+        curriculum=app_state.curriculum,
+        performance=app_state.performance,
+        intro_text=app_state.intro_text,
+        grade_content=app_state.grade_content,
+        params=sampled,
+        question_id="confirmation-payload-replay",
+        skip_verify=True,
+        curriculum_context=app_state.math_curriculum_context,
+    )
+
+    assert (
+        first["system_prompt"].encode(),
+        first["user_prompt"].encode(),
+    ) == (
+        second["system_prompt"].encode(),
+        second["user_prompt"].encode(),
+    )
+    assert capture.prompts == (
+        first["system_prompt"],
+        first["user_prompt"],
+    )
+    assert "### 範例 1：" in first["user_prompt"]
 
 
 def test_preview_never_constructs_an_llm_client(monkeypatch) -> None:

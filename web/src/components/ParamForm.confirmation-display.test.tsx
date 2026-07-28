@@ -93,6 +93,44 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(perQuestion[0].learning_performance).toEqual(["n-IV-1"]);
   });
 
+  it("resolves, displays, and submits one seed per question", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ count: 2 }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+
+    const displayedSeeds = [1, 2].map((number) => {
+      const block = screen.getByRole("region", { name: `第${number}題` });
+      const seedTerm = within(block).getByText("種子", { selector: "dt" });
+      const seedRow = within(seedTerm.parentElement!);
+      expect(seedRow.getByText("預抽")).toHaveClass("text-amber-700");
+      return seedRow.getByText(/^\d+$/).textContent;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params);
+    expect(perQuestion.map((item: { seed: number }) => String(item.seed))).toEqual(displayedSeeds);
+  });
+
+  it("derives user-supplied seeds per question and displays the user badge", async () => {
+    await openConfirmation("math", { count: 2, seed: 700 });
+
+    [700, 701].forEach((seed, index) => {
+      const block = screen.getByRole("region", { name: `第${index + 1}題` });
+      const seedTerm = within(block).getByText("種子", { selector: "dt" });
+      const seedRow = within(seedTerm.parentElement!);
+      expect(seedRow.getByText(String(seed))).toBeInTheDocument();
+      expect(seedRow.getByText("使用者選擇")).toHaveClass("text-green-700");
+    });
+  });
+
   it("N>1 renders one labelled block per question", async () => {
     await openConfirmation("math", { count: 3 });
 

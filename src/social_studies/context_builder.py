@@ -370,7 +370,7 @@ def build_user_prompt(
     prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
     if rng is None:
-        rng = random.Random()
+        rng = random.Random(params.seed)
 
     reading_process = "、".join(p.value for p in params.閱讀歷程)
     topic_override = user_topic.strip() if user_topic else ""
@@ -935,7 +935,7 @@ def build_subquestion_user_prompt(
 ) -> tuple[str, list[Path]]:
     del image_generation_mode
     if rng is None:
-        rng = random.Random()
+        rng = random.Random(params.seed)
 
     q_type = (
         cfg.question_type.value

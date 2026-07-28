@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from collections.abc import Callable, Sequence
 from datetime import datetime
@@ -299,6 +300,7 @@ def _ns_build_text_user(
     return build_text_user_prompt(
         params,
         few_shot_dir,
+        rng=random.Random(params.seed),
         user_passage=user_passage,
         user_options=user_options,
         user_topic=user_topic,

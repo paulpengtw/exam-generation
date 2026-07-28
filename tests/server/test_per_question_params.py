@@ -112,11 +112,52 @@ def test_multiple_per_question_param_sets_are_zipped_by_worker_index(
     )
 
 
+def test_explicit_per_question_seed_is_used_without_worker_derivation() -> None:
+    params = GenerateParams(
+        subject="math",
+        count=2,
+        seed=184,
+        coverage_mode="random",
+        per_question_params='[{"seed": 901}, {"seed": 902}]',
+    )
+    decoded = decode_per_question_params(params.per_question_params)
+    spec = SUBJECTS[params.subject]
+    app_state = _app_state()
+    overrides = spec.coerce_overrides(params, app_state)
+
+    second = _sample_worker_params(
+        1,
+        params,
+        spec,
+        overrides,
+        None,
+        False,
+        None,
+        decoded,
+        app_state,
+    )
+    expected = spec.do_sample_params(
+        params,
+        overrides,
+        seed=902,
+        assigned_q_type=None,
+        assigned_lc=None,
+        subquestion_configs_decoded=None,
+    )
+
+    assert second.model_dump_json() == expected.model_dump_json()
+
+
 @pytest.mark.parametrize("subject", ["math", "social_studies", "natural_sciences"])
 def test_omitting_per_question_params_preserves_sampled_params_bytes(
     subject: str,
 ) -> None:
-    params = GenerateParams(subject=subject, count=1, seed=184)
+    params = GenerateParams(
+        subject=subject,
+        count=2,
+        seed=184,
+        coverage_mode="random",
+    )
     spec = SUBJECTS[subject]
     app_state = _app_state()
     overrides = spec.coerce_overrides(params, app_state)
@@ -124,14 +165,14 @@ def test_omitting_per_question_params_preserves_sampled_params_bytes(
     legacy = spec.do_sample_params(
         params,
         overrides,
-        seed=184,
+        seed=185,
         assigned_q_type=None,
         assigned_lc=None,
         subquestion_configs_decoded=None,
     )
 
     through_fan_out = _sample_worker_params(
-        0,
+        1,
         params,
         spec,
         overrides,

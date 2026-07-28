@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
+from random import Random
 
 from src.common.batch_dedup import PriorScope, extract_math_prior_scope
 from src.config import Config
@@ -268,6 +269,7 @@ def build_generation_prompts(
     user_prompt, few_shot_images = build_user_prompt(
         params,
         config.data_dir / "few_shot",
+        rng=Random(params.seed),
         user_topic=user_topic,
         user_passage=user_passage,
         user_options=user_options,

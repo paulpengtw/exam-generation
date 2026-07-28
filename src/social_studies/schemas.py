@@ -179,6 +179,7 @@ class SampledParams(BaseModel):
     """Parameters selected by the sampler for social-studies question generation."""
 
     grade: int
+    seed: int | None = None
 
     @field_validator("grade")
     @classmethod
