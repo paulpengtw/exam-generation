@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
-import traceback
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
@@ -20,13 +19,16 @@ from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
 from server.generate.models import (
+    ALLOWED_SUBJECTS,
     CoverageMode,
     GenerateParams,
     ImageGenerationMode,
     PlanCoreQuestionsRequest,
     PlanCoreQuestionsResponse,
+    build_sse_error,
 )
 from server.generate.service import generate_question_stream
+from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
 
@@ -51,6 +53,16 @@ def _check_model_allowed(model: str | None, config: ServerConfig, field: str) ->
         raise HTTPException(
             status_code=422,
             detail=f"{field}: model '{model}' not in allowlist: [{allowed}]",
+        )
+
+
+def _check_subject_allowed(subject: str) -> None:
+    """Raise HTTPException(422) when subject is not a recognised value."""
+    if subject not in ALLOWED_SUBJECTS:
+        allowed = ", ".join(sorted(ALLOWED_SUBJECTS))
+        raise HTTPException(
+            status_code=422,
+            detail=f"subject: subject '{subject}' not in allowlist: [{allowed}]",
         )
 
 
@@ -100,6 +112,7 @@ async def generate_endpoint(
     """
     _check_model_allowed(model_plan, config, "model_plan")
     _check_model_allowed(model_execute, config, "model_execute")
+    _check_subject_allowed(subject)
     params = GenerateParams(
         subject=subject,
         grade=grade,
@@ -156,14 +169,22 @@ async def generate_endpoint(
             ):
                 if event["event"] == "error":
                     status = "failed"
-                    error_msg = str(event.get("data", ""))
+                    data = event.get("data", "")
+                    error_msg = (
+                        data.get("message", str(data))
+                        if isinstance(data, dict)
+                        else str(data)
+                    )
                 yield _serialize_event(event)
         except Exception as exc:
             status = "failed"
-            tb = traceback.format_exc()
-            error_msg = f"{type(exc).__name__}: {exc}\n\n{tb}"
+            error_payload = build_sse_error(
+                "stream_failed",
+                f"Stream error ({type(exc).__name__})",
+            )
+            error_msg = error_payload["message"]
             logger.exception("generate_endpoint stream error")
-            yield {"event": "error", "data": error_msg}
+            yield _serialize_event({"event": "error", "data": error_payload})
             yield {"event": "done", "data": ""}
         finally:
             async with AsyncSessionLocal() as s:
@@ -206,87 +227,23 @@ async def plan_core_questions_endpoint(
     )
     client = LLMClient(src_config)
 
-    if body.subject == "math":
-        from src.planner import plan_core_questions as math_plan_core_questions
-        from src.sampler import grade_to_learning_stage
-
-        if body.grade is not None:
-            try:
-                learning_stage = grade_to_learning_stage(body.grade)
-            except ValueError:
-                learning_stage = "第四學習階段"
-        else:
-            learning_stage = "第四學習階段"
-
-        try:
-            candidates = math_plan_core_questions(
-                client,
-                body.topic,
-                subject_filter=body.subject_filter,
-                grade=body.grade,
-                learning_stage=learning_stage,
-            )
-        except ValueError as exc:
-            logger.warning("Planner returned malformed candidates: %s", exc)
-            raise HTTPException(
-                status_code=502,
-                detail="Planner upstream returned malformed candidates",
-            ) from exc
-    elif body.subject == "natural_sciences":
-        from src.natural_sciences.planner import plan_core_questions as ns_plan_core_questions
-        from src.natural_sciences.schema_loader import (
-            load_learning_stage,
-            load_schemas,
+    # Site 6: planner dispatch via registry (replaces if/elif per-subject branches)
+    spec = SUBJECTS[body.subject]
+    learning_stage = spec.load_planner_stage(None, body.grade)
+    try:
+        candidates = spec.plan_core_questions(
+            client,
+            body.topic,
+            subject_filter=body.subject_filter,
+            grade=body.grade,
+            learning_stage=learning_stage,
         )
-
-        schemas = load_schemas()
-        if body.grade is not None:
-            from src.sampler import grade_to_learning_stage
-            try:
-                learning_stage = grade_to_learning_stage(body.grade)
-            except ValueError:
-                learning_stage = load_learning_stage(schemas)
-        else:
-            learning_stage = load_learning_stage(schemas)
-
-        try:
-            candidates = ns_plan_core_questions(
-                client,
-                body.topic,
-                subject_filter=body.subject_filter,
-                grade=body.grade,
-                learning_stage=learning_stage,
-            )
-        except ValueError as exc:
-            logger.warning("Planner returned malformed candidates: %s", exc)
-            raise HTTPException(
-                status_code=502,
-                detail="Planner upstream returned malformed candidates",
-            ) from exc
-    else:
-        from src.social_studies.planner import plan_core_questions as ss_plan_core_questions
-        from src.social_studies.schema_loader import (
-            load_learning_stage,
-            load_schemas,
-        )
-
-        schemas = load_schemas()
-        learning_stage = load_learning_stage(schemas)
-
-        try:
-            candidates = ss_plan_core_questions(
-                client,
-                body.topic,
-                subject_filter=body.subject_filter,
-                grade=body.grade,
-                learning_stage=learning_stage,
-            )
-        except ValueError as exc:
-            logger.warning("Planner returned malformed candidates: %s", exc)
-            raise HTTPException(
-                status_code=502,
-                detail="Planner upstream returned malformed candidates",
-            ) from exc
+    except ValueError as exc:
+        logger.warning("Planner returned malformed candidates: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Planner upstream returned malformed candidates",
+        ) from exc
     return PlanCoreQuestionsResponse(candidates=candidates)
 
 

@@ -7,104 +7,33 @@ LLMObserver, so multiple questions can generate in parallel.
 from __future__ import annotations
 
 import asyncio
-import base64
 import dataclasses
+import functools
 import itertools
 import json
 import logging
-import random
 import threading
-import traceback
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import datetime
 from typing import Any
 
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
-from server.generate.exchange_recorder import ExchangeRecorder
-from server.generate.models import GenerateParams
-from server.models import GenerationRecord, LLMExchange
-from src.batch_sampler import BatchSampler
-from src.cli import generate_with_corrections as math_generate_with_corrections
-from src.common.batch_dedup import (
-    PriorScope,
-    extract_math_prior_scope,
-    extract_ns_prior_scope,
-    extract_ss_prior_scope,
+from server.generate.marshalling import (
+    SSEEventName,
+    make_combined_observer,
+    make_pipeline_emitter,
+    make_question_update_emitter,
+    make_queue_observer,
+    question_to_event,
 )
-from src.llm_client import LLMClient, LLMObserver
-from src.natural_sciences.cli import generate_with_corrections as ns_generate_with_corrections
-from src.natural_sciences.sampler import sample_params as ns_sample_params
-from src.natural_sciences.schemas import (
-    ExamQuestion as NSExamQuestion,
-)
-from src.natural_sciences.schemas import (
-    QuestionContext as NSQuestionContext,
-)
-from src.natural_sciences.schemas import (
-    QuestionSetType as NSQuestionSetType,
-)
-from src.natural_sciences.schemas import (
-    QuestionSubContext as NSQuestionSubContext,
-)
-from src.natural_sciences.schemas import (
-    QuestionType as NSQuestionType,
-)
-from src.natural_sciences.schemas import (
-    ScienceCompetency as NSScienceCompetency,
-)
-from src.sampler import sample_params as math_sample_params
-from src.schemas import (
-    ExamQuestion as MathExamQuestion,
-)
-from src.schemas import (
-    QuestionContext as MathQuestionContext,
-)
-from src.schemas import (
-    QuestionSetType as MathQuestionSetType,
-)
-from src.schemas import (
-    QuestionStyle as MathQuestionStyle,
-)
-from src.schemas import (
-    QuestionType as MathQuestionType,
-)
-from src.social_studies.cli import _plan_batch_briefs as ss_plan_batch_briefs
-from src.social_studies.cli import generate_with_corrections as ss_generate_with_corrections
-from src.social_studies.sampler import sample_params as ss_sample_params
-from src.social_studies.schemas import (
-    CreativeBrief as SSCreativeBrief,
-)
-from src.social_studies.schemas import (
-    ExamQuestion as SSExamQuestion,
-)
-from src.social_studies.schemas import (
-    QuestionContext as SSQuestionContext,
-)
-from src.social_studies.schemas import (
-    QuestionMetadata,
-)
-from src.social_studies.schemas import (
-    QuestionSetType as SSQuestionSetType,
-)
-from src.social_studies.schemas import (
-    QuestionSubject as SSQuestionSubject,
-)
-from src.social_studies.schemas import (
-    QuestionType as SSQuestionType,
-)
+from server.generate.models import GenerateParams, build_sse_error
+from server.generate.persistence import make_exchange_recorder, persist_generation_record
+from server.generate.subjects import SUBJECTS, SubjectSpec
+from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_enum(value: str | None, enum_cls: type) -> Any:
-    if value is None:
-        return None
-    for member in enum_cls:
-        if member.value == value:
-            return member
-    raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
 
 
 def _decode_subquestion_configs(raw: str | None) -> list[dict] | None:
@@ -122,80 +51,187 @@ def _decode_subquestion_configs(raw: str | None) -> list[dict] | None:
     return [item for item in decoded if isinstance(item, dict)]
 
 
-def _question_to_event(
-    question: MathExamQuestion | SSExamQuestion | NSExamQuestion,
-    config: ServerConfig,
-) -> dict[str, Any]:
-    """Serialize an ExamQuestion to a result-event payload, embedding PNG if present."""
-    payload = json.loads(question.model_dump_json(exclude_none=True))
-    if question.圖片:
-        png_path = config.output_dir / question.圖片
-        if png_path.exists():
-            payload["image_base64"] = base64.b64encode(png_path.read_bytes()).decode("ascii")
-    for index, sub in enumerate(getattr(question, "subquestions", []) or []):
-        if not getattr(sub, "圖片", None):
-            continue
-        png_path = config.output_dir / sub.圖片
-        if png_path.exists() and index < len(payload.get("subquestions", [])):
-            payload["subquestions"][index]["image_base64"] = base64.b64encode(
-                png_path.read_bytes()
-            ).decode("ascii")
-    return payload
+@dataclasses.dataclass(frozen=True)
+class _RunContext:
+    """Frozen bundle of per-request context threaded through _worker_one.
+
+    ``prior_scopes`` is mutable (frozen prevents *reassignment*, not *mutation*).
+    ``emit_pipeline`` / ``next_order`` are callables closed over their own state.
+    """
+
+    spec: SubjectSpec
+    params: GenerateParams
+    overrides: dict
+    client_config: ServerConfig
+    batch_sampler: Any
+    batch_user_pinned_lc: bool
+    count: int
+    base_seed: int | None
+    max_retries: int
+    timestamp: str
+    html_renderer: Any
+    decoded_subquestion_configs: list | None
+    loop: asyncio.AbstractEventLoop
+    queue: asyncio.Queue
+    prior_scopes: list  # mutated by workers; frozen prevents field reassignment only
+    prior_scopes_lock: threading.Lock
+    emit_pipeline: Any  # Callable[..., None] from make_pipeline_emitter
+    generation_log_id: uuid.UUID | None
+    retention_days: int
+    session_factory: Any
+    next_order: Any  # Callable[[], int]
+    config: ServerConfig
 
 
-def _extract_image_files(payload: dict[str, Any]) -> list[str]:
-    """Collect top-level + per-subquestion image filenames (no base64)."""
-    files: list[str] = []
-    top = payload.get("圖片")
-    if top:
-        files.append(top)
-    for sub in payload.get("subquestions", []) or []:
-        if isinstance(sub, dict):
-            sub_img = sub.get("圖片")
-            if sub_img:
-                files.append(sub_img)
-    return files
-
-
-def _strip_image_base64(payload: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of a result-event payload with all image_base64 fields removed."""
-    cleaned = {k: v for k, v in payload.items() if k != "image_base64"}
-    subs = cleaned.get("subquestions")
-    if isinstance(subs, list):
-        cleaned["subquestions"] = [
-            {k: v for k, v in sub.items() if k != "image_base64"}
-            if isinstance(sub, dict)
-            else sub
-            for sub in subs
-        ]
-    return cleaned
-
-
-async def _persist_generation_record(
-    *,
-    user_id: uuid.UUID,
-    generation_log_id: uuid.UUID | None,
-    subject: str,
+def _build_run_context(
     params: GenerateParams,
-    payload: dict[str, Any],
+    config: ServerConfig,
+    app_state: Any,
+    *,
+    spec: SubjectSpec,
+    session_factory: Any,
+    generation_log_id: uuid.UUID | None,
+    loop: asyncio.AbstractEventLoop,
+    queue: asyncio.Queue,
+    html_renderer: Any,
+) -> _RunContext:
+    """Build the frozen per-request context from resolved collaborators."""
+    overrides = spec.coerce_overrides(params, app_state)
+    batch_sampler, batch_user_pinned_lc = spec.setup_batch_sampler(params, overrides)
+    client_config = dataclasses.replace(
+        config,
+        model_execute=params.model_execute or config.model_execute,
+        model_plan=params.model_plan or config.model_plan,
+    )
+    order_counter = itertools.count(1)
+    order_lock = threading.Lock()
+
+    def _next_order() -> int:
+        with order_lock:
+            return next(order_counter)
+
+    return _RunContext(
+        spec=spec,
+        params=params,
+        overrides=overrides,
+        client_config=client_config,
+        batch_sampler=batch_sampler,
+        batch_user_pinned_lc=batch_user_pinned_lc,
+        count=max(1, params.count),
+        base_seed=params.seed,
+        max_retries=params.max_retries,
+        timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
+        html_renderer=html_renderer,
+        decoded_subquestion_configs=_decode_subquestion_configs(params.subquestion_configs),
+        loop=loop,
+        queue=queue,
+        prior_scopes=[],
+        prior_scopes_lock=threading.Lock(),
+        emit_pipeline=make_pipeline_emitter(loop, queue),
+        generation_log_id=generation_log_id,
+        retention_days=config.llm_exchange_retention_days,
+        session_factory=session_factory,
+        next_order=_next_order,
+        config=config,
+    )
+
+
+def _worker_one(
+    i: int,
+    question_client: LLMClient,
+    ctx: _RunContext,
+    batch_briefs: list,
 ) -> None:
-    """Insert one generation_records row; log-and-swallow on failure so
-    persistence never breaks generation."""
+    """Execute one question-generation worker; enqueues result/error events."""
+    seed = (ctx.base_seed + i) if ctx.base_seed is not None else None
+    worker_recorder = make_exchange_recorder(
+        generation_log_id=ctx.generation_log_id,
+        retention_days=ctx.retention_days,
+        loop=ctx.loop,
+        session_factory=ctx.session_factory,
+        next_order=ctx.next_order,
+    )
+    question_client.set_observer(
+        make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
+    )
+    emit_question_update = make_question_update_emitter(i, ctx.loop, ctx.queue, ctx.config)
+    ctx.emit_pipeline("question_start", index=i, total=ctx.count)
+    with ctx.prior_scopes_lock:
+        prior_snapshot = list(ctx.prior_scopes)
     try:
-        record = GenerationRecord(
-            user_id=user_id,
-            generation_log_id=generation_log_id,
-            subject=subject,
-            question_id=payload.get("id", ""),
-            params_json=params.model_dump(mode="json"),
-            question_json=_strip_image_base64(payload),
-            image_files=_extract_image_files(payload),
+        assigned_qt = (
+            ctx.batch_sampler.q_type_assignments[i] if ctx.batch_sampler is not None else None
         )
-        async with AsyncSessionLocal() as session:
-            session.add(record)
-            await session.commit()
-    except Exception as exc:  # noqa: BLE001 — best-effort persistence
-        logger.warning("failed to persist generation_record: %s", exc)
+        assigned_lc = (
+            ctx.batch_sampler.learning_content_assignments[i]
+            if ctx.batch_sampler is not None and not ctx.batch_user_pinned_lc
+            else None
+        )
+        rng_params = ctx.spec.do_sample_params(
+            ctx.params,
+            ctx.overrides,
+            seed=seed,
+            assigned_q_type=assigned_qt,
+            assigned_lc=assigned_lc,
+            subquestion_configs_decoded=ctx.decoded_subquestion_configs,
+        )
+
+        # Site 2: apply creative brief when available (SS only in practice)
+        if i < len(batch_briefs) and batch_briefs[i] is not None:
+            rng_params = rng_params.model_copy(
+                update={"creative_brief": batch_briefs[i]},
+            )
+
+        # Site 3: generate via registry (replaces if/elif generate calls)
+        question_id = f"{ctx.spec.question_id_prefix}{ctx.timestamp}_{i+1:03d}"
+        question = ctx.spec.do_generate(
+            rng_params,
+            ctx.overrides,
+            config=ctx.client_config,
+            client=question_client,
+            question_id=question_id,
+            max_retries=ctx.max_retries,
+            skip_verify=ctx.params.skip_verify,
+            disable_reference_fewshot=ctx.params.disable_reference_fewshot,
+            html_renderer=ctx.html_renderer,
+            image_generation_mode=ctx.params.image_generation_mode,
+            user_passage=ctx.params.passage,
+            text_word_limit=ctx.params.text_word_limit,
+            user_options=ctx.params.options,
+            user_topic=ctx.params.topic,
+            user_core_question=ctx.params.core_question,
+            on_question_update=emit_question_update,
+            prior_scopes=prior_snapshot,
+        )
+
+        # Site 4: metadata patching (SS only; other specs have patch_metadata=None)
+        if ctx.spec.patch_metadata is not None:
+            question = ctx.spec.patch_metadata(question, ctx.batch_sampler)
+
+        assert isinstance(question, ctx.spec.exam_question_cls)
+
+        # Site 5: prior-scope extraction via registry
+        new_scope = ctx.spec.extract_prior_scope(question)
+        if new_scope is not None:
+            with ctx.prior_scopes_lock:
+                ctx.prior_scopes.append(new_scope)
+        ctx.emit_pipeline("question_end", index=i, total=ctx.count)
+        ctx.loop.call_soon_threadsafe(
+            ctx.queue.put_nowait,
+            {"event": SSEEventName.RESULT, "data": question_to_event(question, ctx.config)},
+        )
+    except Exception as exc:
+        ctx.loop.call_soon_threadsafe(
+            ctx.queue.put_nowait,
+            {
+                "event": SSEEventName.ERROR,
+                "data": build_sse_error(
+                    "generation_failed",
+                    f"Question generation failed ({type(exc).__name__})",
+                ),
+            },
+        )
+        logger.exception("worker_one error (index=%d)", i)
 
 
 async def generate_question_stream(
@@ -204,475 +240,85 @@ async def generate_question_stream(
     app_state: Any,
     user_id: uuid.UUID | None = None,
     generation_log_id: uuid.UUID | None = None,
+    *,
+    subjects: Mapping[str, SubjectSpec] | None = None,
+    session_factory: Any = None,
+    client_factory: Callable[..., LLMClient] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Async generator yielding SSE event dicts for one or more questions.
 
-    Event shapes:
-      - {"event": "started",  "data": ""}
-      - {"event": "progress", "data": str}
-      - {"event": "question_update", "data": {"index": int, "phase": str, "question": dict}}
-      - {"event": "result",   "data": dict}
-      - {"event": "error",    "data": str}
-      - {"event": "done",     "data": ""}
+    Injectable collaborators (keyword-only, all default to production singletons):
+      subjects        — the subject-spec registry; defaults to SUBJECTS.
+      session_factory — async session maker; defaults to AsyncSessionLocal.
+      client_factory  — LLMClient constructor; defaults to LLMClient.
     """
-    yield {"event": "started", "data": ""}
+    _subjects = subjects if subjects is not None else SUBJECTS
+    _session_factory = session_factory if session_factory is not None else AsyncSessionLocal
+    _client_factory = client_factory if client_factory is not None else LLMClient
+
+    yield {"event": SSEEventName.STARTED, "data": ""}
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-
     renderer_pool = getattr(app_state, "renderer_pool", None)
     html_renderer = await renderer_pool.get() if renderer_pool else None
-    is_social_studies = params.subject == "social_studies"
-    is_natural_sciences = params.subject == "natural_sciences"
-
-    if is_social_studies:
-        context_override = (
-            [_resolve_enum(v, SSQuestionContext) for v in params.context]
-            if params.context else None
-        )
-        set_type_override = _resolve_enum(params.set_type, SSQuestionSetType)
-        q_type_override = (
-            [_resolve_enum(v, SSQuestionType) for v in params.q_type]
-            if params.q_type else None
-        )
-        subject_override = (
-            [SSQuestionSubject(v) for v in params.subject_filter]
-            if params.subject_filter else None
-        )
-    elif is_natural_sciences:
-        context_override = (
-            [_resolve_enum(v, NSQuestionContext) for v in params.context]
-            if params.context else None
-        )
-        sub_context_override = _resolve_enum(params.sub_context, NSQuestionSubContext)
-        set_type_override = _resolve_enum(params.set_type, NSQuestionSetType)
-        q_type_override = (
-            [_resolve_enum(v, NSQuestionType) for v in params.q_type]
-            if params.q_type else None
-        )
-        science_competency_override = (
-            [_resolve_enum(v, NSScienceCompetency) for v in params.science_competency]
-            if params.science_competency else None
-        )
-    else:
-        curriculum = app_state.curriculum
-        performance = app_state.performance
-        intro_text = app_state.intro_text
-        grade_content = app_state.grade_content
-        style_override = (
-            [MathQuestionStyle(v) for v in params.style] if params.style else None
-        )
-        context_override = (
-            [_resolve_enum(v, MathQuestionContext) for v in params.context]
-            if params.context else None
-        )
-        set_type_override = _resolve_enum(params.set_type, MathQuestionSetType)
-        q_type_override = (
-            [_resolve_enum(v, MathQuestionType) for v in params.q_type]
-            if params.q_type else None
-        )
-
-    # --- Balanced-coverage planning (SS only, count > 1, balanced mode) -----
-    ss_batch_sampler: BatchSampler | None = None
-    ss_batch_user_pinned_lc = False
-    if (
-        is_social_studies
-        and params.count > 1
-        and params.coverage_mode == "balanced"
-    ):
-        batch_rng = random.Random(params.seed if params.seed is not None else 0)
-        # Interaction rule: only balance dimensions the user left random.
-        user_pinned_qtype = bool(params.q_type) or bool(params.subquestion_configs)
-        user_pinned_lc = bool(params.learning_content)
-        ss_batch_user_pinned_lc = user_pinned_lc
-        q_pool = (
-            [SSQuestionType(v) for v in params.q_type]
-            if user_pinned_qtype and params.q_type
-            else list(SSQuestionType)
-        )
-        # 學習內容 pool: keyed by 跨科 (the full cross-subject union) when the
-        # user didn't pin subject_filter. This is a pragmatic stand-in since
-        # the per-question 科目 isn't known at batch-planning time; per-question
-        # sampling may therefore draw an out-of-subject code — known v1 limitation.
-        from src.social_studies.curriculum_loader import (
-            allowed_learning_content,
-            load_learning_content,
-        )
-        from src.social_studies.sampler import _LEARNING_STAGE as _SS_STAGE
-
-        subj_key = (
-            params.subject_filter[0] if params.subject_filter else "跨科"
-        )
-        lc_entries = (
-            allowed_learning_content(load_learning_content(), _SS_STAGE, subj_key)
-            if not user_pinned_lc
-            else []
-        )
-        lc_pool = [e["value"] for e in lc_entries] if not user_pinned_lc else []
-
-        ss_batch_sampler = BatchSampler(
-            count=params.count,
-            # Always pass the full q_type pool: when user_pinned_qtype is True,
-            # sample_params() ignores these batch-planned q_type assignments and
-            # uses the user's pinned q_type/subquestion_configs instead, so the
-            # pool value here is a no-op in that case.
-            q_type_pool=q_pool,
-            learning_content_pool=lc_pool,
-            rng=batch_rng,
-        )
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_seed = params.seed
-    count = max(1, params.count)
-    max_retries = params.max_retries
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
-
-    prior_scopes: list[PriorScope] = []
-    prior_scopes_lock = threading.Lock()
-
-    _EVENT_TYPE_MAP = {
-        "llm_request": "llm_request",
-        "llm_reasoning_delta": "llm_thinking",
-        "llm_content_delta": "llm_content",
-        "llm_response": "llm_response",
-        "stage": "stage",
-    }
-
-    def _make_queue_observer(
-        _loop: asyncio.AbstractEventLoop,
-        _queue: asyncio.Queue,
-    ) -> LLMObserver:
-        def observer(event: dict) -> None:
-            sse_event = _EVENT_TYPE_MAP.get(event.get("type", ""))
-            if sse_event:
-                _loop.call_soon_threadsafe(
-                    _queue.put_nowait, {"event": sse_event, "data": event}
-                )
-        return observer
-
-    order_counter = itertools.count(1)
-    order_lock = threading.Lock()
-
-    def _next_order() -> int:
-        with order_lock:
-            return next(order_counter)
-
-    def _make_recorder() -> ExchangeRecorder | None:
-        if generation_log_id is None or config.llm_exchange_retention_days <= 0:
-            return None
-
-        async def _insert(row: dict[str, Any]) -> None:
-            async with AsyncSessionLocal() as sess:
-                sess.add(LLMExchange(**row))
-                await sess.commit()
-
-        def _write_row(row: dict[str, Any]) -> None:
-            future = asyncio.run_coroutine_threadsafe(_insert(row), loop)
-            try:
-                future.result(timeout=10)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("llm_exchanges insert failed: %s", exc)
-
-        return ExchangeRecorder(generation_log_id, _write_row, next_order=_next_order)
-
-    def _make_observer(
-        queue_obs: LLMObserver,
-        recorder: ExchangeRecorder | None,
-    ) -> LLMObserver:
-        def observer(event: dict) -> None:
-            try:
-                queue_obs(event)
-            except Exception:
-                pass
-            if recorder is not None:
-                try:
-                    recorder(event)
-                except Exception:
-                    pass
-        return observer
-
-    def _emit_pipeline(event_name: str, **data: object) -> None:
-        import time as _time
-
-        payload = {"event_name": event_name, "ts": _time.time(), **data}
-        loop.call_soon_threadsafe(
-            queue.put_nowait, {"event": "pipeline", "data": payload}
-        )
-
-    def _make_question_update_emitter(index: int):
-        def emit_question_update(
-            question: MathExamQuestion | SSExamQuestion | NSExamQuestion,
-            phase: str,
-        ) -> None:
-            payload = {
-                "index": index,
-                "phase": phase,
-                "question": _question_to_event(question, config),
-            }
-            loop.call_soon_threadsafe(
-                queue.put_nowait,
-                {"event": "question_update", "data": payload},
-            )
-
-        return emit_question_update
-
-    def worker_one(i: int, question_client: LLMClient) -> None:
-        seed = (base_seed + i) if base_seed is not None else None
-        worker_recorder = _make_recorder()
-        question_client.set_observer(
-            _make_observer(_make_queue_observer(loop, queue), worker_recorder)
-        )
-        emit_question_update = _make_question_update_emitter(i)
-        _emit_pipeline("question_start", index=i, total=count)
-        with prior_scopes_lock:
-            prior_snapshot = list(prior_scopes)
-        try:
-            if is_social_studies:
-                assigned_qt = (
-                    ss_batch_sampler.q_type_assignments[i]
-                    if ss_batch_sampler is not None else None
-                )
-                assigned_lc = (
-                    ss_batch_sampler.learning_content_assignments[i]
-                    if ss_batch_sampler is not None and not ss_batch_user_pinned_lc
-                    else None
-                )
-                rng_params = ss_sample_params(
-                    grade=params.grade,
-                    context=context_override,
-                    set_type=set_type_override,
-                    q_type=q_type_override,
-                    subject=subject_override,
-                    content_type=params.content_type,
-                    learning_content=params.learning_content,
-                    learning_performance=params.learning_performance,
-                    seed=seed,
-                    sub_question_count=params.sub_question_count,
-                    question_word_limit=params.question_word_limit,
-                    option_word_limit=params.option_word_limit,
-                    subquestion_configs=_decode_subquestion_configs(
-                        params.subquestion_configs,
-                    ),
-                    difficulty=params.difficulty,
-                    assigned_q_type=assigned_qt,
-                    assigned_learning_content=assigned_lc,
-                )
-                if i < len(ss_batch_briefs) and ss_batch_briefs[i] is not None:
-                    rng_params = rng_params.model_copy(
-                        update={"creative_brief": ss_batch_briefs[i]},
-                    )
-                question_id = f"ss_{timestamp}_{i+1:03d}"
-                question = ss_generate_with_corrections(
-                    config=client_config,
-                    client=question_client,
-                    params=rng_params,
-                    question_id=question_id,
-                    max_retries=max_retries,
-                    skip_verify=params.skip_verify,
-                    disable_reference_fewshot=params.disable_reference_fewshot,
-                    html_renderer=html_renderer,
-                    image_generation_mode=params.image_generation_mode,
-                    user_passage=params.passage,
-                    text_word_limit=params.text_word_limit,
-                    user_options=params.options,
-                    user_topic=params.topic,
-                    user_core_question=params.core_question,
-                    on_question_update=emit_question_update,
-                    prior_scopes=prior_snapshot,
-                )
-            elif is_natural_sciences:
-                rng_params = ns_sample_params(
-                    grade=params.grade,
-                    context=context_override,
-                    sub_context=sub_context_override,
-                    set_type=set_type_override,
-                    q_type=q_type_override,
-                    science_competency=science_competency_override,
-                    content_type=params.content_type,
-                    learning_content=params.learning_content,
-                    learning_performance=params.learning_performance,
-                    seed=seed,
-                    sub_question_count=params.sub_question_count,
-                    question_word_limit=params.question_word_limit,
-                    option_word_limit=params.option_word_limit,
-                    subquestion_configs=_decode_subquestion_configs(
-                        params.subquestion_configs,
-                    ),
-                    difficulty=params.difficulty,
-                )
-                question_id = f"ns_{timestamp}_{i+1:03d}"
-                question = ns_generate_with_corrections(
-                    config=client_config,
-                    client=question_client,
-                    params=rng_params,
-                    question_id=question_id,
-                    max_retries=max_retries,
-                    skip_verify=params.skip_verify,
-                    disable_reference_fewshot=params.disable_reference_fewshot,
-                    html_renderer=html_renderer,
-                    image_generation_mode=params.image_generation_mode,
-                    user_passage=params.passage,
-                    text_word_limit=params.text_word_limit,
-                    user_options=params.options,
-                    user_topic=params.topic,
-                    user_core_question=params.core_question,
-                    on_question_update=emit_question_update,
-                    prior_scopes=prior_snapshot,
-                )
-            else:
-                # math sampler accepts a single 科目 string; take first if list provided
-                math_subject_filter: str | None = None
-                if params.subject_filter:
-                    math_subject_filter = params.subject_filter[0]
-                rng_params = math_sample_params(
-                    grade_content=grade_content,
-                    grade=params.grade,
-                    style=style_override,
-                    context=context_override,
-                    set_type=set_type_override,
-                    q_type=q_type_override,
-                    seed=seed,
-                    core_competency=params.core_competency,
-                    learning_content=params.learning_content,
-                    learning_performance=params.learning_performance,
-                    content_type=params.content_type,
-                    subject_filter=math_subject_filter,
-                    difficulty=params.difficulty,
-                )
-                question_id = f"q_{timestamp}_{i+1:03d}"
-                question = math_generate_with_corrections(
-                    config=client_config,
-                    client=question_client,
-                    curriculum=curriculum,
-                    performance=performance,
-                    intro_text=intro_text,
-                    grade_content=grade_content,
-                    params=rng_params,
-                    question_id=question_id,
-                    max_retries=max_retries,
-                    skip_verify=params.skip_verify,
-                    html_renderer=html_renderer,
-                    image_generation_mode=params.image_generation_mode,
-                    user_topic=params.topic or "",
-                    user_passage=params.passage or "",
-                    user_options=params.options,
-                    user_core_question=params.core_question or "",
-                    on_question_update=emit_question_update,
-                    prior_scopes=prior_snapshot,
-                )
-            if is_social_studies and isinstance(question, SSExamQuestion):
-                effective_mode = (
-                    "balanced" if ss_batch_sampler is not None else "random"
-                )
-                if question.metadata is None:
-                    fallback_model = getattr(config, "model_execute", "unknown")
-                    question.metadata = QuestionMetadata(
-                        grade=rng_params.grade,
-                        model=fallback_model,
-                        coverage_mode_used=effective_mode,
-                    )
-                else:
-                    question.metadata = question.metadata.model_copy(
-                        update={"coverage_mode_used": effective_mode}
-                    )
-            assert isinstance(
-                question,
-                (MathExamQuestion, SSExamQuestion, NSExamQuestion),
-            )
-            if is_social_studies:
-                new_scope = extract_ss_prior_scope(question)
-            elif is_natural_sciences:
-                new_scope = extract_ns_prior_scope(question)
-            else:
-                new_scope = extract_math_prior_scope(question)
-            if new_scope is not None:
-                with prior_scopes_lock:
-                    prior_scopes.append(new_scope)
-            _emit_pipeline("question_end", index=i, total=count)
-            loop.call_soon_threadsafe(
-                queue.put_nowait,
-                {"event": "result", "data": _question_to_event(question, config)},
-            )
-        except Exception as exc:
-            tb = traceback.format_exc()
-            loop.call_soon_threadsafe(
-                queue.put_nowait,
-                {"event": "error", "data": f"{type(exc).__name__}: {exc}\n\n{tb}"},
-            )
-            logger.exception("worker_one error (index=%d)", i)
-
-    # #114: for SS batches, plan creative briefs once before spawning workers.
-    ss_batch_briefs: list[SSCreativeBrief | None] = []
-    if is_social_studies and count >= 1 and config.creative_planning:
-        # Sample all SS params up front so plan_context_angles sees the actual
-        # 情境 and 學習內容 pool that the workers will use. Workers re-sample
-        # with the same seed and receive the corresponding brief.
-        pre_params_list = []
-        for i in range(count):
-            seed = (base_seed + i) if base_seed is not None else None
-            pre_params_list.append(
-                ss_sample_params(
-                    grade=params.grade,
-                    context=context_override,
-                    set_type=set_type_override,
-                    q_type=q_type_override,
-                    subject=subject_override,
-                    content_type=params.content_type,
-                    learning_performance=params.learning_performance,
-                    seed=seed,
-                    sub_question_count=params.sub_question_count,
-                    question_word_limit=params.question_word_limit,
-                    option_word_limit=params.option_word_limit,
-                    subquestion_configs=_decode_subquestion_configs(
-                        params.subquestion_configs,
-                    ),
-                ),
-            )
-        # Use a dedicated planning client so worker observers stay clean.
-        planning_client = LLMClient(config)
-        ss_batch_briefs = ss_plan_batch_briefs(planning_client, config, pre_params_list)
-    elif is_social_studies:
-        ss_batch_briefs = [None] * count
-
-    _emit_pipeline("pipeline_start", total=count)
-    # #105: per-request model overrides are baked into each LLMClient's config so
-    # downstream `client.generate*` / `client.plan` calls transparently use the
-    # chosen model without changing subject-CLI signatures.
-    client_config = dataclasses.replace(
-        config,
-        model_execute=params.model_execute or config.model_execute,
-        model_plan=params.model_plan or config.model_plan,
+    spec = _subjects[params.subject]
+    ctx = _build_run_context(
+        params, config, app_state,
+        spec=spec,
+        session_factory=_session_factory,
+        generation_log_id=generation_log_id,
+        loop=loop,
+        queue=queue,
+        html_renderer=html_renderer,
     )
-    question_clients = [LLMClient(client_config) for _ in range(count)]
+
+    # Site 2 (creative-brief / coverage planning): delegated to spec.
+    # SS: plans briefs when creative_planning=True; returns [None]*count otherwise.
+    # Math / NS: always returns [] so the brief-application check is a no-op.
+    batch_briefs = spec.plan_all_batch_briefs(
+        params, ctx.count, ctx.base_seed, ctx.overrides, config,
+        config.creative_planning, ctx.decoded_subquestion_configs,
+        client_factory=_client_factory,
+    )
+
+    ctx.emit_pipeline("pipeline_start", total=ctx.count)
+    question_clients = [_client_factory(ctx.client_config) for _ in range(ctx.count)]
     futures = [
-        loop.run_in_executor(None, worker_one, i, question_clients[i])
-        for i in range(count)
+        loop.run_in_executor(
+            None, functools.partial(_worker_one, i, question_clients[i], ctx, batch_briefs),
+        )
+        for i in range(ctx.count)
     ]
 
     async def _wait_and_signal() -> None:
         await asyncio.gather(*futures, return_exceptions=True)
-        _emit_pipeline("pipeline_end", total=count)
-        queue.put_nowait({"event": "done", "data": ""})
+        # _direct=True: already on the event loop — call_soon_threadsafe would
+        # defer pipeline_end by one tick, placing it after done in the queue.
+        ctx.emit_pipeline("pipeline_end", total=ctx.count, _direct=True)
+        queue.put_nowait({"event": SSEEventName.DONE, "data": ""})
 
     signal_task = asyncio.create_task(_wait_and_signal())
     try:
         while True:
             event = await queue.get()
             if (
-                event["event"] == "result"
+                event["event"] == SSEEventName.RESULT
                 and user_id is not None
                 and isinstance(event["data"], dict)
             ):
-                await _persist_generation_record(
+                await persist_generation_record(
                     user_id=user_id,
                     generation_log_id=generation_log_id,
                     subject=params.subject,
                     params=params,
                     payload=event["data"],
+                    session_factory=_session_factory,
                 )
             yield event
-            if event["event"] in ("done", "error"):
+            if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):
                 break
     finally:
         await signal_task

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from server.config import ServerConfig
-from server.generate.service import _question_to_event
+from server.generate.marshalling import question_to_event as _question_to_event
 from src.config import Config
 from src.social_studies.cli import generate_one
 from src.social_studies.sampler import sample_params

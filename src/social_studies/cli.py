@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import json
 import logging
 import random
@@ -15,7 +14,10 @@ from typing import Any
 
 from src.batch_sampler import BatchSampler
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
+from src.common.generation_core import generate_one_core, generate_with_corrections_core
+from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
 from src.config import Config
+from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_stderr_observer
 from src.renderer import render_image
@@ -197,130 +199,6 @@ def _resolve_enum(value: str | None, enum_cls: type) -> object | None:
         if member.value == value:
             return member
     raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
-
-
-def _parse_question(
-    raw: dict,
-    question_id: str,
-    params: SampledParams,
-    model: str,
-) -> ExamQuestion:
-    """Parse raw LLM JSON output into a social-studies ExamQuestion."""
-    chart_spec = None
-    raw_spec = raw.get("image_spec") or raw.get("chart_spec")
-    if raw_spec:
-        try:
-            chart_spec = ImageSpec(**raw_spec)
-        except Exception:
-            if raw_spec.get("chart_type"):
-                chart_spec = ImageSpec(
-                    render_mode="chart",
-                    chart_type=raw_spec.get("chart_type"),
-                    data=raw_spec.get("data", {}),
-                    labels=raw_spec.get("labels", {}),
-                    title=raw_spec.get("title", ""),
-                    description=raw_spec.get("description", ""),
-                )
-            else:
-                chart_spec = ImageSpec(
-                    render_mode="html",
-                    description=raw_spec.get("description", raw_spec.get("title", "")),
-                    title=raw_spec.get("title", ""),
-                    data=raw_spec.get("data", {}),
-                )
-
-    subquestions: list[SubQuestion] = []
-    for i, sq_raw in enumerate(raw.get("subquestions", []), start=1):
-        if not isinstance(sq_raw, dict):
-            continue
-        try:
-            cfg = (
-                params.subquestion_configs[i - 1]
-                if i - 1 < len(params.subquestion_configs) else None
-            )
-            lc_refs = [
-                LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
-                for r in sq_raw.get("學習內容", [])
-                if isinstance(r, dict) and r.get("編碼")
-            ]
-            lp_refs = [
-                LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
-                for r in sq_raw.get("學習表現", [])
-                if isinstance(r, dict) and r.get("編碼")
-            ]
-            if cfg and cfg.learning_content:
-                lc_refs = [
-                    LearningContentRef(編碼=code, 說明=LC_INSTRUCTIONS.get(code, ""))
-                    for code in cfg.learning_content
-                ]
-            if cfg and cfg.learning_performance:
-                lp_refs = [
-                    LearningContentRef(編碼=code, 說明=LP_INSTRUCTIONS.get(code, ""))
-                    for code in cfg.learning_performance
-                ]
-            rubric = [
-                RubricEntry(
-                    code=str(r.get("code", "")),
-                    規準說明=r.get("規準說明", ""),
-                    學生作答實例=r.get("學生作答實例", []),
-                )
-                for r in (sq_raw.get("評分規準") or sq_raw.get("評分標準") or [])
-                if isinstance(r, dict)
-            ]
-            sq_chart_spec = None
-            raw_sq_spec = sq_raw.get("image_spec") or sq_raw.get("chart_spec")
-            if isinstance(raw_sq_spec, dict):
-                try:
-                    sq_chart_spec = ImageSpec(**raw_sq_spec)
-                except Exception:
-                    sq_chart_spec = None
-            subquestions.append(SubQuestion(
-                id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
-                序號=sq_raw.get("序號", i),
-                年級=sq_raw.get("年級", params.grade),
-                科目=sq_raw.get("科目", [params.科目.value]),
-                核心素養=sq_raw.get("核心素養", []),
-                學習內容=lc_refs,
-                學習表現=lp_refs,
-                出題概念=sq_raw.get("出題概念", ""),
-                出題指示=(
-                    cfg.instruction if cfg and cfg.instruction else sq_raw.get("出題指示")
-                ),
-                題型=sq_raw.get("題型", params.題型[0].value if params.題型 else "選擇題"),
-                題目=sq_raw.get("題目", ""),
-                答案=sq_raw.get("答案", ""),
-                答案解析=sq_raw.get("答案解析", ""),
-                評分規準=rubric,
-                題目內容類型=sq_raw.get("題目內容類型"),
-                image_generation_mode=sq_raw.get("image_generation_mode"),
-                圖片=sq_raw.get("圖片"),
-                chart_spec=sq_chart_spec,
-            ))
-        except Exception:
-            pass
-
-    return ExamQuestion(
-        id=question_id,
-        核心問題=raw.get("核心問題", ""),
-        文本=raw.get("文本", ""),
-        取材來源=raw.get("取材來源", []),
-        subquestions=subquestions,
-        情境=[c.value for c in params.情境],
-        題型種類=params.題型種類.value,
-        題型=params.題型[0].value if params.題型 else "選擇題",
-        閱讀歷程=[p.value for p in params.閱讀歷程],
-        文本形式=params.文本形式.value,
-        題目內容類型=params.題目內容類型,
-        題目=raw.get("題目", []),
-        正確解題分析=raw.get("正確解題分析", []),
-        chart_spec=chart_spec,
-        metadata=QuestionMetadata(
-            grade=params.grade,
-            model=model,
-            seed=None,
-            difficulty=params.difficulty,
-        ),
-    )
 
 
 def _parse_subquestion(
@@ -621,6 +499,107 @@ def _plan_batch_briefs(
     return result
 
 
+def _ss_build_text_system(params: SampledParams) -> tuple[str, dict]:
+    return build_text_system_prompt(creative_brief=params.creative_brief), {}
+
+
+def _ss_build_text_user(
+    params, few_shot_dir,
+    user_passage, user_options, user_topic, user_core_question,
+    image_generation_mode, disable_reference_fewshot, prior_scopes,
+):
+    return build_text_user_prompt(
+        params,
+        few_shot_dir,
+        image_generation_mode=image_generation_mode,
+        user_passage=user_passage,
+        user_options=user_options,
+        user_topic=user_topic,
+        user_core_question=user_core_question,
+        disable_reference_fewshot=disable_reference_fewshot,
+        prior_scopes=prior_scopes,
+    )
+
+
+def _ss_build_subquestion_system(stage_ctx: dict) -> str:
+    return build_subquestion_system_prompt(learning_stage=_LEARNING_STAGE)
+
+
+def _ss_build_subquestion_user(
+    text_raw, params, few_shot_dir, sq_plan, slot_cfg,
+    image_generation_mode, disable_reference_fewshot,
+):
+    return build_subquestion_user_prompt(
+        核心問題=text_raw.get("核心問題", ""),
+        文本=text_raw.get("文本", ""),
+        取材來源=text_raw.get("取材來源", []),
+        sq_plan=sq_plan,
+        params=params,
+        few_shot_dir=few_shot_dir,
+        image_generation_mode=image_generation_mode,
+        cfg=slot_cfg,
+        disable_reference_fewshot=disable_reference_fewshot,
+    )
+
+
+def _ss_make_fallback_sq_plans(params: SampledParams, n: int) -> list[dict]:
+    return [
+        {
+            "序號": i,
+            "題型": params.題型[0].value if params.題型 else "選擇題",
+            "出題概念": "",
+        }
+        for i in range(1, n + 1)
+    ]
+
+
+def _ss_ensure_visual_spec(
+    question: ExamQuestion, params: SampledParams, client: Any,
+) -> None:
+    _ensure_top_level_visual_spec(question, params, client)
+
+
+def _ss_render_subquestion_images(
+    question: ExamQuestion,
+    config: Config,
+    client: Any,
+    html_renderer: Any,
+    image_generation_mode: str,
+    obs: Any,
+    params: SampledParams,
+) -> list[str]:
+    return _render_subquestion_images(
+        question,
+        config,
+        client,
+        html_renderer,
+        image_generation_mode,
+        obs,
+        {
+            i: cfg.image_generation_mode
+            for i, cfg in enumerate(params.subquestion_configs, start=1)
+            if cfg.image_generation_mode
+        },
+    )
+
+
+_SS_SPEC = SubjectGenerationSpec(
+    few_shot_subdir="social_studies",
+    build_text_system_fn=_ss_build_text_system,
+    build_text_user_fn=_ss_build_text_user,
+    build_subquestion_system_fn=_ss_build_subquestion_system,
+    build_subquestion_user_fn=_ss_build_subquestion_user,
+    parse_text_shell_fn=_parse_text_shell,
+    parse_subquestion_fn=_parse_subquestion,
+    make_fallback_sq_plans_fn=_ss_make_fallback_sq_plans,
+    ensure_visual_spec_fn=_ss_ensure_visual_spec,
+    render_subquestion_images_fn=_ss_render_subquestion_images,
+    image_question_text_fn=lambda q: "\n".join(q.題目) or q.文本,
+    verify_fn=verify_question,
+    correct_fn=correct_question,
+)
+
+
 def generate_one(
     config: Config,
     client: LLMClient | None,
@@ -639,193 +618,30 @@ def generate_one(
     on_question_update: QuestionUpdateCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
-    few_shot_dir = config.data_dir / "social_studies" / "few_shot"
     params = _with_text_word_limit(params, text_word_limit)
-    if dry_run:
-        text_system = build_text_system_prompt(creative_brief=params.creative_brief)
-        text_user, text_images = build_text_user_prompt(
-            params,
-            few_shot_dir,
-            image_generation_mode=image_generation_mode,
-            user_passage=user_passage,
-            user_options=user_options,
-            user_topic=user_topic,
-            user_core_question=user_core_question,
-            disable_reference_fewshot=disable_reference_fewshot,
-            prior_scopes=prior_scopes,
-        )
-        img_note = f" ({len(text_images)} few-shot images)" if text_images else ""
-        return (
-            f"=== TEXT SYSTEM PROMPT ({len(text_system)} chars) ===\n{text_system[:2000]}...\n\n"
-            f"=== TEXT USER PROMPT ({len(text_user)} chars{img_note}) ===\n{text_user}"
-        )
-
-    obs = client.get_observer() if client else None
-
-    print(f"  Generating question {question_id}...", file=sys.stderr)
-
-    text_system = build_text_system_prompt(creative_brief=params.creative_brief)
-    text_user, text_images = build_text_user_prompt(
-        params,
-        few_shot_dir,
+    return generate_one_core(
+        config=config,
+        client=client,
+        params=params,
+        question_id=question_id,
+        spec=_SS_SPEC,
+        dry_run=dry_run,
+        skip_verify=skip_verify,
+        disable_reference_fewshot=disable_reference_fewshot,
+        html_renderer=html_renderer,
         image_generation_mode=image_generation_mode,
         user_passage=user_passage,
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
-        disable_reference_fewshot=disable_reference_fewshot,
+        on_question_update=on_question_update,
+        sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
+        curriculum_context=curriculum_context,
     )
-    emit_stage(obs, "generator", "llm_generate", "start")
-    text_raw = client.generate_json(text_system, text_user, images=text_images or None)
-    emit_stage(obs, "generator", "llm_generate", "end")
-
-    question = _parse_text_shell(text_raw, question_id, params, config.model_execute)
-
-    sq_plans: list[dict] = text_raw.get("subquestions", [])
-    if not sq_plans:
-        n = params.sub_question_count or 3
-        sq_plans = [
-            {
-                "序號": i,
-                "題型": params.題型[0].value if params.題型 else "選擇題",
-                "出題概念": "",
-            }
-            for i in range(1, n + 1)
-        ]
-
-    sub_system = build_subquestion_system_prompt(learning_stage=_LEARNING_STAGE)
-    max_workers = min(len(sq_plans), config.subgen_max_concurrency)
-    use_embedded_subquestions = (
-        sub_client_factory is None and client is not None and not isinstance(client, LLMClient)
-    )
-
-    def _generate_subquestion(sq_plan: dict) -> SubQuestion | None:
-        idx = sq_plan.get("序號", sq_plans.index(sq_plan) + 1)
-        agent_id = f"sub_generator#{idx}"
-        if use_embedded_subquestions:
-            return _parse_subquestion(sq_plan, question_id, params, idx)
-
-        slot_cfg = (
-            params.subquestion_configs[idx - 1]
-            if idx - 1 < len(params.subquestion_configs) else None
-        )
-        sub_user, sub_images = build_subquestion_user_prompt(
-            核心問題=text_raw.get("核心問題", ""),
-            文本=text_raw.get("文本", ""),
-            取材來源=text_raw.get("取材來源", []),
-            sq_plan=sq_plan,
-            params=params,
-            few_shot_dir=few_shot_dir,
-            image_generation_mode=image_generation_mode,
-            cfg=slot_cfg,
-            disable_reference_fewshot=disable_reference_fewshot,
-        )
-
-        attempts = 1 + max(0, config.subgen_retries)
-        result: SubQuestion | None = None
-        for attempt in range(1, attempts + 1):
-            sub_client = (
-                sub_client_factory() if sub_client_factory is not None else LLMClient(config)
-            )
-            if hasattr(sub_client, "set_observer"):
-                sub_client.set_observer(obs)
-            emit_stage(obs, agent_id, "llm_generate", "start", attempt=attempt)
-            try:
-                sq_raw = sub_client.generate_json(
-                    sub_system,
-                    sub_user,
-                    images=sub_images or None,
-                    agent_override=agent_id,
-                )
-                result = _parse_subquestion(sq_raw, question_id, params, idx)
-            except Exception as e:
-                print(
-                    f"  Sub-generator {agent_id} attempt {attempt}/{attempts} failed: {e}",
-                    file=sys.stderr,
-                )
-                result = None
-            emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
-            if result is not None:
-                return result
-            if attempt < attempts:
-                print(
-                    f"  Retrying sub-generator {agent_id} (attempt {attempt + 1}/{attempts})...",
-                    file=sys.stderr,
-                )
-        print(
-            f"  Sub-generator {agent_id} dropped after {attempts} attempt(s)",
-            file=sys.stderr,
-        )
-        return None
-
-    sq_results: dict[int, SubQuestion] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(_generate_subquestion, plan): plan for plan in sq_plans}
-        for fut in concurrent.futures.as_completed(futures):
-            plan = futures[fut]
-            idx = plan.get("序號", sq_plans.index(plan) + 1)
-            sq = fut.result()
-            if sq is not None:
-                sq_results[idx] = sq
-
-    question.subquestions = [sq_results[k] for k in sorted(sq_results)]
-    _emit_question_update(on_question_update, question, "draft")
-    prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
-    _ensure_top_level_visual_spec(question, params, client)
-    if question.chart_spec != prior_chart_spec:
-        _emit_question_update(on_question_update, question, "corrected")
-
-    chart_image_path: str | None = None
-    if question.chart_spec:
-        img_path = config.output_dir / f"{question_id}.png"
-        print(f"  Rendering image: {img_path}", file=sys.stderr)
-        emit_stage(obs, "image_agent", "render_image", "start")
-        rendered = render_image(
-            question.chart_spec.model_dump(),
-            img_path,
-            question_text="\n".join(question.題目) or question.文本,
-            html_renderer=html_renderer,
-            llm_client=client,
-            image_generation_mode=image_generation_mode,
-        )
-        emit_stage(obs, "image_agent", "render_image", "end")
-        if rendered:
-            question.圖片 = f"{question_id}.png"
-            chart_image_path = rendered
-            _emit_question_update(on_question_update, question, "image")
-
-    subquestion_image_paths = _render_subquestion_images(
-        question,
-        config,
-        client,
-        html_renderer,
-        image_generation_mode,
-        obs,
-        {
-            i: cfg.image_generation_mode
-            for i, cfg in enumerate(params.subquestion_configs, start=1)
-            if cfg.image_generation_mode
-        },
-    )
-    if chart_image_path is None and subquestion_image_paths:
-        chart_image_path = subquestion_image_paths[0]
-    if subquestion_image_paths:
-        _emit_question_update(on_question_update, question, "image")
-
-    if not skip_verify:
-        print(f"  Verifying question {question_id}...", file=sys.stderr)
-        emit_stage(obs, "verifier", "verify", "start")
-        result = verify_question(client, question, chart_image_path=chart_image_path)
-        emit_stage(obs, "verifier", "verify", "end")
-        question.verification = result
-        _emit_question_update(on_question_update, question, "verified")
-        status = "PASSED" if result.passed else "FAILED"
-        print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
-
-    return question
 
 
 def generate_with_corrections(
@@ -846,18 +662,21 @@ def generate_with_corrections(
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
-    question = generate_one(
+    return generate_with_corrections_core(
         config=config,
         client=client,
         params=params,
         question_id=question_id,
-        dry_run=dry_run,
+        spec=_SS_SPEC,
+        max_retries=max_retries,
         skip_verify=skip_verify,
         disable_reference_fewshot=disable_reference_fewshot,
         html_renderer=html_renderer,
         image_generation_mode=image_generation_mode,
+        dry_run=dry_run,
         user_passage=user_passage,
         text_word_limit=text_word_limit,
         user_options=user_options,
@@ -865,69 +684,8 @@ def generate_with_corrections(
         user_core_question=user_core_question,
         on_question_update=on_question_update,
         prior_scopes=prior_scopes,
+        curriculum_context=curriculum_context,
     )
-
-    if dry_run or not isinstance(question, ExamQuestion):
-        return question
-
-    obs = client.get_observer() if client else None
-
-    for attempt in range(max_retries):
-        if skip_verify or question.verification is None or question.verification.passed:
-            break
-
-        print(
-            f"  Verification failed; applying correction "
-            f"(attempt {attempt + 1}/{max_retries})...",
-            file=sys.stderr,
-        )
-
-        prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
-
-        chart_image_path: str | None = None
-        if question.圖片:
-            p = config.output_dir / question.圖片
-            if p.exists():
-                chart_image_path = str(p)
-
-        emit_stage(obs, "corrector", "correct", "start", retry=attempt + 1)
-        question = correct_question(client, question, question.verification,
-                                    chart_image_path=chart_image_path)
-        emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
-        _emit_question_update(on_question_update, question, "corrected")
-
-        new_chart_image_path: str | None = None
-        if question.chart_spec and question.chart_spec != prior_chart_spec:
-            img_path = config.output_dir / f"{question_id}.png"
-            print(f"  Chart spec changed; re-rendering image: {img_path}", file=sys.stderr)
-            emit_stage(obs, "image_agent", "render_image", "start")
-            rendered = render_image(
-                question.chart_spec.model_dump(),
-                img_path,
-                question_text="\n".join(question.題目) or question.文本,
-                html_renderer=html_renderer,
-                llm_client=client,
-                image_generation_mode=image_generation_mode,
-            )
-            emit_stage(obs, "image_agent", "render_image", "end")
-            if rendered:
-                question.圖片 = f"{question_id}.png"
-                new_chart_image_path = rendered
-                _emit_question_update(on_question_update, question, "image")
-        elif question.圖片:
-            p = config.output_dir / question.圖片
-            new_chart_image_path = str(p) if p.exists() else None
-
-        if not skip_verify:
-            emit_stage(obs, "verifier", "verify", "start", retry=attempt + 1)
-            result = verify_question(client, question, chart_image_path=new_chart_image_path)
-            emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
-            question.verification = result
-            _emit_question_update(on_question_update, question, "verified")
-            status = "PASSED" if result.passed else "FAILED"
-            print(f"  Re-verification {status}: {result.details[:100]}", file=sys.stderr)
-
-    return question
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -969,6 +727,9 @@ def main(argv: list[str] | None = None) -> None:
     learning_content_override = args.learning_content if args.learning_content else None
     learning_performance_override = args.learning_performance if args.learning_performance else None
     content_type_override = args.content_type if args.content_type else None
+
+    # Build the canonical SS curriculum context once per run; all pipeline stages share it.
+    ss_curriculum_context = load_curriculum_context(SOCIAL_STUDIES.data_dir)
 
     results = []
     prior_scopes: list[PriorScope] = []
@@ -1051,6 +812,7 @@ def main(argv: list[str] | None = None) -> None:
                 image_generation_mode=args.image_generation_mode,
                 dry_run=args.dry_run,
                 prior_scopes=list(prior_scopes),
+                curriculum_context=ss_curriculum_context,
             )
 
             if args.dry_run:

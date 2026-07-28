@@ -16,7 +16,7 @@ from server.auth.dependencies import get_config
 from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
-from server.models import Base, User
+from server.models import Base, GenerationLog, User
 from server.rate_limit import limiter
 
 
@@ -186,10 +186,12 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
 
 
 def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> None:
+    import dataclasses
     from types import SimpleNamespace
 
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
     from src.social_studies.schemas import ExamQuestion
 
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
@@ -216,22 +218,23 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
         kwargs["on_question_update"](question, "draft")
         return question
 
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_with_corrections(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
+
     async def collect_events():
         events = []
-        async for event in service.generate_question_stream(
+        async for event in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
+            subjects={"social_studies": fake_spec},
         ):
             events.append(event)
         return events
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
-    try:
-        events = asyncio.run(collect_events())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+    events = asyncio.run(collect_events())
 
     updates = [event for event in events if event["event"] == "question_update"]
     results = [event for event in events if event["event"] == "result"]
@@ -380,6 +383,7 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
 
 
 def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
+    import dataclasses
     from types import SimpleNamespace
 
     from sqlalchemy import select
@@ -389,8 +393,9 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
         create_async_engine,
     )
 
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
     from src.social_studies.schemas import ExamQuestion
 
@@ -402,10 +407,6 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
 
     asyncio.run(_init())
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-
-    # Patch service.AsyncSessionLocal so the recorder's write path uses our engine.
-    original_sessionmaker = service.AsyncSessionLocal
-    service.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
 
     log_id = uuid.uuid4()
     config = ServerConfig(
@@ -458,23 +459,23 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
             正確解題分析=["a"],
         )
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_with_corrections(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
     async def _drive() -> None:
-        async for _ in service.generate_question_stream(
+        async for _ in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
             generation_log_id=log_id,
+            subjects={"social_studies": fake_spec},
+            session_factory=SessionLocal,
         ):
             pass
 
-    try:
-        asyncio.run(_drive())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
-        service.AsyncSessionLocal = original_sessionmaker  # type: ignore[assignment]
+    asyncio.run(_drive())
 
     async def _read() -> list[LLMExchange]:
         async with SessionLocal() as s:
@@ -503,6 +504,7 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
     stays unique/contiguous across the whole generation_log, instead of each
     worker restarting its own itertools.count(1) and colliding.
     """
+    import dataclasses
     from types import SimpleNamespace
 
     from sqlalchemy import select
@@ -512,8 +514,9 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
         create_async_engine,
     )
 
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
     from src.social_studies.schemas import ExamQuestion
 
@@ -525,10 +528,6 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
 
     asyncio.run(_init())
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-
-    # Patch service.AsyncSessionLocal so the recorder's write path uses our engine.
-    original_sessionmaker = service.AsyncSessionLocal
-    service.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
 
     log_id = uuid.uuid4()
     config = ServerConfig(
@@ -581,23 +580,23 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
             正確解題分析=["a"],
         )
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_with_corrections(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
     async def _drive() -> None:
-        async for _ in service.generate_question_stream(
+        async for _ in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
             generation_log_id=log_id,
+            subjects={"social_studies": fake_spec},
+            session_factory=SessionLocal,
         ):
             pass
 
-    try:
-        asyncio.run(_drive())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
-        service.AsyncSessionLocal = original_sessionmaker  # type: ignore[assignment]
+    asyncio.run(_drive())
 
     async def _read() -> list[LLMExchange]:
         async with SessionLocal() as s:
@@ -619,6 +618,7 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
 
 
 def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
+    import dataclasses
     from types import SimpleNamespace
 
     from sqlalchemy import select
@@ -628,8 +628,9 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
         create_async_engine,
     )
 
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
     from src.social_studies.schemas import ExamQuestion
 
@@ -641,8 +642,6 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
 
     asyncio.run(_init())
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    original_sessionmaker = service.AsyncSessionLocal
-    service.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
 
     log_id = uuid.uuid4()
     config = ServerConfig(
@@ -677,23 +676,23 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
             題目=["q"], 正確解題分析=["a"],
         )
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_with_corrections(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
     async def _drive() -> None:
-        async for _ in service.generate_question_stream(
+        async for _ in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
             generation_log_id=log_id,
+            subjects={"social_studies": fake_spec},
+            session_factory=SessionLocal,
         ):
             pass
 
-    try:
-        asyncio.run(_drive())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
-        service.AsyncSessionLocal = original_sessionmaker  # type: ignore[assignment]
+    asyncio.run(_drive())
 
     async def _read_count() -> int:
         async with SessionLocal() as s:
@@ -703,3 +702,237 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
     count = asyncio.run(_read_count())
     asyncio.run(engine.dispose())
     assert count == 0
+
+
+def test_generate_route_rejects_unknown_subject_422() -> None:
+    """Unknown subject returns 422 before any DB write (no generation_log row)."""
+    from sqlalchemy import select
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/generate?subject=typo",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        # Error must name the offending value and list allowed subjects.
+        assert "typo" in detail
+        assert "math" in detail
+
+        # No generation_log row must have been written.
+        async def count_logs() -> int:
+            async with SessionLocal() as s:
+                result = await s.execute(select(GenerationLog))
+                return len(list(result.scalars().all()))
+
+        log_count = asyncio.run(count_logs())
+        assert log_count == 0, "generation_log row must not be created for an unknown subject"
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_generate_route_valid_subjects_still_accepted() -> None:
+    """math, social_studies, and natural_sciences are all accepted (no regression)."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    from server.generate import routes as gen_routes
+
+    async def fake_stream(params, *_args, **_kwargs):
+        yield {"event": "done", "data": ""}
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    original = gen_routes.generate_question_stream
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            for subject in ("math", "social_studies", "natural_sciences"):
+                r = client.get(
+                    f"/api/generate?subject={subject}",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                assert r.status_code == 200, f"expected 200 for subject={subject!r}"
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+# ---------------------------------------------------------------------------
+# Issue #153 — structured SSE error events (no tracebacks to browser)
+# ---------------------------------------------------------------------------
+
+
+def test_build_sse_error_returns_structured_payload() -> None:
+    """build_sse_error must return a dict with stable 'code' and 'message' keys."""
+    from server.generate.models import build_sse_error
+
+    payload = build_sse_error("generation_failed", "Question generation failed (ValueError)")
+    assert payload["code"] == "generation_failed"
+    assert payload["message"] == "Question generation failed (ValueError)"
+    assert "Traceback" not in payload["message"]
+    assert '  File "' not in payload["message"]
+
+
+def test_service_worker_error_event_is_structured(tmp_path) -> None:
+    """The per-question worker exception path must emit a structured error dict."""
+    import dataclasses
+    from types import SimpleNamespace
+
+    from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
+
+    config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        raise RuntimeError("boom")
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
+
+    async def collect_events():
+        events = []
+        async for event in generate_question_stream(
+            params,
+            config,
+            SimpleNamespace(html_renderer=None, renderer_pool=None),
+            subjects={"social_studies": fake_spec},
+        ):
+            events.append(event)
+        return events
+
+    events = asyncio.run(collect_events())
+
+    error_events = [e for e in events if e["event"] == "error"]
+    assert len(error_events) == 1, f"expected 1 error event, got: {error_events}"
+    data = error_events[0]["data"]
+    # data must be a dict with code and message
+    assert isinstance(data, dict), f"expected dict, got {type(data)}: {data!r}"
+    assert data["code"] == "generation_failed"
+    assert "message" in data
+    assert "Traceback (most recent call last)" not in data["message"]
+    assert '  File "' not in data["message"]
+
+
+def test_route_outer_error_event_is_structured() -> None:
+    """The outer event_generator exception path must emit a structured error dict."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    from server.generate import routes as gen_routes
+
+    async def exploding_stream(params, *_args, **_kwargs):
+        raise RuntimeError("outer stream boom")
+        yield  # make it a generator
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    original = gen_routes.generate_question_stream
+    gen_routes.generate_question_stream = exploding_stream  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/generate?subject=math",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200
+    # Parse the SSE stream body to find the error event
+    body = response.text
+    error_data: str | None = None
+    for line in body.splitlines():
+        if line.startswith("data:") and "stream_failed" in line:
+            error_data = line[len("data:"):].strip()
+            break
+    assert error_data is not None, f"No stream_failed error event found in: {body!r}"
+    import json as _json
+    parsed = _json.loads(error_data)
+    assert parsed["code"] == "stream_failed"
+    assert "Traceback (most recent call last)" not in parsed["message"]
+    assert '  File "' not in parsed["message"]

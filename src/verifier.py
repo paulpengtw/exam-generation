@@ -3,21 +3,13 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from src.common.distractor import validate_distractor_keys
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
-from src.context_builder import (
-    _CONTENT_TEXT,
-    _PERFORMANCE_INTRO,
-    _PERFORMANCE_TEXT,
-    _build_curriculum_section,
-)
+from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
-
-_CURRICULUM_PREFIX: str = _build_curriculum_section(
-    _CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO
-)
 
 _VERIFICATION_SYSTEM_PROMPT_CORE = f"""\
 你是一位數學教師，負責審核考試題目的正確性。你會收到一道數學題目，請你：
@@ -58,11 +50,7 @@ _VERIFICATION_SYSTEM_PROMPT_CORE = f"""\
 若題目未附圖表圖片，請省略 chart_verification 欄位。只輸出 JSON，不要輸出其他文字。
 """
 
-VERIFICATION_SYSTEM_PROMPT = (
-    f"{_CURRICULUM_PREFIX}\n\n---\n\n{_VERIFICATION_SYSTEM_PROMPT_CORE}"
-    if _CURRICULUM_PREFIX
-    else _VERIFICATION_SYSTEM_PROMPT_CORE
-)
+VERIFICATION_SYSTEM_PROMPT = _VERIFICATION_SYSTEM_PROMPT_CORE
 
 VERIFICATION_USER_TEMPLATE = """\
 請審核以下考試題目：
@@ -81,9 +69,22 @@ def verify_question(
     client: LLMClient,
     question: ExamQuestion,
     chart_image_path: str | None = None,
-    curriculum_context: str | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> VerificationResult:
-    """Run a second LLM pass to independently verify the question and answer."""
+    """Run a second LLM pass to independently verify the question and answer.
+
+    Args:
+        client: LLM client to use for the verification call.
+        question: The exam question to verify.
+        chart_image_path: Path to a rendered chart PNG, if any.
+        curriculum_context: When supplied, the curriculum section is prepended
+            to the system prompt so the verifier is grounded in the same corpus
+            as the generator.  Pass ``None`` to omit the curriculum prefix.
+    """
+    # Fall back to text-only when the image file is absent or unreadable.
+    if chart_image_path is not None and not Path(chart_image_path).exists():
+        chart_image_path = None
+
     question_text = "\n".join(question.題目)
     solution_text = "\n".join(question.正確解題分析)
 
@@ -107,11 +108,15 @@ def verify_question(
             "以下附上題目引用的圖表圖片，請檢查圖表數據與題目描述是否一致。"
         )
 
-    system = (
-        f"{curriculum_context}\n\n---\n\n{VERIFICATION_SYSTEM_PROMPT}"
-        if curriculum_context
-        else VERIFICATION_SYSTEM_PROMPT
-    )
+    if curriculum_context is not None:
+        curriculum_prefix = build_curriculum_section(curriculum_context)
+        system = (
+            f"{curriculum_prefix}\n\n---\n\n{VERIFICATION_SYSTEM_PROMPT}"
+            if curriculum_prefix
+            else VERIFICATION_SYSTEM_PROMPT
+        )
+    else:
+        system = VERIFICATION_SYSTEM_PROMPT
 
     try:
         raw = client.generate_with_image(
@@ -129,11 +134,12 @@ def verify_question(
             )
 
         # Non-blocking distractor-key audit (warnings only; never flips passed).
+        # Use "；" separator, consistent with the NS and SS verifiers.
         warnings = validate_distractor_keys(question_text, question.誘答分析)
         details = result.get("details", "")
         if warnings:
             details = details.rstrip()
-            details += "\n\n[誘答分析提醒] " + " ".join(warnings)
+            details += "\n\n[誘答分析提醒] " + "；".join(warnings)
 
         return VerificationResult(
             passed=result.get("passed", False),

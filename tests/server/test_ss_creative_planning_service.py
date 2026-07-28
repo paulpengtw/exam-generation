@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from unittest.mock import MagicMock
 
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
+from server.generate.subjects import SUBJECTS
 from src.social_studies.schemas import CreativeBrief, ExamQuestion
 
 
@@ -23,6 +25,14 @@ def _collect(coro):
             events.append(evt)
         return events
     return asyncio.run(_run())
+
+
+def _fake_ss_spec(fake_generate_fn):
+    """Return a copy of the SS SubjectSpec with do_generate replaced."""
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_fn(params=rng_params, **kwargs)
+
+    return dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
 
 def test_ss_batch_calls_plan_context_angles_once(monkeypatch, tmp_path) -> None:
@@ -55,15 +65,13 @@ def test_ss_batch_calls_plan_context_angles_once(monkeypatch, tmp_path) -> None:
         )
         return eq
 
-    monkeypatch.setattr(
-        "server.generate.service.ss_generate_with_corrections",
-        fake_generate,
-    )
-
     cfg = ServerConfig(api_key="x", output_dir=tmp_path, creative_planning=True)
     params = GenerateParams(subject="social_studies", count=3, skip_verify=True)
 
-    events = _collect(generate_question_stream(params, cfg, _AppState()))
+    events = _collect(generate_question_stream(
+        params, cfg, _AppState(),
+        subjects={"social_studies": _fake_ss_spec(fake_generate)},
+    ))
 
     assert plan_calls["count"] == 1
     assert len(captured_params) == 3
@@ -87,15 +95,13 @@ def test_ss_batch_skips_planning_when_flag_disabled(monkeypatch, tmp_path) -> No
             文本形式=kwargs["params"].文本形式.value,
         )
 
-    monkeypatch.setattr(
-        "server.generate.service.ss_generate_with_corrections",
-        fake_generate,
-    )
-
     cfg = ServerConfig(api_key="x", output_dir=tmp_path, creative_planning=False)
     params = GenerateParams(subject="social_studies", count=2, skip_verify=True)
 
-    events = _collect(generate_question_stream(params, cfg, _AppState()))
+    events = _collect(generate_question_stream(
+        params, cfg, _AppState(),
+        subjects={"social_studies": _fake_ss_spec(fake_generate)},
+    ))
     assert {"result", "done"}.issubset({e["event"] for e in events})
 
 
@@ -105,11 +111,16 @@ def test_math_branch_never_plans(monkeypatch, tmp_path) -> None:
         "src.social_studies.cli.plan_context_angles",
         MagicMock(side_effect=AssertionError("must not be called for math")),
     )
-    # We only need to prove the SS planner is not invoked; short-circuit math
-    # generation by making sample_params raise so the branch exits early.
-    monkeypatch.setattr(
-        "server.generate.service.math_sample_params",
-        MagicMock(side_effect=RuntimeError("stop math")),
+
+    # Inject a fake math spec whose do_sample_params raises immediately — this
+    # short-circuits the math generation without needing to monkeypatch service
+    # module attributes.
+    def fake_do_sample_params(params, overrides, **kwargs):
+        raise RuntimeError("stop math")
+
+    fake_math_spec = dataclasses.replace(
+        SUBJECTS["math"],
+        do_sample_params=fake_do_sample_params,
     )
 
     class _MathState:
@@ -122,6 +133,9 @@ def test_math_branch_never_plans(monkeypatch, tmp_path) -> None:
     cfg = ServerConfig(api_key="x", output_dir=tmp_path, creative_planning=True)
     params = GenerateParams(subject="math", count=2, skip_verify=True)
 
-    events = _collect(generate_question_stream(params, cfg, _MathState()))
+    events = _collect(generate_question_stream(
+        params, cfg, _MathState(),
+        subjects={"math": fake_math_spec},
+    ))
     # Errors are OK; the AssertionError side_effect above is what we're guarding against.
     assert {"error", "done"}.intersection({e["event"] for e in events}) or True

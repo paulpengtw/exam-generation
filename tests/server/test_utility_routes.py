@@ -154,3 +154,19 @@ def test_models_endpoint_falls_back_to_defaults_only() -> None:
         "execute": "claude-sonnet-4-6",
     }
     assert body["allowed"] == ["claude-opus-4-6", "claude-sonnet-4-6"]
+
+
+def test_schemas_rejects_unknown_subject_422(tmp_path: Path) -> None:
+    """GET /api/schemas with an unknown subject must return 422."""
+    schemas_file = tmp_path / "question_schemas.json"
+    schemas_file.write_text("{}", encoding="utf-8")
+
+    app = create_app()
+    app.dependency_overrides[get_config] = lambda: _config(schemas_file)
+    with TestClient(app) as client:
+        r = client.get("/api/schemas?subject=unknown_thing")
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    # Error must name the offending value and list allowed subjects.
+    assert "unknown_thing" in detail
+    assert "math" in detail

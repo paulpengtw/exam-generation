@@ -1,4 +1,8 @@
-"""Subject-specific shim over src.common.curriculum_loader for 社會領域."""
+"""Subject-specific shim over src.common.curriculum_loader for 社會領域.
+
+The subject → 科目-prefix map and per-file env-var overrides are sourced from
+``src.common.subject_spec.SOCIAL_STUDIES`` so the spec lives in one place.
+"""
 
 from __future__ import annotations
 
@@ -7,17 +11,13 @@ import os
 from pathlib import Path
 
 from src.common import curriculum_loader as _base
+from src.common.subject_spec import SOCIAL_STUDIES as _SPEC
 
-_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "social_studies" / "curriculum"
+_DATA_DIR = _SPEC.data_dir
 
-# 科目 prefixes that match each QuestionSubject value.
+# 科目 prefixes that match each QuestionSubject value — read from the spec.
 # 社_* codes are cross-subject general 學習表現 and apply to all 社會 subjects.
-_SUBJECT_TO_PREFIXES: dict[str, set[str]] = {
-    "歷史": {"歷", "社", ""},
-    "地理": {"地", "社", ""},
-    "公民與社會": {"公", "社", ""},
-    "跨科": {"歷", "地", "公", "社", ""},
-}
+_SUBJECT_TO_PREFIXES: dict[str, set[str]] = _SPEC.subject_to_prefixes
 
 
 def _load_json(path: Path) -> dict:
@@ -28,7 +28,7 @@ def _load_json(path: Path) -> dict:
 def load_learning_content(path: Path | None = None) -> dict:
     if path is not None:
         return _load_json(path)
-    env = os.environ.get("SOCIAL_STUDIES_LEARNING_CONTENT_PATH")
+    env = os.environ.get(_SPEC.lc_path_env or "")
     if env:
         return _load_json(Path(env))
     return _base.load_learning_content(_DATA_DIR)
@@ -37,7 +37,7 @@ def load_learning_content(path: Path | None = None) -> dict:
 def load_learning_performance(path: Path | None = None) -> dict:
     if path is not None:
         return _load_json(path)
-    env = os.environ.get("SOCIAL_STUDIES_LEARNING_PERFORMANCE_PATH")
+    env = os.environ.get(_SPEC.lp_path_env or "")
     if env:
         return _load_json(Path(env))
     return _base.load_learning_performance(_DATA_DIR)
@@ -48,7 +48,7 @@ def load_performance_intro(path: Path | None = None) -> str:
         if not path.exists():
             return ""
         return path.read_text(encoding="utf-8")
-    env = os.environ.get("SOCIAL_STUDIES_LEARNING_PERFORMANCE_INTRO_PATH")
+    env = os.environ.get(_SPEC.lp_intro_path_env or "")
     if env:
         p = Path(env)
         return p.read_text(encoding="utf-8") if p.exists() else ""

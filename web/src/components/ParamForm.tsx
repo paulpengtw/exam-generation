@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { getAvailableModels, getSchemas, type AvailableModels, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
+import { drawRandomSubset } from "../utils/drawRandomSubset";
 import CoreQuestionPicker from "./CoreQuestionPicker";
+import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
 
 export interface SubQuestionConfig {
   question_type?: string;
@@ -16,40 +18,66 @@ export interface SubQuestionConfig {
   learning_performance?: string[];
 }
 
-export interface GenerateParams {
+/**
+ * Form-specific param shape — collected from ParamForm and passed to
+ * GeneratePage.handleSubmit, which bridges it to the wire GenerateParams.
+ *
+ * Inherits all optional wire fields unchanged (so adding a wire field
+ * automatically makes it available here). Fields that the form treats
+ * differently are listed in the intersection below with inline comments.
+ */
+export type FormParams = Omit<
+  WireGenerateParams,
+  // GeneratePage injects `subject` from its own props — not a form control.
+  | "subject"
+  // Not exposed in the form UI.
+  | "seed"
+  // Not exposed in the form UI.
+  | "max_retries"
+  // Not exposed in the form UI.
+  | "core_competency"
+  // Exposed per-subquestion inside subquestion_configs, not at top level.
+  | "question_word_limit"
+  // Exposed per-subquestion inside subquestion_configs, not at top level.
+  | "option_word_limit"
+  // Form sends a single string; GeneratePage wraps it in [style].
+  | "style"
+  // Form sends a single string; GeneratePage wraps it in [subject_filter].
+  | "subject_filter"
+  // Required in form — always provided before submit.
+  | "grade"
+  | "context"
+  | "set_type"
+  | "q_type"
+  | "count"
+  | "skip_verify"
+  | "image_generation_mode"
+> & {
+  // Required: the form always has a grade selected before submit.
   grade: number;
-  style?: string;
-  content_type?: string;
+  // Required: defaults to [] when no context is chosen.
   context: string[];
+  // Required: always set from the schema dropdown.
   set_type: string;
+  // Required: always set from the schema dropdown.
   q_type: string[];
+  // Required: defaults to 1.
   count: number;
+  // Required: defaults to false.
   skip_verify: boolean;
-  disable_reference_fewshot?: boolean;
+  // Required: defaults to "html".
   image_generation_mode: "html" | "gpt_image";
-  difficulty?: "easy" | "medium" | "hard";
+  // Form sends a single string; GeneratePage wraps it in [style] for the wire call.
+  style?: string;
+  // Form sends a single string; GeneratePage wraps it in [subject_filter] for the wire call.
   subject_filter?: string;
-  passage?: string;
-  text_word_limit?: number;
-  options?: string[];
-  topic?: string;
-  core_question?: string;
-  sub_context?: string;
-  science_competency?: string[];
-  learning_performance?: string[];
-  learning_content?: string[];
-  sub_question_count?: number;
-  subquestion_configs?: string;
-  model_plan?: string;
-  model_execute?: string;
-  coverage_mode?: "balanced" | "random";
-}
+};
 
 export interface ParamFormProps {
   subject?: string;
-  onSubmit: (params: GenerateParams) => void;
+  onSubmit: (params: FormParams) => void;
   disabled: boolean;
-  initialParams?: Partial<GenerateParams> & { [key: string]: unknown };
+  initialParams?: Partial<FormParams> & { [key: string]: unknown };
 }
 
 const TEXT_HINT = "500 字";
@@ -191,9 +219,12 @@ export default function ParamForm({
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pendingParams, setPendingParams] = useState<GenerateParams | null>(null);
+  const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
+  const [pendingResolvedSubquestionConfigs, setPendingResolvedSubquestionConfigs] = useState<
+    (SubQuestionConfig & { _lcWasAutoDrawn?: boolean; _lpWasAutoDrawn?: boolean })[]
+  >([]);
 
   const ip = initialParams ?? {};
   function fromInit<T>(key: string, fallback: T): T {
@@ -520,37 +551,15 @@ export default function ParamForm({
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
     if (isCurriculumSubject && !effectiveContentType) return;
-    const effectiveSubquestionConfigs =
-      (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== ""
-        ? subquestionConfigs.slice(0, subQuestionCount).map((cfg) => ({
-            question_type: cfg.question_type || undefined,
-            instruction: cfg.instruction?.trim() || undefined,
-            content_type: cfg.content_type || undefined,
-            image_generation_mode: cfg.image_generation_mode || undefined,
-            question_word_limit: cfg.question_word_limit,
-            option_word_limit: cfg.option_word_limit,
-            text_word_limit: cfg.text_word_limit,
-            reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
-            learning_content: cfg.learning_content?.length ? cfg.learning_content : undefined,
-            learning_performance: cfg.learning_performance?.length ? cfg.learning_performance : undefined,
-          }))
-        : [];
-    const hasSubquestionConfig = effectiveSubquestionConfigs.some(
-      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.reporting_scale || c.learning_content?.length || c.learning_performance?.length,
-    );
-    const shouldSendSubquestionConfigs =
-      (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== "" && (
-        hasSubquestionConfig || effectiveSubquestionConfigs.length > 0
-      );
+    const lpPoolValues = availableLearningPerformance.map((e) => e.value);
+    const lcPoolValues = availableLearningContent.map((e) => e.value);
 
     // If no learning_performance selected, pre-draw randomly to match backend sampling
     let finalLp: string[] | undefined;
     let autoDrawn = false;
-    if (isCurriculumSubject && learningPerformance.length === 0 && availableLearningPerformance.length > 0) {
+    if (isCurriculumSubject && learningPerformance.length === 0 && lpPoolValues.length > 0) {
       const maxDraw = subject === "math" ? 3 : 2;
-      const drawCount = Math.floor(Math.random() * Math.min(maxDraw, availableLearningPerformance.length)) + 1;
-      const shuffled = [...availableLearningPerformance].sort(() => Math.random() - 0.5);
-      finalLp = shuffled.slice(0, drawCount).map((e) => e.value);
+      finalLp = drawRandomSubset(lpPoolValues, 1, maxDraw);
       autoDrawn = true;
     } else if (isCurriculumSubject && learningPerformance.length > 0) {
       finalLp = learningPerformance;
@@ -562,11 +571,9 @@ export default function ParamForm({
     if (
       (subject === "natural_sciences" || subject === "social_studies") &&
       learningContent.length === 0 &&
-      availableLearningContent.length > 0
+      lcPoolValues.length > 0
     ) {
-      const drawCount = Math.floor(Math.random() * Math.min(3, availableLearningContent.length)) + 1;
-      const shuffled = [...availableLearningContent].sort(() => Math.random() - 0.5);
-      finalLc = shuffled.slice(0, drawCount).map((e) => e.value);
+      finalLc = drawRandomSubset(lcPoolValues, 1, 3);
       lcAutoDrawn = true;
     } else if (
       (subject === "natural_sciences" || subject === "social_studies") &&
@@ -576,6 +583,62 @@ export default function ParamForm({
     }
 
     setLcWasAutoDrawn(lcAutoDrawn);
+    const perSubqLpPool = learningPerformance.length > 0 ? learningPerformance : (finalLp ?? []);
+    const perSubqLcPool = learningContent.length > 0 ? learningContent : (finalLc ?? []);
+    const shouldDrawPerSubq =
+      (subject === "social_studies" || subject === "natural_sciences") &&
+      subQuestionCount !== "";
+
+    const effectiveSubquestionConfigsInternal: (SubQuestionConfig & {
+      _lcWasAutoDrawn?: boolean;
+      _lpWasAutoDrawn?: boolean;
+    })[] = shouldDrawPerSubq
+      ? subquestionConfigs
+          .slice(0, subQuestionCount as number)
+          .map((cfg) => {
+            const hasExplicitLc = (cfg.learning_content?.length ?? 0) > 0;
+            const hasExplicitLp = (cfg.learning_performance?.length ?? 0) > 0;
+            const resolvedLc = hasExplicitLc
+              ? cfg.learning_content
+              : perSubqLcPool.length > 0
+                ? drawRandomSubset(perSubqLcPool, 1, 3)
+                : undefined;
+            const resolvedLp = hasExplicitLp
+              ? cfg.learning_performance
+              : perSubqLpPool.length > 0
+                ? drawRandomSubset(perSubqLpPool, 1, 2)
+                : undefined;
+            return {
+              question_type: cfg.question_type || undefined,
+              instruction: cfg.instruction?.trim() || undefined,
+              content_type: cfg.content_type || undefined,
+              image_generation_mode: cfg.image_generation_mode || undefined,
+              question_word_limit: cfg.question_word_limit,
+              option_word_limit: cfg.option_word_limit,
+              text_word_limit: cfg.text_word_limit,
+              reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
+              learning_content: resolvedLc?.length ? resolvedLc : undefined,
+              learning_performance: resolvedLp?.length ? resolvedLp : undefined,
+              _lcWasAutoDrawn: !hasExplicitLc && !!resolvedLc?.length,
+              _lpWasAutoDrawn: !hasExplicitLp && !!resolvedLp?.length,
+            };
+          })
+      : [];
+
+    const effectiveSubquestionConfigs: SubQuestionConfig[] = effectiveSubquestionConfigsInternal.map(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      ({ _lcWasAutoDrawn: _lc, _lpWasAutoDrawn: _lp, ...rest }) => rest,
+    );
+
+    const hasSubquestionConfig = effectiveSubquestionConfigs.some(
+      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.reporting_scale || c.learning_content?.length || c.learning_performance?.length,
+    );
+    const shouldSendSubquestionConfigs =
+      (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== "" && (
+        hasSubquestionConfig || effectiveSubquestionConfigs.length > 0
+      );
+
+    setPendingResolvedSubquestionConfigs(effectiveSubquestionConfigsInternal);
     setPendingParams({
       grade,
       style: subject === "math" ? style : undefined,
@@ -668,7 +731,6 @@ export default function ParamForm({
         value: p.disable_reference_fewshot ? "✓" : undefined,
       },
       { label: "小題數量", value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined },
-      { label: "各小題配置", value: p.subquestion_configs },
     ];
 
     const lpHeading = lpWasAutoDrawn
@@ -742,6 +804,68 @@ export default function ParamForm({
             </dd>
           </div>
         </dl>
+        {pendingResolvedSubquestionConfigs.length > 0 && (
+          <section className="space-y-3 pt-4 border-t">
+            <h3 className="text-sm font-semibold text-gray-700">{t("form.confirm_subquestion_heading")}</h3>
+            <ol className="space-y-3">
+              {pendingResolvedSubquestionConfigs.map((row, i) => (
+                <li key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <h4 className="text-xs font-semibold text-gray-600 mb-2">
+                    {t("form.confirm_subquestion_row_title").replace("{n}", String(i + 1))}
+                  </h4>
+                  {row.question_type && <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type}</div>}
+                  {row.instruction && <div className="text-sm text-gray-700">{t("form.confirm_subq_instruction")} {row.instruction}</div>}
+                  {row.content_type && <div className="text-sm text-gray-700">{t("form.confirm_subq_content_type")} {row.content_type}</div>}
+                  {row.image_generation_mode && <div className="text-sm text-gray-700">{t("form.confirm_subq_image_mode")} {row.image_generation_mode}</div>}
+                  {row.question_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_q_word_limit")} {row.question_word_limit}</div>}
+                  {row.option_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_o_word_limit")} {row.option_word_limit}</div>}
+                  {row.text_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_text_word_limit")} {row.text_word_limit}</div>}
+                  {row.reporting_scale && <div className="text-sm text-gray-700">{t("form.confirm_subq_reporting_scale")} {row.reporting_scale}</div>}
+                  <div>
+                    {row.learning_performance && row.learning_performance.length > 0 ? (
+                      <>
+                        <div className="text-xs font-medium text-gray-600 mt-2">
+                          {t(
+                            row._lpWasAutoDrawn
+                              ? "form.confirm_subq_lp_random_pool"
+                              : "form.confirm_subq_lp_selected",
+                          ).replace("{n}", String(row.learning_performance.length))}
+                        </div>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
+                          {row.learning_performance.map((code) => (
+                            <li key={code}>{code}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-700">{t("form.confirm_subq_lp_empty")}</div>
+                    )}
+                  </div>
+                  <div>
+                    {row.learning_content && row.learning_content.length > 0 ? (
+                      <>
+                        <div className="text-xs font-medium text-gray-600 mt-2">
+                          {t(
+                            row._lcWasAutoDrawn
+                              ? "form.confirm_subq_lc_random_pool"
+                              : "form.confirm_subq_lc_selected",
+                          ).replace("{n}", String(row.learning_content.length))}
+                        </div>
+                        <ul className="list-disc pl-5 text-sm text-gray-700">
+                          {row.learning_content.map((code) => (
+                            <li key={code}>{code}</li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : (
+                      <div className="text-sm text-gray-700">{t("form.confirm_subq_lc_empty")}</div>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
         <div className="flex flex-wrap gap-3 pt-1">
           <button
             type="button"

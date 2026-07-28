@@ -4,9 +4,10 @@
 Figure routing: any `chart_spec` this module instructs the model to emit
 must follow the rule in ``docs/figure-rendering-policy.md`` —
 precise/quantitative statistical charts use ``render_mode: "chart"``
-(matplotlib); illustrative figures — 實驗裝置圖, 模型圖, 流程圖, 標籤圖,
-data tables — use ``render_mode: "html"`` (LLM-HTML + Playwright). See
-``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``題目內容類型`` mapping.
+(matplotlib); structured data tables and semantic-overlay figures use
+``render_mode: "html"`` (LLM-HTML + Playwright); realistic diagrams (實驗裝置圖,
+模型圖, 標籤圖, 生物剖面, 地圖) use ``render_mode: "gpt_image"`` (OpenAI image
+API). See ``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``題目內容類型`` mapping.
 """
 
 from __future__ import annotations
@@ -121,14 +122,22 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
         "題目、答案與解釋只能依據 `文本` 欄位中的文字、數據描述或實驗敘述。"
     ),
     "含圖片": (
-        "本題組必須包含視覺式科學素材，例如實驗裝置圖、模型圖、流程圖、標籤圖、"
-        "地圖或情境示意圖。請輸出 `chart_spec`，優先使用 `render_mode: \"html\"`，"
-        "並在 `description` 與 `data` 中完整描述版面與作答所需元素。"
+        "本題組必須包含視覺式科學素材，例如實驗裝置圖、模型圖、流程圖、標籤圖、地圖或情境示意圖。"
+        "請輸出 `chart_spec`，並依圖片家族選擇 `render_mode`："
+        "\n"
+        "- **寫實圖 / 實體示意** — 實驗裝置圖（含真實器材幾何）、生物剖面/標籤圖、"
+        "岩石或天體照片式示意、需符合真實比例的模型圖，請使用 `render_mode: \"gpt_image\"`。"
+        "\n"
+        "- **結構化 / 抽象示意** — 流程圖、概念關係圖、電路連接圖、含語意標註的比較版面，"
+        "請使用 `render_mode: \"html\"`。"
+        "\n"
+        "在 `description` 與 `data` 中完整描述版面與作答所需元素。"
         "（重要）圖片必須是作答的必要條件：至少一道小題的答案必須直接依賴圖片中才有的資訊，無法僅憑文本回答。"
         "設計時請先確定「移除圖片後此題是否仍可作答」——若可以，請重新設計圖片，使其承載文本中未涵蓋的關鍵資訊"
         "（例如實驗裝置的連接方式、模型圖的標示數據、流程圖的條件分支）。"
-        f"（示意圖聲明）圖片為示意用途，非完全等比例繪製；請在 `chart_spec.description` 中要求下游 HTML 產生器"
-        f"將「{IMAGE_DISCLAIMER}」以 caption 呈現在圖片下緣或版面空白處。"
+        f"（示意圖聲明）圖片為示意用途，非完全等比例繪製；若使用 `render_mode: \"html\"`，"
+        f"請在 `chart_spec.description` 中要求下游 HTML 產生器將「{IMAGE_DISCLAIMER}」"
+        f"以 caption 呈現在圖片下緣或版面空白處。"
     ),
     "graphs/charts/tables": (
         "本題組必須包含數據圖表或表格。統計圖請使用 `render_mode: \"chart\"`；"

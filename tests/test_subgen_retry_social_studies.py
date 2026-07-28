@@ -158,3 +158,16 @@ def test_unparseable_output_is_also_retried() -> None:
     assert [sq.序號 for sq in question.subquestions] == [1, 2, 3]
     assert state.calls_by_slot[1] == 2
     assert state.factory_calls == 4
+
+
+def test_dropped_slot_logged_to_stderr(capsys) -> None:
+    """The 'dropped after' message is printed to stderr when all retries are exhausted.
+
+    AC3 of issue #160: SS must log the dropped-slot line with the same wording
+    as NS — 'Sub-generator sub_generator#N dropped after M attempt(s)'.
+    """
+    state = _State()
+    flaky = _FlakySubClient(state, failing_slot=2, fail_times=99)
+    _generate(state, flaky, subgen_retries=2)
+    captured = capsys.readouterr()
+    assert "Sub-generator sub_generator#2 dropped after 3 attempt(s)" in captured.err

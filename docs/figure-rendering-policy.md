@@ -13,7 +13,8 @@ question's subject, grade, or 學習內容 code.
 | Figure family | Examples | `render_mode` | Renderer |
 | --- | --- | --- | --- |
 | Precise / quantitative statistical charts | 直方圖, 盒鬚圖, 折線圖, 圓餅圖, 未來加入的任何座標軸帶刻度的統計圖 | `"chart"` | matplotlib (`src/renderer.py::render_chart`) |
-| Illustrative figures | 幾何示意圖, 座標平面, 數線, 表格, 菜單, 廣告, 海報, 情境卡, 流程圖 | `"html"` (or `"frontend_ts"` — see below) | LLM-HTML + Playwright (`src/renderer.py::_generate_html_via_llm` + `src/html_renderer.py`) |
+| Illustrative figures — structured / semantic | 菜單, 情境卡, 廣告, 版面, 表單, 帶語意標註的表格 | `"html"` | LLM-HTML + Playwright (`src/renderer.py::_generate_html_via_llm` + `src/html_renderer.py`) |
+| Illustrative figures — realistic diagram | 地圖 (含真實海岸線/經緯線), 實驗裝置, 生物模型/標籤圖, 需符合真實比例的幾何, 情境寫實圖 | `"gpt_image"` | OpenAI image API via `src/llm_client.py::generate_image` |
 
 ### Why this split
 
@@ -26,24 +27,38 @@ question's subject, grade, or 學習內容 code.
   card). The HTML path lets the LLM invent layout details the schema does
   not encode; this is the correct trade-off for that family.
 
+## Renderer selection matrix
+
+> **Provisional (2026-07-18):** Derived from a 15-spec fidelity sample; revisit once
+> the census gate (≥30 real production questions per subject) is met.
+
+| Figure category | Default renderer | Rationale |
+|---|---|---|
+| Deterministic statistical chart (histogram/boxplot/line/pie, no domain overlays) | `render_mode: "chart"` (matplotlib) | Reproducibility; no LLM call |
+| Table (any subject) | `render_mode: "html"` | HTML+Playwright captures titles, semantic highlights, inline units, footnotes |
+| Chart with semantic overlays (projection dividers, threshold lines, domain-specific highlights, companion data tables) | `render_mode: "html"` | LLM-authored HTML/SVG reliably encodes semantic overlays gpt-image-2 flattens |
+| Realistic diagram (map with real coastlines, lab apparatus, biology cell/organism, geometry that must match real-world proportions) | `render_mode: "gpt_image"` | 15-spec eval: 4/4 diagram_realistic wins for gpt-image-2; HTML+SVG reads as infographic |
+| Structured pedagogical figure (menu, tree diagram, PISA two-panel) | Case-by-case; prefer `html` if figure needs semantic annotation hooks, `gpt_image` if textbook-atlas aesthetic is primary | Split 1-2 in 15-spec eval |
+
 ## Phase A outcome (issue #108)
 
 The Phase A evaluation (`docs/figure-rendering-evaluation.md`) recorded a
 **NO-GO (for now)** decision for adding a frontend TS renderer.
 
-- **NO-GO (for now)**: `render_mode` stays `Literal["chart", "html"]` as the
-  shipped default. Task 10 of the plan (extending `render_mode` with
-  `"frontend_ts"`) is deferred pending production evidence. The frontend TS
-  prototype remains behind `VITE_ENABLE_FRONTEND_TS_RENDERER` for continued
-  experimentation. A full GO (triggering Task 10) requires both a production
-  census (≥30 questions per subject) and a live fidelity comparison with
-  measured fallback rates. When that evidence is collected, re-run Phase A;
-  if the outcome is GO or HYBRID, Task 10 extends `render_mode` with
-  `"frontend_ts"` for illustrative figures whose display can be done
-  client-side. Verifier and ODT export would still consume the server-side
-  PNG, so illustrative specs would also keep producing one — the frontend TS
-  renderer replaces the on-page `<img>` display only. `"html"` remains
-  permanently accepted as a legacy alias for already-generated questions.
+- **HYBRID (recorded 2026-07-18 by operator, provisional — census gate remains unmet)**:
+  The 15-spec fidelity evaluation (see `docs/figure-rendering-evaluation.md`) showed the
+  frontend TS renderer prototype produced usable output on only 2/15 illustrative specs and
+  never won head-to-head. LLM-HTML+Playwright and gpt-image-2 tied 7-7 (+1 tie) but
+  specialize on different figure categories: HTML wins tables and semantic-overlay charts
+  (6/7 in the sample); gpt-image-2 wins realistic diagrams / maps / lab apparatus /
+  biology (4/4). Decision: introduce category-based routing per the "Renderer selection
+  matrix" section below, and do NOT ship `render_mode: "frontend_ts"` as originally
+  planned in `docs/superpowers/plans/2026-07-18-frontend-ts-render-mode.md` (that plan is
+  now superseded). The `>=30 questions per subject` census gate remains unmet
+  (production has 2 records total on 2026-07-18); this decision is provisional and MUST
+  be revisited once production accumulates ~30 real questions per subject. `"html"`
+  remains permanently accepted as a legacy alias for already-generated questions;
+  `"frontend_ts"` is NOT introduced.
 
 ## Gate evidence collection and re-evaluation (issue #110)
 
@@ -103,14 +118,14 @@ The three prompt assemblers already encode this rule in their
 | 題目內容類型 | Instruction MUST direct the model to |
 | --- | --- |
 | `純文字` | Omit `chart_spec` entirely. |
-| `含圖片` | Emit `chart_spec` with `render_mode: "html"` (illustrative path). |
-| `graphs/charts/tables` | Emit `chart_spec` with `render_mode: "chart"` when a listed statistical chart applies; otherwise `render_mode: "html"` for tables. |
+| `含圖片` | Emit `chart_spec` with `render_mode: "gpt_image"` for realistic diagrams (maps, lab apparatus, biology, real-world-proportion geometry) and `render_mode: "html"` for structured/semantic content (menus, scenario cards, layouts, forms). |
+| `graphs/charts/tables` | Emit `chart_spec` with `render_mode: "chart"` for statistical charts; `render_mode: "html"` for tables and semantic-overlay charts. |
 | `customized` | Follow the user-supplied instruction verbatim; no default. |
 
 ## Enforcement
 
 - `tests/test_figure_rendering_policy.py::test_plain_text_bans_chart_spec`,
-  `::test_illustrative_content_routes_to_html`, and
+  `::test_illustrative_content_routes_to_gpt_image_or_html`, and
   `::test_quantitative_content_routes_to_chart_and_html_for_tables` assert the
   `CONTENT_TYPE_INSTRUCTIONS` strings for each of the three subjects contain
   the correct `render_mode: "…"` fragment.
@@ -120,6 +135,10 @@ The three prompt assemblers already encode this rule in their
   `::test_dispatch_unknown_render_mode_returns_none` fixture-test that
   `render_image()` in `src/renderer.py` dispatches each ImageSpec to the
   intended renderer.
+- `tests/test_figure_rendering_policy.py::test_dispatch_gpt_image_render_mode_calls_llm_generate_image`
+  asserts `render_mode: "gpt_image"` routes to `LLMClient.generate_image()`.
+- `tests/test_hybrid_routing_schema.py::test_imagespec_accepts_gpt_image_render_mode`
+  asserts the schema Literal accepts `"gpt_image"` across all three subjects.
 
 ## Out of scope of this policy
 

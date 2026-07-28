@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.natural_sciences.cli import _parse_question, _parse_subquestion
+from src.natural_sciences.cli import _parse_subquestion
 from src.natural_sciences.sampler import sample_params
 
 
@@ -133,25 +133,27 @@ def test_parse_subquestion_cfg_codes_stay_verbatim() -> None:
     assert [r.編碼 for r in sq.學習表現] == ["pa-Ⅳ-1"]
 
 
-def test_parse_question_repairs_subquestion_codes() -> None:
-    raw = {
-        "核心問題": "測試核心問題",
-        "文本": "測試文本",
-        "取材來源": [],
-        "subquestions": [
-            {
-                "序號": 1,
-                "題型": "Simple multiple-choice",
-                "題目": "Q? (A) 甲 (B) 乙",
-                "答案": "A",
-                "答案解析": "解析",
-                "學習內容": [{"編碼": "INc-Ⅳ-1", "說明": "幻覺"}],
-                "學習表現": [{"編碼": "tr-IV-1", "說明": ""}],
-            }
-        ],
-        "題目": ["文本", "Q?"],
-        "正確解題分析": ["A"],
+def test_parse_question_subquestion_code_repair_via_parse_subquestion() -> None:
+    """Code-repair behavior tested via the live _parse_subquestion parser.
+
+    The dead _parse_question was removed (issue #160 AC2).  The repair
+    behavior it guarded (unknown LC → pool fallback; ASCII LP spelling →
+    Unicode canonical) is already covered by
+    test_parse_subquestion_replaces_unknown_codes_from_pool_per_family and
+    test_parse_subquestion_canonicalizes_spelling_and_fills_說明.  This test
+    retargets the same INc-Ⅳ-1 / tr-IV-1 fixture at the live parser so the
+    specific codes remain exercised.
+    """
+    sq_raw = {
+        "序號": 1,
+        "題型": "Simple multiple-choice",
+        "題目": "Q? (A) 甲 (B) 乙",
+        "答案": "A",
+        "答案解析": "解析",
+        "學習內容": [{"編碼": "INc-Ⅳ-1", "說明": "幻覺"}],
+        "學習表現": [{"編碼": "tr-IV-1", "說明": ""}],
     }
-    question = _parse_question(raw, "ns_test_001", _params(), "test-model")
-    assert [r.編碼 for r in question.subquestions[0].學習內容] == ["Ab-Ⅳ-1"]  # pool
-    assert [r.編碼 for r in question.subquestions[0].學習表現] == ["tr-Ⅳ-1"]  # canonicalized
+    sq = _parse_subquestion(sq_raw, "ns_test_001", _params(), 1)
+    assert sq is not None
+    assert [r.編碼 for r in sq.學習內容] == ["Ab-Ⅳ-1"]  # pool fallback for unknown code
+    assert [r.編碼 for r in sq.學習表現] == ["tr-Ⅳ-1"]   # ASCII → Unicode canonical

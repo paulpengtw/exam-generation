@@ -2,40 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 
 import { useAuthStore } from "../store/authStore";
+import type { GenerateParams } from "../api/generated/contract";
 
-export type GenerateStatus = "idle" | "queued" | "generating" | "error";
+export type { GenerateParams };
 
-export interface GenerateParams {
-  subject?: string;
-  grade?: number;
-  style?: string[];
-  content_type?: string;
-  context?: string[];
-  set_type?: string;
-  q_type?: string[];
-  count?: number;
-  skip_verify?: boolean;
-  disable_reference_fewshot?: boolean;
-  seed?: number;
-  image_generation_mode?: "html" | "gpt_image";
-  difficulty?: "easy" | "medium" | "hard";
-  subject_filter?: string;
-  passage?: string;
-  options?: string[];
-  topic?: string;
-  core_question?: string;
-  sub_context?: string;
-  science_competency?: string[];
-  learning_performance?: string[];
-  learning_content?: string[];
-  sub_question_count?: number;
-  question_word_limit?: number;
-  option_word_limit?: number;
-  subquestion_configs?: string;
-  model_plan?: string;
-  model_execute?: string;
-  coverage_mode?: "balanced" | "random";
-}
+export type GenerateStatus = "idle" | "generating" | "error";
 
 export interface LearningContentItem {
   編碼: string;
@@ -138,7 +109,6 @@ function purposeToAgent(purpose: string): string {
 
 export interface UseGenerateReturn {
   status: GenerateStatus;
-  jobsAhead: number;
   progressLines: string[];
   results: ExamQuestion[];
   displayResults: GeneratedQuestion[];
@@ -171,6 +141,37 @@ function upsertDisplayResult(
   return updated.sort((a, b) => a.index - b.index);
 }
 
+/**
+ * Parse an SSE error event's raw data string into a human-readable message.
+ *
+ * The server now emits structured JSON: `{"code": "...", "message": "..."}`.
+ * Older or third-party error sources may still send a plain string.  This
+ * helper handles both so the UI always has something useful to display.
+ *
+ * Rules:
+ * - Valid JSON with a non-empty `.message` string → return `.message`.
+ * - Anything else (invalid JSON, missing/non-string message) → return the
+ *   raw string unchanged, or "Unknown error" when the raw string is empty.
+ */
+export function parseErrorEventData(raw: string): string {
+  if (!raw) return "Unknown error";
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "message" in parsed &&
+      typeof (parsed as Record<string, unknown>).message === "string" &&
+      (parsed as Record<string, unknown>).message !== ""
+    ) {
+      return (parsed as Record<string, string>).message;
+    }
+  } catch {
+    // not JSON — fall through
+  }
+  return raw;
+}
+
 export function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
   if (params.subject !== undefined) qs.append("subject", params.subject);
@@ -189,7 +190,7 @@ export function buildQueryString(params: GenerateParams): string {
   for (const v of params.style ?? []) qs.append("style", v);
   for (const v of params.context ?? []) qs.append("context", v);
   for (const v of params.q_type ?? []) qs.append("q_type", v);
-  if (params.subject_filter) qs.append("subject_filter", params.subject_filter);
+  for (const v of params.subject_filter ?? []) qs.append("subject_filter", v);
   if (params.passage) qs.append("passage", params.passage);
   for (const v of params.options ?? []) qs.append("options", v);
   if (params.topic) qs.append("topic", params.topic);
@@ -201,6 +202,7 @@ export function buildQueryString(params: GenerateParams): string {
   if (params.sub_question_count !== undefined) qs.append("sub_question_count", String(params.sub_question_count));
   if (params.question_word_limit !== undefined) qs.append("question_word_limit", String(params.question_word_limit));
   if (params.option_word_limit !== undefined) qs.append("option_word_limit", String(params.option_word_limit));
+  if (params.text_word_limit !== undefined) qs.append("text_word_limit", String(params.text_word_limit));
   if (params.subquestion_configs) qs.append("subquestion_configs", params.subquestion_configs);
   if (params.difficulty !== undefined) qs.append("difficulty", params.difficulty);
   if (params.model_plan && params.model_plan.length > 0) {
@@ -284,7 +286,6 @@ function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
 
 export function useGenerate(): UseGenerateReturn {
   const [status, setStatus] = useState<GenerateStatus>("idle");
-  const [jobsAhead, setJobsAhead] = useState<number>(0);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [results, setResults] = useState<ExamQuestion[]>([]);
   const [displayResults, setDisplayResults] = useState<GeneratedQuestion[]>([]);
@@ -309,7 +310,6 @@ export function useGenerate(): UseGenerateReturn {
     setResults([]);
     setDisplayResults([]);
     setLlmCalls([]);
-    setJobsAhead(0);
     setErrorMessage(null);
     nextFinalIndexRef.current = 0;
     setStatus("idle");
@@ -329,7 +329,6 @@ export function useGenerate(): UseGenerateReturn {
     setResults([]);
     setDisplayResults([]);
     setLlmCalls([]);
-    setJobsAhead(0);
     setErrorMessage(null);
     nextFinalIndexRef.current = 0;
 
@@ -351,14 +350,7 @@ export function useGenerate(): UseGenerateReturn {
       },
       onmessage(ev) {
         switch (ev.event) {
-          case "queued": {
-            const { jobs_ahead } = JSON.parse(ev.data) as { jobs_ahead: number };
-            setJobsAhead(jobs_ahead);
-            setStatus("queued");
-            break;
-          }
           case "started":
-            setJobsAhead(0);
             setStatus("generating");
             break;
           case "progress":
@@ -447,7 +439,7 @@ export function useGenerate(): UseGenerateReturn {
             }
             break;
           case "error":
-            setErrorMessage(ev.data || "Unknown error");
+            setErrorMessage(parseErrorEventData(ev.data ?? ""));
             setStatus("error");
             break;
           case "done":
@@ -469,7 +461,6 @@ export function useGenerate(): UseGenerateReturn {
 
   return {
     status,
-    jobsAhead,
     progressLines,
     results,
     displayResults,

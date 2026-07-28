@@ -2,9 +2,12 @@
 
 Figure routing: any `chart_spec` this module instructs the model to emit must
 follow the rule in ``docs/figure-rendering-policy.md`` — precise/quantitative
-statistical charts use ``render_mode: "chart"`` (matplotlib); illustrative
-figures use ``render_mode: "html"`` (LLM-HTML + Playwright). See
-``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``題目內容類型`` mapping.
+statistical charts use ``render_mode: "chart"`` (matplotlib); structured or
+semantic illustrative figures (menus, scenario cards, tables with annotations)
+use ``render_mode: "html"`` (LLM-HTML + Playwright); realistic diagrams (maps,
+lab apparatus, biology, real-world-proportion geometry) use
+``render_mode: "gpt_image"`` (OpenAI image API). See ``CONTENT_TYPE_INSTRUCTIONS``
+below for the per-``題目內容類型`` mapping.
 """
 
 from __future__ import annotations
@@ -28,6 +31,10 @@ from src.common.curriculum_loader import (
     performance_instructions,
 )
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.curriculum_context import (
+    CurriculumContext,
+    build_curriculum_section,
+)
 from src.data_loader import load_few_shot_examples
 from src.schema_loader import build_instructions, load_grades, load_learning_stage, load_schemas
 from src.schemas import SampledParams
@@ -67,9 +74,17 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     ),
     "含圖片": (
         "本題目必須包含圖片或視覺示意素材（幾何圖形、示意圖、版面等）。"
-        "請輸出 `chart_spec`，優先使用 `render_mode: \"html\"`，並在 `description` 與 `data` 中完整描述版面與內容。"
+        "請輸出 `chart_spec`，並依圖片家族選擇 `render_mode`："
+        "\n"
+        "- **寫實圖 / 真實比例幾何** — 需符合真實比例的幾何、示意情境圖、需要接近寫實筆觸的插圖，"
+        "請使用 `render_mode: \"gpt_image\"`。"
+        "\n"
+        "- **結構化 / 語意版面** — 版面型的說明圖、附語意標註或表格化的比較，"
+        "請使用 `render_mode: \"html\"`。"
+        "\n"
+        "在 `description` 與 `data` 中完整描述版面與內容。"
         f"（示意圖聲明）本題所有圖片皆為示意用途，非完全等比例繪製；"
-        f"請在 `chart_spec.description` 中明確要求下游 HTML 產生器"
+        f"若使用 `render_mode: \"html\"`，請在 `chart_spec.description` 中明確要求下游 HTML 產生器"
         f"將「{IMAGE_DISCLAIMER}」以 caption 形式呈現在圖片下緣或版面空白處。"
     ),
     "graphs/charts/tables": (
@@ -226,16 +241,13 @@ def _build_curriculum_section(
     performance_text: str,
     performance_intro: str = "",
 ) -> str:
-    if not content_text and not performance_text:
-        return _CURRICULUM_EMPTY_NOTICE
-    parts = []
-    if performance_intro:
-        parts.append("### 學習表現架構說明\n\n" + performance_intro)
-    if performance_text:
-        parts.append("### 學習表現標準\n\n" + performance_text)
-    if content_text:
-        parts.append("### 學習內容\n\n" + content_text)
-    return "\n\n".join(parts)
+    """Internal helper — delegates to the canonical public function."""
+    ctx = CurriculumContext(
+        content_text=content_text,
+        performance_text=performance_text,
+        intro_text=performance_intro,
+    )
+    return build_curriculum_section(ctx)
 
 
 def build_system_prompt(
@@ -244,20 +256,31 @@ def build_system_prompt(
     intro_text: str | None = None,
     grades: list[int] | None = None,
     learning_stage: str | None = None,
+    *,
+    curriculum_context: CurriculumContext | None = None,
 ) -> str:
     """Build the system prompt with full curriculum context.
 
     All args are optional; defaults use the materialized math curriculum data.
     Positional args are still accepted for backward compat with old callers
     that passed pre-serialized text.
+
+    When *curriculum_context* is supplied it takes priority over all three
+    curriculum positional args (``curriculum_json``, ``performance_json``,
+    ``intro_text``).
     """
     g = grades if grades is not None else _GRADES
     stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
     grade_range = f"{min(g)}-{max(g)}年級"
     grade_names = "、".join(f"{x}年級" for x in g)
-    c_text = curriculum_json if curriculum_json is not None else _CONTENT_TEXT
-    p_text = performance_json if performance_json is not None else _PERFORMANCE_TEXT
-    p_intro = intro_text if intro_text is not None else _PERFORMANCE_INTRO
+    if curriculum_context is not None:
+        c_text = curriculum_context.content_text
+        p_text = curriculum_context.performance_text
+        p_intro = curriculum_context.intro_text
+    else:
+        c_text = curriculum_json if curriculum_json is not None else _CONTENT_TEXT
+        p_text = performance_json if performance_json is not None else _PERFORMANCE_TEXT
+        p_intro = intro_text if intro_text is not None else _PERFORMANCE_INTRO
     curriculum_section = _build_curriculum_section(c_text, p_text, p_intro)
     sc = stage_code_for(_CC_DATA, stage)
     return SYSTEM_PROMPT_TEMPLATE.format(

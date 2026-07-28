@@ -3,22 +3,20 @@
 
 from __future__ import annotations
 
-import json
+from pathlib import Path
 
-from src.common.distractor import validate_distractor_keys
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
-from src.llm_client import LLMClient, extract_json
-from src.natural_sciences.context_builder import (
-    _CONTENT_TEXT,
-    _PERFORMANCE_TEXT,
-    _build_curriculum_section,
-)
+from src.common.verifier import PostVerifyHook, verify_question_common
+from src.curriculum_context import CurriculumContext, build_curriculum_section
+from src.llm_client import LLMClient
 from src.natural_sciences.curriculum_codes import validate_question_codes
 from src.natural_sciences.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
 
-_CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT)
-
-_VERIFICATION_SYSTEM_PROMPT_CORE = f"""\
+# Curriculum-free core — exported for tests that check subject-specific strings
+# (示意圖, IMAGE_DISCLAIMER, 不得僅因, 數值, 標籤).
+# The full system prompt used at call time prepends the curriculum section when
+# a CurriculumContext is supplied.
+VERIFICATION_SYSTEM_PROMPT = f"""\
 你是一位 PISA Science 與108課綱自然科學領域命題審核教師，負責審核考試題組的可用性與明顯錯誤。你會收到一道題組，請你：
 
 1. 完全獨立地閱讀科學情境素材並回答每一道小題（不要先看提供的解答）。
@@ -58,12 +56,6 @@ answer_match 的判斷也請寬鬆：
 
 若題目未附圖表圖片，請省略 chart_verification 欄位。只輸出 JSON，不要輸出其他文字。
 """
-
-VERIFICATION_SYSTEM_PROMPT = (
-    f"{_CURRICULUM_PREFIX}\n\n---\n\n{_VERIFICATION_SYSTEM_PROMPT_CORE}"
-    if _CURRICULUM_PREFIX
-    else _VERIFICATION_SYSTEM_PROMPT_CORE
-)
 
 VERIFICATION_USER_TEMPLATE = """\
 請審核以下 PISA Science + 108課綱自然科學題組：
@@ -111,11 +103,40 @@ def _build_question_text(question: ExamQuestion) -> tuple[str, str, str]:
     return "", parts[0] if parts else "", subquestions_text
 
 
+def _ns_code_check_hook(
+    question: ExamQuestion,
+    result: VerificationResult,
+    client: LLMClient,
+) -> VerificationResult:
+    """Post-verify hook: deterministic curriculum-code hard-reject (issue #92).
+
+    Unlike the advisory distractor warnings, unknown or missing
+    學習內容/學習表現 codes are a hard reject — the LLM's lenient verdict
+    cannot overrule the curriculum JSON.  Appends ``[課綱代碼檢核]`` to
+    ``details`` and forces ``passed=False`` when issues are found.
+    """
+    code_issues = validate_question_codes(question)
+    if code_issues:
+        result.details = result.details.rstrip()
+        result.details += "\n\n[課綱代碼檢核] " + "；".join(code_issues)
+        result.passed = False
+    return result
+
+
+# Declared on the subject spec: hooks run in this order after the LLM verdict.
+_NS_POST_VERIFY_HOOKS: list[PostVerifyHook] = [_ns_code_check_hook]
+
+
 def verify_question(
     client: LLMClient,
     question: ExamQuestion,
     chart_image_path: str | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> VerificationResult:
+    # Fall back to text-only when the image file is absent or unreadable.
+    if chart_image_path is not None and not Path(chart_image_path).exists():
+        chart_image_path = None
+
     core_q, passage_text, subquestions_text = _build_question_text(question)
     if not subquestions_text:
         subquestions_text = "\n".join(question.題目)
@@ -143,54 +164,23 @@ def verify_question(
             "以下附上題目引用的素材圖片，請檢查素材內容與題目描述是否一致。"
         )
 
-    try:
-        raw = client.generate_with_image(
-            VERIFICATION_SYSTEM_PROMPT,
-            user_prompt,
-            image_path=chart_image_path,
-            purpose="verify",
+    if curriculum_context is not None:
+        curriculum_prefix = build_curriculum_section(curriculum_context)
+        system_prompt = (
+            f"{curriculum_prefix}\n\n---\n\n{VERIFICATION_SYSTEM_PROMPT}"
+            if curriculum_prefix
+            else VERIFICATION_SYSTEM_PROMPT
         )
-        result = extract_json(raw)
+    else:
+        system_prompt = VERIFICATION_SYSTEM_PROMPT
 
-        chart_verif = None
-        if "chart_verification" in result:
-            cv = result["chart_verification"]
-            chart_verif = ChartVerificationResult(
-                chart_data_match=cv.get("chart_data_match", False),
-                chart_labels_correct=cv.get("chart_labels_correct", False),
-                chart_details=cv.get("chart_details", ""),
-            )
-
-        all_warnings: list[str] = []
-        for sq in question.subquestions:
-            warnings = validate_distractor_keys(sq.題目, sq.誘答分析)
-            for w in warnings:
-                all_warnings.append(f"第{sq.序號}題：{w}")
-        details = result.get("details", "")
-        if all_warnings:
-            details = details.rstrip()
-            details += "\n\n[誘答分析提醒] " + "；".join(all_warnings)
-
-        # Issue #92: deterministic curriculum-code check. Unlike the advisory
-        # distractor warnings above, unknown or missing 學習內容/學習表現
-        # codes are a hard reject — the LLM's lenient verdict cannot
-        # overrule the curriculum JSON.
-        code_issues = validate_question_codes(question)
-        if code_issues:
-            details = details.rstrip()
-            details += "\n\n[課綱代碼檢核] " + "；".join(code_issues)
-
-        return VerificationResult(
-            passed=result.get("passed", False) and not code_issues,
-            answer_match=result.get("answer_match", False),
-            details=details,
-            my_answer=result.get("my_answer", ""),
-            provided_answer=result.get("provided_answer", ""),
-            chart_verification=chart_verif,
-        )
-    except (json.JSONDecodeError, ValueError, KeyError) as e:
-        return VerificationResult(
-            passed=False,
-            answer_match=False,
-            details=f"Verification failed to parse LLM response: {e}",
-        )
+    return verify_question_common(
+        client=client,
+        question=question,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        verification_result_cls=VerificationResult,
+        chart_verif_cls=ChartVerificationResult,
+        chart_image_path=chart_image_path,
+        post_verify_hooks=_NS_POST_VERIFY_HOOKS,
+    )

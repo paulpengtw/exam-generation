@@ -1,0 +1,329 @@
+"""Shared generation core for NS and SS subjects.
+
+``generate_one_core`` runs the 文本生成器 → N-parallel-子題產生器 pipeline.
+``generate_with_corrections_core`` wraps it with the verify/correct retry loop.
+
+Both are parameterised by a :class:`src.common.subject_spec.SubjectGenerationSpec`
+instance, which bundles all per-subject callables (prompt builders, parsers,
+post-draft hooks, verify/correct functions, etc.).
+
+Design note: ``src/`` must NOT import from ``server/``.  All imports here are
+from ``src.*`` only.
+"""
+
+from __future__ import annotations
+
+import concurrent.futures
+import sys
+from collections.abc import Callable, Sequence
+from typing import Any
+
+from src.common.subject_spec import SubjectGenerationSpec
+from src.config import Config
+from src.curriculum_context import CurriculumContext
+from src.html_renderer import PlaywrightRenderer
+from src.llm_client import LLMClient, emit_stage
+from src.renderer import render_image
+
+
+def _emit_update(callback: Callable | None, question: Any, phase: str) -> None:
+    if callback is not None:
+        callback(question, phase)
+
+
+def generate_one_core(
+    config: Config,
+    client: LLMClient | None,
+    params: Any,
+    question_id: str,
+    spec: SubjectGenerationSpec,
+    *,
+    dry_run: bool = False,
+    skip_verify: bool = False,
+    disable_reference_fewshot: bool = False,
+    html_renderer: PlaywrightRenderer | None = None,
+    image_generation_mode: str = "html",
+    user_passage: str | None = None,
+    text_word_limit: int | None = None,
+    user_options: list[str] | None = None,
+    user_topic: str | None = None,
+    user_core_question: str | None = None,
+    on_question_update: Callable | None = None,
+    sub_client_factory: Callable[[], Any] | None = None,
+    prior_scopes: Sequence[Any] | None = None,
+    curriculum_context: CurriculumContext | None = None,
+) -> Any:
+    """Shared 文本生成器 → N-parallel-子題產生器 pipeline for NS and SS."""
+    few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
+
+    # ── Text-prompt build (dry-run returns early) ─────────────────────────
+    text_system, stage_ctx = spec.build_text_system_fn(params)
+    text_user, text_images = spec.build_text_user_fn(
+        params, few_shot_dir,
+        user_passage, user_options, user_topic, user_core_question,
+        image_generation_mode, disable_reference_fewshot, prior_scopes,
+    )
+    if dry_run:
+        img_note = f" ({len(text_images)} few-shot images)" if text_images else ""
+        return (
+            f"=== TEXT SYSTEM PROMPT ({len(text_system)} chars) ===\n"
+            f"{text_system[:2000]}...\n\n"
+            f"=== TEXT USER PROMPT ({len(text_user)} chars{img_note}) ===\n{text_user}"
+        )
+
+    obs = client.get_observer() if client else None
+    print(f"  Generating question {question_id}...", file=sys.stderr)
+
+    emit_stage(obs, "generator", "llm_generate", "start")
+    text_raw = client.generate_json(text_system, text_user, images=text_images or None)
+    emit_stage(obs, "generator", "llm_generate", "end")
+
+    question = spec.parse_text_shell_fn(text_raw, question_id, params, config.model_execute)
+
+    sq_plans: list[dict] = text_raw.get("subquestions", [])
+    if not sq_plans:
+        n = params.sub_question_count or 3
+        sq_plans = spec.make_fallback_sq_plans_fn(params, n)
+
+    sub_system = spec.build_subquestion_system_fn(stage_ctx)
+    max_workers = min(len(sq_plans), config.subgen_max_concurrency)
+    use_embedded_subquestions = (
+        sub_client_factory is None and client is not None and not isinstance(client, LLMClient)
+    )
+
+    def _generate_subquestion(sq_plan: dict) -> Any:
+        idx = sq_plan.get("序號", sq_plans.index(sq_plan) + 1)
+        agent_id = f"sub_generator#{idx}"
+        if use_embedded_subquestions:
+            return spec.parse_subquestion_fn(sq_plan, question_id, params, idx)
+
+        slot_cfg = (
+            params.subquestion_configs[idx - 1]
+            if idx - 1 < len(params.subquestion_configs) else None
+        )
+        sub_user, sub_images = spec.build_subquestion_user_fn(
+            text_raw, params, few_shot_dir, sq_plan, slot_cfg,
+            image_generation_mode, disable_reference_fewshot,
+        )
+
+        attempts = 1 + max(0, config.subgen_retries)
+        result = None
+        for attempt in range(1, attempts + 1):
+            sub_client = (
+                sub_client_factory() if sub_client_factory is not None else LLMClient(config)
+            )
+            if hasattr(sub_client, "set_observer"):
+                sub_client.set_observer(obs)
+            emit_stage(obs, agent_id, "llm_generate", "start", attempt=attempt)
+            try:
+                sq_raw = sub_client.generate_json(
+                    sub_system,
+                    sub_user,
+                    images=sub_images or None,
+                    agent_override=agent_id,
+                )
+                result = spec.parse_subquestion_fn(sq_raw, question_id, params, idx)
+            except Exception as e:
+                print(
+                    f"  Sub-generator {agent_id} attempt {attempt}/{attempts} failed: {e}",
+                    file=sys.stderr,
+                )
+                result = None
+            emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
+            if result is not None:
+                return result
+            if attempt < attempts:
+                print(
+                    f"  Retrying sub-generator {agent_id}"
+                    f" (attempt {attempt + 1}/{attempts})...",
+                    file=sys.stderr,
+                )
+        print(
+            f"  Sub-generator {agent_id} dropped after {attempts} attempt(s)",
+            file=sys.stderr,
+        )
+        return None
+
+    sq_results: dict[int, Any] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_generate_subquestion, sq_plan): sq_plan
+            for sq_plan in sq_plans
+        }
+        for future in concurrent.futures.as_completed(futures):
+            sq_plan = futures[future]
+            idx = sq_plan.get("序號", sq_plans.index(sq_plan) + 1)
+            result = future.result()
+            if result is not None:
+                sq_results[idx] = result
+
+    question.subquestions = [sq_results[k] for k in sorted(sq_results)]
+    _emit_update(on_question_update, question, "draft")
+
+    # ── Post-draft hook (SS: ensure_top_level_visual_spec) ────────────────
+    if spec.ensure_visual_spec_fn is not None:
+        prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
+        spec.ensure_visual_spec_fn(question, params, client)
+        if question.chart_spec != prior_chart_spec:
+            _emit_update(on_question_update, question, "corrected")
+
+    # ── Top-level image rendering ─────────────────────────────────────────
+    chart_image_path: str | None = None
+    if question.chart_spec:
+        img_path = config.output_dir / f"{question_id}.png"
+        print(f"  Rendering image: {img_path}", file=sys.stderr)
+        emit_stage(obs, "image_agent", "render_image", "start")
+        rendered = render_image(
+            question.chart_spec.model_dump(),
+            img_path,
+            question_text=spec.image_question_text_fn(question),
+            html_renderer=html_renderer,
+            llm_client=client,
+            image_generation_mode=image_generation_mode,
+        )
+        emit_stage(obs, "image_agent", "render_image", "end")
+        if rendered:
+            question.圖片 = f"{question_id}.png"
+            chart_image_path = rendered
+            _emit_update(on_question_update, question, "image")
+
+    # ── Subquestion image rendering (SS only) ─────────────────────────────
+    if spec.render_subquestion_images_fn is not None:
+        subquestion_image_paths = spec.render_subquestion_images_fn(
+            question, config, client, html_renderer, image_generation_mode, obs, params,
+        )
+        if chart_image_path is None and subquestion_image_paths:
+            chart_image_path = subquestion_image_paths[0]
+        if subquestion_image_paths:
+            _emit_update(on_question_update, question, "image")
+
+    # ── Verification ──────────────────────────────────────────────────────
+    if not skip_verify:
+        print(f"  Verifying question {question_id}...", file=sys.stderr)
+        emit_stage(obs, "verifier", "verify", "start")
+        result = spec.verify_fn(
+            client, question,
+            chart_image_path=chart_image_path,
+            curriculum_context=curriculum_context,
+        )
+        emit_stage(obs, "verifier", "verify", "end")
+        question.verification = result
+        _emit_update(on_question_update, question, "verified")
+        status = "PASSED" if result.passed else "FAILED"
+        print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
+
+    return question
+
+
+def generate_with_corrections_core(
+    config: Config,
+    client: LLMClient | None,
+    params: Any,
+    question_id: str,
+    spec: SubjectGenerationSpec,
+    *,
+    max_retries: int = 3,
+    skip_verify: bool = False,
+    disable_reference_fewshot: bool = False,
+    html_renderer: PlaywrightRenderer | None = None,
+    image_generation_mode: str = "html",
+    dry_run: bool = False,
+    user_passage: str | None = None,
+    text_word_limit: int | None = None,
+    user_options: list[str] | None = None,
+    user_topic: str | None = None,
+    user_core_question: str | None = None,
+    on_question_update: Callable | None = None,
+    prior_scopes: Sequence[Any] | None = None,
+    curriculum_context: CurriculumContext | None = None,
+) -> Any:
+    """generate_one_core followed by up to max_retries correction passes."""
+    question = generate_one_core(
+        config=config,
+        client=client,
+        params=params,
+        question_id=question_id,
+        spec=spec,
+        dry_run=dry_run,
+        skip_verify=skip_verify,
+        disable_reference_fewshot=disable_reference_fewshot,
+        html_renderer=html_renderer,
+        image_generation_mode=image_generation_mode,
+        user_passage=user_passage,
+        text_word_limit=text_word_limit,
+        user_options=user_options,
+        user_topic=user_topic,
+        user_core_question=user_core_question,
+        on_question_update=on_question_update,
+        prior_scopes=prior_scopes,
+        curriculum_context=curriculum_context,
+    )
+
+    if dry_run or not hasattr(question, "verification"):
+        return question
+
+    obs = client.get_observer() if client else None
+
+    for attempt in range(max_retries):
+        if skip_verify or question.verification is None or question.verification.passed:
+            break
+
+        print(
+            f"  Verification failed; applying correction "
+            f"(attempt {attempt + 1}/{max_retries})...",
+            file=sys.stderr,
+        )
+
+        prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
+
+        chart_image_path: str | None = None
+        if question.圖片:
+            p = config.output_dir / question.圖片
+            if p.exists():
+                chart_image_path = str(p)
+
+        emit_stage(obs, "corrector", "correct", "start", retry=attempt + 1)
+        question = spec.correct_fn(
+            client, question, question.verification,
+            chart_image_path=chart_image_path,
+            curriculum_context=curriculum_context,
+        )
+        emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
+        _emit_update(on_question_update, question, "corrected")
+
+        new_chart_image_path: str | None = None
+        if question.chart_spec and question.chart_spec != prior_chart_spec:
+            img_path = config.output_dir / f"{question_id}.png"
+            print(f"  Chart spec changed; re-rendering image: {img_path}", file=sys.stderr)
+            emit_stage(obs, "image_agent", "render_image", "start")
+            rendered = render_image(
+                question.chart_spec.model_dump(),
+                img_path,
+                question_text=spec.image_question_text_fn(question),
+                html_renderer=html_renderer,
+                llm_client=client,
+                image_generation_mode=image_generation_mode,
+            )
+            emit_stage(obs, "image_agent", "render_image", "end")
+            if rendered:
+                question.圖片 = f"{question_id}.png"
+                new_chart_image_path = rendered
+                _emit_update(on_question_update, question, "image")
+        elif question.圖片:
+            p = config.output_dir / question.圖片
+            new_chart_image_path = str(p) if p.exists() else None
+
+        if not skip_verify:
+            emit_stage(obs, "verifier", "verify", "start", retry=attempt + 1)
+            result = spec.verify_fn(
+                client, question,
+                chart_image_path=new_chart_image_path,
+                curriculum_context=curriculum_context,
+            )
+            emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
+            question.verification = result
+            _emit_update(on_question_update, question, "verified")
+            status = "PASSED" if result.passed else "FAILED"
+            print(f"  Re-verification {status}: {result.details[:100]}", file=sys.stderr)
+
+    return question

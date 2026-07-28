@@ -19,6 +19,17 @@ When a batch generates `count > 1` questions, each subject's batch loop accumula
 ### Web confirmation dialog pre-draw
 The web form always shows both 學習內容 and 學習表現 in the confirmation step before submission. If the user made no manual selection, the frontend pre-draws a random subset (1–3 items for 學習內容, 1–2 for 學習表現) from the available pool before displaying the confirmation screen. What is shown is exactly what will be sent to the backend — no further randomness happens on the backend for those fields when they are present.
 
+For 社會領域 and 自然科學 requests that specify `sub_question_count`, the
+frontend also pre-draws per-小題 學習內容 (1–3) and 學習表現 (1–2) from
+the currently-active global pool whenever a 子題's per-小題 selection is
+empty. The drawn codes appear in the confirmation screen under a
+"各小題配置" section (one card per 小題) and are sent to the backend as
+`subquestion_configs[*].learning_content` / `learning_performance`.
+Explicit per-小題 selections are preserved verbatim and never
+overwritten. Empty global pools disable per-小題 auto-draw for that
+field, in which case the backend's `or global pool` prompt-build
+fallback still applies at generation time.
+
 ### Verify + correct loop
 1. First call (Sonnet): generates the question and solution. **For math,** this is a single call producing the full question. **For social studies and natural sciences,** this is a two-stage pipeline: a **文本生成器** call produces the shared 核心問題/文本/取材來源 plus an N-entry 子題 plan, then N concurrent **子題產生器** calls each write one complete 子題 (via `ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6; failed/unparseable 子題 calls get up to `SUBGEN_RETRIES` fresh retries, default 1, before the slot is dropped); the assembled 題組 then enters the verify/correct loop.
 2. Chart/image specs are rendered to PNG before verification so the verifier can see them. Math and natural sciences render top-level `chart_spec`; social studies also renders `subquestions[*].chart_spec` to per-小題 PNGs.
@@ -108,7 +119,7 @@ Few-shot examples live under `data/natural_sciences/few_shot/` in one folder per
 | `Complex-multiple-choice/` | PISA 複選 |
 | `Constructed-response/` | PISA 建構反應題 |
 
-Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot/{style}/`) or a `few_shot_examples.csv` (parallel to social studies). The repo currently includes 28 JSON examples across these folders. The data loader (`src/natural_sciences/data_loader.py`) falls back to scanning all subdirectories when `q_type` is unknown.
+Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot/{style}/`) or a `few_shot_examples.csv` (parallel to social studies). The repo ships a pool of JSON examples across these folders (count it with `ls data/natural_sciences/few_shot/*/*.json | wc -l`). The data loader (`src/natural_sciences/data_loader.py`) falls back to scanning all subdirectories when `q_type` is unknown.
 
 ## Key Files
 
@@ -157,7 +168,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/natural_sciences/planner.py` | Thin shim over `src.common.planner.plan_core_questions`; PISA-Science prompt template (自然科學領域命題教師) |
 | `src/natural_sciences/sampler.py` | PISA-Science sampler: picks grade (學習階段 derived per-question via `grade_to_learning_stage`, so grades 10-12 draw 第五學習階段 pools), 情境 + 情境子類別 (parent-child constrained), 題型, 科學能力 (1–2 of 6: 能力一/二/三 + 環境能力一/二/三), 學習表現 (1–2), 學習內容 (1–3 preferentially derived from chosen 學習表現 via `對應學習內容`). No 科目 buckets. Accepts sub_question_count (3-7), question_word_limit, option_word_limit, subquestion_configs — resolves per-小題 SubQuestionConfig rows with random q_type fill (parallel to social studies); per-小題 LC/LP are preserved as raw user selections and not pre-filled with the global pool. |
 | `src/natural_sciences/schemas.py` | Pydantic models: `ExamQuestion` (subquestions[], 科學能力, 情境子類別, no 核心素養 at top level), `SubQuestion` (科學能力 replaces 社會領域 核心素養; 科目 fixed as 自然科學), `ScienceCompetency` (6-member enum), `QuestionSubContext`. No `QuestionSubject` enum. Now includes `SubQuestionConfig` (per-小題 overrides: question_type/instruction/content_type/image_generation_mode/word limits/LC/LP) and `出題指示` on `SubQuestion` — parallel to social studies. |
-| `src/natural_sciences/data_loader.py` | Hybrid few-shot loader: scans `data/natural_sciences/few_shot/{q_type}/` for `*.json` and optional `few_shot_examples.csv`; falls back to all subdirs when q_type unknown. Current repo includes 28 JSON examples. |
+| `src/natural_sciences/data_loader.py` | Hybrid few-shot loader: scans `data/natural_sciences/few_shot/{q_type}/` for `*.json` and optional `few_shot_examples.csv`; falls back to all subdirs when q_type unknown. Example count is not pinned here — see `data/natural_sciences/few_shot/`. |
 | `src/natural_sciences/context_builder.py` | PISA-Science prompt assembly; `curriculum_texts(learning_stage, lc_codes)` builds the `## 課程綱要參考` block (學習內容 + 學習表現 filtered to the grade-derived 學習階段; 跨科概念 narrowed to the sampled codes' concept groups with full-taxonomy fallback), injected into the system prompt; adds `build_text_system/user_prompt` and `build_subquestion_system/user_prompt` for the two-stage pipeline; `build_text_user_prompt` and `build_subquestion_user_prompt` accept `disable_reference_fewshot: bool = False`; original builders retained; `build_subquestion_user_prompt` accepts an optional `cfg: SubQuestionConfig` for per-slot LC/LP; explicit codes use hard "不得替換或新增" wording; public `LC_INSTRUCTIONS`/`LP_INSTRUCTIONS` aliases exported. |
 | `src/natural_sciences/curriculum_codes.py` | Deterministic 學習內容/學習表現 code validation (issue #92): normalized lookup over the NS curriculum JSON (Unicode Ⅰ–Ⅴ ↔ ASCII roman-numeral spellings), `canonical_lc/lp`, `repair_lc/lp_refs` (canonicalize valid codes, drop unknown, fall back to the sampled pool), `validate_question_codes`. Parse-time repair runs in `cli.py` `_parse_subquestion`/`_parse_question` (cfg-pinned per-小題 codes stay verbatim); the verifier appends `[課綱代碼檢核]` issues to details and forces `passed=False` on unknown/missing codes; the corrector keeps its metadata freeze but canonicalizes codes on LLM-added subquestions. |
 | `src/natural_sciences/verifier.py` | Explicit "寬鬆通過、只攔重大問題" stance — more lenient than math's "明確錯誤"; otherwise parallel architecture (multimodal when chart PNG present) Deterministic `[課綱代碼檢核]` check (issue #92) rejects unknown/missing 學習內容/學習表現 codes regardless of the LLM verdict.  |
@@ -494,3 +505,17 @@ Calls 3 + 4 may repeat up to `max_retries` times (default 3, via `LLM_MAX_RETRIE
 ### Randomness Summary
 
 All RNG is `random.Random(seed)` per question. Points: grade from `_GRADES` (sampler.py:38), 情境 (41-46), 題型種類 (49), 題型 (52), 數學思考 (55-57), 學習內容 (60-64), style (67), few-shot pick (context_builder.py:208-209).
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues at `paulpengtw/exam-generation`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary, label string equals role name. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.

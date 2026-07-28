@@ -3,10 +3,12 @@
 Figure routing: any `chart_spec` this module instructs the model to emit
 (top-level 題組 material or per-小題 supplements) must follow the rule in
 ``docs/figure-rendering-policy.md`` — precise/quantitative statistical charts
-use ``render_mode: "chart"`` (matplotlib); illustrative figures — maps,
-posters, tables, scenario cards — use ``render_mode: "html"`` (LLM-HTML +
-Playwright). See ``CONTENT_TYPE_INSTRUCTIONS`` below for the per-``文本素材類型``
-mapping.
+use ``render_mode: "chart"`` (matplotlib); structured or semantic illustrative
+figures (menus, posters, scenario cards, tables with domain annotations) use
+``render_mode: "html"`` (LLM-HTML + Playwright); realistic diagrams (maps with
+real coastlines, historical images, scenario 寫實圖) use
+``render_mode: "gpt_image"`` (OpenAI image API). See ``CONTENT_TYPE_INSTRUCTIONS``
+below for the per-``文本素材類型`` mapping.
 """
 
 from __future__ import annotations
@@ -66,13 +68,21 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     ),
     "含圖片": (
         "本題組必須包含圖片式或視覺式非連續素材，例如地圖、圖解、廣告、表單、海報或網頁畫面。"
-        "請在題組頂層輸出非 null 的 `chart_spec`，優先使用 `render_mode: \"html\"`，"
-        "並在 `description` 與 `data` 中完整描述版面與內容。"
+        "請在題組頂層輸出非 null 的 `chart_spec`，並依圖片家族選擇 `render_mode`："
+        "\n"
+        "- **寫實圖 / 地理圖像** — 帶真實海岸線或行政區劃的地圖、歷史照片式的情境圖、"
+        "文物照片式插畫、需要接近寫實筆觸的場景插圖，請使用 `render_mode: \"gpt_image\"`。"
+        "\n"
+        "- **結構化 / 版面** — 廣告、表單、海報、網頁畫面、比較欄位、含語意標註的表格，"
+        "請使用 `render_mode: \"html\"`。"
+        "\n"
+        "在 `description` 與 `data` 中完整描述版面與內容。"
         "（重要）圖片必須是作答的必要條件：至少一道小題的答案必須直接依賴圖片中才有的資訊，無法僅憑文本回答。"
         "設計時請先確定「移除圖片後此題是否仍可作答」——若可以，請重新設計圖片，使其承載文本中未涵蓋的關鍵資訊"
         "（例如地圖上的地名/路線/分布、廣告上的價格/期限/規則、表單上的數據欄位）。"
-        f"（示意圖聲明）圖片為示意用途，非完全等比例繪製；請在 `chart_spec.description` 中要求下游 HTML 產生器"
-        f"將「{IMAGE_DISCLAIMER}」以 caption 呈現在圖片下緣或版面空白處。"
+        f"（示意圖聲明）圖片為示意用途，非完全等比例繪製；若使用 `render_mode: \"html\"`，"
+        f"請在 `chart_spec.description` 中要求下游 HTML 產生器將「{IMAGE_DISCLAIMER}」"
+        f"以 caption 呈現在圖片下緣或版面空白處。"
     ),
     "graphs/charts/tables": (
         "本題組必須包含圖表或表格素材。統計圖（直方圖、折線圖、圓餅圖等）請使用 `render_mode: \"chart\"`；"

@@ -51,7 +51,8 @@ def render_chart(chart_spec: dict, output_path: str | Path) -> str | None:
     """Render a statistical chart from a chart_spec dict and save as PNG.
 
     Handles render_mode="chart" types: histogram, boxplot, line_chart, pie_chart.
-    Returns the output path on success, or None if chart_type is unknown.
+    Returns the output path on success, or None if chart_type is unknown
+    or the renderer produced no file (e.g. an empty-segments pie spec).
     """
     output_path = Path(output_path)
     chart_type = chart_spec.get("chart_type", "")
@@ -68,7 +69,7 @@ def render_chart(chart_spec: dict, output_path: str | Path) -> str | None:
         return None
 
     renderer(chart_spec, output_path)
-    return str(output_path)
+    return str(output_path) if output_path.exists() else None
 
 
 def _render_histogram(spec: dict, output_path: Path) -> None:
@@ -294,6 +295,18 @@ def render_image(
         try:
             prompt = _build_gpt_image_prompt(image_spec, question_text)
             print("  Generating image via GPT image model...", file=sys.stderr)
+            return llm_client.generate_image(prompt, output_path)
+        except Exception as e:
+            print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
+            return None
+
+    if render_mode == "gpt_image":
+        if llm_client is None:
+            print("  Warning: render_mode='gpt_image' requires LLMClient", file=sys.stderr)
+            return None
+        try:
+            prompt = _build_gpt_image_prompt(image_spec, question_text)
+            print("  Generating image via GPT image model (spec-driven)...", file=sys.stderr)
             return llm_client.generate_image(prompt, output_path)
         except Exception as e:
             print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)

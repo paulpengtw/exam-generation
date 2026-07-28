@@ -6,24 +6,22 @@ import os
 from pathlib import Path
 
 from src.common import core_competency_loader as _base
+from src.common.subject_spec import NATURAL_SCIENCES as _SPEC
 
-_DATA_PATH = (
-    Path(__file__).parent.parent.parent
-    / "data" / "natural_sciences" / "curriculum" / "core_competencies.json"
-)
-_SUBJECT_PREFIX = "自"
+_DATA_PATH = _SPEC.core_competency_data_path
+_SUBJECT_PREFIX = _SPEC.core_competency_subject_prefix
 
 
 def load_core_competencies(path: Path | None = None) -> dict:
     if path is None:
-        env = os.environ.get("NATURAL_SCIENCES_CORE_COMPETENCIES_PATH")
+        env = os.environ.get(_SPEC.core_competency_path_env)
         path = Path(env) if env else _DATA_PATH
     return _base.load_core_competencies(path)
 
 
 def build_core_competency_enum(data: dict) -> type:
     return _base.build_core_competency_enum(
-        data, subject_prefix=_SUBJECT_PREFIX, enum_name="NaturalCoreCompetency"
+        data, subject_prefix=_SUBJECT_PREFIX, enum_name=_SPEC.core_competency_enum_name
     )
 
 

@@ -54,6 +54,14 @@ describe("history api client", () => {
       }),
     );
     const blob = await downloadHistoryJson("abc");
-    expect(blob).toBeInstanceOf(Blob);
+    // Cross-realm jsdom pitfall: Response.blob() in node 20 returns a Blob from
+    // the fetch/jsdom realm, which is a different object than the node global `Blob`.
+    // `instanceof Blob` therefore fails on node 20 even when the value is a genuine
+    // Blob. Use structural checks instead — they are realm-independent and strictly
+    // stronger than instanceof (they also verify content, which instanceof never did).
+    expect(typeof blob.text).toBe("function");
+    expect(typeof blob.size).toBe("number");
+    expect(blob.type).toBe("application/json");
+    expect(await blob.text()).toBe('{"a":1}');
   });
 });

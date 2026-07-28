@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
-import ParamForm, { type GenerateParams as FormParams } from "../components/ParamForm";
+import ParamForm, { type FormParams } from "../components/ParamForm";
 import ProgressLog from "../components/ProgressLog";
 import QuestionCard from "../components/QuestionCard";
 import { useGenerate } from "../hooks/useGenerate";
@@ -34,7 +34,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const { status, jobsAhead, progressLines, results, displayResults, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
+  const { status, progressLines, results, displayResults, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
 
   const handleLogout = () => {
     logout();
@@ -64,7 +64,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           ? params.image_generation_mode
           : undefined,
       subject_filter:
-        subject === "social_studies" || subject === "math" ? params.subject_filter : undefined,
+        subject === "social_studies" || subject === "math"
+          ? (params.subject_filter ? [params.subject_filter] : undefined)
+          : undefined,
       topic:
         subject === "social_studies" || subject === "math" || subject === "natural_sciences"
           ? params.topic
@@ -98,6 +100,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         subject === "social_studies" || subject === "natural_sciences" ? params.subquestion_configs : undefined,
       model_plan: params.model_plan,
       model_execute: params.model_execute,
+      difficulty: params.difficulty,
+      coverage_mode: subject === "social_studies" ? params.coverage_mode : undefined,
+      text_word_limit: params.text_word_limit,
     });
   };
 
@@ -169,7 +174,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           <ParamForm
             subject={subject}
             onSubmit={handleSubmit}
-            disabled={status === "generating" || status === "queued"}
+            disabled={status === "generating"}
             initialParams={prefillParams ?? undefined}
           />
         </section>
@@ -182,7 +187,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
         {showProgress && (
           <section className="rounded-lg border bg-white p-4 shadow-sm">
-            <ProgressLog lines={progressLines} status={status} jobsAhead={jobsAhead} errorMessage={errorMessage} llmCalls={llmCalls} />
+            <ProgressLog lines={progressLines} status={status} errorMessage={errorMessage} llmCalls={llmCalls} />
           </section>
         )}
 
