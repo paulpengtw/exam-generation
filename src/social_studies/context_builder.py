@@ -937,7 +937,11 @@ def build_subquestion_user_prompt(
     if rng is None:
         rng = random.Random()
 
-    q_type = sq_plan.get("題型", "")
+    q_type = (
+        cfg.question_type.value
+        if cfg is not None and cfg.question_type is not None
+        else sq_plan.get("題型", "")
+    )
     example_groups = (
         [] if disable_reference_fewshot else load_few_shot_example_groups(few_shot_dir)
     )

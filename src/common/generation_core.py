@@ -81,6 +81,15 @@ def generate_one_core(
     question = spec.parse_text_shell_fn(text_raw, question_id, params, config.model_execute)
 
     sq_plans: list[dict] = text_raw.get("subquestions", [])
+    if params.sub_question_count is not None:
+        sq_plans = sq_plans[:params.sub_question_count]
+        if len(sq_plans) < params.sub_question_count:
+            fallback_plans = spec.make_fallback_sq_plans_fn(
+                params, params.sub_question_count,
+            )
+            # Known limitation: padded 小題 skip the 文本生成器 coherence pass,
+            # so their angle may overlap a sibling 小題.
+            sq_plans.extend(fallback_plans[len(sq_plans):])
     if not sq_plans:
         n = params.sub_question_count or 3
         sq_plans = spec.make_fallback_sq_plans_fn(params, n)
@@ -130,6 +139,33 @@ def generate_one_core(
                 )
                 result = None
             emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
+            if result is not None:
+                configured_type = (
+                    slot_cfg.question_type
+                    if slot_cfg is not None else None
+                )
+                if configured_type is not None:
+                    field = type(result).model_fields.get("題型")
+                    enum_type = field.annotation if field is not None else None
+                    try:
+                        coerced_type = (
+                            enum_type(configured_type)
+                            if enum_type is not None else None
+                        )
+                    except (TypeError, ValueError) as e:
+                        print(
+                            f"  Could not enforce 題型 for {agent_id}: {e}",
+                            file=sys.stderr,
+                        )
+                    else:
+                        if coerced_type is None:
+                            print(
+                                f"  Could not enforce 題型 for {agent_id}: "
+                                "field has no declared enum type",
+                                file=sys.stderr,
+                            )
+                        else:
+                            result.題型 = coerced_type
             if result is not None:
                 return result
             if attempt < attempts:
