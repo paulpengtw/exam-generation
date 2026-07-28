@@ -10,6 +10,9 @@ const tMock = vi.hoisted(() => {
     "form.difficulty": "Difficulty",
     "form.text_word_limit": "文本字數限制",
     "form.unlimited": "不限",
+    "form.subject_filter": "科目",
+    "form.subject_filter_natural_sciences": "依科目篩選學習內容選項",
+    "form.subject_filter_natural_sciences_help": "此選擇僅篩選學習內容選項，不會作為出題參數送出。",
     "form.btn_generate": "Generate",
     "form.btn_confirm_send": "Confirm",
     "form.error_set_type_required": "題型種類 is required.",
@@ -49,6 +52,72 @@ const FAKE_MATH_SCHEMA = {
   學習表現: [],
   學習內容: [],
 };
+
+const FAKE_SOCIAL_SCHEMA = {
+  ...FAKE_MATH_SCHEMA,
+  題型種類: [{ value: "題組題", instruction: "" }],
+  科目: [{ value: "歷史", instruction: "" }],
+};
+
+const FAKE_SCIENCE_SCHEMA = {
+  ...FAKE_SOCIAL_SCHEMA,
+  情境: [{ value: "Personal", instruction: "" }],
+  情境子類別: [{ value: "健康", parent: "Personal", instruction: "" }],
+  科學能力: [{ value: "能力一", instruction: "" }],
+  科目: [
+    { value: "生物", instruction: "" },
+    { value: "化學", instruction: "" },
+  ],
+  學習內容: [
+    { value: "BDa-IV-1", instruction: "生物內容", 科目: "生物" },
+    { value: "JFa-IV-1", instruction: "化學內容", 科目: "化學" },
+    { value: "INa-IV-1", instruction: "共通內容", 科目: "" },
+  ],
+};
+
+describe("ParamForm subject-filter label", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  it("renders the 學習內容 narrowing label instead of 科目 for 自然科學", async () => {
+    getSchemasMock.mockResolvedValue(FAKE_SCIENCE_SCHEMA);
+
+    render(<ParamForm subject="natural_sciences" onSubmit={() => {}} disabled={false} />);
+
+    expect(await screen.findByText("依科目篩選學習內容選項", { selector: "label" })).toBeInTheDocument();
+    expect(screen.queryByText("科目", { selector: "label", exact: true })).not.toBeInTheDocument();
+    expect(screen.getByText("此選擇僅篩選學習內容選項，不會作為出題參數送出。")).toBeInTheDocument();
+  });
+
+  it("keeps the 科目 label for 數學 and 社會領域", async () => {
+    getSchemasMock.mockResolvedValue(FAKE_MATH_SCHEMA);
+    const math = render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+    expect(await screen.findByText("科目", { selector: "label", exact: true })).toBeInTheDocument();
+    math.unmount();
+
+    getSchemasMock.mockResolvedValue(FAKE_SOCIAL_SCHEMA);
+    render(<ParamForm subject="social_studies" onSubmit={() => {}} disabled={false} />);
+    expect(await screen.findByText("科目", { selector: "label", exact: true })).toBeInTheDocument();
+  });
+
+  it("filters 自然科學 學習內容 options by the selected 科目", async () => {
+    getSchemasMock.mockResolvedValue(FAKE_SCIENCE_SCHEMA);
+    render(<ParamForm subject="natural_sciences" onSubmit={() => {}} disabled={false} />);
+
+    const subjectOption = await screen.findByRole("option", { name: "化學" });
+    expect(screen.getByText("BDa-IV-1")).toBeInTheDocument();
+    expect(screen.getByText("JFa-IV-1")).toBeInTheDocument();
+    expect(screen.getByText("INa-IV-1")).toBeInTheDocument();
+
+    fireEvent.change(subjectOption.closest("select")!, { target: { value: "化學" } });
+
+    await waitFor(() => expect(screen.queryByText("BDa-IV-1")).not.toBeInTheDocument());
+    expect(screen.getByText("JFa-IV-1")).toBeInTheDocument();
+    expect(screen.getByText("INa-IV-1")).toBeInTheDocument();
+  });
+});
 
 describe("ParamForm difficulty dropdown", () => {
   beforeEach(() => {

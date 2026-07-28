@@ -1401,7 +1401,13 @@ export default function ParamForm({
 
       {schemas.科目 && schemas.科目.length > 0 && (
         <div>
-          <label className="block text-sm font-medium">{t("form.subject_filter")}</label>
+          <label className="block text-sm font-medium">
+            {t(
+              subject === "natural_sciences"
+                ? "form.subject_filter_natural_sciences"
+                : "form.subject_filter",
+            )}
+          </label>
           <select
             value={subjectFilter}
             onChange={(e) => {
@@ -1417,6 +1423,11 @@ export default function ParamForm({
               </option>
             ))}
           </select>
+          {subject === "natural_sciences" && (
+            <p className="mt-1 text-sm text-gray-500">
+              {t("form.subject_filter_natural_sciences_help")}
+            </p>
+          )}
         </div>
       )}
 
