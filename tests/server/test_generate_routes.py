@@ -186,10 +186,12 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
 
 
 def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> None:
+    import dataclasses
     from types import SimpleNamespace
 
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
     from src.social_studies.schemas import ExamQuestion
 
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
@@ -216,22 +218,23 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
         kwargs["on_question_update"](question, "draft")
         return question
 
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_with_corrections(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
+
     async def collect_events():
         events = []
-        async for event in service.generate_question_stream(
+        async for event in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
+            subjects={"social_studies": fake_spec},
         ):
             events.append(event)
         return events
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
-    try:
-        events = asyncio.run(collect_events())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+    events = asyncio.run(collect_events())
 
     updates = [event for event in events if event["event"] == "question_update"]
     results = [event for event in events if event["event"] == "result"]
@@ -380,6 +383,7 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
 
 
 def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
+    import dataclasses
     from types import SimpleNamespace
 
     from sqlalchemy import select
@@ -389,8 +393,9 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
         create_async_engine,
     )
 
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
     from src.social_studies.schemas import ExamQuestion
 
@@ -402,10 +407,6 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
 
     asyncio.run(_init())
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-
-    # Patch service.AsyncSessionLocal so the recorder's write path uses our engine.
-    original_sessionmaker = service.AsyncSessionLocal
-    service.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
 
     log_id = uuid.uuid4()
     config = ServerConfig(
@@ -458,23 +459,23 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
             正確解題分析=["a"],
         )
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_with_corrections(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
     async def _drive() -> None:
-        async for _ in service.generate_question_stream(
+        async for _ in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
             generation_log_id=log_id,
+            subjects={"social_studies": fake_spec},
+            session_factory=SessionLocal,
         ):
             pass
 
-    try:
-        asyncio.run(_drive())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
-        service.AsyncSessionLocal = original_sessionmaker  # type: ignore[assignment]
+    asyncio.run(_drive())
 
     async def _read() -> list[LLMExchange]:
         async with SessionLocal() as s:
@@ -503,6 +504,7 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
     stays unique/contiguous across the whole generation_log, instead of each
     worker restarting its own itertools.count(1) and colliding.
     """
+    import dataclasses
     from types import SimpleNamespace
 
     from sqlalchemy import select
@@ -512,8 +514,9 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
         create_async_engine,
     )
 
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
     from src.social_studies.schemas import ExamQuestion
 
@@ -525,10 +528,6 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
 
     asyncio.run(_init())
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-
-    # Patch service.AsyncSessionLocal so the recorder's write path uses our engine.
-    original_sessionmaker = service.AsyncSessionLocal
-    service.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
 
     log_id = uuid.uuid4()
     config = ServerConfig(
@@ -581,23 +580,23 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
             正確解題分析=["a"],
         )
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_with_corrections(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
     async def _drive() -> None:
-        async for _ in service.generate_question_stream(
+        async for _ in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
             generation_log_id=log_id,
+            subjects={"social_studies": fake_spec},
+            session_factory=SessionLocal,
         ):
             pass
 
-    try:
-        asyncio.run(_drive())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
-        service.AsyncSessionLocal = original_sessionmaker  # type: ignore[assignment]
+    asyncio.run(_drive())
 
     async def _read() -> list[LLMExchange]:
         async with SessionLocal() as s:
@@ -619,6 +618,7 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
 
 
 def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
+    import dataclasses
     from types import SimpleNamespace
 
     from sqlalchemy import select
@@ -628,8 +628,9 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
         create_async_engine,
     )
 
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
     from src.social_studies.schemas import ExamQuestion
 
@@ -641,8 +642,6 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
 
     asyncio.run(_init())
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-    original_sessionmaker = service.AsyncSessionLocal
-    service.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
 
     log_id = uuid.uuid4()
     config = ServerConfig(
@@ -677,23 +676,23 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
             題目=["q"], 正確解題分析=["a"],
         )
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_with_corrections  # type: ignore[assignment]
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_with_corrections(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
     async def _drive() -> None:
-        async for _ in service.generate_question_stream(
+        async for _ in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
             generation_log_id=log_id,
+            subjects={"social_studies": fake_spec},
+            session_factory=SessionLocal,
         ):
             pass
 
-    try:
-        asyncio.run(_drive())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
-        service.AsyncSessionLocal = original_sessionmaker  # type: ignore[assignment]
+    asyncio.run(_drive())
 
     async def _read_count() -> int:
         async with SessionLocal() as s:
@@ -834,34 +833,33 @@ def test_build_sse_error_returns_structured_payload() -> None:
 
 def test_service_worker_error_event_is_structured(tmp_path) -> None:
     """The per-question worker exception path must emit a structured error dict."""
+    import dataclasses
     from types import SimpleNamespace
 
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
 
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
     params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
 
-    def fake_generate_raises(**kwargs):
+    def fake_do_generate(rng_params, overrides, **kwargs):
         raise RuntimeError("boom")
 
-    original = service.ss_generate_with_corrections
-    service.ss_generate_with_corrections = fake_generate_raises  # type: ignore[assignment]
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
     async def collect_events():
         events = []
-        async for event in service.generate_question_stream(
+        async for event in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
+            subjects={"social_studies": fake_spec},
         ):
             events.append(event)
         return events
 
-    try:
-        events = asyncio.run(collect_events())
-    finally:
-        service.ss_generate_with_corrections = original  # type: ignore[assignment]
+    events = asyncio.run(collect_events())
 
     error_events = [e for e in events if e["event"] == "error"]
     assert len(error_events) == 1, f"expected 1 error event, got: {error_events}"

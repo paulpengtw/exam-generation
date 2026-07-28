@@ -14,7 +14,7 @@ import json
 import logging
 import threading
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import datetime
 from typing import Any
 
@@ -22,31 +22,12 @@ from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.exchange_recorder import ExchangeRecorder
 from server.generate.models import GenerateParams, build_sse_error
-from server.generate.subjects import SUBJECTS
+from server.generate.subjects import SUBJECTS, SubjectSpec
 from server.models import GenerationRecord, LLMExchange
-from src.cli import (
-    generate_with_corrections as math_generate_with_corrections,  # noqa: F401 — monkeypatch seam
-)
 from src.common.batch_dedup import PriorScope
 from src.llm_client import LLMClient, LLMObserver
-from src.natural_sciences.cli import (
-    generate_with_corrections as ns_generate_with_corrections,  # noqa: F401 — monkeypatch seam
-)
-from src.natural_sciences.sampler import (
-    sample_params as ns_sample_params,  # noqa: F401 — monkeypatch seam
-)
 from src.natural_sciences.schemas import ExamQuestion as NSExamQuestion
-from src.sampler import sample_params as math_sample_params  # noqa: F401 — monkeypatch seam
 from src.schemas import ExamQuestion as MathExamQuestion
-from src.social_studies.cli import (
-    _plan_batch_briefs as ss_plan_batch_briefs,  # noqa: F401 — monkeypatch seam
-)
-from src.social_studies.cli import (
-    generate_with_corrections as ss_generate_with_corrections,  # noqa: F401 — monkeypatch seam
-)
-from src.social_studies.sampler import (
-    sample_params as ss_sample_params,  # noqa: F401 — monkeypatch seam
-)
 from src.social_studies.schemas import ExamQuestion as SSExamQuestion
 
 logger = logging.getLogger(__name__)
@@ -123,9 +104,11 @@ async def _persist_generation_record(
     subject: str,
     params: GenerateParams,
     payload: dict[str, Any],
+    session_factory: Any = None,
 ) -> None:
     """Insert one generation_records row; log-and-swallow on failure so
     persistence never breaks generation."""
+    _factory = session_factory if session_factory is not None else AsyncSessionLocal
     try:
         record = GenerationRecord(
             user_id=user_id,
@@ -136,7 +119,7 @@ async def _persist_generation_record(
             question_json=_strip_image_base64(payload),
             image_files=_extract_image_files(payload),
         )
-        async with AsyncSessionLocal() as session:
+        async with _factory() as session:
             session.add(record)
             await session.commit()
     except Exception as exc:  # noqa: BLE001 — best-effort persistence
@@ -149,8 +132,17 @@ async def generate_question_stream(
     app_state: Any,
     user_id: uuid.UUID | None = None,
     generation_log_id: uuid.UUID | None = None,
+    *,
+    subjects: Mapping[str, SubjectSpec] | None = None,
+    session_factory: Any = None,
+    client_factory: Callable[..., LLMClient] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Async generator yielding SSE event dicts for one or more questions.
+
+    Injectable collaborators (keyword-only, all default to production singletons):
+      subjects        — the subject-spec registry; defaults to SUBJECTS.
+      session_factory — async session maker; defaults to AsyncSessionLocal.
+      client_factory  — LLMClient constructor; defaults to LLMClient.
 
     Event shapes:
       - {"event": "started",  "data": ""}
@@ -160,6 +152,10 @@ async def generate_question_stream(
       - {"event": "error",    "data": str}
       - {"event": "done",     "data": ""}
     """
+    _subjects = subjects if subjects is not None else SUBJECTS
+    _session_factory = session_factory if session_factory is not None else AsyncSessionLocal
+    _client_factory = client_factory if client_factory is not None else LLMClient
+
     yield {"event": "started", "data": ""}
 
     loop = asyncio.get_running_loop()
@@ -169,7 +165,7 @@ async def generate_question_stream(
     html_renderer = await renderer_pool.get() if renderer_pool else None
 
     # --- Registry lookup — replaces all is_social_studies / is_natural_sciences checks ---
-    spec = SUBJECTS[params.subject]
+    spec = _subjects[params.subject]
 
     # Site 1: enum coercion + subject-specific app_state extraction
     overrides = spec.coerce_overrides(params, app_state)
@@ -219,7 +215,7 @@ async def generate_question_stream(
             return None
 
         async def _insert(row: dict[str, Any]) -> None:
-            async with AsyncSessionLocal() as sess:
+            async with _session_factory() as sess:
                 sess.add(LLMExchange(**row))
                 await sess.commit()
 
@@ -248,13 +244,22 @@ async def generate_question_stream(
                     pass
         return observer
 
-    def _emit_pipeline(event_name: str, **data: object) -> None:
+    def _emit_pipeline(event_name: str, *, _direct: bool = False, **data: object) -> None:
+        """Enqueue a ``pipeline`` SSE event.
+
+        Pass ``_direct=True`` when the caller is already on the event loop
+        (e.g. inside ``_wait_and_signal``). That uses ``queue.put_nowait``
+        directly instead of ``loop.call_soon_threadsafe``, so the event lands
+        in the queue immediately rather than being deferred by one tick.
+        """
         import time as _time
 
         payload = {"event_name": event_name, "ts": _time.time(), **data}
-        loop.call_soon_threadsafe(
-            queue.put_nowait, {"event": "pipeline", "data": payload}
-        )
+        envelope = {"event": "pipeline", "data": payload}
+        if _direct:
+            queue.put_nowait(envelope)
+        else:
+            loop.call_soon_threadsafe(queue.put_nowait, envelope)
 
     def _make_question_update_emitter(index: int):
         def emit_question_update(
@@ -370,6 +375,7 @@ async def generate_question_stream(
         config,
         config.creative_planning,
         decoded_subquestion_configs,
+        client_factory=_client_factory,
     )
 
     _emit_pipeline("pipeline_start", total=count)
@@ -381,7 +387,7 @@ async def generate_question_stream(
         model_execute=params.model_execute or config.model_execute,
         model_plan=params.model_plan or config.model_plan,
     )
-    question_clients = [LLMClient(client_config) for _ in range(count)]
+    question_clients = [_client_factory(client_config) for _ in range(count)]
     futures = [
         loop.run_in_executor(None, worker_one, i, question_clients[i])
         for i in range(count)
@@ -389,7 +395,10 @@ async def generate_question_stream(
 
     async def _wait_and_signal() -> None:
         await asyncio.gather(*futures, return_exceptions=True)
-        _emit_pipeline("pipeline_end", total=count)
+        # _direct=True: we are already on the event loop, so calling
+        # _emit_pipeline without _direct would use call_soon_threadsafe and
+        # defer the event by one tick — placing it after done in the queue.
+        _emit_pipeline("pipeline_end", total=count, _direct=True)
         queue.put_nowait({"event": "done", "data": ""})
 
     signal_task = asyncio.create_task(_wait_and_signal())
@@ -407,6 +416,7 @@ async def generate_question_stream(
                     subject=params.subject,
                     params=params,
                     payload=event["data"],
+                    session_factory=_session_factory,
                 )
             yield event
             if event["event"] in ("done", "error"):

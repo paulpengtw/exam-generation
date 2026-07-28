@@ -484,13 +484,15 @@ def test_server_generate_stream_accumulates_prior_scopes_across_math_workers(tmp
     """
     import asyncio
     import concurrent.futures
+    import dataclasses
     import threading
     import types
     from pathlib import Path
 
     from server.config import ServerConfig
-    from server.generate import service
     from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
     from src.common.batch_dedup import PriorScope
 
     captured: dict[int, list[PriorScope] | None] = {}
@@ -517,8 +519,10 @@ def test_server_generate_stream_accumulates_prior_scopes_across_math_workers(tmp
             metadata=None,
         )
 
-    original = service.math_generate_with_corrections
-    service.math_generate_with_corrections = fake_math_gwc  # type: ignore[assignment]
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_math_gwc(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["math"], do_generate=fake_do_generate)
 
     app_state = types.SimpleNamespace(
         renderer_pool=None,
@@ -544,14 +548,14 @@ def test_server_generate_stream_accumulates_prior_scopes_across_math_workers(tmp
         loop = asyncio.get_running_loop()
         loop.set_default_executor(concurrent.futures.ThreadPoolExecutor(max_workers=1))
         events: list[dict] = []
-        async for evt in service.generate_question_stream(params, config, app_state):
+        async for evt in generate_question_stream(
+            params, config, app_state,
+            subjects={"math": fake_spec},
+        ):
             events.append(evt)
         return events
 
-    try:
-        asyncio.run(_drive())
-    finally:
-        service.math_generate_with_corrections = original  # type: ignore[assignment]
+    asyncio.run(_drive())
 
     # 2 workers ran sequentially; the second must see the first's scope.
     assert len(captured) == 2

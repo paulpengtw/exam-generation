@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from server.config import ServerConfig
-from server.generate import service
 from server.generate.models import GenerateParams
+from server.generate.service import generate_question_stream
+from server.generate.subjects import SUBJECTS
 from src.social_studies.schemas import (
     ExamQuestion,
     QuestionMetadata,
@@ -35,19 +36,26 @@ def _fake_generate_with_corrections(**kwargs):
     )
 
 
+def _fake_do_generate(rng_params, overrides, **kwargs):
+    return _fake_generate_with_corrections(params=rng_params, **kwargs)
+
+
+_fake_ss_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=_fake_do_generate)
+
+
 def _run_stream(params: GenerateParams, tmp_path: Path) -> list[dict]:
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
     app_state = SimpleNamespace(renderer_pool=None)
     events: list[dict] = []
 
     async def collect() -> None:
-        async for ev in service.generate_question_stream(params, config, app_state):
+        async for ev in generate_question_stream(
+            params, config, app_state,
+            subjects={"social_studies": _fake_ss_spec},
+        ):
             events.append(ev)
 
-    with patch.object(
-        service, "ss_generate_with_corrections", side_effect=_fake_generate_with_corrections
-    ):
-        asyncio.run(collect())
+    asyncio.run(collect())
     return events
 
 
