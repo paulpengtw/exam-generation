@@ -417,6 +417,7 @@ uv run python -m src.natural_sciences generate --count 5 --seed 1 --batch
 - `--sub-context` is a single value and must be a valid child of the chosen `--context` (the parent-child relationship is defined in `schema_parameters.csv`).
 - 題型 values are PISA-aligned: `Simple-multiple-choice`, `Complex-multiple-choice`, `Constructed-response`.
 - 學習內容 pool is preferentially derived from the chosen 學習表現 codes' `對應學習內容` cross-links, then falls back to the full stage pool.
+- 社會領域 reads 學習階段 once at import from `schema_meta.csv` (currently 第四學習階段, grades 7–9), rather than deriving it from the sampled 年級 as 數學 and 自然科學 do. All 26 shipped 社會領域 學習表現 entries cover only 第四學習階段, so per-grade derivation would currently be a no-op and would yield an empty 學習表現 pool if the grade range were widened to 10–12. If that data is ever extended, update `schema_meta.csv` and switch to per-grade derivation. `src/social_studies/context_builder.py` reads the same module-level stage into the prompt, so it and `src/social_studies/sampler.py` must be updated in lockstep.
 - The verifier uses a lenient "寬鬆通過、只攔重大問題" stance (distinct from math's strict "明確錯誤").
 
 Most flags work identically to social studies: `--grade`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--max-retries`, `--batch`, `--dry-run`, `--output`, `--content-type`, `--image-generation-mode`. Natural sciences does not use `--style`.
