@@ -86,6 +86,40 @@ def test_ns_verifier_appends_distractor_warning() -> None:
     assert "誘答分析提醒" in result.details
 
 
+def test_math_distractor_warning_join_separator_is_chinese_semicolon() -> None:
+    """AC4: Math verifier must join multiple distractor-warning strings with '；'
+    (Chinese semicolon), consistent with SS and NS verifiers.
+
+    A question with 4 option labels but a 誘答分析 that has 1 valid key (A)
+    and 1 unknown key (X) produces two warning strings from
+    ``validate_distractor_keys``:
+      1. "誘答分析缺少選項 B, C, D（...）"
+      2. "誘答分析出現題目未定義的鍵 X"
+
+    With the current space-join in ``src/verifier.py`` the two strings are
+    joined by a plain space; this test is red until the separator is changed
+    to '；' to match SS and NS.
+    """
+    from src.schemas import ExamQuestion
+    from src.verifier import verify_question
+
+    q = ExamQuestion(
+        情境=["個人"], 題型種類="單一題", 題型="選擇題",
+        數學思考=["形成"], 學習內容=[],
+        題目=["Q? (A) 3 (B) 4 (C) 5 (D) 6"],
+        正確解題分析=["A"],
+        # Missing B, C, D  +  unknown key X → two separate warning strings
+        誘答分析={"A": "正確答案：3。", "X": "未知鍵"},
+    )
+    result = verify_question(_FakeVerifierClient(_passed_payload()), q)
+    assert "誘答分析提醒" in result.details
+    block = result.details.split("[誘答分析提醒]")[1].strip()
+    assert "；" in block, (
+        f"Expected '；' (Chinese semicolon) between distractor warnings, "
+        f"consistent with SS and NS verifiers. Got: {block!r}"
+    )
+
+
 @pytest.mark.parametrize("subject", ["math", "ss", "ns"])
 def test_verifier_leaves_details_unchanged_when_no_warnings(subject: str) -> None:
     payload = _passed_payload()

@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from src.common.distractor import validate_distractor_keys
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
-from src.llm_client import LLMClient, extract_json
-from src.social_studies.context_builder import (
-    _CONTENT_TEXT,
-    _PERFORMANCE_INTRO,
-    _PERFORMANCE_TEXT,
-    _build_curriculum_section,
-)
+from src.common.verifier import PostVerifyHook, verify_question_common
+from src.curriculum_context import CurriculumContext, build_curriculum_section
+from src.llm_client import LLMClient
 from src.social_studies.fact_check import fact_check_question, is_current_events
 from src.social_studies.schemas import (
     ChartVerificationResult,
@@ -22,9 +16,11 @@ from src.social_studies.schemas import (
     VerificationResult,
 )
 
-_CURRICULUM_PREFIX: str = _build_curriculum_section(_CONTENT_TEXT, _PERFORMANCE_TEXT, _PERFORMANCE_INTRO)
-
-_VERIFICATION_SYSTEM_PROMPT_CORE = f"""\
+# Curriculum-free core — exported for tests that check subject-specific strings
+# (寬鬆通過、只攔重大問題, 示意圖, IMAGE_DISCLAIMER, 數值, 標籤).
+# The full system prompt used at call time prepends the curriculum section when
+# a CurriculumContext is supplied.
+VERIFICATION_SYSTEM_PROMPT = f"""\
 你是一位108課綱社會領域素養導向命題審核教師，負責審核考試題組的可用性與明顯錯誤。你會收到一道題組，請你：
 
 1. 完全獨立地閱讀文本素材並回答每一道小題（不要看提供的解答）。
@@ -68,12 +64,6 @@ answer_match 的判斷也請寬鬆：
 若題目未附圖表圖片，請省略 chart_verification 欄位。只輸出 JSON，不要輸出其他文字。
 """
 
-VERIFICATION_SYSTEM_PROMPT = (
-    f"{_CURRICULUM_PREFIX}\n\n---\n\n{_VERIFICATION_SYSTEM_PROMPT_CORE}"
-    if _CURRICULUM_PREFIX
-    else _VERIFICATION_SYSTEM_PROMPT_CORE
-)
-
 VERIFICATION_USER_TEMPLATE = """\
 請審核以下社會領域素養導向題組：
 
@@ -116,10 +106,43 @@ def _build_question_text(question: ExamQuestion) -> tuple[str, str, str]:
     return "", parts[0] if parts else "", "\n".join(parts[1:]) if len(parts) > 1 else "\n".join(parts)
 
 
+def _ss_fact_check_hook(
+    question: ExamQuestion,
+    result: VerificationResult,
+    client: LLMClient,
+) -> VerificationResult:
+    """Post-verify hook: optional web-search fact-check for 時事 questions.
+
+    Runs only when the provider is ``"anthropic"`` and the question is
+    classified as 時事 by ``is_current_events``.  Any failure fails open —
+    ``result`` is returned unchanged.
+    """
+    provider = getattr(getattr(client, "config", None), "web_search_provider", "none")
+    max_uses = int(getattr(getattr(client, "config", None), "web_search_max_uses", 5))
+    if provider == "anthropic" and is_current_events(question):
+        fc: FactCheckResult | None = fact_check_question(
+            client, question, provider=provider, max_uses=max_uses,
+        )
+        result.fact_check = fc
+        if fc is not None and fc.verified is False:
+            joined_issues = "；".join(fc.issues) if fc.issues else "（未提供具體事項）"
+            appended = f"事實查證未通過：{joined_issues}"
+            result.details = (
+                f"{result.details}\n\n{appended}" if result.details else appended
+            )
+            result.passed = False
+    return result
+
+
+# Declared on the subject spec: hooks run in this order after the LLM verdict.
+_SS_POST_VERIFY_HOOKS: list[PostVerifyHook] = [_ss_fact_check_hook]
+
+
 def verify_question(
     client: LLMClient,
     question: ExamQuestion,
     chart_image_path: str | None = None,
+    curriculum_context: CurriculumContext | None = None,
 ) -> VerificationResult:
     # Fall back to text-only when the image file is absent or unreadable.
     if chart_image_path is not None and not Path(chart_image_path).exists():
@@ -152,61 +175,23 @@ def verify_question(
             "以下附上題目引用的素材圖片，請檢查素材內容與題目描述是否一致。"
         )
 
-    try:
-        raw = client.generate_with_image(
-            VERIFICATION_SYSTEM_PROMPT, user_prompt, image_path=chart_image_path, purpose="verify"
+    if curriculum_context is not None:
+        curriculum_prefix = build_curriculum_section(curriculum_context)
+        system_prompt = (
+            f"{curriculum_prefix}\n\n---\n\n{VERIFICATION_SYSTEM_PROMPT}"
+            if curriculum_prefix
+            else VERIFICATION_SYSTEM_PROMPT
         )
-        result = extract_json(raw)
+    else:
+        system_prompt = VERIFICATION_SYSTEM_PROMPT
 
-        chart_verif = None
-        if "chart_verification" in result:
-            cv = result["chart_verification"]
-            chart_verif = ChartVerificationResult(
-                chart_data_match=cv.get("chart_data_match", False),
-                chart_labels_correct=cv.get("chart_labels_correct", False),
-                chart_details=cv.get("chart_details", ""),
-            )
-
-        # Aggregate distractor-key warnings across all subquestions.
-        all_warnings: list[str] = []
-        for sq in question.subquestions:
-            warnings = validate_distractor_keys(sq.題目, sq.誘答分析)
-            for w in warnings:
-                all_warnings.append(f"第{sq.序號}題：{w}")
-        details = result.get("details", "")
-        if all_warnings:
-            details = details.rstrip()
-            details += "\n\n[誘答分析提醒] " + "；".join(all_warnings)
-
-        verification = VerificationResult(
-            passed=result.get("passed", False),
-            answer_match=result.get("answer_match", False),
-            details=details,
-            my_answer=result.get("my_answer", ""),
-            provided_answer=result.get("provided_answer", ""),
-            chart_verification=chart_verif,
-        )
-    except (json.JSONDecodeError, ValueError, KeyError) as e:
-        verification = VerificationResult(
-            passed=False,
-            answer_match=False,
-            details=f"Verification failed to parse LLM response: {e}",
-        )
-
-    # Additive fact-check pass — only for 時事 questions when the provider is enabled.
-    provider = getattr(getattr(client, "config", None), "web_search_provider", "none")
-    max_uses = int(getattr(getattr(client, "config", None), "web_search_max_uses", 5))
-    if provider == "anthropic" and is_current_events(question):
-        fc: FactCheckResult | None = fact_check_question(
-            client, question, provider=provider, max_uses=max_uses,
-        )
-        verification.fact_check = fc
-        if fc is not None and fc.verified is False:
-            joined_issues = "；".join(fc.issues) if fc.issues else "（未提供具體事項）"
-            appended = f"事實查證未通過：{joined_issues}"
-            verification.details = (
-                f"{verification.details}\n\n{appended}" if verification.details else appended
-            )
-            verification.passed = False
-
-    return verification
+    return verify_question_common(
+        client=client,
+        question=question,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        verification_result_cls=VerificationResult,
+        chart_verif_cls=ChartVerificationResult,
+        chart_image_path=chart_image_path,
+        post_verify_hooks=_SS_POST_VERIFY_HOOKS,
+    )

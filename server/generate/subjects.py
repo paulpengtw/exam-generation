@@ -271,11 +271,13 @@ def _ss_coerce_overrides(params: Any, app_state: Any) -> dict:
         [SSQuestionSubject(v) for v in params.subject_filter]
         if params.subject_filter else None
     )
+    ss_curriculum_context = getattr(app_state, "ss_curriculum_context", None)
     return {
         "context_override": context_override,
         "set_type_override": set_type_override,
         "q_type_override": q_type_override,
         "subject_override": subject_override,
+        "ss_curriculum_context": ss_curriculum_context,
     }
 
 
@@ -405,6 +407,7 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         user_core_question=kwargs["user_core_question"],
         on_question_update=kwargs["on_question_update"],
         prior_scopes=kwargs["prior_scopes"],
+        curriculum_context=overrides["ss_curriculum_context"],
     )
 
 
@@ -490,12 +493,14 @@ def _ns_coerce_overrides(params: Any, app_state: Any) -> dict:
         [_resolve_enum(v, NSScienceCompetency) for v in params.science_competency]
         if params.science_competency else None
     )
+    ns_curriculum_context = getattr(app_state, "ns_curriculum_context", None)
     return {
         "context_override": context_override,
         "sub_context_override": sub_context_override,
         "set_type_override": set_type_override,
         "q_type_override": q_type_override,
         "science_competency_override": science_competency_override,
+        "ns_curriculum_context": ns_curriculum_context,
     }
 
 
@@ -567,6 +572,7 @@ def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         user_core_question=kwargs["user_core_question"],
         on_question_update=kwargs["on_question_update"],
         prior_scopes=kwargs["prior_scopes"],
+        curriculum_context=overrides["ns_curriculum_context"],
     )
 
 

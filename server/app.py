@@ -27,6 +27,7 @@ from server.history.routes import router as history_router
 from server.models import GenerationRecord, LLMExchange
 from server.rate_limit import limiter
 from server.utility.routes import router as utility_router
+from src.common.subject_spec import NATURAL_SCIENCES, SOCIAL_STUDIES
 from src.curriculum_context import load_curriculum_context
 from src.data_loader import (
     get_grade_content,
@@ -128,6 +129,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Build the canonical math curriculum context once per server process so
     # generator, verifier, and corrector all share the same corpus (issue #154).
     app.state.math_curriculum_context = load_curriculum_context()
+    # Build social-studies and natural-sciences curriculum contexts (issue #158).
+    app.state.ss_curriculum_context = load_curriculum_context(SOCIAL_STUDIES.data_dir)
+    app.state.ns_curriculum_context = load_curriculum_context(NATURAL_SCIENCES.data_dir)
     print(f"Curriculum loaded: {len(curriculum)} grade entries, target grades {grades}")
 
     renderer_pool: asyncio.Queue[PlaywrightRenderer] = asyncio.Queue()
