@@ -69,6 +69,18 @@ class _NaturalSubClient:
         }
 
 
+class _PayloadSubClient:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+
+    def set_observer(self, observer) -> None:
+        pass
+
+    def generate_json(self, system, user, images=None, agent_override=None, **kwargs):
+        idx = int(agent_override.split("#", 1)[1])
+        return {"序號": idx, **self.payload}
+
+
 def _config() -> Config:
     return Config(data_dir=Path("data"), subgen_max_concurrency=7, subgen_retries=0)
 
@@ -160,6 +172,75 @@ def test_社會領域_釘選題型覆寫子題產生器輸出() -> None:
     )
 
     assert question.subquestions[0].題型.value == "開放式建構反應題"
+
+
+def test_社會領域_科目強制為取樣值() -> None:
+    from src.social_studies.cli import generate_one
+    from src.social_studies.sampler import sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    params = sample_params(
+        seed=23,
+        content_type="純文字",
+        sub_question_count=3,
+        subject=[QuestionSubject("歷史")],
+    )
+
+    question = generate_one(
+        config=_config(),
+        client=_TextClient("選擇題", plan_count=3),
+        params=params,
+        question_id="ss_force_subject",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _PayloadSubClient({
+            "科目": ["地理"],
+            "題型": "選擇題",
+            "題目": "測試題目",
+            "答案": "A",
+        }),
+    )
+
+    assert question.subquestions[0].科目 == ["歷史"]
+
+
+def test_社會領域_科目強制不改動其他子題欄位() -> None:
+    from src.social_studies.cli import generate_one
+    from src.social_studies.sampler import sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    params = sample_params(
+        seed=23,
+        content_type="純文字",
+        sub_question_count=3,
+        subject=[QuestionSubject("歷史")],
+    )
+    learning_content = [{"編碼": "歷Ka-Ⅳ-1", "說明": "歷史內容說明"}]
+    learning_performance = [{"編碼": "社1b-Ⅳ-1", "說明": "學習表現說明"}]
+
+    question = generate_one(
+        config=_config(),
+        client=_TextClient("選擇題", plan_count=3),
+        params=params,
+        question_id="ss_force_subject_fields",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _PayloadSubClient({
+            "科目": ["地理"],
+            "學習內容": learning_content,
+            "學習表現": learning_performance,
+            "題型": "選擇題",
+            "題目": "應完整保留的題目",
+            "答案": "應完整保留的答案",
+        }),
+    )
+
+    subquestion = question.subquestions[0]
+    assert subquestion.科目 == ["歷史"]
+    assert [ref.model_dump() for ref in subquestion.學習內容] == learning_content
+    assert [ref.model_dump() for ref in subquestion.學習表現] == learning_performance
+    assert subquestion.題目 == "應完整保留的題目"
+    assert subquestion.答案 == "應完整保留的答案"
 
 
 def test_社會領域_空白題型將計畫寫入提示詞但保留子題產生器輸出() -> None:
@@ -322,6 +403,30 @@ def test_自然科學_釘選題型覆寫子題產生器輸出() -> None:
     )
 
     assert question.subquestions[0].題型.value == "Constructed response"
+
+
+def test_自然科學_科目強制為自然科學() -> None:
+    from src.natural_sciences.cli import generate_one
+    from src.natural_sciences.sampler import sample_params
+
+    params = sample_params(seed=23, content_type="純文字", sub_question_count=3)
+
+    question = generate_one(
+        config=_config(),
+        client=_TextClient("Simple multiple-choice", plan_count=3),
+        params=params,
+        question_id="ns_force_subject",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _PayloadSubClient({
+            "科目": ["生物"],
+            "題型": "Simple multiple-choice",
+            "題目": "測試題目",
+            "答案": "A",
+        }),
+    )
+
+    assert question.subquestions[0].科目 == ["自然科學"]
 
 
 def test_自然科學_空白題型將計畫寫入提示詞但保留子題產生器輸出() -> None:
