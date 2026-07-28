@@ -28,7 +28,11 @@ from server.generate.marshalling import (
     make_queue_observer,
     question_to_event,
 )
-from server.generate.models import GenerateParams, build_sse_error
+from server.generate.models import (
+    GenerateParams,
+    build_sse_error,
+    decode_per_question_params,
+)
 from server.generate.persistence import make_exchange_recorder, persist_generation_record
 from server.generate.subjects import SUBJECTS, SubjectSpec
 from src.llm_client import LLMClient
@@ -44,8 +48,23 @@ def _sample_worker_params(
     batch_sampler: Any,
     batch_user_pinned_lc: bool,
     decoded_subquestion_configs: list[dict] | None,
+    decoded_per_question_params: list[dict[str, Any]] | None = None,
+    app_state: Any = None,
 ) -> Any:
     """Resolve the sampled parameters for one submit/preview worker index."""
+    worker_params = params
+    worker_overrides = overrides
+    worker_subquestion_configs = decoded_subquestion_configs
+    if decoded_per_question_params is not None:
+        worker_data = params.model_dump()
+        worker_data["per_question_params"] = None
+        worker_params = GenerateParams.model_validate(
+            {**worker_data, **decoded_per_question_params[i]}
+        )
+        worker_overrides = spec.coerce_overrides(worker_params, app_state)
+        worker_subquestion_configs = _decode_subquestion_configs(
+            worker_params.subquestion_configs
+        )
     assigned_qt = (
         batch_sampler.q_type_assignments[i] if batch_sampler is not None else None
     )
@@ -54,14 +73,14 @@ def _sample_worker_params(
         if batch_sampler is not None and not batch_user_pinned_lc
         else None
     )
-    seed = (params.seed + i) if params.seed is not None else None
+    seed = (worker_params.seed + i) if worker_params.seed is not None else None
     return spec.do_sample_params(
-        params,
-        overrides,
+        worker_params,
+        worker_overrides,
         seed=seed,
         assigned_q_type=assigned_qt,
         assigned_lc=assigned_lc,
-        subquestion_configs_decoded=decoded_subquestion_configs,
+        subquestion_configs_decoded=worker_subquestion_configs,
     )
 
 
@@ -75,6 +94,7 @@ def build_prompt_previews(
     overrides = spec.coerce_overrides(params, app_state)
     batch_sampler, batch_user_pinned_lc = spec.setup_batch_sampler(params, overrides)
     decoded_configs = _decode_subquestion_configs(params.subquestion_configs)
+    decoded_per_question = decode_per_question_params(params.per_question_params)
     client_config = dataclasses.replace(
         config,
         model_execute=params.model_execute or config.model_execute,
@@ -90,6 +110,8 @@ def build_prompt_previews(
             batch_sampler,
             batch_user_pinned_lc,
             decoded_configs,
+            decoded_per_question,
+            app_state,
         )
         assert spec.build_generation_prompts is not None
         system, user, _images = spec.build_generation_prompts(
@@ -146,6 +168,8 @@ class _RunContext:
     timestamp: str
     html_renderer: Any
     decoded_subquestion_configs: list | None
+    decoded_per_question_params: list[dict[str, Any]] | None
+    app_state: Any
     loop: asyncio.AbstractEventLoop
     queue: asyncio.Queue
     prior_scopes: list  # mutated by workers; frozen prevents field reassignment only
@@ -198,6 +222,10 @@ def _build_run_context(
         timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
         html_renderer=html_renderer,
         decoded_subquestion_configs=_decode_subquestion_configs(params.subquestion_configs),
+        decoded_per_question_params=decode_per_question_params(
+            params.per_question_params
+        ),
+        app_state=app_state,
         loop=loop,
         queue=queue,
         prior_scopes=[],
@@ -241,6 +269,8 @@ def _worker_one(
             ctx.batch_sampler,
             ctx.batch_user_pinned_lc,
             ctx.decoded_subquestion_configs,
+            ctx.decoded_per_question_params,
+            ctx.app_state,
         )
 
         # Site 2: apply creative brief when available (SS only in practice)

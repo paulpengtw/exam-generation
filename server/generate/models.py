@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -39,6 +40,21 @@ def _build_allowed_subjects() -> frozenset[str]:
 
 
 ALLOWED_SUBJECTS: frozenset[str] = _build_allowed_subjects()
+
+
+def decode_per_question_params(raw: str | None) -> list[dict[str, Any]] | None:
+    """Decode the strictly validated per-question parameter array."""
+    if raw is None:
+        return None
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("per_question_params must be valid JSON") from exc
+    if not isinstance(decoded, list):
+        raise ValueError("per_question_params must be a JSON array")
+    if not all(isinstance(item, dict) for item in decoded):
+        raise ValueError("each per_question_params item must be an object")
+    return decoded
 
 
 class GenerateParams(BaseModel):
@@ -80,6 +96,7 @@ class GenerateParams(BaseModel):
     text_word_limit: int | None = Field(default=None, ge=1)
     # #101: per-子題 configs as JSON string (array of {content_type, image_generation_mode, ...})
     subquestion_configs: str | None = None
+    per_question_params: str | None = None
     # #105: per-request model overrides (validated against ServerConfig.llm_models_allowed
     # at the route level).
     model_plan: str | None = None
@@ -102,6 +119,12 @@ class GenerateParams(BaseModel):
             raise ValueError("must not contain an empty value")
         return value
 
+    @field_validator("per_question_params")
+    @classmethod
+    def per_question_params_must_be_well_formed(cls, value: str | None) -> str | None:
+        decode_per_question_params(value)
+        return value
+
     @model_validator(mode="after")
     def context_must_match_sub_context(self) -> GenerateParams:
         from server.generate.subjects import SUBJECTS  # noqa: PLC0415
@@ -109,6 +132,28 @@ class GenerateParams(BaseModel):
         spec = SUBJECTS.get(self.subject)
         if spec is not None and spec.validate_params is not None:
             spec.validate_params(self)
+        decoded = decode_per_question_params(self.per_question_params)
+        if decoded is not None and len(decoded) != self.count:
+            raise ValueError(
+                f"per_question_params array length {len(decoded)} must equal count {self.count}"
+            )
+        if decoded is not None:
+            known_fields = set(type(self).model_fields)
+            base = self.model_dump()
+            base["per_question_params"] = None
+            for index, item in enumerate(decoded):
+                unknown = set(item) - known_fields
+                if unknown:
+                    names = ", ".join(sorted(unknown))
+                    raise ValueError(
+                        f"per_question_params[{index}] has unknown parameter(s): {names}"
+                    )
+                try:
+                    type(self).model_validate({**base, **item})
+                except ValueError as exc:
+                    raise ValueError(
+                        f"per_question_params[{index}] is invalid: {exc}"
+                    ) from exc
         return self
 
     model_config = {"populate_by_name": True}

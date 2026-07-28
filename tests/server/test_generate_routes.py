@@ -39,6 +39,29 @@ def test_generate_route_returns_422_for_empty_enum_value() -> None:
     assert "context" in response.text
 
 
+def test_generate_route_rejects_malformed_per_question_params() -> None:
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/generate",
+                params={"per_question_params": "{not-json"},
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert "per_question_params" in response.text
+    assert "valid JSON" in response.text
+
+
 def test_generate_route_forwards_social_studies_options() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 
