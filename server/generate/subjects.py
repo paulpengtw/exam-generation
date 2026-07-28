@@ -249,6 +249,28 @@ def _ns_validate_params(params: Any) -> None:
         )
 
 
+def _math_validate_params(params: Any) -> None:
+    unsupported = [
+        field
+        for field in (
+            "text_word_limit",
+            "sub_question_count",
+            "question_word_limit",
+            "option_word_limit",
+            "subquestion_configs",
+        )
+        if getattr(params, field) is not None
+    ]
+    # disable_reference_fewshot is deliberately excluded: its bool=False default
+    # makes omission indistinguishable from an explicit false; making it optional
+    # would be an out-of-scope wire change.
+    if unsupported:
+        raise ValueError(
+            "The following parameters are not supported for math: "
+            + ", ".join(unsupported)
+        )
+
+
 _MATH_SUBJECTS = [
     {
         "value": "數與量",
@@ -960,5 +982,6 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_core_questions=_math_plan_core_questions,
         load_planner_stage=_math_load_planner_stage,
         build_schemas=_math_build_schemas,
+        validate_params=_math_validate_params,
     ),
 }

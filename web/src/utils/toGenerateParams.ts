@@ -51,6 +51,9 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
     model_execute: params.model_execute,
     difficulty: params.difficulty,
     coverage_mode: subject === "social_studies" ? params.coverage_mode : undefined,
-    text_word_limit: params.text_word_limit,
+    text_word_limit:
+      subject === "social_studies" || subject === "natural_sciences"
+        ? params.text_word_limit
+        : undefined,
   };
 }

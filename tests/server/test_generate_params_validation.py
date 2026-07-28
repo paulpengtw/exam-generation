@@ -8,6 +8,15 @@ from pydantic import ValidationError
 from server.generate.models import GenerateParams
 
 
+MATH_UNSUPPORTED_PARAMS: list[tuple[str, object]] = [
+    ("text_word_limit", 500),
+    ("sub_question_count", 3),
+    ("question_word_limit", 80),
+    ("option_word_limit", 30),
+    ("subquestion_configs", "[]"),
+]
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -35,6 +44,58 @@ def test_generate_params_rejects_incompatible_context_and_sub_context() -> None:
             context=["Global"],
             sub_context="Maintenance of health",
         )
+
+
+@pytest.mark.parametrize(("field", "value"), MATH_UNSUPPORTED_PARAMS)
+def test_generate_params_rejects_unhonoured_math_parameter(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError, match=field):
+        GenerateParams(subject="math", **{field: value})
+
+
+def test_generate_params_lists_all_unhonoured_math_parameters() -> None:
+    with pytest.raises(
+        ValidationError,
+        match=r"text_word_limit.*question_word_limit.*subquestion_configs",
+    ):
+        GenerateParams(
+            subject="math",
+            text_word_limit=500,
+            question_word_limit=80,
+            subquestion_configs="[]",
+        )
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences"])
+@pytest.mark.parametrize(("field", "value"), MATH_UNSUPPORTED_PARAMS)
+def test_generate_params_accepts_math_unsupported_parameter_for_curriculum_subject(
+    subject: str,
+    field: str,
+    value: object,
+) -> None:
+    params = GenerateParams(subject=subject, **{field: value})
+
+    assert getattr(params, field) == value
+
+
+def test_generate_params_accepts_plain_math_request() -> None:
+    params = GenerateParams(subject="math")
+
+    assert params.subject == "math"
+
+
+@pytest.mark.parametrize("disable_reference_fewshot", [False, True])
+def test_generate_params_accepts_math_disable_reference_fewshot(
+    disable_reference_fewshot: bool,
+) -> None:
+    params = GenerateParams(
+        subject="math",
+        disable_reference_fewshot=disable_reference_fewshot,
+    )
+
+    assert params.disable_reference_fewshot is disable_reference_fewshot
 
 
 @pytest.mark.parametrize(

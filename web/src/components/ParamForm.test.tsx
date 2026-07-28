@@ -8,6 +8,8 @@ const tMock = vi.hoisted(() => {
     "history.prefill_notice": "Some saved parameters are no longer available in the current schema.",
     "form.grade": "Grade",
     "form.difficulty": "Difficulty",
+    "form.text_word_limit": "文本字數限制",
+    "form.unlimited": "不限",
     "form.subject_filter": "科目",
     "form.subject_filter_natural_sciences": "依科目篩選學習內容選項",
     "form.subject_filter_natural_sciences_help": "此選擇僅篩選學習內容選項，不會作為出題參數送出。",
@@ -154,6 +156,31 @@ describe("ParamForm difficulty dropdown", () => {
     const [payload] = onSubmit.mock.calls[0];
     expect(payload.difficulty).toBe("hard");
   });
+});
+
+describe("ParamForm top-level text word limit", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getSchemasMock.mockResolvedValue(FAKE_MATH_SCHEMA);
+  });
+
+  it("hides 文本字數限制 for math", async () => {
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    await screen.findByRole("button", { name: /generate/i });
+    expect(screen.queryByText("文本字數限制", { selector: "label" })).not.toBeInTheDocument();
+  });
+
+  it.each(["social_studies", "natural_sciences"])(
+    "shows 文本字數限制 for %s",
+    async (subject) => {
+      render(<ParamForm subject={subject} onSubmit={() => {}} disabled={false} />);
+
+      await screen.findByRole("button", { name: /generate/i });
+      const label = screen.getByText("文本字數限制", { selector: "label" });
+      expect(label.parentElement?.querySelector("input")).toHaveAttribute("placeholder", "不限");
+    },
+  );
 });
 
 describe("ParamForm prefill", () => {
