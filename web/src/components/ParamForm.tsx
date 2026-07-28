@@ -80,6 +80,20 @@ export interface ParamFormProps {
   initialParams?: Partial<FormParams> & { [key: string]: unknown };
 }
 
+type ConfirmationValueKind = "absent" | "sampled" | "defaulted";
+
+function resolveConfirmationValue(
+  value: string | undefined,
+  kind: ConfirmationValueKind,
+  t: (key: string) => string,
+  defaultValue?: string,
+) {
+  if (value !== undefined && value !== "") return value;
+  if (kind === "sampled") return t("form.confirm_backend_sampled");
+  if (kind === "defaulted") return defaultValue ?? t("form.confirm_not_filled");
+  return t("form.confirm_not_filled");
+}
+
 const TEXT_HINT = "500 字";
 const OPTION_HINT = "50 字";
 const SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
@@ -707,38 +721,57 @@ export default function ParamForm({
       ? allLcEntries.filter((e) => p.learning_content!.includes(e.value))
       : [];
 
-    const rows: { label: string; value: string | undefined }[] = [
-      { label: t("form.confirm_topic"), value: p.topic },
-      { label: t("form.confirm_core_question"), value: p.core_question },
-      { label: t("form.confirm_grade"), value: String(p.grade) },
-      { label: t("form.confirm_difficulty"), value: p.difficulty },
-      { label: t("form.confirm_subject_filter"), value: p.subject_filter },
-      { label: t("form.confirm_style"), value: p.style },
-      { label: t("form.confirm_content_type"), value: p.content_type },
-      { label: t("form.confirm_context"), value: p.context.length ? p.context.join(", ") : undefined },
-      { label: t("form.confirm_set_type"), value: p.set_type },
+    const allSubjects = ["math", "social_studies", "natural_sciences"];
+    const rows: {
+      label: string;
+      value: string | undefined;
+      subjects: string[];
+      kind?: ConfirmationValueKind;
+      defaultValue?: string;
+    }[] = [
+      { label: t("form.confirm_topic"), value: p.topic, subjects: allSubjects, kind: "absent" },
+      { label: t("form.confirm_core_question"), value: p.core_question, subjects: allSubjects },
+      { label: t("form.confirm_grade"), value: String(p.grade), subjects: allSubjects },
+      { label: t("form.confirm_difficulty"), value: p.difficulty, subjects: allSubjects, kind: "defaulted", defaultValue: "medium" },
+      { label: t("form.confirm_subject_filter"), value: p.subject_filter, subjects: ["math", "social_studies"], kind: subject === "social_studies" ? "sampled" : "absent" },
+      { label: t("form.confirm_style"), value: p.style, subjects: ["math"], kind: "sampled" },
+      { label: t("form.confirm_content_type"), value: p.content_type, subjects: allSubjects, kind: "sampled" },
+      { label: t("form.confirm_context"), value: p.context.length ? p.context.join(", ") : undefined, subjects: allSubjects, kind: "sampled" },
+      { label: t("form.confirm_set_type"), value: p.set_type, subjects: allSubjects, kind: "sampled" },
       {
         label: t("form.confirm_q_type"),
         value: subject !== "social_studies" && p.q_type.length ? p.q_type.join(", ") : undefined,
+        subjects: ["math", "natural_sciences"],
+        kind: "sampled",
       },
-      { label: t("form.confirm_count"), value: String(p.count) },
+      { label: t("form.confirm_count"), value: String(p.count), subjects: allSubjects },
       {
         label: t("form.confirm_coverage_mode"),
         value: subject === "social_studies" ? p.coverage_mode : undefined,
+        subjects: ["social_studies"],
       },
-      { label: t("form.confirm_passage"), value: p.passage },
-      { label: t("form.confirm_options"), value: p.options?.join(", ") },
+      { label: t("form.confirm_passage"), value: p.passage, subjects: allSubjects },
+      { label: t("form.confirm_options"), value: p.options?.join(", "), subjects: ["math"] },
+      { label: t("form.confirm_text_word_limit"), value: p.text_word_limit !== undefined ? String(p.text_word_limit) : undefined, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_unlimited") },
+      { label: t("form.confirm_sub_context"), value: p.sub_context, subjects: ["natural_sciences"], kind: "sampled" },
+      { label: t("form.confirm_science_competency"), value: p.science_competency?.join(", "), subjects: ["natural_sciences"], kind: "sampled" },
+      { label: t("form.confirm_model_plan"), value: p.model_plan, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
+      { label: t("form.confirm_model_execute"), value: p.model_execute, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       {
         label: t("form.confirm_image_mode"),
         value: p.image_generation_mode,
+        subjects: allSubjects,
       },
-      { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined },
+      { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_no") },
       {
         label: t("form.confirm_disable_reference_fewshot"),
         value: p.disable_reference_fewshot ? "✓" : undefined,
+        subjects: allSubjects,
+        kind: "defaulted",
+        defaultValue: t("form.confirm_no"),
       },
-      { label: "小題數量", value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined },
-    ];
+      { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "natural_sciences"] },
+    ].filter((row) => row.subjects.includes(subject));
 
     const lpHeading = lpWasAutoDrawn
       ? t("form.confirm_lp_random_pool").replace("{n}", String(lpDisplayEntries.length))
@@ -754,11 +787,11 @@ export default function ParamForm({
           <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
         </div>
         <dl className="divide-y rounded-lg border bg-gray-50">
-          {rows.map(({ label, value }) => (
+          {rows.map(({ label, value, kind = "absent", defaultValue }) => (
             <div key={label} className="flex gap-3 px-4 py-2.5">
               <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{label}</dt>
               <dd className="flex-1 text-sm text-gray-900 break-words">
-                {value ?? <span className="text-gray-400 italic">{t("form.confirm_none")}</span>}
+                {resolveConfirmationValue(value, kind, t, defaultValue)}
               </dd>
             </div>
           ))}
@@ -766,7 +799,7 @@ export default function ParamForm({
             <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{t("form.confirm_learning_performance")}</dt>
             <dd className="flex-1 text-sm text-gray-900">
               {lpDisplayEntries.length === 0 ? (
-                <span className="text-gray-400 italic">{t("form.confirm_none")}</span>
+                <span className="text-gray-400 italic">{t("form.confirm_not_filled")}</span>
               ) : (
                 <div className="space-y-1">
                   <p className={`text-xs font-medium mb-1.5 ${lpWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>
@@ -793,7 +826,7 @@ export default function ParamForm({
                 <span className="text-gray-400 italic">
                   {subject === "social_studies" && p.coverage_mode === "balanced"
                     ? t("form.confirm_lc_balanced_backend_assignment")
-                    : t("form.confirm_none")}
+                    : t("form.confirm_not_filled")}
                 </span>
               ) : (
                 <div className="space-y-1">
@@ -824,14 +857,14 @@ export default function ParamForm({
                   <h4 className="text-xs font-semibold text-gray-600 mb-2">
                     {t("form.confirm_subquestion_row_title").replace("{n}", String(i + 1))}
                   </h4>
-                  {row.question_type && <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type}</div>}
-                  {row.instruction && <div className="text-sm text-gray-700">{t("form.confirm_subq_instruction")} {row.instruction}</div>}
-                  {row.content_type && <div className="text-sm text-gray-700">{t("form.confirm_subq_content_type")} {row.content_type}</div>}
-                  {row.image_generation_mode && <div className="text-sm text-gray-700">{t("form.confirm_subq_image_mode")} {row.image_generation_mode}</div>}
-                  {row.question_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_q_word_limit")} {row.question_word_limit}</div>}
-                  {row.option_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_o_word_limit")} {row.option_word_limit}</div>}
-                  {row.text_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_text_word_limit")} {row.text_word_limit}</div>}
-                  {row.reporting_scale && <div className="text-sm text-gray-700">{t("form.confirm_subq_reporting_scale")} {row.reporting_scale}</div>}
+                  <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type ?? t("form.confirm_random")}</div>
+                  <div className="text-sm text-gray-700">{t("form.confirm_subq_instruction")} {row.instruction ?? t("form.confirm_not_filled")}</div>
+                  <div className="text-sm text-gray-700">{t("form.confirm_subq_content_type")} {row.content_type ?? t("form.confirm_inherit_text")}</div>
+                  <div className="text-sm text-gray-700">{t("form.confirm_subq_image_mode")} {row.image_generation_mode ?? t("form.confirm_inherit_text")}</div>
+                  <div className="text-sm text-gray-700">{t("form.confirm_subq_q_word_limit")} {row.question_word_limit ?? t("form.confirm_unlimited")}</div>
+                  <div className="text-sm text-gray-700">{t("form.confirm_subq_o_word_limit")} {row.option_word_limit ?? t("form.confirm_unlimited")}</div>
+                  <div className="text-sm text-gray-700">{t("form.confirm_subq_text_word_limit")} {row.text_word_limit ?? t("form.confirm_unlimited")}</div>
+                  {subject === "natural_sciences" && <div className="text-sm text-gray-700">{t("form.confirm_subq_reporting_scale")} {row.reporting_scale ?? t("form.confirm_random")}</div>}
                   <div>
                     {row.learning_performance && row.learning_performance.length > 0 ? (
                       <>
