@@ -431,6 +431,7 @@ export default function ParamForm({
   );
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
+  const supportsTextWordLimit = isCurriculumSubject && subject !== "math";
 
   useEffect(() => {
     let cancelled = false;
@@ -799,7 +800,7 @@ export default function ParamForm({
       difficulty: difficulty === "" ? undefined : difficulty,
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
-      text_word_limit: textWordLimit,
+      text_word_limit: supportsTextWordLimit ? textWordLimit : undefined,
       options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,
       topic:
         isCurriculumSubject && cleanTopic
@@ -992,7 +993,7 @@ export default function ParamForm({
       },
       { label: t("form.confirm_passage"), value: p.passage, subjects: allSubjects },
       { label: t("form.confirm_options"), value: p.options?.join(", "), subjects: ["math"] },
-      { label: t("form.confirm_text_word_limit"), value: p.text_word_limit !== undefined ? String(p.text_word_limit) : undefined, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_unlimited") },
+      { label: t("form.confirm_text_word_limit"), value: p.text_word_limit !== undefined ? String(p.text_word_limit) : undefined, subjects: ["social_studies", "natural_sciences"], kind: "defaulted", defaultValue: t("form.confirm_unlimited") },
       { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "natural_sciences"] },
       { label: t("form.confirm_model_plan"), value: p.model_plan, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       { label: t("form.confirm_model_execute"), value: p.model_execute, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
@@ -1936,17 +1937,19 @@ export default function ParamForm({
         </div>
       )}
 
-      <div>
-        <label className="block text-sm font-medium">文本字數限制</label>
-        <input
-          type="number"
-          min={1}
-          value={textWordLimit ?? ""}
-          onChange={(e) => setTextWordLimit(e.target.value ? Number(e.target.value) : undefined)}
-          placeholder="不限"
-          className="mt-1 block w-full border rounded px-2 py-1"
-        />
-      </div>
+      {supportsTextWordLimit && (
+        <div>
+          <label className="block text-sm font-medium">{t("form.text_word_limit")}</label>
+          <input
+            type="number"
+            min={1}
+            value={textWordLimit ?? ""}
+            onChange={(e) => setTextWordLimit(e.target.value ? Number(e.target.value) : undefined)}
+            placeholder={t("form.unlimited")}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          />
+        </div>
+      )}
 
       {subject === "math" && (
         <fieldset>
