@@ -1,0 +1,85 @@
+"""Persistence helpers for the generate SSE stream.
+
+Owns all concerns related to writing generation records and LLM exchanges to the
+database.  Both functions follow the ``exchange_recorder.py`` pattern: the write
+sink is INJECTED (never imported from ``server.db`` directly) so tests can pass a
+fake session factory without touching the module.
+
+All failures are logged-and-swallowed; persistence must never break generation.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import uuid
+from typing import Any
+
+from server.generate.exchange_recorder import ExchangeRecorder
+from server.generate.marshalling import extract_image_files, strip_image_base64
+from server.models import GenerationRecord, LLMExchange
+
+logger = logging.getLogger(__name__)
+
+
+async def persist_generation_record(
+    *,
+    user_id: uuid.UUID,
+    generation_log_id: uuid.UUID | None,
+    subject: str,
+    params: Any,
+    payload: dict[str, Any],
+    session_factory: Any,
+) -> None:
+    """Insert one generation_records row; log-and-swallow on failure so
+    persistence never breaks generation."""
+    try:
+        record = GenerationRecord(
+            user_id=user_id,
+            generation_log_id=generation_log_id,
+            subject=subject,
+            question_id=payload.get("id", ""),
+            params_json=params.model_dump(mode="json"),
+            question_json=strip_image_base64(payload),
+            image_files=extract_image_files(payload),
+        )
+        async with session_factory() as session:
+            session.add(record)
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001 — best-effort persistence
+        logger.warning("failed to persist generation_record: %s", exc)
+
+
+def make_exchange_recorder(
+    *,
+    generation_log_id: uuid.UUID | None,
+    retention_days: int,
+    loop: asyncio.AbstractEventLoop,
+    session_factory: Any,
+    next_order: Any,
+) -> ExchangeRecorder | None:
+    """Return an ExchangeRecorder wired to *session_factory*, or None when disabled.
+
+    Returns None when *generation_log_id* is None or *retention_days* is ≤ 0,
+    matching the production disable logic.
+
+    The write sink runs ``asyncio.run_coroutine_threadsafe`` so it is safe to
+    call from background ThreadPoolExecutor workers.  Write failures are logged
+    as warnings and never raised.
+    """
+    if generation_log_id is None or retention_days <= 0:
+        return None
+
+    async def _insert(row: dict[str, Any]) -> None:
+        async with session_factory() as sess:
+            sess.add(LLMExchange(**row))
+            await sess.commit()
+
+    def _write_row(row: dict[str, Any]) -> None:
+        future = asyncio.run_coroutine_threadsafe(_insert(row), loop)
+        try:
+            future.result(timeout=10)
+        except Exception as exc:  # noqa: BLE001 — best-effort persistence
+            logger.warning("llm_exchanges insert failed: %s", exc)
+
+    return ExchangeRecorder(generation_log_id, _write_row, next_order=next_order)
