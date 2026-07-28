@@ -4,8 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
+const previewGenerateMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../api/client", () => ({ getSchemas: getSchemasMock, getAvailableModels: getAvailableModelsMock, planCoreQuestions: planCoreQuestionsMock }));
+vi.mock("../api/client", () => ({
+  getSchemas: getSchemasMock,
+  getAvailableModels: getAvailableModelsMock,
+  planCoreQuestions: planCoreQuestionsMock,
+  previewGenerate: previewGenerateMock,
+}));
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (state: { lang: string }) => unknown) => selector({ lang: "zh-TW" }),
 }));
@@ -56,6 +62,227 @@ describe("ParamForm 發送前確認 display semantics", () => {
     vi.clearAllMocks(); window.localStorage.clear(); getSchemasMock.mockResolvedValue(MATH_SCHEMA);
     getAvailableModelsMock.mockResolvedValue({ allowed: [], defaults: { plan: "", execute: "" } });
     planCoreQuestionsMock.mockResolvedValue({ candidates: ["候選核心問題"] });
+    previewGenerateMock.mockResolvedValue({ prompts: [] });
+  });
+
+  it("requests 提示詞預覽 once with the exact payload that 確定發送 submits", async () => {
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ count: 1, seed: 700, topic: "分數", core_question: "如何比較分數？" }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+
+    await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(1));
+    const previewPayload = previewGenerateMock.mock.calls[0][0];
+    expect(previewPayload).toEqual(expect.objectContaining({
+      subject: "math",
+      grade: 7,
+      count: 1,
+      topic: "分數",
+      core_question: "如何比較分數？",
+    }));
+    expect(JSON.parse(previewPayload.per_question_params)).toEqual([
+      expect.objectContaining({
+        subject: "math",
+        seed: 700,
+        topic: "分數",
+        core_question: "如何比較分數？",
+      }),
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(previewPayload.per_question_params).toBe(onSubmit.mock.calls[0][0].per_question_params);
+  });
+
+  it("renders the returned system and user prompts as literal text in the matching question", async () => {
+    previewGenerateMock.mockResolvedValue({
+      prompts: [{
+        index: 0,
+        system_prompt: "# 系統提示\n請保留 **星號**",
+        user_prompt: "## 使用者提示\n題目：1 < 2",
+      }],
+    });
+
+    await openConfirmation("math", { core_question: "已提供的核心問題" });
+
+    const question = screen.getByRole("region", { name: "第1題" });
+    await within(question).findByText("文本生成器將送出的提示詞");
+    const prompts = question.querySelectorAll("pre");
+    expect(prompts[0]).toHaveTextContent("# 系統提示\n請保留 **星號**", { normalizeWhitespace: false });
+    expect(prompts[1]).toHaveTextContent("## 使用者提示\n題目：1 < 2", { normalizeWhitespace: false });
+  });
+
+  it("keeps 將送出的提示詞 collapsed by default and expands it on interaction", async () => {
+    previewGenerateMock.mockResolvedValue({
+      prompts: [{ index: 0, system_prompt: "系統內容", user_prompt: "使用者內容" }],
+    });
+    await openConfirmation("math", { core_question: "已提供的核心問題" });
+
+    const toggle = await screen.findByText("文本生成器將送出的提示詞", { selector: "summary" });
+    const details = toggle.closest("details");
+    expect(details).not.toHaveAttribute("open");
+
+    fireEvent.click(toggle);
+    expect(details).toHaveAttribute("open");
+  });
+
+  it("matches each 社會領域 文本生成器 preview to its question by index", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    previewGenerateMock.mockResolvedValue({
+      prompts: [
+        { index: 0, system_prompt: "第一題文本系統", user_prompt: "第一題文本使用者" },
+        { index: 0, subquestion_index: 0, system_prompt: "第一題小題一系統", user_prompt: "第一題小題一使用者" },
+        { index: 0, subquestion_index: 1, system_prompt: "第一題小題二系統", user_prompt: "第一題小題二使用者" },
+        { index: 0, subquestion_index: 2, system_prompt: "第一題小題三系統", user_prompt: "第一題小題三使用者" },
+        { index: 1, system_prompt: "第二題文本系統", user_prompt: "第二題文本使用者" },
+        { index: 1, subquestion_index: 0, system_prompt: "第二題小題一系統", user_prompt: "第二題小題一使用者" },
+        { index: 1, subquestion_index: 1, system_prompt: "第二題小題二系統", user_prompt: "第二題小題二使用者" },
+        { index: 1, subquestion_index: 2, system_prompt: "第二題小題三系統", user_prompt: "第二題小題三使用者" },
+      ],
+    });
+    await openConfirmation("social_studies", {
+      count: 2,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+    });
+
+    const first = screen.getByRole("region", { name: "第1題" });
+    const second = screen.getByRole("region", { name: "第2題" });
+    await within(first).findByText("第一題文本系統");
+    expect(within(first).queryByText("第二題文本系統")).not.toBeInTheDocument();
+    expect(within(second).getByText("第二題文本系統")).toBeInTheDocument();
+    expect(within(second).queryByText("第一題文本系統")).not.toBeInTheDocument();
+  });
+
+  it("renders each 子題產生器 preview in subquestion_index order inside its question", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    previewGenerateMock.mockResolvedValue({
+      prompts: [
+        { index: 0, system_prompt: "文本系統", user_prompt: "文本使用者" },
+        { index: 0, subquestion_index: 2, system_prompt: "小題三系統", user_prompt: "小題三使用者" },
+        { index: 0, subquestion_index: 0, system_prompt: "小題一系統", user_prompt: "小題一使用者" },
+        { index: 0, subquestion_index: 1, system_prompt: "小題二系統", user_prompt: "小題二使用者" },
+      ],
+    });
+    await openConfirmation("social_studies", {
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+    });
+
+    const question = screen.getByRole("region", { name: "第1題" });
+    const summaries = await within(question).findAllByText(/子題產生器.*第[123]小題/, {
+      selector: "summary",
+    });
+    expect(summaries.map((summary) => summary.textContent)).toEqual([
+      "子題產生器（第1小題）將送出的提示詞",
+      "子題產生器（第2小題）將送出的提示詞",
+      "子題產生器（第3小題）將送出的提示詞",
+    ]);
+    expect(within(question).getByText("小題一系統")).toBeInTheDocument();
+    expect(within(question).getByText("小題二系統")).toBeInTheDocument();
+    expect(within(question).getByText("小題三系統")).toBeInTheDocument();
+    for (const summary of summaries) {
+      expect(summary.closest("details")).not.toHaveAttribute("open");
+    }
+  });
+
+  it("renders 子題產生器 placeholder tokens verbatim", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const placeholders = [
+      "{{核心問題：由前一階段產生}}",
+      "{{文本：由前一階段產生}}",
+      "{{取材來源：由前一階段產生}}",
+      "{{子題 plan：由前一階段產生}}",
+    ];
+    previewGenerateMock.mockResolvedValue({
+      prompts: [
+        { index: 0, system_prompt: "文本系統", user_prompt: "文本使用者" },
+        {
+          index: 0,
+          subquestion_index: 0,
+          system_prompt: placeholders.slice(0, 2).join("\n"),
+          user_prompt: placeholders.slice(2).join("\n"),
+        },
+      ],
+    });
+    await openConfirmation("social_studies", {
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+    });
+
+    const question = screen.getByRole("region", { name: "第1題" });
+    for (const placeholder of placeholders) {
+      expect(await within(question).findByText(placeholder, { exact: false })).toBeInTheDocument();
+    }
+  });
+
+  it("renders only the 文本生成器 preview for 數學", async () => {
+    previewGenerateMock.mockResolvedValue({
+      prompts: [
+        { index: 0, system_prompt: "數學系統", user_prompt: "數學使用者" },
+      ],
+    });
+    await openConfirmation("math", { core_question: "已提供的核心問題" });
+
+    const question = screen.getByRole("region", { name: "第1題" });
+    expect(await within(question).findByText("數學系統")).toBeInTheDocument();
+    expect(within(question).getByText("文本生成器將送出的提示詞")).toBeInTheDocument();
+    expect(within(question).queryByText(/子題產生器/)).not.toBeInTheDocument();
+  });
+
+  it("keeps 發送前確認 usable and 確定發送 working when 提示詞預覽 returns malformed data", async () => {
+    previewGenerateMock.mockResolvedValue({ prompts: null });
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ core_question: "已提供的核心問題" }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(1));
+
+    expect(screen.getByRole("heading", { name: "發送前確認設定" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "第1題" })).toBeInTheDocument();
+    const confirm = screen.getByRole("button", { name: "確定發送" });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-fire 提示詞預覽 when the same confirmation screen re-renders", async () => {
+    const onSubmit = vi.fn();
+    const initialParams = { core_question: "已提供的核心問題" };
+    const { rerender } = render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={initialParams}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled
+        initialParams={initialParams}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "發送前確認設定" })).toBeInTheDocument();
+    expect(previewGenerateMock).toHaveBeenCalledTimes(1);
   });
 
   it("calls the core-question planner once when entering confirmation with 核心問題 blank", async () => {

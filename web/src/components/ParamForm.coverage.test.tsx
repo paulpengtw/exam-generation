@@ -23,6 +23,7 @@ vi.mock("../api/client", () => ({
   })),
   getAvailableModels: vi.fn(async () => ({ allowed: [], defaults: { plan: "", execute: "" } })),
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
+  previewGenerate: vi.fn(async () => ({ prompts: [] })),
 }));
 
 vi.mock("../i18n/useT", () => ({

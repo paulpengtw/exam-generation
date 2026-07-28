@@ -177,6 +177,11 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_subq_lc_random_pool": "Learning content ({n} pre-drawn from pool)",
     "form.confirm_subq_lp_empty": "學習表現: (use 全域設定)",
     "form.confirm_subq_lc_empty": "學習內容: (use 全域設定)",
+    "form.confirm_prompt_preview": "Prompts to be sent",
+    "form.confirm_text_generator_prompt_preview": "Text Generator prompts to be sent",
+    "form.confirm_subquestion_generator_prompt_preview": "Sub-question Generator (sub-question {n}) prompts to be sent",
+    "form.confirm_system_prompt": "System prompt",
+    "form.confirm_user_prompt": "User prompt",
 
     "progress.generating": "Generating…",
     "progress.done": "Done",
@@ -421,6 +426,11 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_subq_lc_random_pool": "學習內容（隨機抽取 {n} 項）",
     "form.confirm_subq_lp_empty": "學習表現: （沿用全域設定）",
     "form.confirm_subq_lc_empty": "學習內容: （沿用全域設定）",
+    "form.confirm_prompt_preview": "將送出的提示詞",
+    "form.confirm_text_generator_prompt_preview": "文本生成器將送出的提示詞",
+    "form.confirm_subquestion_generator_prompt_preview": "子題產生器（第{n}小題）將送出的提示詞",
+    "form.confirm_system_prompt": "系統提示詞",
+    "form.confirm_user_prompt": "使用者提示詞",
 
     "progress.generating": "產生中…",
     "progress.done": "完成",

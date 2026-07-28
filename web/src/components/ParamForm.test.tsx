@@ -18,6 +18,7 @@ vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
+  previewGenerate: vi.fn(async () => ({ prompts: [] })),
 }));
 vi.mock("../i18n/useT", () => ({
   useT: () => tMock,

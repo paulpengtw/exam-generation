@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
 import ParamForm, { type FormParams } from "../components/ParamForm";
+import { toGenerateParams } from "../utils/toGenerateParams";
 import ProgressLog from "../components/ProgressLog";
 import QuestionCard from "../components/QuestionCard";
 import { useGenerate } from "../hooks/useGenerate";
@@ -42,69 +43,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   };
 
   const handleSubmit = (params: FormParams) => {
-    generate({
-      subject,
-      grade: params.grade,
-      style: subject === "math" && params.style ? [params.style] : [],
-      content_type:
-        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
-          ? params.content_type
-          : undefined,
-      context: subject === "math" || subject === "natural_sciences" ? params.context : [],
-      set_type: params.set_type,
-      q_type: params.q_type,
-      count: params.count,
-      skip_verify: params.skip_verify,
-      disable_reference_fewshot:
-        subject === "social_studies" || subject === "natural_sciences"
-          ? params.disable_reference_fewshot
-          : undefined,
-      image_generation_mode:
-        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
-          ? params.image_generation_mode
-          : undefined,
-      subject_filter:
-        subject === "social_studies" || subject === "math"
-          ? (params.subject_filter ? [params.subject_filter] : undefined)
-          : undefined,
-      topic:
-        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
-          ? params.topic
-          : undefined,
-      core_question:
-        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
-          ? params.core_question
-          : undefined,
-      passage:
-        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
-          ? params.passage
-          : undefined,
-      options:
-        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
-          ? params.options
-          : undefined,
-      sub_context: subject === "natural_sciences" ? params.sub_context : undefined,
-      science_competency:
-        subject === "natural_sciences" ? params.science_competency : undefined,
-      learning_performance:
-        subject === "social_studies" || subject === "math" || subject === "natural_sciences"
-          ? params.learning_performance
-          : undefined,
-      learning_content:
-        subject === "social_studies" || subject === "natural_sciences"
-          ? params.learning_content
-          : undefined,
-      sub_question_count:
-        subject === "social_studies" || subject === "natural_sciences" ? params.sub_question_count : undefined,
-      subquestion_configs:
-        subject === "social_studies" || subject === "natural_sciences" ? params.subquestion_configs : undefined,
-      per_question_params: params.per_question_params,
-      model_plan: params.model_plan,
-      model_execute: params.model_execute,
-      difficulty: params.difficulty,
-      coverage_mode: subject === "social_studies" ? params.coverage_mode : undefined,
-      text_word_limit: params.text_word_limit,
-    });
+    generate(toGenerateParams(subject, params));
   };
 
   const handleDownloadAll = () => {

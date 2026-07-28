@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getAvailableModels, getSchemas, planCoreQuestions, type AvailableModels, type Schemas } from "../api/client";
+import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
 import CoreQuestionPicker from "./CoreQuestionPicker";
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
+import { toGenerateParams } from "../utils/toGenerateParams";
 
 export interface SubQuestionConfig {
   question_type?: string;
@@ -257,6 +258,8 @@ export default function ParamForm({
     (SubQuestionConfig & { _lcWasAutoDrawn?: boolean; _lpWasAutoDrawn?: boolean })[]
   >([]);
   const [perQuestionAutoFields, setPerQuestionAutoFields] = useState<string[][]>([]);
+  const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
+  const previewRequestedRef = useRef(false);
 
   const ip = initialParams ?? {};
   const userChosenFields = useRef(new Set(Object.keys(ip)));
@@ -312,6 +315,33 @@ export default function ParamForm({
   const [scienceCompetency, setScienceCompetency] = useState<string[]>(
     fromInit<string[]>("science_competency", []),
   );
+
+  useEffect(() => {
+    if (!pendingParams || coreQuestionResolution === "loading" || previewRequestedRef.current) return;
+    previewRequestedRef.current = true;
+    void previewGenerate(toGenerateParams(subject, pendingParams))
+      .then(({ prompts }) => {
+        if (
+          Array.isArray(prompts) &&
+          prompts.every((prompt) => (
+            Number.isInteger(prompt?.index) &&
+            prompt.index >= 0 &&
+            (
+              prompt.subquestion_index === undefined ||
+              (
+                Number.isInteger(prompt.subquestion_index) &&
+                prompt.subquestion_index >= 0
+              )
+            ) &&
+            typeof prompt?.system_prompt === "string" &&
+            typeof prompt?.user_prompt === "string"
+          ))
+        ) {
+          setPromptPreviews(prompts);
+        }
+      })
+      .catch(() => undefined);
+  }, [coreQuestionResolution, pendingParams, subject]);
   const [learningPerformance, setLearningPerformance] = useState<string[]>(
     fromInit<string[]>("learning_performance", []),
   );
@@ -581,6 +611,8 @@ export default function ParamForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    previewRequestedRef.current = false;
+    setPromptPreviews([]);
     if (grade === "") return;
     if (!setType.trim()) {
       setValidationError(t("form.error_set_type_required"));
@@ -1017,6 +1049,14 @@ export default function ParamForm({
         <div className="space-y-4">
           {resolvedPerQuestionParams.map((questionParams, index) => {
             const heading = t("form.confirm_question_block").replace("{n}", String(index + 1));
+            const textGeneratorPreview = promptPreviews.find(
+              (preview) => preview.index === index && preview.subquestion_index === undefined,
+            );
+            const subquestionGeneratorPreviews = promptPreviews
+              .filter(
+                (preview) => preview.index === index && preview.subquestion_index !== undefined,
+              )
+              .sort((a, b) => a.subquestion_index! - b.subquestion_index!);
             return (
               <section
                 key={index}
@@ -1064,6 +1104,60 @@ export default function ParamForm({
                       </div>
                     )}
                 </dl>
+                {textGeneratorPreview && (
+                  <details className="mt-4 border-t border-gray-200 pt-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-700">
+                      {t("form.confirm_text_generator_prompt_preview")}
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-gray-600">
+                          {t("form.confirm_system_prompt")}
+                        </div>
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-xs text-gray-800">
+                          {textGeneratorPreview.system_prompt}
+                        </pre>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-gray-600">
+                          {t("form.confirm_user_prompt")}
+                        </div>
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-xs text-gray-800">
+                          {textGeneratorPreview.user_prompt}
+                        </pre>
+                      </div>
+                    </div>
+                  </details>
+                )}
+                {subquestionGeneratorPreviews.map((preview) => (
+                  <details
+                    key={preview.subquestion_index}
+                    className="mt-4 border-t border-gray-200 pt-3"
+                  >
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-700">
+                      {t("form.confirm_subquestion_generator_prompt_preview")
+                        .replace("{n}", String(preview.subquestion_index! + 1))}
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-gray-600">
+                          {t("form.confirm_system_prompt")}
+                        </div>
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-xs text-gray-800">
+                          {preview.system_prompt}
+                        </pre>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-gray-600">
+                          {t("form.confirm_user_prompt")}
+                        </div>
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-xs text-gray-800">
+                          {preview.user_prompt}
+                        </pre>
+                      </div>
+                    </div>
+                  </details>
+                ))}
               </section>
             );
           })}
