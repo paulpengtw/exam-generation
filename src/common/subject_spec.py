@@ -16,6 +16,7 @@ individual loaders; this module is pure data.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
@@ -128,3 +129,78 @@ NATURAL_SCIENCES = SubjectLoaderSpec(
         "情境", "情境子類別", "題型種類", "題型", "科學能力", "題目內容類型", "難度",
     ),
 )
+
+
+@dataclasses.dataclass(frozen=True)
+class SubjectGenerationSpec:
+    """Per-subject wiring for the shared NS/SS generation core.
+
+    Instances are created at module import time in each subject's ``cli.py``
+    and passed to ``generate_one_core`` / ``generate_with_corrections_core``
+    in ``src.common.generation_core``.
+    """
+
+    # Data subdirectory name under config.data_dir for few-shot examples.
+    # Core computes: config.data_dir / few_shot_subdir / "few_shot"
+    few_shot_subdir: str
+
+    # Build text-generator system prompt.
+    # Signature: (params: Any) -> tuple[str, dict]
+    # Returns (system_prompt, stage_ctx) where stage_ctx is subject-specific
+    # context forwarded to build_subquestion_system_fn and used in
+    # build_subquestion_user_fn.
+    build_text_system_fn: Callable
+
+    # Build text-generator user prompt.
+    # Signature: (params, few_shot_dir, user_passage, user_options, user_topic,
+    #              user_core_question, image_generation_mode,
+    #              disable_reference_fewshot, prior_scopes) -> tuple[str, list]
+    build_text_user_fn: Callable
+
+    # Build subquestion system prompt.
+    # Signature: (stage_ctx: dict) -> str
+    build_subquestion_system_fn: Callable
+
+    # Build subquestion user prompt.
+    # Signature: (text_raw, params, few_shot_dir, sq_plan, slot_cfg,
+    #              image_generation_mode, disable_reference_fewshot) -> tuple[str, list]
+    build_subquestion_user_fn: Callable
+
+    # Parse text-generator JSON into an ExamQuestion shell (subquestions=[]).
+    # Signature: (raw, question_id, params, model) -> ExamQuestion
+    parse_text_shell_fn: Callable
+
+    # Parse one subquestion dict into a SubQuestion.
+    # Signature: (sq_raw, question_id, params, idx) -> SubQuestion | None
+    parse_subquestion_fn: Callable
+
+    # Generate fallback sq-plan list when text-generator emits none.
+    # Signature: (params, n: int) -> list[dict]
+    make_fallback_sq_plans_fn: Callable
+
+    # SS-only: ensure a top-level visual spec exists after subquestions assemble.
+    # Mutates question in-place. Returns True if question.chart_spec changed.
+    # Signature: (question, params, client) -> bool
+    # None → no-op (NS uses None)
+    ensure_visual_spec_fn: Callable | None
+
+    # SS-only: render per-subquestion image specs to PNGs.
+    # Signature: (question, config, client, html_renderer, image_generation_mode,
+    #              obs, params) -> list[str]
+    # None → no-op (NS uses None)
+    render_subquestion_images_fn: Callable | None
+
+    # Extract the question-text string for image rendering / re-rendering.
+    # NS: lambda q: "\n".join(q.題目)
+    # SS: lambda q: "\n".join(q.題目) or q.文本
+    # Signature: (question) -> str
+    image_question_text_fn: Callable
+
+    # Verify the assembled question.
+    # Signature: (client, question, *, chart_image_path, curriculum_context) -> VerificationResult
+    verify_fn: Callable
+
+    # Correct a failed question given the verification result.
+    # Signature: (client, question, verification, *, chart_image_path,
+    #              curriculum_context) -> question
+    correct_fn: Callable
