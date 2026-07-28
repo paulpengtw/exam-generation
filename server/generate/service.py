@@ -138,6 +138,29 @@ def build_prompt_previews(
         previews.append(
             {"index": i, "system_prompt": system, "user_prompt": user}
         )
+        if spec.build_subquestion_prompt_previews is not None:
+            for sub_idx, sub_system, sub_user, _sub_images in (
+                spec.build_subquestion_prompt_previews(
+                    sampled,
+                    overrides,
+                    config=client_config,
+                    disable_reference_fewshot=params.disable_reference_fewshot,
+                    image_generation_mode=params.image_generation_mode,
+                    user_passage=params.passage,
+                    user_options=params.options,
+                    user_topic=params.topic,
+                    user_core_question=params.core_question,
+                    prior_scopes=[],
+                )
+            ):
+                previews.append(
+                    {
+                        "index": i,
+                        "subquestion_index": sub_idx,
+                        "system_prompt": sub_system,
+                        "user_prompt": sub_user,
+                    }
+                )
     return previews
 
 

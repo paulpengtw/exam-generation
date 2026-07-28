@@ -419,6 +419,30 @@ def build_generation_prompts(
     return system, user, images
 
 
+def build_subquestion_prompt_previews(
+    config: Config,
+    params: SampledParams,
+    **kwargs: Any,
+) -> list[tuple[int, str, str, list]]:
+    """Build 子題產生器 prompts without invoking either generation stage."""
+    from src.common.generation_core import (  # noqa: PLC0415
+        build_subquestion_generation_prompts,
+    )
+
+    return build_subquestion_generation_prompts(
+        config,
+        params,
+        _NS_SPEC,
+        disable_reference_fewshot=kwargs.get("disable_reference_fewshot", False),
+        image_generation_mode=kwargs.get("image_generation_mode", "html"),
+        user_passage=kwargs.get("user_passage"),
+        user_options=kwargs.get("user_options"),
+        user_topic=kwargs.get("user_topic"),
+        user_core_question=kwargs.get("user_core_question"),
+        prior_scopes=kwargs.get("prior_scopes"),
+    )
+
+
 def generate_with_corrections(
     config: Config,
     client: LLMClient | None,

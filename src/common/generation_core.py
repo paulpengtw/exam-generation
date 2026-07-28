@@ -61,6 +61,70 @@ def build_text_generation_prompts(
     return text_system, text_user, text_images, stage_ctx
 
 
+def build_subquestion_generation_prompts(
+    config: Config,
+    params: Any,
+    spec: SubjectGenerationSpec,
+    *,
+    disable_reference_fewshot: bool = False,
+    image_generation_mode: str = "html",
+    user_passage: str | None = None,
+    user_options: list[str] | None = None,
+    user_topic: str | None = None,
+    user_core_question: str | None = None,
+    prior_scopes: Sequence[Any] | None = None,
+) -> list[tuple[int, str, str, list]]:
+    """Build deterministic 子題產生器 prompts with visible 文本生成器 placeholders."""
+    _, _, _, stage_ctx = build_text_generation_prompts(
+        config,
+        params,
+        spec,
+        disable_reference_fewshot=disable_reference_fewshot,
+        image_generation_mode=image_generation_mode,
+        user_passage=user_passage,
+        user_options=user_options,
+        user_topic=user_topic,
+        user_core_question=user_core_question,
+        prior_scopes=prior_scopes,
+    )
+    slot_count = (
+        params.sub_question_count
+        or len(params.subquestion_configs)
+        or 3
+    )
+    plans = spec.make_fallback_sq_plans_fn(params, slot_count)
+    sub_system = spec.build_subquestion_system_fn(stage_ctx)
+    few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
+    text_raw = {
+        "核心問題": "{{核心問題：由前一階段產生}}",
+        "文本": "{{文本：由前一階段產生}}",
+        "取材來源": ["{{取材來源：由前一階段產生}}"],
+    }
+    previews = []
+    for idx, plan in enumerate(plans, start=1):
+        preview_plan = {
+            **plan,
+            "序號": idx,
+            "出題概念": "{{子題 plan：由前一階段產生}}",
+        }
+        slot_cfg = (
+            params.subquestion_configs[idx - 1]
+            if idx - 1 < len(params.subquestion_configs)
+            else None
+        )
+        sub_user, sub_images = spec.build_subquestion_user_fn(
+            text_raw,
+            params,
+            few_shot_dir,
+            preview_plan,
+            slot_cfg,
+            image_generation_mode,
+            disable_reference_fewshot,
+        )
+        previews.append((idx, sub_system, sub_user, sub_images))
+    return previews
+
+
 def generate_one_core(
     config: Config,
     client: LLMClient | None,
