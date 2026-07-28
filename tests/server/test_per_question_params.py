@@ -64,6 +64,68 @@ def _learning_content_codes(subject: str, sampled: object) -> list[str]:
     return sampled.學習內容_pool
 
 
+def test_per_question_subject_is_rejected_at_index_zero() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        GenerateParams(
+            subject="social_studies",
+            count=1,
+            per_question_params='[{"subject": "math"}]',
+        )
+
+    assert (
+        "per_question_params[0] has unknown parameter(s): subject"
+        in str(exc_info.value)
+    )
+
+
+def test_per_question_count_is_rejected() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        GenerateParams(count=1, per_question_params='[{"count": 9999}]')
+
+    assert (
+        "per_question_params[0] has unknown parameter(s): count"
+        in str(exc_info.value)
+    )
+
+
+def test_per_question_max_retries_is_rejected() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        GenerateParams(count=1, per_question_params='[{"max_retries": 9}]')
+
+    assert (
+        "per_question_params[0] has unknown parameter(s): max_retries"
+        in str(exc_info.value)
+    )
+
+
+def test_nested_per_question_params_is_rejected() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        GenerateParams(count=1, per_question_params='[{"per_question_params": "[]"}]')
+
+    assert (
+        "per_question_params[0] has unknown parameter(s): per_question_params"
+        in str(exc_info.value)
+    )
+
+
+def test_per_question_grade_and_seed_are_accepted() -> None:
+    params = GenerateParams(
+        count=1,
+        per_question_params='[{"grade": 7, "seed": 1}]',
+    )
+
+    assert decode_per_question_params(params.per_question_params) == [
+        {"grade": 7, "seed": 1}
+    ]
+
+
+def test_non_object_per_question_param_error_names_index() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        decode_per_question_params('[{"grade": 7}, "not-object"]')
+
+    assert "per_question_params[1] must be an object" in str(exc_info.value)
+
+
 @pytest.mark.parametrize("subject", ["math", "social_studies", "natural_sciences"])
 def test_one_per_question_param_set_is_applied_without_resampling(subject: str) -> None:
     params = GenerateParams(

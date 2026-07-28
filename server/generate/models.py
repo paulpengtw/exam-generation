@@ -40,6 +40,9 @@ def _build_allowed_subjects() -> frozenset[str]:
 
 
 ALLOWED_SUBJECTS: frozenset[str] = _build_allowed_subjects()
+REQUEST_LEVEL_FIELDS: frozenset[str] = frozenset(
+    {"subject", "count", "per_question_params", "max_retries"}
+)
 
 
 def decode_per_question_params(raw: str | None) -> list[dict[str, Any]] | None:
@@ -52,8 +55,9 @@ def decode_per_question_params(raw: str | None) -> list[dict[str, Any]] | None:
         raise ValueError("per_question_params must be valid JSON") from exc
     if not isinstance(decoded, list):
         raise ValueError("per_question_params must be a JSON array")
-    if not all(isinstance(item, dict) for item in decoded):
-        raise ValueError("each per_question_params item must be an object")
+    for index, item in enumerate(decoded):
+        if not isinstance(item, dict):
+            raise ValueError(f"per_question_params[{index}] must be an object")
     return decoded
 
 
@@ -138,11 +142,10 @@ class GenerateParams(BaseModel):
                 f"per_question_params array length {len(decoded)} must equal count {self.count}"
             )
         if decoded is not None:
-            known_fields = set(type(self).model_fields)
             base = self.model_dump()
             base["per_question_params"] = None
             for index, item in enumerate(decoded):
-                unknown = set(item) - known_fields
+                unknown = set(item) - PER_QUESTION_FIELDS
                 if unknown:
                     names = ", ".join(sorted(unknown))
                     raise ValueError(
@@ -157,6 +160,11 @@ class GenerateParams(BaseModel):
         return self
 
     model_config = {"populate_by_name": True}
+
+
+PER_QUESTION_FIELDS: frozenset[str] = (
+    frozenset(GenerateParams.model_fields) - REQUEST_LEVEL_FIELDS
+)
 
 
 class PlanCoreQuestionsRequest(BaseModel):

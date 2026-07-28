@@ -108,7 +108,7 @@ describe("GeneratePage — handleSubmit forwards params to generate()", () => {
 
   it("forwards per_question_params from the confirmed form payload", () => {
     const perQuestionParams = JSON.stringify([
-      { subject: "math", grade: 7, learning_performance: ["n-IV-1"] },
+      { grade: 7, learning_performance: ["n-IV-1"] },
     ]);
 
     render(<GeneratePage subject="math" />);

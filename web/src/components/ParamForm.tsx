@@ -872,7 +872,6 @@ export default function ParamForm({
           })
         : [];
       const result = {
-        subject,
         ...baseParams,
         seed: resolvedSeed,
         style: randomStyle ?? (baseParams.style ? [baseParams.style] : undefined),

@@ -86,14 +86,15 @@ describe("ParamForm 發送前確認 display semantics", () => {
       topic: "分數",
       core_question: "如何比較分數？",
     }));
-    expect(JSON.parse(previewPayload.per_question_params)).toEqual([
+    const previewPerQuestion = JSON.parse(previewPayload.per_question_params);
+    expect(previewPerQuestion).toEqual([
       expect.objectContaining({
-        subject: "math",
         seed: 700,
         topic: "分數",
         core_question: "如何比較分數？",
       }),
     ]);
+    expect(previewPerQuestion[0]).not.toHaveProperty("subject");
 
     fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -386,8 +387,8 @@ describe("ParamForm 發送前確認 display semantics", () => {
 
     const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params);
     expect(perQuestion).toHaveLength(2);
-    expect(perQuestion.map((item: { subject: string }) => item.subject))
-      .toEqual([subject, subject]);
+    expect(perQuestion.every((item: Record<string, unknown>) => !("subject" in item)))
+      .toBe(true);
   });
 
   it("copies a user-chosen parameter across the batch and badges it green", async () => {
