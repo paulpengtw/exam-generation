@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.batch_sampler import BatchSampler
+from src.cli import build_generation_prompts as _math_build_prompts_impl
 from src.cli import generate_with_corrections as _math_generate_with_corrections
 from src.common.batch_dedup import (
     extract_math_prior_scope,
@@ -26,6 +27,9 @@ from src.common.batch_dedup import (
     extract_ss_prior_scope,
 )
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
+from src.natural_sciences.cli import (
+    build_generation_prompts as _ns_build_prompts_impl,
+)
 from src.natural_sciences.cli import (
     generate_with_corrections as _ns_generate_with_corrections,
 )
@@ -78,6 +82,9 @@ from src.schemas import (
     QuestionType as MathQuestionType,
 )
 from src.social_studies.cli import _plan_batch_briefs as _ss_plan_batch_briefs
+from src.social_studies.cli import (
+    build_generation_prompts as _ss_build_prompts_impl,
+)
 from src.social_studies.cli import (
     generate_with_corrections as _ss_generate_with_corrections,
 )
@@ -158,6 +165,10 @@ class SubjectSpec:
                             -> ExamQuestion``
                             Adapters use a lazy import of service.py so that
                             test monkeypatches are intercepted.
+    build_generation_prompts
+                            ``(rng_params, overrides, **common_kwargs)
+                            -> (system_prompt, user_prompt, image_paths)``
+                            Builds the same first-call prompts as do_generate.
     extract_prior_scope     ``(question) -> PriorScope | None``
     patch_metadata          Optional ``(question, batch_sampler) -> question``
                             for SS metadata patching.
@@ -187,6 +198,7 @@ class SubjectSpec:
     plan_core_questions: Callable
     load_planner_stage: Callable
     build_schemas: Callable
+    build_generation_prompts: Callable | None = None
     validate_params: Callable | None = None
 
 
@@ -438,6 +450,23 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
     )
 
 
+def _ss_build_generation_prompts(
+    rng_params: Any, overrides: dict, **kwargs: Any
+) -> tuple[str, str, list]:
+    return _ss_build_prompts_impl(
+        kwargs["config"],
+        rng_params,
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_passage=kwargs["user_passage"],
+        text_word_limit=kwargs["text_word_limit"],
+        user_options=kwargs["user_options"],
+        user_topic=kwargs["user_topic"],
+        user_core_question=kwargs["user_core_question"],
+        prior_scopes=kwargs["prior_scopes"],
+    )
+
+
 def _ss_patch_metadata(question: Any, batch_sampler: Any) -> Any:
     from src.social_studies.schemas import ExamQuestion as _SSExamQuestion  # noqa: PLC0415
     from src.social_studies.schemas import QuestionMetadata as _QM  # noqa: PLC0415
@@ -598,6 +627,23 @@ def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
     )
 
 
+def _ns_build_generation_prompts(
+    rng_params: Any, overrides: dict, **kwargs: Any
+) -> tuple[str, str, list]:
+    return _ns_build_prompts_impl(
+        kwargs["config"],
+        rng_params,
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_passage=kwargs["user_passage"],
+        text_word_limit=kwargs["text_word_limit"],
+        user_options=kwargs["user_options"],
+        user_topic=kwargs["user_topic"],
+        user_core_question=kwargs["user_core_question"],
+        prior_scopes=kwargs["prior_scopes"],
+    )
+
+
 def _ns_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:
     # Lazy import so test monkeypatches on src.natural_sciences.planner are seen.
     import src.natural_sciences.planner as _m  # noqa: PLC0415
@@ -755,6 +801,21 @@ def _math_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
     )
 
 
+def _math_build_generation_prompts(
+    rng_params: Any, overrides: dict, **kwargs: Any
+) -> tuple[str, str, list]:
+    return _math_build_prompts_impl(
+        kwargs["config"],
+        rng_params,
+        user_topic=kwargs["user_topic"] or "",
+        user_passage=kwargs["user_passage"] or "",
+        user_options=kwargs["user_options"],
+        user_core_question=kwargs["user_core_question"] or "",
+        prior_scopes=kwargs["prior_scopes"],
+        curriculum_context=overrides["math_curriculum_context"],
+    )
+
+
 def _math_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:
     # Lazy import so test monkeypatches on src.planner.plan_core_questions are seen.
     import src.planner as _m  # noqa: PLC0415
@@ -804,6 +865,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_all_batch_briefs=_ss_plan_all_batch_briefs,
         do_sample_params=_ss_do_sample_params,
         do_generate=_ss_do_generate,
+        build_generation_prompts=_ss_build_generation_prompts,
         extract_prior_scope=extract_ss_prior_scope,
         patch_metadata=_ss_patch_metadata,
         plan_core_questions=_ss_plan_core_questions,
@@ -819,6 +881,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_all_batch_briefs=_ns_plan_all_batch_briefs,
         do_sample_params=_ns_do_sample_params,
         do_generate=_ns_do_generate,
+        build_generation_prompts=_ns_build_generation_prompts,
         extract_prior_scope=extract_ns_prior_scope,
         patch_metadata=None,
         plan_core_questions=_ns_plan_core_questions,
@@ -835,6 +898,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_all_batch_briefs=_math_plan_all_batch_briefs,
         do_sample_params=_math_do_sample_params,
         do_generate=_math_do_generate,
+        build_generation_prompts=_math_build_generation_prompts,
         extract_prior_scope=extract_math_prior_scope,
         patch_metadata=None,
         plan_core_questions=_math_plan_core_questions,

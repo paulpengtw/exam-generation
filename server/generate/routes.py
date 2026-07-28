@@ -28,7 +28,7 @@ from server.generate.models import (
     PlanCoreQuestionsResponse,
     build_sse_error,
 )
-from server.generate.service import generate_question_stream
+from server.generate.service import build_prompt_previews, generate_question_stream
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
@@ -36,6 +36,22 @@ from server.rate_limit import jwt_user_key, limiter
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["generate"])
 NonEmptyQueryValue = Annotated[str, Field(min_length=1)]
+GenerateQuery = Annotated[GenerateParams, Query()]
+
+
+@router.get("/generate/preview")
+@limiter.limit("30/hour", key_func=jwt_user_key)
+async def preview_generate_endpoint(
+    request: Request,
+    params: GenerateQuery,
+    _user: User = Depends(get_current_user),
+    config: ServerConfig = Depends(get_config),
+) -> dict[str, Any]:
+    """Return exact first-stage prompts without invoking an LLM."""
+    _check_model_allowed(params.model_plan, config, "model_plan")
+    _check_model_allowed(params.model_execute, config, "model_execute")
+    _check_subject_allowed(params.subject)
+    return {"prompts": build_prompt_previews(params, config, request.app.state)}
 
 
 def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:

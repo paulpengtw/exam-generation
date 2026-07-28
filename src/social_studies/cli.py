@@ -644,6 +644,21 @@ def generate_one(
     )
 
 
+def build_generation_prompts(
+    config: Config,
+    params: SampledParams,
+    **kwargs: Any,
+) -> tuple[str, str, list]:
+    """Build the exact prompts used by the 社會領域文本生成器."""
+    from src.common.generation_core import build_text_generation_prompts
+
+    params = _with_text_word_limit(params, kwargs.pop("text_word_limit", None))
+    system, user, images, _stage_ctx = build_text_generation_prompts(
+        config, params, _SS_SPEC, **kwargs
+    )
+    return system, user, images
+
+
 def generate_with_corrections(
     config: Config,
     client: LLMClient | None,

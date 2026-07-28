@@ -36,6 +36,81 @@ from src.llm_client import LLMClient
 logger = logging.getLogger(__name__)
 
 
+def _sample_worker_params(
+    i: int,
+    params: GenerateParams,
+    spec: SubjectSpec,
+    overrides: dict,
+    batch_sampler: Any,
+    batch_user_pinned_lc: bool,
+    decoded_subquestion_configs: list[dict] | None,
+) -> Any:
+    """Resolve the sampled parameters for one submit/preview worker index."""
+    assigned_qt = (
+        batch_sampler.q_type_assignments[i] if batch_sampler is not None else None
+    )
+    assigned_lc = (
+        batch_sampler.learning_content_assignments[i]
+        if batch_sampler is not None and not batch_user_pinned_lc
+        else None
+    )
+    seed = (params.seed + i) if params.seed is not None else None
+    return spec.do_sample_params(
+        params,
+        overrides,
+        seed=seed,
+        assigned_q_type=assigned_qt,
+        assigned_lc=assigned_lc,
+        subquestion_configs_decoded=decoded_subquestion_configs,
+    )
+
+
+def build_prompt_previews(
+    params: GenerateParams,
+    config: ServerConfig,
+    app_state: Any,
+) -> list[dict[str, Any]]:
+    """Resolve parameters and build first-stage prompts without an LLM client."""
+    spec = SUBJECTS[params.subject]
+    overrides = spec.coerce_overrides(params, app_state)
+    batch_sampler, batch_user_pinned_lc = spec.setup_batch_sampler(params, overrides)
+    decoded_configs = _decode_subquestion_configs(params.subquestion_configs)
+    client_config = dataclasses.replace(
+        config,
+        model_execute=params.model_execute or config.model_execute,
+        model_plan=params.model_plan or config.model_plan,
+    )
+    previews = []
+    for i in range(max(1, params.count)):
+        sampled = _sample_worker_params(
+            i,
+            params,
+            spec,
+            overrides,
+            batch_sampler,
+            batch_user_pinned_lc,
+            decoded_configs,
+        )
+        assert spec.build_generation_prompts is not None
+        system, user, _images = spec.build_generation_prompts(
+            sampled,
+            overrides,
+            config=client_config,
+            disable_reference_fewshot=params.disable_reference_fewshot,
+            image_generation_mode=params.image_generation_mode,
+            user_passage=params.passage,
+            text_word_limit=params.text_word_limit,
+            user_options=params.options,
+            user_topic=params.topic,
+            user_core_question=params.core_question,
+            prior_scopes=[],
+        )
+        previews.append(
+            {"index": i, "system_prompt": system, "user_prompt": user}
+        )
+    return previews
+
+
 def _decode_subquestion_configs(raw: str | None) -> list[dict] | None:
     """Decode social-studies per-subquestion configs from the GET query string."""
     if not raw:
@@ -143,7 +218,6 @@ def _worker_one(
     batch_briefs: list,
 ) -> None:
     """Execute one question-generation worker; enqueues result/error events."""
-    seed = (ctx.base_seed + i) if ctx.base_seed is not None else None
     worker_recorder = make_exchange_recorder(
         generation_log_id=ctx.generation_log_id,
         retention_days=ctx.retention_days,
@@ -159,21 +233,14 @@ def _worker_one(
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
     try:
-        assigned_qt = (
-            ctx.batch_sampler.q_type_assignments[i] if ctx.batch_sampler is not None else None
-        )
-        assigned_lc = (
-            ctx.batch_sampler.learning_content_assignments[i]
-            if ctx.batch_sampler is not None and not ctx.batch_user_pinned_lc
-            else None
-        )
-        rng_params = ctx.spec.do_sample_params(
+        rng_params = _sample_worker_params(
+            i,
             ctx.params,
+            ctx.spec,
             ctx.overrides,
-            seed=seed,
-            assigned_q_type=assigned_qt,
-            assigned_lc=assigned_lc,
-            subquestion_configs_decoded=ctx.decoded_subquestion_configs,
+            ctx.batch_sampler,
+            ctx.batch_user_pinned_lc,
+            ctx.decoded_subquestion_configs,
         )
 
         # Site 2: apply creative brief when available (SS only in practice)

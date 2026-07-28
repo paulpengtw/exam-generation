@@ -31,6 +31,36 @@ def _emit_update(callback: Callable | None, question: Any, phase: str) -> None:
         callback(question, phase)
 
 
+def build_text_generation_prompts(
+    config: Config,
+    params: Any,
+    spec: SubjectGenerationSpec,
+    *,
+    disable_reference_fewshot: bool = False,
+    image_generation_mode: str = "html",
+    user_passage: str | None = None,
+    user_options: list[str] | None = None,
+    user_topic: str | None = None,
+    user_core_question: str | None = None,
+    prior_scopes: Sequence[Any] | None = None,
+) -> tuple[str, str, list, dict]:
+    """Build the exact prompts used by a 文本生成器 call."""
+    few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
+    text_system, stage_ctx = spec.build_text_system_fn(params)
+    text_user, text_images = spec.build_text_user_fn(
+        params,
+        few_shot_dir,
+        user_passage,
+        user_options,
+        user_topic,
+        user_core_question,
+        image_generation_mode,
+        disable_reference_fewshot,
+        prior_scopes,
+    )
+    return text_system, text_user, text_images, stage_ctx
+
+
 def generate_one_core(
     config: Config,
     client: LLMClient | None,
@@ -54,14 +84,18 @@ def generate_one_core(
     curriculum_context: CurriculumContext | None = None,
 ) -> Any:
     """Shared 文本生成器 → N-parallel-子題產生器 pipeline for NS and SS."""
-    few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
-
     # ── Text-prompt build (dry-run returns early) ─────────────────────────
-    text_system, stage_ctx = spec.build_text_system_fn(params)
-    text_user, text_images = spec.build_text_user_fn(
-        params, few_shot_dir,
-        user_passage, user_options, user_topic, user_core_question,
-        image_generation_mode, disable_reference_fewshot, prior_scopes,
+    text_system, text_user, text_images, stage_ctx = build_text_generation_prompts(
+        config,
+        params,
+        spec,
+        disable_reference_fewshot=disable_reference_fewshot,
+        image_generation_mode=image_generation_mode,
+        user_passage=user_passage,
+        user_options=user_options,
+        user_topic=user_topic,
+        user_core_question=user_core_question,
+        prior_scopes=prior_scopes,
     )
     if dry_run:
         img_note = f" ({len(text_images)} few-shot images)" if text_images else ""
@@ -95,6 +129,7 @@ def generate_one_core(
         sq_plans = spec.make_fallback_sq_plans_fn(params, n)
 
     sub_system = spec.build_subquestion_system_fn(stage_ctx)
+    few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
     max_workers = min(len(sq_plans), config.subgen_max_concurrency)
     use_embedded_subquestions = (
         sub_client_factory is None and client is not None and not isinstance(client, LLMClient)
