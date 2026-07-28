@@ -1,4 +1,18 @@
-"""Subject-specific shim over src.common.curriculum_loader for 自然科學領域."""
+"""Subject-specific shim over src.common.curriculum_loader for 自然科學領域.
+
+Differences from the SS shim
+-----------------------------
+* ``subject_to_prefixes`` is empty — NS has no subject bucketing at the sampler
+  level.  The common ``_subject_prefixes()`` helper therefore falls back to
+  ``{subject}`` for an explicit subject (exact 科目 match) and returns ``None``
+  (no filter) when ``subject=None``.  All current NS call sites pass no subject,
+  so the behaviour is byte-identical to the old ``del subject`` approach; the
+  argument simply stops being silently discarded (AC2).
+* NS-only helpers (``grade_to_learning_stage``, ``relevant_cross_concepts``,
+  ``_paren_code``) have no SS counterpart and remain here.
+* Per-file env-var overrides for LC/LP are preserved (NS has three that SS
+  also carries; see ``SubjectLoaderSpec`` for the full list).
+"""
 
 from __future__ import annotations
 
@@ -9,8 +23,9 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from src.common import curriculum_loader as _base
+from src.common.subject_spec import NATURAL_SCIENCES as _SPEC
 
-_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "natural_sciences" / "curriculum"
+_DATA_DIR = _SPEC.data_dir
 
 
 def grade_to_learning_stage(grade: int) -> str:
@@ -39,7 +54,7 @@ def _load_json(path: Path) -> dict:
 def load_learning_content(path: Path | None = None) -> dict:
     if path is not None:
         return _load_json(path)
-    env = os.environ.get("NATURAL_SCIENCES_LEARNING_CONTENT_PATH")
+    env = os.environ.get(_SPEC.lc_path_env or "")
     if env:
         return _load_json(Path(env))
     return _base.load_learning_content(_DATA_DIR)
@@ -48,7 +63,7 @@ def load_learning_content(path: Path | None = None) -> dict:
 def load_learning_performance(path: Path | None = None) -> dict:
     if path is not None:
         return _load_json(path)
-    env = os.environ.get("NATURAL_SCIENCES_LEARNING_PERFORMANCE_PATH")
+    env = os.environ.get(_SPEC.lp_path_env or "")
     if env:
         return _load_json(Path(env))
     return _base.load_learning_performance(_DATA_DIR)
@@ -59,7 +74,7 @@ def load_performance_intro(path: Path | None = None) -> str:
         if not path.exists():
             return ""
         return path.read_text(encoding="utf-8")
-    env = os.environ.get("NATURAL_SCIENCES_LEARNING_PERFORMANCE_INTRO_PATH")
+    env = os.environ.get(_SPEC.lp_intro_path_env or "")
     if env:
         p = Path(env)
         return p.read_text(encoding="utf-8") if p.exists() else ""
@@ -71,8 +86,20 @@ def allowed_learning_content(
     learning_stage: str,
     subject: str | None = None,
 ) -> list[dict]:
-    del subject
-    return [e for e in data["學習內容"] if e["學習階段"] == learning_stage]
+    """Return 學習內容 entries for *learning_stage*, optionally filtered by 科目.
+
+    When *subject* is ``None`` (all current NS call sites) the full stage pool
+    is returned — behaviour unchanged from the old ``del subject`` approach.
+    When *subject* is given, the common implementation filters to entries whose
+    ``科目`` field is in the fallback set ``{subject}`` (since
+    ``subject_to_prefixes`` is empty for NS).
+    """
+    return _base.allowed_learning_content(
+        data,
+        learning_stage,
+        subject=subject,
+        subject_to_prefixes=_SPEC.subject_to_prefixes,
+    )
 
 
 def allowed_learning_performance(
@@ -80,8 +107,16 @@ def allowed_learning_performance(
     learning_stage: str,
     subject: str | None = None,
 ) -> list[dict]:
-    del subject
-    return [e for e in data["學習表現"] if e["學習階段"] == learning_stage]
+    """Return 學習表現 entries for *learning_stage*, optionally filtered by 科目.
+
+    Same subject-handling contract as ``allowed_learning_content``.
+    """
+    return _base.allowed_learning_performance(
+        data,
+        learning_stage,
+        subject=subject,
+        subject_to_prefixes=_SPEC.subject_to_prefixes,
+    )
 
 
 _PAREN_CODE_RE = re.compile(r"（\s*([A-Za-z]+)\s*）")
