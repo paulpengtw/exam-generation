@@ -94,3 +94,23 @@ describe("buildQueryString — subject_filter as repeated keys", () => {
     expect(qs).not.toContain("subject_filter");
   });
 });
+
+describe("buildQueryString — core_competency as repeated keys", () => {
+  it("emits every core_competency value when present", () => {
+    const qs = buildQueryString({
+      subject: "social_studies",
+      core_competency: ["社-U-A1", "社-U-B2"],
+    });
+
+    expect(new URLSearchParams(qs).getAll("core_competency")).toEqual([
+      "社-U-A1",
+      "社-U-B2",
+    ]);
+  });
+
+  it("omits core_competency when absent", () => {
+    const qs = buildQueryString({ subject: "social_studies" });
+
+    expect(qs).not.toContain("core_competency");
+  });
+});

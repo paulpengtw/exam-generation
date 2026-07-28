@@ -12,12 +12,31 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.app import create_app
-from server.auth.dependencies import get_config
+from server.auth.dependencies import get_config, get_current_user
 from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import Base, GenerationLog, User
 from server.rate_limit import limiter
+
+
+def test_generate_route_returns_422_for_empty_enum_value() -> None:
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/api/generate?subject=natural_sciences&context=")
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert "context" in response.text
 
 
 def test_generate_route_forwards_social_studies_options() -> None:
@@ -104,8 +123,7 @@ def test_subquestion_config_decoder_ignores_malformed_json() -> None:
     from server.generate.service import _decode_subquestion_configs
 
     raw_configs = (
-        '[{"question_word_limit": 80, "question_type": "選擇題", '
-        '"instruction": "聚焦資料判讀"}]'
+        '[{"question_word_limit": 80, "question_type": "選擇題", "instruction": "聚焦資料判讀"}]'
     )
     assert _decode_subquestion_configs(raw_configs) == [
         {
@@ -309,6 +327,7 @@ def test_generate_route_accepts_difficulty_query_param() -> None:
 
 def test_generate_params_difficulty_defaults_to_none():
     from server.generate.models import GenerateParams
+
     assert GenerateParams(subject="math").difficulty is None
 
 
@@ -422,29 +441,48 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
         sampled = kwargs["params"]
         obs = kwargs["client"].get_observer()
         # Simulate two LLM calls (generator + verifier) coming through the observer.
-        obs({
-            "type": "llm_request", "agent": "generator", "purpose": "generate",
-            "model": "claude-sonnet-4-6",
-            "messages": [{"role": "user", "content": "hi"}],
-            "params": {"max_tokens": 8192, "temperature": 0.7},
-        })
-        obs({
-            "type": "llm_response", "agent": "generator", "purpose": "generate",
-            "model": "claude-sonnet-4-6", "content": "ok", "reasoning": None,
-            "usage": {"input": 10, "output": 5, "cache_read": 0, "cache_creation": 0},
-        })
-        obs({
-            "type": "llm_request", "agent": "verifier", "purpose": "verify",
-            "model": "claude-sonnet-4-6",
-            "messages": [{"role": "user", "content": "verify"}],
-            "params": {"max_tokens": 8192, "temperature": 0.7},
-        })
-        obs({
-            "type": "llm_response", "agent": "verifier", "purpose": "verify",
-            "model": "claude-sonnet-4-6", "content": "{\"passed\": true}",
-            "reasoning": None,
-            "usage": {"input": 7, "output": 2, "cache_read": 0, "cache_creation": 0},
-        })
+        obs(
+            {
+                "type": "llm_request",
+                "agent": "generator",
+                "purpose": "generate",
+                "model": "claude-sonnet-4-6",
+                "messages": [{"role": "user", "content": "hi"}],
+                "params": {"max_tokens": 8192, "temperature": 0.7},
+            }
+        )
+        obs(
+            {
+                "type": "llm_response",
+                "agent": "generator",
+                "purpose": "generate",
+                "model": "claude-sonnet-4-6",
+                "content": "ok",
+                "reasoning": None,
+                "usage": {"input": 10, "output": 5, "cache_read": 0, "cache_creation": 0},
+            }
+        )
+        obs(
+            {
+                "type": "llm_request",
+                "agent": "verifier",
+                "purpose": "verify",
+                "model": "claude-sonnet-4-6",
+                "messages": [{"role": "user", "content": "verify"}],
+                "params": {"max_tokens": 8192, "temperature": 0.7},
+            }
+        )
+        obs(
+            {
+                "type": "llm_response",
+                "agent": "verifier",
+                "purpose": "verify",
+                "model": "claude-sonnet-4-6",
+                "content": '{"passed": true}',
+                "reasoning": None,
+                "usage": {"input": 7, "output": 2, "cache_read": 0, "cache_creation": 0},
+            }
+        )
         return ExamQuestion(
             id=question_id,
             核心問題="c",
@@ -543,29 +581,48 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
         sampled = kwargs["params"]
         obs = kwargs["client"].get_observer()
         # Simulate two LLM calls (generator + verifier) per question.
-        obs({
-            "type": "llm_request", "agent": "generator", "purpose": "generate",
-            "model": "claude-sonnet-4-6",
-            "messages": [{"role": "user", "content": "hi"}],
-            "params": {"max_tokens": 8192, "temperature": 0.7},
-        })
-        obs({
-            "type": "llm_response", "agent": "generator", "purpose": "generate",
-            "model": "claude-sonnet-4-6", "content": "ok", "reasoning": None,
-            "usage": {"input": 10, "output": 5, "cache_read": 0, "cache_creation": 0},
-        })
-        obs({
-            "type": "llm_request", "agent": "verifier", "purpose": "verify",
-            "model": "claude-sonnet-4-6",
-            "messages": [{"role": "user", "content": "verify"}],
-            "params": {"max_tokens": 8192, "temperature": 0.7},
-        })
-        obs({
-            "type": "llm_response", "agent": "verifier", "purpose": "verify",
-            "model": "claude-sonnet-4-6", "content": "{\"passed\": true}",
-            "reasoning": None,
-            "usage": {"input": 7, "output": 2, "cache_read": 0, "cache_creation": 0},
-        })
+        obs(
+            {
+                "type": "llm_request",
+                "agent": "generator",
+                "purpose": "generate",
+                "model": "claude-sonnet-4-6",
+                "messages": [{"role": "user", "content": "hi"}],
+                "params": {"max_tokens": 8192, "temperature": 0.7},
+            }
+        )
+        obs(
+            {
+                "type": "llm_response",
+                "agent": "generator",
+                "purpose": "generate",
+                "model": "claude-sonnet-4-6",
+                "content": "ok",
+                "reasoning": None,
+                "usage": {"input": 10, "output": 5, "cache_read": 0, "cache_creation": 0},
+            }
+        )
+        obs(
+            {
+                "type": "llm_request",
+                "agent": "verifier",
+                "purpose": "verify",
+                "model": "claude-sonnet-4-6",
+                "messages": [{"role": "user", "content": "verify"}],
+                "params": {"max_tokens": 8192, "temperature": 0.7},
+            }
+        )
+        obs(
+            {
+                "type": "llm_response",
+                "agent": "verifier",
+                "purpose": "verify",
+                "model": "claude-sonnet-4-6",
+                "content": '{"passed": true}',
+                "reasoning": None,
+                "usage": {"input": 7, "output": 2, "cache_read": 0, "cache_creation": 0},
+            }
+        )
         return ExamQuestion(
             id=question_id,
             核心問題="c",
@@ -656,24 +713,40 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
         obs = kwargs["client"].get_observer()
         # Recorder must not be attached; if it were, this would insert.
         if obs is not None:
-            obs({
-                "type": "llm_request", "agent": "generator", "purpose": "generate",
-                "model": "m", "messages": [], "params": {},
-            })
-            obs({
-                "type": "llm_response", "agent": "generator", "purpose": "generate",
-                "model": "m", "content": "x", "reasoning": None, "usage": {},
-            })
+            obs(
+                {
+                    "type": "llm_request",
+                    "agent": "generator",
+                    "purpose": "generate",
+                    "model": "m",
+                    "messages": [],
+                    "params": {},
+                }
+            )
+            obs(
+                {
+                    "type": "llm_response",
+                    "agent": "generator",
+                    "purpose": "generate",
+                    "model": "m",
+                    "content": "x",
+                    "reasoning": None,
+                    "usage": {},
+                }
+            )
         sampled = kwargs["params"]
         return ExamQuestion(
             id=kwargs["question_id"],
-            核心問題="c", 文本="p", subquestions=[],
+            核心問題="c",
+            文本="p",
+            subquestions=[],
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
             閱讀歷程=[p.value for p in sampled.閱讀歷程],
             文本形式=sampled.文本形式.value,
-            題目=["q"], 正確解題分析=["a"],
+            題目=["q"],
+            正確解題分析=["a"],
         )
 
     def fake_do_generate(rng_params, overrides, **kwargs):
@@ -928,10 +1001,11 @@ def test_route_outer_error_event_is_structured() -> None:
     error_data: str | None = None
     for line in body.splitlines():
         if line.startswith("data:") and "stream_failed" in line:
-            error_data = line[len("data:"):].strip()
+            error_data = line[len("data:") :].strip()
             break
     assert error_data is not None, f"No stream_failed error event found in: {body!r}"
     import json as _json
+
     parsed = _json.loads(error_data)
     assert parsed["code"] == "stream_failed"
     assert "Traceback (most recent call last)" not in parsed["message"]
