@@ -83,6 +83,15 @@ export interface ParamFormProps {
 
 type ConfirmationValueKind = "absent" | "sampled" | "defaulted";
 
+type ConfirmationRow = {
+  label: string;
+  value: string | undefined;
+  subjects: string[];
+  kind?: ConfirmationValueKind;
+  defaultValue?: string;
+  badge?: string;
+};
+
 function resolveConfirmationValue(
   value: string | undefined,
   kind: ConfirmationValueKind,
@@ -974,14 +983,7 @@ export default function ParamForm({
       : [];
 
     const allSubjects = ["math", "social_studies", "natural_sciences"];
-    const rows: {
-      label: string;
-      value: string | undefined;
-      subjects: string[];
-      kind?: ConfirmationValueKind;
-      defaultValue?: string;
-      badge?: string;
-    }[] = [
+    const rows = ([
       { label: t("form.confirm_topic"), value: p.topic, subjects: allSubjects, kind: "absent" },
       {
         label: t("form.confirm_core_question"),
@@ -1031,7 +1033,7 @@ export default function ParamForm({
         defaultValue: t("form.confirm_no"),
       },
       { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "natural_sciences"] },
-    ].filter((row) => row.subjects.includes(subject));
+    ] satisfies ConfirmationRow[]).filter((row) => row.subjects.includes(subject));
 
     const lpHeading = lpWasAutoDrawn
       ? t("form.confirm_lp_random_pool").replace("{n}", String(lpDisplayEntries.length))
