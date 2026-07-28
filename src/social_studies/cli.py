@@ -256,7 +256,7 @@ def _parse_subquestion(
             distractor = {str(k): str(v) for k, v in raw_distractor.items()}
         else:
             distractor = {}
-        return SubQuestion(
+        result = SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
             年級=sq_raw.get("年級", params.grade),
@@ -279,6 +279,8 @@ def _parse_subquestion(
             圖片=sq_raw.get("圖片"),
             chart_spec=sq_chart_spec,
         )
+        result.科目 = [params.科目.value]
+        return result
     except Exception:
         return None
 

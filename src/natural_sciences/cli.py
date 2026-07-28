@@ -201,7 +201,7 @@ def _parse_subquestion(
             distractor = {str(k): str(v) for k, v in raw_distractor.items()}
         else:
             distractor = {}
-        return SubQuestion(
+        result = SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
             年級=sq_raw.get("年級", params.grade),
@@ -219,6 +219,8 @@ def _parse_subquestion(
             評分規準=rubric,
             誘答分析=distractor,
         )
+        result.科目 = ["自然科學"]
+        return result
     except Exception:
         return None
 

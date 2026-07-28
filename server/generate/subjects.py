@@ -112,6 +112,9 @@ from src.social_studies.schema_loader import (
     load_schemas as ss_load_schemas,
 )
 from src.social_studies.schemas import (
+    CoreCompetency as SSCoreCompetency,
+)
+from src.social_studies.schemas import (
     ExamQuestion as SSExamQuestion,
 )
 from src.social_studies.schemas import (
@@ -223,6 +226,12 @@ def _resolve_stage(schemas: dict, grade: int | None) -> str:
 
 
 def _ns_validate_params(params: Any) -> None:
+    if params.core_competency:
+        raise ValueError(
+            "core_competency is not supported for natural sciences; "
+            "use science_competency instead"
+        )
+
     if params.context is None or params.sub_context is None:
         return
 
@@ -320,12 +329,17 @@ def _ss_coerce_overrides(params: Any, app_state: Any) -> dict:
         [SSQuestionSubject(v) for v in params.subject_filter]
         if params.subject_filter else None
     )
+    core_competency_override = (
+        [SSCoreCompetency(v) for v in params.core_competency]
+        if params.core_competency else None
+    )
     ss_curriculum_context = getattr(app_state, "ss_curriculum_context", None)
     return {
         "context_override": context_override,
         "set_type_override": set_type_override,
         "q_type_override": q_type_override,
         "subject_override": subject_override,
+        "core_competency_override": core_competency_override,
         "ss_curriculum_context": ss_curriculum_context,
     }
 
@@ -421,6 +435,7 @@ def _ss_do_sample_params(
         set_type=overrides["set_type_override"],
         q_type=overrides["q_type_override"],
         subject=overrides["subject_override"],
+        core_competency=overrides["core_competency_override"],
         content_type=params.content_type,
         learning_content=params.learning_content,
         learning_performance=params.learning_performance,
