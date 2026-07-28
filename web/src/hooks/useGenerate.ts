@@ -2,41 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 
 import { useAuthStore } from "../store/authStore";
+import type { GenerateParams } from "../api/generated/contract";
+
+export type { GenerateParams };
 
 export type GenerateStatus = "idle" | "generating" | "error";
-
-export interface GenerateParams {
-  subject?: string;
-  grade?: number;
-  style?: string[];
-  content_type?: string;
-  context?: string[];
-  set_type?: string;
-  q_type?: string[];
-  count?: number;
-  skip_verify?: boolean;
-  disable_reference_fewshot?: boolean;
-  seed?: number;
-  image_generation_mode?: "html" | "gpt_image";
-  difficulty?: "easy" | "medium" | "hard";
-  subject_filter?: string[];
-  passage?: string;
-  options?: string[];
-  topic?: string;
-  core_question?: string;
-  sub_context?: string;
-  science_competency?: string[];
-  learning_performance?: string[];
-  learning_content?: string[];
-  sub_question_count?: number;
-  question_word_limit?: number;
-  option_word_limit?: number;
-  text_word_limit?: number;
-  subquestion_configs?: string;
-  model_plan?: string;
-  model_execute?: string;
-  coverage_mode?: "balanced" | "random";
-}
 
 export interface LearningContentItem {
   編碼: string;

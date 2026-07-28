@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from server.config import ServerConfig
 from server.generate.marshalling import (
+    EMITTED_EVENT_NAMES,
     SSEEventName,
     extract_image_files,
     make_combined_observer,
@@ -35,21 +36,10 @@ from server.generate.marshalling import (
 # Helpers / canonical event-name sets
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Event names the server actually emits at runtime.
-# If "progress" (or any other name) starts being emitted, move it here.
-_EMITTED_EVENTS: frozenset[str] = frozenset({
-    "started",
-    "question_update",
-    "result",
-    "error",
-    "done",
-    "pipeline",
-    "llm_request",
-    "llm_thinking",
-    "llm_content",
-    "llm_response",
-    "stage",
-})
+# Event names the server actually emits at runtime — imported from the source
+# of truth in marshalling.py (issue #162). This replaces the previously local
+# constant so tests and the TS generator both draw from the same definition.
+_EMITTED_EVENTS: frozenset[str] = EMITTED_EVENT_NAMES
 
 # Declared in SSEEventName for wire-contract completeness (issue #162 TypeScript
 # generation must see the full vocabulary) but never emitted by server code.

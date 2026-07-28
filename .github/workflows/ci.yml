@@ -1,0 +1,61 @@
+# First CI workflow for this repository (added with issue #162).
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install Python dependencies
+        # --all-groups ensures the [dependency-groups] dev group is included
+        # in addition to the optional extras (dev: pytest/ruff, web: fastapi etc.)
+        run: uv sync --all-extras --all-groups
+
+      - name: Lint (ruff)
+        # Non-blocking: 105 pre-existing errors as of issue #162. Flip to blocking
+        # (remove continue-on-error) once the ruff debt is cleared.
+        continue-on-error: true
+        run: uv run ruff check src/ server/ tests/
+
+      - name: Python tests (includes TS contract drift guard)
+        run: uv run pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc -b --noEmit
+
+      - name: Lint (eslint)
+        # Non-blocking: 6 pre-existing errors in VerifyPage.tsx as of issue #162.
+        # Flip to blocking (remove continue-on-error) once the eslint debt is cleared.
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Web tests
+        run: npm test

@@ -3,6 +3,7 @@ import { getAvailableModels, getSchemas, type AvailableModels, type Schemas } fr
 import { useT } from "../i18n/useT";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
 import CoreQuestionPicker from "./CoreQuestionPicker";
+import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
 
 export interface SubQuestionConfig {
   question_type?: string;
@@ -17,40 +18,66 @@ export interface SubQuestionConfig {
   learning_performance?: string[];
 }
 
-export interface GenerateParams {
+/**
+ * Form-specific param shape — collected from ParamForm and passed to
+ * GeneratePage.handleSubmit, which bridges it to the wire GenerateParams.
+ *
+ * Inherits all optional wire fields unchanged (so adding a wire field
+ * automatically makes it available here). Fields that the form treats
+ * differently are listed in the intersection below with inline comments.
+ */
+export type FormParams = Omit<
+  WireGenerateParams,
+  // GeneratePage injects `subject` from its own props — not a form control.
+  | "subject"
+  // Not exposed in the form UI.
+  | "seed"
+  // Not exposed in the form UI.
+  | "max_retries"
+  // Not exposed in the form UI.
+  | "core_competency"
+  // Exposed per-subquestion inside subquestion_configs, not at top level.
+  | "question_word_limit"
+  // Exposed per-subquestion inside subquestion_configs, not at top level.
+  | "option_word_limit"
+  // Form sends a single string; GeneratePage wraps it in [style].
+  | "style"
+  // Form sends a single string; GeneratePage wraps it in [subject_filter].
+  | "subject_filter"
+  // Required in form — always provided before submit.
+  | "grade"
+  | "context"
+  | "set_type"
+  | "q_type"
+  | "count"
+  | "skip_verify"
+  | "image_generation_mode"
+> & {
+  // Required: the form always has a grade selected before submit.
   grade: number;
-  style?: string;
-  content_type?: string;
+  // Required: defaults to [] when no context is chosen.
   context: string[];
+  // Required: always set from the schema dropdown.
   set_type: string;
+  // Required: always set from the schema dropdown.
   q_type: string[];
+  // Required: defaults to 1.
   count: number;
+  // Required: defaults to false.
   skip_verify: boolean;
-  disable_reference_fewshot?: boolean;
+  // Required: defaults to "html".
   image_generation_mode: "html" | "gpt_image";
-  difficulty?: "easy" | "medium" | "hard";
+  // Form sends a single string; GeneratePage wraps it in [style] for the wire call.
+  style?: string;
+  // Form sends a single string; GeneratePage wraps it in [subject_filter] for the wire call.
   subject_filter?: string;
-  passage?: string;
-  text_word_limit?: number;
-  options?: string[];
-  topic?: string;
-  core_question?: string;
-  sub_context?: string;
-  science_competency?: string[];
-  learning_performance?: string[];
-  learning_content?: string[];
-  sub_question_count?: number;
-  subquestion_configs?: string;
-  model_plan?: string;
-  model_execute?: string;
-  coverage_mode?: "balanced" | "random";
-}
+};
 
 export interface ParamFormProps {
   subject?: string;
-  onSubmit: (params: GenerateParams) => void;
+  onSubmit: (params: FormParams) => void;
   disabled: boolean;
-  initialParams?: Partial<GenerateParams> & { [key: string]: unknown };
+  initialParams?: Partial<FormParams> & { [key: string]: unknown };
 }
 
 const TEXT_HINT = "500 字";
@@ -192,7 +219,7 @@ export default function ParamForm({
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pendingParams, setPendingParams] = useState<GenerateParams | null>(null);
+  const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
   const [pendingResolvedSubquestionConfigs, setPendingResolvedSubquestionConfigs] = useState<
