@@ -44,6 +44,7 @@ export interface GenerateParams {
   option_word_limit?: number;
   text_word_limit?: number;
   subquestion_configs?: string;
+  per_question_params?: string;
   model_plan?: string;
   model_execute?: string;
 }

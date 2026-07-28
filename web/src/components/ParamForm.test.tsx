@@ -17,6 +17,7 @@ const tMock = vi.hoisted(() => {
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
+  planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
 }));
 vi.mock("../i18n/useT", () => ({
   useT: () => tMock,

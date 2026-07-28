@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
+const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../api/client", () => ({ getSchemas: getSchemasMock, getAvailableModels: getAvailableModelsMock, planCoreQuestions: vi.fn() }));
+vi.mock("../api/client", () => ({ getSchemas: getSchemasMock, getAvailableModels: getAvailableModelsMock, planCoreQuestions: planCoreQuestionsMock }));
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (state: { lang: string }) => unknown) => selector({ lang: "zh-TW" }),
 }));
@@ -17,6 +18,13 @@ const MATH_SCHEMA = {
   題型: [{ value: "選擇題", instruction: "" }], 數學思考: [{ value: "形成", instruction: "" }],
   question_style: [{ value: "課本", instruction: "" }], 題目內容類型: [{ value: "純文字", instruction: "" }],
   科目: [{ value: "數與量", instruction: "" }], 學習表現: [], 學習內容: [],
+};
+const MATH_SCHEMA_WITH_CURRICULUM = {
+  ...MATH_SCHEMA,
+  學習表現: [
+    { value: "n-IV-1", instruction: "理解數與量", 科目: "n" },
+    { value: "n-IV-2", instruction: "運用數與量", 科目: "n" },
+  ],
 };
 const SOCIAL_SCHEMA = {
   ...MATH_SCHEMA,
@@ -47,17 +55,198 @@ describe("ParamForm 發送前確認 display semantics", () => {
   beforeEach(() => {
     vi.clearAllMocks(); window.localStorage.clear(); getSchemasMock.mockResolvedValue(MATH_SCHEMA);
     getAvailableModelsMock.mockResolvedValue({ allowed: [], defaults: { plan: "", execute: "" } });
+    planCoreQuestionsMock.mockResolvedValue({ candidates: ["候選核心問題"] });
+  });
+
+  it("calls the core-question planner once when entering confirmation with 核心問題 blank", async () => {
+    await openConfirmation("math", { topic: "分數" });
+
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+    expect(planCoreQuestionsMock).toHaveBeenCalledWith({
+      topic: "分數",
+      subject: "math",
+      subject_filter: undefined,
+      grade: 7,
+    });
+  });
+
+  it("N=1 displays and submits the same one-element per-question payload", async () => {
+    getSchemasMock.mockResolvedValue(MATH_SCHEMA_WITH_CURRICULUM);
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ count: 1, learning_performance: ["n-IV-1"] }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+
+    const block = await screen.findByRole("region", { name: "第1題" });
+    expect(within(block).getByText("n-IV-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const payload = onSubmit.mock.calls[0][0];
+    const perQuestion = JSON.parse(payload.per_question_params);
+    expect(perQuestion).toHaveLength(1);
+    expect(perQuestion[0].learning_performance).toEqual(["n-IV-1"]);
+  });
+
+  it("N>1 renders one labelled block per question", async () => {
+    await openConfirmation("math", { count: 3 });
+
+    expect(screen.getByRole("region", { name: "第1題" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "第2題" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "第3題" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["math", MATH_SCHEMA],
+    ["social_studies", SOCIAL_SCHEMA],
+    ["natural_sciences", SCIENCE_SCHEMA],
+  ])("%s sends one resolved object per requested question", async (subject, schema) => {
+    getSchemasMock.mockResolvedValue(schema);
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject={subject}
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ count: 2 }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    fireEvent.click(await screen.findByRole("button", { name: "確定發送" }));
+
+    const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params);
+    expect(perQuestion).toHaveLength(2);
+    expect(perQuestion.map((item: { subject: string }) => item.subject))
+      .toEqual([subject, subject]);
+  });
+
+  it("copies a user-chosen parameter across the batch and badges it green", async () => {
+    getSchemasMock.mockResolvedValue(MATH_SCHEMA_WITH_CURRICULUM);
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ count: 2, learning_performance: ["n-IV-1"] }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+
+    for (const name of ["第1題", "第2題"]) {
+      const row = within(screen.getByRole("region", { name }))
+        .getByText("學習表現")
+        .parentElement!;
+      expect(within(row).getByText("使用者選擇")).toHaveClass("text-green-700");
+    }
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params);
+    expect(perQuestion.map((item: { learning_performance: string[] }) => item.learning_performance))
+      .toEqual([["n-IV-1"], ["n-IV-1"]]);
+  });
+
+  it("draws an unchosen parameter independently and badges each concrete value amber", async () => {
+    getSchemasMock.mockResolvedValue(MATH_SCHEMA_WITH_CURRICULUM);
+    const random = vi.spyOn(Math, "random");
+    [0, 0, 0, 0, 0, 0.9, 0].forEach((value) => random.mockReturnValueOnce(value));
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ count: 2 }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+
+    for (const name of ["第1題", "第2題"]) {
+      const row = within(screen.getByRole("region", { name }))
+        .getByText("學習表現")
+        .parentElement!;
+      expect(within(row).getByText("隨機抽取")).toHaveClass("text-amber-700");
+      expect(within(row).queryByText("由後端隨機抽取（每題不同）")).not.toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params);
+    expect(perQuestion[0].learning_performance).not.toEqual(perQuestion[1].learning_performance);
+    random.mockRestore();
+  });
+
+  it("auto-selects a planned core question and renders it with the 預先產生 badge", async () => {
+    await openConfirmation("math", { topic: "分數" });
+
+    await screen.findByText("候選核心問題");
+    const row = confirmationRow("核心問題");
+    expect(row.getByText("候選核心問題")).toBeInTheDocument();
+    expect(row.getByText("預先產生")).toHaveClass("text-amber-700");
+  });
+
+  it("submits the pre-generated value as core_question", async () => {
+    const onSubmit = vi.fn();
+    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} initialParams={{ topic: "分數" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    await screen.findByText("候選核心問題");
+
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ core_question: "候選核心問題" }));
+  });
+
+  it("preserves a user-supplied core question without calling the planner", async () => {
+    await openConfirmation("math", { topic: "分數", core_question: "使用者的核心問題" });
+
+    expect(confirmationRow("核心問題").getByText("使用者的核心問題")).toBeInTheDocument();
+    expect(confirmationRow("核心問題").queryByText("預先產生")).not.toBeInTheDocument();
+    expect(planCoreQuestionsMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps confirmation usable and defers 核心問題 when planning fails", async () => {
+    planCoreQuestionsMock.mockRejectedValue(new Error("planner unavailable"));
+    const onSubmit = vi.fn();
+    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} initialParams={{ topic: "分數" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalled());
+    const confirm = screen.getByRole("button", { name: "確定發送" });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ core_question: undefined }));
+  });
+
+  it("does not re-fire the planner when the same confirmation screen re-renders", async () => {
+    const onSubmit = vi.fn();
+    const { rerender } = render(
+      <ParamForm subject="math" onSubmit={onSubmit} disabled={false} initialParams={{ topic: "分數" }} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    await screen.findByText("候選核心問題");
+
+    rerender(<ParamForm subject="math" onSubmit={onSubmit} disabled initialParams={{ topic: "分數" }} />);
+
+    expect(screen.getByRole("heading", { name: "發送前確認設定" })).toBeInTheDocument();
+    expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1);
   });
 
   it("renders a blank 主題 as 未填寫 instead of （無）", async () => {
     await openConfirmation();
-    expect(confirmationRow("主題").getByText("未填寫")).toBeInTheDocument();
+    expect(screen.queryByText("主題", { selector: "dt" })).not.toBeInTheDocument();
     expect(screen.queryByText("（無）")).not.toBeInTheDocument();
   });
 
-  it("labels a blank 情境 as backend-sampled per question", async () => {
+  it("renders a blank 情境 as a concrete per-question draw", async () => {
     await openConfirmation();
-    expect(confirmationRow("情境").getByText("由後端隨機抽取（每題不同）")).toBeInTheDocument();
+    const row = confirmationRow("情境");
+    expect(row.getByText("個人")).toBeInTheDocument();
+    expect(row.getByText("隨機抽取")).toHaveClass("text-amber-700");
   });
 
   it("renders blank 難度 as its resolved medium default", async () => {
@@ -88,14 +277,8 @@ describe("ParamForm 發送前確認 display semantics", () => {
   it("renders all ten natural-science 各小題配置 fields when unset", async () => {
     getSchemasMock.mockResolvedValue(SCIENCE_SCHEMA);
     await openConfirmation("natural_sciences", { sub_question_count: 3, subquestion_configs: [{}, {}, {}] });
-    const card = screen.getByText("第 1 小題").closest("li")!;
-    expect(within(card).getByText(/題型:.*（隨機）/)).toBeInTheDocument();
-    expect(within(card).getByText(/出題指示:.*未填寫/)).toBeInTheDocument();
-    expect(within(card).getAllByText(/（沿用文本設定）/)).toHaveLength(2);
-    expect(within(card).getAllByText(/不限/)).toHaveLength(3);
-    expect(within(card).getByText(/報告等級:.*（隨機）/)).toBeInTheDocument();
-    expect(within(card).getByText(/學習表現:.*（沿用全域設定）/)).toBeInTheDocument();
-    expect(within(card).getByText(/學習內容:.*（沿用全域設定）/)).toBeInTheDocument();
+    const row = confirmationRow("各小題配置");
+    expect(row.getByText("[{},{},{}]")).toBeInTheDocument();
   });
 
   it("renders blank-everything confirmation for 數學 without （無）", async () => {

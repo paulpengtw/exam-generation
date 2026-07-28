@@ -98,6 +98,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         subject === "social_studies" || subject === "natural_sciences" ? params.sub_question_count : undefined,
       subquestion_configs:
         subject === "social_studies" || subject === "natural_sciences" ? params.subquestion_configs : undefined,
+      per_question_params: params.per_question_params,
       model_plan: params.model_plan,
       model_execute: params.model_execute,
       difficulty: params.difficulty,

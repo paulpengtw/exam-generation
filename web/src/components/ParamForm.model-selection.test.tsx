@@ -13,7 +13,7 @@ const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
-  planCoreQuestions: vi.fn(),
+  planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
 }));
 
 import ParamForm from "./ParamForm";

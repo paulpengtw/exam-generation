@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { getAvailableModels, getSchemas, type AvailableModels, type Schemas } from "../api/client";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getAvailableModels, getSchemas, planCoreQuestions, type AvailableModels, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
 import CoreQuestionPicker from "./CoreQuestionPicker";
@@ -92,6 +92,21 @@ function resolveConfirmationValue(
   if (kind === "sampled") return t("form.confirm_backend_sampled");
   if (kind === "defaulted") return defaultValue ?? t("form.confirm_not_filled");
   return t("form.confirm_not_filled");
+}
+
+function drawQuestionSubset<T>(
+  pool: readonly T[],
+  min: number,
+  max: number,
+  previous?: readonly T[],
+): T[] {
+  const drawn = drawRandomSubset(pool, min, max);
+  if (!previous || pool.length < 2 || JSON.stringify(drawn) !== JSON.stringify(previous)) {
+    return drawn;
+  }
+  const alternative = pool.find((value) => !previous.includes(value));
+  if (alternative !== undefined) return [alternative];
+  return drawn.length > 1 ? [drawn[0]] : drawn;
 }
 
 const TEXT_HINT = "500 字";
@@ -235,15 +250,21 @@ export default function ParamForm({
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
+  const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
   const [pendingResolvedSubquestionConfigs, setPendingResolvedSubquestionConfigs] = useState<
     (SubQuestionConfig & { _lcWasAutoDrawn?: boolean; _lpWasAutoDrawn?: boolean })[]
   >([]);
+  const [perQuestionAutoFields, setPerQuestionAutoFields] = useState<string[][]>([]);
 
   const ip = initialParams ?? {};
+  const userChosenFields = useRef(new Set(Object.keys(ip)));
   function fromInit<T>(key: string, fallback: T): T {
     return (ip[key] as T | undefined) ?? fallback;
+  }
+  function markUserChosen(key: string) {
+    userChosenFields.current.add(key);
   }
 
   const [grade, setGrade] = useState<number | "">(fromInit<number | "">("grade", ""));
@@ -521,14 +542,16 @@ export default function ParamForm({
   }, [availableSubContexts, subContext, subject]);
 
   useEffect(() => {
+    if (!schemas) return;
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
     setLearningPerformance((prev) => prev.filter((value) => allowed.has(value)));
-  }, [availableLearningPerformance]);
+  }, [availableLearningPerformance, schemas]);
 
   useEffect(() => {
+    if (!schemas) return;
     const allowed = new Set(availableLearningContent.map((entry) => entry.value));
     setLearningContent((prev) => prev.filter((value) => allowed.has(value)));
-  }, [availableLearningContent]);
+  }, [availableLearningContent, schemas]);
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
@@ -660,7 +683,37 @@ export default function ParamForm({
       );
 
     setPendingResolvedSubquestionConfigs(effectiveSubquestionConfigsInternal);
-    setPendingParams({
+    setCoreQuestionResolution(coreQuestion ? "idle" : "loading");
+    if (!coreQuestion) {
+      void planCoreQuestions({
+        topic: cleanTopic,
+        subject,
+        subject_filter: subjectFilter ? [subjectFilter] : undefined,
+        grade,
+      }).then(({ candidates }) => {
+        if (candidates.length === 0) {
+          setCoreQuestionResolution("failed");
+          return;
+        }
+        const selected = candidates[Math.floor(Math.random() * candidates.length)];
+        setPendingParams((current) => {
+          if (!current) return current;
+          const perQuestion = current.per_question_params
+            ? (JSON.parse(current.per_question_params) as Record<string, unknown>[]).map((item) => ({
+                ...item,
+                core_question: selected,
+              }))
+            : undefined;
+          return {
+            ...current,
+            core_question: selected,
+            per_question_params: perQuestion ? JSON.stringify(perQuestion) : undefined,
+          };
+        });
+        setCoreQuestionResolution("generated");
+      }).catch(() => setCoreQuestionResolution("failed"));
+    }
+    const baseParams: FormParams = {
       grade,
       style: subject === "math" ? style : undefined,
       content_type: effectiveContentType,
@@ -697,6 +750,134 @@ export default function ParamForm({
           : undefined,
       model_plan: modelPlan || undefined,
       model_execute: modelExecute || undefined,
+    };
+
+    let previousQuestionLp: string[] | undefined;
+    let previousQuestionLc: string[] | undefined;
+    let previousQuestionSubquestions: SubQuestionConfig[] | undefined;
+    let previousRandomValues: Record<string, string[] | undefined> = {};
+    const drawField = (key: string, pool: string[], max = 1): string[] | undefined => {
+      if (userChosenFields.current.has(key) || pool.length === 0) return undefined;
+      return drawQuestionSubset(pool, 1, max, previousRandomValues[key]);
+    };
+    const perQuestionParams = Array.from({ length: count }, () => {
+      const randomStyle = subject === "math"
+        ? drawField("style", (schemas?.question_style ?? []).map((entry) => entry.value))
+        : undefined;
+      const randomContentType = drawField(
+        "content_type",
+        (schemas?.題目內容類型 ?? []).filter((entry) => entry.value !== "customized").map((entry) => entry.value),
+      );
+      const randomContext = drawField("context", (schemas?.情境 ?? []).map((entry) => entry.value));
+      const randomSetType = drawField("set_type", (schemas?.題型種類 ?? []).map((entry) => entry.value));
+      const randomQuestionType = subject !== "social_studies"
+        ? drawField("q_type", (schemas?.題型 ?? []).map((entry) => entry.value))
+        : undefined;
+      const randomSubjectFilter = subject === "social_studies"
+        ? drawField("subject_filter", (schemas?.科目 ?? []).map((entry) => entry.value))
+        : undefined;
+      const randomSubContext = subject === "natural_sciences"
+        ? drawField("sub_context", availableSubContexts.map((entry) => entry.value))
+        : undefined;
+      const randomScienceCompetency = subject === "natural_sciences"
+        ? drawField("science_competency", (schemas?.科學能力 ?? []).map((entry) => entry.value))
+        : undefined;
+      const questionLp = autoDrawn
+        ? drawQuestionSubset(lpPoolValues, 1, subject === "math" ? 3 : 2, previousQuestionLp)
+        : finalLp;
+      const questionLc = lcAutoDrawn
+        ? drawQuestionSubset(lcPoolValues, 1, 3, previousQuestionLc)
+        : finalLc;
+      const questionSubquestionConfigs = shouldDrawPerSubq
+        ? subquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
+            const hasExplicitLc = (cfg.learning_content?.length ?? 0) > 0;
+            const hasExplicitLp = (cfg.learning_performance?.length ?? 0) > 0;
+            const lcPool = learningContent.length > 0 ? learningContent : (questionLc ?? []);
+            const lpPool = learningPerformance.length > 0 ? learningPerformance : (questionLp ?? []);
+            return {
+              question_type: cfg.question_type || undefined,
+              instruction: cfg.instruction?.trim() || undefined,
+              content_type: cfg.content_type || undefined,
+              image_generation_mode: cfg.image_generation_mode || undefined,
+              question_word_limit: cfg.question_word_limit,
+              option_word_limit: cfg.option_word_limit,
+              text_word_limit: cfg.text_word_limit,
+              reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
+              learning_content: hasExplicitLc
+                ? cfg.learning_content
+                : lcPool.length > 0
+                  ? drawQuestionSubset(
+                      lcPool,
+                      1,
+                      3,
+                      previousQuestionSubquestions?.[subquestionIndex]?.learning_content,
+                    )
+                  : undefined,
+              learning_performance: hasExplicitLp
+                ? cfg.learning_performance
+                : lpPool.length > 0
+                  ? drawQuestionSubset(
+                      lpPool,
+                      1,
+                      2,
+                      previousQuestionSubquestions?.[subquestionIndex]?.learning_performance,
+                    )
+                  : undefined,
+            };
+          })
+        : [];
+      const result = {
+        subject,
+        ...baseParams,
+        style: randomStyle ?? (baseParams.style ? [baseParams.style] : undefined),
+        content_type: randomContentType?.[0] ?? baseParams.content_type,
+        context: randomContext ?? baseParams.context,
+        set_type: randomSetType?.[0] ?? baseParams.set_type,
+        q_type: randomQuestionType ?? baseParams.q_type,
+        subject_filter: randomSubjectFilter ?? (baseParams.subject_filter ? [baseParams.subject_filter] : undefined),
+        sub_context: randomSubContext?.[0] ?? baseParams.sub_context,
+        science_competency: randomScienceCompetency ?? baseParams.science_competency,
+        difficulty: baseParams.difficulty ?? "medium",
+        model_plan: baseParams.model_plan ?? models?.defaults.plan,
+        model_execute: baseParams.model_execute ?? models?.defaults.execute,
+        learning_performance: questionLp,
+        learning_content: questionLc,
+        subquestion_configs: shouldSendSubquestionConfigs
+          ? JSON.stringify(questionSubquestionConfigs)
+          : undefined,
+      };
+      previousQuestionLp = questionLp;
+      previousQuestionLc = questionLc;
+      previousQuestionSubquestions = questionSubquestionConfigs;
+      previousRandomValues = {
+        style: randomStyle,
+        content_type: randomContentType,
+        context: randomContext,
+        set_type: randomSetType,
+        q_type: randomQuestionType,
+        subject_filter: randomSubjectFilter,
+        sub_context: randomSubContext,
+        science_competency: randomScienceCompetency,
+      };
+      return result;
+    });
+    setPerQuestionAutoFields(
+      perQuestionParams.map(() => [
+        ...(!userChosenFields.current.has("style") && subject === "math" ? ["style"] : []),
+        ...(!userChosenFields.current.has("content_type") ? ["content_type"] : []),
+        ...(!userChosenFields.current.has("context") ? ["context"] : []),
+        ...(!userChosenFields.current.has("set_type") ? ["set_type"] : []),
+        ...(!userChosenFields.current.has("q_type") && subject !== "social_studies" ? ["q_type"] : []),
+        ...(!userChosenFields.current.has("subject_filter") && subject === "social_studies" ? ["subject_filter"] : []),
+        ...(!userChosenFields.current.has("sub_context") && subject === "natural_sciences" ? ["sub_context"] : []),
+        ...(!userChosenFields.current.has("science_competency") && subject === "natural_sciences" ? ["science_competency"] : []),
+        ...(autoDrawn ? ["learning_performance"] : []),
+        ...(lcAutoDrawn ? ["learning_content"] : []),
+      ]),
+    );
+    setPendingParams({
+      ...baseParams,
+      per_question_params: JSON.stringify(perQuestionParams),
     });
   }
 
@@ -708,6 +889,38 @@ export default function ParamForm({
 
   if (pendingParams) {
     const p = pendingParams;
+    const resolvedPerQuestionParams = p.per_question_params
+      ? JSON.parse(p.per_question_params) as Record<string, unknown>[]
+      : [];
+    const perQuestionLabels: Record<string, string> = {
+      subject: t("form.subject"),
+      grade: t("form.confirm_grade"),
+      style: t("form.confirm_style"),
+      content_type: t("form.confirm_content_type"),
+      context: t("form.confirm_context"),
+      set_type: t("form.confirm_set_type"),
+      q_type: t("form.confirm_q_type"),
+      count: t("form.confirm_count"),
+      coverage_mode: t("form.confirm_coverage_mode"),
+      skip_verify: t("form.confirm_skip_verify"),
+      disable_reference_fewshot: t("form.confirm_disable_reference_fewshot"),
+      image_generation_mode: t("form.confirm_image_mode"),
+      difficulty: t("form.confirm_difficulty"),
+      subject_filter: t("form.confirm_subject_filter"),
+      passage: t("form.confirm_passage"),
+      options: t("form.confirm_options"),
+      topic: t("form.confirm_topic"),
+      core_question: t("form.confirm_core_question"),
+      sub_context: t("form.confirm_sub_context"),
+      science_competency: t("form.confirm_science_competency"),
+      learning_performance: t("form.confirm_learning_performance"),
+      learning_content: t("form.confirm_learning_content"),
+      sub_question_count: t("form.confirm_sub_question_count"),
+      text_word_limit: t("form.confirm_text_word_limit"),
+      subquestion_configs: t("form.confirm_subquestion_heading"),
+      model_plan: t("form.confirm_model_plan"),
+      model_execute: t("form.confirm_model_execute"),
+    };
 
     // Resolve full 學習表現 entries for display
     const allLpEntries = schemas?.學習表現 ?? [];
@@ -728,9 +941,17 @@ export default function ParamForm({
       subjects: string[];
       kind?: ConfirmationValueKind;
       defaultValue?: string;
+      badge?: string;
     }[] = [
       { label: t("form.confirm_topic"), value: p.topic, subjects: allSubjects, kind: "absent" },
-      { label: t("form.confirm_core_question"), value: p.core_question, subjects: allSubjects },
+      {
+        label: t("form.confirm_core_question"),
+        value: p.core_question,
+        subjects: allSubjects,
+        kind: coreQuestionResolution === "failed" ? "defaulted" : "absent",
+        defaultValue: coreQuestionResolution === "failed" ? t("form.confirm_core_question_generation_decides") : undefined,
+        badge: coreQuestionResolution === "generated" ? t("form.confirm_core_question_pre_generated") : undefined,
+      },
       { label: t("form.confirm_grade"), value: String(p.grade), subjects: allSubjects },
       { label: t("form.confirm_difficulty"), value: p.difficulty, subjects: allSubjects, kind: "defaulted", defaultValue: "medium" },
       { label: t("form.confirm_subject_filter"), value: p.subject_filter, subjects: ["math", "social_studies"], kind: subject === "social_studies" ? "sampled" : "absent" },
@@ -786,12 +1007,66 @@ export default function ParamForm({
           <h2 className="text-base font-semibold">{t("form.confirm_title")}</h2>
           <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
         </div>
+        <div className="space-y-4">
+          {resolvedPerQuestionParams.map((questionParams, index) => {
+            const heading = t("form.confirm_question_block").replace("{n}", String(index + 1));
+            return (
+              <section
+                key={index}
+                role="region"
+                aria-label={heading}
+                className="rounded-lg border border-gray-200 bg-white p-4"
+              >
+                <h3 className="mb-3 font-semibold text-gray-800">{heading}</h3>
+                <dl className="space-y-2">
+                  {Object.entries(questionParams)
+                    .filter(([, value]) => value !== undefined)
+                    .map(([key, value]) => {
+                      const isRandom = perQuestionAutoFields[index]?.includes(key);
+                      const isPreGeneratedCoreQuestion =
+                        key === "core_question" && coreQuestionResolution === "generated";
+                      return (
+                        <div key={key} className="flex gap-3 text-sm">
+                          <dt className="w-40 shrink-0 font-medium text-gray-600">
+                            {perQuestionLabels[key] ?? key}
+                          </dt>
+                          <dd className="min-w-0 break-words text-gray-900">
+                            <span>{Array.isArray(value) ? value.join(", ") : String(value)}</span>
+                            <span className={`ml-2 text-xs font-medium ${isRandom || isPreGeneratedCoreQuestion ? "text-amber-700" : "text-green-700"}`}>
+                              {isPreGeneratedCoreQuestion
+                                ? t("form.confirm_core_question_pre_generated")
+                                : t(isRandom ? "form.confirm_badge_random" : "form.confirm_badge_user")}
+                            </span>
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  {subject === "social_studies" &&
+                    p.coverage_mode === "balanced" &&
+                    questionParams.learning_content === undefined && (
+                      <div className="flex gap-3 text-sm">
+                        <dt className="w-40 shrink-0 font-medium text-gray-600">
+                          {t("form.confirm_learning_content")}
+                        </dt>
+                        <dd className="min-w-0 break-words text-gray-900">
+                          {t("form.confirm_lc_balanced_backend_assignment")}
+                        </dd>
+                      </div>
+                    )}
+                </dl>
+              </section>
+            );
+          })}
+        </div>
+        {resolvedPerQuestionParams.length === 0 && (
+        <>
         <dl className="divide-y rounded-lg border bg-gray-50">
-          {rows.map(({ label, value, kind = "absent", defaultValue }) => (
+          {rows.map(({ label, value, kind = "absent", defaultValue, badge }) => (
             <div key={label} className="flex gap-3 px-4 py-2.5">
               <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{label}</dt>
               <dd className="flex-1 text-sm text-gray-900 break-words">
                 {resolveConfirmationValue(value, kind, t, defaultValue)}
+                {badge && <span className="ml-2 text-xs font-medium text-amber-700">{badge}</span>}
               </dd>
             </div>
           ))}
@@ -909,6 +1184,8 @@ export default function ParamForm({
               ))}
             </ol>
           </section>
+        )}
+        </>
         )}
         <div className="flex flex-wrap gap-3 pt-1">
           <button
@@ -1041,7 +1318,10 @@ export default function ParamForm({
           <label className="block text-sm font-medium">{t("form.subject_filter")}</label>
           <select
             value={subjectFilter}
-            onChange={(e) => setSubjectFilter(e.target.value)}
+            onChange={(e) => {
+              markUserChosen("subject_filter");
+              setSubjectFilter(e.target.value);
+            }}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.subject_filter.all")}</option>
@@ -1072,7 +1352,10 @@ export default function ParamForm({
                 <SearchPicker
                   available={availableLearningPerformance}
                   selected={learningPerformance}
-                  onChange={setLearningPerformance}
+                  onChange={(values) => {
+                    markUserChosen("learning_performance");
+                    setLearningPerformance(values);
+                  }}
                   placeholder="搜尋學習表現..."
                 />
               </div>
@@ -1083,9 +1366,10 @@ export default function ParamForm({
                     <input
                       type="checkbox"
                       checked={learningPerformance.includes(entry.value)}
-                      onChange={() =>
-                        setLearningPerformance((prev) => toggleMulti(prev, entry.value))
-                      }
+                      onChange={() => {
+                        markUserChosen("learning_performance");
+                        setLearningPerformance((prev) => toggleMulti(prev, entry.value));
+                      }}
                       className="mt-1"
                     />
                     <span className="text-sm">
@@ -1109,7 +1393,10 @@ export default function ParamForm({
           <label className="block text-sm font-medium">{t("form.style")}</label>
           <select
             value={style}
-            onChange={(e) => setStyle(e.target.value)}
+            onChange={(e) => {
+              markUserChosen("style");
+              setStyle(e.target.value);
+            }}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             {(schemas.question_style ?? []).map((s) => (
@@ -1126,7 +1413,10 @@ export default function ParamForm({
           <label className="block text-sm font-medium">{subject === "social_studies" ? "文本素材類型" : t("form.content_type")}</label>
           <select
             value={contentType}
-            onChange={(e) => setContentType(e.target.value)}
+            onChange={(e) => {
+              markUserChosen("content_type");
+              setContentType(e.target.value);
+            }}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             {schemas.題目內容類型.map((s) => (
@@ -1179,7 +1469,10 @@ export default function ParamForm({
                 <input
                   type="checkbox"
                   checked={context.includes(s.value)}
-                  onChange={() => setContext((prev) => toggleMulti(prev, s.value))}
+                  onChange={() => {
+                    markUserChosen("context");
+                    setContext((prev) => toggleMulti(prev, s.value));
+                  }}
                 />
                 <span>{s.value}</span>
               </label>
@@ -1194,7 +1487,10 @@ export default function ParamForm({
             <label className="block text-sm font-medium">{t("form.context")}</label>
             <select
               value={context[0] ?? ""}
-              onChange={(e) => setContext(e.target.value ? [e.target.value] : [])}
+              onChange={(e) => {
+                markUserChosen("context");
+                setContext(e.target.value ? [e.target.value] : []);
+              }}
               className="mt-1 block w-full border rounded px-2 py-1"
             >
               {schemas.情境.map((s) => (
@@ -1208,7 +1504,10 @@ export default function ParamForm({
             <label className="block text-sm font-medium">{t("form.sub_context")}</label>
             <select
               value={subContext}
-              onChange={(e) => setSubContext(e.target.value)}
+              onChange={(e) => {
+                markUserChosen("sub_context");
+                setSubContext(e.target.value);
+              }}
               className="mt-1 block w-full border rounded px-2 py-1"
             >
               {availableSubContexts.map((s) => (
@@ -1226,6 +1525,7 @@ export default function ParamForm({
         <select
           value={setType}
           onChange={(e) => {
+            markUserChosen("set_type");
             setSetType(e.target.value);
             setValidationError(null);
           }}
@@ -1248,7 +1548,10 @@ export default function ParamForm({
               <input
                 type="checkbox"
                 checked={qType.includes(s.value)}
-                onChange={() => setQType((prev) => toggleMulti(prev, s.value))}
+                onChange={() => {
+                  markUserChosen("q_type");
+                  setQType((prev) => toggleMulti(prev, s.value));
+                }}
               />
               <span>{s.value}</span>
             </label>
@@ -1266,9 +1569,10 @@ export default function ParamForm({
                 <input
                   type="checkbox"
                   checked={scienceCompetency.includes(s.value)}
-                  onChange={() =>
-                    setScienceCompetency((prev) => toggleMulti(prev, s.value))
-                  }
+                  onChange={() => {
+                    markUserChosen("science_competency");
+                    setScienceCompetency((prev) => toggleMulti(prev, s.value));
+                  }}
                   className="mt-1"
                 />
                 <span className="text-sm">
@@ -1301,7 +1605,10 @@ export default function ParamForm({
                 <SearchPicker
                   available={availableLearningContent}
                   selected={learningContent}
-                  onChange={setLearningContent}
+                  onChange={(values) => {
+                    markUserChosen("learning_content");
+                    setLearningContent(values);
+                  }}
                   placeholder="搜尋學習內容..."
                 />
               </div>
@@ -1312,9 +1619,10 @@ export default function ParamForm({
                     <input
                       type="checkbox"
                       checked={learningContent.includes(entry.value)}
-                      onChange={() =>
-                        setLearningContent((prev) => toggleMulti(prev, entry.value))
-                      }
+                      onChange={() => {
+                        markUserChosen("learning_content");
+                        setLearningContent((prev) => toggleMulti(prev, entry.value));
+                      }}
                       className="mt-1"
                     />
                     <span className="text-sm">

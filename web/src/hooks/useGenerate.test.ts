@@ -114,3 +114,20 @@ describe("buildQueryString — core_competency as repeated keys", () => {
     expect(qs).not.toContain("core_competency");
   });
 });
+
+describe("buildQueryString — per_question_params serialization", () => {
+  it("emits the JSON array string unchanged", () => {
+    const perQuestionParams = JSON.stringify([
+      { difficulty: "easy", context: ["個人"] },
+      { difficulty: "hard", context: ["公共"] },
+    ]);
+
+    const qs = buildQueryString({
+      subject: "social_studies",
+      count: 2,
+      per_question_params: perQuestionParams,
+    });
+
+    expect(new URLSearchParams(qs).get("per_question_params")).toBe(perQuestionParams);
+  });
+});
