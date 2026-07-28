@@ -5,14 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.common.difficulty import DEFAULT_DIFFICULTY, Difficulty
 from src.natural_sciences.schema_loader import build_enums, load_grades, load_schemas
 
 _schemas = load_schemas()
-QuestionContext, QuestionSubContext, QuestionSetType, QuestionType, ScienceCompetency = (
-    build_enums(_schemas)
+QuestionContext, QuestionSubContext, QuestionSetType, QuestionType, ScienceCompetency = build_enums(
+    _schemas
 )
 _GRADES: list[int] = load_grades(_schemas)
 
@@ -64,6 +64,8 @@ class RubricEntry(BaseModel):
 
 class SubQuestionConfig(BaseModel):
     """Per-subquestion generation configuration overrides for natural sciences."""
+
+    model_config = ConfigDict(extra="forbid")
 
     question_type: QuestionType | None = None  # type: ignore[valid-type]
     instruction: str | None = None

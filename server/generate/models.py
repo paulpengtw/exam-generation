@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ImageGenerationMode = Literal["html", "gpt_image"]
 CoverageMode = Literal["balanced", "random"]
@@ -28,11 +28,13 @@ def build_sse_error(code: str, message: str) -> dict[str, Any]:
     """
     return {"code": code, "message": message}
 
+
 # Canonical set of valid subject values — derived from the SubjectSpec registry so
 # there is exactly ONE declaration point.  Import is deferred to avoid a heavy
 # src.* import cascade in modules that only need ALLOWED_SUBJECTS.
 def _build_allowed_subjects() -> frozenset[str]:
     from server.generate.subjects import SUBJECTS  # noqa: PLC0415
+
     return frozenset(SUBJECTS)
 
 
@@ -82,6 +84,32 @@ class GenerateParams(BaseModel):
     # at the route level).
     model_plan: str | None = None
     model_execute: str | None = None
+
+    @field_validator(
+        "set_type",
+        "sub_context",
+        "style",
+        "q_type",
+        "context",
+        "subject_filter",
+        "science_competency",
+        mode="before",
+    )
+    @classmethod
+    def enum_values_must_not_be_empty(cls, value: object) -> object:
+        values = value if isinstance(value, list) else [value]
+        if any(item == "" for item in values):
+            raise ValueError("must not contain an empty value")
+        return value
+
+    @model_validator(mode="after")
+    def context_must_match_sub_context(self) -> GenerateParams:
+        from server.generate.subjects import SUBJECTS  # noqa: PLC0415
+
+        spec = SUBJECTS.get(self.subject)
+        if spec is not None and spec.validate_params is not None:
+            spec.validate_params(self)
+        return self
 
     model_config = {"populate_by_name": True}
 

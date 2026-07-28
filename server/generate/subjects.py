@@ -167,6 +167,8 @@ class SubjectSpec:
                             Returns the learning-stage string for the planner.
     build_schemas           ``(config_server, grade) -> dict``
                             Returns the schemas dict for /api/schemas.
+    validate_params         Optional ``(params) -> None`` request validation
+                            hook for subject-specific parameter relationships.
     """
 
     key: str
@@ -185,6 +187,7 @@ class SubjectSpec:
     plan_core_questions: Callable
     load_planner_stage: Callable
     build_schemas: Callable
+    validate_params: Callable | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -198,6 +201,24 @@ def _resolve_stage(schemas: dict, grade: int | None) -> str:
         except ValueError:
             pass
     return schemas.get("學習階段", "")
+
+
+def _ns_validate_params(params: Any) -> None:
+    if params.context is None or params.sub_context is None:
+        return
+
+    from src.natural_sciences.schema_loader import load_schemas  # noqa: PLC0415
+
+    parents = {
+        row["value"]: row.get("parent")
+        for row in load_schemas().get("情境子類別", [])
+    }
+    if parents.get(params.sub_context) not in params.context:
+        raise ValueError(
+            "context and sub_context are incompatible: "
+            f"sub_context {params.sub_context!r} requires "
+            f"context {parents.get(params.sub_context)!r}"
+        )
 
 
 _MATH_SUBJECTS = [
@@ -803,6 +824,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_core_questions=_ns_plan_core_questions,
         load_planner_stage=_ns_load_planner_stage,
         build_schemas=_ns_build_schemas,
+        validate_params=_ns_validate_params,
     ),
     "math": SubjectSpec(
         key="math",

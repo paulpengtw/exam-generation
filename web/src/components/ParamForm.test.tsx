@@ -3,9 +3,23 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn(async () => ({ allowed: [], defaults: { plan: "", execute: "" } })));
+const tMock = vi.hoisted(() => {
+  const messages: Record<string, string> = {
+    "history.prefill_notice": "Some saved parameters are no longer available in the current schema.",
+    "form.grade": "Grade",
+    "form.difficulty": "Difficulty",
+    "form.btn_generate": "Generate",
+    "form.btn_confirm_send": "Confirm",
+    "form.error_set_type_required": "題型種類 is required.",
+  };
+  return (key: string) => messages[key] ?? key;
+});
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
+}));
+vi.mock("../i18n/useT", () => ({
+  useT: () => tMock,
 }));
 
 vi.mock("../store/langStore", () => ({
@@ -111,5 +125,26 @@ describe("ParamForm prefill", () => {
         screen.getByText(/Some saved parameters are no longer available/i),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("prevents 發送前確認 when history prefill clears 題型種類", async () => {
+    const onSubmit = vi.fn();
+    getSchemasMock.mockResolvedValue(FAKE_MATH_SCHEMA);
+
+    render(
+      <ParamForm
+        subject="math"
+        disabled={false}
+        onSubmit={onSubmit}
+        initialParams={{ grade: 8, set_type: "已刪除題型種類" }}
+      />,
+    );
+
+    await screen.findByText(/Some saved parameters are no longer available/i);
+    fireEvent.click(screen.getByRole("button", { name: /generate/i }));
+
+    expect(await screen.findByText(/題型種類.*required/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /confirm/i })).not.toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

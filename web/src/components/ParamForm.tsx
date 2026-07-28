@@ -219,6 +219,7 @@ export default function ParamForm({
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
@@ -543,6 +544,11 @@ export default function ParamForm({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (grade === "") return;
+    if (!setType.trim()) {
+      setValidationError(t("form.error_set_type_required"));
+      return;
+    }
+    setValidationError(null);
     const cleanPassage = passage === TEXT_HINT ? undefined : passage;
     const cleanOptions = options.filter((o) => o && o !== OPTION_HINT);
     const cleanTopic = topic.trim();
@@ -570,6 +576,7 @@ export default function ParamForm({
     let lcAutoDrawn = false;
     if (
       (subject === "natural_sciences" || subject === "social_studies") &&
+      !(subject === "social_studies" && coverageMode === "balanced") &&
       learningContent.length === 0 &&
       lcPoolValues.length > 0
     ) {
@@ -783,7 +790,11 @@ export default function ParamForm({
             <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{t("form.confirm_learning_content")}</dt>
             <dd className="flex-1 text-sm text-gray-900">
               {lcDisplayEntries.length === 0 ? (
-                <span className="text-gray-400 italic">{t("form.confirm_none")}</span>
+                <span className="text-gray-400 italic">
+                  {subject === "social_studies" && p.coverage_mode === "balanced"
+                    ? t("form.confirm_lc_balanced_backend_assignment")
+                    : t("form.confirm_none")}
+                </span>
               ) : (
                 <div className="space-y-1">
                   <p className={`text-xs font-medium mb-1.5 ${lcWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>
@@ -924,6 +935,11 @@ export default function ParamForm({
       {prefillNotice && (
         <div className="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">
           {prefillNotice}
+        </div>
+      )}
+      {validationError && (
+        <div role="alert" className="mb-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+          {validationError}
         </div>
       )}
       {isCurriculumSubject && (
@@ -1176,7 +1192,10 @@ export default function ParamForm({
         <label className="block text-sm font-medium">{t("form.set_type")}</label>
         <select
           value={setType}
-          onChange={(e) => setSetType(e.target.value)}
+          onChange={(e) => {
+            setSetType(e.target.value);
+            setValidationError(null);
+          }}
           className="mt-1 block w-full border rounded px-2 py-1"
         >
           {schemas.題型種類.map((s) => (
