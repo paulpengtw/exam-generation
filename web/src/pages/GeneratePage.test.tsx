@@ -106,6 +106,19 @@ describe("GeneratePage — handleSubmit forwards params to generate()", () => {
     );
   });
 
+  it("forwards per_question_params from the confirmed form payload", () => {
+    const perQuestionParams = JSON.stringify([
+      { grade: 7, learning_performance: ["n-IV-1"] },
+    ]);
+
+    render(<GeneratePage subject="math" />);
+    capturedOnSubmit!({ ...BASE_PARAMS, per_question_params: perQuestionParams });
+
+    expect(generateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ per_question_params: perQuestionParams }),
+    );
+  });
+
   it("forwards text_word_limit to generate()", () => {
     render(<GeneratePage subject="social_studies" />);
     capturedOnSubmit!({ ...BASE_PARAMS, text_word_limit: 500 });

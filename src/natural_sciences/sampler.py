@@ -199,6 +199,7 @@ def sample_params(
 
     return SampledParams(
         grade=selected_grade,
+        seed=seed,
         情境=selected_context,
         情境子類別=selected_sub_context,
         題型種類=selected_set_type,

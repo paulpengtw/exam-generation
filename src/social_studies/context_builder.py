@@ -370,7 +370,7 @@ def build_user_prompt(
     prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
     if rng is None:
-        rng = random.Random()
+        rng = random.Random(params.seed)
 
     reading_process = "、".join(p.value for p in params.閱讀歷程)
     topic_override = user_topic.strip() if user_topic else ""
@@ -935,7 +935,7 @@ def build_subquestion_user_prompt(
 ) -> tuple[str, list[Path]]:
     del image_generation_mode
     if rng is None:
-        rng = random.Random()
+        rng = random.Random(params.seed)
 
     q_type = (
         cfg.question_type.value
@@ -1028,6 +1028,31 @@ def build_subquestion_user_prompt(
 
     source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
     difficulty_section = _difficulty_section(params).lstrip("\n")
+    config_parts = [f"題型={q_type}"]
+    if cfg is not None and cfg.instruction:
+        config_parts.append(f"出題指示={cfg.instruction}")
+    if cfg is not None and cfg.learning_content:
+        config_parts.append(f"學習內容={','.join(cfg.learning_content)}")
+    if cfg is not None and cfg.learning_performance:
+        config_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
+    question_limit = (
+        cfg.question_word_limit
+        if cfg is not None and cfg.question_word_limit
+        else params.question_word_limit
+    )
+    option_limit = (
+        cfg.option_word_limit
+        if cfg is not None and cfg.option_word_limit
+        else params.option_word_limit
+    )
+    if question_limit:
+        config_parts.append(f"題目字數上限={question_limit}")
+    if option_limit:
+        config_parts.append(f"選項字數上限={option_limit}")
+    subquestion_config_section = (
+        "## 各小題配置\n\n"
+        f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts)
+    )
     return f"""\
 請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題：
 
@@ -1051,6 +1076,8 @@ def build_subquestion_user_prompt(
 - **序號**：{sq_plan.get("序號", 1)}
 - **題型**：{q_type}
 - **出題概念**：{sq_plan.get("出題概念", "")}
+
+{subquestion_config_section}
 
 ## 指定條件
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from collections.abc import Callable, Sequence
 from datetime import datetime
@@ -301,6 +302,7 @@ def _ns_build_text_user(
     return build_text_user_prompt(
         params,
         few_shot_dir,
+        rng=random.Random(params.seed),
         user_passage=user_passage,
         user_options=user_options,
         user_topic=user_topic,
@@ -401,6 +403,45 @@ def generate_one(
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
+    )
+
+
+def build_generation_prompts(
+    config: Config,
+    params: SampledParams,
+    **kwargs: Any,
+) -> tuple[str, str, list]:
+    """Build the exact prompts used by the 自然科學文本生成器."""
+    from src.common.generation_core import build_text_generation_prompts
+
+    params = _with_text_word_limit(params, kwargs.pop("text_word_limit", None))
+    system, user, images, _stage_ctx = build_text_generation_prompts(
+        config, params, _NS_SPEC, **kwargs
+    )
+    return system, user, images
+
+
+def build_subquestion_prompt_previews(
+    config: Config,
+    params: SampledParams,
+    **kwargs: Any,
+) -> list[tuple[int, str, str, list]]:
+    """Build 子題產生器 prompts without invoking either generation stage."""
+    from src.common.generation_core import (  # noqa: PLC0415
+        build_subquestion_generation_prompts,
+    )
+
+    return build_subquestion_generation_prompts(
+        config,
+        params,
+        _NS_SPEC,
+        disable_reference_fewshot=kwargs.get("disable_reference_fewshot", False),
+        image_generation_mode=kwargs.get("image_generation_mode", "html"),
+        user_passage=kwargs.get("user_passage"),
+        user_options=kwargs.get("user_options"),
+        user_topic=kwargs.get("user_topic"),
+        user_core_question=kwargs.get("user_core_question"),
+        prior_scopes=kwargs.get("prior_scopes"),
     )
 
 

@@ -205,6 +205,7 @@ export function buildQueryString(params: GenerateParams): string {
   if (params.option_word_limit !== undefined) qs.append("option_word_limit", String(params.option_word_limit));
   if (params.text_word_limit !== undefined) qs.append("text_word_limit", String(params.text_word_limit));
   if (params.subquestion_configs) qs.append("subquestion_configs", params.subquestion_configs);
+  if (params.per_question_params) qs.append("per_question_params", params.per_question_params);
   if (params.difficulty !== undefined) qs.append("difficulty", params.difficulty);
   if (params.model_plan && params.model_plan.length > 0) {
     qs.append("model_plan", params.model_plan);

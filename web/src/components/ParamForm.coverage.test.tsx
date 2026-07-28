@@ -22,6 +22,8 @@ vi.mock("../api/client", () => ({
     question_style: [],
   })),
   getAvailableModels: vi.fn(async () => ({ allowed: [], defaults: { plan: "", execute: "" } })),
+  planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
+  previewGenerate: vi.fn(async () => ({ prompts: [] })),
 }));
 
 vi.mock("../i18n/useT", () => ({
@@ -88,6 +90,10 @@ describe("ParamForm coverage_mode dropdown", () => {
 
     await waitFor(() => expect(submitted).toHaveLength(1));
     expect(submitted[0].learning_content).toBeUndefined();
+    const perQuestion = JSON.parse(submitted[0].per_question_params as string);
+    expect(perQuestion).toHaveLength(3);
+    expect(perQuestion.every((item: { learning_content?: string[] }) =>
+      item.learning_content === undefined)).toBe(true);
   });
 
   it("states on 發送前確認 that 均衡 assigns 學習內容 per question", async () => {
@@ -104,8 +110,8 @@ describe("ParamForm coverage_mode dropdown", () => {
     fireEvent.click(screen.getByText("form.btn_generate"));
 
     expect(
-      await screen.findByText("form.confirm_lc_balanced_backend_assignment"),
-    ).toBeInTheDocument();
+      await screen.findAllByText("form.confirm_lc_balanced_backend_assignment"),
+    ).toHaveLength(3);
   });
 
   it("sends an explicit 學習內容 selection as a 釘選 under 均衡", async () => {
