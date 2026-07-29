@@ -9,6 +9,7 @@ const generateState = vi.hoisted(() => ({
   llmCalls: [] as unknown[],
   startedAt: null as number | null,
   finishedAt: null as number | null,
+  subQuestionTotal: null as number | null,
 }));
 
 const statusBar = vi.hoisted(() => ({
@@ -31,6 +32,7 @@ vi.mock("../hooks/useGenerate", () => ({
     errorMessage: null,
     startedAt: generateState.startedAt,
     finishedAt: generateState.finishedAt,
+    subQuestionTotal: generateState.subQuestionTotal,
     generate: vi.fn(),
     reset: vi.fn(),
   }),
@@ -196,17 +198,38 @@ describe("GeneratePage — 生成步驟 wiring", () => {
     ];
     generateState.startedAt = 1_000;
     generateState.finishedAt = null;
+    generateState.subQuestionTotal = null;
     paramForm.onSubmit = null;
     statusBar.props = null;
   });
 
-  it("passes the subject, hook events, and submitted 子題 count to the bar", () => {
+  it("uses the announced 子題 total when the form omitted 子題數", () => {
+    const page = render(<GeneratePage subject="social_studies" />);
+
+    act(() => {
+      paramForm.onSubmit?.({ count: 1 });
+    });
+    generateState.status = "generating";
+    generateState.subQuestionTotal = 5;
+    page.rerender(<GeneratePage subject="social_studies" />);
+
+    expect(statusBar.props).toEqual(
+      expect.objectContaining({
+        subject: "social_studies",
+        stageEvents: generateState.llmCalls,
+        subQuestionCount: 5,
+      }),
+    );
+  });
+
+  it("keeps the submitted 子題 count when a different total is announced", () => {
     const page = render(<GeneratePage subject="social_studies" />);
 
     act(() => {
       paramForm.onSubmit?.({ count: 1, sub_question_count: 4 });
     });
     generateState.status = "generating";
+    generateState.subQuestionTotal = 5;
     page.rerender(<GeneratePage subject="social_studies" />);
 
     expect(statusBar.props).toEqual(

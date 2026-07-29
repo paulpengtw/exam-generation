@@ -56,6 +56,21 @@ def emit_stage(
         pass
 
 
+def emit_plan(observer: LLMObserver | None, sub_question_total: int) -> None:
+    """Emit the resolved sub-question plan total to the observer (if any)."""
+    if observer is None:
+        return
+    try:
+        observer({
+            "type": "plan",
+            "agent": "generator",
+            "sub_question_total": sub_question_total,
+            "ts": time.time(),
+        })
+    except Exception:
+        pass
+
+
 def make_stderr_observer(truncate: int | None = None) -> LLMObserver:
     """Return an observer that prints LLM events to stderr."""
     _reasoning_started = [False]

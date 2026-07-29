@@ -117,6 +117,7 @@ export interface UseGenerateReturn {
   errorMessage: string | null;
   startedAt: number | null;
   finishedAt: number | null;
+  subQuestionTotal: number | null;
   generate: (params: GenerateParams) => void;
   reset: () => void;
 }
@@ -297,6 +298,7 @@ export function useGenerate(): UseGenerateReturn {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [finishedAt, setFinishedAt] = useState<number | null>(null);
+  const [subQuestionTotal, setSubQuestionTotal] = useState<number | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const nextFinalIndexRef = useRef(0);
 
@@ -319,6 +321,7 @@ export function useGenerate(): UseGenerateReturn {
     setErrorMessage(null);
     setStartedAt(null);
     setFinishedAt(null);
+    setSubQuestionTotal(null);
     nextFinalIndexRef.current = 0;
     setStatus("idle");
   }, []);
@@ -340,6 +343,7 @@ export function useGenerate(): UseGenerateReturn {
     setErrorMessage(null);
     setStartedAt(Date.now());
     setFinishedAt(null);
+    setSubQuestionTotal(null);
     nextFinalIndexRef.current = 0;
 
     fetchEventSource(url, {
@@ -418,6 +422,13 @@ export function useGenerate(): UseGenerateReturn {
             } catch { /* ignore */ }
             break;
           }
+          case "plan": {
+            try {
+              const d = JSON.parse(ev.data) as { sub_question_total: number };
+              setSubQuestionTotal(d.sub_question_total);
+            } catch { /* ignore */ }
+            break;
+          }
           case "pipeline":
             // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
             break;
@@ -483,6 +494,7 @@ export function useGenerate(): UseGenerateReturn {
     errorMessage,
     startedAt,
     finishedAt,
+    subQuestionTotal,
     generate,
     reset,
   };

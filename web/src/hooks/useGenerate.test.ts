@@ -134,6 +134,51 @@ describe("useGenerate — run timestamps", () => {
   });
 });
 
+describe("useGenerate — resolved sub-question total", () => {
+  beforeEach(() => {
+    fetchEventSourceMock.mockClear();
+  });
+
+  it("stores a plan announcement and clears it on reset", () => {
+    const { result } = renderStartedRun();
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "plan",
+        data: JSON.stringify({ sub_question_total: 5 }),
+      });
+    });
+
+    expect(result.current.subQuestionTotal).toBe(5);
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(result.current.subQuestionTotal).toBeNull();
+  });
+
+  it("clears the previous plan announcement when a new run starts", () => {
+    const { result } = renderStartedRun();
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "plan",
+        data: JSON.stringify({ sub_question_total: 5 }),
+      });
+    });
+    expect(result.current.subQuestionTotal).toBe(5);
+
+    act(() => {
+      result.current.generate({ subject: "social_studies", count: 1 });
+    });
+
+    expect(result.current.subQuestionTotal).toBeNull();
+  });
+});
+
 describe("useGenerate — model overrides", () => {
   it("does not emit model_plan / model_execute when unset", () => {
     const qs = buildQueryString({ subject: "math", grade: 7 });

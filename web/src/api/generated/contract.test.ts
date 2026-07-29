@@ -23,6 +23,7 @@ const FRONTEND_HANDLED_EVENTS: ReadonlySet<string> = new Set([
   "llm_content",
   "llm_response",
   "stage",
+  "plan",
   "pipeline",
   "question_update",
   "result",
@@ -52,11 +53,11 @@ describe("SSE contract: frontend vs server event-name consistency", () => {
     expect(undeclared).toEqual([]);
   });
 
-  it("SSE_EMITTED_EVENT_NAMES has 11 entries (PROGRESS is declared-only)", () => {
-    expect(SSE_EMITTED_EVENT_NAMES).toHaveLength(11);
+  it("SSE_EMITTED_EVENT_NAMES has 12 entries (PROGRESS is declared-only)", () => {
+    expect(SSE_EMITTED_EVENT_NAMES).toHaveLength(12);
   });
 
-  it("ALL_DECLARED_EVENTS has 12 entries (11 emitted + 1 declared-only)", () => {
-    expect(ALL_DECLARED_EVENTS.size).toBe(12);
+  it("ALL_DECLARED_EVENTS has 13 entries (12 emitted + 1 declared-only)", () => {
+    expect(ALL_DECLARED_EVENTS.size).toBe(13);
   });
 });

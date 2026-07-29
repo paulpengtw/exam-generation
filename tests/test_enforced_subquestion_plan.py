@@ -6,12 +6,13 @@ from src.config import Config
 
 
 class _TextClient:
-    def __init__(self, question_type: str, plan_count: int) -> None:
+    def __init__(self, question_type: str, plan_count: int, observer=None) -> None:
         self.question_type = question_type
         self.plan_count = plan_count
+        self.observer = observer
 
     def get_observer(self):
-        return None
+        return self.observer
 
     def generate_json(self, system, user, images=None, **kwargs):
         return {
@@ -104,6 +105,28 @@ def test_社會領域_文本生成器計畫過長時截斷至指定小題數量(
     assert len(question.subquestions) == 3
 
 
+def test_社會領域_公告截斷後的小題數量() -> None:
+    from src.social_studies.cli import generate_one
+    from src.social_studies.sampler import sample_params
+
+    params = sample_params(seed=23, content_type="純文字", sub_question_count=4)
+    events: list[dict] = []
+
+    generate_one(
+        config=_config(),
+        client=_TextClient("選擇題", plan_count=6, observer=events.append),
+        params=params,
+        question_id="ss_announce_truncated_count",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=_SubClient,
+    )
+
+    plan_events = [event for event in events if event.get("type") == "plan"]
+    assert len(plan_events) == 1
+    assert plan_events[0]["sub_question_total"] == 4
+
+
 def test_社會領域_文本生成器計畫過短時以既有備援計畫補足小題() -> None:
     from src.social_studies.cli import generate_one
     from src.social_studies.sampler import sample_params
@@ -122,6 +145,28 @@ def test_社會領域_文本生成器計畫過短時以既有備援計畫補足�
 
     assert len(question.subquestions) == 3
     assert question.subquestions[2].出題概念 == ""
+
+
+def test_社會領域_公告補足後的小題數量() -> None:
+    from src.social_studies.cli import generate_one
+    from src.social_studies.sampler import sample_params
+
+    params = sample_params(seed=23, content_type="純文字", sub_question_count=5)
+    events: list[dict] = []
+
+    generate_one(
+        config=_config(),
+        client=_TextClient("選擇題", plan_count=2, observer=events.append),
+        params=params,
+        question_id="ss_announce_padded_count",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=_SubClient,
+    )
+
+    plan_events = [event for event in events if event.get("type") == "plan"]
+    assert len(plan_events) == 1
+    assert plan_events[0]["sub_question_total"] == 5
 
 
 def test_社會領域_釘選題型寫入子題產生器提示詞() -> None:
@@ -314,6 +359,39 @@ def test_社會領域_未指定小題數量時保留文本生成器決定的數�
     )
 
     assert len(question.subquestions) == 4
+
+
+def test_社會領域_未指定小題數量時在子題產生前公告文本生成器決定的數量() -> None:
+    from src.social_studies.cli import generate_one
+    from src.social_studies.sampler import sample_params
+
+    params = sample_params(seed=23, content_type="純文字")
+    events: list[dict] = []
+
+    generate_one(
+        config=_config(),
+        client=_TextClient("選擇題", plan_count=4, observer=events.append),
+        params=params,
+        question_id="ss_announce_llm_count",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=_SubClient,
+    )
+
+    plan_events = [event for event in events if event.get("type") == "plan"]
+    assert len(plan_events) == 1
+    assert plan_events[0]["agent"] == "generator"
+    assert plan_events[0]["sub_question_total"] == 4
+
+    plan_index = events.index(plan_events[0])
+    first_sub_generator_start = next(
+        index
+        for index, event in enumerate(events)
+        if event.get("type") == "stage"
+        and str(event.get("agent", "")).startswith("sub_generator#")
+        and event.get("status") == "start"
+    )
+    assert plan_index < first_sub_generator_start
 
 
 def test_自然科學_文本生成器計畫過長時截斷至指定小題數量() -> None:
