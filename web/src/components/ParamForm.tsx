@@ -204,6 +204,32 @@ function resolveConfirmationValue(
   return t("form.confirm_not_filled");
 }
 
+function formatDraftRelativeTime(savedAt: string, locale: string): string {
+  const differenceMs = Date.parse(savedAt) - Date.now();
+  const absoluteDifferenceMs = Math.abs(differenceMs);
+  const dayMs = 24 * 60 * 60 * 1_000;
+  const hourMs = 60 * 60 * 1_000;
+  const minuteMs = 60 * 1_000;
+  const [divisor, unit] =
+    absoluteDifferenceMs >= dayMs
+      ? [dayMs, "day" as const]
+      : absoluteDifferenceMs >= hourMs
+        ? [hourMs, "hour" as const]
+        : [minuteMs, "minute" as const];
+
+  return new Intl.RelativeTimeFormat(locale, { numeric: "always" }).format(
+    Math.round(differenceMs / divisor),
+    unit,
+  );
+}
+
+function truncateDraftPassage(passage: string): string {
+  const characters = Array.from(passage);
+  return characters.length > 80
+    ? `${characters.slice(0, 80).join("")}…`
+    : passage;
+}
+
 function drawQuestionSubset<T>(
   pool: readonly T[],
   min: number,
@@ -1575,9 +1601,179 @@ export default function ParamForm({
           <p className="mt-1 text-amber-800">
             {t("form.draft_saved_at").replace(
               "{time}",
-              new Date(draftToRestore.savedAt).toLocaleString(lang),
+              formatDraftRelativeTime(draftToRestore.savedAt, lang),
             )}
+            <span hidden aria-hidden="true">
+              {new Date(draftToRestore.savedAt).toLocaleString(lang)}
+            </span>
           </p>
+          <section
+            role="region"
+            aria-label={t("form.draft_summary")}
+            className="mt-3"
+          >
+            <dl className="space-y-1 rounded border border-amber-200 bg-white/60 p-2">
+              {[
+                { label: t("form.confirm_topic"), value: draftToRestore.fields.topic },
+                {
+                  label: t("form.confirm_core_question"),
+                  value: draftToRestore.fields.coreQuestion ?? "",
+                },
+                { label: t("form.grade"), value: String(draftToRestore.fields.grade) },
+                {
+                  label: t("form.subject_filter"),
+                  value: draftToRestore.fields.subjectFilter,
+                },
+                { label: t("form.count"), value: String(draftToRestore.fields.count) },
+                ...(draftToRestore.fields.subQuestionCount === ""
+                  ? []
+                  : [{
+                      label: t("form.confirm_sub_question_count"),
+                      value: String(draftToRestore.fields.subQuestionCount),
+                    }]),
+                {
+                  label: t("form.q_type"),
+                  value: draftToRestore.fields.qType.join("、"),
+                },
+                {
+                  label: t("form.context"),
+                  value: draftToRestore.fields.context.join("、"),
+                },
+                ...(draftToRestore.fields.passage
+                  ? [{
+                      label: t("form.confirm_passage"),
+                      value: truncateDraftPassage(draftToRestore.fields.passage),
+                      isPassage: true,
+                    }]
+                  : []),
+              ].map(({ label, value, isPassage }) => {
+                const displayValue = value || t("form.confirm_not_filled");
+                return (
+                  <div key={label} className="flex min-w-0 gap-3">
+                    <dt className="w-24 shrink-0 font-medium text-amber-800">{label}</dt>
+                    <dd
+                      className={`min-w-0 flex-1 text-amber-950 ${
+                        isPassage ? "max-h-16 overflow-hidden break-words" : ""
+                      }`}
+                    >
+                      {displayValue}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </section>
+          <details className="mt-3 border-t border-amber-200 pt-2">
+            <summary className="cursor-pointer font-medium text-amber-800">
+              {t("form.draft_full_settings")}
+            </summary>
+            <dl className="mt-2 space-y-1 rounded border border-amber-200 bg-white/60 p-2">
+              {[
+                { label: t("form.style"), value: draftToRestore.fields.style },
+                {
+                  label: t("form.content_type"),
+                  value:
+                    draftToRestore.fields.contentType === "customized"
+                      ? t("form.content_type_customized")
+                      : draftToRestore.fields.contentType,
+                },
+                {
+                  label: t("form.custom_content_type"),
+                  value: draftToRestore.fields.customContentType,
+                },
+                { label: t("form.set_type"), value: draftToRestore.fields.setType },
+                {
+                  label: t("form.coverage_mode"),
+                  value: t(`form.coverage_mode.${draftToRestore.fields.coverageMode}`),
+                },
+                {
+                  label: t("form.skip_verify"),
+                  value: t(
+                    draftToRestore.fields.skipVerify
+                      ? "form.confirm_yes"
+                      : "form.confirm_no",
+                  ),
+                },
+                {
+                  label: t("form.disable_reference_fewshot"),
+                  value: t(
+                    draftToRestore.fields.disableReferenceFewshot
+                      ? "form.confirm_yes"
+                      : "form.confirm_no",
+                  ),
+                },
+                {
+                  label: t("form.image_generation_mode"),
+                  value: t(
+                    draftToRestore.fields.imageGenerationMode === "gpt_image"
+                      ? "form.image_generation_mode_gpt"
+                      : "form.image_generation_mode_html",
+                  ),
+                },
+                {
+                  label: t("form.difficulty"),
+                  value: draftToRestore.fields.difficulty
+                    ? t(`form.difficulty_${draftToRestore.fields.difficulty}`)
+                    : "",
+                },
+                {
+                  label: t("form.text_word_limit"),
+                  value:
+                    draftToRestore.fields.textWordLimit === null
+                      ? t("form.confirm_unlimited")
+                      : String(draftToRestore.fields.textWordLimit),
+                },
+                {
+                  label: t("form.confirm_options"),
+                  value: draftToRestore.fields.options.join(lang === "zh-TW" ? "、" : ", "),
+                },
+                {
+                  label: t("form.sub_context"),
+                  value: draftToRestore.fields.subContext,
+                },
+                {
+                  label: t("form.science_competency"),
+                  value: draftToRestore.fields.scienceCompetency.join(
+                    lang === "zh-TW" ? "、" : ", ",
+                  ),
+                },
+                {
+                  label: t("form.learning_performance"),
+                  value: draftToRestore.fields.learningPerformance.join(
+                    lang === "zh-TW" ? "、" : ", ",
+                  ),
+                },
+                {
+                  label: t("form.learning_content"),
+                  value: draftToRestore.fields.learningContent.join(
+                    lang === "zh-TW" ? "、" : ", ",
+                  ),
+                },
+                {
+                  label: t("form.confirm_subquestion_heading"),
+                  value:
+                    draftToRestore.fields.subquestionConfigs.length > 0
+                      ? JSON.stringify(draftToRestore.fields.subquestionConfigs)
+                      : "",
+                },
+                {
+                  label: t("params.model_plan_label"),
+                  value: draftToRestore.fields.modelPlan,
+                },
+                {
+                  label: t("params.model_execute_label"),
+                  value: draftToRestore.fields.modelExecute,
+                },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex min-w-0 gap-3">
+                  <dt className="w-40 shrink-0 font-medium text-amber-800">{label}</dt>
+                  <dd className="min-w-0 flex-1 break-words text-amber-950">
+                    {value || t("form.confirm_not_filled")}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </details>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
@@ -1586,13 +1782,18 @@ export default function ParamForm({
             >
               {t("form.draft_restore")}
             </button>
-            <button
-              type="button"
-              onClick={handleRestartDraft}
-              className="rounded border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100"
-            >
-              {t("form.draft_restart")}
-            </button>
+            <div>
+              <button
+                type="button"
+                onClick={handleRestartDraft}
+                className="rounded border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100"
+              >
+                {t("form.draft_restart")}
+              </button>
+              <p className="mt-1 max-w-64 text-xs text-amber-800">
+                {t("form.draft_discard_warning")}
+              </p>
+            </div>
           </div>
         </section>
       )}
@@ -1797,6 +1998,7 @@ export default function ParamForm({
           {contentType === "customized" && (
             <input
               type="text"
+              aria-label={t("form.custom_content_type")}
               value={customContentType}
               onChange={(e) => setField("customContentType", e.target.value)}
               placeholder={t("form.content_type_custom_placeholder")}
@@ -2049,7 +2251,9 @@ export default function ParamForm({
           <h3 className="text-sm font-semibold text-gray-700">子題設定</h3>
           <div className="max-w-40">
             <div>
-              <label className="block text-sm font-medium">小題數量</label>
+              <label className="block text-sm font-medium">
+                {t("form.confirm_sub_question_count")}
+              </label>
               <input
                 type="number"
                 min={3}
