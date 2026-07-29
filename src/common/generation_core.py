@@ -22,7 +22,7 @@ from src.common.subject_spec import SubjectGenerationSpec
 from src.config import Config
 from src.curriculum_context import CurriculumContext
 from src.html_renderer import PlaywrightRenderer
-from src.llm_client import LLMClient, emit_stage
+from src.llm_client import LLMClient, emit_plan, emit_stage
 from src.renderer import render_image
 
 
@@ -191,6 +191,8 @@ def generate_one_core(
     if not sq_plans:
         n = params.sub_question_count or 3
         sq_plans = spec.make_fallback_sq_plans_fn(params, n)
+
+    emit_plan(obs, len(sq_plans))
 
     sub_system = spec.build_subquestion_system_fn(stage_ctx)
     few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"

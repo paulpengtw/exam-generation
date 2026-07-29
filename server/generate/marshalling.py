@@ -49,12 +49,13 @@ class SSEEventName(str, Enum):
     ERROR = "error"
     DONE = "done"
     PIPELINE = "pipeline"
-    # Five names mapped from LLM-observer event types:
+    # Six names mapped from LLM-observer event types:
     LLM_REQUEST = "llm_request"
     LLM_THINKING = "llm_thinking"
     LLM_CONTENT = "llm_content"
     LLM_RESPONSE = "llm_response"
     STAGE = "stage"
+    PLAN = "plan"
 
 
 # Canonical set of event names the server actually emits at runtime.
@@ -73,6 +74,7 @@ EMITTED_EVENT_NAMES: frozenset[str] = frozenset({
     "llm_content",
     "llm_response",
     "stage",
+    "plan",
 })
 
 
@@ -83,6 +85,7 @@ _OBSERVER_TYPE_MAP: dict[str, SSEEventName] = {
     "llm_content_delta": SSEEventName.LLM_CONTENT,
     "llm_response": SSEEventName.LLM_RESPONSE,
     "stage": SSEEventName.STAGE,
+    "plan": SSEEventName.PLAN,
 }
 
 # ---------------------------------------------------------------------------

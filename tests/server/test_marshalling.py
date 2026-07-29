@@ -1,7 +1,7 @@
 """Unit tests for server.generate.marshalling — no threads, no database.
 
 Covers:
-  - SSEEventName vocabulary completeness (all 12 event names present)
+  - SSEEventName vocabulary completeness (all 13 event names present)
   - question_to_event: PNG embedding, missing-file skip, subquestion embedding
   - extract_image_files / strip_image_base64
   - make_queue_observer: mapped events enqueued, unknown events dropped
@@ -97,8 +97,8 @@ def test_sse_event_name_declared_vocabulary_matches_canonical_sets() -> None:
     )
 
 
-def test_sse_event_name_has_exactly_twelve_members() -> None:
-    assert len(SSEEventName) == 12
+def test_sse_event_name_has_exactly_thirteen_members() -> None:
+    assert len(SSEEventName) == 13
 
 
 def test_sse_event_name_values_are_strings() -> None:
@@ -133,6 +133,10 @@ def test_emitted_events_are_all_declared() -> None:
     assert not undeclared, (
         f"Emitted event names missing from SSEEventName: {sorted(undeclared)}"
     )
+
+
+def test_plan_is_an_emitted_event() -> None:
+    assert "plan" in EMITTED_EVENT_NAMES
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -264,6 +268,7 @@ def test_make_queue_observer_maps_all_observer_types() -> None:
             ("llm_content_delta", SSEEventName.LLM_CONTENT),
             ("llm_response", SSEEventName.LLM_RESPONSE),
             ("stage", SSEEventName.STAGE),
+            ("plan", SSEEventName.PLAN),
         ]
         for input_type, expected_event in pairs:
             observer({"type": input_type})

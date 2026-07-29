@@ -52,6 +52,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     errorMessage,
     startedAt,
     finishedAt,
+    subQuestionTotal,
     generate,
     reset,
   } = useGenerate();
@@ -60,7 +61,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const progressRef = useRef<HTMLElement | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
   const [requestedTotal, setRequestedTotal] = useState(0);
-  const [subQuestionCount, setSubQuestionCount] = useState<number | null>(null);
+  const [submittedSubQuestionCount, setSubmittedSubQuestionCount] =
+    useState<number | null>(null);
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isClearResultsConfirmOpen, setIsClearResultsConfirmOpen] =
@@ -98,14 +100,14 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       return;
     }
     setRequestedTotal(params.count);
-    setSubQuestionCount(generateParams.sub_question_count ?? null);
+    setSubmittedSubQuestionCount(generateParams.sub_question_count ?? null);
     generate(generateParams);
   };
 
   const handleReset = () => {
     reset();
     setRequestedTotal(0);
-    setSubQuestionCount(null);
+    setSubmittedSubQuestionCount(null);
   };
 
   const handleJump = (target: JumpTarget) => {
@@ -330,7 +332,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           const params = pendingResubmitParams;
           setPendingResubmitParams(null);
           setRequestedTotal(params.count ?? 0);
-          setSubQuestionCount(params.sub_question_count ?? null);
+          setSubmittedSubQuestionCount(params.sub_question_count ?? null);
           generate(params);
         }}
         onCancel={() => setPendingResubmitParams(null)}
@@ -341,7 +343,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         requestedTotal={requestedTotal}
         subject={subject}
         stageEvents={llmCalls}
-        subQuestionCount={subQuestionCount}
+        subQuestionCount={submittedSubQuestionCount ?? subQuestionTotal}
         startedAt={startedAt}
         finishedAt={finishedAt}
         availableTargets={availableTargets}
