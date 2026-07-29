@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
+import type { LlmCallEvent } from "../hooks/useGenerate";
 
 function formatDuration(
   durationMs: number,
@@ -41,6 +42,171 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
 
 export type RunState = "idle" | "running" | "done" | "error";
 export type JumpTarget = "form" | "progress" | "results";
+type Subject = "math" | "social_studies" | "natural_sciences";
+type StageEvent = Extract<LlmCallEvent, { type: "stage" }>;
+type StepState = "complete" | "live" | "pending";
+
+interface GenerationStep {
+  id: string;
+  labelKey: string;
+  conditional?: boolean;
+  matches: (event: StageEvent) => boolean;
+}
+
+const MATH_STEPS: readonly GenerationStep[] = [
+  {
+    id: "generate",
+    labelKey: "statusbar.step_generate",
+    matches: (event) =>
+      event.agent === "generator" && event.stage === "llm_generate",
+  },
+  {
+    id: "image",
+    labelKey: "statusbar.step_image",
+    conditional: true,
+    matches: (event) =>
+      event.agent === "image_agent" && event.stage === "render_image",
+  },
+  {
+    id: "verify",
+    labelKey: "statusbar.step_verify",
+    matches: (event) =>
+      event.agent === "verifier" && event.stage === "verify",
+  },
+  {
+    id: "correct",
+    labelKey: "statusbar.step_correct",
+    conditional: true,
+    matches: (event) =>
+      event.agent === "corrector" && event.stage === "correct",
+  },
+];
+
+const GROUPED_SUBJECT_STEPS: readonly GenerationStep[] = [
+  {
+    id: "text",
+    labelKey: "statusbar.step_text",
+    matches: (event) =>
+      event.agent === "generator" && event.stage === "llm_generate",
+  },
+  {
+    id: "subquestions",
+    labelKey: "statusbar.step_subquestions",
+    matches: (event) =>
+      /^sub_generator#[1-9]\d*$/.test(event.agent) &&
+      event.stage === "llm_generate",
+  },
+  ...MATH_STEPS.slice(1),
+];
+
+function currentStageEvent(events: readonly StageEvent[]): StageEvent | null {
+  const activeByAgentAndStage = new Map<string, StageEvent>();
+
+  for (const event of events) {
+    const key = `${event.agent}\u0000${event.stage}`;
+    if (event.status === "start") {
+      activeByAgentAndStage.set(key, event);
+    } else {
+      activeByAgentAndStage.delete(key);
+    }
+  }
+
+  return (
+    events.findLast((event) => {
+      const key = `${event.agent}\u0000${event.stage}`;
+      return activeByAgentAndStage.get(key) === event;
+    }) ?? null
+  );
+}
+
+function stepState(
+  step: GenerationStep,
+  events: readonly StageEvent[],
+  currentEvent: StageEvent | null,
+): StepState {
+  if (currentEvent !== null && step.matches(currentEvent)) return "live";
+
+  const latestStepEvent = events.findLast(step.matches);
+  return latestStepEvent?.status === "end" ? "complete" : "pending";
+}
+
+function completedSubQuestionWorkers(events: readonly StageEvent[]): number {
+  const latestByAgent = new Map<string, StageEvent>();
+
+  for (const event of events) {
+    if (
+      /^sub_generator#[1-9]\d*$/.test(event.agent) &&
+      event.stage === "llm_generate"
+    ) {
+      latestByAgent.set(event.agent, event);
+    }
+  }
+
+  return Array.from(latestByAgent.values()).filter(
+    (event) => event.status === "end",
+  ).length;
+}
+
+function GenerationStepBreadcrumb({
+  subject,
+  stageEvents,
+  subQuestionCount,
+}: {
+  subject: Subject;
+  stageEvents: readonly LlmCallEvent[];
+  subQuestionCount: number | null;
+}) {
+  const t = useT();
+  const events = stageEvents.filter(
+    (event): event is StageEvent => event.type === "stage",
+  );
+  const steps = subject === "math" ? MATH_STEPS : GROUPED_SUBJECT_STEPS;
+  const relevantEvents = events.filter((event) =>
+    steps.some((step) => step.matches(event)),
+  );
+  const currentEvent = currentStageEvent(relevantEvents);
+  const completedSubQuestions = completedSubQuestionWorkers(relevantEvents);
+
+  return (
+    <span data-testid="generation-step-breadcrumb" className="sentry-unmask">
+      {steps.map((step, index) => {
+        const state = stepState(step, relevantEvents, currentEvent);
+        const isDim =
+          step.conditional === true && !relevantEvents.some(step.matches);
+        const stateClass =
+          state === "live"
+            ? "font-semibold text-blue-600"
+            : state === "complete"
+              ? "text-green-600"
+              : isDim
+                ? "text-gray-300"
+                : "text-gray-400";
+        return (
+          <span key={step.id}>
+            {index > 0 ? (
+              <span className="hidden text-gray-300 sm:inline"> › </span>
+            ) : null}
+            <span
+              data-testid={`generation-step-${step.id}`}
+              data-state={state}
+              data-dim={isDim}
+              className={`${stateClass}${
+                state === "live" ? "" : " hidden sm:inline"
+              }`}
+            >
+              {t(step.labelKey)}
+              {step.id === "subquestions" && state === "live"
+                ? ` ${completedSubQuestions}${
+                    subQuestionCount === null ? "" : `/${subQuestionCount}`
+                  }`
+                : null}
+            </span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 const JUMP_BUTTONS: readonly {
   target: JumpTarget;
@@ -55,6 +221,9 @@ export interface GenerationStatusBarProps {
   runState: RunState;
   completedCount: number;
   requestedTotal: number;
+  subject: Subject;
+  stageEvents: LlmCallEvent[];
+  subQuestionCount: number | null;
   startedAt: number | null;
   finishedAt: number | null;
   availableTargets: readonly JumpTarget[];
@@ -66,6 +235,9 @@ export default function GenerationStatusBar({
   runState,
   completedCount,
   requestedTotal,
+  subject = "math",
+  stageEvents = [],
+  subQuestionCount = null,
   startedAt,
   finishedAt,
   availableTargets,
@@ -73,6 +245,8 @@ export default function GenerationStatusBar({
   onFeedback,
 }: GenerationStatusBarProps) {
   const t = useT();
+  const showGenerationSteps =
+    runState === "running" && requestedTotal === 1;
 
   return (
     <div
@@ -98,13 +272,21 @@ export default function GenerationStatusBar({
               </span>
             ) : null}
             {runState === "running" ? (
-              <>
-                <span className="sentry-unmask">
-                  ◐ {t("statusbar.running")} ·{" "}
-                  {t("statusbar.completed_prefix")}
-                </span>{" "}
-                {completedCount} / {requestedTotal}
-              </>
+              showGenerationSteps ? (
+                <GenerationStepBreadcrumb
+                  subject={subject}
+                  stageEvents={stageEvents}
+                  subQuestionCount={subQuestionCount}
+                />
+              ) : (
+                <>
+                  <span className="sentry-unmask">
+                    ◐ {t("statusbar.running")} ·{" "}
+                    {t("statusbar.completed_prefix")}
+                  </span>{" "}
+                  {completedCount} / {requestedTotal}
+                </>
+              )
             ) : null}
             {runState === "done" &&
             startedAt !== null &&

@@ -19,7 +19,7 @@ import LanguageSwitcher from "../components/LanguageSwitcher";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
 
 export interface GeneratePageProps {
-  subject?: string;
+  subject?: "math" | "social_studies" | "natural_sciences";
 }
 
 function downloadBlob(blob: Blob, filename: string): void {
@@ -60,6 +60,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const progressRef = useRef<HTMLElement | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
   const [requestedTotal, setRequestedTotal] = useState(0);
+  const [subQuestionCount, setSubQuestionCount] = useState<number | null>(null);
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isClearResultsConfirmOpen, setIsClearResultsConfirmOpen] =
@@ -97,12 +98,14 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       return;
     }
     setRequestedTotal(params.count);
+    setSubQuestionCount(generateParams.sub_question_count ?? null);
     generate(generateParams);
   };
 
   const handleReset = () => {
     reset();
     setRequestedTotal(0);
+    setSubQuestionCount(null);
   };
 
   const handleJump = (target: JumpTarget) => {
@@ -327,6 +330,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           const params = pendingResubmitParams;
           setPendingResubmitParams(null);
           setRequestedTotal(params.count ?? 0);
+          setSubQuestionCount(params.sub_question_count ?? null);
           generate(params);
         }}
         onCancel={() => setPendingResubmitParams(null)}
@@ -335,6 +339,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         runState={runState}
         completedCount={results.length}
         requestedTotal={requestedTotal}
+        subject={subject}
+        stageEvents={llmCalls}
+        subQuestionCount={subQuestionCount}
         startedAt={startedAt}
         finishedAt={finishedAt}
         availableTargets={availableTargets}
