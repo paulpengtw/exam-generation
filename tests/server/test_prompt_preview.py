@@ -155,6 +155,69 @@ def test_social_studies_preview_is_byte_identical_to_text_generator_prompt() -> 
     assert preview["user_prompt"] == capture.prompts[1]
 
 
+def test_balanced_batch_preview_shows_the_spread_instruction_in_every_question() -> None:
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ss_curriculum_context=None)
+    params = GenerateParams(
+        subject="social_studies",
+        count=3,
+        coverage_mode="balanced",
+        seed=193,
+    )
+
+    previews = build_prompt_previews(params, config, app_state)
+    text_previews = [
+        preview for preview in previews if "subquestion_index" not in preview
+    ]
+
+    assert len(text_previews) == 3
+    assert all(
+        "## 出題模式：均衡" in preview["user_prompt"]
+        for preview in text_previews
+    )
+
+
+def test_random_batch_preview_omits_the_spread_instruction() -> None:
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ss_curriculum_context=None)
+    params = GenerateParams(
+        subject="social_studies",
+        count=3,
+        coverage_mode="random",
+        seed=194,
+    )
+
+    previews = build_prompt_previews(params, config, app_state)
+    text_previews = [
+        preview for preview in previews if "subquestion_index" not in preview
+    ]
+
+    assert len(text_previews) == 3
+    assert all(
+        "## 出題模式：均衡" not in preview["user_prompt"]
+        for preview in text_previews
+    )
+
+
+def test_count_one_preview_omits_the_spread_instruction_even_under_balanced() -> None:
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ss_curriculum_context=None)
+    params = GenerateParams(
+        subject="social_studies",
+        count=1,
+        coverage_mode="balanced",
+        seed=195,
+    )
+
+    previews = build_prompt_previews(params, config, app_state)
+    text_previews = [
+        preview for preview in previews if "subquestion_index" not in preview
+    ]
+
+    assert len(text_previews) == 1
+    assert "## 出題模式：均衡" not in text_previews[0]["user_prompt"]
+
+
 def test_social_studies_sub_generator_previews_are_byte_identical_after_placeholder_substitution() -> None:
     seed = 191
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)

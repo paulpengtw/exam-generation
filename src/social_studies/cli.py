@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import logging
 import random
@@ -508,6 +509,8 @@ def _ss_build_text_user(
     params, few_shot_dir,
     user_passage, user_options, user_topic, user_core_question,
     image_generation_mode, disable_reference_fewshot, prior_scopes,
+    *,
+    balanced_batch=False,
 ):
     return build_text_user_prompt(
         params,
@@ -520,6 +523,7 @@ def _ss_build_text_user(
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
         prior_scopes=prior_scopes,
+        balanced_batch=balanced_batch,
     )
 
 
@@ -602,6 +606,16 @@ _SS_SPEC = SubjectGenerationSpec(
 )
 
 
+def _ss_spec_for_batch(balanced_batch: bool) -> SubjectGenerationSpec:
+    if not balanced_batch:
+        return _SS_SPEC
+
+    def build_text_user(*args: Any) -> tuple[str, list[Path]]:
+        return _ss_build_text_user(*args, balanced_batch=True)
+
+    return dataclasses.replace(_SS_SPEC, build_text_user_fn=build_text_user)
+
+
 def generate_one(
     config: Config,
     client: LLMClient | None,
@@ -621,6 +635,7 @@ def generate_one(
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    balanced_batch: bool = False,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     params = _with_text_word_limit(params, text_word_limit)
@@ -629,7 +644,7 @@ def generate_one(
         client=client,
         params=params,
         question_id=question_id,
-        spec=_SS_SPEC,
+        spec=_ss_spec_for_batch(balanced_batch),
         dry_run=dry_run,
         skip_verify=skip_verify,
         disable_reference_fewshot=disable_reference_fewshot,
@@ -655,8 +670,9 @@ def build_generation_prompts(
     from src.common.generation_core import build_text_generation_prompts
 
     params = _with_text_word_limit(params, kwargs.pop("text_word_limit", None))
+    spec = _ss_spec_for_batch(kwargs.pop("balanced_batch", False))
     system, user, images, _stage_ctx = build_text_generation_prompts(
-        config, params, _SS_SPEC, **kwargs
+        config, params, spec, **kwargs
     )
     return system, user, images
 
@@ -704,6 +720,7 @@ def generate_with_corrections(
     on_question_update: QuestionUpdateCallback | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    balanced_batch: bool = False,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     return generate_with_corrections_core(
@@ -711,7 +728,7 @@ def generate_with_corrections(
         client=client,
         params=params,
         question_id=question_id,
-        spec=_SS_SPEC,
+        spec=_ss_spec_for_batch(balanced_batch),
         max_retries=max_retries,
         skip_verify=skip_verify,
         disable_reference_fewshot=disable_reference_fewshot,
@@ -777,6 +794,7 @@ def main(argv: list[str] | None = None) -> None:
     base_seed = args.seed
     max_retries = args.max_retries if args.max_retries is not None else config.max_retries
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    balanced_batch = args.coverage_mode == "balanced" and args.count > 1
 
     try:
         params_list: list[SampledParams] = []
@@ -826,6 +844,7 @@ def main(argv: list[str] | None = None) -> None:
                 dry_run=args.dry_run,
                 prior_scopes=list(prior_scopes),
                 curriculum_context=ss_curriculum_context,
+                balanced_batch=balanced_batch,
             )
 
             if args.dry_run:
