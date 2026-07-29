@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
+import DestructiveConfirm from "../components/DestructiveConfirm";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useT } from "../i18n/useT";
 
@@ -8,6 +10,7 @@ export default function SubjectSelectPage() {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -28,7 +31,7 @@ export default function SubjectSelectPage() {
             )}
             <button
               type="button"
-              onClick={handleLogout}
+              onClick={() => setIsLogoutConfirmOpen(true)}
               className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
             >
               {t("generate.btn_logout")}
@@ -77,6 +80,14 @@ export default function SubjectSelectPage() {
           </button>
         </div>
       </main>
+      <DestructiveConfirm
+        open={isLogoutConfirmOpen}
+        titleKey="confirm.logout_title"
+        bodyKeys={["confirm.logout_body_session"]}
+        confirmKey="confirm.logout_confirm"
+        onConfirm={handleLogout}
+        onCancel={() => setIsLogoutConfirmOpen(false)}
+      />
     </div>
   );
 }
