@@ -146,7 +146,7 @@ const SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
   "公民與社會": ["公", "社"],
   "跨科": ["歷", "地", "公", "社"],
 };
-const MATH_SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
+const MATH_SUBJECT_TO_STRAND_PREFIXES: Record<string, string[]> = {
   "": ["n", "N", "r", "R", "a", "A", "f", "F", "s", "S", "g", "G", "d", "D", "p", "P"],
   "數與量": ["n", "N"],
   "代數": ["r", "R", "a", "A", "f", "F"],
@@ -606,7 +606,7 @@ export default function ParamForm({
     const entries = schemas?.學習表現 ?? [];
     if (subject === "natural_sciences") return entries;
     const map =
-      subject === "math" ? MATH_SUBJECT_TO_PERFORMANCE_PREFIXES : SUBJECT_TO_PERFORMANCE_PREFIXES;
+      subject === "math" ? MATH_SUBJECT_TO_STRAND_PREFIXES : SUBJECT_TO_PERFORMANCE_PREFIXES;
     const prefixes = map[subjectFilter] ?? map[""];
     return entries.filter((entry) => prefixes.includes(entry.科目));
   }, [schemas, subjectFilter, subject]);
@@ -619,6 +619,11 @@ export default function ParamForm({
 
   const availableLearningContent = useMemo(() => {
     const entries = schemas?.學習內容 ?? [];
+    if (subject === "math") {
+      const prefixes =
+        MATH_SUBJECT_TO_STRAND_PREFIXES[subjectFilter] ?? MATH_SUBJECT_TO_STRAND_PREFIXES[""];
+      return entries.filter((entry) => prefixes.includes(entry.科目));
+    }
     if (subject === "social_studies") {
       if (!subjectFilter) return entries;
       const code = SS_SUBJECT_FILTER_TO_CONTENT_CODE[subjectFilter] ?? null;
@@ -1688,7 +1693,7 @@ export default function ParamForm({
         </fieldset>
       )}
 
-      {(subject === "natural_sciences" || subject === "social_studies") && Array.isArray(schemas.學習內容) && schemas.學習內容.length > 0 && (
+      {Array.isArray(schemas.學習內容) && schemas.學習內容.length > 0 && (
         <div>
           <div className="flex items-center justify-between">
             <label className="block text-sm font-medium">{t("form.learning_content")}</label>

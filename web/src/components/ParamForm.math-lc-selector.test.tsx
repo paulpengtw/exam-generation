@@ -1,0 +1,184 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const getSchemasMock = vi.hoisted(() => vi.fn());
+
+const MATH_LEARNING_CONTENT = [
+  { value: "N-7-1", instruction: "負數與數線", 科目: "N" },
+  { value: "n-IV-2", instruction: "數與量關係", 科目: "n" },
+  { value: "A-7-3", instruction: "代數式", 科目: "A" },
+  { value: "S-8-1", instruction: "幾何與空間", 科目: "S" },
+  { value: "D-9-1", instruction: "資料分析", 科目: "D" },
+];
+const LEARNING_CONTENT_CODES = MATH_LEARNING_CONTENT.map((entry) => entry.value);
+
+function mathSchema(learningContent = MATH_LEARNING_CONTENT) {
+  return {
+    學習階段: "第四學習階段",
+    grades: [7, 8, 9],
+    情境: [{ value: "個人", instruction: "" }],
+    題型種類: [{ value: "單一題", instruction: "" }],
+    題型: [{ value: "選擇題", instruction: "" }],
+    數學思考: [{ value: "形成", instruction: "" }],
+    question_style: [{ value: "課本", instruction: "" }],
+    題目內容類型: [{ value: "純文字", instruction: "" }],
+    科目: [
+      { value: "數與量", instruction: "" },
+      { value: "代數", instruction: "" },
+      { value: "幾何", instruction: "" },
+      { value: "統計與機率", instruction: "" },
+      { value: "跨領域", instruction: "" },
+    ],
+    學習表現: [
+      { value: "n-IV-1", instruction: "理解數與量", 科目: "n" },
+      { value: "a-IV-1", instruction: "理解代數", 科目: "a" },
+    ],
+    學習內容: learningContent,
+  };
+}
+
+vi.mock("../api/client", () => ({
+  getSchemas: getSchemasMock,
+  getAvailableModels: vi.fn(async () => ({
+    allowed: [],
+    defaults: { plan: "", execute: "" },
+  })),
+  planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
+  previewGenerate: vi.fn(async () => ({ prompts: [] })),
+}));
+
+vi.mock("../i18n/useT", () => ({
+  useT: () => (key: string) => key,
+}));
+
+import ParamForm, { type GenerateParams } from "./ParamForm";
+
+function getLearningContentSection(): HTMLElement {
+  const label = screen.getByText("form.learning_content", { selector: "label" });
+  return label.parentElement!.parentElement!;
+}
+
+function getSubjectFilterSelect(): HTMLSelectElement {
+  const label = screen.getByText("form.subject_filter", { selector: "label" });
+  const select = label.parentElement!.querySelector("select");
+  expect(select).not.toBeNull();
+  return select as HTMLSelectElement;
+}
+
+function expectLearningContentDraw(value: unknown): asserts value is string[] {
+  expect(value).toBeInstanceOf(Array);
+  const codes = value as string[];
+  expect(codes.length).toBeGreaterThanOrEqual(1);
+  expect(codes.length).toBeLessThanOrEqual(3);
+  expect(codes.every((code) => LEARNING_CONTENT_CODES.includes(code))).toBe(true);
+}
+
+describe("ParamForm math learning-content selector", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    getSchemasMock.mockImplementation(async () => mathSchema());
+  });
+
+  it("shows the 學習內容 selector on the 數學 form when the pool is non-empty", async () => {
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    expect(await screen.findByText("form.learning_content", { selector: "label" }))
+      .toBeInTheDocument();
+    expect(within(getLearningContentSection()).getByText("N-7-1")).toBeInTheDocument();
+  });
+
+  it("hides the 學習內容 selector when the pool is empty", async () => {
+    getSchemasMock.mockImplementation(async () => mathSchema([]));
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    await screen.findByText("form.btn_generate");
+    expect(screen.queryByText("form.learning_content", { selector: "label" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("narrows the visible 學習內容 pool by subject_filter strand prefix", async () => {
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+    await screen.findByText("N-7-1");
+
+    fireEvent.change(getSubjectFilterSelect(), { target: { value: "幾何" } });
+    await waitFor(() => {
+      const section = within(getLearningContentSection());
+      expect(section.getByText("S-8-1")).toBeInTheDocument();
+      expect(section.queryByText("N-7-1")).not.toBeInTheDocument();
+      expect(section.queryByText("D-9-1")).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(getSubjectFilterSelect(), { target: { value: "數與量" } });
+    await waitFor(() => {
+      const section = within(getLearningContentSection());
+      expect(section.getByText("N-7-1")).toBeInTheDocument();
+      expect(section.getByText("n-IV-2")).toBeInTheDocument();
+      expect(section.queryByText("S-8-1")).not.toBeInTheDocument();
+      expect(section.queryByText("D-9-1")).not.toBeInTheDocument();
+    });
+  });
+
+  it("sends an explicit 數學 學習內容 selection verbatim and suppresses the 預抽", async () => {
+    const submitted: GenerateParams[] = [];
+    render(
+      <ParamForm subject="math" onSubmit={(params) => submitted.push(params)} disabled={false} />,
+    );
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /^A-7-3/ }));
+    fireEvent.click(screen.getByText("form.btn_generate"));
+    fireEvent.click(await screen.findByText("form.btn_confirm_send"));
+
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0].learning_content).toEqual(["A-7-3"]);
+  });
+
+  it("labels an explicit 數學 學習內容 selection as user-selected", async () => {
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /^S-8-1/ }));
+    fireEvent.click(screen.getByText("form.btn_generate"));
+    await screen.findByText("form.confirm_title");
+
+    const label = screen.getByText("form.confirm_learning_content", { selector: "dt" });
+    const learningContentRow = within(label.parentElement!);
+    expect(learningContentRow.getByText("form.confirm_lc_selected")).toBeInTheDocument();
+    expect(learningContentRow.queryByText("form.confirm_lc_random_pool")).not.toBeInTheDocument();
+  });
+
+  it("restores the 預抽 when an explicit selection is cleared", async () => {
+    const submitted: GenerateParams[] = [];
+    render(
+      <ParamForm subject="math" onSubmit={(params) => submitted.push(params)} disabled={false} />,
+    );
+
+    const checkbox = await screen.findByRole("checkbox", { name: /^A-7-3/ });
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+    fireEvent.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(screen.getByText("form.btn_generate"));
+
+    const label = await screen.findByText("form.confirm_learning_content", { selector: "dt" });
+    const learningContentRow = within(label.parentElement!);
+    expect(learningContentRow.getByText("form.confirm_lc_random_pool")).toBeInTheDocument();
+    expect(learningContentRow.queryByText("form.confirm_lc_selected")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("form.btn_confirm_send"));
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expectLearningContentDraw(submitted[0].learning_content);
+  });
+
+  it("supports both checkbox and search modes on the 數學 form", async () => {
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+    await screen.findByText("form.learning_content", { selector: "label" });
+
+    const section = within(getLearningContentSection());
+    const toggle = section.getByRole("button", { name: "切換搜尋模式" });
+    expect(toggle).toBeInTheDocument();
+    fireEvent.click(toggle);
+
+    expect(section.getByRole("button", { name: "切換勾選模式" })).toBeInTheDocument();
+    expect(section.getByPlaceholderText("搜尋學習內容...")).toBeInTheDocument();
+  });
+});
