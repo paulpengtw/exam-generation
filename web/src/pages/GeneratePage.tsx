@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
 import DestructiveConfirm from "../components/DestructiveConfirm";
@@ -71,6 +71,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     string | null
   >(null);
   const hasResults = displayResults.length > 0;
+  const blocker = useBlocker(
+    ({ historyAction }) =>
+      (hasUnsubmittedInput || hasResults) && historyAction === "POP",
+  );
 
   useEffect(() => {
     if (!hasUnsubmittedInput && !hasResults) return;
@@ -275,6 +279,14 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         confirmKey="confirm.navigate_away_confirm"
         onConfirm={handleNavigationConfirm}
         onCancel={() => setPendingNavigationTarget(null)}
+      />
+      <DestructiveConfirm
+        open={blocker.state === "blocked"}
+        titleKey="confirm.navigate_away_title"
+        bodyKeys={navigationBodyKeys}
+        confirmKey="confirm.navigate_away_confirm"
+        onConfirm={() => blocker.proceed?.()}
+        onCancel={() => blocker.reset?.()}
       />
       <DestructiveConfirm
         open={isLogoutConfirmOpen}
