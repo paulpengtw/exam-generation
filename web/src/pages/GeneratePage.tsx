@@ -42,6 +42,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isClearResultsConfirmOpen, setIsClearResultsConfirmOpen] =
     useState(false);
+  const [pendingResubmitParams, setPendingResubmitParams] = useState<
+    ReturnType<typeof toGenerateParams> | null
+  >(null);
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
@@ -52,7 +55,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   };
 
   const handleSubmit = (params: FormParams) => {
-    generate(toGenerateParams(subject, params));
+    const generateParams = toGenerateParams(subject, params);
+    if (status === "generating") {
+      setPendingResubmitParams(generateParams);
+      return;
+    }
+
+    generate(generateParams);
   };
 
   const handleDownloadAll = () => {
@@ -239,6 +248,20 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           reset();
         }}
         onCancel={() => setIsClearResultsConfirmOpen(false)}
+      />
+      <DestructiveConfirm
+        open={pendingResubmitParams !== null}
+        titleKey="confirm.resubmit_title"
+        bodyKeys={["confirm.resubmit_body"]}
+        confirmKey="confirm.resubmit_confirm"
+        onConfirm={() => {
+          if (pendingResubmitParams === null) return;
+
+          const params = pendingResubmitParams;
+          setPendingResubmitParams(null);
+          generate(params);
+        }}
+        onCancel={() => setPendingResubmitParams(null)}
       />
     </div>
   );
