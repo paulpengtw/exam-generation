@@ -230,6 +230,188 @@ function truncateDraftPassage(passage: string): string {
     : passage;
 }
 
+function DraftSummary({
+  fields,
+  lang,
+  t,
+}: {
+  fields: FormFields;
+  lang: string;
+  t: (key: string) => string;
+}) {
+  return (
+    <>
+      <section
+        role="region"
+        aria-label={t("form.draft_summary")}
+        className="mt-3"
+      >
+        <dl className="space-y-1 rounded border border-amber-200 bg-white/60 p-2">
+          {[
+            { label: t("form.confirm_topic"), value: fields.topic },
+            {
+              label: t("form.confirm_core_question"),
+              value: fields.coreQuestion ?? "",
+            },
+            { label: t("form.grade"), value: String(fields.grade) },
+            {
+              label: t("form.subject_filter"),
+              value: fields.subjectFilter,
+            },
+            { label: t("form.count"), value: String(fields.count) },
+            ...(fields.subQuestionCount === ""
+              ? []
+              : [{
+                  label: t("form.confirm_sub_question_count"),
+                  value: String(fields.subQuestionCount),
+                }]),
+            {
+              label: t("form.q_type"),
+              value: fields.qType.join("、"),
+            },
+            {
+              label: t("form.context"),
+              value: fields.context.join("、"),
+            },
+            ...(fields.passage
+              ? [{
+                  label: t("form.confirm_passage"),
+                  value: truncateDraftPassage(fields.passage),
+                  isPassage: true,
+                }]
+              : []),
+          ].map(({ label, value, isPassage }) => {
+            const displayValue = value || t("form.confirm_not_filled");
+            return (
+              <div key={label} className="flex min-w-0 gap-3">
+                <dt className="w-24 shrink-0 font-medium text-amber-800">{label}</dt>
+                <dd
+                  className={`min-w-0 flex-1 text-amber-950 ${
+                    isPassage ? "max-h-16 overflow-hidden break-words" : ""
+                  }`}
+                >
+                  {displayValue}
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+      </section>
+      <details className="mt-3 border-t border-amber-200 pt-2">
+        <summary className="cursor-pointer font-medium text-amber-800">
+          {t("form.draft_full_settings")}
+        </summary>
+        <dl className="mt-2 space-y-1 rounded border border-amber-200 bg-white/60 p-2">
+          {[
+            { label: t("form.style"), value: fields.style },
+            {
+              label: t("form.content_type"),
+              value:
+                fields.contentType === "customized"
+                  ? t("form.content_type_customized")
+                  : fields.contentType,
+            },
+            {
+              label: t("form.custom_content_type"),
+              value: fields.customContentType,
+            },
+            { label: t("form.set_type"), value: fields.setType },
+            {
+              label: t("form.coverage_mode"),
+              value: t(`form.coverage_mode.${fields.coverageMode}`),
+            },
+            {
+              label: t("form.skip_verify"),
+              value: t(
+                fields.skipVerify
+                  ? "form.confirm_yes"
+                  : "form.confirm_no",
+              ),
+            },
+            {
+              label: t("form.disable_reference_fewshot"),
+              value: t(
+                fields.disableReferenceFewshot
+                  ? "form.confirm_yes"
+                  : "form.confirm_no",
+              ),
+            },
+            {
+              label: t("form.image_generation_mode"),
+              value: t(
+                fields.imageGenerationMode === "gpt_image"
+                  ? "form.image_generation_mode_gpt"
+                  : "form.image_generation_mode_html",
+              ),
+            },
+            {
+              label: t("form.difficulty"),
+              value: fields.difficulty
+                ? t(`form.difficulty_${fields.difficulty}`)
+                : "",
+            },
+            {
+              label: t("form.text_word_limit"),
+              value:
+                fields.textWordLimit === null
+                  ? t("form.confirm_unlimited")
+                  : String(fields.textWordLimit),
+            },
+            {
+              label: t("form.confirm_options"),
+              value: fields.options.join(lang === "zh-TW" ? "、" : ", "),
+            },
+            {
+              label: t("form.sub_context"),
+              value: fields.subContext,
+            },
+            {
+              label: t("form.science_competency"),
+              value: fields.scienceCompetency.join(
+                lang === "zh-TW" ? "、" : ", ",
+              ),
+            },
+            {
+              label: t("form.learning_performance"),
+              value: fields.learningPerformance.join(
+                lang === "zh-TW" ? "、" : ", ",
+              ),
+            },
+            {
+              label: t("form.learning_content"),
+              value: fields.learningContent.join(
+                lang === "zh-TW" ? "、" : ", ",
+              ),
+            },
+            {
+              label: t("form.confirm_subquestion_heading"),
+              value:
+                fields.subquestionConfigs.length > 0
+                  ? JSON.stringify(fields.subquestionConfigs)
+                  : "",
+            },
+            {
+              label: t("params.model_plan_label"),
+              value: fields.modelPlan,
+            },
+            {
+              label: t("params.model_execute_label"),
+              value: fields.modelExecute,
+            },
+          ].map(({ label, value }) => (
+            <div key={label} className="flex min-w-0 gap-3">
+              <dt className="w-40 shrink-0 font-medium text-amber-800">{label}</dt>
+              <dd className="min-w-0 flex-1 break-words text-amber-950">
+                {value || t("form.confirm_not_filled")}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </details>
+    </>
+  );
+}
+
 function drawQuestionSubset<T>(
   pool: readonly T[],
   min: number,
@@ -247,6 +429,68 @@ function drawQuestionSubset<T>(
 
 const TEXT_HINT = "500 字";
 const OPTION_HINT = "50 字";
+
+function defaultFormFields(
+  subject: string,
+  schemas: Schemas,
+  modelPlan: string,
+  modelExecute: string,
+): FormFields {
+  const isCurriculumSubject =
+    subject === "social_studies" ||
+    subject === "math" ||
+    subject === "natural_sciences";
+  const firstContext = schemas.情境[0]?.value;
+  const defaultNaturalSciencesContext =
+    subject === "natural_sciences" && firstContext ? [firstContext] : [];
+  const defaultSubContext =
+    subject === "natural_sciences" && firstContext
+      ? (schemas.情境子類別 ?? []).find(
+          (entry) => entry.parent === firstContext,
+        )?.value ?? ""
+      : "";
+  const contentTypes =
+    schemas.題目內容類型 as Schemas["題目內容類型"] | undefined;
+
+  return {
+    grade: schemas.grades[0] ?? "",
+    style:
+      subject === "math"
+        ? (schemas.question_style?.[0]?.value ?? "")
+        : "",
+    contentType:
+      isCurriculumSubject &&
+      Array.isArray(contentTypes) &&
+      contentTypes.length > 0
+        ? contentTypes[0].value
+        : "純文字",
+    customContentType: "",
+    context: defaultNaturalSciencesContext,
+    setType: schemas.題型種類[0]?.value ?? "",
+    qType: [],
+    count: 1,
+    coverageMode: "balanced",
+    skipVerify: false,
+    disableReferenceFewshot: false,
+    imageGenerationMode: "html",
+    difficulty: "",
+    subjectFilter: "",
+    passage: TEXT_HINT,
+    textWordLimit: null,
+    options: [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
+    topic: "",
+    coreQuestion: null,
+    subContext: defaultSubContext,
+    scienceCompetency: [],
+    learningPerformance: [],
+    learningContent: [],
+    subQuestionCount: "",
+    subquestionConfigs: [],
+    modelPlan,
+    modelExecute,
+  };
+}
+
 const SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
   "": ["社"],
   "歷史": ["歷", "社"],
@@ -394,6 +638,7 @@ export default function ParamForm({
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
@@ -411,8 +656,11 @@ export default function ParamForm({
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
   const [draftToRestore, setDraftToRestore] = useState<FormDraft | null>(() =>
-    userId && !hasInitialParams ? loadDraft(userId) : null,
+    userId ? loadDraft(userId) : null,
   );
+  const [historyDraftChoice, setHistoryDraftChoice] = useState<
+    "draft" | "history" | "defaults" | null
+  >(null);
 
   const ip = initialParams ?? {};
   const userChosenFields = useRef(new Set(Object.keys(ip)));
@@ -526,11 +774,22 @@ export default function ParamForm({
     }
   }, [defaultsReady, formSnapshot, modelsResolved, schemas]);
 
+  const hasDraftHistoryConflict =
+    draftToRestore !== null &&
+    hasInitialParams &&
+    historyDraftChoice === null;
+
   useEffect(() => {
     if (
       !userId ||
       !defaultsReady ||
       generationStartedRef.current ||
+      hasDraftHistoryConflict ||
+      (
+        (historyDraftChoice === "history" ||
+          historyDraftChoice === "defaults") &&
+        !hasUserEditedRef.current
+      ) ||
       defaultsSnapshotRef.current === null ||
       (
         !hasInitialParams &&
@@ -551,7 +810,14 @@ export default function ParamForm({
         draftSaveTimeoutRef.current = null;
       }
     };
-  }, [defaultsReady, formSnapshot, hasInitialParams, userId]);
+  }, [
+    defaultsReady,
+    formSnapshot,
+    hasDraftHistoryConflict,
+    hasInitialParams,
+    historyDraftChoice,
+    userId,
+  ]);
 
   const showDraftPrompt =
     draftToRestore !== null &&
@@ -560,12 +826,40 @@ export default function ParamForm({
     !hasUserEditedRef.current &&
     defaultsSnapshotRef.current !== null &&
     jsonDeepEqual(formSnapshot, defaultsSnapshotRef.current);
+  const showDraftHistoryChoice =
+    hasDraftHistoryConflict &&
+    defaultsReady;
 
   function handleRestoreDraft() {
     if (!draftToRestore) return;
     const fields = draftToRestore.fields;
+    if (hasInitialParams) {
+      setHistoryDraftChoice("draft");
+      setPrefillNotice(null);
+    }
     setDraftToRestore(null);
     restoreFormSnapshot(fields);
+  }
+
+  function handleUseHistoryParams() {
+    hasUserEditedRef.current = false;
+    setHistoryDraftChoice("history");
+    setDraftToRestore(null);
+    if (defaultsSnapshotRef.current !== null) {
+      restoreFormSnapshot(defaultsSnapshotRef.current);
+    }
+  }
+
+  function handleStartWithDefaults() {
+    if (!schemas) return;
+    hasUserEditedRef.current = false;
+    setHistoryDraftChoice("defaults");
+    setDraftToRestore(null);
+    setPrefillNotice(null);
+    userChosenFields.current.clear();
+    restoreFormSnapshot(
+      defaultFormFields(subject, schemas, modelPlan, modelExecute),
+    );
   }
 
   function handleRestartDraft() {
@@ -781,7 +1075,6 @@ export default function ParamForm({
     window.localStorage.setItem("model_execute", modelExecute);
   }, [modelExecute]);
 
-  const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
   useEffect(() => {
     if (!schemas || !initialParams) return;
     const missing: string[] = [];
@@ -1592,12 +1885,23 @@ export default function ParamForm({
 
   return (
     <form onSubmit={handleSubmit} onChange={markUnsubmittedInput} className="space-y-4">
-      {showDraftPrompt && (
+      {draftToRestore && (showDraftPrompt || showDraftHistoryChoice) && (
         <section
-          role="status"
+          role={showDraftHistoryChoice ? "dialog" : "status"}
+          aria-label={
+            showDraftHistoryChoice
+              ? t("form.draft_history_choice")
+              : undefined
+          }
           className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
         >
-          <p className="font-medium">{t("form.draft_found")}</p>
+          <p className="font-medium">
+            {t(
+              showDraftHistoryChoice
+                ? "form.draft_history_choice"
+                : "form.draft_found",
+            )}
+          </p>
           <p className="mt-1 text-amber-800">
             {t("form.draft_saved_at").replace(
               "{time}",
@@ -1607,173 +1911,7 @@ export default function ParamForm({
               {new Date(draftToRestore.savedAt).toLocaleString(lang)}
             </span>
           </p>
-          <section
-            role="region"
-            aria-label={t("form.draft_summary")}
-            className="mt-3"
-          >
-            <dl className="space-y-1 rounded border border-amber-200 bg-white/60 p-2">
-              {[
-                { label: t("form.confirm_topic"), value: draftToRestore.fields.topic },
-                {
-                  label: t("form.confirm_core_question"),
-                  value: draftToRestore.fields.coreQuestion ?? "",
-                },
-                { label: t("form.grade"), value: String(draftToRestore.fields.grade) },
-                {
-                  label: t("form.subject_filter"),
-                  value: draftToRestore.fields.subjectFilter,
-                },
-                { label: t("form.count"), value: String(draftToRestore.fields.count) },
-                ...(draftToRestore.fields.subQuestionCount === ""
-                  ? []
-                  : [{
-                      label: t("form.confirm_sub_question_count"),
-                      value: String(draftToRestore.fields.subQuestionCount),
-                    }]),
-                {
-                  label: t("form.q_type"),
-                  value: draftToRestore.fields.qType.join("、"),
-                },
-                {
-                  label: t("form.context"),
-                  value: draftToRestore.fields.context.join("、"),
-                },
-                ...(draftToRestore.fields.passage
-                  ? [{
-                      label: t("form.confirm_passage"),
-                      value: truncateDraftPassage(draftToRestore.fields.passage),
-                      isPassage: true,
-                    }]
-                  : []),
-              ].map(({ label, value, isPassage }) => {
-                const displayValue = value || t("form.confirm_not_filled");
-                return (
-                  <div key={label} className="flex min-w-0 gap-3">
-                    <dt className="w-24 shrink-0 font-medium text-amber-800">{label}</dt>
-                    <dd
-                      className={`min-w-0 flex-1 text-amber-950 ${
-                        isPassage ? "max-h-16 overflow-hidden break-words" : ""
-                      }`}
-                    >
-                      {displayValue}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </section>
-          <details className="mt-3 border-t border-amber-200 pt-2">
-            <summary className="cursor-pointer font-medium text-amber-800">
-              {t("form.draft_full_settings")}
-            </summary>
-            <dl className="mt-2 space-y-1 rounded border border-amber-200 bg-white/60 p-2">
-              {[
-                { label: t("form.style"), value: draftToRestore.fields.style },
-                {
-                  label: t("form.content_type"),
-                  value:
-                    draftToRestore.fields.contentType === "customized"
-                      ? t("form.content_type_customized")
-                      : draftToRestore.fields.contentType,
-                },
-                {
-                  label: t("form.custom_content_type"),
-                  value: draftToRestore.fields.customContentType,
-                },
-                { label: t("form.set_type"), value: draftToRestore.fields.setType },
-                {
-                  label: t("form.coverage_mode"),
-                  value: t(`form.coverage_mode.${draftToRestore.fields.coverageMode}`),
-                },
-                {
-                  label: t("form.skip_verify"),
-                  value: t(
-                    draftToRestore.fields.skipVerify
-                      ? "form.confirm_yes"
-                      : "form.confirm_no",
-                  ),
-                },
-                {
-                  label: t("form.disable_reference_fewshot"),
-                  value: t(
-                    draftToRestore.fields.disableReferenceFewshot
-                      ? "form.confirm_yes"
-                      : "form.confirm_no",
-                  ),
-                },
-                {
-                  label: t("form.image_generation_mode"),
-                  value: t(
-                    draftToRestore.fields.imageGenerationMode === "gpt_image"
-                      ? "form.image_generation_mode_gpt"
-                      : "form.image_generation_mode_html",
-                  ),
-                },
-                {
-                  label: t("form.difficulty"),
-                  value: draftToRestore.fields.difficulty
-                    ? t(`form.difficulty_${draftToRestore.fields.difficulty}`)
-                    : "",
-                },
-                {
-                  label: t("form.text_word_limit"),
-                  value:
-                    draftToRestore.fields.textWordLimit === null
-                      ? t("form.confirm_unlimited")
-                      : String(draftToRestore.fields.textWordLimit),
-                },
-                {
-                  label: t("form.confirm_options"),
-                  value: draftToRestore.fields.options.join(lang === "zh-TW" ? "、" : ", "),
-                },
-                {
-                  label: t("form.sub_context"),
-                  value: draftToRestore.fields.subContext,
-                },
-                {
-                  label: t("form.science_competency"),
-                  value: draftToRestore.fields.scienceCompetency.join(
-                    lang === "zh-TW" ? "、" : ", ",
-                  ),
-                },
-                {
-                  label: t("form.learning_performance"),
-                  value: draftToRestore.fields.learningPerformance.join(
-                    lang === "zh-TW" ? "、" : ", ",
-                  ),
-                },
-                {
-                  label: t("form.learning_content"),
-                  value: draftToRestore.fields.learningContent.join(
-                    lang === "zh-TW" ? "、" : ", ",
-                  ),
-                },
-                {
-                  label: t("form.confirm_subquestion_heading"),
-                  value:
-                    draftToRestore.fields.subquestionConfigs.length > 0
-                      ? JSON.stringify(draftToRestore.fields.subquestionConfigs)
-                      : "",
-                },
-                {
-                  label: t("params.model_plan_label"),
-                  value: draftToRestore.fields.modelPlan,
-                },
-                {
-                  label: t("params.model_execute_label"),
-                  value: draftToRestore.fields.modelExecute,
-                },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex min-w-0 gap-3">
-                  <dt className="w-40 shrink-0 font-medium text-amber-800">{label}</dt>
-                  <dd className="min-w-0 flex-1 break-words text-amber-950">
-                    {value || t("form.confirm_not_filled")}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </details>
+          <DraftSummary fields={draftToRestore.fields} lang={lang} t={t} />
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
@@ -1782,18 +1920,37 @@ export default function ParamForm({
             >
               {t("form.draft_restore")}
             </button>
-            <div>
-              <button
-                type="button"
-                onClick={handleRestartDraft}
-                className="rounded border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100"
-              >
-                {t("form.draft_restart")}
-              </button>
-              <p className="mt-1 max-w-64 text-xs text-amber-800">
-                {t("form.draft_discard_warning")}
-              </p>
-            </div>
+            {showDraftHistoryChoice ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleUseHistoryParams}
+                  className="rounded border border-amber-400 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  {t("form.draft_use_history")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartWithDefaults}
+                  className="rounded border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  {t("form.draft_restart")}
+                </button>
+              </>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  onClick={handleRestartDraft}
+                  className="rounded border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  {t("form.draft_restart")}
+                </button>
+                <p className="mt-1 max-w-64 text-xs text-amber-800">
+                  {t("form.draft_discard_warning")}
+                </p>
+              </div>
+            )}
           </div>
         </section>
       )}

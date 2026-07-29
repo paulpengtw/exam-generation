@@ -139,6 +139,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.draft_discard_warning": "Discarding the draft is permanent and cannot be undone.",
     "form.draft_summary": "Draft summary",
     "form.draft_full_settings": "Full settings",
+    "form.draft_history_choice": "A saved draft and settings carried from history were both found. Choose which settings to use.",
+    "form.draft_use_history": "Use settings carried from history",
 
     "form.confirm_title": "Review settings before generating",
     "form.confirm_subtitle": "Please review the configuration below. Click \"Confirm & Generate\" to start, or \"Back\" to adjust.",
@@ -440,6 +442,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.draft_discard_warning": "捨棄草稿是永久的，且無法復原。",
     "form.draft_summary": "草稿摘要",
     "form.draft_full_settings": "完整設定",
+    "form.draft_history_choice": "同時找到未完成的草稿與從歷史紀錄帶入的設定，請選擇要使用的內容。",
+    "form.draft_use_history": "使用從歷史紀錄帶入的設定",
 
     "form.confirm_title": "發送前確認設定",
     "form.confirm_subtitle": "請確認以下設定。確認無誤後點選「確定發送」，或點選「返回」調整。",
