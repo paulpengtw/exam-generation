@@ -5,11 +5,19 @@ const setUserMock = vi.hoisted(() => vi.fn());
 const feedbackIntegrationMock = vi.hoisted(() =>
   vi.fn(() => ({ name: "Feedback" })),
 );
+const browserTracingIntegrationMock = vi.hoisted(() =>
+  vi.fn(() => ({ name: "BrowserTracing" })),
+);
+const consoleLoggingIntegrationMock = vi.hoisted(() =>
+  vi.fn(() => ({ name: "ConsoleLogs" })),
+);
 
 vi.mock("@sentry/react", () => ({
   init: initMock,
   setUser: setUserMock,
   feedbackIntegration: feedbackIntegrationMock,
+  browserTracingIntegration: browserTracingIntegrationMock,
+  consoleLoggingIntegration: consoleLoggingIntegrationMock,
 }));
 
 // initSentry() now guards on a module-level `_initialized` flag, so each
@@ -18,11 +26,14 @@ vi.mock("@sentry/react", () => ({
 // init in a later one).
 let initSentry: typeof import("./sentry").initSentry;
 let isSentryEnabled: typeof import("./sentry").isSentryEnabled;
+let scrubMagicLinkToken: typeof import("./sentry").scrubMagicLinkToken;
 
 beforeEach(async () => {
   localStorage.clear();
   vi.resetModules();
-  ({ initSentry, isSentryEnabled } = await import("./sentry"));
+  ({ initSentry, isSentryEnabled, scrubMagicLinkToken } = await import(
+    "./sentry"
+  ));
 });
 
 afterEach(() => {
@@ -31,6 +42,122 @@ afterEach(() => {
 });
 
 describe("sentry module", () => {
+  it("scrubs only token and email query values from magic-link URLs", () => {
+    expect(
+      scrubMagicLinkToken(
+        "/verify?token=abc123&email=x@y.z&next=/exams#complete",
+      ),
+    ).toBe(
+      "/verify?token=[Filtered]&email=[Filtered]&next=/exams#complete",
+    );
+    expect(scrubMagicLinkToken("/exams?status=draft#recent")).toBe(
+      "/exams?status=draft#recent",
+    );
+  });
+
+  it("scrubs magic-link URLs from error events without dropping ordinary events", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    initSentry();
+    const beforeSend = initMock.mock.calls[0][0].beforeSend;
+    const event = {
+      request: {
+        url: "/verify?token=url-token&email=url@example.com&next=/exams",
+        query_string:
+          "token=query-token&email=query@example.com&next=/exams",
+      },
+    };
+
+    expect(beforeSend(event, {})).toBe(event);
+    expect(event).toEqual({
+      request: {
+        url: "/verify?token=[Filtered]&email=[Filtered]&next=/exams",
+        query_string:
+          "token=[Filtered]&email=[Filtered]&next=/exams",
+      },
+    });
+
+    const ordinaryEvent = {
+      request: { url: "/exams?status=draft", query_string: "status=draft" },
+    };
+    expect(beforeSend(ordinaryEvent, {})).toBe(ordinaryEvent);
+    expect(ordinaryEvent).toEqual({
+      request: { url: "/exams?status=draft", query_string: "status=draft" },
+    });
+  });
+
+  it("scrubs magic-link URLs from transactions without dropping ordinary transactions", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    initSentry();
+    const beforeSendTransaction =
+      initMock.mock.calls[0][0].beforeSendTransaction;
+    const transaction = {
+      transaction:
+        "GET /verify?token=transaction-token&email=trace@example.com&next=/exams",
+      request: {
+        url: "/verify?token=request-token&email=request@example.com",
+        query_string: "token=query-token&email=query@example.com",
+      },
+    };
+
+    expect(beforeSendTransaction(transaction, {})).toBe(transaction);
+    expect(transaction).toEqual({
+      transaction:
+        "GET /verify?token=[Filtered]&email=[Filtered]&next=/exams",
+      request: {
+        url: "/verify?token=[Filtered]&email=[Filtered]",
+        query_string: "token=[Filtered]&email=[Filtered]",
+      },
+    });
+
+    const ordinaryTransaction = { transaction: "GET /exams?status=draft" };
+    expect(beforeSendTransaction(ordinaryTransaction, {})).toBe(
+      ordinaryTransaction,
+    );
+    expect(ordinaryTransaction).toEqual({
+      transaction: "GET /exams?status=draft",
+    });
+  });
+
+  it("scrubs magic-link URLs from breadcrumb strings without dropping ordinary breadcrumbs", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    initSentry();
+    const beforeBreadcrumb = initMock.mock.calls[0][0].beforeBreadcrumb;
+    const breadcrumb = {
+      category: "navigation",
+      message: "/verify?token=message-token&email=message@example.com",
+      data: {
+        from: "/verify?token=from-token&email=from@example.com",
+        to: "/verify?token=to-token&email=to@example.com",
+        url: "/verify?token=url-token&email=url@example.com",
+        method: "GET",
+        status_code: 200,
+      },
+    };
+
+    expect(beforeBreadcrumb(breadcrumb)).toBe(breadcrumb);
+    expect(breadcrumb).toEqual({
+      category: "navigation",
+      message: "/verify?token=[Filtered]&email=[Filtered]",
+      data: {
+        from: "/verify?token=[Filtered]&email=[Filtered]",
+        to: "/verify?token=[Filtered]&email=[Filtered]",
+        url: "/verify?token=[Filtered]&email=[Filtered]",
+        method: "GET",
+        status_code: 200,
+      },
+    });
+
+    const ordinaryBreadcrumb = {
+      message: "/exams?status=draft",
+      data: { to: "/exams?status=draft", status_code: 200 },
+    };
+    expect(beforeBreadcrumb(ordinaryBreadcrumb)).toBe(ordinaryBreadcrumb);
+    expect(ordinaryBreadcrumb).toEqual({
+      message: "/exams?status=draft",
+      data: { to: "/exams?status=draft", status_code: 200 },
+    });
+  });
+
   it("sets the persisted auth user after a page reload", async () => {
     const user = {
       id: "account-123",
@@ -126,6 +253,61 @@ describe("sentry module", () => {
     expect(feedbackIntegrationMock).toHaveBeenCalledWith(
       expect.objectContaining({ autoInject: false, showBranding: false }),
     );
+  });
+
+  it("enables tracing only for same-origin relative requests", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+
+    initSentry();
+
+    const options = initMock.mock.calls[0][0];
+    expect(browserTracingIntegrationMock).toHaveBeenCalledOnce();
+    expect(options.tracesSampleRate).toBe(1);
+    expect(options.tracePropagationTargets).toEqual([/^\//]);
+    expect(options.tracePropagationTargets[0].test("/auth/verify")).toBe(true);
+    expect(
+      options.tracePropagationTargets.some((target: string | RegExp) =>
+        String(target).includes("yourserver.io"),
+      ),
+    ).toBe(false);
+  });
+
+  it("pins every allowed data-collection category", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+
+    initSentry();
+
+    expect(initMock.mock.calls[0][0].dataCollection).toEqual({
+      userInfo: false,
+      httpHeaders: {
+        request: { allow: [] },
+        response: { allow: [] },
+      },
+      httpBodies: [],
+      genAI: { inputs: false, outputs: false },
+      cookies: false,
+      queryParams: { allow: [] },
+    });
+  });
+
+  it("forwards only warn and error console calls as logs", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+
+    initSentry();
+
+    expect(initMock.mock.calls[0][0].enableLogs).toBe(true);
+    expect(consoleLoggingIntegrationMock).toHaveBeenCalledWith({
+      levels: ["warn", "error"],
+    });
+  });
+
+  it("includes the build release when VITE_SENTRY_RELEASE is set", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    vi.stubEnv("VITE_SENTRY_RELEASE", "9cffb64");
+
+    initSentry();
+
+    expect(initMock.mock.calls[0][0]).toHaveProperty("release", "9cffb64");
   });
 
   it("uses the staging environment when VITE_IS_STAGING is set", () => {

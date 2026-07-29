@@ -8,6 +8,11 @@ export function isSentryEnabled(): boolean {
   return Boolean(import.meta.env.VITE_SENTRY_DSN);
 }
 
+/** Remove credentials embedded in magic-link query parameters. */
+export function scrubMagicLinkToken(url: string): string {
+  return url.replace(/(^|[?&])((?:token|email)=)[^&#]*/g, "$1$2[Filtered]");
+}
+
 /**
  * Initialize Sentry error monitoring + the user-feedback integration.
  * Idempotent — safe to call more than once; Sentry is only initialized
@@ -18,12 +23,68 @@ export function isSentryEnabled(): boolean {
 export function initSentry(): void {
   if (!isSentryEnabled() || _initialized) return;
   _initialized = true;
+  const release = import.meta.env.VITE_SENTRY_RELEASE;
   Sentry.init({
     dsn: import.meta.env.VITE_SENTRY_DSN,
     environment: import.meta.env.VITE_IS_STAGING ? "staging" : "production",
+    ...(release ? { release } : {}),
     integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.consoleLoggingIntegration({ levels: ["warn", "error"] }),
       Sentry.feedbackIntegration({ autoInject: false, showBranding: false }),
     ],
+    tracesSampleRate: 1,
+    tracePropagationTargets: [/^\//],
+    enableLogs: true,
+    // Metrics default to enabled in @sentry/react 10.66, so no flag is needed.
+    dataCollection: {
+      userInfo: false,
+      httpHeaders: {
+        request: { allow: [] },
+        response: { allow: [] },
+      },
+      httpBodies: [],
+      genAI: { inputs: false, outputs: false },
+      cookies: false,
+      queryParams: { allow: [] },
+    },
+    beforeSend(event) {
+      if (event.request?.url) {
+        event.request.url = scrubMagicLinkToken(event.request.url);
+      }
+      if (typeof event.request?.query_string === "string") {
+        event.request.query_string = scrubMagicLinkToken(
+          event.request.query_string,
+        );
+      }
+      return event;
+    },
+    beforeSendTransaction(event) {
+      if (event.request?.url) {
+        event.request.url = scrubMagicLinkToken(event.request.url);
+      }
+      if (typeof event.request?.query_string === "string") {
+        event.request.query_string = scrubMagicLinkToken(
+          event.request.query_string,
+        );
+      }
+      if (event.transaction) {
+        event.transaction = scrubMagicLinkToken(event.transaction);
+      }
+      return event;
+    },
+    beforeBreadcrumb(breadcrumb) {
+      if (typeof breadcrumb.message === "string") {
+        breadcrumb.message = scrubMagicLinkToken(breadcrumb.message);
+      }
+      for (const key of ["from", "to", "url"]) {
+        const value = breadcrumb.data?.[key];
+        if (typeof value === "string") {
+          breadcrumb.data![key] = scrubMagicLinkToken(value);
+        }
+      }
+      return breadcrumb;
+    },
   });
 
   const user = useAuthStore.getState().user;
