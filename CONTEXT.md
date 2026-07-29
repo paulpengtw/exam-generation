@@ -83,3 +83,7 @@ _Avoid_: confirmation dialog, review screen, preview
 **提示詞預覽**:
 The literal system and user prompt text displayed on 發送前確認, assembled without calling any model.
 _Avoid_: prompt preview, dry run, payload preview
+
+**生成進度列**:
+The bar fixed to the bottom of 生成頁面, stating which 生成步驟 a run has reached.
+_Avoid_: sticky bottom bar, navbar, progress bar, 進度條

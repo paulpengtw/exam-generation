@@ -115,6 +115,8 @@ export interface UseGenerateReturn {
   llmCalls: LlmCallEvent[];
   agentLanes: AgentLane[];
   errorMessage: string | null;
+  startedAt: number | null;
+  finishedAt: number | null;
   generate: (params: GenerateParams) => void;
   reset: () => void;
 }
@@ -293,6 +295,8 @@ export function useGenerate(): UseGenerateReturn {
   const [displayResults, setDisplayResults] = useState<GeneratedQuestion[]>([]);
   const [llmCalls, setLlmCalls] = useState<LlmCallEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [finishedAt, setFinishedAt] = useState<number | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const nextFinalIndexRef = useRef(0);
 
@@ -313,6 +317,8 @@ export function useGenerate(): UseGenerateReturn {
     setDisplayResults([]);
     setLlmCalls([]);
     setErrorMessage(null);
+    setStartedAt(null);
+    setFinishedAt(null);
     nextFinalIndexRef.current = 0;
     setStatus("idle");
   }, []);
@@ -332,6 +338,8 @@ export function useGenerate(): UseGenerateReturn {
     setDisplayResults([]);
     setLlmCalls([]);
     setErrorMessage(null);
+    setStartedAt(Date.now());
+    setFinishedAt(null);
     nextFinalIndexRef.current = 0;
 
     fetchEventSource(url, {
@@ -347,6 +355,7 @@ export function useGenerate(): UseGenerateReturn {
             ? "Session expired — please sign in again"
             : `Stream open failed: HTTP ${res.status}`;
           setErrorMessage(msg);
+          setFinishedAt(Date.now());
           throw new FatalStreamError(msg);
         }
       },
@@ -443,9 +452,11 @@ export function useGenerate(): UseGenerateReturn {
           case "error":
             setErrorMessage(parseErrorEventData(ev.data ?? ""));
             setStatus("error");
+            setFinishedAt(Date.now());
             break;
           case "done":
             setStatus("idle");
+            setFinishedAt(Date.now());
             controller.abort();
             controllerRef.current = null;
             break;
@@ -454,6 +465,7 @@ export function useGenerate(): UseGenerateReturn {
       onerror(err) {
         setErrorMessage(err instanceof Error ? err.message : String(err));
         setStatus("error");
+        setFinishedAt(Date.now());
         throw err instanceof Error ? err : new FatalStreamError(String(err));
       },
     }).catch(() => {
@@ -469,6 +481,8 @@ export function useGenerate(): UseGenerateReturn {
     llmCalls,
     agentLanes,
     errorMessage,
+    startedAt,
+    finishedAt,
     generate,
     reset,
   };
