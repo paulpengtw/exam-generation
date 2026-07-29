@@ -291,9 +291,26 @@ One-time setup:
 4. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
    integration and connect the `paulpengtw/exam-generation` repository.
 
+On the **frontend** service only, add these build-time variables in both the
+production and staging environments. The frontend build's source-map upload
+step uses them to publish releases and upload source maps:
+
+| Variable name | Value to type | What it is |
+|---|---|---|
+| `SENTRY_AUTH_TOKEN` | An organisation auth token from Sentry | Authorises the frontend build to publish releases and upload source maps. This is a real secret: never commit it and never put it in `.env.example`. |
+| `SENTRY_ORG` | Your Sentry organisation slug | Tells the upload step which Sentry organisation to use |
+| `SENTRY_PROJECT` | The Sentry project slug for this web service and environment | Tells the upload step which project to use. Use a different project for each environment (for example, one for the production web build and another for staging). |
+
+If these three variables are unset, the frontend build still succeeds and
+simply skips the source-map upload.
+
 Set `VITE_SENTRY_RELEASE` to the deploy commit SHA at frontend build time so
 source maps uploaded later can match incoming events. Railway exposes the SHA
 as `RAILWAY_GIT_COMMIT_SHA`; Render exposes it as `RENDER_GIT_COMMIT`.
+
+Forks can leave **all** Sentry variables unset, including the three frontend
+build variables above. Everything degrades gracefully: there is no Sentry
+error reporting, no source-map upload, and no build failure.
 
 Triage flow: user feedback and captured errors appear in the Sentry project
 (User Feedback / Issues views). Open an item and use **Create GitHub Issue**
