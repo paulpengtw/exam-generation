@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
+import DestructiveConfirm from "../components/DestructiveConfirm";
 import ParamForm, { type FormParams } from "../components/ParamForm";
 import { toGenerateParams } from "../utils/toGenerateParams";
 import ProgressLog from "../components/ProgressLog";
@@ -36,6 +38,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const { status, progressLines, results, displayResults, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
+  const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
+  const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
+    string | null
+  >(null);
 
   const handleLogout = () => {
     logout();
@@ -62,6 +68,25 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
   const showProgress = !(progressLines.length === 0 && status === "idle");
   const hasResults = displayResults.length > 0;
+  const handleNavigation = (target: string) => {
+    if (!hasUnsubmittedInput && !hasResults) {
+      navigate(target);
+      return;
+    }
+
+    setPendingNavigationTarget(target);
+  };
+  const handleNavigationConfirm = () => {
+    if (pendingNavigationTarget === null) return;
+
+    const target = pendingNavigationTarget;
+    setPendingNavigationTarget(null);
+    navigate(target);
+  };
+  const navigationBodyKeys = [
+    ...(hasUnsubmittedInput ? ["confirm.navigate_away_body_params"] : []),
+    ...(hasResults ? ["confirm.navigate_away_body_results"] : []),
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -70,7 +95,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate("/generate")}
+              onClick={() => handleNavigation("/generate")}
               className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
               title={t("generate.btn_back_subjects")}
             >
@@ -88,7 +113,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             <LanguageSwitcher />
             <button
               type="button"
-              onClick={() => navigate("/history")}
+              onClick={() => handleNavigation("/history")}
               className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
             >
               {t("history.nav_link")}
@@ -116,6 +141,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             onSubmit={handleSubmit}
             disabled={status === "generating"}
             initialParams={prefillParams ?? undefined}
+            onUnsubmittedInput={() => setHasUnsubmittedInput(true)}
           />
         </section>
 
@@ -174,6 +200,14 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           </section>
         )}
       </main>
+      <DestructiveConfirm
+        open={pendingNavigationTarget !== null}
+        titleKey="confirm.navigate_away_title"
+        bodyKeys={navigationBodyKeys}
+        confirmKey="confirm.navigate_away_confirm"
+        onConfirm={handleNavigationConfirm}
+        onCancel={() => setPendingNavigationTarget(null)}
+      />
     </div>
   );
 }

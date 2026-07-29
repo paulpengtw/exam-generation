@@ -38,6 +38,12 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "feedback.cancel_label": "Cancel",
     "feedback.success_message": "Thank you for your report!",
 
+    "confirm.destructive_cancel": "Cancel",
+    "confirm.navigate_away_title": "Leave this page?",
+    "confirm.navigate_away_body_params": "The parameters you entered will be lost.",
+    "confirm.navigate_away_body_results": "The generated questions will be lost.",
+    "confirm.navigate_away_confirm": "Leave",
+
     "generate.title": "Math Exam Generator",
     "generate.title_ss": "Social Studies Generator",
     "generate.title_ns": "Natural Sciences Generator",
@@ -290,6 +296,12 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "feedback.submit_label": "送出回報",
     "feedback.cancel_label": "取消",
     "feedback.success_message": "感謝您的回報！",
+
+    "confirm.destructive_cancel": "取消",
+    "confirm.navigate_away_title": "確定要離開此頁面？",
+    "confirm.navigate_away_body_params": "您已輸入但尚未送出的內容將會遺失。",
+    "confirm.navigate_away_body_results": "已產生的題目將會遺失。",
+    "confirm.navigate_away_confirm": "離開",
 
     "generate.title": "數學題目產生器",
     "generate.title_ss": "社會領域題目產生器",

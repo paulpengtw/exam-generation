@@ -39,3 +39,42 @@ Object.defineProperty(globalThis, "localStorage", {
   configurable: true,
   writable: true,
 });
+
+// jsdom 29.1.1 does not implement the native dialog methods. Emulate the
+// browser behavior used by the app: showModal() opens the dialog, close()
+// closes it and emits `close`, and Escape emits a cancelable `cancel` event
+// before closing. Listen on document because Escape dismissal is browser
+// modal behavior; keydown events fired on a dialog bubble here as they do in
+// a browser.
+Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+  value: function showModal(this: HTMLDialogElement): void {
+    this.open = true;
+  },
+  configurable: true,
+  writable: true,
+});
+
+Object.defineProperty(HTMLDialogElement.prototype, "close", {
+  value: function close(this: HTMLDialogElement, returnValue?: string): void {
+    if (returnValue !== undefined) {
+      this.returnValue = returnValue;
+    }
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
+  },
+  configurable: true,
+  writable: true,
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+
+  const dialogs = Array.from(document.querySelectorAll<HTMLDialogElement>("dialog[open]"));
+  const dialog = dialogs.at(-1);
+  if (!dialog) return;
+
+  const cancelEvent = new Event("cancel", { cancelable: true });
+  if (dialog.dispatchEvent(cancelEvent)) {
+    dialog.close();
+  }
+});

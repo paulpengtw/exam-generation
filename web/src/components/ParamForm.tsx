@@ -97,6 +97,7 @@ export interface ParamFormProps {
   onSubmit: (params: FormParams) => void;
   disabled: boolean;
   initialParams?: Partial<FormParams> & { [key: string]: unknown };
+  onUnsubmittedInput?: () => void;
 }
 
 type ConfirmationValueKind = "absent" | "sampled" | "defaulted";
@@ -272,7 +273,9 @@ export default function ParamForm({
   onSubmit,
   disabled,
   initialParams,
+  onUnsubmittedInput,
 }: ParamFormProps) {
+  const markUnsubmittedInput = () => onUnsubmittedInput?.();
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1336,7 +1339,7 @@ export default function ParamForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} onChange={markUnsubmittedInput} className="space-y-4">
       {prefillNotice && (
         <div className="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">
           {prefillNotice}
@@ -1446,7 +1449,10 @@ export default function ParamForm({
             <label className="block text-sm font-medium">{t("form.learning_performance")}</label>
             <button
               type="button"
-              onClick={() => setUseCurriculumSearch((v) => !v)}
+              onClick={() => {
+                setUseCurriculumSearch((v) => !v);
+                markUnsubmittedInput();
+              }}
               className="text-xs text-blue-600 hover:underline"
             >
               {useCurriculumSearch ? "切換勾選模式" : "切換搜尋模式"}
@@ -1461,6 +1467,7 @@ export default function ParamForm({
                   onChange={(values) => {
                     markUserChosen("learning_performance");
                     setLearningPerformance(values);
+                    markUnsubmittedInput();
                   }}
                   placeholder="搜尋學習表現..."
                 />
@@ -1699,7 +1706,10 @@ export default function ParamForm({
             <label className="block text-sm font-medium">{t("form.learning_content")}</label>
             <button
               type="button"
-              onClick={() => setUseCurriculumSearch((v) => !v)}
+              onClick={() => {
+                setUseCurriculumSearch((v) => !v);
+                markUnsubmittedInput();
+              }}
               className="text-xs text-blue-600 hover:underline"
             >
               {useCurriculumSearch ? "切換勾選模式" : "切換搜尋模式"}
@@ -1714,6 +1724,7 @@ export default function ParamForm({
                   onChange={(values) => {
                     markUserChosen("learning_content");
                     setLearningContent(values);
+                    markUnsubmittedInput();
                   }}
                   placeholder="搜尋學習內容..."
                 />
@@ -1999,7 +2010,10 @@ export default function ParamForm({
                 />
                 <button
                   type="button"
-                  onClick={() => setOptions((prev) => prev.filter((_, j) => j !== i))}
+                  onClick={() => {
+                    setOptions((prev) => prev.filter((_, j) => j !== i));
+                    markUnsubmittedInput();
+                  }}
                   className="text-sm text-red-600 hover:underline disabled:opacity-40"
                   disabled={options.length <= 2}
                 >−</button>
@@ -2007,7 +2021,10 @@ export default function ParamForm({
             ))}
             <button
               type="button"
-              onClick={() => setOptions((prev) => [...prev, OPTION_HINT])}
+              onClick={() => {
+                setOptions((prev) => [...prev, OPTION_HINT]);
+                markUnsubmittedInput();
+              }}
               className="text-sm text-blue-600 hover:underline disabled:opacity-40"
               disabled={options.length >= 8}
             >+ 新增選項</button>
