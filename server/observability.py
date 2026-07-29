@@ -15,6 +15,20 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 _initialized = False
 
 
+def record_generation_outcome(subject: str, outcome: str) -> None:
+    """Record one completed generation outcome."""
+    sanitized_subject = (
+        subject
+        if subject in {"math", "social_studies", "natural_sciences"}
+        else "other"
+    )
+    sentry_sdk.metrics.count(
+        "generation.outcome",
+        1,
+        attributes={"outcome": outcome, "subject": sanitized_subject},
+    )
+
+
 def init_sentry() -> bool:
     """Initialize Sentry when a backend DSN is configured."""
     global _initialized

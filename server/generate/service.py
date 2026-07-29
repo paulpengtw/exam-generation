@@ -35,6 +35,7 @@ from server.generate.models import (
 )
 from server.generate.persistence import make_exchange_recorder, persist_generation_record
 from server.generate.subjects import SUBJECTS, SubjectSpec
+from server.observability import record_generation_outcome
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -328,11 +329,13 @@ def _worker_one(
             with ctx.prior_scopes_lock:
                 ctx.prior_scopes.append(new_scope)
         ctx.emit_pipeline("question_end", index=i, total=ctx.count)
+        record_generation_outcome(ctx.params.subject, "success")
         ctx.loop.call_soon_threadsafe(
             ctx.queue.put_nowait,
             {"event": SSEEventName.RESULT, "data": question_to_event(question, ctx.config)},
         )
     except Exception as exc:
+        record_generation_outcome(ctx.params.subject, "failure")
         ctx.loop.call_soon_threadsafe(
             ctx.queue.put_nowait,
             {

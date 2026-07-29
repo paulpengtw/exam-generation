@@ -133,3 +133,78 @@ def test_create_app_initializes_sentry_before_fastapi(monkeypatch) -> None:
     app_module.create_app()
 
     assert calls[:2] == ["sentry", "fastapi"]
+
+
+def test_record_generation_outcome_does_not_raise_without_sentry_init(
+    monkeypatch,
+) -> None:
+    from server import observability
+
+    monkeypatch.delenv("SENTRY_DSN", raising=False)
+
+    observability.record_generation_outcome("math", "success")
+
+
+def test_record_generation_outcome_records_success_for_known_subject(
+    monkeypatch,
+) -> None:
+    from server import observability
+
+    metric_calls: list[dict] = []
+
+    def capture_count(name: str, value: int, **kwargs) -> None:
+        metric_calls.append({"name": name, "value": value, **kwargs})
+
+    monkeypatch.setattr(observability.sentry_sdk.metrics, "count", capture_count)
+
+    observability.record_generation_outcome("math", "success")
+
+    assert metric_calls == [
+        {
+            "name": "generation.outcome",
+            "value": 1,
+            "attributes": {"outcome": "success", "subject": "math"},
+        }
+    ]
+
+
+def test_record_generation_outcome_records_failure(monkeypatch) -> None:
+    from server import observability
+
+    metric_calls: list[dict] = []
+
+    def capture_count(name: str, value: int, **kwargs) -> None:
+        metric_calls.append({"name": name, "value": value, **kwargs})
+
+    monkeypatch.setattr(observability.sentry_sdk.metrics, "count", capture_count)
+
+    observability.record_generation_outcome("math", "failure")
+
+    assert metric_calls == [
+        {
+            "name": "generation.outcome",
+            "value": 1,
+            "attributes": {"outcome": "failure", "subject": "math"},
+        }
+    ]
+
+
+def test_record_generation_outcome_sanitizes_unknown_subject(monkeypatch) -> None:
+    from server import observability
+
+    metric_calls: list[dict] = []
+
+    def capture_count(name: str, value: int, **kwargs) -> None:
+        metric_calls.append({"name": name, "value": value, **kwargs})
+
+    monkeypatch.setattr(observability.sentry_sdk.metrics, "count", capture_count)
+
+    observability.record_generation_outcome("fake", "success")
+
+    assert metric_calls == [
+        {
+            "name": "generation.outcome",
+            "value": 1,
+            "attributes": {"outcome": "success", "subject": "other"},
+        }
+    ]
