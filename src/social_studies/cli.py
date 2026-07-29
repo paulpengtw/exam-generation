@@ -12,7 +12,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.batch_sampler import BatchSampler
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
@@ -779,26 +778,6 @@ def main(argv: list[str] | None = None) -> None:
     max_retries = args.max_retries if args.max_retries is not None else config.max_retries
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    batch_sampler: BatchSampler | None = None
-    if args.count > 1 and args.coverage_mode == "balanced":
-        user_pinned_qtype = bool(args.q_type)
-        batch_rng = random.Random(base_seed if base_seed is not None else 0)
-        q_pool = (
-            [_resolve_enum(v, QuestionType) for v in args.q_type]
-            if user_pinned_qtype else list(QuestionType)
-        )
-        # CLI is the single-operator path; stage-wide 學習內容 stratification
-        # is exercised via the API in Task 5, so the pool stays empty here
-        # (BatchSampler.learning_content_assignments then falls back to []
-        # per question, which sample_params() treats as no override).
-        lc_pool: list[str] = []
-        batch_sampler = BatchSampler(
-            count=args.count,
-            q_type_pool=q_pool,
-            learning_content_pool=lc_pool,
-            rng=batch_rng,
-        )
-
     try:
         params_list: list[SampledParams] = []
         for i in range(args.count):
@@ -815,14 +794,6 @@ def main(argv: list[str] | None = None) -> None:
                 content_type=content_type_override,
                 seed=seed,
                 difficulty=args.difficulty,
-                assigned_q_type=(
-                    batch_sampler.q_type_assignments[i] if batch_sampler else None
-                ),
-                assigned_learning_content=(
-                    batch_sampler.learning_content_assignments[i]
-                    if batch_sampler and batch_sampler.learning_content_assignments[i]
-                    else None
-                ),
             )
             params_list.append(params)
 
@@ -864,16 +835,15 @@ def main(argv: list[str] | None = None) -> None:
             question = result
             assert isinstance(question, ExamQuestion)
 
-            effective_mode = "balanced" if batch_sampler is not None else "random"
             if question.metadata is None:
                 question.metadata = QuestionMetadata(
                     grade=params.grade,
                     model="",
-                    coverage_mode_used=effective_mode,
+                    coverage_mode_used=args.coverage_mode,
                 )
             else:
                 question.metadata = question.metadata.model_copy(
-                    update={"coverage_mode_used": effective_mode}
+                    update={"coverage_mode_used": args.coverage_mode}
                 )
 
             results.append(question)

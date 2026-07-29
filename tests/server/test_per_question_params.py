@@ -44,14 +44,11 @@ def _sample(
     spec = SUBJECTS[params.subject]
     app_state = _app_state()
     overrides = spec.coerce_overrides(params, app_state)
-    batch_sampler, user_pinned_lc = spec.setup_batch_sampler(params, overrides)
     return _sample_worker_params(
         index,
         params,
         spec,
         overrides,
-        batch_sampler,
-        user_pinned_lc,
         None,
         decoded,
         app_state,
@@ -193,8 +190,6 @@ def test_explicit_per_question_seed_is_used_without_worker_derivation() -> None:
         spec,
         overrides,
         None,
-        False,
-        None,
         decoded,
         app_state,
     )
@@ -202,8 +197,6 @@ def test_explicit_per_question_seed_is_used_without_worker_derivation() -> None:
         params,
         overrides,
         seed=902,
-        assigned_q_type=None,
-        assigned_lc=None,
         subquestion_configs_decoded=None,
     )
 
@@ -223,13 +216,10 @@ def test_omitting_per_question_params_preserves_sampled_params_bytes(
     spec = SUBJECTS[subject]
     app_state = _app_state()
     overrides = spec.coerce_overrides(params, app_state)
-    batch_sampler, user_pinned_lc = spec.setup_batch_sampler(params, overrides)
     legacy = spec.do_sample_params(
         params,
         overrides,
         seed=185,
-        assigned_q_type=None,
-        assigned_lc=None,
         subquestion_configs_decoded=None,
     )
 
@@ -238,8 +228,6 @@ def test_omitting_per_question_params_preserves_sampled_params_bytes(
         params,
         spec,
         overrides,
-        batch_sampler,
-        user_pinned_lc,
         None,
     )
 
