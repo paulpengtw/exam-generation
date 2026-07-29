@@ -107,3 +107,7 @@ _Avoid_: prompt preview, dry run, payload preview
 **生成進度列**:
 The bar fixed to the bottom of 生成頁面, stating which 生成步驟 a run has reached.
 _Avoid_: sticky bottom bar, navbar, progress bar, 進度條
+
+**生成步驟**:
+One unit of a question's generation pipeline — 文本, 子題, 圖片, 驗證, 修正. Per-question, coarser than the per-agent stage events.
+_Avoid_: phase, stage, 階段, 生成階段

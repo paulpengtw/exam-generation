@@ -6,8 +6,13 @@ const generateState = vi.hoisted(() => ({
   progressLines: [] as string[],
   results: [] as unknown[],
   displayResults: [] as unknown[],
+  llmCalls: [] as unknown[],
   startedAt: null as number | null,
   finishedAt: null as number | null,
+}));
+
+const statusBar = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
 }));
 
 const paramForm = vi.hoisted(() => ({
@@ -21,7 +26,7 @@ vi.mock("../hooks/useGenerate", () => ({
     progressLines: generateState.progressLines,
     results: generateState.results,
     displayResults: generateState.displayResults,
-    llmCalls: [],
+    llmCalls: generateState.llmCalls,
     agentLanes: [],
     errorMessage: null,
     startedAt: generateState.startedAt,
@@ -30,6 +35,19 @@ vi.mock("../hooks/useGenerate", () => ({
     reset: vi.fn(),
   }),
 }));
+
+vi.mock("../components/GenerationStatusBar", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../components/GenerationStatusBar")>();
+  return {
+    ...actual,
+    default: (props: Parameters<typeof actual.default>[0]) => {
+      statusBar.props = { ...props };
+      const ActualStatusBar = actual.default;
+      return <ActualStatusBar {...props} />;
+    },
+  };
+});
 
 vi.mock("react-router-dom", () => ({
   useNavigate: () => vi.fn(),
@@ -76,11 +94,12 @@ describe("GeneratePage — 生成進度列", () => {
     generateState.progressLines = [];
     generateState.results = [];
     generateState.displayResults = [];
+    generateState.llmCalls = [];
     generateState.startedAt = null;
     generateState.finishedAt = null;
   });
 
-  it.each(["math", "social_studies", "natural_sciences"])(
+  it.each(["math", "social_studies", "natural_sciences"] as const)(
     "docks the 生成進度列 to 生成頁面 for %s",
     (subject) => {
       render(<GeneratePage subject={subject} />);
@@ -99,6 +118,7 @@ describe("GeneratePage — 生成進度列 section jumps", () => {
     generateState.progressLines = ["第 1 題 開始生成"];
     generateState.results = [];
     generateState.displayResults = [];
+    generateState.llmCalls = [];
     generateState.startedAt = null;
     generateState.finishedAt = null;
   });
@@ -133,6 +153,7 @@ describe("GeneratePage — 生成進度列 elapsed timer", () => {
     generateState.progressLines = ["第 1 題 開始生成"];
     generateState.results = [];
     generateState.displayResults = [];
+    generateState.llmCalls = [];
     generateState.startedAt = 0;
     generateState.finishedAt = null;
     paramForm.renders = 0;
@@ -155,5 +176,45 @@ describe("GeneratePage — 生成進度列 elapsed timer", () => {
 
     expect(screen.getByTestId("statusbar-elapsed")).toHaveTextContent("5秒");
     expect(paramForm.renders).toBe(rendersBeforeTicking);
+  });
+});
+
+describe("GeneratePage — 生成步驟 wiring", () => {
+  beforeEach(() => {
+    generateState.status = "idle";
+    generateState.progressLines = [];
+    generateState.results = [];
+    generateState.displayResults = [];
+    generateState.llmCalls = [
+      {
+        type: "stage",
+        agent: "sub_generator#1",
+        stage: "llm_generate",
+        status: "start",
+        ts: 1_000,
+      },
+    ];
+    generateState.startedAt = 1_000;
+    generateState.finishedAt = null;
+    paramForm.onSubmit = null;
+    statusBar.props = null;
+  });
+
+  it("passes the subject, hook events, and submitted 子題 count to the bar", () => {
+    const page = render(<GeneratePage subject="social_studies" />);
+
+    act(() => {
+      paramForm.onSubmit?.({ count: 1, sub_question_count: 4 });
+    });
+    generateState.status = "generating";
+    page.rerender(<GeneratePage subject="social_studies" />);
+
+    expect(statusBar.props).toEqual(
+      expect.objectContaining({
+        subject: "social_studies",
+        stageEvents: generateState.llmCalls,
+        subQuestionCount: 4,
+      }),
+    );
   });
 });

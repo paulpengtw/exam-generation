@@ -9,17 +9,266 @@ vi.mock("../store/langStore", () => ({
 import GenerationStatusBar, {
   type GenerationStatusBarProps,
 } from "./GenerationStatusBar";
+import type { LlmCallEvent } from "../hooks/useGenerate";
+
+function stageEvent(
+  agent: string,
+  stage: string,
+  status: "start" | "end",
+  ts: number,
+): LlmCallEvent {
+  return { type: "stage", agent, stage, status, ts };
+}
 
 const BASE_PROPS: GenerationStatusBarProps = {
   runState: "idle",
   completedCount: 0,
   requestedTotal: 0,
+  subject: "math",
+  stageEvents: [],
+  subQuestionCount: null,
   startedAt: null,
   finishedAt: null,
   availableTargets: ["form"],
   onJump: vi.fn(),
   onFeedback: null,
 };
+
+describe("GenerationStatusBar — 生成步驟", () => {
+  it("shows the four-step math skeleton with 生成 live when generation starts", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        startedAt={1_000}
+        stageEvents={[
+          stageEvent("generator", "llm_generate", "start", 1_000),
+        ]}
+      />,
+    );
+
+    const breadcrumb = screen.getByTestId("generation-step-breadcrumb");
+    expect(breadcrumb).toHaveTextContent("生成 › 圖片 › 驗證 › 修正");
+    expect(screen.getByTestId("generation-step-generate")).toHaveAttribute(
+      "data-state",
+      "live",
+    );
+  });
+
+  it.each(["social_studies", "natural_sciences"] as const)(
+    "shows the five-step %s skeleton with 文本 live when generation starts",
+    (subject) => {
+      render(
+        <GenerationStatusBar
+          {...BASE_PROPS}
+          subject={subject}
+          runState="running"
+          requestedTotal={1}
+          startedAt={1_000}
+          stageEvents={[
+            stageEvent("generator", "llm_generate", "start", 1_000),
+          ]}
+        />,
+      );
+
+      const breadcrumb = screen.getByTestId("generation-step-breadcrumb");
+      expect(breadcrumb).toHaveTextContent("文本 › 子題 › 圖片 › 驗證 › 修正");
+      expect(screen.getByTestId("generation-step-text")).toHaveAttribute(
+        "data-state",
+        "live",
+      );
+    },
+  );
+
+  it("completes 生成 and makes 驗證 live when the pipeline moves to verification", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        startedAt={1_000}
+        stageEvents={[
+          stageEvent("generator", "llm_generate", "start", 1_000),
+          stageEvent("generator", "llm_generate", "end", 2_000),
+          stageEvent("verifier", "verify", "start", 3_000),
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("generation-step-generate")).toHaveAttribute(
+      "data-state",
+      "complete",
+    );
+    expect(screen.getByTestId("generation-step-verify")).toHaveAttribute(
+      "data-state",
+      "live",
+    );
+  });
+
+  it("dims conditional 圖片 and 修正 until their activity arrives", () => {
+    const { rerender } = render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        startedAt={1_000}
+        stageEvents={[
+          stageEvent("generator", "llm_generate", "start", 1_000),
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("generation-step-image")).toHaveAttribute(
+      "data-dim",
+      "true",
+    );
+    expect(screen.getByTestId("generation-step-correct")).toHaveAttribute(
+      "data-dim",
+      "true",
+    );
+
+    rerender(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        startedAt={1_000}
+        stageEvents={[
+          stageEvent("generator", "llm_generate", "start", 1_000),
+          stageEvent("generator", "llm_generate", "end", 2_000),
+          stageEvent("image_agent", "render_image", "start", 3_000),
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("generation-step-image")).toHaveAttribute(
+      "data-state",
+      "live",
+    );
+    expect(screen.getByTestId("generation-step-image")).toHaveAttribute(
+      "data-dim",
+      "false",
+    );
+  });
+
+  it("keeps 圖片 and 修正 dim when verification is reached without either activity", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        startedAt={1_000}
+        stageEvents={[
+          stageEvent("generator", "llm_generate", "start", 1_000),
+          stageEvent("generator", "llm_generate", "end", 2_000),
+          stageEvent("verifier", "verify", "start", 3_000),
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("generation-step-verify")).toHaveAttribute(
+      "data-state",
+      "live",
+    );
+    expect(screen.getByTestId("generation-step-image")).toHaveAttribute(
+      "data-dim",
+      "true",
+    );
+    expect(screen.getByTestId("generation-step-correct")).toHaveAttribute(
+      "data-dim",
+      "true",
+    );
+  });
+
+  it("shows distinct completed 子題 workers with and without a submitted total", () => {
+    const subQuestionEvents = [
+      stageEvent("sub_generator#1", "llm_generate", "end", 1_000),
+      stageEvent("sub_generator#2", "llm_generate", "end", 2_000),
+      stageEvent("sub_generator#3", "llm_generate", "start", 3_000),
+    ];
+    const { rerender } = render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        subject="social_studies"
+        runState="running"
+        requestedTotal={1}
+        subQuestionCount={5}
+        startedAt={1_000}
+        stageEvents={subQuestionEvents}
+      />,
+    );
+
+    const subquestions = screen.getByTestId("generation-step-subquestions");
+    expect(subquestions).toHaveAttribute("data-state", "live");
+    expect(subquestions).toHaveTextContent("子題 2/5");
+
+    rerender(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        subject="social_studies"
+        runState="running"
+        requestedTotal={1}
+        subQuestionCount={null}
+        startedAt={1_000}
+        stageEvents={subQuestionEvents}
+      />,
+    );
+
+    expect(screen.getByTestId("generation-step-subquestions")).toHaveTextContent(
+      "子題 2",
+    );
+    expect(screen.getByTestId("generation-step-subquestions")).not.toHaveTextContent(
+      "2/",
+    );
+  });
+
+  it("keeps the roll-up and omits every breadcrumb element for a multi-question run", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        completedCount={1}
+        requestedTotal={2}
+        startedAt={1_000}
+        stageEvents={[
+          stageEvent("generator", "llm_generate", "start", 1_000),
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("statusbar-status")).toHaveTextContent(
+      "生成中 · 已完成 1 / 2",
+    );
+    expect(screen.queryAllByTestId(/^generation-step-/)).toHaveLength(0);
+  });
+
+  it("hides non-live steps below 640px while keeping the live step visible", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        startedAt={1_000}
+        stageEvents={[
+          stageEvent("generator", "llm_generate", "start", 1_000),
+          stageEvent("generator", "llm_generate", "end", 2_000),
+          stageEvent("verifier", "verify", "start", 3_000),
+        ]}
+      />,
+    );
+
+    for (const step of ["generate", "image", "correct"]) {
+      expect(screen.getByTestId(`generation-step-${step}`)).toHaveClass(
+        "hidden",
+        "sm:inline",
+      );
+    }
+    expect(screen.getByTestId("generation-step-verify")).not.toHaveClass(
+      "hidden",
+    );
+  });
+});
 
 describe("GenerationStatusBar — status half", () => {
   it("unmasks fixed status labels without unmasking dynamic status values", () => {
