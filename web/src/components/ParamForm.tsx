@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
@@ -35,6 +35,12 @@ function parseSubquestionConfigs(value: unknown): SubQuestionConfig[] {
   } catch {
     return [];
   }
+}
+
+function serialisableSubquestionConfig(config: SubQuestionConfig): SubQuestionConfig {
+  return Object.fromEntries(
+    Object.entries(config).filter(([, value]) => value !== undefined),
+  ) as SubQuestionConfig;
 }
 
 /**
@@ -99,6 +105,45 @@ export interface ParamFormProps {
   initialParams?: Partial<FormParams> & { [key: string]: unknown };
   onUnsubmittedInput?: () => void;
 }
+
+/**
+ * Complete, JSON-serialisable snapshot of the user-entered generation fields.
+ * Async data, validation/confirmation state, and display-only UI preferences
+ * deliberately live outside this object.
+ */
+export interface FormFields {
+  grade: number | "";
+  style: string;
+  contentType: string;
+  customContentType: string;
+  context: string[];
+  setType: string;
+  qType: string[];
+  count: number;
+  coverageMode: "balanced" | "random";
+  skipVerify: boolean;
+  disableReferenceFewshot: boolean;
+  imageGenerationMode: "html" | "gpt_image";
+  difficulty: "" | "easy" | "medium" | "hard";
+  subjectFilter: string;
+  passage: string;
+  textWordLimit: number | null;
+  options: string[];
+  topic: string;
+  coreQuestion: string | null;
+  subContext: string;
+  scienceCompetency: string[];
+  learningPerformance: string[];
+  learningContent: string[];
+  subQuestionCount: number | "";
+  subquestionConfigs: SubQuestionConfig[];
+  modelPlan: string;
+  modelExecute: string;
+}
+
+type FormFieldUpdate<K extends keyof FormFields> =
+  | FormFields[K]
+  | ((current: FormFields[K]) => FormFields[K]);
 
 type ConfirmationValueKind = "absent" | "sampled" | "defaulted";
 
@@ -289,6 +334,8 @@ export default function ParamForm({
   >([]);
   const [perQuestionAutoFields, setPerQuestionAutoFields] = useState<string[][]>([]);
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
+  const [models, setModels] = useState<AvailableModels | null>(null);
+  const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(false);
   const previewRequestedRef = useRef(false);
 
   const ip = initialParams ?? {};
@@ -296,55 +343,99 @@ export default function ParamForm({
   function fromInit<T>(key: string, fallback: T): T {
     return (ip[key] as T | undefined) ?? fallback;
   }
+  function subquestionConfigsFromInit(): SubQuestionConfig[] {
+    const value = ip.subquestion_configs;
+    const configs = Array.isArray(value)
+      ? value.filter(
+          (row): row is SubQuestionConfig =>
+            typeof row === "object" && row !== null && !Array.isArray(row),
+        )
+      : parseSubquestionConfigs(value);
+    return configs.map(serialisableSubquestionConfig);
+  }
   function markUserChosen(key: string) {
     userChosenFields.current.add(key);
   }
 
-  const [grade, setGrade] = useState<number | "">(fromInit<number | "">("grade", ""));
-  const [style, setStyle] = useState<string>(fromInit<string>("style", ""));
-  const [contentType, setContentType] = useState<string>(
-    fromInit<string>("content_type", "純文字"),
-  );
-  const [customContentType, setCustomContentType] = useState<string>("");
-  const [context, setContext] = useState<string[]>(fromInit<string[]>("context", []));
-  const [setType, setSetType] = useState<string>(fromInit<string>("set_type", ""));
-  const [qType, setQType] = useState<string[]>(fromInit<string[]>("q_type", []));
-  const [count, setCount] = useState<number>(fromInit<number>("count", 1));
-  const configuredSeed = fromInit<number | undefined>("seed", undefined);
-  const [coverageMode, setCoverageMode] = useState<"balanced" | "random">("balanced");
-  const [skipVerify, setSkipVerify] = useState<boolean>(
-    fromInit<boolean>("skip_verify", false),
-  );
-  const [disableReferenceFewshot, setDisableReferenceFewshot] =
-    useState<boolean>(fromInit<boolean>("disable_reference_fewshot", false));
-  const [imageGenerationMode, setImageGenerationMode] =
-    useState<"html" | "gpt_image">(
-      fromInit<"html" | "gpt_image">("image_generation_mode", "html"),
-    );
-  const [difficulty, setDifficulty] = useState<"" | "easy" | "medium" | "hard">(
-    fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
-  );
-  const [subjectFilter, setSubjectFilter] = useState<string>(
-    (() => {
-      const v = fromInit<string | string[]>("subject_filter", "");
-      return Array.isArray(v) ? (v[0] ?? "") : v;
+  const [formFields, setFormFields] = useState<FormFields>(() => ({
+    grade: fromInit<number | "">("grade", ""),
+    style: fromInit<string>("style", ""),
+    contentType: fromInit<string>("content_type", "純文字"),
+    customContentType: "",
+    context: fromInit<string[]>("context", []),
+    setType: fromInit<string>("set_type", ""),
+    qType: fromInit<string[]>("q_type", []),
+    count: fromInit<number>("count", 1),
+    coverageMode: "balanced",
+    skipVerify: fromInit<boolean>("skip_verify", false),
+    disableReferenceFewshot: fromInit<boolean>("disable_reference_fewshot", false),
+    imageGenerationMode: fromInit<"html" | "gpt_image">("image_generation_mode", "html"),
+    difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
+    subjectFilter: (() => {
+      const value = fromInit<string | string[]>("subject_filter", "");
+      return Array.isArray(value) ? (value[0] ?? "") : value;
     })(),
+    passage: fromInit<string>("passage", TEXT_HINT),
+    textWordLimit: fromInit<number | undefined>("text_word_limit", undefined) ?? null,
+    options: fromInit<string[]>(
+      "options",
+      [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
+    ),
+    topic: fromInit<string>("topic", ""),
+    coreQuestion: fromInit<string | null>("core_question", null),
+    subContext: fromInit<string>("sub_context", ""),
+    scienceCompetency: fromInit<string[]>("science_competency", []),
+    learningPerformance: fromInit<string[]>("learning_performance", []),
+    learningContent: fromInit<string[]>("learning_content", []),
+    subQuestionCount: fromInit<number | "">("sub_question_count", ""),
+    subquestionConfigs: subquestionConfigsFromInit(),
+    modelPlan: window.localStorage.getItem("model_plan") ?? "",
+    modelExecute: window.localStorage.getItem("model_execute") ?? "",
+  }));
+  const formSnapshot = formFields;
+  const restoreFormSnapshot = setFormFields;
+  const setField = useCallback(
+    function updateFormField<K extends keyof FormFields>(key: K, update: FormFieldUpdate<K>) {
+      restoreFormSnapshot((current) => {
+        const nextValue = typeof update === "function"
+          ? (update as (value: FormFields[K]) => FormFields[K])(current[key])
+          : update;
+        if (Object.is(nextValue, current[key])) return current;
+        return { ...current, [key]: nextValue };
+      });
+    },
+    [restoreFormSnapshot],
   );
-  const [passage, setPassage] = useState<string>(fromInit<string>("passage", TEXT_HINT));
-  const [textWordLimit, setTextWordLimit] = useState<number | undefined>(
-    fromInit<number | undefined>("text_word_limit", undefined),
-  );
-  const [options, setOptions] = useState<string[]>(
-    fromInit<string[]>("options", [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]),
-  );
-  const [topic, setTopic] = useState<string>(fromInit<string>("topic", ""));
-  const [coreQuestion, setCoreQuestion] = useState<string | null>(
-    fromInit<string | null>("core_question", null),
-  );
-  const [subContext, setSubContext] = useState<string>(fromInit<string>("sub_context", ""));
-  const [scienceCompetency, setScienceCompetency] = useState<string[]>(
-    fromInit<string[]>("science_competency", []),
-  );
+  const {
+    grade,
+    style,
+    contentType,
+    customContentType,
+    context,
+    setType,
+    qType,
+    count,
+    coverageMode,
+    skipVerify,
+    disableReferenceFewshot,
+    imageGenerationMode,
+    difficulty,
+    subjectFilter,
+    passage,
+    textWordLimit,
+    options,
+    topic,
+    coreQuestion,
+    subContext,
+    scienceCompetency,
+    learningPerformance,
+    learningContent,
+    subQuestionCount,
+    subquestionConfigs,
+    modelPlan,
+    modelExecute,
+  } = formSnapshot;
+  const configuredSeed = fromInit<number | undefined>("seed", undefined);
 
   useEffect(() => {
     if (!pendingParams || coreQuestionResolution === "loading" || previewRequestedRef.current) return;
@@ -412,26 +503,6 @@ export default function ParamForm({
     });
     return () => { cancelled = true; };
   }, [coreQuestionResolution, pendingParams, subject]);
-  const [learningPerformance, setLearningPerformance] = useState<string[]>(
-    fromInit<string[]>("learning_performance", []),
-  );
-  const [learningContent, setLearningContent] = useState<string[]>(
-    fromInit<string[]>("learning_content", []),
-  );
-  const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(false);
-  const [subQuestionCount, setSubQuestionCount] = useState<number | "">(
-    fromInit<number | "">("sub_question_count", ""),
-  );
-  const [subquestionConfigs, setSubquestionConfigs] = useState<SubQuestionConfig[]>(
-    fromInit<SubQuestionConfig[]>("subquestion_configs", []),
-  );
-  const [models, setModels] = useState<AvailableModels | null>(null);
-  const [modelPlan, setModelPlan] = useState<string>(
-    () => window.localStorage.getItem("model_plan") ?? "",
-  );
-  const [modelExecute, setModelExecute] = useState<string>(
-    () => window.localStorage.getItem("model_execute") ?? "",
-  );
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
   const supportsTextWordLimit = isCurriculumSubject && subject !== "math";
@@ -440,58 +511,62 @@ export default function ParamForm({
     let cancelled = false;
     setSchemas(null);
     setError(null);
-    setContext(fromInit<string[]>("context", []));
-    setQType(fromInit<string[]>("q_type", []));
-    setImageGenerationMode(
-      fromInit<"html" | "gpt_image">("image_generation_mode", "html"),
-    );
-    setDifficulty(fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""));
-    setPassage(fromInit<string>("passage", TEXT_HINT));
-    setTextWordLimit(fromInit<number | undefined>("text_word_limit", undefined));
-    setOptions(
-      fromInit<string[]>("options", [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT]),
-    );
-    setSubjectFilter(
-      (() => {
+    restoreFormSnapshot((current) => ({
+      ...current,
+      context: fromInit<string[]>("context", []),
+      qType: fromInit<string[]>("q_type", []),
+      imageGenerationMode: fromInit<"html" | "gpt_image">(
+        "image_generation_mode",
+        "html",
+      ),
+      difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
+      passage: fromInit<string>("passage", TEXT_HINT),
+      textWordLimit: fromInit<number | undefined>("text_word_limit", undefined) ?? null,
+      options: fromInit<string[]>(
+        "options",
+        [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
+      ),
+      subjectFilter: (() => {
         const v = fromInit<string | string[]>("subject_filter", "");
         return Array.isArray(v) ? (v[0] ?? "") : v;
       })(),
-    );
-    setSubContext(fromInit<string>("sub_context", ""));
-    setScienceCompetency(fromInit<string[]>("science_competency", []));
-    setLearningPerformance(fromInit<string[]>("learning_performance", []));
-    setLearningContent(fromInit<string[]>("learning_content", []));
-    setSubQuestionCount(fromInit<number | "">("sub_question_count", ""));
-    setSubquestionConfigs(fromInit<SubQuestionConfig[]>("subquestion_configs", []));
-    setTopic(fromInit<string>("topic", ""));
-    setCoreQuestion(fromInit<string | null>("core_question", null));
+      subContext: fromInit<string>("sub_context", ""),
+      scienceCompetency: fromInit<string[]>("science_competency", []),
+      learningPerformance: fromInit<string[]>("learning_performance", []),
+      learningContent: fromInit<string[]>("learning_content", []),
+      subQuestionCount: fromInit<number | "">("sub_question_count", ""),
+      subquestionConfigs: subquestionConfigsFromInit(),
+      topic: fromInit<string>("topic", ""),
+      coreQuestion: fromInit<string | null>("core_question", null),
+    }));
     getSchemas(subject)
       .then((s) => {
         if (cancelled) return;
         setSchemas(s);
-        if (s.grades.length > 0 && ip.grade === undefined) setGrade(s.grades[0]);
+        if (s.grades.length > 0 && ip.grade === undefined) setField("grade", s.grades[0]);
         if (
           subject === "natural_sciences" &&
           s.情境.length > 0 &&
           ip.sub_context === undefined
         ) {
-          setContext([s.情境[0].value]);
+          setField("context", [s.情境[0].value]);
           const firstSub = (s.情境子類別 ?? []).find(
             (entry) => entry.parent === s.情境[0].value,
           );
-          setSubContext(firstSub?.value ?? "");
+          setField("subContext", firstSub?.value ?? "");
         }
         const questionStyles = s.question_style ?? [];
         if (ip.style === undefined) {
           if (subject === "math" && questionStyles.length > 0) {
-            setStyle(questionStyles[0].value);
+            setField("style", questionStyles[0].value);
           } else {
-            setStyle("");
+            setField("style", "");
           }
         }
         if (ip.content_type === undefined) {
           const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
-          setContentType(
+          setField(
+            "contentType",
             isCurriculumSubject &&
               Array.isArray(contentTypes) &&
               contentTypes.length > 0
@@ -499,8 +574,8 @@ export default function ParamForm({
               : "純文字",
           );
         }
-        setCustomContentType("");
-        if (s.題型種類.length > 0 && ip.set_type === undefined) setSetType(s.題型種類[0].value);
+        setField("customContentType", "");
+        if (s.題型種類.length > 0 && ip.set_type === undefined) setField("setType", s.題型種類[0].value);
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message);
@@ -521,8 +596,8 @@ export default function ParamForm({
         // allowlist — a stale value (e.g. a model that was removed server
         // side) must never be silently submitted.
         const allowed = new Set(m.allowed);
-        setModelPlan((prev) => (prev && !allowed.has(prev) ? "" : prev));
-        setModelExecute((prev) => (prev && !allowed.has(prev) ? "" : prev));
+        setField("modelPlan", (prev) => (prev && !allowed.has(prev) ? "" : prev));
+        setField("modelExecute", (prev) => (prev && !allowed.has(prev) ? "" : prev));
       })
       .catch(() => {
         if (cancelled) return;
@@ -531,13 +606,13 @@ export default function ParamForm({
         // when /api/models fails, even for a returning user with a
         // persisted choice.
         setModels(null);
-        setModelPlan("");
-        setModelExecute("");
+        setField("modelPlan", "");
+        setField("modelExecute", "");
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setField]);
 
   useEffect(() => {
     window.localStorage.setItem("model_plan", modelPlan);
@@ -582,15 +657,15 @@ export default function ParamForm({
       setPrefillNotice(t("history.prefill_notice"));
       // Drop the missing entries so the form submits a clean payload.
       const allowedCtx = new Set(schemas.情境?.map((s) => s.value));
-      setContext((prev) => prev.filter((v) => allowedCtx.has(v)));
+      setField("context", (prev) => prev.filter((v) => allowedCtx.has(v)));
       const allowedQT = new Set(schemas.題型?.map((s) => s.value));
-      setQType((prev) => prev.filter((v) => allowedQT.has(v)));
+      setField("qType", (prev) => prev.filter((v) => allowedQT.has(v)));
       const allowedST = new Set(schemas.題型種類?.map((s) => s.value));
-      setSetType((prev) => (allowedST.has(prev) ? prev : ""));
+      setField("setType", (prev) => (allowedST.has(prev) ? prev : ""));
     } else {
       setPrefillNotice(null);
     }
-  }, [schemas, initialParams, t]);
+  }, [schemas, initialParams, t, setField]);
 
   // Re-fetch grade-dependent fields when grade changes so the correct learning stage is used.
   useEffect(() => {
@@ -644,42 +719,44 @@ export default function ParamForm({
     if (subject !== "natural_sciences") return;
     const allowed = new Set(availableSubContexts.map((entry) => entry.value));
     if (!subContext || !allowed.has(subContext)) {
-      setSubContext(availableSubContexts[0]?.value ?? "");
+      setField("subContext", availableSubContexts[0]?.value ?? "");
     }
-  }, [availableSubContexts, subContext, subject]);
+  }, [availableSubContexts, subContext, subject, setField]);
 
   useEffect(() => {
     if (!schemas) return;
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
-    setLearningPerformance((prev) => prev.filter((value) => allowed.has(value)));
-    setSubquestionConfigs((prev) =>
+    setField("learningPerformance", (prev) => prev.filter((value) => allowed.has(value)));
+    setField("subquestionConfigs", (prev) =>
       prev.map((cfg) =>
         cfg.learning_performance?.length
           ? { ...cfg, learning_performance: cfg.learning_performance.filter((v) => allowed.has(v)) }
           : cfg,
       ),
     );
-  }, [availableLearningPerformance, schemas]);
+  }, [availableLearningPerformance, schemas, setField]);
 
   useEffect(() => {
     if (!schemas) return;
     const allowed = new Set(availableLearningContent.map((entry) => entry.value));
-    setLearningContent((prev) => prev.filter((value) => allowed.has(value)));
-  }, [availableLearningContent, schemas]);
+    setField("learningContent", (prev) => prev.filter((value) => allowed.has(value)));
+  }, [availableLearningContent, schemas, setField]);
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
     const n = typeof subQuestionCount === "number" ? subQuestionCount : 0;
-    setSubquestionConfigs((prev) => {
+    setField("subquestionConfigs", (prev) => {
       if (n <= 0) return [];
       if (prev.length === n) return prev;
       if (prev.length < n) return [...prev, ...Array(n - prev.length).fill({})];
       return prev.slice(0, n);
     });
-  }, [subQuestionCount]);
+  }, [subQuestionCount, setField]);
 
   function updateSubquestionConfig(index: number, patch: Partial<SubQuestionConfig>) {
-    setSubquestionConfigs((prev) => prev.map((cfg, i) => i === index ? { ...cfg, ...patch } : cfg));
+    setField("subquestionConfigs", (prev) => prev.map((cfg, i) =>
+      i === index ? serialisableSubquestionConfig({ ...cfg, ...patch }) : cfg,
+    ));
   }
 
   function optionalNumber(raw: string): number | undefined {
@@ -814,7 +891,7 @@ export default function ParamForm({
       difficulty: difficulty === "" ? undefined : difficulty,
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
-      text_word_limit: supportsTextWordLimit ? textWordLimit : undefined,
+      text_word_limit: supportsTextWordLimit ? (textWordLimit ?? undefined) : undefined,
       options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,
       topic:
         isCurriculumSubject && cleanTopic
@@ -1366,8 +1443,8 @@ export default function ParamForm({
             type="text"
             value={topic}
             onChange={(e) => {
-              setTopic(e.target.value);
-              setCoreQuestion(null);
+              setField("topic", e.target.value);
+              setField("coreQuestion", null);
             }}
             onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
             placeholder={t("form.topic_placeholder")}
@@ -1379,8 +1456,8 @@ export default function ParamForm({
               subject={subject}
               subjectFilter={subjectFilter || undefined}
               grade={grade !== "" ? grade : undefined}
-              onPick={(q) => setCoreQuestion(q)}
-              onClear={() => setCoreQuestion(null)}
+              onPick={(q) => setField("coreQuestion", q)}
+              onClear={() => setField("coreQuestion", null)}
               pickedValue={coreQuestion}
             />
           )}
@@ -1392,7 +1469,7 @@ export default function ParamForm({
         <select
           id="param-form-grade"
           value={grade}
-          onChange={(e) => setGrade(Number(e.target.value))}
+          onChange={(e) => setField("grade", Number(e.target.value))}
           className="mt-1 block w-full border rounded px-2 py-1"
         >
           {schemas.grades.map((g) => (
@@ -1410,7 +1487,7 @@ export default function ParamForm({
         <select
           id="difficulty"
           value={difficulty}
-          onChange={(e) => setDifficulty(e.target.value as "" | "easy" | "medium" | "hard")}
+          onChange={(e) => setField("difficulty", e.target.value as "" | "easy" | "medium" | "hard")}
           className="mt-1 block w-full border rounded px-2 py-1"
         >
           <option value="">{t("form.difficulty_default")}</option>
@@ -1433,7 +1510,7 @@ export default function ParamForm({
             value={subjectFilter}
             onChange={(e) => {
               markUserChosen("subject_filter");
-              setSubjectFilter(e.target.value);
+              setField("subjectFilter", e.target.value);
             }}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
@@ -1475,7 +1552,7 @@ export default function ParamForm({
                   selected={learningPerformance}
                   onChange={(values) => {
                     markUserChosen("learning_performance");
-                    setLearningPerformance(values);
+                    setField("learningPerformance", values);
                     markUnsubmittedInput();
                   }}
                   placeholder="搜尋學習表現..."
@@ -1490,7 +1567,7 @@ export default function ParamForm({
                       checked={learningPerformance.includes(entry.value)}
                       onChange={() => {
                         markUserChosen("learning_performance");
-                        setLearningPerformance((prev) => toggleMulti(prev, entry.value));
+                        setField("learningPerformance", (prev) => toggleMulti(prev, entry.value));
                       }}
                       className="mt-1"
                     />
@@ -1517,7 +1594,7 @@ export default function ParamForm({
             value={style}
             onChange={(e) => {
               markUserChosen("style");
-              setStyle(e.target.value);
+              setField("style", e.target.value);
             }}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
@@ -1537,7 +1614,7 @@ export default function ParamForm({
             value={contentType}
             onChange={(e) => {
               markUserChosen("content_type");
-              setContentType(e.target.value);
+              setField("contentType", e.target.value);
             }}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
@@ -1551,7 +1628,7 @@ export default function ParamForm({
             <input
               type="text"
               value={customContentType}
-              onChange={(e) => setCustomContentType(e.target.value)}
+              onChange={(e) => setField("customContentType", e.target.value)}
               placeholder={t("form.content_type_custom_placeholder")}
               required
               className="block w-full border rounded px-2 py-1"
@@ -1568,7 +1645,7 @@ export default function ParamForm({
           <select
             value={imageGenerationMode}
             onChange={(e) =>
-              setImageGenerationMode(e.target.value as "html" | "gpt_image")
+              setField("imageGenerationMode", e.target.value as "html" | "gpt_image")
             }
             className="mt-1 block w-full border rounded px-2 py-1"
           >
@@ -1593,7 +1670,7 @@ export default function ParamForm({
                   checked={context.includes(s.value)}
                   onChange={() => {
                     markUserChosen("context");
-                    setContext((prev) => toggleMulti(prev, s.value));
+                    setField("context", (prev) => toggleMulti(prev, s.value));
                   }}
                 />
                 <span>{s.value}</span>
@@ -1611,7 +1688,7 @@ export default function ParamForm({
               value={context[0] ?? ""}
               onChange={(e) => {
                 markUserChosen("context");
-                setContext(e.target.value ? [e.target.value] : []);
+                setField("context", e.target.value ? [e.target.value] : []);
               }}
               className="mt-1 block w-full border rounded px-2 py-1"
             >
@@ -1628,7 +1705,7 @@ export default function ParamForm({
               value={subContext}
               onChange={(e) => {
                 markUserChosen("sub_context");
-                setSubContext(e.target.value);
+                setField("subContext", e.target.value);
               }}
               className="mt-1 block w-full border rounded px-2 py-1"
             >
@@ -1648,7 +1725,7 @@ export default function ParamForm({
           value={setType}
           onChange={(e) => {
             markUserChosen("set_type");
-            setSetType(e.target.value);
+            setField("setType", e.target.value);
             setValidationError(null);
           }}
           className="mt-1 block w-full border rounded px-2 py-1"
@@ -1672,7 +1749,7 @@ export default function ParamForm({
                 checked={qType.includes(s.value)}
                 onChange={() => {
                   markUserChosen("q_type");
-                  setQType((prev) => toggleMulti(prev, s.value));
+                  setField("qType", (prev) => toggleMulti(prev, s.value));
                 }}
               />
               <span>{s.value}</span>
@@ -1693,7 +1770,7 @@ export default function ParamForm({
                   checked={scienceCompetency.includes(s.value)}
                   onChange={() => {
                     markUserChosen("science_competency");
-                    setScienceCompetency((prev) => toggleMulti(prev, s.value));
+                    setField("scienceCompetency", (prev) => toggleMulti(prev, s.value));
                   }}
                   className="mt-1"
                 />
@@ -1732,7 +1809,7 @@ export default function ParamForm({
                   selected={learningContent}
                   onChange={(values) => {
                     markUserChosen("learning_content");
-                    setLearningContent(values);
+                    setField("learningContent", values);
                     markUnsubmittedInput();
                   }}
                   placeholder="搜尋學習內容..."
@@ -1747,7 +1824,7 @@ export default function ParamForm({
                       checked={learningContent.includes(entry.value)}
                       onChange={() => {
                         markUserChosen("learning_content");
-                        setLearningContent((prev) => toggleMulti(prev, entry.value));
+                        setField("learningContent", (prev) => toggleMulti(prev, entry.value));
                       }}
                       className="mt-1"
                     />
@@ -1774,7 +1851,7 @@ export default function ParamForm({
           min={1}
           max={10}
           value={count}
-          onChange={(e) => setCount(Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
+          onChange={(e) => setField("count", Math.min(10, Math.max(1, Number(e.target.value) || 1)))}
           className="mt-1 block w-24 border rounded px-2 py-1"
         />
       </div>
@@ -1788,7 +1865,7 @@ export default function ParamForm({
             id="coverage-mode-select"
             aria-label="form.coverage_mode"
             value={coverageMode}
-            onChange={(e) => setCoverageMode(e.target.value as "balanced" | "random")}
+            onChange={(e) => setField("coverageMode", e.target.value as "balanced" | "random")}
             className="mt-1 block w-64 border rounded px-2 py-1"
           >
             <option value="balanced">{t("form.coverage_mode.balanced")}</option>
@@ -1810,7 +1887,7 @@ export default function ParamForm({
                 value={subQuestionCount}
                 onChange={(e) => {
                   const v = e.target.value;
-                  setSubQuestionCount(v === "" ? "" : Math.min(7, Math.max(3, Number(v) || 3)));
+                  setField("subQuestionCount", v === "" ? "" : Math.min(7, Math.max(3, Number(v) || 3)));
                 }}
                 placeholder="自動 3-7"
                 className="mt-1 block w-full border rounded px-2 py-1"
@@ -1984,7 +2061,7 @@ export default function ParamForm({
             type="number"
             min={1}
             value={textWordLimit ?? ""}
-            onChange={(e) => setTextWordLimit(e.target.value ? Number(e.target.value) : undefined)}
+            onChange={(e) => setField("textWordLimit", e.target.value ? Number(e.target.value) : null)}
             placeholder={t("form.unlimited")}
             className="mt-1 block w-full border rounded px-2 py-1"
           />
@@ -2003,24 +2080,24 @@ export default function ParamForm({
                   value={opt}
                   onFocus={() => {
                     if (opt === OPTION_HINT) {
-                      setOptions((prev) => prev.map((v, j) => j === i ? "" : v));
+                      setField("options", (prev) => prev.map((v, j) => j === i ? "" : v));
                     }
                   }}
                   onBlur={() => {
                     if (options[i] === "") {
-                      setOptions((prev) => prev.map((v, j) => j === i ? OPTION_HINT : v));
+                      setField("options", (prev) => prev.map((v, j) => j === i ? OPTION_HINT : v));
                     }
                   }}
                   onChange={(e) => {
                     const v = e.target.value;
-                    setOptions((prev) => prev.map((x, j) => j === i ? v : x));
+                    setField("options", (prev) => prev.map((x, j) => j === i ? v : x));
                   }}
                   className="flex-1 border rounded px-2 py-1"
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    setOptions((prev) => prev.filter((_, j) => j !== i));
+                    setField("options", (prev) => prev.filter((_, j) => j !== i));
                     markUnsubmittedInput();
                   }}
                   className="text-sm text-red-600 hover:underline disabled:opacity-40"
@@ -2031,7 +2108,7 @@ export default function ParamForm({
             <button
               type="button"
               onClick={() => {
-                setOptions((prev) => [...prev, OPTION_HINT]);
+                setField("options", (prev) => [...prev, OPTION_HINT]);
                 markUnsubmittedInput();
               }}
               className="text-sm text-blue-600 hover:underline disabled:opacity-40"
@@ -2045,7 +2122,7 @@ export default function ParamForm({
         <input
           type="checkbox"
           checked={skipVerify}
-          onChange={(e) => setSkipVerify(e.target.checked)}
+          onChange={(e) => setField("skipVerify", e.target.checked)}
         />
         <span className="text-sm">{t("form.skip_verify")}</span>
       </label>
@@ -2055,7 +2132,7 @@ export default function ParamForm({
           <input
             type="checkbox"
             checked={disableReferenceFewshot}
-            onChange={(e) => setDisableReferenceFewshot(e.target.checked)}
+            onChange={(e) => setField("disableReferenceFewshot", e.target.checked)}
           />
           <span className="text-sm">{t("form.disable_reference_fewshot")}</span>
         </label>
@@ -2074,7 +2151,7 @@ export default function ParamForm({
             <select
               aria-label={t("params.model_plan_label")}
               value={modelPlan}
-              onChange={(e) => setModelPlan(e.target.value)}
+              onChange={(e) => setField("modelPlan", e.target.value)}
               className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
             >
               <option value="">
@@ -2092,7 +2169,7 @@ export default function ParamForm({
             <select
               aria-label={t("params.model_execute_label")}
               value={modelExecute}
-              onChange={(e) => setModelExecute(e.target.value)}
+              onChange={(e) => setField("modelExecute", e.target.value)}
               className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
             >
               <option value="">
