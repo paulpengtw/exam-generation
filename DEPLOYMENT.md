@@ -144,6 +144,8 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `FRONTEND_URL` | The frontend URL you copied in Step 7.3, with `https://` in front | Tells the backend which website is allowed to call it |
 | `EMAIL_BACKEND` | `console` | `console` prints magic-link login emails to backend logs — fine for your own first login; switch to `ses` after following **Step 13** so other teachers receive real emails |
 | `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |
+| `SENTRY_DSN` | *(leave blank, or paste the backend project's DSN)* | Sends backend errors and traces to Sentry. Leave it unset or blank to disable backend Sentry completely. |
+| `SENTRY_ENVIRONMENT` | `production` (or `staging`) | Tags backend Sentry data with the deployment environment. |
 
 **How to generate `JWT_SECRET`:** open `https://passwordsgenerator.net` in a new tab, set length to 64, click **Generate**, and paste the result.
 
@@ -270,20 +272,23 @@ Render's free tier puts services to sleep after 15 minutes of inactivity. The fi
 ## Error reporting (Sentry, optional)
 
 The web app has a bottom-right "?" button that lets users report problems.
-It is powered by [Sentry](https://sentry.io) User Feedback and is **entirely
-optional** — when `VITE_SENTRY_DSN` is not set, the button is hidden and the
-app never contacts Sentry.
+It and the backend error reporting are powered by [Sentry](https://sentry.io)
+and are **entirely optional**. The frontend never contacts Sentry when
+`VITE_SENTRY_DSN` is unset; the backend never contacts Sentry when
+`SENTRY_DSN` is unset or blank.
 
 One-time setup:
 
-1. Create a free account at sentry.io and create a project (platform:
-   **React**). Copy the project's **DSN** (a public client key, not a
-   secret).
+1. Create a free account at sentry.io and create two projects: one with the
+   **React** platform and one with the **FastAPI** platform. Copy each
+   project's **DSN** (a public client key, not a secret).
 2. Set `VITE_SENTRY_DSN` to that DSN when building the frontend
    (docker-compose reads it from the environment / `.env` file). Staging
    builds are tagged with environment `staging` (via `VITE_IS_STAGING`),
    production builds with `production`.
-3. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
+3. Set the FastAPI project's DSN as `SENTRY_DSN` on the backend and set
+   `SENTRY_ENVIRONMENT` to `staging` or `production`.
+4. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
    integration and connect the `paulpengtw/exam-generation` repository.
 
 Triage flow: user feedback and captured errors appear in the Sentry project

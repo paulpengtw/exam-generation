@@ -171,7 +171,7 @@ async def generate_endpoint(
         )
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
+    logger.info("generate request params=%s", params.model_dump(mode="json"))
 
     log = GenerationLog(
         user_id=user.id,

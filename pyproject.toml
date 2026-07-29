@@ -23,6 +23,7 @@ dev = [
 ]
 web = [
     "fastapi",
+    "sentry-sdk[fastapi]",
     "uvicorn[standard]",
     "sse-starlette",
     "sqlalchemy[asyncio]",
