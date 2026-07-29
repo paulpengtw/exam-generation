@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
@@ -70,6 +70,16 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
+  const hasResults = displayResults.length > 0;
+
+  useEffect(() => {
+    if (!hasUnsubmittedInput && !hasResults) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsubmittedInput, hasResults]);
 
   const handleLogout = () => {
     logout();
@@ -115,7 +125,6 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   };
 
   const showProgress = !(progressLines.length === 0 && status === "idle");
-  const hasResults = displayResults.length > 0;
   const runState: RunState =
     status === "error"
       ? "error"
