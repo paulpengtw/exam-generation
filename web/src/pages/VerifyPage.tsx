@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useT } from "../i18n/useT";
+import { consumeReturnDestination } from "../lib/returnDestination";
 
 type Status = "verifying" | "error";
 
@@ -30,7 +31,8 @@ export default function VerifyPage() {
     void (async () => {
       const result = await verifyToken(token, email);
       if (result.success) {
-        navigate("/generate", { replace: true });
+        const dest = consumeReturnDestination();
+        navigate(dest ?? "/generate", { replace: true });
       } else {
         setError(t("verify.error_default"));
         setStatus("error");

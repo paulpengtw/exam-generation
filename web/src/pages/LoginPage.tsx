@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../components/LanguageSwitcher";
+import { consumeSignoutReason, type SignoutReason } from "../lib/signoutReason";
+import { loadDraft } from "../lib/formDraft";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -14,6 +16,21 @@ export default function LoginPage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [signoutInfo, setSignoutInfo] = useState<{
+    reason: SignoutReason;
+    hasDraft: boolean;
+  } | null>(null);
+  const signoutCheckedRef = useRef(false);
+
+  useEffect(() => {
+    if (signoutCheckedRef.current) return;
+    signoutCheckedRef.current = true;
+    const data = consumeSignoutReason();
+    if (data) {
+      const draft = loadDraft(data.userId);
+      setSignoutInfo({ reason: data.reason, hasDraft: draft !== null });
+    }
+  }, []);
 
   if (isAuthenticated()) {
     return <Navigate to="/generate" replace />;
@@ -48,6 +65,24 @@ export default function LoginPage() {
           <h1 className="text-2xl font-semibold">{t("login.title")}</h1>
           <LanguageSwitcher />
         </div>
+
+        {signoutInfo !== null && (
+          <div
+            data-testid="signout-banner"
+            className="rounded border border-amber-300 bg-amber-50 p-3 text-amber-800 text-sm"
+          >
+            {t(
+              signoutInfo.reason === "session_expired"
+                ? "login.signout.reason_expired"
+                : "login.signout.reason_30day_limit",
+            )}{" "}
+            {t(
+              signoutInfo.hasDraft
+                ? "login.signout.draft_notice"
+                : "login.signout.next_step",
+            )}
+          </div>
+        )}
 
         {sent ? (
           <div

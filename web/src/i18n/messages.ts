@@ -12,6 +12,11 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "login.btn_sending": "Sending…",
     "login.sent": "Check your email for a login link.",
     "login.error_default": "Failed to send magic link.",
+    "login.signout.reason_expired": "Your session has expired.",
+    "login.signout.reason_30day_limit": "Your session has reached its 30-day limit.",
+    "login.signout.next_step": "Sign in to continue.",
+    "login.signout.draft_notice":
+      "Your unfinished work is saved in this browser — sign in here to continue it.",
 
     "verify.verifying": "Verifying…",
     "verify.error_default": "Link expired or invalid",
@@ -315,6 +320,11 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "login.btn_sending": "傳送中…",
     "login.sent": "請查看電子郵件中的登入連結。",
     "login.error_default": "傳送登入連結失敗。",
+    "login.signout.reason_expired": "您的登入工作階段已過期。",
+    "login.signout.reason_30day_limit": "您的登入工作階段已達 30 天上限。",
+    "login.signout.next_step": "請重新登入以繼續。",
+    "login.signout.draft_notice":
+      "您的未完成出題資料已儲存在此瀏覽器中——請在此瀏覽器中登入以繼續。",
 
     "verify.verifying": "驗證中…",
     "verify.error_default": "連結已過期或無效",
