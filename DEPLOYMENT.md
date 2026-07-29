@@ -304,9 +304,11 @@ step uses them to publish releases and upload source maps:
 If these three variables are unset, the frontend build still succeeds and
 simply skips the source-map upload.
 
-Set `VITE_SENTRY_RELEASE` to the deploy commit SHA at frontend build time so
-source maps uploaded later can match incoming events. Railway exposes the SHA
-as `RAILWAY_GIT_COMMIT_SHA`; Render exposes it as `RENDER_GIT_COMMIT`.
+The frontend Docker build automatically stamps the release with the deploy
+commit SHA on Railway (`RAILWAY_GIT_COMMIT_SHA`) and Render
+(`RENDER_GIT_COMMIT`), so there is nothing to configure on those platforms.
+Set `VITE_SENTRY_RELEASE` manually only on other platforms or when you want to
+override the automatically detected value.
 
 Forks can leave **all** Sentry variables unset, including the three frontend
 build variables above. Everything degrades gracefully: there is no Sentry
