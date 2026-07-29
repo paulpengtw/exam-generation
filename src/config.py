@@ -30,6 +30,7 @@ class Config:
     web_search_max_uses: int = 5
     # per-batch Opus 情境-題材 planning (SS only); env CREATIVE_PLANNING
     creative_planning: bool = True
+    temperature: float | None = None  # sampling temperature; None = provider default
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> Config:
@@ -59,6 +60,7 @@ class Config:
             web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
             not in ("0", "false", "False", ""),
+            temperature=float(t) if (t := os.environ.get("LLM_TEMPERATURE", "").strip()) else None,
         )
 
     def validate(self) -> None:

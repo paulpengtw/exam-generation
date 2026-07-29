@@ -16,6 +16,27 @@ from pydantic import BaseModel
 
 from src.config import Config
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+_SAMPLING_REJECT_PREFIXES: tuple[str, ...] = (
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+)
+
+
+def _accepts_sampling(model: str) -> bool:
+    """Return False for models known to reject sampling parameters."""
+    for prefix in _SAMPLING_REJECT_PREFIXES:
+        if model == prefix or model.startswith(prefix + "-"):
+            return False
+    return True
+
+
 LLMObserver = Callable[[dict], None]
 
 _PURPOSE_TO_AGENT: dict[str, str] = {
@@ -217,6 +238,18 @@ class LLMClient:
                 result.append(msg)
         return result
 
+    def _temperature_kwargs(self, model: str) -> dict:
+        """Return {'temperature': value} if configured and model accepts it, else {}."""
+        t = self.config.temperature
+        if t is None:
+            return {}
+        if _accepts_sampling(model):
+            return {"temperature": t}
+        logger.warning(
+            "LLM_TEMPERATURE ignored for %s — model does not accept sampling params", model
+        )
+        return {}
+
     def _generate_streaming(
         self,
         system: str,
@@ -238,7 +271,7 @@ class LLMClient:
         with self.client.messages.stream(
             model=model,
             max_tokens=8192,
-            temperature=0.7,
+            **self._temperature_kwargs(model),
             system=system_param,
             messages=messages,  # type: ignore[arg-type]
         ) as stream:
@@ -311,7 +344,7 @@ class LLMClient:
                 "agent": agent,
                 "model": model,
                 "messages": self._summarize_for_observer(messages),
-                "params": {"max_tokens": 8192, "temperature": 0.7},
+                "params": {"max_tokens": 8192, "temperature": self.config.temperature},
             })
 
         # Convert image format to Anthropic style
@@ -330,7 +363,7 @@ class LLMClient:
         response = self.client.messages.create(
             model=model,
             max_tokens=8192,
-            temperature=0.7,
+            **self._temperature_kwargs(model),
             system=system_param,
             messages=anthropic_messages,  # type: ignore[arg-type]
         )
@@ -559,14 +592,14 @@ class LLMClient:
                 "agent": agent,
                 "model": call_model,
                 "messages": [{"role": "system", "content": system}, *messages],
-                "params": {"max_tokens": 8192, "temperature": 0.7, "tools": tools},
+                "params": {"max_tokens": 8192, "temperature": self.config.temperature, "tools": tools},
             })
 
         for iteration in range(max_iterations):
             response = self.client.messages.create(
                 model=call_model,
                 max_tokens=8192,
-                temperature=0.7,
+                **self._temperature_kwargs(call_model),
                 system=system_param,
                 messages=messages,  # type: ignore[arg-type]
                 tools=tools,  # type: ignore[arg-type]

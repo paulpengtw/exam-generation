@@ -140,6 +140,7 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `LLM_MODEL_PLAN` | `claude-opus-4-6` | Which Claude model handles planning |
 | `LLM_MODEL_EXECUTE` | `claude-sonnet-4-6` | Which Claude model generates questions |
 | `LLM_RATE_LIMIT_DELAY` | `2` | Wait 2 seconds between Claude calls (avoids rate-limit errors) |
+| `LLM_TEMPERATURE` | (unset) | Optional sampling temperature; leave unset to use the provider default. Ignored for models that reject sampling params. |
 | `JWT_SECRET` | A long random string (see below) | Used to sign login tokens |
 | `JWT_EXPIRE_DAYS` | `7` | Keeps each login token valid for 7 days |
 | `SESSION_RENEWAL_THRESHOLD_MINUTES` | `360` | Renews a login session when less than 360 minutes remain on the token |

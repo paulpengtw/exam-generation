@@ -229,6 +229,7 @@ Environment variables (set in `.env` or export directly):
 | `IMAGE_MODEL` | CLI + server | Image generation model used when GPT image mode is selected | `gpt-image2` |
 | `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
 | `LLM_MAX_RETRIES` | CLI + server | Max correction attempts when verification fails | `3` |
+| `LLM_TEMPERATURE` | CLI + server | Sampling temperature forwarded to the API; unset = provider default; ignored for models that reject sampling params (claude-opus-5, claude-sonnet-5, claude-fable-5, claude-opus-4-7, claude-opus-4-8 and dated variants) | (unset) |
 | `SUBGEN_MAX_CONCURRENCY` | CLI + server | Max concurrent 子題產生器 LLM calls per 題組 (SS/NS only) | `6` |
 | `SUBGEN_RETRIES` | CLI + server | Extra fresh-call attempts for a failed/unparseable 子題產生器 slot before that 子題 is dropped (SS/NS only; `0` = drop on first failure) | `1` |
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |
