@@ -4,6 +4,7 @@ import type { AgentLane, AgentStatus } from "../hooks/useGenerate";
 
 interface Props {
   lanes: AgentLane[];
+  requestedTotal: number;
 }
 
 function StatusDot({ status }: { status: AgentStatus }) {
@@ -36,9 +37,10 @@ function ElapsedTimer({ startedAt }: { startedAt: number }) {
 
 interface LaneCardProps {
   lane: AgentLane;
+  aggregateMode: boolean;
 }
 
-function LaneCard({ lane }: LaneCardProps) {
+function LaneCard({ lane, aggregateMode }: LaneCardProps) {
   const t = useT();
   const contentRef = useRef<HTMLPreElement>(null);
 
@@ -56,27 +58,51 @@ function LaneCard({ lane }: LaneCardProps) {
     : null;
 
   const activeHistory = lane.stageHistory.filter((h) => h.endedAt !== undefined);
+  const activeCount = lane.stageHistory.filter(
+    (h) => h.endedAt === undefined,
+  ).length;
+  const completedCount = activeHistory.length;
   const currentEntry = lane.stageHistory.find((h) => h.endedAt === undefined);
+  const aggregateStatus: AgentStatus =
+    activeCount > 0
+      ? "running"
+      : completedCount > 0
+        ? "done"
+        : "idle";
+  const effectiveStatus = aggregateMode ? aggregateStatus : lane.status;
 
   return (
     <div className={`rounded-lg border p-3 space-y-2 transition-colors ${
-      lane.status === "running"
+      effectiveStatus === "running"
         ? "border-blue-300 bg-blue-50"
-        : lane.status === "done"
+        : effectiveStatus === "done"
         ? "border-green-200 bg-green-50"
         : "border-gray-200 bg-gray-50"
     }`}>
       {/* Header */}
       <div className="flex items-center gap-2">
-        <StatusDot status={lane.status} />
+        <StatusDot status={effectiveStatus} />
         <span className="text-sm font-semibold text-gray-800">{agentLabel}</span>
-        {stageLabel && (
-          <span className="text-xs text-gray-500 truncate">{stageLabel}</span>
-        )}
-        {currentEntry && lane.status === "running" && (
-          <span className="ml-auto">
-            <ElapsedTimer startedAt={currentEntry.startedAt} />
+        {aggregateMode ? (
+          <span
+            data-testid="agent-aggregate-counts"
+            className="text-xs text-gray-500"
+          >
+            {t("agent_panel.aggregate_counts")
+              .replace("{running}", String(activeCount))
+              .replace("{done}", String(completedCount))}
           </span>
+        ) : (
+          <>
+            {stageLabel && (
+              <span className="text-xs text-gray-500 truncate">{stageLabel}</span>
+            )}
+            {currentEntry && lane.status === "running" && (
+              <span className="ml-auto">
+                <ElapsedTimer startedAt={currentEntry.startedAt} />
+              </span>
+            )}
+          </>
         )}
       </div>
 
@@ -142,8 +168,12 @@ function LaneCard({ lane }: LaneCardProps) {
   );
 }
 
-export default function AgentStatusPanel({ lanes }: Props) {
+export default function AgentStatusPanel({
+  lanes,
+  requestedTotal,
+}: Props) {
   const t = useT();
+  const aggregateMode = requestedTotal > 1;
 
   if (lanes.length === 0) return null;
 
@@ -151,10 +181,25 @@ export default function AgentStatusPanel({ lanes }: Props) {
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold text-gray-700">{t("agent_panel.title")}</h3>
+        {aggregateMode && (
+          <span
+            data-testid="agent-panel-aggregate-label"
+            className="text-xs text-gray-500"
+          >
+            {t("agent_panel.aggregate_label").replace(
+              "{n}",
+              String(requestedTotal),
+            )}
+          </span>
+        )}
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {lanes.map((lane) => (
-          <LaneCard key={lane.agent} lane={lane} />
+          <LaneCard
+            key={lane.agent}
+            lane={lane}
+            aggregateMode={aggregateMode}
+          />
         ))}
       </div>
     </div>

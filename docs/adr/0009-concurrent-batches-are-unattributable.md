@@ -5,8 +5,9 @@ A batch launches all questions concurrently, while its agent stage events carry 
 ## Decisions
 
 - 生成進度列 shows a roll-up and no 生成步驟 breadcrumb for a multi-question run (#246).
+- 代理狀態面板 switches to 合計模式 for a multi-question run: aggregate counts per agent, no per-run timer, and a mode label instead of per-question grouping (#248).
 
-This list remains open for the 代理狀態面板 合計模式 decision in #248.
+This list now records both current status surfaces and remains open for future multi-question surfaces.
 
 ## Rejected Alternative
 
