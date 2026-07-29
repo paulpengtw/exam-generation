@@ -13,6 +13,22 @@ export function scrubMagicLinkToken(url: string): string {
   return url.replace(/(^|[?&])((?:token|email)=)[^&#]*/g, "$1$2[Filtered]");
 }
 
+function scrubSpan(span: {
+  description?: string;
+  data?: Record<string, unknown>;
+}): void {
+  if (typeof span.description === "string") {
+    span.description = scrubMagicLinkToken(span.description);
+  }
+  if (span.data) {
+    for (const [key, value] of Object.entries(span.data)) {
+      if (typeof value === "string") {
+        span.data[key] = scrubMagicLinkToken(value);
+      }
+    }
+  }
+}
+
 /**
  * Initialize Sentry error monitoring + the user-feedback integration.
  * Idempotent — safe to call more than once; Sentry is only initialized
@@ -78,7 +94,22 @@ export function initSentry(): void {
       if (event.transaction) {
         event.transaction = scrubMagicLinkToken(event.transaction);
       }
+      for (const span of event.spans ?? []) {
+        scrubSpan(span);
+      }
+      const traceData = event.contexts?.trace?.data;
+      if (traceData) {
+        for (const [key, value] of Object.entries(traceData)) {
+          if (typeof value === "string") {
+            traceData[key] = scrubMagicLinkToken(value);
+          }
+        }
+      }
       return event;
+    },
+    beforeSendSpan(span) {
+      scrubSpan(span);
+      return span;
     },
     beforeBreadcrumb(breadcrumb) {
       if (typeof breadcrumb.message === "string") {
