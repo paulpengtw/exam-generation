@@ -8,9 +8,10 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import Field, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -27,13 +28,30 @@ from server.generate.models import (
     PlanCoreQuestionsResponse,
     build_sse_error,
 )
-from server.generate.service import generate_question_stream
+from server.generate.service import build_prompt_previews, generate_question_stream
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["generate"])
+NonEmptyQueryValue = Annotated[str, Field(min_length=1)]
+GenerateQuery = Annotated[GenerateParams, Query()]
+
+
+@router.get("/generate/preview")
+@limiter.limit("30/hour", key_func=jwt_user_key)
+async def preview_generate_endpoint(
+    request: Request,
+    params: GenerateQuery,
+    _user: User = Depends(get_current_user),
+    config: ServerConfig = Depends(get_config),
+) -> dict[str, Any]:
+    """Return exact first-stage prompts without invoking an LLM."""
+    _check_model_allowed(params.model_plan, config, "model_plan")
+    _check_model_allowed(params.model_execute, config, "model_execute")
+    _check_subject_allowed(params.subject)
+    return {"prompts": build_prompt_previews(params, config, request.app.state)}
 
 
 def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -72,25 +90,26 @@ async def generate_endpoint(
     request: Request,
     subject: str = Query(default="math"),
     grade: int | None = Query(default=None),
-    style: list[str] | None = Query(default=None),
-    context: list[str] | None = Query(default=None),
-    set_type: str | None = Query(default=None),
-    q_type: list[str] | None = Query(default=None),
+    style: list[NonEmptyQueryValue] | None = Query(default=None),
+    context: list[NonEmptyQueryValue] | None = Query(default=None),
+    set_type: NonEmptyQueryValue | None = Query(default=None),
+    q_type: list[NonEmptyQueryValue] | None = Query(default=None),
     count: int = Query(default=1, ge=1),
     skip_verify: bool = Query(default=False),
     disable_reference_fewshot: bool = Query(default=False),
     seed: int | None = Query(default=None),
+    max_retries: int = Query(default=3),
     image_generation_mode: ImageGenerationMode = Query(default="html"),
     difficulty: Literal["easy", "medium", "hard"] | None = Query(default=None),
     coverage_mode: CoverageMode = Query(default="balanced"),
-    subject_filter: list[str] | None = Query(default=None),
+    subject_filter: list[NonEmptyQueryValue] | None = Query(default=None),
     content_type: str | None = Query(default=None),
     passage: str | None = Query(default=None),
     options: list[str] | None = Query(default=None),
     topic: str | None = Query(default=None),
     core_question: str | None = Query(default=None),
-    sub_context: str | None = Query(default=None),
-    science_competency: list[str] | None = Query(default=None),
+    sub_context: NonEmptyQueryValue | None = Query(default=None),
+    science_competency: list[NonEmptyQueryValue] | None = Query(default=None),
     learning_performance: list[str] | None = Query(default=None),
     core_competency: list[str] | None = Query(default=None),
     learning_content: list[str] | None = Query(default=None),
@@ -99,6 +118,7 @@ async def generate_endpoint(
     option_word_limit: int | None = Query(default=None, ge=1),
     text_word_limit: int | None = Query(default=None, ge=1),
     subquestion_configs: str | None = Query(default=None),
+    per_question_params: str | None = Query(default=None),
     model_plan: str | None = Query(default=None),
     model_execute: str | None = Query(default=None),
     user: User = Depends(get_current_user),
@@ -113,39 +133,44 @@ async def generate_endpoint(
     _check_model_allowed(model_plan, config, "model_plan")
     _check_model_allowed(model_execute, config, "model_execute")
     _check_subject_allowed(subject)
-    params = GenerateParams(
-        subject=subject,
-        grade=grade,
-        style=style,
-        context=context,
-        set_type=set_type,
-        q_type=q_type,
-        count=count,
-        skip_verify=skip_verify,
-        disable_reference_fewshot=disable_reference_fewshot,
-        seed=seed,
-        image_generation_mode=image_generation_mode,
-        difficulty=difficulty,
-        coverage_mode=coverage_mode,
-        subject_filter=subject_filter,
-        content_type=content_type,
-        passage=passage,
-        options=options,
-        topic=topic,
-        core_question=core_question,
-        sub_context=sub_context,
-        science_competency=science_competency,
-        learning_performance=learning_performance,
-        core_competency=core_competency,
-        learning_content=learning_content,
-        sub_question_count=sub_question_count,
-        question_word_limit=question_word_limit,
-        option_word_limit=option_word_limit,
-        text_word_limit=text_word_limit,
-        subquestion_configs=subquestion_configs,
-        model_plan=model_plan,
-        model_execute=model_execute,
-    )
+    try:
+        params = GenerateParams(
+            subject=subject,
+            grade=grade,
+            style=style,
+            context=context,
+            set_type=set_type,
+            q_type=q_type,
+            count=count,
+            skip_verify=skip_verify,
+            disable_reference_fewshot=disable_reference_fewshot,
+            seed=seed,
+            max_retries=max_retries,
+            image_generation_mode=image_generation_mode,
+            difficulty=difficulty,
+            coverage_mode=coverage_mode,
+            subject_filter=subject_filter,
+            content_type=content_type,
+            passage=passage,
+            options=options,
+            topic=topic,
+            core_question=core_question,
+            sub_context=sub_context,
+            science_competency=science_competency,
+            learning_performance=learning_performance,
+            core_competency=core_competency,
+            learning_content=learning_content,
+            sub_question_count=sub_question_count,
+            question_word_limit=question_word_limit,
+            option_word_limit=option_word_limit,
+            text_word_limit=text_word_limit,
+            subquestion_configs=subquestion_configs,
+            per_question_params=per_question_params,
+            model_plan=model_plan,
+            model_execute=model_execute,
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     logger.info("generate request user=%s params=%s", user.email, params.model_dump(mode="json"))
 
     log = GenerationLog(
@@ -171,9 +196,7 @@ async def generate_endpoint(
                     status = "failed"
                     data = event.get("data", "")
                     error_msg = (
-                        data.get("message", str(data))
-                        if isinstance(data, dict)
-                        else str(data)
+                        data.get("message", str(data)) if isinstance(data, dict) else str(data)
                     )
                 yield _serialize_event(event)
         except Exception as exc:

@@ -12,7 +12,8 @@ const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
-  planCoreQuestions: vi.fn(),
+  planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
+  previewGenerate: vi.fn(async () => ({ prompts: [] })),
 }));
 
 vi.mock("../i18n/useT", () => ({
@@ -141,8 +142,6 @@ describe("per-子題 pre-draw (natural_sciences)", () => {
     fireEvent.click(screen.getByRole("button", { name: /form\.btn_generate/i }));
 
     await screen.findByText("各小題配置");
-    expect(screen.getByText("第 1 小題")).toBeInTheDocument();
-    expect(screen.getByText("第 2 小題")).toBeInTheDocument();
 
     const section = screen
       .getByText("各小題配置")
@@ -155,10 +154,55 @@ describe("per-子題 pre-draw (natural_sciences)", () => {
     expect(lcVisible).toBe(true);
     expect(lpVisible).toBe(true);
   });
+
+  it("copies typed 各小題配置 but redraws automatic LC/LP per question", async () => {
+    const random = vi.spyOn(Math, "random");
+    let turn = 0;
+    random.mockImplementation(() => (turn++ % 2 === 0 ? 0 : 0.99));
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="natural_sciences"
+        onSubmit={onSubmit}
+        initialParams={{
+          count: 2,
+          sub_question_count: 3,
+          subquestion_configs: [
+            { question_type: "Simple-multiple-choice", instruction: "固定指示", question_word_limit: 88 },
+            {},
+            {},
+          ],
+        }}
+      />,
+    );
+    await screen.findByPlaceholderText("自動 3-7");
+    fireEvent.click(screen.getByRole("button", { name: /form\.btn_generate/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_confirm_send/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params);
+    const first = JSON.parse(perQuestion[0].subquestion_configs);
+    const second = JSON.parse(perQuestion[1].subquestion_configs);
+    expect(first[0]).toEqual(expect.objectContaining({
+      question_type: "Simple-multiple-choice",
+      instruction: "固定指示",
+      question_word_limit: 88,
+    }));
+    expect(second[0]).toEqual(expect.objectContaining({
+      question_type: "Simple-multiple-choice",
+      instruction: "固定指示",
+      question_word_limit: 88,
+    }));
+    expect(first.map((row: { learning_content: string[] }) => row.learning_content))
+      .not.toEqual(second.map((row: { learning_content: string[] }) => row.learning_content));
+    expect(first.map((row: { learning_performance: string[] }) => row.learning_performance))
+      .not.toEqual(second.map((row: { learning_performance: string[] }) => row.learning_performance));
+    random.mockRestore();
+  });
 });
 
-describe("per-子題 pre-draw (social_studies)", () => {
-  it("fills empty per-小題 LC/LP with a random subset from the global pool", async () => {
+describe("社會領域各小題預抽", () => {
+  it("leaves 學習內容 unpinned under 均衡 while 預抽ing 學習表現 from the 全域池", async () => {
     getSchemasMock.mockResolvedValue(SS_SCHEMA);
     const onSubmit = vi.fn();
     render(<ParamForm subject="social_studies" onSubmit={onSubmit} />);
@@ -175,16 +219,10 @@ describe("per-子題 pre-draw (social_studies)", () => {
     const rows = JSON.parse(payload.subquestion_configs as string);
     expect(rows).toHaveLength(3);
     for (const row of rows) {
-      expect(Array.isArray(row.learning_content)).toBe(true);
-      expect(row.learning_content.length).toBeGreaterThanOrEqual(1);
-      expect(row.learning_content.length).toBeLessThanOrEqual(3);
+      expect(row.learning_content).toBeUndefined();
       expect(Array.isArray(row.learning_performance)).toBe(true);
       expect(row.learning_performance.length).toBeGreaterThanOrEqual(1);
       expect(row.learning_performance.length).toBeLessThanOrEqual(2);
-      for (const code of row.learning_content) {
-        expect(["歷Ka-Ⅳ-1", "歷Ka-Ⅳ-2", "歷Ka-Ⅳ-3", "歷Ka-Ⅳ-4"]).toContain(code);
-        expect(payload.learning_content).toContain(code);
-      }
       for (const code of row.learning_performance) {
         expect(["社1a-Ⅳ-1", "社1a-Ⅳ-2", "社1a-Ⅳ-3"]).toContain(code);
         expect(payload.learning_performance).toContain(code);
@@ -192,5 +230,6 @@ describe("per-子題 pre-draw (social_studies)", () => {
       expect(row).not.toHaveProperty("_lcWasAutoDrawn");
       expect(row).not.toHaveProperty("_lpWasAutoDrawn");
     }
+    expect(payload.learning_content).toBeUndefined();
   });
 });

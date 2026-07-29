@@ -59,6 +59,28 @@ def test_natural_sciences_prompt_includes_pisa_and_curriculum(tmp_path: Path) ->
     assert "不得輸出 `chart_spec`" in prompt
 
 
+def test_subquestion_prompt_replays_few_shot_selection_from_sampled_seed() -> None:
+    from src.natural_sciences.context_builder import build_subquestion_user_prompt
+
+    params = sample_params(seed=185, q_type=["Simple multiple-choice"])
+    kwargs = {
+        "核心問題": "測試核心問題",
+        "文本": "測試文本",
+        "取材來源": ["來源A"],
+        "sq_plan": {
+            "序號": 1,
+            "題型": "Simple multiple-choice",
+            "出題概念": "測試",
+        },
+        "params": params,
+        "few_shot_dir": Path("data/natural_sciences/few_shot"),
+    }
+
+    prompts = [build_subquestion_user_prompt(**kwargs)[0] for _ in range(5)]
+
+    assert len(set(prompts)) == 1
+
+
 def test_ns_content_type_instructions_include_disclaimer_for_image_types() -> None:
     assert IMAGE_DISCLAIMER in NS_CONTENT_TYPE_INSTRUCTIONS["含圖片"]
     assert IMAGE_DISCLAIMER in NS_CONTENT_TYPE_INSTRUCTIONS["graphs/charts/tables"]

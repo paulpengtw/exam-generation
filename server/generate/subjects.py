@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.batch_sampler import BatchSampler
+from src.cli import build_generation_prompts as _math_build_prompts_impl
 from src.cli import generate_with_corrections as _math_generate_with_corrections
 from src.common.batch_dedup import (
     extract_math_prior_scope,
@@ -26,6 +27,12 @@ from src.common.batch_dedup import (
     extract_ss_prior_scope,
 )
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
+from src.natural_sciences.cli import (
+    build_generation_prompts as _ns_build_prompts_impl,
+)
+from src.natural_sciences.cli import (
+    build_subquestion_prompt_previews as _ns_build_sub_prompts_impl,
+)
 from src.natural_sciences.cli import (
     generate_with_corrections as _ns_generate_with_corrections,
 )
@@ -79,6 +86,12 @@ from src.schemas import (
 )
 from src.social_studies.cli import _plan_batch_briefs as _ss_plan_batch_briefs
 from src.social_studies.cli import (
+    build_generation_prompts as _ss_build_prompts_impl,
+)
+from src.social_studies.cli import (
+    build_subquestion_prompt_previews as _ss_build_sub_prompts_impl,
+)
+from src.social_studies.cli import (
     generate_with_corrections as _ss_generate_with_corrections,
 )
 from src.social_studies.curriculum_loader import (
@@ -97,6 +110,9 @@ from src.social_studies.schema_loader import (
 )
 from src.social_studies.schema_loader import (
     load_schemas as ss_load_schemas,
+)
+from src.social_studies.schemas import (
+    CoreCompetency as SSCoreCompetency,
 )
 from src.social_studies.schemas import (
     ExamQuestion as SSExamQuestion,
@@ -158,6 +174,10 @@ class SubjectSpec:
                             -> ExamQuestion``
                             Adapters use a lazy import of service.py so that
                             test monkeypatches are intercepted.
+    build_generation_prompts
+                            ``(rng_params, overrides, **common_kwargs)
+                            -> (system_prompt, user_prompt, image_paths)``
+                            Builds the same first-call prompts as do_generate.
     extract_prior_scope     ``(question) -> PriorScope | None``
     patch_metadata          Optional ``(question, batch_sampler) -> question``
                             for SS metadata patching.
@@ -167,6 +187,8 @@ class SubjectSpec:
                             Returns the learning-stage string for the planner.
     build_schemas           ``(config_server, grade) -> dict``
                             Returns the schemas dict for /api/schemas.
+    validate_params         Optional ``(params) -> None`` request validation
+                            hook for subject-specific parameter relationships.
     """
 
     key: str
@@ -185,6 +207,9 @@ class SubjectSpec:
     plan_core_questions: Callable
     load_planner_stage: Callable
     build_schemas: Callable
+    build_generation_prompts: Callable | None = None
+    build_subquestion_prompt_previews: Callable | None = None
+    validate_params: Callable | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -198,6 +223,52 @@ def _resolve_stage(schemas: dict, grade: int | None) -> str:
         except ValueError:
             pass
     return schemas.get("學習階段", "")
+
+
+def _ns_validate_params(params: Any) -> None:
+    if params.core_competency:
+        raise ValueError(
+            "core_competency is not supported for natural sciences; "
+            "use science_competency instead"
+        )
+
+    if params.context is None or params.sub_context is None:
+        return
+
+    from src.natural_sciences.schema_loader import load_schemas  # noqa: PLC0415
+
+    parents = {
+        row["value"]: row.get("parent")
+        for row in load_schemas().get("情境子類別", [])
+    }
+    if parents.get(params.sub_context) not in params.context:
+        raise ValueError(
+            "context and sub_context are incompatible: "
+            f"sub_context {params.sub_context!r} requires "
+            f"context {parents.get(params.sub_context)!r}"
+        )
+
+
+def _math_validate_params(params: Any) -> None:
+    unsupported = [
+        field
+        for field in (
+            "text_word_limit",
+            "sub_question_count",
+            "question_word_limit",
+            "option_word_limit",
+            "subquestion_configs",
+        )
+        if getattr(params, field) is not None
+    ]
+    # disable_reference_fewshot is deliberately excluded: its bool=False default
+    # makes omission indistinguishable from an explicit false; making it optional
+    # would be an out-of-scope wire change.
+    if unsupported:
+        raise ValueError(
+            "The following parameters are not supported for math: "
+            + ", ".join(unsupported)
+        )
 
 
 _MATH_SUBJECTS = [
@@ -280,12 +351,17 @@ def _ss_coerce_overrides(params: Any, app_state: Any) -> dict:
         [SSQuestionSubject(v) for v in params.subject_filter]
         if params.subject_filter else None
     )
+    core_competency_override = (
+        [SSCoreCompetency(v) for v in params.core_competency]
+        if params.core_competency else None
+    )
     ss_curriculum_context = getattr(app_state, "ss_curriculum_context", None)
     return {
         "context_override": context_override,
         "set_type_override": set_type_override,
         "q_type_override": q_type_override,
         "subject_override": subject_override,
+        "core_competency_override": core_competency_override,
         "ss_curriculum_context": ss_curriculum_context,
     }
 
@@ -381,6 +457,7 @@ def _ss_do_sample_params(
         set_type=overrides["set_type_override"],
         q_type=overrides["q_type_override"],
         subject=overrides["subject_override"],
+        core_competency=overrides["core_competency_override"],
         content_type=params.content_type,
         learning_content=params.learning_content,
         learning_performance=params.learning_performance,
@@ -414,6 +491,39 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         on_question_update=kwargs["on_question_update"],
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ss_curriculum_context"],
+    )
+
+
+def _ss_build_generation_prompts(
+    rng_params: Any, overrides: dict, **kwargs: Any
+) -> tuple[str, str, list]:
+    return _ss_build_prompts_impl(
+        kwargs["config"],
+        rng_params,
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_passage=kwargs["user_passage"],
+        text_word_limit=kwargs["text_word_limit"],
+        user_options=kwargs["user_options"],
+        user_topic=kwargs["user_topic"],
+        user_core_question=kwargs["user_core_question"],
+        prior_scopes=kwargs["prior_scopes"],
+    )
+
+
+def _ss_build_subquestion_prompt_previews(
+    rng_params: Any, overrides: dict, **kwargs: Any
+) -> list[tuple[int, str, str, list]]:
+    return _ss_build_sub_prompts_impl(
+        kwargs["config"],
+        rng_params,
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_passage=kwargs["user_passage"],
+        user_options=kwargs["user_options"],
+        user_topic=kwargs["user_topic"],
+        user_core_question=kwargs["user_core_question"],
+        prior_scopes=kwargs["prior_scopes"],
     )
 
 
@@ -577,6 +687,39 @@ def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
     )
 
 
+def _ns_build_generation_prompts(
+    rng_params: Any, overrides: dict, **kwargs: Any
+) -> tuple[str, str, list]:
+    return _ns_build_prompts_impl(
+        kwargs["config"],
+        rng_params,
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_passage=kwargs["user_passage"],
+        text_word_limit=kwargs["text_word_limit"],
+        user_options=kwargs["user_options"],
+        user_topic=kwargs["user_topic"],
+        user_core_question=kwargs["user_core_question"],
+        prior_scopes=kwargs["prior_scopes"],
+    )
+
+
+def _ns_build_subquestion_prompt_previews(
+    rng_params: Any, overrides: dict, **kwargs: Any
+) -> list[tuple[int, str, str, list]]:
+    return _ns_build_sub_prompts_impl(
+        kwargs["config"],
+        rng_params,
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_passage=kwargs["user_passage"],
+        user_options=kwargs["user_options"],
+        user_topic=kwargs["user_topic"],
+        user_core_question=kwargs["user_core_question"],
+        prior_scopes=kwargs["prior_scopes"],
+    )
+
+
 def _ns_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:
     # Lazy import so test monkeypatches on src.natural_sciences.planner are seen.
     import src.natural_sciences.planner as _m  # noqa: PLC0415
@@ -734,6 +877,21 @@ def _math_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
     )
 
 
+def _math_build_generation_prompts(
+    rng_params: Any, overrides: dict, **kwargs: Any
+) -> tuple[str, str, list]:
+    return _math_build_prompts_impl(
+        kwargs["config"],
+        rng_params,
+        user_topic=kwargs["user_topic"] or "",
+        user_passage=kwargs["user_passage"] or "",
+        user_options=kwargs["user_options"],
+        user_core_question=kwargs["user_core_question"] or "",
+        prior_scopes=kwargs["prior_scopes"],
+        curriculum_context=overrides["math_curriculum_context"],
+    )
+
+
 def _math_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:
     # Lazy import so test monkeypatches on src.planner.plan_core_questions are seen.
     import src.planner as _m  # noqa: PLC0415
@@ -783,6 +941,8 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_all_batch_briefs=_ss_plan_all_batch_briefs,
         do_sample_params=_ss_do_sample_params,
         do_generate=_ss_do_generate,
+        build_generation_prompts=_ss_build_generation_prompts,
+        build_subquestion_prompt_previews=_ss_build_subquestion_prompt_previews,
         extract_prior_scope=extract_ss_prior_scope,
         patch_metadata=_ss_patch_metadata,
         plan_core_questions=_ss_plan_core_questions,
@@ -798,11 +958,14 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_all_batch_briefs=_ns_plan_all_batch_briefs,
         do_sample_params=_ns_do_sample_params,
         do_generate=_ns_do_generate,
+        build_generation_prompts=_ns_build_generation_prompts,
+        build_subquestion_prompt_previews=_ns_build_subquestion_prompt_previews,
         extract_prior_scope=extract_ns_prior_scope,
         patch_metadata=None,
         plan_core_questions=_ns_plan_core_questions,
         load_planner_stage=_ns_load_planner_stage,
         build_schemas=_ns_build_schemas,
+        validate_params=_ns_validate_params,
     ),
     "math": SubjectSpec(
         key="math",
@@ -813,10 +976,12 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_all_batch_briefs=_math_plan_all_batch_briefs,
         do_sample_params=_math_do_sample_params,
         do_generate=_math_do_generate,
+        build_generation_prompts=_math_build_generation_prompts,
         extract_prior_scope=extract_math_prior_scope,
         patch_metadata=None,
         plan_core_questions=_math_plan_core_questions,
         load_planner_stage=_math_load_planner_stage,
         build_schemas=_math_build_schemas,
+        validate_params=_math_validate_params,
     ),
 }

@@ -28,12 +28,140 @@ from server.generate.marshalling import (
     make_queue_observer,
     question_to_event,
 )
-from server.generate.models import GenerateParams, build_sse_error
+from server.generate.models import (
+    GenerateParams,
+    build_sse_error,
+    decode_per_question_params,
+)
 from server.generate.persistence import make_exchange_recorder, persist_generation_record
 from server.generate.subjects import SUBJECTS, SubjectSpec
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
+
+
+def _sample_worker_params(
+    i: int,
+    params: GenerateParams,
+    spec: SubjectSpec,
+    overrides: dict,
+    batch_sampler: Any,
+    batch_user_pinned_lc: bool,
+    decoded_subquestion_configs: list[dict] | None,
+    decoded_per_question_params: list[dict[str, Any]] | None = None,
+    app_state: Any = None,
+) -> Any:
+    """Resolve the sampled parameters for one submit/preview worker index."""
+    worker_params = params
+    worker_overrides = overrides
+    worker_subquestion_configs = decoded_subquestion_configs
+    if decoded_per_question_params is not None:
+        worker_data = params.model_dump()
+        worker_data["per_question_params"] = None
+        worker_params = GenerateParams.model_validate(
+            {**worker_data, **decoded_per_question_params[i]}
+        )
+        worker_overrides = spec.coerce_overrides(worker_params, app_state)
+        worker_subquestion_configs = _decode_subquestion_configs(
+            worker_params.subquestion_configs
+        )
+    assigned_qt = (
+        batch_sampler.q_type_assignments[i] if batch_sampler is not None else None
+    )
+    assigned_lc = (
+        batch_sampler.learning_content_assignments[i]
+        if batch_sampler is not None and not batch_user_pinned_lc
+        else None
+    )
+    has_explicit_worker_seed = (
+        decoded_per_question_params is not None
+        and decoded_per_question_params[i].get("seed") is not None
+    )
+    seed = (
+        worker_params.seed
+        if has_explicit_worker_seed
+        else (worker_params.seed + i) if worker_params.seed is not None else None
+    )
+    return spec.do_sample_params(
+        worker_params,
+        worker_overrides,
+        seed=seed,
+        assigned_q_type=assigned_qt,
+        assigned_lc=assigned_lc,
+        subquestion_configs_decoded=worker_subquestion_configs,
+    )
+
+
+def build_prompt_previews(
+    params: GenerateParams,
+    config: ServerConfig,
+    app_state: Any,
+) -> list[dict[str, Any]]:
+    """Resolve parameters and build first-stage prompts without an LLM client."""
+    spec = SUBJECTS[params.subject]
+    overrides = spec.coerce_overrides(params, app_state)
+    batch_sampler, batch_user_pinned_lc = spec.setup_batch_sampler(params, overrides)
+    decoded_configs = _decode_subquestion_configs(params.subquestion_configs)
+    decoded_per_question = decode_per_question_params(params.per_question_params)
+    client_config = dataclasses.replace(
+        config,
+        model_execute=params.model_execute or config.model_execute,
+        model_plan=params.model_plan or config.model_plan,
+    )
+    previews = []
+    for i in range(max(1, params.count)):
+        sampled = _sample_worker_params(
+            i,
+            params,
+            spec,
+            overrides,
+            batch_sampler,
+            batch_user_pinned_lc,
+            decoded_configs,
+            decoded_per_question,
+            app_state,
+        )
+        assert spec.build_generation_prompts is not None
+        system, user, _images = spec.build_generation_prompts(
+            sampled,
+            overrides,
+            config=client_config,
+            disable_reference_fewshot=params.disable_reference_fewshot,
+            image_generation_mode=params.image_generation_mode,
+            user_passage=params.passage,
+            text_word_limit=params.text_word_limit,
+            user_options=params.options,
+            user_topic=params.topic,
+            user_core_question=params.core_question,
+            prior_scopes=[],
+        )
+        previews.append(
+            {"index": i, "system_prompt": system, "user_prompt": user}
+        )
+        if spec.build_subquestion_prompt_previews is not None:
+            for sub_idx, sub_system, sub_user, _sub_images in (
+                spec.build_subquestion_prompt_previews(
+                    sampled,
+                    overrides,
+                    config=client_config,
+                    disable_reference_fewshot=params.disable_reference_fewshot,
+                    image_generation_mode=params.image_generation_mode,
+                    user_passage=params.passage,
+                    user_options=params.options,
+                    user_topic=params.topic,
+                    user_core_question=params.core_question,
+                    prior_scopes=[],
+                )
+            ):
+                previews.append(
+                    {
+                        "index": i,
+                        "subquestion_index": sub_idx,
+                        "system_prompt": sub_system,
+                        "user_prompt": sub_user,
+                    }
+                )
+    return previews
 
 
 def _decode_subquestion_configs(raw: str | None) -> list[dict] | None:
@@ -71,6 +199,8 @@ class _RunContext:
     timestamp: str
     html_renderer: Any
     decoded_subquestion_configs: list | None
+    decoded_per_question_params: list[dict[str, Any]] | None
+    app_state: Any
     loop: asyncio.AbstractEventLoop
     queue: asyncio.Queue
     prior_scopes: list  # mutated by workers; frozen prevents field reassignment only
@@ -123,6 +253,10 @@ def _build_run_context(
         timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
         html_renderer=html_renderer,
         decoded_subquestion_configs=_decode_subquestion_configs(params.subquestion_configs),
+        decoded_per_question_params=decode_per_question_params(
+            params.per_question_params
+        ),
+        app_state=app_state,
         loop=loop,
         queue=queue,
         prior_scopes=[],
@@ -143,7 +277,6 @@ def _worker_one(
     batch_briefs: list,
 ) -> None:
     """Execute one question-generation worker; enqueues result/error events."""
-    seed = (ctx.base_seed + i) if ctx.base_seed is not None else None
     worker_recorder = make_exchange_recorder(
         generation_log_id=ctx.generation_log_id,
         retention_days=ctx.retention_days,
@@ -159,21 +292,16 @@ def _worker_one(
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
     try:
-        assigned_qt = (
-            ctx.batch_sampler.q_type_assignments[i] if ctx.batch_sampler is not None else None
-        )
-        assigned_lc = (
-            ctx.batch_sampler.learning_content_assignments[i]
-            if ctx.batch_sampler is not None and not ctx.batch_user_pinned_lc
-            else None
-        )
-        rng_params = ctx.spec.do_sample_params(
+        rng_params = _sample_worker_params(
+            i,
             ctx.params,
+            ctx.spec,
             ctx.overrides,
-            seed=seed,
-            assigned_q_type=assigned_qt,
-            assigned_lc=assigned_lc,
-            subquestion_configs_decoded=ctx.decoded_subquestion_configs,
+            ctx.batch_sampler,
+            ctx.batch_user_pinned_lc,
+            ctx.decoded_subquestion_configs,
+            ctx.decoded_per_question_params,
+            ctx.app_state,
         )
 
         # Site 2: apply creative brief when available (SS only in practice)

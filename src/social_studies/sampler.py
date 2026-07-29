@@ -29,6 +29,7 @@ from src.social_studies.schemas import (
 
 _schemas = load_schemas()
 _GRADES: list[int] = load_grades(_schemas)
+# Deliberately fixed; see README "Natural sciences vs social studies differences" and #192.
 _LEARNING_STAGE: str = load_learning_stage(_schemas)
 _CONTENT_TYPE_VALUES: list[str] = [
     row["value"] for row in _schemas.get("題目內容類型", []) if row.get("value")
@@ -196,6 +197,7 @@ def sample_params(
 
     return SampledParams(
         grade=selected_grade,
+        seed=seed,
         情境=selected_context,
         題型種類=selected_set_type,
         題型=selected_q_types,

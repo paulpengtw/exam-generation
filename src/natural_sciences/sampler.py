@@ -27,9 +27,7 @@ _GRADES: list[int] = load_grades(_schemas)
 _CONTENT_TYPE_VALUES: list[str] = [
     row["value"] for row in _schemas.get("題目內容類型", []) if row.get("value")
 ]
-_RANDOM_CONTENT_TYPE_VALUES: list[str] = [
-    v for v in _CONTENT_TYPE_VALUES if v != "customized"
-]
+_RANDOM_CONTENT_TYPE_VALUES: list[str] = [v for v in _CONTENT_TYPE_VALUES if v != "customized"]
 _SUB_CONTEXT_PARENT: dict[str, str] = {
     row["value"]: row.get("parent", "")
     for row in _schemas.get("情境子類別", [])
@@ -42,7 +40,8 @@ _LP_DATA: dict = load_learning_performance()
 
 def _matching_subcontexts(context_values: set[str]) -> list[QuestionSubContext]:
     return [
-        sub_context for sub_context in QuestionSubContext
+        sub_context
+        for sub_context in QuestionSubContext
         if _SUB_CONTEXT_PARENT.get(sub_context.value) in context_values
     ]
 
@@ -52,12 +51,10 @@ def _content_from_performance(
     learning_stage: str,
 ) -> list[str]:
     content_by_value = {
-        entry["value"]: entry
-        for entry in allowed_learning_content(_LC_DATA, learning_stage)
+        entry["value"]: entry for entry in allowed_learning_content(_LC_DATA, learning_stage)
     }
     performance_by_value = {
-        entry["value"]: entry
-        for entry in allowed_learning_performance(_LP_DATA, learning_stage)
+        entry["value"]: entry for entry in allowed_learning_performance(_LP_DATA, learning_stage)
     }
     result: list[str] = []
     seen: set[str] = set()
@@ -103,7 +100,7 @@ def sample_params(
         selected_context = [rng.choice(list(QuestionContext))]
 
     context_values = {c.value for c in selected_context}
-    if sub_context is not None and _SUB_CONTEXT_PARENT.get(sub_context.value) in context_values:
+    if sub_context is not None:
         selected_sub_context = sub_context
     else:
         sub_context_pool = _matching_subcontexts(context_values) or list(QuestionSubContext)
@@ -131,9 +128,7 @@ def sample_params(
         lp_entries = allowed_learning_performance(_LP_DATA, learning_stage)
         lp_count = rng.randint(1, min(2, max(1, len(lp_entries))))
         selected_lp_pool = (
-            [e["value"] for e in rng.sample(lp_entries, lp_count)]
-            if lp_entries
-            else []
+            [e["value"] for e in rng.sample(lp_entries, lp_count)] if lp_entries else []
         )
 
     if learning_content is not None:
@@ -147,13 +142,12 @@ def sample_params(
             lc_entries = allowed_learning_content(_LC_DATA, learning_stage)
             lc_count = rng.randint(1, min(3, max(1, len(lc_entries))))
             selected_lc_pool = (
-                [e["value"] for e in rng.sample(lc_entries, lc_count)]
-                if lc_entries
-                else []
+                [e["value"] for e in rng.sample(lc_entries, lc_count)] if lc_entries else []
             )
 
     from src.natural_sciences.reporting_scale import REPORTING_SCALE_ORDER
     from src.natural_sciences.schemas import SubQuestionConfig
+
     resolved_configs: list[SubQuestionConfig] = []
     if subquestion_configs:
         for cfg in subquestion_configs:
@@ -197,10 +191,7 @@ def sample_params(
     if resolved_configs:
         resolved_configs = [
             cfg.model_copy(
-                update={
-                    "reporting_scale": cfg.reporting_scale
-                    or rng.choice(REPORTING_SCALE_ORDER)
-                }
+                update={"reporting_scale": cfg.reporting_scale or rng.choice(REPORTING_SCALE_ORDER)}
             )
             for cfg in resolved_configs
         ]
@@ -208,6 +199,7 @@ def sample_params(
 
     return SampledParams(
         grade=selected_grade,
+        seed=seed,
         情境=selected_context,
         情境子類別=selected_sub_context,
         題型種類=selected_set_type,

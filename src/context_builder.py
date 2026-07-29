@@ -310,7 +310,7 @@ def build_user_prompt(
     empty image list because the math few-shot loader is JSON-based.
     """
     if rng is None:
-        rng = random.Random()
+        rng = random.Random(params.seed)
 
     # Format learning content list
     content_lines = []

@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
+from random import Random
 
 from src.common.batch_dedup import PriorScope, extract_math_prior_scope
 from src.config import Config
@@ -182,15 +183,15 @@ def generate_one(
     # The legacy ``curriculum`` / ``performance`` / ``intro_text`` positional
     # params are retained for backward compat (grade_content derivation) but
     # are no longer injected into the system prompt.
-    system_prompt = build_system_prompt(curriculum_context=curriculum_context)
-    user_prompt, few_shot_images = build_user_prompt(
+    system_prompt, user_prompt, few_shot_images = build_generation_prompts(
+        config,
         params,
-        config.data_dir / "few_shot",
         user_topic=user_topic,
         user_passage=user_passage,
         user_options=user_options,
         user_core_question=user_core_question,
         prior_scopes=prior_scopes,
+        curriculum_context=curriculum_context,
     )
 
     if dry_run:
@@ -238,7 +239,8 @@ def generate_one(
         print(f"  Verifying question {question_id}...", file=sys.stderr)
         emit_stage(obs, "verifier", "verify", "start")
         result = verify_question(
-            client, question,
+            client,
+            question,
             chart_image_path=chart_image_path,
             curriculum_context=curriculum_context,
         )
@@ -249,6 +251,32 @@ def generate_one(
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
 
     return question
+
+
+def build_generation_prompts(
+    config: Config,
+    params: SampledParams,
+    *,
+    user_topic: str = "",
+    user_passage: str = "",
+    user_options: list[str] | None = None,
+    user_core_question: str = "",
+    prior_scopes: Sequence[PriorScope] | None = None,
+    curriculum_context: CurriculumContext | None = None,
+) -> tuple[str, str, list[str]]:
+    """Build the exact prompts used by math's first model call."""
+    system_prompt = build_system_prompt(curriculum_context=curriculum_context)
+    user_prompt, few_shot_images = build_user_prompt(
+        params,
+        config.data_dir / "few_shot",
+        rng=Random(params.seed),
+        user_topic=user_topic,
+        user_passage=user_passage,
+        user_options=user_options,
+        user_core_question=user_core_question,
+        prior_scopes=prior_scopes,
+    )
+    return system_prompt, user_prompt, few_shot_images
 
 
 def generate_with_corrections(

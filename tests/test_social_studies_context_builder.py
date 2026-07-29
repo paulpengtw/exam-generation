@@ -234,6 +234,26 @@ def test_build_subquestion_user_prompt_empty_cfg_uses_global_pool():
     assert "不得替換或新增" not in prompt
 
 
+def test_subquestion_prompt_replays_few_shot_selection_from_sampled_seed() -> None:
+    from pathlib import Path
+
+    from src.social_studies.context_builder import build_subquestion_user_prompt
+
+    params = sample_params(seed=185, q_type=["選擇題"])
+    kwargs = {
+        "核心問題": "測試核心問題",
+        "文本": "測試文本",
+        "取材來源": ["來源A"],
+        "sq_plan": {"序號": 1, "題型": "選擇題", "出題概念": "測試"},
+        "params": params,
+        "few_shot_dir": Path("data/social_studies/few_shot"),
+    }
+
+    prompts = [build_subquestion_user_prompt(**kwargs)[0] for _ in range(5)]
+
+    assert len(set(prompts)) == 1
+
+
 def test_ss_content_type_instructions_include_disclaimer_for_image_types() -> None:
     assert IMAGE_DISCLAIMER in SS_CONTENT_TYPE_INSTRUCTIONS["含圖片"]
     assert IMAGE_DISCLAIMER in SS_CONTENT_TYPE_INSTRUCTIONS["graphs/charts/tables"]

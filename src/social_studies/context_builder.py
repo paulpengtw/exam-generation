@@ -370,7 +370,7 @@ def build_user_prompt(
     prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
     if rng is None:
-        rng = random.Random()
+        rng = random.Random(params.seed)
 
     reading_process = "、".join(p.value for p in params.閱讀歷程)
     topic_override = user_topic.strip() if user_topic else ""
@@ -765,188 +765,6 @@ _SUBQUESTION_USER_PROMPT_TEMPLATE = """\
 """
 
 
-def build_text_generation_prompt(
-    params: "SampledParams",
-    *,
-    user_passage: str | None = None,
-    user_topic: str | None = None,
-    user_core_question: str | None = None,
-    grades: list[int] | None = None,
-    learning_stage: str | None = None,
-    content_text: str | None = None,
-    performance_text: str | None = None,
-) -> tuple[str, str]:
-    """Return (system_prompt, user_prompt) for the text-generation phase (Call A).
-
-    Produces only the top-level 題組 metadata — 核心問題, 文本, 取材來源,
-    情境, 閱讀歷程, 文本形式, 題目內容類型, chart_spec — with no subquestions.
-    """
-    g = grades if grades is not None else _GRADES
-    stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
-    grade_names = "、".join(f"{x}年級" for x in g)
-    c_text = content_text if content_text is not None else _CONTENT_TEXT
-    p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
-    curriculum_section = _build_curriculum_section(c_text, p_text, _PERFORMANCE_INTRO)
-
-    system_prompt = _TEXT_GENERATION_SYSTEM_PROMPT_TEMPLATE.format(
-        learning_stage=stage,
-        grade_names=grade_names,
-        curriculum_section=curriculum_section,
-    )
-
-    topic_override = user_passage.strip() if user_passage else (user_topic.strip() if user_topic else "")
-    reading_process = "、".join(p.value for p in params.閱讀歷程)
-    content_type = params.題目內容類型 or "純文字"
-    core_competencies = "、".join(c.value for c in params.核心素養)
-
-    # Slot type summary for the text prompt (so the LLM knows what diversity to support)
-    slot_types = [cfg.question_type.value for cfg in params.subquestion_configs if cfg.question_type]
-    slot_type_summary = "、".join(slot_types) if slot_types else "由各小題自行決定"
-    slot_count = params.sub_question_count or len(params.subquestion_configs) or 3
-
-    param_instruction_lines = []
-    content_type_instr = CONTENT_TYPE_INSTRUCTIONS.get(
-        content_type,
-        f"請將題目內容類型視為「{content_type}」，依此設計文本與素材形式。",
-    )
-    param_instruction_lines.append(
-        f"  - **題目內容類型（{content_type}）補充**：{content_type_instr}"
-    )
-    param_instructions = (
-        "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
-    )
-
-    difficulty_section = _difficulty_section(params)
-
-    if params.學習內容_pool:
-        lc_codes = "、".join(params.學習內容_pool)
-        lc_pool_lines = f"- **指定學習內容**：{lc_codes}\n"
-    else:
-        lc_pool_lines = ""
-
-    if params.學習表現_pool:
-        lp_codes = "、".join(params.學習表現_pool)
-        lp_pool_lines = f"- **指定學習表現**：{lp_codes}\n"
-    else:
-        lp_pool_lines = ""
-
-    user_materials_parts = []
-    if topic_override:
-        user_materials_parts.append(
-            "## 指定情境\n\n"
-            f"主題 / 議題：{topic_override}\n\n"
-            "請以此主題 / 議題作為題組的真實情境與文本取材方向。"
-        )
-    if user_core_question:
-        user_materials_parts.append(
-            "## 指定核心問題（請逐字使用，不得修改）\n\n"
-            f"核心問題：{user_core_question}"
-        )
-    if user_passage:
-        user_materials_parts.append(
-            "## 使用者指定素材\n\n"
-            "**文本（請逐字使用，不得修改）**：\n\n"
-            f"```\n{user_passage}\n```"
-        )
-    user_materials = ("\n" + "\n\n".join(user_materials_parts) + "\n") if user_materials_parts else ""
-
-    user_prompt = _TEXT_GENERATION_USER_PROMPT_TEMPLATE.format(
-        grade=params.grade,
-        learning_stage=stage,
-        subject=params.科目.value,
-        context=topic_override or "、".join(c.value for c in params.情境),
-        reading_process=reading_process,
-        text_form=params.文本形式.value,
-        content_type=content_type,
-        core_competencies=core_competencies,
-        slot_type_summary=slot_type_summary,
-        slot_count=slot_count,
-        lc_pool_lines=lc_pool_lines,
-        lp_pool_lines=lp_pool_lines,
-        param_instructions=param_instructions,
-        difficulty_section=difficulty_section,
-        user_materials=user_materials,
-    )
-    return system_prompt, user_prompt
-
-
-def build_subquestion_prompt(
-    params: "SampledParams",
-    slot_index: int,
-    passage: str,
-    all_slot_configs: "list",
-    *,
-    grades: list[int] | None = None,
-    learning_stage: str | None = None,
-    content_text: str | None = None,
-    performance_text: str | None = None,
-) -> tuple[str, str]:
-    """Return (system_prompt, user_prompt) for one subquestion (Call B).
-
-    Args:
-        slot_index: 0-based index into all_slot_configs for this subquestion.
-        passage: The 文本 string produced by Call A.
-        all_slot_configs: Full list of SubQuestionConfig for this 題組.
-    """
-    g = grades if grades is not None else _GRADES
-    stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
-    grade_names = "、".join(f"{x}年級" for x in g)
-    c_text = content_text if content_text is not None else _CONTENT_TEXT
-    p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
-    curriculum_section = _build_curriculum_section(c_text, p_text, _PERFORMANCE_INTRO)
-    sc = stage_code_for(_CC_DATA, stage)
-
-    cfg: SubQuestionConfig = all_slot_configs[slot_index]
-    slot_number = slot_index + 1
-    total_slots = len(all_slot_configs)
-    slot_type = cfg.question_type.value if cfg.question_type else "選擇題"
-
-    # Use per-slot competencies from params if available, else fall back to top-level pool
-    slot_competencies = "、".join(c.value for c in params.核心素養)
-
-    # Sibling slots summary: all slots including current, so each call sees full picture
-    sibling_lines = []
-    for i, s_cfg in enumerate(all_slot_configs):
-        s_num = i + 1
-        s_type = s_cfg.question_type.value if s_cfg.question_type else "（未指定）"
-        marker = "← 本小題" if i == slot_index else ""
-        sibling_lines.append(f"  - 第{s_num}小題：題型={s_type} {marker}".rstrip())
-    sibling_slots_summary = "\n".join(sibling_lines)
-
-    lc_pool = "、".join(params.學習內容_pool) if params.學習內容_pool else "（依課綱自行選用）"
-    lp_pool = "、".join(params.學習表現_pool) if params.學習表現_pool else "（依課綱自行選用）"
-
-    slot_instruction_line = ""
-    if cfg.instruction:
-        slot_instruction_line = f"- **出題指示**：{cfg.instruction}\n"
-
-    difficulty_section = _difficulty_section(params).lstrip("\n")
-
-    system_prompt = _SUBQUESTION_SYSTEM_PROMPT_TEMPLATE.format(
-        learning_stage=stage,
-        grade_names=grade_names,
-        slot_number=slot_number,
-        slot_type=slot_type,
-        slot_competencies=slot_competencies,
-        stage_code=sc,
-        sibling_slots_summary=sibling_slots_summary,
-        curriculum_section=curriculum_section,
-    )
-
-    user_prompt = _SUBQUESTION_USER_PROMPT_TEMPLATE.format(
-        slot_number=slot_number,
-        total_slots=total_slots,
-        slot_type=slot_type,
-        slot_competencies=slot_competencies,
-        passage=passage,
-        lc_pool=lc_pool,
-        lp_pool=lp_pool,
-        slot_instruction_line=slot_instruction_line,
-        difficulty_section=difficulty_section,
-    )
-    return system_prompt, user_prompt
-
-
 def build_text_system_prompt(
     grades: list[int] | None = None,
     learning_stage: str | None = None,
@@ -1117,9 +935,13 @@ def build_subquestion_user_prompt(
 ) -> tuple[str, list[Path]]:
     del image_generation_mode
     if rng is None:
-        rng = random.Random()
+        rng = random.Random(params.seed)
 
-    q_type = sq_plan.get("題型", "")
+    q_type = (
+        cfg.question_type.value
+        if cfg is not None and cfg.question_type is not None
+        else sq_plan.get("題型", "")
+    )
     example_groups = (
         [] if disable_reference_fewshot else load_few_shot_example_groups(few_shot_dir)
     )
@@ -1206,6 +1028,31 @@ def build_subquestion_user_prompt(
 
     source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
     difficulty_section = _difficulty_section(params).lstrip("\n")
+    config_parts = [f"題型={q_type}"]
+    if cfg is not None and cfg.instruction:
+        config_parts.append(f"出題指示={cfg.instruction}")
+    if cfg is not None and cfg.learning_content:
+        config_parts.append(f"學習內容={','.join(cfg.learning_content)}")
+    if cfg is not None and cfg.learning_performance:
+        config_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
+    question_limit = (
+        cfg.question_word_limit
+        if cfg is not None and cfg.question_word_limit
+        else params.question_word_limit
+    )
+    option_limit = (
+        cfg.option_word_limit
+        if cfg is not None and cfg.option_word_limit
+        else params.option_word_limit
+    )
+    if question_limit:
+        config_parts.append(f"題目字數上限={question_limit}")
+    if option_limit:
+        config_parts.append(f"選項字數上限={option_limit}")
+    subquestion_config_section = (
+        "## 各小題配置\n\n"
+        f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts)
+    )
     return f"""\
 請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題：
 
@@ -1229,6 +1076,8 @@ def build_subquestion_user_prompt(
 - **序號**：{sq_plan.get("序號", 1)}
 - **題型**：{q_type}
 - **出題概念**：{sq_plan.get("出題概念", "")}
+
+{subquestion_config_section}
 
 ## 指定條件
 

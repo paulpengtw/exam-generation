@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { getAvailableModels, getSchemas, type AvailableModels, type Schemas } from "../api/client";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
 import CoreQuestionPicker from "./CoreQuestionPicker";
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
+import { toGenerateParams } from "../utils/toGenerateParams";
 
 export interface SubQuestionConfig {
   question_type?: string;
@@ -16,6 +17,24 @@ export interface SubQuestionConfig {
   reporting_scale?: string;
   learning_content?: string[];
   learning_performance?: string[];
+}
+
+type ResolvedSubQuestionConfig = SubQuestionConfig & {
+  _lcWasAutoDrawn?: boolean;
+  _lpWasAutoDrawn?: boolean;
+};
+
+function parseSubquestionConfigs(value: unknown): SubQuestionConfig[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (row): row is SubQuestionConfig => typeof row === "object" && row !== null && !Array.isArray(row),
+    );
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -78,6 +97,44 @@ export interface ParamFormProps {
   onSubmit: (params: FormParams) => void;
   disabled: boolean;
   initialParams?: Partial<FormParams> & { [key: string]: unknown };
+}
+
+type ConfirmationValueKind = "absent" | "sampled" | "defaulted";
+
+type ConfirmationRow = {
+  label: string;
+  value: string | undefined;
+  subjects: string[];
+  kind?: ConfirmationValueKind;
+  defaultValue?: string;
+  badge?: string;
+};
+
+function resolveConfirmationValue(
+  value: string | undefined,
+  kind: ConfirmationValueKind,
+  t: (key: string) => string,
+  defaultValue?: string,
+) {
+  if (value !== undefined && value !== "") return value;
+  if (kind === "sampled") return t("form.confirm_backend_sampled");
+  if (kind === "defaulted") return defaultValue ?? t("form.confirm_not_filled");
+  return t("form.confirm_not_filled");
+}
+
+function drawQuestionSubset<T>(
+  pool: readonly T[],
+  min: number,
+  max: number,
+  previous?: readonly T[],
+): T[] {
+  const drawn = drawRandomSubset(pool, min, max);
+  if (!previous || pool.length < 2 || JSON.stringify(drawn) !== JSON.stringify(previous)) {
+    return drawn;
+  }
+  const alternative = pool.find((value) => !previous.includes(value));
+  if (alternative !== undefined) return [alternative];
+  return drawn.length > 1 ? [drawn[0]] : drawn;
 }
 
 const TEXT_HINT = "500 字";
@@ -219,16 +276,25 @@ export default function ParamForm({
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
+  const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
   const [pendingResolvedSubquestionConfigs, setPendingResolvedSubquestionConfigs] = useState<
-    (SubQuestionConfig & { _lcWasAutoDrawn?: boolean; _lpWasAutoDrawn?: boolean })[]
+    ResolvedSubQuestionConfig[]
   >([]);
+  const [perQuestionAutoFields, setPerQuestionAutoFields] = useState<string[][]>([]);
+  const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
+  const previewRequestedRef = useRef(false);
 
   const ip = initialParams ?? {};
+  const userChosenFields = useRef(new Set(Object.keys(ip)));
   function fromInit<T>(key: string, fallback: T): T {
     return (ip[key] as T | undefined) ?? fallback;
+  }
+  function markUserChosen(key: string) {
+    userChosenFields.current.add(key);
   }
 
   const [grade, setGrade] = useState<number | "">(fromInit<number | "">("grade", ""));
@@ -241,6 +307,7 @@ export default function ParamForm({
   const [setType, setSetType] = useState<string>(fromInit<string>("set_type", ""));
   const [qType, setQType] = useState<string[]>(fromInit<string[]>("q_type", []));
   const [count, setCount] = useState<number>(fromInit<number>("count", 1));
+  const configuredSeed = fromInit<number | undefined>("seed", undefined);
   const [coverageMode, setCoverageMode] = useState<"balanced" | "random">("balanced");
   const [skipVerify, setSkipVerify] = useState<boolean>(
     fromInit<boolean>("skip_verify", false),
@@ -275,6 +342,73 @@ export default function ParamForm({
   const [scienceCompetency, setScienceCompetency] = useState<string[]>(
     fromInit<string[]>("science_competency", []),
   );
+
+  useEffect(() => {
+    if (!pendingParams || coreQuestionResolution === "loading" || previewRequestedRef.current) return;
+    let cancelled = false;
+    previewRequestedRef.current = true;
+    void previewGenerate(toGenerateParams(subject, pendingParams))
+      .then(({ prompts }) => {
+        if (cancelled) return;
+        if (
+          Array.isArray(prompts) &&
+          prompts.every((prompt) => (
+            Number.isInteger(prompt?.index) &&
+            prompt.index >= 0 &&
+            (
+              prompt.subquestion_index === undefined ||
+              (
+                Number.isInteger(prompt.subquestion_index) &&
+                prompt.subquestion_index >= 0
+              )
+            ) &&
+            typeof prompt?.system_prompt === "string" &&
+            typeof prompt?.user_prompt === "string"
+          ))
+        ) {
+          setPromptPreviews(prompts);
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [coreQuestionResolution, pendingParams, subject]);
+
+  useEffect(() => {
+    if (!pendingParams || coreQuestionResolution !== "loading") return;
+    let cancelled = false;
+    void planCoreQuestions({
+      topic: pendingParams.topic ?? "",
+      subject,
+      subject_filter: pendingParams.subject_filter ? [pendingParams.subject_filter] : undefined,
+      grade: pendingParams.grade,
+    }).then(({ candidates }) => {
+      if (cancelled) return;
+      if (candidates.length === 0) {
+        setCoreQuestionResolution("failed");
+        return;
+      }
+      const selected = candidates[Math.floor(Math.random() * candidates.length)];
+      setPendingParams((current) => {
+        if (!current) return current;
+        const perQuestion = current.per_question_params
+          ? (JSON.parse(current.per_question_params) as Record<string, unknown>[]).map((item) => ({
+              ...item,
+              core_question: selected,
+            }))
+          : undefined;
+        return {
+          ...current,
+          core_question: selected,
+          per_question_params: perQuestion ? JSON.stringify(perQuestion) : undefined,
+        };
+      });
+      setCoreQuestionResolution("generated");
+    }).catch(() => {
+      if (cancelled) return;
+      setCoreQuestionResolution("failed");
+    });
+    return () => { cancelled = true; };
+  }, [coreQuestionResolution, pendingParams, subject]);
   const [learningPerformance, setLearningPerformance] = useState<string[]>(
     fromInit<string[]>("learning_performance", []),
   );
@@ -297,6 +431,7 @@ export default function ParamForm({
   );
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
+  const supportsTextWordLimit = isCurriculumSubject && subject !== "math";
 
   useEffect(() => {
     let cancelled = false;
@@ -506,14 +641,16 @@ export default function ParamForm({
   }, [availableSubContexts, subContext, subject]);
 
   useEffect(() => {
+    if (!schemas) return;
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
     setLearningPerformance((prev) => prev.filter((value) => allowed.has(value)));
-  }, [availableLearningPerformance]);
+  }, [availableLearningPerformance, schemas]);
 
   useEffect(() => {
+    if (!schemas) return;
     const allowed = new Set(availableLearningContent.map((entry) => entry.value));
     setLearningContent((prev) => prev.filter((value) => allowed.has(value)));
-  }, [availableLearningContent]);
+  }, [availableLearningContent, schemas]);
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
@@ -542,7 +679,14 @@ export default function ParamForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    previewRequestedRef.current = false;
+    setPromptPreviews([]);
     if (grade === "") return;
+    if (!setType.trim()) {
+      setValidationError(t("form.error_set_type_required"));
+      return;
+    }
+    setValidationError(null);
     const cleanPassage = passage === TEXT_HINT ? undefined : passage;
     const cleanOptions = options.filter((o) => o && o !== OPTION_HINT);
     const cleanTopic = topic.trim();
@@ -570,6 +714,7 @@ export default function ParamForm({
     let lcAutoDrawn = false;
     if (
       (subject === "natural_sciences" || subject === "social_studies") &&
+      !(subject === "social_studies" && coverageMode === "balanced") &&
       learningContent.length === 0 &&
       lcPoolValues.length > 0
     ) {
@@ -639,7 +784,8 @@ export default function ParamForm({
       );
 
     setPendingResolvedSubquestionConfigs(effectiveSubquestionConfigsInternal);
-    setPendingParams({
+    setCoreQuestionResolution(coreQuestion ? "idle" : "loading");
+    const baseParams: FormParams = {
       grade,
       style: subject === "math" ? style : undefined,
       content_type: effectiveContentType,
@@ -654,7 +800,7 @@ export default function ParamForm({
       difficulty: difficulty === "" ? undefined : difficulty,
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
-      text_word_limit: textWordLimit,
+      text_word_limit: supportsTextWordLimit ? textWordLimit : undefined,
       options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,
       topic:
         isCurriculumSubject && cleanTopic
@@ -676,6 +822,138 @@ export default function ParamForm({
           : undefined,
       model_plan: modelPlan || undefined,
       model_execute: modelExecute || undefined,
+    };
+
+    let previousQuestionLp: string[] | undefined;
+    let previousQuestionLc: string[] | undefined;
+    let previousQuestionSubquestions: SubQuestionConfig[] | undefined;
+    let previousRandomValues: Record<string, string[] | undefined> = {};
+    const drawField = (key: string, pool: string[], max = 1): string[] | undefined => {
+      if (userChosenFields.current.has(key) || pool.length === 0) return undefined;
+      return drawQuestionSubset(pool, 1, max, previousRandomValues[key]);
+    };
+    const perQuestionParams = Array.from({ length: count }, (_, questionIndex) => {
+      const resolvedSeed = configuredSeed !== undefined
+        ? configuredSeed + questionIndex
+        : Math.floor(Math.random() * 2_147_483_648);
+      const randomStyle = subject === "math"
+        ? drawField("style", (schemas?.question_style ?? []).map((entry) => entry.value))
+        : undefined;
+      const randomContentType = drawField(
+        "content_type",
+        (schemas?.題目內容類型 ?? []).filter((entry) => entry.value !== "customized").map((entry) => entry.value),
+      );
+      const randomContext = drawField("context", (schemas?.情境 ?? []).map((entry) => entry.value));
+      const randomSetType = drawField("set_type", (schemas?.題型種類 ?? []).map((entry) => entry.value));
+      const randomQuestionType = subject !== "social_studies"
+        ? drawField("q_type", (schemas?.題型 ?? []).map((entry) => entry.value))
+        : undefined;
+      const randomSubjectFilter = subject === "social_studies"
+        ? drawField("subject_filter", (schemas?.科目 ?? []).map((entry) => entry.value))
+        : undefined;
+      const randomSubContext = subject === "natural_sciences"
+        ? drawField("sub_context", availableSubContexts.map((entry) => entry.value))
+        : undefined;
+      const randomScienceCompetency = subject === "natural_sciences"
+        ? drawField("science_competency", (schemas?.科學能力 ?? []).map((entry) => entry.value))
+        : undefined;
+      const questionLp = autoDrawn
+        ? drawQuestionSubset(lpPoolValues, 1, subject === "math" ? 3 : 2, previousQuestionLp)
+        : finalLp;
+      const questionLc = lcAutoDrawn
+        ? drawQuestionSubset(lcPoolValues, 1, 3, previousQuestionLc)
+        : finalLc;
+      const questionSubquestionConfigs = shouldDrawPerSubq
+        ? subquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
+            const hasExplicitLc = (cfg.learning_content?.length ?? 0) > 0;
+            const hasExplicitLp = (cfg.learning_performance?.length ?? 0) > 0;
+            const lcPool = learningContent.length > 0 ? learningContent : (questionLc ?? []);
+            const lpPool = learningPerformance.length > 0 ? learningPerformance : (questionLp ?? []);
+            return {
+              question_type: cfg.question_type || undefined,
+              instruction: cfg.instruction?.trim() || undefined,
+              content_type: cfg.content_type || undefined,
+              image_generation_mode: cfg.image_generation_mode || undefined,
+              question_word_limit: cfg.question_word_limit,
+              option_word_limit: cfg.option_word_limit,
+              text_word_limit: cfg.text_word_limit,
+              reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
+              learning_content: hasExplicitLc
+                ? cfg.learning_content
+                : lcPool.length > 0
+                  ? drawQuestionSubset(
+                      lcPool,
+                      1,
+                      3,
+                      previousQuestionSubquestions?.[subquestionIndex]?.learning_content,
+                    )
+                  : undefined,
+              learning_performance: hasExplicitLp
+                ? cfg.learning_performance
+                : lpPool.length > 0
+                  ? drawQuestionSubset(
+                      lpPool,
+                      1,
+                      2,
+                      previousQuestionSubquestions?.[subquestionIndex]?.learning_performance,
+                    )
+                  : undefined,
+            };
+          })
+        : [];
+      const result = {
+        ...baseParams,
+        seed: resolvedSeed,
+        style: randomStyle ?? (baseParams.style ? [baseParams.style] : undefined),
+        content_type: randomContentType?.[0] ?? baseParams.content_type,
+        context: randomContext ?? baseParams.context,
+        set_type: randomSetType?.[0] ?? baseParams.set_type,
+        q_type: randomQuestionType ?? baseParams.q_type,
+        subject_filter: randomSubjectFilter ?? (baseParams.subject_filter ? [baseParams.subject_filter] : undefined),
+        sub_context: randomSubContext?.[0] ?? baseParams.sub_context,
+        science_competency: randomScienceCompetency ?? baseParams.science_competency,
+        difficulty: baseParams.difficulty ?? "medium",
+        model_plan: baseParams.model_plan ?? models?.defaults.plan,
+        model_execute: baseParams.model_execute ?? models?.defaults.execute,
+        learning_performance: questionLp,
+        learning_content: questionLc,
+        subquestion_configs: shouldSendSubquestionConfigs
+          ? JSON.stringify(questionSubquestionConfigs)
+          : undefined,
+      };
+      previousQuestionLp = questionLp;
+      previousQuestionLc = questionLc;
+      previousQuestionSubquestions = questionSubquestionConfigs;
+      previousRandomValues = {
+        style: randomStyle,
+        content_type: randomContentType,
+        context: randomContext,
+        set_type: randomSetType,
+        q_type: randomQuestionType,
+        subject_filter: randomSubjectFilter,
+        sub_context: randomSubContext,
+        science_competency: randomScienceCompetency,
+      };
+      return result;
+    });
+    setPerQuestionAutoFields(
+      perQuestionParams.map(() => [
+        ...(configuredSeed === undefined ? ["seed"] : []),
+        ...(!userChosenFields.current.has("style") && subject === "math" ? ["style"] : []),
+        ...(!userChosenFields.current.has("content_type") ? ["content_type"] : []),
+        ...(!userChosenFields.current.has("context") ? ["context"] : []),
+        ...(!userChosenFields.current.has("set_type") ? ["set_type"] : []),
+        ...(!userChosenFields.current.has("q_type") && subject !== "social_studies" ? ["q_type"] : []),
+        ...(!userChosenFields.current.has("subject_filter") && subject === "social_studies" ? ["subject_filter"] : []),
+        ...(!userChosenFields.current.has("sub_context") && subject === "natural_sciences" ? ["sub_context"] : []),
+        ...(!userChosenFields.current.has("science_competency") && subject === "natural_sciences" ? ["science_competency"] : []),
+        ...(autoDrawn ? ["learning_performance"] : []),
+        ...(lcAutoDrawn ? ["learning_content"] : []),
+      ]),
+    );
+    setPendingParams({
+      ...baseParams,
+      per_question_params: JSON.stringify(perQuestionParams),
     });
   }
 
@@ -687,58 +965,64 @@ export default function ParamForm({
 
   if (pendingParams) {
     const p = pendingParams;
-
-    // Resolve full 學習表現 entries for display
+    const resolvedPerQuestionParams = p.per_question_params
+      ? JSON.parse(p.per_question_params) as Record<string, unknown>[]
+      : [];
     const allLpEntries = schemas?.學習表現 ?? [];
-    const lpDisplayEntries = p.learning_performance
-      ? allLpEntries.filter((e) => p.learning_performance!.includes(e.value))
-      : [];
-
-    // Resolve full 學習內容 entries for display
     const allLcEntries = schemas?.學習內容 ?? [];
-    const lcDisplayEntries = p.learning_content
-      ? allLcEntries.filter((e) => p.learning_content!.includes(e.value))
-      : [];
 
-    const rows: { label: string; value: string | undefined }[] = [
-      { label: t("form.confirm_topic"), value: p.topic },
-      { label: t("form.confirm_core_question"), value: p.core_question },
-      { label: t("form.confirm_grade"), value: String(p.grade) },
-      { label: t("form.confirm_difficulty"), value: p.difficulty },
-      { label: t("form.confirm_subject_filter"), value: p.subject_filter },
-      { label: t("form.confirm_style"), value: p.style },
-      { label: t("form.confirm_content_type"), value: p.content_type },
-      { label: t("form.confirm_context"), value: p.context.length ? p.context.join(", ") : undefined },
-      { label: t("form.confirm_set_type"), value: p.set_type },
+    const allSubjects = ["math", "social_studies", "natural_sciences"];
+    const rows = ([
+      { label: t("form.confirm_topic"), value: p.topic, subjects: allSubjects, kind: "absent" },
       {
-        label: t("form.confirm_q_type"),
-        value: subject !== "social_studies" && p.q_type.length ? p.q_type.join(", ") : undefined,
+        label: t("form.confirm_core_question"),
+        value: p.core_question,
+        subjects: allSubjects,
+        kind: coreQuestionResolution === "failed" ? "defaulted" : "absent",
+        defaultValue: coreQuestionResolution === "failed" ? t("form.confirm_core_question_generation_decides") : undefined,
+        badge: coreQuestionResolution === "generated" ? t("form.confirm_core_question_pre_generated") : undefined,
       },
-      { label: t("form.confirm_count"), value: String(p.count) },
+      { label: t("form.confirm_grade"), value: String(p.grade), subjects: allSubjects },
+      { label: t("form.confirm_difficulty"), value: p.difficulty, subjects: allSubjects, kind: "defaulted", defaultValue: "medium" },
+      { label: t("form.confirm_subject_filter"), value: p.subject_filter, subjects: ["math", "social_studies"], kind: subject === "social_studies" ? "sampled" : "absent" },
+      { label: t("form.confirm_count"), value: String(p.count), subjects: allSubjects },
       {
         label: t("form.confirm_coverage_mode"),
         value: subject === "social_studies" ? p.coverage_mode : undefined,
+        subjects: ["social_studies"],
       },
-      { label: t("form.confirm_passage"), value: p.passage },
-      { label: t("form.confirm_options"), value: p.options?.join(", ") },
+      { label: t("form.confirm_passage"), value: p.passage, subjects: allSubjects },
+      { label: t("form.confirm_options"), value: p.options?.join(", "), subjects: ["math"] },
+      { label: t("form.confirm_text_word_limit"), value: p.text_word_limit !== undefined ? String(p.text_word_limit) : undefined, subjects: ["social_studies", "natural_sciences"], kind: "defaulted", defaultValue: t("form.confirm_unlimited") },
+      { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "natural_sciences"] },
+      { label: t("form.confirm_model_plan"), value: p.model_plan, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
+      { label: t("form.confirm_model_execute"), value: p.model_execute, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       {
         label: t("form.confirm_image_mode"),
         value: p.image_generation_mode,
+        subjects: allSubjects,
       },
-      { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined },
+      { label: t("form.confirm_skip_verify"), value: p.skip_verify ? "✓" : undefined, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_no") },
       {
         label: t("form.confirm_disable_reference_fewshot"),
         value: p.disable_reference_fewshot ? "✓" : undefined,
+        subjects: ["social_studies", "natural_sciences"],
+        kind: "defaulted",
+        defaultValue: t("form.confirm_no"),
       },
-      { label: "小題數量", value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined },
-    ];
-
-    const lpHeading = lpWasAutoDrawn
-      ? t("form.confirm_lp_random_pool").replace("{n}", String(lpDisplayEntries.length))
-      : t("form.confirm_lp_selected").replace("{n}", String(lpDisplayEntries.length));
-    const lcHeading = lcWasAutoDrawn
-      ? t("form.confirm_lc_random_pool").replace("{n}", String(lcDisplayEntries.length))
-      : t("form.confirm_lc_selected").replace("{n}", String(lcDisplayEntries.length));
+    ] satisfies ConfirmationRow[]).filter((row) => row.subjects.includes(subject));
+    const perQuestionRows = ([
+      { key: "seed", label: t("form.confirm_seed"), subjects: allSubjects },
+      { key: "style", label: t("form.confirm_style"), subjects: ["math"] },
+      { key: "content_type", label: t("form.confirm_content_type"), subjects: allSubjects },
+      { key: "context", label: t("form.confirm_context"), subjects: allSubjects },
+      { key: "set_type", label: t("form.confirm_set_type"), subjects: allSubjects },
+      { key: "q_type", label: t("form.confirm_q_type"), subjects: ["math", "natural_sciences"] },
+      { key: "subject_filter", label: t("form.confirm_subject_filter"), subjects: ["social_studies"] },
+      { key: "sub_context", label: t("form.confirm_sub_context"), subjects: ["natural_sciences"] },
+      { key: "science_competency", label: t("form.confirm_science_competency"), subjects: ["natural_sciences"] },
+    ] satisfies { key: string; label: string; subjects: string[] }[])
+      .filter((row) => row.subjects.includes(subject));
 
     return (
       <div className="space-y-4">
@@ -746,126 +1030,249 @@ export default function ParamForm({
           <h2 className="text-base font-semibold">{t("form.confirm_title")}</h2>
           <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
         </div>
-        <dl className="divide-y rounded-lg border bg-gray-50">
-          {rows.map(({ label, value }) => (
-            <div key={label} className="flex gap-3 px-4 py-2.5">
-              <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{label}</dt>
-              <dd className="flex-1 text-sm text-gray-900 break-words">
-                {value ?? <span className="text-gray-400 italic">{t("form.confirm_none")}</span>}
-              </dd>
-            </div>
-          ))}
-          <div className="flex gap-3 px-4 py-2.5">
-            <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{t("form.confirm_learning_performance")}</dt>
-            <dd className="flex-1 text-sm text-gray-900">
-              {lpDisplayEntries.length === 0 ? (
-                <span className="text-gray-400 italic">{t("form.confirm_none")}</span>
-              ) : (
-                <div className="space-y-1">
-                  <p className={`text-xs font-medium mb-1.5 ${lpWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>
-                    {lpHeading}
-                  </p>
-                  <ul className="space-y-1">
-                    {lpDisplayEntries.map((entry) => (
-                      <li key={entry.value} className="flex gap-2 text-sm">
-                        <span className="shrink-0 font-mono font-semibold text-gray-800">{entry.value}</span>
-                        {entry.instruction && (
-                          <span className="text-gray-600">— {entry.instruction}</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+        <section role="region" aria-label={t("form.confirm_shared_heading")}>
+          <h3 className="mb-3 font-semibold text-gray-800">{t("form.confirm_shared_heading")}</h3>
+          <dl className="divide-y rounded-lg border bg-gray-50">
+            {rows.map(({ label, value, kind = "absent", defaultValue, badge }) => (
+                <div key={label} className="flex gap-3 px-4 py-2.5">
+                  <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{label}</dt>
+                  <dd className="flex-1 break-words text-sm text-gray-900">
+                    {resolveConfirmationValue(value, kind, t, defaultValue)}
+                    {badge && <span className="ml-2 text-xs font-medium text-amber-700">{badge}</span>}
+                  </dd>
                 </div>
-              )}
-            </dd>
-          </div>
-          <div className="flex gap-3 px-4 py-2.5">
-            <dt className="w-40 shrink-0 text-sm font-medium text-gray-600">{t("form.confirm_learning_content")}</dt>
-            <dd className="flex-1 text-sm text-gray-900">
-              {lcDisplayEntries.length === 0 ? (
-                <span className="text-gray-400 italic">{t("form.confirm_none")}</span>
-              ) : (
-                <div className="space-y-1">
-                  <p className={`text-xs font-medium mb-1.5 ${lcWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>
-                    {lcHeading}
-                  </p>
-                  <ul className="space-y-1">
-                    {lcDisplayEntries.map((entry) => (
-                      <li key={entry.value} className="flex gap-2 text-sm">
-                        <span className="shrink-0 font-mono font-semibold text-gray-800">{entry.value}</span>
-                        {entry.instruction && (
-                          <span className="text-gray-600">— {entry.instruction}</span>
+            ))}
+          </dl>
+        </section>
+        <div className="space-y-4">
+          {resolvedPerQuestionParams.map((questionParams, index) => {
+            const heading = t("form.confirm_question_block").replace("{n}", String(index + 1));
+            const questionLpCodes = Array.isArray(questionParams.learning_performance)
+              ? questionParams.learning_performance.filter((code): code is string => typeof code === "string")
+              : [];
+            const questionLcCodes = Array.isArray(questionParams.learning_content)
+              ? questionParams.learning_content.filter((code): code is string => typeof code === "string")
+              : [];
+            const questionLpDisplayEntries = allLpEntries.filter((entry) => questionLpCodes.includes(entry.value));
+            const questionLcDisplayEntries = allLcEntries.filter((entry) => questionLcCodes.includes(entry.value));
+            const questionSubquestionConfigs = parseSubquestionConfigs(
+              questionParams.subquestion_configs,
+            ).map((config, subquestionIndex): ResolvedSubQuestionConfig => ({
+              ...config,
+              _lcWasAutoDrawn: pendingResolvedSubquestionConfigs[subquestionIndex]?._lcWasAutoDrawn,
+              _lpWasAutoDrawn: pendingResolvedSubquestionConfigs[subquestionIndex]?._lpWasAutoDrawn,
+            }));
+            const questionLpHeading = t(
+              lpWasAutoDrawn ? "form.confirm_lp_random_pool" : "form.confirm_lp_selected",
+            )
+              .replace("{n}", String(questionLpDisplayEntries.length));
+            const questionLcHeading = t(
+              lcWasAutoDrawn ? "form.confirm_lc_random_pool" : "form.confirm_lc_selected",
+            )
+              .replace("{n}", String(questionLcDisplayEntries.length));
+            const textGeneratorPreview = promptPreviews.find(
+              (preview) => preview.index === index && preview.subquestion_index === undefined,
+            );
+            const subquestionGeneratorPreviews = promptPreviews
+              .filter(
+                (preview) => preview.index === index && preview.subquestion_index !== undefined,
+              )
+              .sort((a, b) => a.subquestion_index! - b.subquestion_index!);
+            return (
+              <section
+                key={index}
+                role="region"
+                aria-label={heading}
+                className="rounded-lg border border-gray-200 bg-white p-4"
+              >
+                <h3 className="mb-3 font-semibold text-gray-800">{heading}</h3>
+                <dl className="space-y-2">
+                  {perQuestionRows.map(({ key, label }) => {
+                      const value = questionParams[key];
+                      const displayValue = Array.isArray(value)
+                        ? value.join(", ")
+                        : value === undefined
+                          ? undefined
+                          : String(value);
+                      const isRandom = perQuestionAutoFields[index]?.includes(key);
+                      const isPredrawnSeed = key === "seed" && isRandom;
+                      return (
+                        <div key={key} className="flex gap-3 text-sm">
+                          <dt className="w-40 shrink-0 font-medium text-gray-600">
+                            {label}
+                          </dt>
+                          <dd className="min-w-0 break-words text-gray-900">
+                            <span>{resolveConfirmationValue(displayValue, "absent", t)}</span>
+                            <span className={`ml-2 text-xs font-medium ${isRandom ? "text-amber-700" : "text-green-700"}`}>
+                              {isPredrawnSeed
+                                ? t("form.confirm_seed_predrawn")
+                                : t(isRandom ? "form.confirm_badge_random" : "form.confirm_badge_user")}
+                            </span>
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  <div className="flex gap-3 text-sm">
+                      <dt className="w-40 shrink-0 font-medium text-gray-600">{t("form.confirm_learning_performance")}</dt>
+                      <dd className="min-w-0 flex-1 text-gray-900">
+                        {questionLpDisplayEntries.length === 0 ? (
+                          <span className="italic text-gray-400">{t("form.confirm_not_filled")}</span>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className={`mb-1.5 text-xs font-medium ${lpWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>{questionLpHeading}</p>
+                            <ul className="space-y-1">
+                              {questionLpDisplayEntries.map((entry) => (
+                                <li key={entry.value} className="flex gap-2 text-sm">
+                                  <span className="shrink-0 font-mono font-semibold text-gray-800">{entry.value}</span>
+                                  {entry.instruction && <span className="text-gray-600">— {entry.instruction}</span>}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </dd>
-          </div>
-        </dl>
-        {pendingResolvedSubquestionConfigs.length > 0 && (
-          <section className="space-y-3 pt-4 border-t">
-            <h3 className="text-sm font-semibold text-gray-700">{t("form.confirm_subquestion_heading")}</h3>
-            <ol className="space-y-3">
-              {pendingResolvedSubquestionConfigs.map((row, i) => (
-                <li key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                  <h4 className="text-xs font-semibold text-gray-600 mb-2">
-                    {t("form.confirm_subquestion_row_title").replace("{n}", String(i + 1))}
-                  </h4>
-                  {row.question_type && <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type}</div>}
-                  {row.instruction && <div className="text-sm text-gray-700">{t("form.confirm_subq_instruction")} {row.instruction}</div>}
-                  {row.content_type && <div className="text-sm text-gray-700">{t("form.confirm_subq_content_type")} {row.content_type}</div>}
-                  {row.image_generation_mode && <div className="text-sm text-gray-700">{t("form.confirm_subq_image_mode")} {row.image_generation_mode}</div>}
-                  {row.question_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_q_word_limit")} {row.question_word_limit}</div>}
-                  {row.option_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_o_word_limit")} {row.option_word_limit}</div>}
-                  {row.text_word_limit != null && <div className="text-sm text-gray-700">{t("form.confirm_subq_text_word_limit")} {row.text_word_limit}</div>}
-                  {row.reporting_scale && <div className="text-sm text-gray-700">{t("form.confirm_subq_reporting_scale")} {row.reporting_scale}</div>}
-                  <div>
-                    {row.learning_performance && row.learning_performance.length > 0 ? (
-                      <>
-                        <div className="text-xs font-medium text-gray-600 mt-2">
-                          {t(
-                            row._lpWasAutoDrawn
-                              ? "form.confirm_subq_lp_random_pool"
-                              : "form.confirm_subq_lp_selected",
-                          ).replace("{n}", String(row.learning_performance.length))}
-                        </div>
-                        <ul className="list-disc pl-5 text-sm text-gray-700">
-                          {row.learning_performance.map((code) => (
-                            <li key={code}>{code}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : (
-                      <div className="text-sm text-gray-700">{t("form.confirm_subq_lp_empty")}</div>
-                    )}
+                      </dd>
                   </div>
-                  <div>
-                    {row.learning_content && row.learning_content.length > 0 ? (
-                      <>
-                        <div className="text-xs font-medium text-gray-600 mt-2">
-                          {t(
-                            row._lcWasAutoDrawn
-                              ? "form.confirm_subq_lc_random_pool"
-                              : "form.confirm_subq_lc_selected",
-                          ).replace("{n}", String(row.learning_content.length))}
-                        </div>
-                        <ul className="list-disc pl-5 text-sm text-gray-700">
-                          {row.learning_content.map((code) => (
-                            <li key={code}>{code}</li>
-                          ))}
-                        </ul>
-                      </>
-                    ) : (
-                      <div className="text-sm text-gray-700">{t("form.confirm_subq_lc_empty")}</div>
-                    )}
+                  <div className="flex gap-3 text-sm">
+                      <dt className="w-40 shrink-0 font-medium text-gray-600">{t("form.confirm_learning_content")}</dt>
+                      <dd className="min-w-0 flex-1 text-gray-900">
+                        {questionLcDisplayEntries.length === 0 ? (
+                          <span className="italic text-gray-400">
+                            {subject === "social_studies" && p.coverage_mode === "balanced"
+                              ? t("form.confirm_lc_balanced_backend_assignment")
+                              : t("form.confirm_not_filled")}
+                          </span>
+                        ) : (
+                          <div className="space-y-1">
+                            <p className={`mb-1.5 text-xs font-medium ${lcWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>{questionLcHeading}</p>
+                            <ul className="space-y-1">
+                              {questionLcDisplayEntries.map((entry) => (
+                                <li key={entry.value} className="flex gap-2 text-sm">
+                                  <span className="shrink-0 font-mono font-semibold text-gray-800">{entry.value}</span>
+                                  {entry.instruction && <span className="text-gray-600">— {entry.instruction}</span>}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </dd>
                   </div>
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
+                </dl>
+                {questionSubquestionConfigs.length > 0 && (
+                  <section className="mt-4 space-y-3 border-t pt-4">
+                    <h4 className="text-sm font-semibold text-gray-700">{t("form.confirm_subquestion_heading")}</h4>
+                    <ol className="space-y-3">
+                      {questionSubquestionConfigs.map((row, subquestionIndex) => (
+                        <li key={subquestionIndex} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                          <h5 className="mb-2 text-xs font-semibold text-gray-600">
+                            {t("form.confirm_subquestion_row_title").replace("{n}", String(subquestionIndex + 1))}
+                          </h5>
+                          <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type ?? t("form.confirm_random")}</div>
+                          <div className="text-sm text-gray-700">{t("form.confirm_subq_instruction")} {row.instruction ?? t("form.confirm_not_filled")}</div>
+                          <div className="text-sm text-gray-700">{t("form.confirm_subq_content_type")} {row.content_type ?? t("form.confirm_inherit_text")}</div>
+                          <div className="text-sm text-gray-700">{t("form.confirm_subq_image_mode")} {row.image_generation_mode ?? t("form.confirm_inherit_text")}</div>
+                          <div className="text-sm text-gray-700">{t("form.confirm_subq_q_word_limit")} {row.question_word_limit ?? t("form.confirm_unlimited")}</div>
+                          <div className="text-sm text-gray-700">{t("form.confirm_subq_o_word_limit")} {row.option_word_limit ?? t("form.confirm_unlimited")}</div>
+                          <div className="text-sm text-gray-700">{t("form.confirm_subq_text_word_limit")} {row.text_word_limit ?? t("form.confirm_unlimited")}</div>
+                          {subject === "natural_sciences" && <div className="text-sm text-gray-700">{t("form.confirm_subq_reporting_scale")} {row.reporting_scale ?? t("form.confirm_random")}</div>}
+                          <div>
+                            {row.learning_content && row.learning_content.length > 0 ? (
+                              <>
+                                <div className="mt-2 text-xs font-medium text-gray-600">
+                                  {t(
+                                    row._lcWasAutoDrawn
+                                      ? "form.confirm_subq_lc_random_pool"
+                                      : "form.confirm_subq_lc_selected",
+                                  ).replace("{n}", String(row.learning_content.length))}
+                                </div>
+                                <ul className="list-disc pl-5 text-sm text-gray-700">
+                                  {row.learning_content.map((code) => <li key={code}>{code}</li>)}
+                                </ul>
+                              </>
+                            ) : (
+                              <div className="text-sm text-gray-700">{t("form.confirm_subq_lc_empty")}</div>
+                            )}
+                          </div>
+                          <div>
+                            {row.learning_performance && row.learning_performance.length > 0 ? (
+                              <>
+                                <div className="mt-2 text-xs font-medium text-gray-600">
+                                  {t(
+                                    row._lpWasAutoDrawn
+                                      ? "form.confirm_subq_lp_random_pool"
+                                      : "form.confirm_subq_lp_selected",
+                                  ).replace("{n}", String(row.learning_performance.length))}
+                                </div>
+                                <ul className="list-disc pl-5 text-sm text-gray-700">
+                                  {row.learning_performance.map((code) => <li key={code}>{code}</li>)}
+                                </ul>
+                              </>
+                            ) : (
+                              <div className="text-sm text-gray-700">{t("form.confirm_subq_lp_empty")}</div>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                )}
+                {textGeneratorPreview && (
+                  <details className="mt-4 border-t border-gray-200 pt-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-700">
+                      {t("form.confirm_text_generator_prompt_preview")}
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-gray-600">
+                          {t("form.confirm_system_prompt")}
+                        </div>
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-xs text-gray-800">
+                          {textGeneratorPreview.system_prompt}
+                        </pre>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-gray-600">
+                          {t("form.confirm_user_prompt")}
+                        </div>
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-xs text-gray-800">
+                          {textGeneratorPreview.user_prompt}
+                        </pre>
+                      </div>
+                    </div>
+                  </details>
+                )}
+                {subquestionGeneratorPreviews.map((preview) => (
+                  <details
+                    key={preview.subquestion_index}
+                    className="mt-4 border-t border-gray-200 pt-3"
+                  >
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-700">
+                      {t("form.confirm_subquestion_generator_prompt_preview")
+                        .replace("{n}", String(preview.subquestion_index! + 1))}
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-gray-600">
+                          {t("form.confirm_system_prompt")}
+                        </div>
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-xs text-gray-800">
+                          {preview.system_prompt}
+                        </pre>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs font-medium text-gray-600">
+                          {t("form.confirm_user_prompt")}
+                        </div>
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-3 text-xs text-gray-800">
+                          {preview.user_prompt}
+                        </pre>
+                      </div>
+                    </div>
+                  </details>
+                ))}
+              </section>
+            );
+          })}
+        </div>
         <div className="flex flex-wrap gap-3 pt-1">
           <button
             type="button"
@@ -924,6 +1331,11 @@ export default function ParamForm({
       {prefillNotice && (
         <div className="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">
           {prefillNotice}
+        </div>
+      )}
+      {validationError && (
+        <div role="alert" className="mb-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+          {validationError}
         </div>
       )}
       {isCurriculumSubject && (
@@ -989,10 +1401,19 @@ export default function ParamForm({
 
       {schemas.科目 && schemas.科目.length > 0 && (
         <div>
-          <label className="block text-sm font-medium">{t("form.subject_filter")}</label>
+          <label className="block text-sm font-medium">
+            {t(
+              subject === "natural_sciences"
+                ? "form.subject_filter_natural_sciences"
+                : "form.subject_filter",
+            )}
+          </label>
           <select
             value={subjectFilter}
-            onChange={(e) => setSubjectFilter(e.target.value)}
+            onChange={(e) => {
+              markUserChosen("subject_filter");
+              setSubjectFilter(e.target.value);
+            }}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.subject_filter.all")}</option>
@@ -1002,6 +1423,11 @@ export default function ParamForm({
               </option>
             ))}
           </select>
+          {subject === "natural_sciences" && (
+            <p className="mt-1 text-sm text-gray-500">
+              {t("form.subject_filter_natural_sciences_help")}
+            </p>
+          )}
         </div>
       )}
 
@@ -1023,7 +1449,10 @@ export default function ParamForm({
                 <SearchPicker
                   available={availableLearningPerformance}
                   selected={learningPerformance}
-                  onChange={setLearningPerformance}
+                  onChange={(values) => {
+                    markUserChosen("learning_performance");
+                    setLearningPerformance(values);
+                  }}
                   placeholder="搜尋學習表現..."
                 />
               </div>
@@ -1034,9 +1463,10 @@ export default function ParamForm({
                     <input
                       type="checkbox"
                       checked={learningPerformance.includes(entry.value)}
-                      onChange={() =>
-                        setLearningPerformance((prev) => toggleMulti(prev, entry.value))
-                      }
+                      onChange={() => {
+                        markUserChosen("learning_performance");
+                        setLearningPerformance((prev) => toggleMulti(prev, entry.value));
+                      }}
                       className="mt-1"
                     />
                     <span className="text-sm">
@@ -1060,7 +1490,10 @@ export default function ParamForm({
           <label className="block text-sm font-medium">{t("form.style")}</label>
           <select
             value={style}
-            onChange={(e) => setStyle(e.target.value)}
+            onChange={(e) => {
+              markUserChosen("style");
+              setStyle(e.target.value);
+            }}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             {(schemas.question_style ?? []).map((s) => (
@@ -1077,7 +1510,10 @@ export default function ParamForm({
           <label className="block text-sm font-medium">{subject === "social_studies" ? "文本素材類型" : t("form.content_type")}</label>
           <select
             value={contentType}
-            onChange={(e) => setContentType(e.target.value)}
+            onChange={(e) => {
+              markUserChosen("content_type");
+              setContentType(e.target.value);
+            }}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             {schemas.題目內容類型.map((s) => (
@@ -1130,7 +1566,10 @@ export default function ParamForm({
                 <input
                   type="checkbox"
                   checked={context.includes(s.value)}
-                  onChange={() => setContext((prev) => toggleMulti(prev, s.value))}
+                  onChange={() => {
+                    markUserChosen("context");
+                    setContext((prev) => toggleMulti(prev, s.value));
+                  }}
                 />
                 <span>{s.value}</span>
               </label>
@@ -1145,7 +1584,10 @@ export default function ParamForm({
             <label className="block text-sm font-medium">{t("form.context")}</label>
             <select
               value={context[0] ?? ""}
-              onChange={(e) => setContext(e.target.value ? [e.target.value] : [])}
+              onChange={(e) => {
+                markUserChosen("context");
+                setContext(e.target.value ? [e.target.value] : []);
+              }}
               className="mt-1 block w-full border rounded px-2 py-1"
             >
               {schemas.情境.map((s) => (
@@ -1159,7 +1601,10 @@ export default function ParamForm({
             <label className="block text-sm font-medium">{t("form.sub_context")}</label>
             <select
               value={subContext}
-              onChange={(e) => setSubContext(e.target.value)}
+              onChange={(e) => {
+                markUserChosen("sub_context");
+                setSubContext(e.target.value);
+              }}
               className="mt-1 block w-full border rounded px-2 py-1"
             >
               {availableSubContexts.map((s) => (
@@ -1176,7 +1621,11 @@ export default function ParamForm({
         <label className="block text-sm font-medium">{t("form.set_type")}</label>
         <select
           value={setType}
-          onChange={(e) => setSetType(e.target.value)}
+          onChange={(e) => {
+            markUserChosen("set_type");
+            setSetType(e.target.value);
+            setValidationError(null);
+          }}
           className="mt-1 block w-full border rounded px-2 py-1"
         >
           {schemas.題型種類.map((s) => (
@@ -1196,7 +1645,10 @@ export default function ParamForm({
               <input
                 type="checkbox"
                 checked={qType.includes(s.value)}
-                onChange={() => setQType((prev) => toggleMulti(prev, s.value))}
+                onChange={() => {
+                  markUserChosen("q_type");
+                  setQType((prev) => toggleMulti(prev, s.value));
+                }}
               />
               <span>{s.value}</span>
             </label>
@@ -1214,9 +1666,10 @@ export default function ParamForm({
                 <input
                   type="checkbox"
                   checked={scienceCompetency.includes(s.value)}
-                  onChange={() =>
-                    setScienceCompetency((prev) => toggleMulti(prev, s.value))
-                  }
+                  onChange={() => {
+                    markUserChosen("science_competency");
+                    setScienceCompetency((prev) => toggleMulti(prev, s.value));
+                  }}
                   className="mt-1"
                 />
                 <span className="text-sm">
@@ -1249,7 +1702,10 @@ export default function ParamForm({
                 <SearchPicker
                   available={availableLearningContent}
                   selected={learningContent}
-                  onChange={setLearningContent}
+                  onChange={(values) => {
+                    markUserChosen("learning_content");
+                    setLearningContent(values);
+                  }}
                   placeholder="搜尋學習內容..."
                 />
               </div>
@@ -1260,9 +1716,10 @@ export default function ParamForm({
                     <input
                       type="checkbox"
                       checked={learningContent.includes(entry.value)}
-                      onChange={() =>
-                        setLearningContent((prev) => toggleMulti(prev, entry.value))
-                      }
+                      onChange={() => {
+                        markUserChosen("learning_content");
+                        setLearningContent((prev) => toggleMulti(prev, entry.value));
+                      }}
                       className="mt-1"
                     />
                     <span className="text-sm">
@@ -1491,17 +1948,19 @@ export default function ParamForm({
         </div>
       )}
 
-      <div>
-        <label className="block text-sm font-medium">文本字數限制</label>
-        <input
-          type="number"
-          min={1}
-          value={textWordLimit ?? ""}
-          onChange={(e) => setTextWordLimit(e.target.value ? Number(e.target.value) : undefined)}
-          placeholder="不限"
-          className="mt-1 block w-full border rounded px-2 py-1"
-        />
-      </div>
+      {supportsTextWordLimit && (
+        <div>
+          <label className="block text-sm font-medium">{t("form.text_word_limit")}</label>
+          <input
+            type="number"
+            min={1}
+            value={textWordLimit ?? ""}
+            onChange={(e) => setTextWordLimit(e.target.value ? Number(e.target.value) : undefined)}
+            placeholder={t("form.unlimited")}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          />
+        </div>
+      )}
 
       {subject === "math" && (
         <fieldset>

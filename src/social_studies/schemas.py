@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.common.difficulty import DEFAULT_DIFFICULTY, Difficulty
 from src.social_studies.core_competency_loader import (
@@ -15,7 +15,9 @@ from src.social_studies.core_competency_loader import (
 from src.social_studies.schema_loader import build_enums, load_grades, load_schemas
 
 _schemas = load_schemas()
-QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionSubject = build_enums(_schemas)
+QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionSubject = (
+    build_enums(_schemas)
+)
 CoreCompetency = build_core_competency_enum(load_core_competencies())
 _GRADES: list[int] = load_grades(_schemas)
 
@@ -65,6 +67,7 @@ class VerificationResult(BaseModel):
 
 class LearningContentRef(BaseModel):
     """A 108課綱 learning content or performance standard code with description."""
+
     編碼: str
     說明: str = ""
 
@@ -74,6 +77,7 @@ class RubricEntry(BaseModel):
 
     Codes follow ODT convention: 2=滿分, 1=部分得分, 0=零分, 0X=未作答.
     """
+
     code: str  # "2" | "1" | "0" | "0X"
     規準說明: str
     學生作答實例: list[str] = Field(default_factory=list)
@@ -81,6 +85,9 @@ class RubricEntry(BaseModel):
 
 class SubQuestionConfig(BaseModel):
     """Per-subquestion generation configuration overrides (issues #100 and #101)."""
+
+    model_config = ConfigDict(extra="forbid")
+
     question_type: QuestionType | None = None  # type: ignore[valid-type]
     instruction: str | None = None
     content_type: str | None = None
@@ -100,6 +107,7 @@ class CreativeBrief(BaseModel):
     - `framing_hooks` are 1–2 concrete grounding devices (e.g. 病患日記,
       決策會議紀錄) the 文本生成器 can weave into the passage.
     """
+
     selected_context: str
     題材_angle: str
     framing_hooks: list[str] = Field(default_factory=list)
@@ -107,10 +115,11 @@ class CreativeBrief(BaseModel):
 
 class SubQuestion(BaseModel):
     """One subquestion within a 題組, tagged with 108課綱 curriculum metadata."""
+
     id: str = ""
     序號: int = 1
     年級: int = 0
-    科目: list[str] = Field(default_factory=list)   # 歷史 / 地理 / 公民與社會
+    科目: list[str] = Field(default_factory=list)  # 歷史 / 地理 / 公民與社會
     核心素養: list[str] = Field(default_factory=list)  # e.g. ["社-J-A2"]
     學習內容: list[LearningContentRef] = Field(default_factory=list)
     學習表現: list[LearningContentRef] = Field(default_factory=list)
@@ -139,6 +148,7 @@ class QuestionMetadata(BaseModel):
 
 class ExamQuestion(BaseModel):
     """A complete 108課綱 社會領域素養導向 exam question set (題組)."""
+
     id: str = ""
 
     # 108課綱 top-level 題組 fields
@@ -167,7 +177,9 @@ class ExamQuestion(BaseModel):
 
 class SampledParams(BaseModel):
     """Parameters selected by the sampler for social-studies question generation."""
+
     grade: int
+    seed: int | None = None
 
     @field_validator("grade")
     @classmethod
@@ -178,7 +190,9 @@ class SampledParams(BaseModel):
 
     情境: list[QuestionContext]  # type: ignore[valid-type]
     題型種類: QuestionSetType  # type: ignore[valid-type]
-    題型: list[QuestionType]  # allowed pool of types; each 子題 picks its own  # type: ignore[valid-type]
+    題型: list[
+        QuestionType
+    ]  # allowed pool of types; each 子題 picks its own  # type: ignore[valid-type]
     閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
     文本形式: TextForm  # type: ignore[valid-type]
     題目內容類型: str = ""  # top-level 文本素材類型 (renamed in UI for #101)

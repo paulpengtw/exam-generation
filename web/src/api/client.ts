@@ -1,4 +1,5 @@
 import { useAuthStore } from "../store/authStore";
+import { buildQueryString, type GenerateParams } from "../hooks/useGenerate";
 
 export interface MagicLinkResponse {
   message: string;
@@ -127,6 +128,49 @@ export async function planCoreQuestions(
     body: JSON.stringify(req),
   });
   return (await res.json()) as PlanCoreQuestionsResponse;
+}
+
+export interface PromptPreview {
+  index: number;
+  subquestion_index?: number;
+  system_prompt: string;
+  user_prompt: string;
+}
+
+export interface PreviewGenerateResponse {
+  prompts: PromptPreview[];
+}
+
+export async function previewGenerate(params: GenerateParams): Promise<PreviewGenerateResponse> {
+  const res = await apiFetch(`/api/generate/preview?${buildQueryString(params)}`);
+  const body = await res.json() as unknown;
+  if (
+    !body ||
+    typeof body !== "object" ||
+    !("prompts" in body) ||
+    !Array.isArray(body.prompts) ||
+    !body.prompts.every((prompt) => (
+      prompt &&
+      typeof prompt === "object" &&
+      "index" in prompt &&
+      Number.isInteger(prompt.index) &&
+      prompt.index >= 0 &&
+      (
+        !("subquestion_index" in prompt) ||
+        (
+          Number.isInteger(prompt.subquestion_index) &&
+          (prompt.subquestion_index as number) >= 0
+        )
+      ) &&
+      "system_prompt" in prompt &&
+      typeof prompt.system_prompt === "string" &&
+      "user_prompt" in prompt &&
+      typeof prompt.user_prompt === "string"
+    ))
+  ) {
+    throw new Error("Malformed prompt preview response");
+  }
+  return { prompts: body.prompts as PromptPreview[] };
 }
 
 export interface AvailableModels {

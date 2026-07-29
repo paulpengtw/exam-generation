@@ -198,12 +198,14 @@ export function buildQueryString(params: GenerateParams): string {
   if (params.sub_context) qs.append("sub_context", params.sub_context);
   for (const v of params.science_competency ?? []) qs.append("science_competency", v);
   for (const v of params.learning_performance ?? []) qs.append("learning_performance", v);
+  for (const v of params.core_competency ?? []) qs.append("core_competency", v);
   for (const v of params.learning_content ?? []) qs.append("learning_content", v);
   if (params.sub_question_count !== undefined) qs.append("sub_question_count", String(params.sub_question_count));
   if (params.question_word_limit !== undefined) qs.append("question_word_limit", String(params.question_word_limit));
   if (params.option_word_limit !== undefined) qs.append("option_word_limit", String(params.option_word_limit));
   if (params.text_word_limit !== undefined) qs.append("text_word_limit", String(params.text_word_limit));
   if (params.subquestion_configs) qs.append("subquestion_configs", params.subquestion_configs);
+  if (params.per_question_params) qs.append("per_question_params", params.per_question_params);
   if (params.difficulty !== undefined) qs.append("difficulty", params.difficulty);
   if (params.model_plan && params.model_plan.length > 0) {
     qs.append("model_plan", params.model_plan);
