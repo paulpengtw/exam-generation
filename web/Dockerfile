@@ -12,6 +12,11 @@ ARG RENDER_GIT_COMMIT
 ARG GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA:-$RENDER_GIT_COMMIT}
 ARG VITE_SENTRY_RELEASE
 ENV VITE_SENTRY_RELEASE=${VITE_SENTRY_RELEASE:-$GIT_COMMIT_SHA}
+# Source-map upload credentials (issue #233). ARG-only, never ENV: the token
+# must not persist in the image. Unset => vite skips the upload entirely.
+ARG SENTRY_AUTH_TOKEN
+ARG SENTRY_ORG
+ARG SENTRY_PROJECT
 RUN npm run build
 
 FROM nginx:alpine
