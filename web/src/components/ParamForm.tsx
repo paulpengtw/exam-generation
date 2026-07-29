@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch, getAvailableModels, getMe, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas, type TokenResponse } from "../api/client";
+import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
-import { shouldRenew } from "../lib/sessionRenewal";
+import { renewSessionIfNeeded } from "../lib/sessionRenewal";
 import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
@@ -766,24 +766,8 @@ export default function ParamForm({
   const configuredSeed = fromInit<number | undefined>("seed", undefined);
 
   useEffect(() => {
-    if (!useAuthStore.getState().token) return;
-
     let cancelled = false;
-    void (async () => {
-      const me = await getMe() as Awaited<ReturnType<typeof getMe>> &
-        Parameters<typeof shouldRenew>[0];
-      if (!shouldRenew(me)) return;
-
-      const response = await apiFetch("/auth/refresh", { method: "POST" });
-      const refreshed = (await response.json()) as TokenResponse;
-      if (cancelled) return;
-      useAuthStore.getState().login(refreshed.access_token, {
-        id: me.id,
-        email: me.email,
-        created_at: me.created_at,
-      });
-    })().catch(() => undefined);
-
+    void renewSessionIfNeeded(() => cancelled).catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -1537,6 +1521,10 @@ export default function ParamForm({
 
   function handleConfirmSend() {
     if (!pendingParams) return;
+    // Renew the session concurrently — fire-and-forget, errors swallowed.
+    // This covers the case where the form sat open long enough for the session
+    // to drift toward expiry since the mount-time check ran.
+    void renewSessionIfNeeded().catch(() => undefined);
     generationStartedRef.current = true;
     if (draftSaveTimeoutRef.current !== null) {
       window.clearTimeout(draftSaveTimeoutRef.current);
