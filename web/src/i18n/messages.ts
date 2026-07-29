@@ -47,6 +47,10 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "confirm.logout_body_session": "Signing back in needs a new magic-link email.",
     "confirm.logout_body_work_lost": "The parameters you entered and any generated questions will also be lost.",
     "confirm.logout_confirm": "Sign out",
+    "confirm.clear_results_title": "Clear generated questions?",
+    "confirm.clear_results_body": "The generated questions will be cleared.",
+    "confirm.clear_results_body_streaming": "The generation still in progress will be interrupted.",
+    "confirm.clear_results_confirm": "Clear",
 
     "generate.title": "Math Exam Generator",
     "generate.title_ss": "Social Studies Generator",
@@ -310,6 +314,10 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "confirm.logout_body_session": "重新登入需要再收一次登入信。",
     "confirm.logout_body_work_lost": "您已輸入的設定與已產生的題目也會一併遺失。",
     "confirm.logout_confirm": "登出",
+    "confirm.clear_results_title": "確定要清除已產生的題目？",
+    "confirm.clear_results_body": "已產生的題目將會被清除。",
+    "confirm.clear_results_body_streaming": "正在進行中的產生作業將會被中斷。",
+    "confirm.clear_results_confirm": "清除",
 
     "generate.title": "數學題目產生器",
     "generate.title_ss": "社會領域題目產生器",

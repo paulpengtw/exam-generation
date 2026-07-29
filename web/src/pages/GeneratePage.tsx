@@ -40,6 +40,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const { status, progressLines, results, displayResults, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [isClearResultsConfirmOpen, setIsClearResultsConfirmOpen] =
+    useState(false);
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
@@ -181,7 +183,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={reset}
+                  onClick={() => setIsClearResultsConfirmOpen(true)}
                   className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
                   {t("generate.btn_clear")}
@@ -221,6 +223,22 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         confirmKey="confirm.logout_confirm"
         onConfirm={handleLogout}
         onCancel={() => setIsLogoutConfirmOpen(false)}
+      />
+      <DestructiveConfirm
+        open={isClearResultsConfirmOpen}
+        titleKey="confirm.clear_results_title"
+        bodyKeys={[
+          "confirm.clear_results_body",
+          ...(status === "generating"
+            ? ["confirm.clear_results_body_streaming"]
+            : []),
+        ]}
+        confirmKey="confirm.clear_results_confirm"
+        onConfirm={() => {
+          setIsClearResultsConfirmOpen(false);
+          reset();
+        }}
+        onCancel={() => setIsClearResultsConfirmOpen(false)}
       />
     </div>
   );
