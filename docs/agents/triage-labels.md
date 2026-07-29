@@ -12,4 +12,6 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
+Labels outside this table are repo-local rather than skill roles; reuse them instead of coining a synonym. `blocked` means an issue is fully specified but waiting on another issue to be resolved first — pair it with a native GitHub issue dependency so the blocker is machine-readable, and swap it for `ready-for-agent` once that blocker closes.
+
 Edit the right-hand column to match whatever vocabulary you actually use.
