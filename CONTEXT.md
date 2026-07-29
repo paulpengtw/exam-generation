@@ -50,6 +50,18 @@ _Avoid_: subquestion config, per-item settings
 A free-text instruction attached to one 小題, telling the generator what that 小題 should focus on.
 _Avoid_: instruction, hint, guidance
 
+**出題模式**:
+The request setting that chooses whether batch-wide variety is suggested to the model; it does not control sampling.
+_Avoid_: coverage mode, sampling mode, distribution strategy
+
+**均衡**:
+The 出題模式 that adds a prompt-level instruction asking the model to spread 題型 and 取材角度 across a batch; it never affects mechanical draws.
+_Avoid_: balanced sampling, stratified mode, even allocation
+
+**隨機**:
+The 出題模式 that adds no batch-variety instruction to the prompt and leaves the existing independent draws unchanged.
+_Avoid_: random sampling mode, shuffle mode, unbalanced mode
+
 **預抽**:
 Resolving a value that would otherwise be chosen randomly during generation, before the user confirms, so the confirmation screen can show it.
 _Avoid_: pre-draw, pre-roll, client-side sampling
