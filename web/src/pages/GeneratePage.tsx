@@ -224,7 +224,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
         {agentLanes.length > 0 && (
           <section className="rounded-lg border bg-white p-4 shadow-sm">
-            <AgentStatusPanel lanes={agentLanes} />
+            <AgentStatusPanel
+              lanes={agentLanes}
+              requestedTotal={requestedTotal}
+            />
           </section>
         )}
 

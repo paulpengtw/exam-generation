@@ -247,6 +247,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "stage.html_render": "Rendering HTML",
 
     "agent_panel.title": "Agent Status",
+    "agent_panel.aggregate_label": "Aggregate · across {n} questions",
+    "agent_panel.aggregate_counts": "{running} running · {done} done",
     "agent_panel.idle": "Idle",
     "agent_panel.running": "Running",
     "agent_panel.done": "Done",
@@ -537,6 +539,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "stage.html_render": "渲染 HTML",
 
     "agent_panel.title": "多 Agent 狀態",
+    "agent_panel.aggregate_label": "合計模式 · {n} 題彙總",
+    "agent_panel.aggregate_counts": "{running} 執行中 · {done} 已完成",
     "agent_panel.idle": "閒置",
     "agent_panel.running": "執行中",
     "agent_panel.done": "完成",

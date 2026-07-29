@@ -7,12 +7,17 @@ const generateState = vi.hoisted(() => ({
   results: [] as unknown[],
   displayResults: [] as unknown[],
   llmCalls: [] as unknown[],
+  agentLanes: [] as unknown[],
   startedAt: null as number | null,
   finishedAt: null as number | null,
   subQuestionTotal: null as number | null,
 }));
 
 const statusBar = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+}));
+
+const agentPanel = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
 }));
 
@@ -28,7 +33,7 @@ vi.mock("../hooks/useGenerate", () => ({
     results: generateState.results,
     displayResults: generateState.displayResults,
     llmCalls: generateState.llmCalls,
-    agentLanes: [],
+    agentLanes: generateState.agentLanes,
     errorMessage: null,
     startedAt: generateState.startedAt,
     finishedAt: generateState.finishedAt,
@@ -85,7 +90,12 @@ vi.mock("../components/ParamForm", () => ({
 }));
 vi.mock("../components/ProgressLog", () => ({ default: () => null }));
 vi.mock("../components/QuestionCard", () => ({ default: () => null }));
-vi.mock("../components/AgentStatusPanel", () => ({ default: () => null }));
+vi.mock("../components/AgentStatusPanel", () => ({
+  default: (props: Record<string, unknown>) => {
+    agentPanel.props = { ...props };
+    return null;
+  },
+}));
 vi.mock("../components/LanguageSwitcher", () => ({ default: () => null }));
 
 import GeneratePage from "./GeneratePage";
@@ -237,6 +247,46 @@ describe("GeneratePage — 生成步驟 wiring", () => {
         subject: "social_studies",
         stageEvents: generateState.llmCalls,
         subQuestionCount: 4,
+      }),
+    );
+  });
+});
+
+describe("GeneratePage — 代理狀態面板 wiring", () => {
+  beforeEach(() => {
+    generateState.status = "idle";
+    generateState.progressLines = [];
+    generateState.results = [];
+    generateState.displayResults = [];
+    generateState.llmCalls = [];
+    generateState.agentLanes = [
+      {
+        agent: "generator",
+        status: "running",
+        currentStage: "llm_generate",
+        streamingThinking: "",
+        streamingContent: "",
+        stageHistory: [{ stage: "llm_generate", startedAt: 1 }],
+      },
+    ];
+    generateState.startedAt = null;
+    generateState.finishedAt = null;
+    generateState.subQuestionTotal = null;
+    paramForm.onSubmit = null;
+    agentPanel.props = null;
+  });
+
+  it("passes the requested question total to AgentStatusPanel", () => {
+    render(<GeneratePage subject="math" />);
+
+    act(() => {
+      paramForm.onSubmit?.({ count: 3 });
+    });
+
+    expect(agentPanel.props).toEqual(
+      expect.objectContaining({
+        lanes: generateState.agentLanes,
+        requestedTotal: 3,
       }),
     );
   });
