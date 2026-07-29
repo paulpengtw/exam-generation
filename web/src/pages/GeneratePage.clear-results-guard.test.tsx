@@ -28,6 +28,8 @@ vi.mock("../hooks/useGenerate", () => ({
     llmCalls: [],
     agentLanes: [],
     errorMessage: null,
+    startedAt: null,
+    finishedAt: null,
     generate: generateMock,
     reset: resetMock,
   }),

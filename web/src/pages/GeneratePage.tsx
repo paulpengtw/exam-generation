@@ -1,12 +1,17 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
 import DestructiveConfirm from "../components/DestructiveConfirm";
+import GenerationStatusBar, {
+  type JumpTarget,
+  type RunState,
+} from "../components/GenerationStatusBar";
 import ParamForm, { type FormParams } from "../components/ParamForm";
 import { toGenerateParams } from "../utils/toGenerateParams";
 import ProgressLog from "../components/ProgressLog";
 import QuestionCard from "../components/QuestionCard";
+import { useFeedbackDialog } from "../hooks/useFeedbackDialog";
 import { useGenerate } from "../hooks/useGenerate";
 import { useAuthStore } from "../store/authStore";
 import { useT } from "../i18n/useT";
@@ -37,7 +42,24 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const { status, progressLines, results, displayResults, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
+  const {
+    status,
+    progressLines,
+    results,
+    displayResults,
+    llmCalls,
+    agentLanes,
+    errorMessage,
+    startedAt,
+    finishedAt,
+    generate,
+    reset,
+  } = useGenerate();
+  const { enabled, open } = useFeedbackDialog();
+  const formRef = useRef<HTMLElement | null>(null);
+  const progressRef = useRef<HTMLElement | null>(null);
+  const resultsRef = useRef<HTMLElement | null>(null);
+  const [requestedTotal, setRequestedTotal] = useState(0);
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isClearResultsConfirmOpen, setIsClearResultsConfirmOpen] =
@@ -60,8 +82,22 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       setPendingResubmitParams(generateParams);
       return;
     }
-
+    setRequestedTotal(params.count);
     generate(generateParams);
+  };
+
+  const handleReset = () => {
+    reset();
+    setRequestedTotal(0);
+  };
+
+  const handleJump = (target: JumpTarget) => {
+    const targetRef = {
+      form: formRef,
+      progress: progressRef,
+      results: resultsRef,
+    }[target];
+    targetRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const handleDownloadAll = () => {
@@ -80,6 +116,17 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
   const showProgress = !(progressLines.length === 0 && status === "idle");
   const hasResults = displayResults.length > 0;
+  const runState: RunState =
+    status === "error"
+      ? "error"
+      : status === "generating"
+        ? "running"
+        : startedAt !== null && finishedAt !== null
+          ? "done"
+          : "idle";
+  const availableTargets: JumpTarget[] = ["form"];
+  if (showProgress) availableTargets.push("progress");
+  if (hasResults) availableTargets.push("results");
   const handleNavigation = (target: string) => {
     if (!hasUnsubmittedInput && !hasResults) {
       navigate(target);
@@ -146,8 +193,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl space-y-6 px-3 py-4 sm:px-4 sm:py-6">
-        <section className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
+      <main className="mx-auto max-w-5xl space-y-6 px-3 pt-4 pb-20 sm:px-4 sm:pt-6">
+        <section ref={formRef} className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
           <ParamForm
             subject={subject}
             onSubmit={handleSubmit}
@@ -164,13 +211,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         )}
 
         {showProgress && (
-          <section className="rounded-lg border bg-white p-4 shadow-sm">
+          <section ref={progressRef} className="rounded-lg border bg-white p-4 shadow-sm">
             <ProgressLog lines={progressLines} status={status} errorMessage={errorMessage} llmCalls={llmCalls} />
           </section>
         )}
 
         {hasResults && (
-          <section className="space-y-3">
+          <section ref={resultsRef} className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-base font-semibold">{t("generate.results")} ({displayResults.length})</h2>
               <div className="flex gap-2">
@@ -245,7 +292,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         confirmKey="confirm.clear_results_confirm"
         onConfirm={() => {
           setIsClearResultsConfirmOpen(false);
-          reset();
+          handleReset();
         }}
         onCancel={() => setIsClearResultsConfirmOpen(false)}
       />
@@ -256,12 +303,22 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         confirmKey="confirm.resubmit_confirm"
         onConfirm={() => {
           if (pendingResubmitParams === null) return;
-
           const params = pendingResubmitParams;
           setPendingResubmitParams(null);
+          setRequestedTotal(params.count ?? 0);
           generate(params);
         }}
         onCancel={() => setPendingResubmitParams(null)}
+      />
+      <GenerationStatusBar
+        runState={runState}
+        completedCount={results.length}
+        requestedTotal={requestedTotal}
+        startedAt={startedAt}
+        finishedAt={finishedAt}
+        availableTargets={availableTargets}
+        onJump={handleJump}
+        onFeedback={enabled ? open : null}
       />
     </div>
   );

@@ -54,7 +54,8 @@ jobs:
         run: npx tsc -b --noEmit
 
       - name: Lint (eslint)
-        # Non-blocking: 6 pre-existing errors in VerifyPage.tsx as of issue #162.
+        # Non-blocking: 6 pre-existing react-hooks/set-state-in-effect errors as of issue #162.
+        # 5 in web/src/components/ParamForm.tsx, 1 in web/src/pages/VerifyPage.tsx.
         # Flip to blocking (remove continue-on-error) once the eslint debt is cleared.
         continue-on-error: true
         run: npm run lint
