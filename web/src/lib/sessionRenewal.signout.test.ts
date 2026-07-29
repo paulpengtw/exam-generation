@@ -40,13 +40,13 @@ const AUTH_USER = {
   created_at: "2026-01-01T00:00:00Z",
 };
 
-const NEAR_EXPIRY = "2026-08-01T12:00:00Z"; // 1 day — within 2-day threshold
+const NEAR_EXPIRY = "2026-07-31T15:00:00Z"; // 3 hours — within 360-minute threshold
 
 function meResponse(sessionExpiresAt: string) {
   return {
     ...AUTH_USER,
     session_expires_at: sessionExpiresAt,
-    renewal_threshold_days: 2,
+    renewal_threshold_minutes: 360,
     server_time: "2026-07-31T12:00:00Z",
   };
 }

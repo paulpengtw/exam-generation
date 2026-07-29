@@ -63,7 +63,7 @@ class UserResponse(BaseModel):
     email: str
     created_at: datetime
     session_expires_at: datetime
-    renewal_threshold_days: int
+    renewal_threshold_minutes: int
     server_time: datetime
 
 
@@ -197,6 +197,6 @@ async def me(
         email=user.email,
         created_at=user.created_at,
         session_expires_at=datetime.fromtimestamp(payload["exp"], timezone.utc),
-        renewal_threshold_days=config.session_renewal_threshold_days,
+        renewal_threshold_minutes=config.session_renewal_threshold_minutes,
         server_time=datetime.now(timezone.utc),
     )

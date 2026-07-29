@@ -55,18 +55,18 @@ const MATH_SCHEMA = {
 };
 
 /**
- * server_time is "2026-07-31T12:00:00Z" and renewal_threshold_days is 2.
- * shouldRenew is true when session_expires_at is less than 2 days from server_time,
- * i.e. before "2026-08-02T12:00:00Z".
+ * server_time is "2026-07-31T12:00:00Z" and renewal_threshold_minutes is 360.
+ * shouldRenew is true when session_expires_at is less than 360 minutes from server_time,
+ * i.e. before "2026-07-31T18:00:00Z".
  */
-const NEAR_EXPIRY = "2026-08-01T12:00:00Z";    // 1 day remaining — within threshold
+const NEAR_EXPIRY = "2026-07-31T15:00:00Z";    // 3 hours remaining — within threshold
 const PLENTY_OF_TIME = "2026-08-10T12:00:00Z"; // 10 days remaining — above threshold
 
 function meResponse(sessionExpiresAt: string) {
   return {
     ...AUTH_USER,
     session_expires_at: sessionExpiresAt,
-    renewal_threshold_days: 2,
+    renewal_threshold_minutes: 360,
     server_time: "2026-07-31T12:00:00Z",
   };
 }

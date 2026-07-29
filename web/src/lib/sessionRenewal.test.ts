@@ -11,8 +11,8 @@ describe("shouldRenew", () => {
   it("returns true when the server-reported remaining time is below the threshold", () => {
     expect(
       shouldRenew({
-        session_expires_at: "2026-08-02T11:59:59Z",
-        renewal_threshold_days: 2,
+        session_expires_at: "2026-07-31T17:59:59Z",
+        renewal_threshold_minutes: 360,
         server_time: "2026-07-31T12:00:00Z",
       }),
     ).toBe(true);
@@ -21,8 +21,8 @@ describe("shouldRenew", () => {
   it("returns false when the server-reported remaining time is above the threshold", () => {
     expect(
       shouldRenew({
-        session_expires_at: "2026-08-02T12:00:01Z",
-        renewal_threshold_days: 2,
+        session_expires_at: "2026-07-31T18:00:01Z",
+        renewal_threshold_minutes: 360,
         server_time: "2026-07-31T12:00:00Z",
       }),
     ).toBe(false);
@@ -31,8 +31,8 @@ describe("shouldRenew", () => {
   it("returns false when the remaining time is exactly the threshold", () => {
     expect(
       shouldRenew({
-        session_expires_at: "2026-08-02T12:00:00Z",
-        renewal_threshold_days: 2,
+        session_expires_at: "2026-07-31T18:00:00Z",
+        renewal_threshold_minutes: 360,
         server_time: "2026-07-31T12:00:00Z",
       }),
     ).toBe(false);
@@ -45,8 +45,8 @@ describe("shouldRenew", () => {
 
     expect(
       shouldRenew({
-        session_expires_at: "2026-08-01T12:00:00Z",
-        renewal_threshold_days: 2,
+        session_expires_at: "2026-07-31T14:00:00Z",
+        renewal_threshold_minutes: 360,
         server_time: "2026-07-31T12:00:00Z",
       }),
     ).toBe(true);

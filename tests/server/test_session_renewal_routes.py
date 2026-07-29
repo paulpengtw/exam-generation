@@ -45,7 +45,7 @@ def app_ctx():
         api_key="test-api-key",
         jwt_secret="test-secret",
         jwt_expire_days=7,
-        session_renewal_threshold_days=3,
+        session_renewal_threshold_minutes=180,
         frontend_url="https://example.com",
     )
     app = create_app()
@@ -90,7 +90,7 @@ def test_me_returns_session_expiry_and_renewal_threshold(app_ctx) -> None:
         body["session_expires_at"].replace("Z", "+00:00")
     )
     assert session_expires_at == datetime.fromtimestamp(payload["exp"], timezone.utc)
-    assert body["renewal_threshold_days"] == 3
+    assert body["renewal_threshold_minutes"] == 180
     assert body["id"] == str(user_id)
     assert body["email"] == "teacher@example.com"
 

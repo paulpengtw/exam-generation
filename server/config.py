@@ -16,7 +16,7 @@ class ServerConfig(Config):
     database_url: str = "sqlite+aiosqlite:///./dev.db"
     jwt_secret: str = ""
     jwt_expire_days: int = 7
-    session_renewal_threshold_days: int = 2
+    session_renewal_threshold_minutes: int = 360
     aws_region: str = ""
     ses_from_email: str = ""
     frontend_url: str = ""
@@ -61,8 +61,8 @@ class ServerConfig(Config):
             database_url=os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db"),
             jwt_secret=os.environ.get("JWT_SECRET", ""),
             jwt_expire_days=int(os.environ.get("JWT_EXPIRE_DAYS", "7")),
-            session_renewal_threshold_days=int(
-                os.environ.get("SESSION_RENEWAL_THRESHOLD_DAYS", "2")
+            session_renewal_threshold_minutes=int(
+                os.environ.get("SESSION_RENEWAL_THRESHOLD_MINUTES", "360")
             ),
             aws_region=os.environ.get("AWS_REGION", ""),
             ses_from_email=os.environ.get("SES_FROM_EMAIL", ""),
@@ -139,10 +139,12 @@ class ServerConfig(Config):
             raise ValueError(
                 "JWT_SECRET is required. Set it in .env or as an environment variable."
             )
-        if self.session_renewal_threshold_days * 2 > self.jwt_expire_days:
+        half_lifetime_minutes = self.jwt_expire_days * 24 * 60 // 2
+        if self.session_renewal_threshold_minutes > half_lifetime_minutes:
             raise ValueError(
-                "SESSION_RENEWAL_THRESHOLD_DAYS="
-                f"{self.session_renewal_threshold_days} must be no more than half of "
-                f"JWT_EXPIRE_DAYS={self.jwt_expire_days}. Lower "
-                "SESSION_RENEWAL_THRESHOLD_DAYS or raise JWT_EXPIRE_DAYS."
+                "SESSION_RENEWAL_THRESHOLD_MINUTES="
+                f"{self.session_renewal_threshold_minutes} must be no more than half of "
+                f"JWT_EXPIRE_DAYS={self.jwt_expire_days} expressed in minutes "
+                f"(half-lifetime = {half_lifetime_minutes} min). Lower "
+                "SESSION_RENEWAL_THRESHOLD_MINUTES or raise JWT_EXPIRE_DAYS."
             )

@@ -58,7 +58,7 @@ function meResponse(sessionExpiresAt: string) {
   return {
     ...AUTH_USER,
     session_expires_at: sessionExpiresAt,
-    renewal_threshold_days: 2,
+    renewal_threshold_minutes: 360,
     server_time: "2026-07-31T12:00:00Z",
   };
 }
@@ -83,7 +83,7 @@ describe("ParamForm mount-time session renewal", () => {
       allowed: [],
       defaults: { plan: "", execute: "" },
     });
-    getMeMock.mockResolvedValue(meResponse("2026-08-01T12:00:00Z"));
+    getMeMock.mockResolvedValue(meResponse("2026-07-31T15:00:00Z"));
     apiFetchMock.mockResolvedValue(
       new Response(
         JSON.stringify({
