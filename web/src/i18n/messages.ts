@@ -51,6 +51,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "confirm.clear_results_body": "The generated questions will be cleared.",
     "confirm.clear_results_body_streaming": "The generation still in progress will be interrupted.",
     "confirm.clear_results_confirm": "Clear",
+    "confirm.resubmit_title": "Replace the running generation?",
+    "confirm.resubmit_body": "A generation is still running. Starting a new one interrupts it and discards the questions it has produced so far.",
+    "confirm.resubmit_confirm": "Start a new generation",
 
     "generate.title": "Math Exam Generator",
     "generate.title_ss": "Social Studies Generator",
@@ -318,6 +321,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "confirm.clear_results_body": "已產生的題目將會被清除。",
     "confirm.clear_results_body_streaming": "正在進行中的產生作業將會被中斷。",
     "confirm.clear_results_confirm": "清除",
+    "confirm.resubmit_title": "要取代正在進行的產生作業嗎？",
+    "confirm.resubmit_body": "目前仍有產生作業進行中。開始新的作業會中斷它，並捨棄它已經產生的題目。",
+    "confirm.resubmit_confirm": "開始新的產生作業",
 
     "generate.title": "數學題目產生器",
     "generate.title_ss": "社會領域題目產生器",
