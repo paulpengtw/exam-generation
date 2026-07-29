@@ -34,6 +34,7 @@ services:
       dockerfile: web/Dockerfile
       args:
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_RELEASE: ${VITE_SENTRY_RELEASE:-}
     environment:
       BACKEND_HOST: backend:8000
       BACKEND_SCHEME: http

@@ -286,6 +286,10 @@ One-time setup:
 3. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
    integration and connect the `paulpengtw/exam-generation` repository.
 
+Set `VITE_SENTRY_RELEASE` to the deploy commit SHA at frontend build time so
+source maps uploaded later can match incoming events. Railway exposes the SHA
+as `RAILWAY_GIT_COMMIT_SHA`; Render exposes it as `RENDER_GIT_COMMIT`.
+
 Triage flow: user feedback and captured errors appear in the Sentry project
 (User Feedback / Issues views). Open an item and use **Create GitHub Issue**
 to file a pre-filled, linked issue in the repository — issue creation is a
