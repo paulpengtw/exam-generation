@@ -95,6 +95,11 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
   const handleSubmit = (params: FormParams) => {
     const generateParams = toGenerateParams(subject, params);
+    // Dormant by design (#270): both submit buttons are disabled while
+    // status === "generating" (the ParamForm `disabled` prop below), so this
+    // #220 guard is unreachable from the UI. Kept as belt-and-braces for any
+    // future change that re-enables mid-run submission — do not delete.
+    // See docs/adr/0010-the-resubmit-guard-is-dormant-by-design.md.
     if (status === "generating") {
       setPendingResubmitParams(generateParams);
       return;

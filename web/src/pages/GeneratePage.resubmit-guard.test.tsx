@@ -1,3 +1,9 @@
+// These tests drive the captured onSubmit callback directly (ParamForm is
+// mocked) because the #220 resubmit guard is dormant by design: the real
+// submit buttons are disabled while a generation is running, so no actual
+// control can reach it. If mid-run submission is ever re-enabled, rewrite
+// these tests to exercise the real control instead.
+// See docs/adr/0010-the-resubmit-guard-is-dormant-by-design.md (#270).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
