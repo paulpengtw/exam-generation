@@ -837,6 +837,15 @@ export default function ParamForm({
       model_plan: modelPlan || undefined,
       model_execute: modelExecute || undefined,
     };
+    const requestLevelFields = new Set([
+      "subject",
+      "count",
+      "per_question_params",
+      "max_retries",
+    ]);
+    const perQuestionBase = Object.fromEntries(
+      Object.entries(baseParams).filter(([key]) => !requestLevelFields.has(key)),
+    );
 
     let previousQuestionLp: string[] | undefined;
     let previousQuestionLc: string[] | undefined;
@@ -916,7 +925,7 @@ export default function ParamForm({
           })
         : [];
       const result = {
-        ...baseParams,
+        ...perQuestionBase,
         seed: resolvedSeed,
         style: randomStyle ?? (baseParams.style ? [baseParams.style] : undefined),
         content_type: randomContentType?.[0] ?? baseParams.content_type,
