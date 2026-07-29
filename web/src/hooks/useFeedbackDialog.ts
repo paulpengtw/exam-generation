@@ -20,7 +20,7 @@ export function useFeedbackDialog(): {
     try {
       const form = await feedback.createForm({
         formTitle: t("feedback.form_title"),
-        nameLabel: t("feedback.name_label"),
+        showName: false,
         emailLabel: t("feedback.email_label"),
         messageLabel: t("feedback.message_label"),
         messagePlaceholder: t("feedback.message_placeholder"),
