@@ -122,6 +122,85 @@ describe("sentry module", () => {
     });
   });
 
+  it("scrubs magic-link URLs from span descriptions", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    initSentry();
+    const beforeSendSpan = initMock.mock.calls[0][0].beforeSendSpan;
+    const span = {
+      description: "https://x/verify?token=abc&email=u@x",
+    };
+
+    expect(beforeSendSpan(span)).toBe(span);
+    expect(span.description).toBe(
+      "https://x/verify?token=[Filtered]&email=[Filtered]",
+    );
+  });
+
+  it("scrubs magic-link URLs from transaction spans and trace data", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    initSentry();
+    const beforeSendTransaction =
+      initMock.mock.calls[0][0].beforeSendTransaction;
+    const transaction = {
+      spans: [
+        {
+          description:
+            "https://x/verify?token=span-token&email=span@example.com",
+          data: {
+            url: "https://x/verify?token=url-token&email=url@example.com",
+            "http.url":
+              "https://x/verify?token=http-token&email=http@example.com",
+            status_code: 200,
+          },
+        },
+      ],
+      contexts: {
+        trace: {
+          data: {
+            "server.address":
+              "https://x/verify?token=server-token&email=server@example.com",
+            method: "GET",
+          },
+        },
+      },
+    };
+
+    expect(beforeSendTransaction(transaction, {})).toBe(transaction);
+    expect(transaction).toEqual({
+      spans: [
+        {
+          description:
+            "https://x/verify?token=[Filtered]&email=[Filtered]",
+          data: {
+            url: "https://x/verify?token=[Filtered]&email=[Filtered]",
+            "http.url":
+              "https://x/verify?token=[Filtered]&email=[Filtered]",
+            status_code: 200,
+          },
+        },
+      ],
+      contexts: {
+        trace: {
+          data: {
+            "server.address":
+              "https://x/verify?token=[Filtered]&email=[Filtered]",
+            method: "GET",
+          },
+        },
+      },
+    });
+  });
+
+  it("leaves non-URL span descriptions unchanged", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    initSentry();
+    const beforeSendSpan = initMock.mock.calls[0][0].beforeSendSpan;
+    const span = { description: "resource.script" };
+
+    expect(beforeSendSpan(span)).toBe(span);
+    expect(span.description).toBe("resource.script");
+  });
+
   it("scrubs magic-link URLs from breadcrumb strings without dropping ordinary breadcrumbs", () => {
     vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
     initSentry();
