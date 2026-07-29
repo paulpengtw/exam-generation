@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -62,7 +63,7 @@ def test_generate_route_rejects_malformed_per_question_params() -> None:
     assert "valid JSON" in response.text
 
 
-def test_generate_route_forwards_social_studies_options() -> None:
+def test_generate_route_forwards_social_studies_options(caplog) -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 
     async def init_db() -> None:
@@ -109,20 +110,25 @@ def test_generate_route_forwards_social_studies_options() -> None:
             '"question_type":"選擇題","instruction":"聚焦資料判讀"}]',
         )
         with TestClient(app) as client:
-            response = client.get(
-                "/api/generate?"
-                "subject=social_studies"
-                "&image_generation_mode=gpt_image"
-                "&topic=%E6%B0%A3%E5%80%99%E8%AE%8A%E9%81%B7"
-                "&content_type=timeline"
-                "&passage=%E7%B4%A0%E6%9D%90"
-                "&options=A&options=B"
-                "&learning_performance=%E7%A4%BE1b-%E2%85%A3-1"
-                "&learning_performance=%E7%A4%BE2a-%E2%85%A3-1"
-                "&sub_question_count=3"
-                f"&subquestion_configs={sq_configs}",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+            gen_routes.logger.addHandler(caplog.handler)
+            try:
+                with caplog.at_level(logging.INFO, logger="server.generate.routes"):
+                    response = client.get(
+                        "/api/generate?"
+                        "subject=social_studies"
+                        "&image_generation_mode=gpt_image"
+                        "&topic=%E6%B0%A3%E5%80%99%E8%AE%8A%E9%81%B7"
+                        "&content_type=timeline"
+                        "&passage=%E7%B4%A0%E6%9D%90"
+                        "&options=A&options=B"
+                        "&learning_performance=%E7%A4%BE1b-%E2%85%A3-1"
+                        "&learning_performance=%E7%A4%BE2a-%E2%85%A3-1"
+                        "&sub_question_count=3"
+                        f"&subquestion_configs={sq_configs}",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+            finally:
+                gen_routes.logger.removeHandler(caplog.handler)
     finally:
         gen_routes.generate_question_stream = original  # type: ignore[assignment]
         limiter.reset()
@@ -140,6 +146,14 @@ def test_generate_route_forwards_social_studies_options() -> None:
     assert "question_word_limit" in captured["params"].subquestion_configs
     assert "question_type" in captured["params"].subquestion_configs
     assert "instruction" in captured["params"].subquestion_configs
+    request_log = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("generate request")
+    )
+    assert "params=" in request_log
+    assert "social_studies" in request_log
+    assert "u@example.com" not in request_log
 
 
 def test_subquestion_config_decoder_ignores_malformed_json() -> None:
