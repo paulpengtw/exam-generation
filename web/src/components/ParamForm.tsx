@@ -721,7 +721,6 @@ export default function ParamForm({
     let lcAutoDrawn = false;
     if (
       (subject === "natural_sciences" || subject === "social_studies") &&
-      !(subject === "social_studies" && coverageMode === "balanced") &&
       learningContent.length === 0 &&
       lcPoolValues.length > 0
     ) {
@@ -1144,9 +1143,7 @@ export default function ParamForm({
                       <dd className="min-w-0 flex-1 text-gray-900">
                         {questionLcDisplayEntries.length === 0 ? (
                           <span className="italic text-gray-400">
-                            {subject === "social_studies" && p.coverage_mode === "balanced"
-                              ? t("form.confirm_lc_balanced_backend_assignment")
-                              : t("form.confirm_not_filled")}
+                            {t("form.confirm_not_filled")}
                           </span>
                         ) : (
                           <div className="space-y-1">
