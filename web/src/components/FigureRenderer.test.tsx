@@ -1,8 +1,15 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
+const recordFigureFallbackMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../utils/figureFallbackMetric", () => ({
+  recordFigureFallback: recordFigureFallbackMock,
+}));
+
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.clearAllMocks();
 });
 
 import FigureRenderer, {
@@ -113,18 +120,12 @@ describe("FigureRenderer", () => {
     expect(screen.getByText("票價 200 元")).toBeInTheDocument();
   });
 
-  it("returns null and logs a fallback for unsupported specs", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("returns null and records a fallback for unsupported specs", () => {
+    const spec = { render_mode: "chart", chart_type: "histogram", data: {} };
     const { container } = render(
-      <FigureRenderer
-        spec={{ render_mode: "chart", chart_type: "histogram", data: {} }}
-      />,
+      <FigureRenderer spec={spec} />,
     );
     expect(container).toBeEmptyDOMElement();
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringMatching(/^\[figure-renderer-fallback]/),
-      expect.anything(),
-    );
-    warn.mockRestore();
+    expect(recordFigureFallbackMock).toHaveBeenCalledWith(spec);
   });
 });
