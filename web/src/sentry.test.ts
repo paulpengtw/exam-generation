@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const initMock = vi.hoisted(() => vi.fn());
+const setUserMock = vi.hoisted(() => vi.fn());
 const feedbackIntegrationMock = vi.hoisted(() =>
   vi.fn(() => ({ name: "Feedback" })),
 );
 
 vi.mock("@sentry/react", () => ({
   init: initMock,
+  setUser: setUserMock,
   feedbackIntegration: feedbackIntegrationMock,
 }));
 
@@ -18,6 +20,7 @@ let initSentry: typeof import("./sentry").initSentry;
 let isSentryEnabled: typeof import("./sentry").isSentryEnabled;
 
 beforeEach(async () => {
+  localStorage.clear();
   vi.resetModules();
   ({ initSentry, isSentryEnabled } = await import("./sentry"));
 });
@@ -28,11 +31,85 @@ afterEach(() => {
 });
 
 describe("sentry module", () => {
-  it("is disabled and skips init when VITE_SENTRY_DSN is empty", () => {
+  it("sets the persisted auth user after a page reload", async () => {
+    const user = {
+      id: "account-123",
+      email: "teacher@example.com",
+      created_at: "2026-07-29T00:00:00Z",
+    };
+    localStorage.setItem("auth_token", "persisted-token");
+    localStorage.setItem("auth_user", JSON.stringify(user));
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    vi.resetModules();
+    ({ initSentry, isSentryEnabled } = await import("./sentry"));
+
+    initSentry();
+
+    expect(setUserMock).toHaveBeenCalledWith({
+      id: "teacher@example.com",
+      email: "teacher@example.com",
+    });
+  });
+
+  it("sets the Sentry user when a user logs in after initialization", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    const { useAuthStore } = await import("./store/authStore");
+    initSentry();
+
+    useAuthStore.getState().login("new-token", {
+      id: "account-456",
+      email: "new-teacher@example.com",
+      created_at: "2026-07-29T00:00:00Z",
+    });
+
+    expect(setUserMock).toHaveBeenCalledWith({
+      id: "new-teacher@example.com",
+      email: "new-teacher@example.com",
+    });
+  });
+
+  it("clears the Sentry user when the signed-in user logs out", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+    const { useAuthStore } = await import("./store/authStore");
+    initSentry();
+    useAuthStore.getState().login("signed-in-token", {
+      id: "account-789",
+      email: "signed-in-teacher@example.com",
+      created_at: "2026-07-29T00:00:00Z",
+    });
+    setUserMock.mockClear();
+
+    useAuthStore.getState().logout();
+
+    expect(setUserMock).toHaveBeenCalledWith(null);
+  });
+
+  it("is disabled and skips all Sentry user wiring when VITE_SENTRY_DSN is empty", async () => {
     vi.stubEnv("VITE_SENTRY_DSN", "");
+    localStorage.setItem("auth_token", "persisted-token");
+    localStorage.setItem(
+      "auth_user",
+      JSON.stringify({
+        id: "account-disabled",
+        email: "disabled@example.com",
+        created_at: "2026-07-29T00:00:00Z",
+      }),
+    );
+    vi.resetModules();
+    ({ initSentry, isSentryEnabled } = await import("./sentry"));
+    const { useAuthStore } = await import("./store/authStore");
+
     expect(isSentryEnabled()).toBe(false);
     initSentry();
+    useAuthStore.getState().logout();
+    useAuthStore.getState().login("new-token", {
+      id: "account-still-disabled",
+      email: "still-disabled@example.com",
+      created_at: "2026-07-29T00:00:00Z",
+    });
+
     expect(initMock).not.toHaveBeenCalled();
+    expect(setUserMock).not.toHaveBeenCalled();
   });
 
   it("initializes with DSN, production environment, and a non-injecting feedback integration", () => {

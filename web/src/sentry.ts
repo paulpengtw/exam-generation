@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/react";
+import { useAuthStore } from "./store/authStore";
 
 let _initialized = false;
 
@@ -23,5 +24,17 @@ export function initSentry(): void {
     integrations: [
       Sentry.feedbackIntegration({ autoInject: false, showBranding: false }),
     ],
+  });
+
+  const user = useAuthStore.getState().user;
+  if (user) {
+    Sentry.setUser({ id: user.email, email: user.email });
+  }
+  useAuthStore.subscribe((state, previousState) => {
+    if (state.user) {
+      Sentry.setUser({ id: state.user.email, email: state.user.email });
+    } else if (previousState.user) {
+      Sentry.setUser(null);
+    }
   });
 }
