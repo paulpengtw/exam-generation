@@ -58,7 +58,7 @@ malformed JSON, exhausted iterations — fails open: `fact_check=None` and the
 teacher verdict is unchanged.
 
 ### OpenAI-compatible endpoint
-Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-opus-4-6` for planning, `claude-sonnet-4-6` for generation and verification.
+Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-opus-5` for planning, `claude-sonnet-4-6` for generation and verification.
 
 ### Web-ready design
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.

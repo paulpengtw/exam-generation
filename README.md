@@ -222,7 +222,7 @@ Environment variables (set in `.env` or export directly):
 |---|---|---|---|
 | `LLM_API_KEY` | CLI + server | API key for the OpenAI-compatible endpoint | **(required)** |
 | `LLM_BASE_URL` | CLI + server | Base URL for the API endpoint | `https://api.anthropic.com/v1` |
-| `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-opus-4-6` |
+| `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-opus-5` |
 | `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `claude-sonnet-4-6` |
 | `IMAGE_API_KEY` | CLI + server | API key for optional GPT image generation (used by both math and social studies when `image_generation_mode=gpt_image`) | — |
 | `IMAGE_BASE_URL` | CLI + server | Base URL for the image generation endpoint | `https://api.openai.com/v1` |
@@ -696,7 +696,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 
 4. `Config.from_env()` reads `.env` file via `dotenv`, then pulls env vars (lines 22-36):
    - `LLM_API_KEY`, `LLM_BASE_URL` (endpoint)
-   - `LLM_MODEL_PLAN` (default: `claude-opus-4-6`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
+   - `LLM_MODEL_PLAN` (default: `claude-opus-5`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
    - `LLM_RATE_LIMIT_DELAY` (default: `0`) — seconds slept before every `generate()` call to avoid 429 errors
    - `OUTPUT_DIR` (default: `./output`), `DATA_DIR` (default: `./data`)
 5. `config.validate()` ensures `LLM_API_KEY` is set (line 227 -> config.py:38-41)

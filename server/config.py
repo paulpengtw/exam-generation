@@ -10,6 +10,18 @@ from dotenv import load_dotenv
 
 from src.config import Config
 
+# Code-level allowlist shipped with the server.  When LLM_MODELS_ALLOWED is
+# unset or empty this roster is used as-is (plus any plan/execute model that
+# is not already in it).  When LLM_MODELS_ALLOWED is set it REPLACES this
+# roster entirely — no merge — and the plan/execute append still applies.
+_DEFAULT_MODELS_ALLOWED: tuple[str, ...] = (
+    "claude-opus-5",
+    "claude-fable-5",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+)
+
 
 @dataclass
 class ServerConfig(Config):
@@ -50,7 +62,7 @@ class ServerConfig(Config):
         cfg = cls(
             api_key=os.environ.get("LLM_API_KEY", ""),
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
-            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-opus-4-6"),
+            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-opus-5"),
             model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
@@ -110,7 +122,7 @@ class ServerConfig(Config):
                 m.strip()
                 for m in os.environ.get("LLM_MODELS_ALLOWED", "").split(",")
                 if m.strip()
-            ),
+            ),  # empty tuple = "unset"; resolved to _DEFAULT_MODELS_ALLOWED below
             llm_exchange_retention_days=int(
                 os.environ.get("LLM_EXCHANGE_RETENTION_DAYS", "30")
             ),
@@ -119,11 +131,14 @@ class ServerConfig(Config):
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
             not in ("0", "false", "False", ""),
         )
+        # When LLM_MODELS_ALLOWED is unset/empty fall back to the built-in
+        # roster; when set it replaces the roster entirely (no merge).
+        initial = cfg.llm_models_allowed if cfg.llm_models_allowed else _DEFAULT_MODELS_ALLOWED
         seen: dict[str, None] = {}
-        for m in cfg.llm_models_allowed:
+        for m in initial:
             if m and m not in seen:
                 seen[m] = None
-        # Always ensure the configured default models are present so
+        # Always ensure the configured plan/execute models are present so
         # GET /api/models never advertises a default that the 422 gate
         # would then reject.
         for m in (cfg.model_plan, cfg.model_execute):

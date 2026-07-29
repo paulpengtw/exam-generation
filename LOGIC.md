@@ -26,7 +26,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 
 4. `Config.from_env()` reads `.env` file via `dotenv`, then pulls env vars (lines 22-36):
    - `LLM_API_KEY`, `LLM_BASE_URL` (endpoint)
-   - `LLM_MODEL_PLAN` (default: `claude-opus-4-6`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
+   - `LLM_MODEL_PLAN` (default: `claude-opus-5`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
    - `LLM_RATE_LIMIT_DELAY` (default: `0`) — float seconds; if > 0, `llm_client.generate()` sleeps this long before every API call to avoid 429 rate-limit errors (llm_client.py:24-25)
    - `OUTPUT_DIR` (default: `./output`), `DATA_DIR` (default: `./data`)
 5. `config.validate()` ensures `LLM_API_KEY` is set (line 193 -> config.py:38-41)

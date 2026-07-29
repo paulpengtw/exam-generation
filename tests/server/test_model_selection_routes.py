@@ -33,7 +33,7 @@ def _make_app_and_token(allowed: tuple[str, ...] = ()):
             yield session
 
     if not allowed:
-        allowed = ("claude-opus-4-6", "claude-sonnet-4-6")
+        allowed = ("claude-opus-5", "claude-fable-5", "claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-4-6")
     config = ServerConfig(
         api_key="x",
         jwt_secret="test-secret",

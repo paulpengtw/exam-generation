@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 class Config:
     api_key: str = ""
     base_url: str = "https://api.anthropic.com/v1"
-    model_plan: str = "claude-opus-4-6"
+    model_plan: str = "claude-opus-5"
     model_execute: str = "claude-sonnet-4-6"
     image_api_key: str = ""
     image_base_url: str = "https://api.openai.com/v1"
@@ -43,7 +43,7 @@ class Config:
         return cls(
             api_key=os.environ.get("LLM_API_KEY", ""),
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
-            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-opus-4-6"),
+            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-opus-5"),
             model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
