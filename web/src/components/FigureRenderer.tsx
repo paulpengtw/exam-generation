@@ -12,6 +12,8 @@
 
 import type { JSX } from "react";
 
+import { recordFigureFallback } from "../utils/figureFallbackMetric";
+
 const SCENARIO_KEYWORDS = ["情境卡", "菜單", "廣告", "海報", "票券", "看板", "簡介"];
 
 export interface ChartSpecInput {
@@ -197,6 +199,6 @@ export default function FigureRenderer({ spec, alt }: Props): JSX.Element | null
     );
   }
 
-  console.warn("[figure-renderer-fallback] unsupported spec, using PNG", spec);
+  recordFigureFallback(spec);
   return null;
 }

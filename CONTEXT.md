@@ -50,9 +50,25 @@ _Avoid_: subquestion config, per-item settings
 A free-text instruction attached to one 小題, telling the generator what that 小題 should focus on.
 _Avoid_: instruction, hint, guidance
 
+**出題模式**:
+The request setting that chooses whether batch-wide variety is suggested to the model; it does not control sampling.
+_Avoid_: coverage mode, sampling mode, distribution strategy
+
+**均衡**:
+The 出題模式 that adds a prompt-level instruction asking the model to spread 題型 and 取材角度 across a batch; it never affects mechanical draws.
+_Avoid_: balanced sampling, stratified mode, even allocation
+
+**隨機**:
+The 出題模式 that adds no batch-variety instruction to the prompt and leaves the existing independent draws unchanged.
+_Avoid_: random sampling mode, shuffle mode, unbalanced mode
+
 **預抽**:
 Resolving a value that would otherwise be chosen randomly during generation, before the user confirms, so the confirmation screen can show it.
 _Avoid_: pre-draw, pre-roll, client-side sampling
+
+**未送出的輸入**:
+Form input the user has entered but not yet sent for generation. It exists from the user's first edit onward; values supplied programmatically by 預抽 or prefilled by Regenerate do not create it without the user's own edit.
+_Avoid_: unsaved changes, dirty state, unsubmitted changes
 
 **釘選**:
 Sending a resolved value with the request so nothing downstream re-randomises it. A 預抽 value is always 釘選.
@@ -80,6 +96,14 @@ _Avoid_: subquestion generator, stage two, worker
 The screen shown after the user submits the form and before generation begins, stating what will be sent.
 _Avoid_: confirmation dialog, review screen, preview
 
+**破壞性操作確認**:
+A modal that interrupts an action which would irreversibly discard the user's work or end their session, requiring explicit assent before it proceeds; it appears on the way to that destructive or irreversible action, not on the way to sending a form. Contrast 發送前確認.
+_Avoid_: destructive-action modal, are-you-sure dialog, warning modal
+
 **提示詞預覽**:
 The literal system and user prompt text displayed on 發送前確認, assembled without calling any model.
 _Avoid_: prompt preview, dry run, payload preview
+
+**生成進度列**:
+The bar fixed to the bottom of 生成頁面, stating which 生成步驟 a run has reached.
+_Avoid_: sticky bottom bar, navbar, progress bar, 進度條

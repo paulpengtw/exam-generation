@@ -153,9 +153,6 @@ def _make_fake_spec() -> SubjectSpec:
     def coerce_overrides(params: Any, app_state: Any) -> dict:
         return {}
 
-    def setup_batch_sampler(params: Any, overrides: dict):
-        return None, False
-
     def plan_all_batch_briefs(
         params: Any,
         count: int,
@@ -173,8 +170,6 @@ def _make_fake_spec() -> SubjectSpec:
         overrides: dict,
         *,
         seed: Any,
-        assigned_q_type: Any,
-        assigned_lc: Any,
         subquestion_configs_decoded: Any,
     ) -> _FakeParams:
         return _FakeParams()
@@ -199,7 +194,6 @@ def _make_fake_spec() -> SubjectSpec:
         question_id_prefix="fake_",
         exam_question_cls=_FakeQuestion,
         coerce_overrides=coerce_overrides,
-        setup_batch_sampler=setup_batch_sampler,
         plan_all_batch_briefs=plan_all_batch_briefs,
         do_sample_params=do_sample_params,
         do_generate=do_generate,

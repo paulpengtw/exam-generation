@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 const sentryState = vi.hoisted(() => ({ enabled: true }));
 const formMock = vi.hoisted(() => ({
@@ -25,9 +26,18 @@ vi.mock("../sentry", () => ({
 
 vi.mock("@sentry/react", () => ({
   getFeedback: getFeedbackMock,
+  getReplay: () => undefined,
 }));
 
 import FeedbackButton from "./FeedbackButton";
+
+function renderAt(path: string) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <FeedbackButton />
+    </MemoryRouter>,
+  );
+}
 
 describe("FeedbackButton", () => {
   beforeEach(() => {
@@ -38,12 +48,20 @@ describe("FeedbackButton", () => {
 
   it("renders nothing when Sentry is not configured", () => {
     sentryState.enabled = false;
-    const { container } = render(<FeedbackButton />);
+    const { container } = renderAt("/history");
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("unmasks its static chrome text in replays", () => {
+    renderAt("/history");
+
+    expect(
+      screen.getByRole("button", { name: "Report a problem" }),
+    ).toHaveClass("sentry-unmask");
+  });
+
   it("renders a ? button and opens the localized feedback form on click", async () => {
-    render(<FeedbackButton />);
+    renderAt("/history");
     const btn = screen.getByRole("button", { name: "Report a problem" });
     expect(btn).toHaveTextContent("?");
 
@@ -61,7 +79,7 @@ describe("FeedbackButton", () => {
 
   it("does nothing when Sentry.getFeedback() returns undefined", () => {
     getFeedbackMock.mockReturnValueOnce(undefined);
-    render(<FeedbackButton />);
+    renderAt("/history");
     const btn = screen.getByRole("button", { name: "Report a problem" });
 
     expect(() => fireEvent.click(btn)).not.toThrow();
@@ -75,7 +93,7 @@ describe("FeedbackButton", () => {
     });
     createFormMock.mockReturnValueOnce(pending);
 
-    render(<FeedbackButton />);
+    renderAt("/history");
     const btn = screen.getByRole("button", { name: "Report a problem" });
 
     fireEvent.click(btn);
@@ -85,4 +103,25 @@ describe("FeedbackButton", () => {
     await waitFor(() => expect(formMock.open).toHaveBeenCalled());
     expect(createFormMock).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("FeedbackButton — where it floats", () => {
+  it.each([
+    "/generate/math",
+    "/generate/social_studies",
+    "/generate/natural_sciences",
+  ])("does not float on 生成頁面 (%s)", (path) => {
+    const { container } = renderAt(path);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it.each(["/", "/generate", "/history"])(
+    "still floats on %s",
+    (path) => {
+      renderAt(path);
+      expect(
+        screen.getByRole("button", { name: "Report a problem" }),
+      ).toBeInTheDocument();
+    },
+  );
 });

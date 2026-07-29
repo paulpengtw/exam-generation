@@ -25,6 +25,7 @@ from server.db import AsyncSessionLocal
 from server.generate.routes import router as generate_router
 from server.history.routes import router as history_router
 from server.models import GenerationRecord, LLMExchange
+from server.observability import init_sentry
 from server.rate_limit import limiter
 from server.utility.routes import router as utility_router
 from src.common.subject_spec import NATURAL_SCIENCES, SOCIAL_STUDIES
@@ -163,6 +164,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    init_sentry()
     app = FastAPI(title="Exam Generation API", lifespan=lifespan)
 
     app.state.limiter = limiter
@@ -176,6 +178,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
     def _unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+        # Starlette re-raises after this response; Sentry's outer ASGI wrapper captures once.
         traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
         return JSONResponse(
             status_code=500,

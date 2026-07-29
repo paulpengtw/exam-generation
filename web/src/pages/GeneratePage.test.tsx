@@ -12,6 +12,8 @@ vi.mock("../hooks/useGenerate", () => ({
     llmCalls: [],
     agentLanes: [],
     errorMessage: null,
+    startedAt: null,
+    finishedAt: null,
     generate: generateMock,
     reset: vi.fn(),
   }),
@@ -21,6 +23,7 @@ vi.mock("../hooks/useGenerate", () => ({
 vi.mock("react-router-dom", () => ({
   useNavigate: () => vi.fn(),
   useLocation: () => ({ state: null }),
+  useBlocker: () => ({ state: "unblocked", proceed: undefined, reset: undefined }),
 }));
 
 // --- mock authStore ---

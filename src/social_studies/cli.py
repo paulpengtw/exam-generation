@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import logging
 import random
@@ -12,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.batch_sampler import BatchSampler
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
@@ -509,6 +509,8 @@ def _ss_build_text_user(
     params, few_shot_dir,
     user_passage, user_options, user_topic, user_core_question,
     image_generation_mode, disable_reference_fewshot, prior_scopes,
+    *,
+    balanced_batch=False,
 ):
     return build_text_user_prompt(
         params,
@@ -521,6 +523,7 @@ def _ss_build_text_user(
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
         prior_scopes=prior_scopes,
+        balanced_batch=balanced_batch,
     )
 
 
@@ -603,6 +606,16 @@ _SS_SPEC = SubjectGenerationSpec(
 )
 
 
+def _ss_spec_for_batch(balanced_batch: bool) -> SubjectGenerationSpec:
+    if not balanced_batch:
+        return _SS_SPEC
+
+    def build_text_user(*args: Any) -> tuple[str, list[Path]]:
+        return _ss_build_text_user(*args, balanced_batch=True)
+
+    return dataclasses.replace(_SS_SPEC, build_text_user_fn=build_text_user)
+
+
 def generate_one(
     config: Config,
     client: LLMClient | None,
@@ -622,6 +635,7 @@ def generate_one(
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    balanced_batch: bool = False,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     params = _with_text_word_limit(params, text_word_limit)
@@ -630,7 +644,7 @@ def generate_one(
         client=client,
         params=params,
         question_id=question_id,
-        spec=_SS_SPEC,
+        spec=_ss_spec_for_batch(balanced_batch),
         dry_run=dry_run,
         skip_verify=skip_verify,
         disable_reference_fewshot=disable_reference_fewshot,
@@ -656,8 +670,9 @@ def build_generation_prompts(
     from src.common.generation_core import build_text_generation_prompts
 
     params = _with_text_word_limit(params, kwargs.pop("text_word_limit", None))
+    spec = _ss_spec_for_batch(kwargs.pop("balanced_batch", False))
     system, user, images, _stage_ctx = build_text_generation_prompts(
-        config, params, _SS_SPEC, **kwargs
+        config, params, spec, **kwargs
     )
     return system, user, images
 
@@ -705,6 +720,7 @@ def generate_with_corrections(
     on_question_update: QuestionUpdateCallback | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    balanced_batch: bool = False,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     return generate_with_corrections_core(
@@ -712,7 +728,7 @@ def generate_with_corrections(
         client=client,
         params=params,
         question_id=question_id,
-        spec=_SS_SPEC,
+        spec=_ss_spec_for_batch(balanced_batch),
         max_retries=max_retries,
         skip_verify=skip_verify,
         disable_reference_fewshot=disable_reference_fewshot,
@@ -778,26 +794,7 @@ def main(argv: list[str] | None = None) -> None:
     base_seed = args.seed
     max_retries = args.max_retries if args.max_retries is not None else config.max_retries
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    batch_sampler: BatchSampler | None = None
-    if args.count > 1 and args.coverage_mode == "balanced":
-        user_pinned_qtype = bool(args.q_type)
-        batch_rng = random.Random(base_seed if base_seed is not None else 0)
-        q_pool = (
-            [_resolve_enum(v, QuestionType) for v in args.q_type]
-            if user_pinned_qtype else list(QuestionType)
-        )
-        # CLI is the single-operator path; stage-wide 學習內容 stratification
-        # is exercised via the API in Task 5, so the pool stays empty here
-        # (BatchSampler.learning_content_assignments then falls back to []
-        # per question, which sample_params() treats as no override).
-        lc_pool: list[str] = []
-        batch_sampler = BatchSampler(
-            count=args.count,
-            q_type_pool=q_pool,
-            learning_content_pool=lc_pool,
-            rng=batch_rng,
-        )
+    balanced_batch = args.coverage_mode == "balanced" and args.count > 1
 
     try:
         params_list: list[SampledParams] = []
@@ -815,14 +812,6 @@ def main(argv: list[str] | None = None) -> None:
                 content_type=content_type_override,
                 seed=seed,
                 difficulty=args.difficulty,
-                assigned_q_type=(
-                    batch_sampler.q_type_assignments[i] if batch_sampler else None
-                ),
-                assigned_learning_content=(
-                    batch_sampler.learning_content_assignments[i]
-                    if batch_sampler and batch_sampler.learning_content_assignments[i]
-                    else None
-                ),
             )
             params_list.append(params)
 
@@ -855,6 +844,7 @@ def main(argv: list[str] | None = None) -> None:
                 dry_run=args.dry_run,
                 prior_scopes=list(prior_scopes),
                 curriculum_context=ss_curriculum_context,
+                balanced_batch=balanced_batch,
             )
 
             if args.dry_run:
@@ -864,16 +854,15 @@ def main(argv: list[str] | None = None) -> None:
             question = result
             assert isinstance(question, ExamQuestion)
 
-            effective_mode = "balanced" if batch_sampler is not None else "random"
             if question.metadata is None:
                 question.metadata = QuestionMetadata(
                     grade=params.grade,
                     model="",
-                    coverage_mode_used=effective_mode,
+                    coverage_mode_used=args.coverage_mode,
                 )
             else:
                 question.metadata = question.metadata.model_copy(
-                    update={"coverage_mode_used": effective_mode}
+                    update={"coverage_mode_used": args.coverage_mode}
                 )
 
             results.append(question)

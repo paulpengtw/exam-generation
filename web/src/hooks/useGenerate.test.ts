@@ -1,8 +1,138 @@
-import { describe, expect, it } from "vitest";
+import type { FetchEventSourceInit } from "@microsoft/fetch-event-source";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const fetchEventSourceMock = vi.hoisted(() =>
+  vi
+    .fn<
+      (
+        input: RequestInfo,
+        init: FetchEventSourceInit,
+      ) => Promise<void>
+    >()
+    .mockResolvedValue(undefined),
+);
+
+vi.mock("@microsoft/fetch-event-source", () => ({
+  fetchEventSource: fetchEventSourceMock,
+}));
+
 // The buildQueryString helper is currently module-private. This test file
 // intentionally imports it via a named re-export added in the implementation
 // step below.
-import { buildQueryString, parseErrorEventData } from "./useGenerate";
+import {
+  buildQueryString,
+  parseErrorEventData,
+  useGenerate,
+} from "./useGenerate";
+
+function latestStreamOptions(): FetchEventSourceInit {
+  const call = fetchEventSourceMock.mock.lastCall;
+  if (!call) {
+    throw new Error("Expected generate() to open an event stream");
+  }
+  return call[1];
+}
+
+function renderStartedRun() {
+  const hook = renderHook(() => useGenerate());
+  act(() => {
+    hook.result.current.generate({ subject: "math", count: 1 });
+  });
+  return hook;
+}
+
+describe("useGenerate — run timestamps", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    fetchEventSourceMock.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("records the run start and clears both timestamps on reset", () => {
+    const { result } = renderStartedRun();
+
+    expect(result.current.startedAt).toBe(1_000);
+    expect(result.current.finishedAt).toBeNull();
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(result.current.startedAt).toBeNull();
+    expect(result.current.finishedAt).toBeNull();
+  });
+
+  it("records the finish time when the stream sends done", () => {
+    const { result } = renderStartedRun();
+    vi.setSystemTime(5_000);
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "done",
+        data: "",
+      });
+    });
+
+    expect(result.current.finishedAt).toBe(5_000);
+  });
+
+  it("records the finish time when the stream sends an error event", () => {
+    const { result } = renderStartedRun();
+    vi.setSystemTime(6_000);
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "error",
+        data: "generation failed",
+      });
+    });
+
+    expect(result.current.finishedAt).toBe(6_000);
+  });
+
+  it("records the finish time when the stream error handler runs", () => {
+    const { result } = renderStartedRun();
+    vi.setSystemTime(7_000);
+    let thrown: unknown;
+
+    act(() => {
+      try {
+        latestStreamOptions().onerror?.(new Error("connection lost"));
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toEqual(new Error("connection lost"));
+    expect(result.current.finishedAt).toBe(7_000);
+  });
+
+  it("records the finish time when opening the stream fails", async () => {
+    const { result } = renderStartedRun();
+    vi.setSystemTime(8_000);
+    let thrown: unknown;
+
+    await act(async () => {
+      try {
+        await latestStreamOptions().onopen?.(
+          new Response(null, { status: 500 }),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toEqual(new Error("Stream open failed: HTTP 500"));
+    expect(result.current.finishedAt).toBe(8_000);
+  });
+});
 
 describe("useGenerate — model overrides", () => {
   it("does not emit model_plan / model_execute when unset", () => {

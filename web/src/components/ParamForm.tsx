@@ -97,6 +97,7 @@ export interface ParamFormProps {
   onSubmit: (params: FormParams) => void;
   disabled: boolean;
   initialParams?: Partial<FormParams> & { [key: string]: unknown };
+  onUnsubmittedInput?: () => void;
 }
 
 type ConfirmationValueKind = "absent" | "sampled" | "defaulted";
@@ -146,7 +147,7 @@ const SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
   "公民與社會": ["公", "社"],
   "跨科": ["歷", "地", "公", "社"],
 };
-const MATH_SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
+const MATH_SUBJECT_TO_STRAND_PREFIXES: Record<string, string[]> = {
   "": ["n", "N", "r", "R", "a", "A", "f", "F", "s", "S", "g", "G", "d", "D", "p", "P"],
   "數與量": ["n", "N"],
   "代數": ["r", "R", "a", "A", "f", "F"],
@@ -272,7 +273,9 @@ export default function ParamForm({
   onSubmit,
   disabled,
   initialParams,
+  onUnsubmittedInput,
 }: ParamFormProps) {
+  const markUnsubmittedInput = () => onUnsubmittedInput?.();
   const t = useT();
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -606,7 +609,7 @@ export default function ParamForm({
     const entries = schemas?.學習表現 ?? [];
     if (subject === "natural_sciences") return entries;
     const map =
-      subject === "math" ? MATH_SUBJECT_TO_PERFORMANCE_PREFIXES : SUBJECT_TO_PERFORMANCE_PREFIXES;
+      subject === "math" ? MATH_SUBJECT_TO_STRAND_PREFIXES : SUBJECT_TO_PERFORMANCE_PREFIXES;
     const prefixes = map[subjectFilter] ?? map[""];
     return entries.filter((entry) => prefixes.includes(entry.科目));
   }, [schemas, subjectFilter, subject]);
@@ -619,6 +622,11 @@ export default function ParamForm({
 
   const availableLearningContent = useMemo(() => {
     const entries = schemas?.學習內容 ?? [];
+    if (subject === "math") {
+      const prefixes =
+        MATH_SUBJECT_TO_STRAND_PREFIXES[subjectFilter] ?? MATH_SUBJECT_TO_STRAND_PREFIXES[""];
+      return entries.filter((entry) => prefixes.includes(entry.科目));
+    }
     if (subject === "social_studies") {
       if (!subjectFilter) return entries;
       const code = SS_SUBJECT_FILTER_TO_CONTENT_CODE[subjectFilter] ?? null;
@@ -720,15 +728,14 @@ export default function ParamForm({
     let finalLc: string[] | undefined;
     let lcAutoDrawn = false;
     if (
-      (subject === "natural_sciences" || subject === "social_studies") &&
-      !(subject === "social_studies" && coverageMode === "balanced") &&
+      (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
       learningContent.length === 0 &&
       lcPoolValues.length > 0
     ) {
       finalLc = drawRandomSubset(lcPoolValues, 1, 3);
       lcAutoDrawn = true;
     } else if (
-      (subject === "natural_sciences" || subject === "social_studies") &&
+      (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
       learningContent.length > 0
     ) {
       finalLc = learningContent;
@@ -1144,9 +1151,7 @@ export default function ParamForm({
                       <dd className="min-w-0 flex-1 text-gray-900">
                         {questionLcDisplayEntries.length === 0 ? (
                           <span className="italic text-gray-400">
-                            {subject === "social_studies" && p.coverage_mode === "balanced"
-                              ? t("form.confirm_lc_balanced_backend_assignment")
-                              : t("form.confirm_not_filled")}
+                            {t("form.confirm_not_filled")}
                           </span>
                         ) : (
                           <div className="space-y-1">
@@ -1334,7 +1339,7 @@ export default function ParamForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} onChange={markUnsubmittedInput} className="space-y-4">
       {prefillNotice && (
         <div className="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">
           {prefillNotice}
@@ -1444,7 +1449,10 @@ export default function ParamForm({
             <label className="block text-sm font-medium">{t("form.learning_performance")}</label>
             <button
               type="button"
-              onClick={() => setUseCurriculumSearch((v) => !v)}
+              onClick={() => {
+                setUseCurriculumSearch((v) => !v);
+                markUnsubmittedInput();
+              }}
               className="text-xs text-blue-600 hover:underline"
             >
               {useCurriculumSearch ? "切換勾選模式" : "切換搜尋模式"}
@@ -1459,6 +1467,7 @@ export default function ParamForm({
                   onChange={(values) => {
                     markUserChosen("learning_performance");
                     setLearningPerformance(values);
+                    markUnsubmittedInput();
                   }}
                   placeholder="搜尋學習表現..."
                 />
@@ -1691,13 +1700,16 @@ export default function ParamForm({
         </fieldset>
       )}
 
-      {(subject === "natural_sciences" || subject === "social_studies") && Array.isArray(schemas.學習內容) && schemas.學習內容.length > 0 && (
+      {Array.isArray(schemas.學習內容) && schemas.學習內容.length > 0 && (
         <div>
           <div className="flex items-center justify-between">
             <label className="block text-sm font-medium">{t("form.learning_content")}</label>
             <button
               type="button"
-              onClick={() => setUseCurriculumSearch((v) => !v)}
+              onClick={() => {
+                setUseCurriculumSearch((v) => !v);
+                markUnsubmittedInput();
+              }}
               className="text-xs text-blue-600 hover:underline"
             >
               {useCurriculumSearch ? "切換勾選模式" : "切換搜尋模式"}
@@ -1712,6 +1724,7 @@ export default function ParamForm({
                   onChange={(values) => {
                     markUserChosen("learning_content");
                     setLearningContent(values);
+                    markUnsubmittedInput();
                   }}
                   placeholder="搜尋學習內容..."
                 />
@@ -1997,7 +2010,10 @@ export default function ParamForm({
                 />
                 <button
                   type="button"
-                  onClick={() => setOptions((prev) => prev.filter((_, j) => j !== i))}
+                  onClick={() => {
+                    setOptions((prev) => prev.filter((_, j) => j !== i));
+                    markUnsubmittedInput();
+                  }}
                   className="text-sm text-red-600 hover:underline disabled:opacity-40"
                   disabled={options.length <= 2}
                 >−</button>
@@ -2005,7 +2021,10 @@ export default function ParamForm({
             ))}
             <button
               type="button"
-              onClick={() => setOptions((prev) => [...prev, OPTION_HINT])}
+              onClick={() => {
+                setOptions((prev) => [...prev, OPTION_HINT]);
+                markUnsubmittedInput();
+              }}
               className="text-sm text-blue-600 hover:underline disabled:opacity-40"
               disabled={options.length >= 8}
             >+ 新增選項</button>

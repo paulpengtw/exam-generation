@@ -14,17 +14,18 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import random
 from pathlib import Path
 from typing import Any, Callable
 
-from src.batch_sampler import BatchSampler
 from src.cli import build_generation_prompts as _math_build_prompts_impl
 from src.cli import generate_with_corrections as _math_generate_with_corrections
 from src.common.batch_dedup import (
     extract_math_prior_scope,
     extract_ns_prior_scope,
     extract_ss_prior_scope,
+)
+from src.common.curriculum_loader import (
+    load_learning_content as load_common_lc,
 )
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
 from src.natural_sciences.cli import (
@@ -95,15 +96,11 @@ from src.social_studies.cli import (
     generate_with_corrections as _ss_generate_with_corrections,
 )
 from src.social_studies.curriculum_loader import (
-    allowed_learning_content,
-)
-from src.social_studies.curriculum_loader import (
     load_learning_content as load_ss_learning_content,
 )
 from src.social_studies.curriculum_loader import (
     load_learning_performance as load_ss_learning_performance,
 )
-from src.social_studies.sampler import _LEARNING_STAGE as _SS_STAGE
 from src.social_studies.sampler import sample_params as _ss_sample_params_direct
 from src.social_studies.schema_loader import (
     load_learning_stage as ss_load_learning_stage,
@@ -156,10 +153,6 @@ class SubjectSpec:
     exam_question_cls       The ExamQuestion class for this subject.
     coerce_overrides        ``(params, app_state) -> dict`` of coerced enum values
                             and subject-specific state drawn from app_state.
-    setup_batch_sampler     ``(params, overrides) -> (BatchSampler|None, bool)``
-                            Returns the batch sampler (or None) and the
-                            ``user_pinned_lc`` flag.  Non-SS subjects return
-                            ``(None, False)``.
     plan_all_batch_briefs   ``(params, count, base_seed, overrides, config,
                             creative_planning, decoded_subquestion_configs)
                             -> list[brief|None]``
@@ -167,8 +160,8 @@ class SubjectSpec:
                             index (None means no brief).  Returns ``[]`` for
                             subjects that don't support creative planning so
                             ``i < len([])`` is always False.
-    do_sample_params        ``(params, overrides, *, seed, assigned_q_type,
-                            assigned_lc, subquestion_configs_decoded)
+    do_sample_params        ``(params, overrides, *, seed,
+                            subquestion_configs_decoded)
                             -> SampledParams``
     do_generate             ``(rng_params, overrides, **common_kwargs)
                             -> ExamQuestion``
@@ -179,7 +172,7 @@ class SubjectSpec:
                             -> (system_prompt, user_prompt, image_paths)``
                             Builds the same first-call prompts as do_generate.
     extract_prior_scope     ``(question) -> PriorScope | None``
-    patch_metadata          Optional ``(question, batch_sampler) -> question``
+    patch_metadata          Optional ``(question, coverage_mode) -> question``
                             for SS metadata patching.
     plan_core_questions     ``(client, topic, **kwargs) -> list[str]``
                             Used by the planner route.
@@ -196,7 +189,6 @@ class SubjectSpec:
     exam_question_cls: type
 
     coerce_overrides: Callable
-    setup_batch_sampler: Callable
     plan_all_batch_briefs: Callable
     do_sample_params: Callable
     do_generate: Callable
@@ -366,35 +358,6 @@ def _ss_coerce_overrides(params: Any, app_state: Any) -> dict:
     }
 
 
-def _ss_setup_batch_sampler(params: Any, overrides: dict) -> tuple[BatchSampler | None, bool]:
-    if params.count <= 1 or params.coverage_mode != "balanced":
-        return None, False
-
-    batch_rng = random.Random(params.seed if params.seed is not None else 0)
-    user_pinned_qtype = bool(params.q_type) or bool(params.subquestion_configs)
-    user_pinned_lc = bool(params.learning_content)
-    q_pool = (
-        [SSQuestionType(v) for v in params.q_type]
-        if user_pinned_qtype and params.q_type
-        else list(SSQuestionType)
-    )
-    subj_key = params.subject_filter[0] if params.subject_filter else "跨科"
-    lc_entries = (
-        allowed_learning_content(load_ss_learning_content(), _SS_STAGE, subj_key)
-        if not user_pinned_lc
-        else []
-    )
-    lc_pool = [e["value"] for e in lc_entries] if not user_pinned_lc else []
-
-    batch_sampler = BatchSampler(
-        count=params.count,
-        q_type_pool=q_pool,
-        learning_content_pool=lc_pool,
-        rng=batch_rng,
-    )
-    return batch_sampler, user_pinned_lc
-
-
 def _ss_plan_all_batch_briefs(
     params: Any,
     count: int,
@@ -447,8 +410,6 @@ def _ss_do_sample_params(
     overrides: dict,
     *,
     seed: int | None,
-    assigned_q_type: Any,
-    assigned_lc: Any,
     subquestion_configs_decoded: list[dict] | None,
 ) -> Any:
     return _ss_sample_params_direct(
@@ -467,8 +428,6 @@ def _ss_do_sample_params(
         option_word_limit=params.option_word_limit,
         subquestion_configs=subquestion_configs_decoded,
         difficulty=params.difficulty,
-        assigned_q_type=assigned_q_type,
-        assigned_learning_content=assigned_lc,
     )
 
 
@@ -491,6 +450,7 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         on_question_update=kwargs["on_question_update"],
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ss_curriculum_context"],
+        balanced_batch=kwargs["balanced_batch"],
     )
 
 
@@ -508,6 +468,7 @@ def _ss_build_generation_prompts(
         user_topic=kwargs["user_topic"],
         user_core_question=kwargs["user_core_question"],
         prior_scopes=kwargs["prior_scopes"],
+        balanced_batch=kwargs["balanced_batch"],
     )
 
 
@@ -527,24 +488,23 @@ def _ss_build_subquestion_prompt_previews(
     )
 
 
-def _ss_patch_metadata(question: Any, batch_sampler: Any) -> Any:
+def _ss_patch_metadata(question: Any, coverage_mode: str) -> Any:
     from src.social_studies.schemas import ExamQuestion as _SSExamQuestion  # noqa: PLC0415
     from src.social_studies.schemas import QuestionMetadata as _QM  # noqa: PLC0415
 
     if not isinstance(question, _SSExamQuestion):
         return question
-    effective_mode = "balanced" if batch_sampler is not None else "random"
     if question.metadata is None:
         # Fall back to a minimal metadata object; model attribute may not be
         # available on all config types, so use "unknown" as sentinel.
         question.metadata = _QM(
             grade=question.subquestions[0].年級 if question.subquestions else 0,
             model="unknown",
-            coverage_mode_used=effective_mode,
+            coverage_mode_used=coverage_mode,
         )
     else:
         question.metadata = question.metadata.model_copy(
-            update={"coverage_mode_used": effective_mode}
+            update={"coverage_mode_used": coverage_mode}
         )
     return question
 
@@ -620,10 +580,6 @@ def _ns_coerce_overrides(params: Any, app_state: Any) -> dict:
     }
 
 
-def _ns_setup_batch_sampler(params: Any, overrides: dict) -> tuple[None, bool]:
-    return None, False
-
-
 def _ns_plan_all_batch_briefs(
     params: Any,
     count: int,
@@ -642,8 +598,6 @@ def _ns_do_sample_params(
     overrides: dict,
     *,
     seed: int | None,
-    assigned_q_type: Any,
-    assigned_lc: Any,
     subquestion_configs_decoded: list[dict] | None,
 ) -> Any:
     return _ns_sample_params(
@@ -806,10 +760,6 @@ def _math_coerce_overrides(params: Any, app_state: Any) -> dict:
     }
 
 
-def _math_setup_batch_sampler(params: Any, overrides: dict) -> tuple[None, bool]:
-    return None, False
-
-
 def _math_plan_all_batch_briefs(
     params: Any,
     count: int,
@@ -828,8 +778,6 @@ def _math_do_sample_params(
     overrides: dict,
     *,
     seed: int | None,
-    assigned_q_type: Any,
-    assigned_lc: Any,
     subquestion_configs_decoded: list[dict] | None,
 ) -> Any:
     math_subject_filter: str | None = None
@@ -924,6 +872,16 @@ def _math_build_schemas(config_server: Any, grade: int | None) -> dict:
         for entry in performance.get("學習表現", [])
         if entry.get("學習階段") == learning_stage
     ]
+    content = load_common_lc(config_server.math_curriculum_dir)
+    schemas["學習內容"] = [
+        {
+            "value": entry["value"],
+            "instruction": entry.get("條目說明", ""),
+            "科目": entry.get("科目", ""),
+        }
+        for entry in content.get("學習內容", [])
+        if entry.get("學習階段") == learning_stage
+    ]
     return schemas
 
 
@@ -937,7 +895,6 @@ SUBJECTS: dict[str, SubjectSpec] = {
         question_id_prefix="ss_",
         exam_question_cls=SSExamQuestion,
         coerce_overrides=_ss_coerce_overrides,
-        setup_batch_sampler=_ss_setup_batch_sampler,
         plan_all_batch_briefs=_ss_plan_all_batch_briefs,
         do_sample_params=_ss_do_sample_params,
         do_generate=_ss_do_generate,
@@ -954,7 +911,6 @@ SUBJECTS: dict[str, SubjectSpec] = {
         question_id_prefix="ns_",
         exam_question_cls=NSExamQuestion,
         coerce_overrides=_ns_coerce_overrides,
-        setup_batch_sampler=_ns_setup_batch_sampler,
         plan_all_batch_briefs=_ns_plan_all_batch_briefs,
         do_sample_params=_ns_do_sample_params,
         do_generate=_ns_do_generate,
@@ -972,7 +928,6 @@ SUBJECTS: dict[str, SubjectSpec] = {
         question_id_prefix="q_",
         exam_question_cls=MathExamQuestion,
         coerce_overrides=_math_coerce_overrides,
-        setup_batch_sampler=_math_setup_batch_sampler,
         plan_all_batch_briefs=_math_plan_all_batch_briefs,
         do_sample_params=_math_do_sample_params,
         do_generate=_math_do_generate,

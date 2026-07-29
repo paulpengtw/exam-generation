@@ -818,6 +818,7 @@ def build_text_user_prompt(
     user_core_question: str | None = None,
     disable_reference_fewshot: bool = False,
     prior_scopes: Sequence[PriorScope] | None = None,
+    balanced_batch: bool = False,
 ) -> tuple[str, list[Path]]:
     text, image_paths = build_user_prompt(
         params=params,
@@ -846,6 +847,16 @@ def build_text_user_prompt(
 7. 只輸出 JSON 格式的結果。
 """,
     )
+    if balanced_batch:
+        text = text.replace(
+            "\n## 參考範例\n",
+            "\n## 出題模式：均衡\n\n"
+            "本題與同批次其他題目的 題型 與 取材角度 請盡量平均分散，"
+            "並避開「已生成題目（請避免相似範圍）」中已列出的取材範圍，"
+            "不要重複相近主題。\n\n"
+            "## 參考範例\n",
+            1,
+        )
     if params.text_word_limit:
         text = text.replace(
             "\n## 參考範例\n",

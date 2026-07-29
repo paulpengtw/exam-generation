@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import type { DraftPhase, ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
+import { recordFigureFallback } from "../utils/figureFallbackMetric";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import FigureRenderer, {
   classifySpec,
@@ -53,8 +54,7 @@ function pickFigure(
     if (classifySpec(spec) !== "unsupported") {
       return { kind: "ts", spec };
     }
-    // Log so fallback rate is trackable in the browser console.
-    console.warn("[figure-renderer-fallback] unsupported spec, using PNG", spec);
+    recordFigureFallback(spec);
   }
   if (imageBase64) {
     return { kind: "png", src: `data:image/png;base64,${imageBase64}` };

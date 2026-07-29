@@ -45,8 +45,6 @@ def _sample_worker_params(
     params: GenerateParams,
     spec: SubjectSpec,
     overrides: dict,
-    batch_sampler: Any,
-    batch_user_pinned_lc: bool,
     decoded_subquestion_configs: list[dict] | None,
     decoded_per_question_params: list[dict[str, Any]] | None = None,
     app_state: Any = None,
@@ -65,14 +63,6 @@ def _sample_worker_params(
         worker_subquestion_configs = _decode_subquestion_configs(
             worker_params.subquestion_configs
         )
-    assigned_qt = (
-        batch_sampler.q_type_assignments[i] if batch_sampler is not None else None
-    )
-    assigned_lc = (
-        batch_sampler.learning_content_assignments[i]
-        if batch_sampler is not None and not batch_user_pinned_lc
-        else None
-    )
     has_explicit_worker_seed = (
         decoded_per_question_params is not None
         and decoded_per_question_params[i].get("seed") is not None
@@ -86,8 +76,6 @@ def _sample_worker_params(
         worker_params,
         worker_overrides,
         seed=seed,
-        assigned_q_type=assigned_qt,
-        assigned_lc=assigned_lc,
         subquestion_configs_decoded=worker_subquestion_configs,
     )
 
@@ -100,7 +88,6 @@ def build_prompt_previews(
     """Resolve parameters and build first-stage prompts without an LLM client."""
     spec = SUBJECTS[params.subject]
     overrides = spec.coerce_overrides(params, app_state)
-    batch_sampler, batch_user_pinned_lc = spec.setup_batch_sampler(params, overrides)
     decoded_configs = _decode_subquestion_configs(params.subquestion_configs)
     decoded_per_question = decode_per_question_params(params.per_question_params)
     client_config = dataclasses.replace(
@@ -108,6 +95,7 @@ def build_prompt_previews(
         model_execute=params.model_execute or config.model_execute,
         model_plan=params.model_plan or config.model_plan,
     )
+    balanced_batch = params.coverage_mode == "balanced" and params.count > 1
     previews = []
     for i in range(max(1, params.count)):
         sampled = _sample_worker_params(
@@ -115,8 +103,6 @@ def build_prompt_previews(
             params,
             spec,
             overrides,
-            batch_sampler,
-            batch_user_pinned_lc,
             decoded_configs,
             decoded_per_question,
             app_state,
@@ -134,6 +120,7 @@ def build_prompt_previews(
             user_topic=params.topic,
             user_core_question=params.core_question,
             prior_scopes=[],
+            balanced_batch=balanced_batch,
         )
         previews.append(
             {"index": i, "system_prompt": system, "user_prompt": user}
@@ -191,8 +178,6 @@ class _RunContext:
     params: GenerateParams
     overrides: dict
     client_config: ServerConfig
-    batch_sampler: Any
-    batch_user_pinned_lc: bool
     count: int
     base_seed: int | None
     max_retries: int
@@ -211,6 +196,7 @@ class _RunContext:
     session_factory: Any
     next_order: Any  # Callable[[], int]
     config: ServerConfig
+    balanced_batch: bool
 
 
 def _build_run_context(
@@ -227,7 +213,6 @@ def _build_run_context(
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
-    batch_sampler, batch_user_pinned_lc = spec.setup_batch_sampler(params, overrides)
     client_config = dataclasses.replace(
         config,
         model_execute=params.model_execute or config.model_execute,
@@ -235,6 +220,7 @@ def _build_run_context(
     )
     order_counter = itertools.count(1)
     order_lock = threading.Lock()
+    balanced_batch = params.coverage_mode == "balanced" and params.count > 1
 
     def _next_order() -> int:
         with order_lock:
@@ -245,8 +231,6 @@ def _build_run_context(
         params=params,
         overrides=overrides,
         client_config=client_config,
-        batch_sampler=batch_sampler,
-        batch_user_pinned_lc=batch_user_pinned_lc,
         count=max(1, params.count),
         base_seed=params.seed,
         max_retries=params.max_retries,
@@ -267,6 +251,7 @@ def _build_run_context(
         session_factory=session_factory,
         next_order=_next_order,
         config=config,
+        balanced_batch=balanced_batch,
     )
 
 
@@ -297,8 +282,6 @@ def _worker_one(
             ctx.params,
             ctx.spec,
             ctx.overrides,
-            ctx.batch_sampler,
-            ctx.batch_user_pinned_lc,
             ctx.decoded_subquestion_configs,
             ctx.decoded_per_question_params,
             ctx.app_state,
@@ -330,11 +313,12 @@ def _worker_one(
             user_core_question=ctx.params.core_question,
             on_question_update=emit_question_update,
             prior_scopes=prior_snapshot,
+            balanced_batch=ctx.balanced_batch,
         )
 
         # Site 4: metadata patching (SS only; other specs have patch_metadata=None)
         if ctx.spec.patch_metadata is not None:
-            question = ctx.spec.patch_metadata(question, ctx.batch_sampler)
+            question = ctx.spec.patch_metadata(question, ctx.params.coverage_mode)
 
         assert isinstance(question, ctx.spec.exam_question_cls)
 

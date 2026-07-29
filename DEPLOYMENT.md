@@ -144,6 +144,8 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `FRONTEND_URL` | The frontend URL you copied in Step 7.3, with `https://` in front | Tells the backend which website is allowed to call it |
 | `EMAIL_BACKEND` | `console` | `console` prints magic-link login emails to backend logs — fine for your own first login; switch to `ses` after following **Step 13** so other teachers receive real emails |
 | `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |
+| `SENTRY_DSN` | *(leave blank, or paste the backend project's DSN)* | Sends backend errors and traces to Sentry. Leave it unset or blank to disable backend Sentry completely. |
+| `SENTRY_ENVIRONMENT` | `production` (or `staging`) | Tags backend Sentry data with the deployment environment. |
 
 **How to generate `JWT_SECRET`:** open `https://passwordsgenerator.net` in a new tab, set length to 64, click **Generate**, and paste the result.
 
@@ -270,21 +272,45 @@ Render's free tier puts services to sleep after 15 minutes of inactivity. The fi
 ## Error reporting (Sentry, optional)
 
 The web app has a bottom-right "?" button that lets users report problems.
-It is powered by [Sentry](https://sentry.io) User Feedback and is **entirely
-optional** — when `VITE_SENTRY_DSN` is not set, the button is hidden and the
-app never contacts Sentry.
+It and the backend error reporting are powered by [Sentry](https://sentry.io)
+and are **entirely optional**. The frontend never contacts Sentry when
+`VITE_SENTRY_DSN` is unset; the backend never contacts Sentry when
+`SENTRY_DSN` is unset or blank.
 
 One-time setup:
 
-1. Create a free account at sentry.io and create a project (platform:
-   **React**). Copy the project's **DSN** (a public client key, not a
-   secret).
+1. Create a free account at sentry.io and create two projects: one with the
+   **React** platform and one with the **FastAPI** platform. Copy each
+   project's **DSN** (a public client key, not a secret).
 2. Set `VITE_SENTRY_DSN` to that DSN when building the frontend
    (docker-compose reads it from the environment / `.env` file). Staging
    builds are tagged with environment `staging` (via `VITE_IS_STAGING`),
    production builds with `production`.
-3. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
+3. Set the FastAPI project's DSN as `SENTRY_DSN` on the backend and set
+   `SENTRY_ENVIRONMENT` to `staging` or `production`.
+4. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
    integration and connect the `paulpengtw/exam-generation` repository.
+
+On the **frontend** service only, add these build-time variables in both the
+production and staging environments. The frontend build's source-map upload
+step uses them to publish releases and upload source maps:
+
+| Variable name | Value to type | What it is |
+|---|---|---|
+| `SENTRY_AUTH_TOKEN` | An organisation auth token from Sentry | Authorises the frontend build to publish releases and upload source maps. This is a real secret: never commit it and never put it in `.env.example`. |
+| `SENTRY_ORG` | Your Sentry organisation slug | Tells the upload step which Sentry organisation to use |
+| `SENTRY_PROJECT` | The Sentry project slug for this web service and environment | Tells the upload step which project to use. Use a different project for each environment (for example, one for the production web build and another for staging). |
+
+If these three variables are unset, the frontend build still succeeds and
+simply skips the source-map upload.
+
+Set `VITE_SENTRY_RELEASE` to the deploy commit SHA at frontend build time so
+source maps uploaded later can match incoming events. Railway exposes the SHA
+as `RAILWAY_GIT_COMMIT_SHA`; Render exposes it as `RENDER_GIT_COMMIT`.
+
+Forks can leave **all** Sentry variables unset, including the three frontend
+build variables above. Everything degrades gracefully: there is no Sentry
+error reporting, no source-map upload, and no build failure.
 
 Triage flow: user feedback and captured errors appear in the Sentry project
 (User Feedback / Issues views). Open an item and use **Create GitHub Issue**

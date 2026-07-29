@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
+const recordFigureFallbackMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../utils/figureFallbackMetric", () => ({
+  recordFigureFallback: recordFigureFallbackMock,
+}));
+
 import QuestionCard from "./QuestionCard";
 import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
 
@@ -33,6 +39,7 @@ describe("QuestionCard draft rendering", () => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.clearAllMocks();
 });
 
 describe("QuestionCard + FigureRenderer swap", () => {
@@ -82,7 +89,7 @@ describe("QuestionCard + FigureRenderer swap", () => {
 
   it("falls back to the PNG img when the flag is on but the spec is unsupported", () => {
     vi.stubEnv("VITE_ENABLE_FRONTEND_TS_RENDERER", "1");
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const spec = { render_mode: "chart", chart_type: "histogram", data: {} };
     const question = {
       情境: [],
       題型種類: "單一題",
@@ -90,18 +97,14 @@ describe("QuestionCard + FigureRenderer swap", () => {
       題目: ["Q"],
       正確解題分析: ["A"],
       image_base64: "aGVsbG8=",
-      chart_spec: { render_mode: "chart", chart_type: "histogram", data: {} },
+      chart_spec: spec,
     } as unknown as import("../hooks/useGenerate").ExamQuestion;
     render(<QuestionCard question={question} isFinal />);
     expect(screen.getByAltText("Question diagram")).toHaveAttribute(
       "src",
       "data:image/png;base64,aGVsbG8=",
     );
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringMatching(/^\[figure-renderer-fallback]/),
-      expect.anything(),
-    );
-    warn.mockRestore();
+    expect(recordFigureFallbackMock).toHaveBeenCalledWith(spec);
   });
 });
 
