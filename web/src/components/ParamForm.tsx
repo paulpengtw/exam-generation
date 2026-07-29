@@ -644,6 +644,13 @@ export default function ParamForm({
     if (!schemas) return;
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
     setLearningPerformance((prev) => prev.filter((value) => allowed.has(value)));
+    setSubquestionConfigs((prev) =>
+      prev.map((cfg) =>
+        cfg.learning_performance?.length
+          ? { ...cfg, learning_performance: cfg.learning_performance.filter((v) => allowed.has(v)) }
+          : cfg,
+      ),
+    );
   }, [availableLearningPerformance, schemas]);
 
   useEffect(() => {
