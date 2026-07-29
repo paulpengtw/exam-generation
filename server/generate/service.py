@@ -95,6 +95,7 @@ def build_prompt_previews(
         model_execute=params.model_execute or config.model_execute,
         model_plan=params.model_plan or config.model_plan,
     )
+    balanced_batch = params.coverage_mode == "balanced" and params.count > 1
     previews = []
     for i in range(max(1, params.count)):
         sampled = _sample_worker_params(
@@ -119,6 +120,7 @@ def build_prompt_previews(
             user_topic=params.topic,
             user_core_question=params.core_question,
             prior_scopes=[],
+            balanced_batch=balanced_batch,
         )
         previews.append(
             {"index": i, "system_prompt": system, "user_prompt": user}
@@ -194,6 +196,7 @@ class _RunContext:
     session_factory: Any
     next_order: Any  # Callable[[], int]
     config: ServerConfig
+    balanced_batch: bool
 
 
 def _build_run_context(
@@ -217,6 +220,7 @@ def _build_run_context(
     )
     order_counter = itertools.count(1)
     order_lock = threading.Lock()
+    balanced_batch = params.coverage_mode == "balanced" and params.count > 1
 
     def _next_order() -> int:
         with order_lock:
@@ -247,6 +251,7 @@ def _build_run_context(
         session_factory=session_factory,
         next_order=_next_order,
         config=config,
+        balanced_batch=balanced_batch,
     )
 
 
@@ -308,6 +313,7 @@ def _worker_one(
             user_core_question=ctx.params.core_question,
             on_question_update=emit_question_update,
             prior_scopes=prior_snapshot,
+            balanced_batch=ctx.balanced_batch,
         )
 
         # Site 4: metadata patching (SS only; other specs have patch_metadata=None)

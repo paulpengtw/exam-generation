@@ -447,6 +447,7 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         on_question_update=kwargs["on_question_update"],
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ss_curriculum_context"],
+        balanced_batch=kwargs["balanced_batch"],
     )
 
 
@@ -464,6 +465,7 @@ def _ss_build_generation_prompts(
         user_topic=kwargs["user_topic"],
         user_core_question=kwargs["user_core_question"],
         prior_scopes=kwargs["prior_scopes"],
+        balanced_batch=kwargs["balanced_batch"],
     )
 
 
