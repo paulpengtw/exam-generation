@@ -39,6 +39,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const logout = useAuthStore((s) => s.logout);
   const { status, progressLines, results, displayResults, llmCalls, agentLanes, errorMessage, generate, reset } = useGenerate();
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
     string | null
   >(null);
@@ -125,7 +126,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             )}
             <button
               type="button"
-              onClick={handleLogout}
+              onClick={() => setIsLogoutConfirmOpen(true)}
               className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
             >
               {t("generate.btn_logout")}
@@ -207,6 +208,19 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         confirmKey="confirm.navigate_away_confirm"
         onConfirm={handleNavigationConfirm}
         onCancel={() => setPendingNavigationTarget(null)}
+      />
+      <DestructiveConfirm
+        open={isLogoutConfirmOpen}
+        titleKey="confirm.logout_title"
+        bodyKeys={[
+          "confirm.logout_body_session",
+          ...((hasUnsubmittedInput || hasResults)
+            ? ["confirm.logout_body_work_lost"]
+            : []),
+        ]}
+        confirmKey="confirm.logout_confirm"
+        onConfirm={handleLogout}
+        onCancel={() => setIsLogoutConfirmOpen(false)}
       />
     </div>
   );

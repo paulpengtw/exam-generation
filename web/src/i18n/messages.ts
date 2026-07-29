@@ -43,6 +43,10 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "confirm.navigate_away_body_params": "The parameters you entered will be lost.",
     "confirm.navigate_away_body_results": "The generated questions will be lost.",
     "confirm.navigate_away_confirm": "Leave",
+    "confirm.logout_title": "Sign out?",
+    "confirm.logout_body_session": "Signing back in needs a new magic-link email.",
+    "confirm.logout_body_work_lost": "The parameters you entered and any generated questions will also be lost.",
+    "confirm.logout_confirm": "Sign out",
 
     "generate.title": "Math Exam Generator",
     "generate.title_ss": "Social Studies Generator",
@@ -302,6 +306,10 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "confirm.navigate_away_body_params": "您已輸入但尚未送出的內容將會遺失。",
     "confirm.navigate_away_body_results": "已產生的題目將會遺失。",
     "confirm.navigate_away_confirm": "離開",
+    "confirm.logout_title": "確定要登出？",
+    "confirm.logout_body_session": "重新登入需要再收一次登入信。",
+    "confirm.logout_body_work_lost": "您已輸入的設定與已產生的題目也會一併遺失。",
+    "confirm.logout_confirm": "登出",
 
     "generate.title": "數學題目產生器",
     "generate.title_ss": "社會領域題目產生器",

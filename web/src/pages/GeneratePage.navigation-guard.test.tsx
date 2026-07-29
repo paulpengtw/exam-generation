@@ -6,6 +6,7 @@ import type { GeneratedQuestion } from "../hooks/useGenerate";
 const navigateMock = vi.hoisted(() => vi.fn());
 const generateMock = vi.hoisted(() => vi.fn());
 const resetMock = vi.hoisted(() => vi.fn());
+const logoutMock = vi.hoisted(() => vi.fn());
 
 let configuredDisplayResults: GeneratedQuestion[] = [];
 
@@ -48,7 +49,7 @@ vi.mock("../store/authStore", () => ({
   useAuthStore: (selector: (state: {
     user: null;
     logout: () => void;
-  }) => unknown) => selector({ user: null, logout: vi.fn() }),
+  }) => unknown) => selector({ user: null, logout: logoutMock }),
 }));
 
 vi.mock("../i18n/useT", () => ({
@@ -97,6 +98,12 @@ function clickBackArrow() {
 function clickHistory() {
   fireEvent.click(
     screen.getByRole("button", { name: "history.nav_link" }),
+  );
+}
+
+function clickLogout() {
+  fireEvent.click(
+    screen.getByRole("button", { name: "generate.btn_logout" }),
   );
 }
 
@@ -254,5 +261,100 @@ describe("GeneratePage navigation guard", () => {
     expect(
       screen.getByText("confirm.navigate_away_body_results"),
     ).toBeInTheDocument();
+  });
+});
+
+describe("GeneratePage logout confirmation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    configuredDisplayResults = [];
+  });
+
+  it("always confirms logout, even on a pristine form", () => {
+    renderPage();
+
+    clickLogout();
+
+    expect(screen.getByText("confirm.logout_title")).toBeInTheDocument();
+    expect(
+      screen.queryByText("confirm.navigate_away_title"),
+    ).not.toBeInTheDocument();
+    expect(logoutMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("mentions only the session on a pristine generate page", () => {
+    renderPage();
+
+    clickLogout();
+
+    expect(screen.getByText("confirm.logout_title")).toBeInTheDocument();
+    expect(
+      screen.getByText("confirm.logout_body_session"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("confirm.logout_body_work_lost"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("also warns about losing work when unsubmitted input is present", () => {
+    renderPage();
+    clickEditForm();
+
+    clickLogout();
+
+    expect(screen.getByText("confirm.logout_title")).toBeInTheDocument();
+    expect(
+      screen.queryByText("confirm.navigate_away_title"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("confirm.logout_body_session"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("confirm.logout_body_work_lost"),
+    ).toBeInTheDocument();
+  });
+
+  it("also warns about losing work when generated questions exist", () => {
+    renderPage({ withResults: true });
+
+    clickLogout();
+
+    expect(screen.getByText("confirm.logout_title")).toBeInTheDocument();
+    expect(
+      screen.queryByText("confirm.navigate_away_title"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("confirm.logout_body_session"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("confirm.logout_body_work_lost"),
+    ).toBeInTheDocument();
+  });
+
+  it("cancelling logout does not log out, clear credentials or navigate", () => {
+    renderPage();
+    clickLogout();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "confirm.destructive_cancel" }),
+    );
+
+    expect(logoutMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(screen.queryByText("confirm.logout_title")).not.toBeInTheDocument();
+  });
+
+  it("confirming logout logs out and returns to the login page", () => {
+    renderPage();
+    clickLogout();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "confirm.logout_confirm" }),
+    );
+
+    expect(logoutMock).toHaveBeenCalledOnce();
+    expect(navigateMock).toHaveBeenCalledOnce();
+    expect(navigateMock).toHaveBeenCalledWith("/");
   });
 });
