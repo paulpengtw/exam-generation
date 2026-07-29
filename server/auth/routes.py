@@ -6,24 +6,26 @@ import hashlib
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.auth.dependencies import get_config, get_current_user
+from server.auth.dependencies import get_config, get_current_token_payload, get_current_user
 from server.auth.email import EmailSender, get_email_sender
-from server.auth.tokens import create_jwt, generate_magic_token
+from server.auth.tokens import create_jwt, generate_magic_token, session_origin
 from server.auth.whitelist import is_email_allowed
 from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import MagicLinkToken, User
-from server.rate_limit import limiter
+from server.rate_limit import jwt_user_key, limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 MAGIC_LINK_TTL_MINUTES = 15
+SESSION_MAX_AGE_DAYS = 30
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -60,6 +62,8 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
     created_at: datetime
+    session_expires_at: datetime
+    renewal_threshold_days: int
 
 
 def _email_sender_dep(config: ServerConfig = Depends(get_config)) -> EmailSender:
@@ -157,6 +161,40 @@ async def verify_magic_link(
     return TokenResponse(access_token=access_token)
 
 
+@router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("10/hour", key_func=jwt_user_key)
+async def refresh(
+    request: Request,
+    user: User = Depends(get_current_user),
+    payload: dict[str, Any] = Depends(get_current_token_payload),
+    config: ServerConfig = Depends(get_config),
+) -> TokenResponse:
+    origin = session_origin(payload)
+    now = int(datetime.now(timezone.utc).timestamp())
+    if now - origin >= SESSION_MAX_AGE_DAYS * 24 * 60 * 60:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session maximum age exceeded",
+        )
+    access_token = create_jwt(
+        user.id,
+        user.email,
+        config=config,
+        origin=origin,
+    )
+    return TokenResponse(access_token=access_token)
+
+
 @router.get("/me", response_model=UserResponse)
-async def me(user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse(id=user.id, email=user.email, created_at=user.created_at)
+async def me(
+    user: User = Depends(get_current_user),
+    payload: dict[str, Any] = Depends(get_current_token_payload),
+    config: ServerConfig = Depends(get_config),
+) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        created_at=user.created_at,
+        session_expires_at=datetime.fromtimestamp(payload["exp"], timezone.utc),
+        renewal_threshold_days=config.session_renewal_threshold_days,
+    )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from functools import lru_cache
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -39,14 +40,20 @@ def _bearer_token(request: Request) -> str:
     return parts[1]
 
 
-async def get_current_user(
+def get_current_token_payload(
     request: Request,
-    session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
+) -> dict[str, Any]:
+    """Decode and return the current Bearer JWT payload."""
+    token = _bearer_token(request)
+    return decode_jwt(token, config=config)
+
+
+async def get_current_user(
+    payload: dict[str, Any] = Depends(get_current_token_payload),
+    session: AsyncSession = Depends(get_async_session),
 ) -> User:
     """Resolve the current user from the Bearer JWT, or raise HTTP 401."""
-    token = _bearer_token(request)
-    payload = decode_jwt(token, config=config)
     sub = payload.get("sub")
     if not sub:
         raise HTTPException(

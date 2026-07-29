@@ -141,6 +141,8 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `LLM_MODEL_EXECUTE` | `claude-sonnet-4-6` | Which Claude model generates questions |
 | `LLM_RATE_LIMIT_DELAY` | `2` | Wait 2 seconds between Claude calls (avoids rate-limit errors) |
 | `JWT_SECRET` | A long random string (see below) | Used to sign login tokens |
+| `JWT_EXPIRE_DAYS` | `7` | Keeps each login token valid for 7 days |
+| `SESSION_RENEWAL_THRESHOLD_DAYS` | `2` | Renews a login session when its token has 2 days left |
 | `FRONTEND_URL` | The frontend URL you copied in Step 7.3, with `https://` in front | Tells the backend which website is allowed to call it |
 | `EMAIL_BACKEND` | `console` | `console` prints magic-link login emails to backend logs — fine for your own first login; switch to `ses` after following **Step 13** so other teachers receive real emails |
 | `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |

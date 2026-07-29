@@ -23,16 +23,32 @@ def generate_magic_token() -> tuple[str, str]:
     return raw_token, token_hash
 
 
-def create_jwt(user_id: uuid.UUID | str, email: str, *, config: ServerConfig) -> str:
+def create_jwt(
+    user_id: uuid.UUID | str,
+    email: str,
+    *,
+    config: ServerConfig,
+    origin: int | None = None,
+) -> str:
     """Create an HS256 JWT for the given user."""
     now = datetime.now(timezone.utc)
+    issued_at = int(now.timestamp())
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "email": email,
-        "iat": int(now.timestamp()),
+        "iat": issued_at,
         "exp": int((now + timedelta(days=config.jwt_expire_days)).timestamp()),
+        "origin": issued_at if origin is None else origin,
     }
     return jwt.encode(payload, config.jwt_secret, algorithm=JWT_ALGORITHM)
+
+
+def session_origin(payload: dict[str, Any]) -> int:
+    """Return the timestamp when the presented login session began."""
+    if "origin" in payload:
+        return payload["origin"]
+    # This fallback becomes dead code once pre-origin tokens age out and should then be removed.
+    return payload["iat"]
 
 
 def decode_jwt(token: str, *, config: ServerConfig) -> dict[str, Any]:

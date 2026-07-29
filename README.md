@@ -239,6 +239,8 @@ Environment variables (set in `.env` or export directly):
 | `DATABASE_URL` | server | Async SQLAlchemy database URL | `sqlite+aiosqlite:///./dev.db` |
 | `DB_PASSWORD` | docker-compose | Password for the bundled Postgres service | `changeme` |
 | `JWT_SECRET` | server | Secret used to sign auth tokens — must be a long random string | **(required for server)** |
+| `JWT_EXPIRE_DAYS` | server | Login token lifetime in days | `7` |
+| `SESSION_RENEWAL_THRESHOLD_DAYS` | server | Days before token expiry when the login session should be renewed | `2` |
 | `FRONTEND_URL` | server | Frontend origin; controls CORS allowlist | `http://localhost:3000` |
 | `EMAIL_BACKEND` | server | `ses` for AWS SES, `console` to log emails to stdout | `console` |
 | `AWS_REGION` | server (if `EMAIL_BACKEND=ses`) | AWS region for SES | `us-east-1` |
