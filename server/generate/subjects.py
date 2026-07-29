@@ -24,6 +24,9 @@ from src.common.batch_dedup import (
     extract_ns_prior_scope,
     extract_ss_prior_scope,
 )
+from src.common.curriculum_loader import (
+    load_learning_content as load_common_lc,
+)
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
 from src.natural_sciences.cli import (
     build_generation_prompts as _ns_build_prompts_impl,
@@ -867,6 +870,16 @@ def _math_build_schemas(config_server: Any, grade: int | None) -> dict:
             "科目": entry.get("科目", ""),
         }
         for entry in performance.get("學習表現", [])
+        if entry.get("學習階段") == learning_stage
+    ]
+    content = load_common_lc(config_server.math_curriculum_dir)
+    schemas["學習內容"] = [
+        {
+            "value": entry["value"],
+            "instruction": entry.get("條目說明", ""),
+            "科目": entry.get("科目", ""),
+        }
+        for entry in content.get("學習內容", [])
         if entry.get("學習階段") == learning_stage
     ]
     return schemas
