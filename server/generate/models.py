@@ -74,7 +74,7 @@ class GenerateParams(BaseModel):
     context: list[str] | None = None
     set_type: str | None = Field(default=None, alias="set_type")
     q_type: list[str] | None = None
-    count: int = 1
+    count: int = Field(default=1, ge=1, le=10)
     skip_verify: bool = False
     disable_reference_fewshot: bool = False
     seed: int | None = None

@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from server.generate.models import GenerateParams
 
-
 MATH_UNSUPPORTED_PARAMS: list[tuple[str, object]] = [
     ("text_word_limit", 500),
     ("sub_question_count", 3),
@@ -96,6 +95,28 @@ def test_generate_params_accepts_math_disable_reference_fewshot(
     )
 
     assert params.disable_reference_fewshot is disable_reference_fewshot
+
+
+def test_generate_params_rejects_count_above_ten() -> None:
+    with pytest.raises(ValidationError, match="count"):
+        GenerateParams(count=11)
+
+
+def test_generate_params_accepts_count_of_ten() -> None:
+    params = GenerateParams(count=10)
+
+    assert params.count == 10
+
+
+def test_generate_params_defaults_count_to_one() -> None:
+    params = GenerateParams()
+
+    assert params.count == 1
+
+
+def test_generate_params_rejects_count_below_one() -> None:
+    with pytest.raises(ValidationError, match="count"):
+        GenerateParams(count=0)
 
 
 @pytest.mark.parametrize(
