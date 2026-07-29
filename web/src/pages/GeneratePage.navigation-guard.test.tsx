@@ -13,6 +13,7 @@ let configuredDisplayResults: GeneratedQuestion[] = [];
 vi.mock("react-router-dom", () => ({
   useNavigate: () => navigateMock,
   useLocation: () => ({ state: null }),
+  useBlocker: () => ({ state: "unblocked", proceed: undefined, reset: undefined }),
 }));
 
 vi.mock("../hooks/useGenerate", () => ({

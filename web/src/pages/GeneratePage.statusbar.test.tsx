@@ -34,6 +34,7 @@ vi.mock("../hooks/useGenerate", () => ({
 vi.mock("react-router-dom", () => ({
   useNavigate: () => vi.fn(),
   useLocation: () => ({ state: null }),
+  useBlocker: () => ({ state: "unblocked", proceed: undefined, reset: undefined }),
 }));
 
 vi.mock("../store/authStore", () => ({
