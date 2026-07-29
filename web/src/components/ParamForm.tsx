@@ -720,14 +720,14 @@ export default function ParamForm({
     let finalLc: string[] | undefined;
     let lcAutoDrawn = false;
     if (
-      (subject === "natural_sciences" || subject === "social_studies") &&
+      (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
       learningContent.length === 0 &&
       lcPoolValues.length > 0
     ) {
       finalLc = drawRandomSubset(lcPoolValues, 1, 3);
       lcAutoDrawn = true;
     } else if (
-      (subject === "natural_sciences" || subject === "social_studies") &&
+      (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
       learningContent.length > 0
     ) {
       finalLc = learningContent;
