@@ -66,6 +66,10 @@ _Avoid_: random sampling mode, shuffle mode, unbalanced mode
 Resolving a value that would otherwise be chosen randomly during generation, before the user confirms, so the confirmation screen can show it.
 _Avoid_: pre-draw, pre-roll, client-side sampling
 
+**未送出的輸入**:
+Form input the user has entered but not yet sent for generation. It exists from the user's first edit onward; values supplied programmatically by 預抽 or prefilled by Regenerate do not create it without the user's own edit.
+_Avoid_: unsaved changes, dirty state, unsubmitted changes
+
 **釘選**:
 Sending a resolved value with the request so nothing downstream re-randomises it. A 預抽 value is always 釘選.
 _Avoid_: pin, lock, fix
@@ -91,6 +95,10 @@ _Avoid_: subquestion generator, stage two, worker
 **發送前確認**:
 The screen shown after the user submits the form and before generation begins, stating what will be sent.
 _Avoid_: confirmation dialog, review screen, preview
+
+**破壞性操作確認**:
+A modal that interrupts an action which would irreversibly discard the user's work or end their session, requiring explicit assent before it proceeds; it appears on the way to that destructive or irreversible action, not on the way to sending a form. Contrast 發送前確認.
+_Avoid_: destructive-action modal, are-you-sure dialog, warning modal
 
 **提示詞預覽**:
 The literal system and user prompt text displayed on 發送前確認, assembled without calling any model.
