@@ -17,7 +17,7 @@ The Python code handles all random selection (grade, 情境, 題型種類, 題�
 When a batch generates `count > 1` questions, each subject's batch loop accumulates a `list[PriorScope]` of already-accepted siblings (`{核心問題 | 出題概念, 學習內容 codes}`) and passes it to the next question's user prompt via a new optional `prior_scopes` keyword on `build_user_prompt` (math) / `build_text_user_prompt` (社會/自然). The LLM sees a short `## 已生成題目（請避免相似範圍）` block listing up to the 10 most recent siblings so it varies angle/題材 even when learning-content codes overlap. Empty list → section omitted → count=1 prompts are byte-identical to today. Extractor helpers and formatter live in `src/common/batch_dedup.py`. The server's `generate_question_stream` shares one `threading.Lock`-guarded list across concurrent workers — best-effort dedup consistent with the concurrent worker design. Embedding-similarity retry (Phase 2) is out of scope.
 
 ### Web confirmation dialog pre-draw
-The web form always shows both 學習內容 and 學習表現 in the confirmation step before submission. If the user made no manual selection, the frontend pre-draws a random subset (1–3 items for 學習內容, 1–2 for 學習表現) from the available pool before displaying the confirmation screen. What is shown is exactly what will be sent to the backend — no further randomness happens on the backend for those fields when they are present.
+The web form always shows both 學習內容 and 學習表現 in the confirmation step before submission. If the user made no manual selection, the frontend pre-draws a random subset (1–3 items for 學習內容, 1–2 for 學習表現) from the available pool before displaying the confirmation screen. This happens regardless of 出題模式: 出題模式 never suppresses or alters the 預抽. What is shown is exactly what will be sent to the backend — no further randomness happens on the backend for those fields when they are present.
 
 For 社會領域 and 自然科學 requests that specify `sub_question_count`, the
 frontend also pre-draws per-小題 學習內容 (1–3) and 學習表現 (1–2) from
@@ -29,6 +29,10 @@ Explicit per-小題 selections are preserved verbatim and never
 overwritten. Empty global pools disable per-小題 auto-draw for that
 field, in which case the backend's `or global pool` prompt-build
 fallback still applies at generation time.
+
+### 出題模式 is a prompt-level hint
+
+`coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.
 
 ### Verify + correct loop
 1. First call (Sonnet): generates the question and solution. **For math,** this is a single call producing the full question. **For social studies and natural sciences,** this is a two-stage pipeline: a **文本生成器** call produces the shared 核心問題/文本/取材來源 plus an N-entry 子題 plan, then N concurrent **子題產生器** calls each write one complete 子題 (via `ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6; failed/unparseable 子題 calls get up to `SUBGEN_RETRIES` fresh retries, default 1, before the slot is dropped); the assembled 題組 then enters the verify/correct loop.

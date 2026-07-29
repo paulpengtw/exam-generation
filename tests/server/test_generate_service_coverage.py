@@ -1,4 +1,4 @@
-"""Balanced-coverage wiring in the SS service branch (issue #112)."""
+"""Coverage mode does not drive SS draws and metadata reflects requests (#211)."""
 
 from __future__ import annotations
 
@@ -59,29 +59,49 @@ def _run_stream(params: GenerateParams, tmp_path: Path) -> list[dict]:
     return events
 
 
-def test_balanced_batch_covers_distinct_q_types(tmp_path) -> None:
-    params = GenerateParams(
+def test_balanced_and_random_draw_identically_for_the_same_seed(tmp_path) -> None:
+    balanced_params = GenerateParams(
         subject="social_studies",
         count=4,
         skip_verify=True,
         coverage_mode="balanced",
         seed=13,
     )
-    events = _run_stream(params, tmp_path)
-    results = [e["data"] for e in events if e["event"] == "result"]
-    assert len(results) == 4
+    random_params = GenerateParams(
+        subject="social_studies",
+        count=4,
+        skip_verify=True,
+        coverage_mode="random",
+        seed=13,
+    )
+    balanced_events = _run_stream(balanced_params, tmp_path)
+    random_events = _run_stream(random_params, tmp_path)
+    balanced_results = [
+        e["data"] for e in balanced_events if e["event"] == "result"
+    ]
+    random_results = [e["data"] for e in random_events if e["event"] == "result"]
 
-    q_types = [r["題型"] for r in results]
-    # 4 questions over the 3-value QuestionType pool: each of the 3 types
-    # must appear at least once (⌊4/3⌋+1 balancing guarantee).
-    from src.social_studies.schemas import QuestionType as QT
+    assert len(balanced_results) == 4
+    assert len(random_results) == 4
 
-    assert set(q_types) >= {t.value for t in QT}
+    # Workers run concurrently so results may arrive in any order; sort by the
+    # numeric suffix of the question ID (e.g. "ss_20250101_001" → "001") to
+    # align the two lists by worker index before comparing.
+    def _by_worker(r: dict) -> str:
+        return r.get("id", "").rsplit("_", 1)[-1]
 
-    assert all(r["metadata"]["coverage_mode_used"] == "balanced" for r in results)
+    balanced_sorted = sorted(balanced_results, key=_by_worker)
+    random_sorted = sorted(random_results, key=_by_worker)
+
+    assert [r["題型"] for r in balanced_sorted] == [
+        r["題型"] for r in random_sorted
+    ]
+    assert [r["取材來源"] for r in balanced_sorted] == [
+        r["取材來源"] for r in random_sorted
+    ]
 
 
-def test_random_mode_skips_batch_sampler_and_stamps_metadata(tmp_path) -> None:
+def test_random_mode_stamps_metadata(tmp_path) -> None:
     params = GenerateParams(
         subject="social_studies",
         count=3,
@@ -95,22 +115,69 @@ def test_random_mode_skips_batch_sampler_and_stamps_metadata(tmp_path) -> None:
     assert all(r["metadata"]["coverage_mode_used"] == "random" for r in results)
 
 
-def test_count_one_stamps_random_regardless_of_flag(tmp_path) -> None:
-    params = GenerateParams(
+def test_count_one_stamps_the_requested_mode(tmp_path) -> None:
+    balanced_params = GenerateParams(
         subject="social_studies",
         count=1,
         skip_verify=True,
         coverage_mode="balanced",
         seed=5,
     )
-    events = _run_stream(params, tmp_path)
-    results = [e["data"] for e in events if e["event"] == "result"]
-    assert len(results) == 1
-    assert results[0]["metadata"]["coverage_mode_used"] == "random"
+    random_params = GenerateParams(
+        subject="social_studies",
+        count=1,
+        skip_verify=True,
+        coverage_mode="random",
+        seed=5,
+    )
+    balanced_events = _run_stream(balanced_params, tmp_path)
+    random_events = _run_stream(random_params, tmp_path)
+    balanced_results = [
+        e["data"] for e in balanced_events if e["event"] == "result"
+    ]
+    random_results = [e["data"] for e in random_events if e["event"] == "result"]
+
+    assert len(balanced_results) == 1
+    assert len(random_results) == 1
+    assert balanced_results[0]["metadata"]["coverage_mode_used"] == "balanced"
+    assert random_results[0]["metadata"]["coverage_mode_used"] == "random"
+
+
+def test_coverage_mode_used_reflects_the_requested_mode_for_a_batch(tmp_path) -> None:
+    balanced_params = GenerateParams(
+        subject="social_studies",
+        count=3,
+        skip_verify=True,
+        coverage_mode="balanced",
+        seed=13,
+    )
+    random_params = GenerateParams(
+        subject="social_studies",
+        count=3,
+        skip_verify=True,
+        coverage_mode="random",
+        seed=13,
+    )
+    balanced_events = _run_stream(balanced_params, tmp_path)
+    random_events = _run_stream(random_params, tmp_path)
+    balanced_results = [
+        e["data"] for e in balanced_events if e["event"] == "result"
+    ]
+    random_results = [e["data"] for e in random_events if e["event"] == "result"]
+
+    assert len(balanced_results) == 3
+    assert len(random_results) == 3
+    assert all(
+        r["metadata"]["coverage_mode_used"] == "balanced"
+        for r in balanced_results
+    )
+    assert all(
+        r["metadata"]["coverage_mode_used"] == "random" for r in random_results
+    )
 
 
 def test_user_q_type_pool_wins_over_balanced_assignment(tmp_path) -> None:
-    # User pinned q_type; balanced assignment must be a no-op for 題型.
+    # An explicit user q_type pin must determine every 題型 draw.
     params = GenerateParams(
         subject="social_studies",
         count=3,
@@ -125,8 +192,7 @@ def test_user_q_type_pool_wins_over_balanced_assignment(tmp_path) -> None:
 
 
 def test_user_learning_content_wins_over_balanced_assignment(tmp_path) -> None:
-    # User pinned 學習內容; balanced batch planning must never zero it out —
-    # every emitted question's sampled LC pool must equal the user's pin.
+    # Every emitted question's sampled LC pool must equal the user's explicit pin.
     params = GenerateParams(
         subject="social_studies",
         count=2,

@@ -75,6 +75,57 @@ def test_social_studies_schemas_include_content_types() -> None:
     assert "社1b-Ⅳ-1" in {entry["value"] for entry in learning_performance}
 
 
+def test_math_schemas_include_the_learning_content_pool(tmp_path: Path) -> None:
+    payload = {"學習階段": "第四學習階段", "grades": [7, 8, 9]}
+    schemas_file = tmp_path / "question_schemas.json"
+    schemas_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    app = create_app()
+    app.dependency_overrides[get_config] = lambda: _config(schemas_file)
+    with TestClient(app) as client:
+        r = client.get("/api/schemas?subject=math")
+
+    assert r.status_code == 200
+    learning_content = r.json()["學習內容"]
+    assert learning_content
+    strand_prefixes = set("NnAaFfRrSsGgDdPp")
+    assert all(set(entry) == {"value", "instruction", "科目"} for entry in learning_content)
+    assert all(
+        len(entry["科目"]) == 1 and entry["科目"] in strand_prefixes
+        for entry in learning_content
+    )
+
+
+def test_math_learning_content_is_filtered_to_the_resolved_learning_stage(
+    tmp_path: Path,
+) -> None:
+    payload = {"學習階段": "第五學習階段", "grades": [7, 8, 9]}
+    schemas_file = tmp_path / "question_schemas.json"
+    schemas_file.write_text(json.dumps(payload), encoding="utf-8")
+    content_path = (
+        Path(__file__).resolve().parents[2]
+        / "data"
+        / "math"
+        / "curriculum"
+        / "learning_content.json"
+    )
+    content_data = json.loads(content_path.read_text(encoding="utf-8"))
+    expected_values = {
+        entry["value"]
+        for entry in content_data["學習內容"]
+        if entry["學習階段"] == "第四學習階段"
+    }
+
+    app = create_app()
+    app.dependency_overrides[get_config] = lambda: _config(schemas_file)
+    with TestClient(app) as client:
+        r = client.get("/api/schemas?subject=math&grade=7")
+
+    assert r.status_code == 200
+    returned_values = {entry["value"] for entry in r.json()["學習內容"]}
+    assert returned_values == expected_values
+
+
 def test_natural_sciences_schemas_include_pisa_science_dimensions() -> None:
     app = create_app()
     with TestClient(app) as client:

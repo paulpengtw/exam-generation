@@ -23,8 +23,6 @@ def test_social_studies_uses_requested_core_competencies() -> None:
         params,
         overrides,
         seed=1,
-        assigned_q_type=None,
-        assigned_lc=None,
         subquestion_configs_decoded=None,
     )
 

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
+import DestructiveConfirm from "../components/DestructiveConfirm";
 import GenerationStatusBar, {
   type JumpTarget,
   type RunState,
@@ -41,12 +42,34 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const { status, progressLines, results, displayResults, llmCalls, agentLanes, errorMessage, startedAt, finishedAt, generate, reset } = useGenerate();
+  const {
+    status,
+    progressLines,
+    results,
+    displayResults,
+    llmCalls,
+    agentLanes,
+    errorMessage,
+    startedAt,
+    finishedAt,
+    generate,
+    reset,
+  } = useGenerate();
   const { enabled, open } = useFeedbackDialog();
   const formRef = useRef<HTMLElement | null>(null);
   const progressRef = useRef<HTMLElement | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
   const [requestedTotal, setRequestedTotal] = useState(0);
+  const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [isClearResultsConfirmOpen, setIsClearResultsConfirmOpen] =
+    useState(false);
+  const [pendingResubmitParams, setPendingResubmitParams] = useState<
+    ReturnType<typeof toGenerateParams> | null
+  >(null);
+  const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
+    string | null
+  >(null);
 
   const handleLogout = () => {
     logout();
@@ -54,8 +77,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   };
 
   const handleSubmit = (params: FormParams) => {
+    const generateParams = toGenerateParams(subject, params);
+    if (status === "generating") {
+      setPendingResubmitParams(generateParams);
+      return;
+    }
     setRequestedTotal(params.count);
-    generate(toGenerateParams(subject, params));
+    generate(generateParams);
   };
 
   const handleReset = () => {
@@ -99,6 +127,25 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const availableTargets: JumpTarget[] = ["form"];
   if (showProgress) availableTargets.push("progress");
   if (hasResults) availableTargets.push("results");
+  const handleNavigation = (target: string) => {
+    if (!hasUnsubmittedInput && !hasResults) {
+      navigate(target);
+      return;
+    }
+
+    setPendingNavigationTarget(target);
+  };
+  const handleNavigationConfirm = () => {
+    if (pendingNavigationTarget === null) return;
+
+    const target = pendingNavigationTarget;
+    setPendingNavigationTarget(null);
+    navigate(target);
+  };
+  const navigationBodyKeys = [
+    ...(hasUnsubmittedInput ? ["confirm.navigate_away_body_params"] : []),
+    ...(hasResults ? ["confirm.navigate_away_body_results"] : []),
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -107,7 +154,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate("/generate")}
+              onClick={() => handleNavigation("/generate")}
               className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
               title={t("generate.btn_back_subjects")}
             >
@@ -125,7 +172,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             <LanguageSwitcher />
             <button
               type="button"
-              onClick={() => navigate("/history")}
+              onClick={() => handleNavigation("/history")}
               className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
             >
               {t("history.nav_link")}
@@ -137,7 +184,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             )}
             <button
               type="button"
-              onClick={handleLogout}
+              onClick={() => setIsLogoutConfirmOpen(true)}
               className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
             >
               {t("generate.btn_logout")}
@@ -153,6 +200,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             onSubmit={handleSubmit}
             disabled={status === "generating"}
             initialParams={prefillParams ?? undefined}
+            onUnsubmittedInput={() => setHasUnsubmittedInput(true)}
           />
         </section>
 
@@ -191,7 +239,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={handleReset}
+                  onClick={() => setIsClearResultsConfirmOpen(true)}
                   className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
                   {t("generate.btn_clear")}
@@ -211,6 +259,57 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           </section>
         )}
       </main>
+      <DestructiveConfirm
+        open={pendingNavigationTarget !== null}
+        titleKey="confirm.navigate_away_title"
+        bodyKeys={navigationBodyKeys}
+        confirmKey="confirm.navigate_away_confirm"
+        onConfirm={handleNavigationConfirm}
+        onCancel={() => setPendingNavigationTarget(null)}
+      />
+      <DestructiveConfirm
+        open={isLogoutConfirmOpen}
+        titleKey="confirm.logout_title"
+        bodyKeys={[
+          "confirm.logout_body_session",
+          ...((hasUnsubmittedInput || hasResults)
+            ? ["confirm.logout_body_work_lost"]
+            : []),
+        ]}
+        confirmKey="confirm.logout_confirm"
+        onConfirm={handleLogout}
+        onCancel={() => setIsLogoutConfirmOpen(false)}
+      />
+      <DestructiveConfirm
+        open={isClearResultsConfirmOpen}
+        titleKey="confirm.clear_results_title"
+        bodyKeys={[
+          "confirm.clear_results_body",
+          ...(status === "generating"
+            ? ["confirm.clear_results_body_streaming"]
+            : []),
+        ]}
+        confirmKey="confirm.clear_results_confirm"
+        onConfirm={() => {
+          setIsClearResultsConfirmOpen(false);
+          handleReset();
+        }}
+        onCancel={() => setIsClearResultsConfirmOpen(false)}
+      />
+      <DestructiveConfirm
+        open={pendingResubmitParams !== null}
+        titleKey="confirm.resubmit_title"
+        bodyKeys={["confirm.resubmit_body"]}
+        confirmKey="confirm.resubmit_confirm"
+        onConfirm={() => {
+          if (pendingResubmitParams === null) return;
+          const params = pendingResubmitParams;
+          setPendingResubmitParams(null);
+          setRequestedTotal(params.count ?? 0);
+          generate(params);
+        }}
+        onCancel={() => setPendingResubmitParams(null)}
+      />
       <GenerationStatusBar
         runState={runState}
         completedCount={results.length}
