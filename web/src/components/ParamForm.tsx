@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
+import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
+import { useAuthStore } from "../store/authStore";
+import { useLangStore } from "../store/langStore";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
 import CoreQuestionPicker from "./CoreQuestionPicker";
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
@@ -144,6 +147,39 @@ export interface FormFields {
 type FormFieldUpdate<K extends keyof FormFields> =
   | FormFields[K]
   | ((current: FormFields[K]) => FormFields[K]);
+
+function jsonDeepEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => jsonDeepEqual(value, right[index]))
+    );
+  }
+  if (
+    typeof left !== "object" ||
+    left === null ||
+    typeof right !== "object" ||
+    right === null
+  ) {
+    return false;
+  }
+
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(rightRecord, key) &&
+        jsonDeepEqual(leftRecord[key], rightRecord[key]),
+    )
+  );
+}
 
 type ConfirmationValueKind = "absent" | "sampled" | "defaulted";
 
@@ -320,8 +356,15 @@ export default function ParamForm({
   initialParams,
   onUnsubmittedInput,
 }: ParamFormProps) {
-  const markUnsubmittedInput = () => onUnsubmittedInput?.();
+  const generationStartedRef = useRef(false);
+  const hasUserEditedRef = useRef(false);
+  const markUnsubmittedInput = () => {
+    generationStartedRef.current = false;
+    hasUserEditedRef.current = true;
+    onUnsubmittedInput?.();
+  };
   const t = useT();
+  const lang = useLangStore((state) => state.lang);
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -335,8 +378,15 @@ export default function ParamForm({
   const [perQuestionAutoFields, setPerQuestionAutoFields] = useState<string[][]>([]);
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
   const [models, setModels] = useState<AvailableModels | null>(null);
+  const [modelsResolved, setModelsResolved] = useState(false);
   const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(false);
   const previewRequestedRef = useRef(false);
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const hasInitialParams =
+    initialParams !== undefined && Object.keys(initialParams).length > 0;
+  const [draftToRestore, setDraftToRestore] = useState<FormDraft | null>(() =>
+    userId && !hasInitialParams ? loadDraft(userId) : null,
+  );
 
   const ip = initialParams ?? {};
   const userChosenFields = useRef(new Set(Object.keys(ip)));
@@ -394,6 +444,9 @@ export default function ParamForm({
   }));
   const formSnapshot = formFields;
   const restoreFormSnapshot = setFormFields;
+  const defaultsSnapshotRef = useRef<FormFields | null>(null);
+  const draftSaveTimeoutRef = useRef<number | null>(null);
+  const [defaultsReady, setDefaultsReady] = useState(false);
   const setField = useCallback(
     function updateFormField<K extends keyof FormFields>(key: K, update: FormFieldUpdate<K>) {
       restoreFormSnapshot((current) => {
@@ -436,6 +489,63 @@ export default function ParamForm({
     modelExecute,
   } = formSnapshot;
   const configuredSeed = fromInit<number | undefined>("seed", undefined);
+
+  useEffect(() => {
+    if (!schemas) return;
+    if (defaultsSnapshotRef.current === null) {
+      defaultsSnapshotRef.current = formSnapshot;
+    }
+    if (modelsResolved && !defaultsReady) {
+      setDefaultsReady(true);
+    }
+  }, [defaultsReady, formSnapshot, modelsResolved, schemas]);
+
+  useEffect(() => {
+    if (
+      !userId ||
+      !defaultsReady ||
+      generationStartedRef.current ||
+      defaultsSnapshotRef.current === null ||
+      (
+        !hasInitialParams &&
+        jsonDeepEqual(formSnapshot, defaultsSnapshotRef.current)
+      )
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      draftSaveTimeoutRef.current = null;
+      saveDraft(userId, formSnapshot);
+    }, 1_000);
+    draftSaveTimeoutRef.current = timeout;
+    return () => {
+      window.clearTimeout(timeout);
+      if (draftSaveTimeoutRef.current === timeout) {
+        draftSaveTimeoutRef.current = null;
+      }
+    };
+  }, [defaultsReady, formSnapshot, hasInitialParams, userId]);
+
+  const showDraftPrompt =
+    draftToRestore !== null &&
+    defaultsReady &&
+    !hasInitialParams &&
+    !hasUserEditedRef.current &&
+    defaultsSnapshotRef.current !== null &&
+    jsonDeepEqual(formSnapshot, defaultsSnapshotRef.current);
+
+  function handleRestoreDraft() {
+    if (!draftToRestore) return;
+    const fields = draftToRestore.fields;
+    setDraftToRestore(null);
+    restoreFormSnapshot(fields);
+  }
+
+  function handleRestartDraft() {
+    if (userId) clearDraft(userId);
+    setDraftToRestore(null);
+  }
 
   useEffect(() => {
     if (!pendingParams || coreQuestionResolution === "loading" || previewRequestedRef.current) return;
@@ -596,8 +706,24 @@ export default function ParamForm({
         // allowlist — a stale value (e.g. a model that was removed server
         // side) must never be silently submitted.
         const allowed = new Set(m.allowed);
+        if (defaultsSnapshotRef.current) {
+          defaultsSnapshotRef.current = {
+            ...defaultsSnapshotRef.current,
+            modelPlan:
+              defaultsSnapshotRef.current.modelPlan &&
+              !allowed.has(defaultsSnapshotRef.current.modelPlan)
+                ? ""
+                : defaultsSnapshotRef.current.modelPlan,
+            modelExecute:
+              defaultsSnapshotRef.current.modelExecute &&
+              !allowed.has(defaultsSnapshotRef.current.modelExecute)
+                ? ""
+                : defaultsSnapshotRef.current.modelExecute,
+          };
+        }
         setField("modelPlan", (prev) => (prev && !allowed.has(prev) ? "" : prev));
         setField("modelExecute", (prev) => (prev && !allowed.has(prev) ? "" : prev));
+        setModelsResolved(true);
       })
       .catch(() => {
         if (cancelled) return;
@@ -606,8 +732,16 @@ export default function ParamForm({
         // when /api/models fails, even for a returning user with a
         // persisted choice.
         setModels(null);
+        if (defaultsSnapshotRef.current) {
+          defaultsSnapshotRef.current = {
+            ...defaultsSnapshotRef.current,
+            modelPlan: "",
+            modelExecute: "",
+          };
+        }
         setField("modelPlan", "");
         setField("modelExecute", "");
+        setModelsResolved(true);
       });
     return () => {
       cancelled = true;
@@ -1059,6 +1193,12 @@ export default function ParamForm({
 
   function handleConfirmSend() {
     if (!pendingParams) return;
+    generationStartedRef.current = true;
+    if (draftSaveTimeoutRef.current !== null) {
+      window.clearTimeout(draftSaveTimeoutRef.current);
+      draftSaveTimeoutRef.current = null;
+    }
+    if (userId) clearDraft(userId);
     setPendingParams(null);
     onSubmit(pendingParams);
   }
@@ -1426,6 +1566,36 @@ export default function ParamForm({
 
   return (
     <form onSubmit={handleSubmit} onChange={markUnsubmittedInput} className="space-y-4">
+      {showDraftPrompt && (
+        <section
+          role="status"
+          className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          <p className="font-medium">{t("form.draft_found")}</p>
+          <p className="mt-1 text-amber-800">
+            {t("form.draft_saved_at").replace(
+              "{time}",
+              new Date(draftToRestore.savedAt).toLocaleString(lang),
+            )}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleRestoreDraft}
+              className="rounded bg-amber-700 px-3 py-1.5 font-medium text-white hover:bg-amber-800"
+            >
+              {t("form.draft_restore")}
+            </button>
+            <button
+              type="button"
+              onClick={handleRestartDraft}
+              className="rounded border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 hover:bg-amber-100"
+            >
+              {t("form.draft_restart")}
+            </button>
+          </div>
+        </section>
+      )}
       {prefillNotice && (
         <div className="mb-2 rounded border border-amber-200 bg-amber-50 p-2 text-sm text-amber-800">
           {prefillNotice}

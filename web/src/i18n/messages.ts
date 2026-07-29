@@ -131,6 +131,10 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.custom_question_btn": "Use my core question",
     "form.custom_question_divider": "— or type your own —",
     "form.topic_no_pick_warning": "You typed a topic but haven't picked a core question — generation will proceed without one.",
+    "form.draft_found": "An unfinished form was found.",
+    "form.draft_saved_at": "Saved at: {time}",
+    "form.draft_restore": "Restore draft",
+    "form.draft_restart": "Start over",
 
     "form.confirm_title": "Review settings before generating",
     "form.confirm_subtitle": "Please review the configuration below. Click \"Confirm & Generate\" to start, or \"Back\" to adjust.",
@@ -423,6 +427,10 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.custom_question_btn": "直接使用我的核心問題",
     "form.custom_question_divider": "— 或自行輸入 —",
     "form.topic_no_pick_warning": "你輸入了主題但尚未選擇核心問題——將直接產生題目（不含核心問題）。",
+    "form.draft_found": "找到未完成的出題表單。",
+    "form.draft_saved_at": "儲存時間：{time}",
+    "form.draft_restore": "還原草稿",
+    "form.draft_restart": "重新開始",
 
     "form.confirm_title": "發送前確認設定",
     "form.confirm_subtitle": "請確認以下設定。確認無誤後點選「確定發送」，或點選「返回」調整。",
