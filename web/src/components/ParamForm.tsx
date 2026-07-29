@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas } from "../api/client";
+import { apiFetch, getAvailableModels, getMe, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas, type TokenResponse } from "../api/client";
 import { useT } from "../i18n/useT";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
+import { shouldRenew } from "../lib/sessionRenewal";
 import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
@@ -763,6 +764,30 @@ export default function ParamForm({
     modelExecute,
   } = formSnapshot;
   const configuredSeed = fromInit<number | undefined>("seed", undefined);
+
+  useEffect(() => {
+    if (!useAuthStore.getState().token) return;
+
+    let cancelled = false;
+    void (async () => {
+      const me = await getMe() as Awaited<ReturnType<typeof getMe>> &
+        Parameters<typeof shouldRenew>[0];
+      if (!shouldRenew(me)) return;
+
+      const response = await apiFetch("/auth/refresh", { method: "POST" });
+      const refreshed = (await response.json()) as TokenResponse;
+      if (cancelled) return;
+      useAuthStore.getState().login(refreshed.access_token, {
+        id: me.id,
+        email: me.email,
+        created_at: me.created_at,
+      });
+    })().catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!schemas) return;

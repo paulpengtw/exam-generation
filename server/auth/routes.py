@@ -64,6 +64,7 @@ class UserResponse(BaseModel):
     created_at: datetime
     session_expires_at: datetime
     renewal_threshold_days: int
+    server_time: datetime
 
 
 def _email_sender_dep(config: ServerConfig = Depends(get_config)) -> EmailSender:
@@ -197,4 +198,5 @@ async def me(
         created_at=user.created_at,
         session_expires_at=datetime.fromtimestamp(payload["exp"], timezone.utc),
         renewal_threshold_days=config.session_renewal_threshold_days,
+        server_time=datetime.now(timezone.utc),
     )
