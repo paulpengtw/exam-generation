@@ -11,7 +11,7 @@ export default function LanguageSwitcher() {
   const setLang = useLangStore((s) => s.setLang);
 
   return (
-    <div className="inline-flex rounded border border-gray-300 overflow-hidden text-sm">
+    <div className="sentry-unmask inline-flex rounded border border-gray-300 overflow-hidden text-sm">
       {LANGS.map(({ value, label }) => (
         <button
           key={value}

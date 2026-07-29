@@ -22,6 +22,52 @@ const BASE_PROPS: GenerationStatusBarProps = {
 };
 
 describe("GenerationStatusBar — status half", () => {
+  it("unmasks fixed status labels without unmasking dynamic status values", () => {
+    const { rerender } = render(<GenerationStatusBar {...BASE_PROPS} />);
+    expect(screen.getByText("尚未生成")).toHaveClass("sentry-unmask");
+
+    rerender(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        completedCount={2}
+        requestedTotal={5}
+        startedAt={1_000}
+      />,
+    );
+    expect(screen.getByTestId("statusbar-status")).not.toHaveClass(
+      "sentry-unmask",
+    );
+    expect(screen.getByText("◐ 生成中 · 已完成")).toHaveClass(
+      "sentry-unmask",
+    );
+
+    rerender(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="done"
+        completedCount={5}
+        requestedTotal={5}
+        startedAt={1_000}
+        finishedAt={226_000}
+      />,
+    );
+    expect(screen.getByText("✓ 完成")).toHaveClass("sentry-unmask");
+    expect(screen.getByText("題 ·")).toHaveClass("sentry-unmask");
+
+    rerender(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="error"
+        completedCount={1}
+        requestedTotal={5}
+        startedAt={1_000}
+        finishedAt={13_000}
+      />,
+    );
+    expect(screen.getByText("✕ 錯誤")).toHaveClass("sentry-unmask");
+  });
+
   it("reports 尚未生成 before any run", () => {
     render(<GenerationStatusBar {...BASE_PROPS} />);
     expect(screen.getByText("尚未生成")).toBeInTheDocument();
@@ -123,6 +169,22 @@ describe("GenerationStatusBar — elapsed timer", () => {
 });
 
 describe("GenerationStatusBar — jump half", () => {
+  it("unmasks fixed action labels in replays", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        availableTargets={["form", "progress", "results"]}
+        onFeedback={vi.fn()}
+      />,
+    );
+
+    for (const label of ["表單", "進度", "結果", "回饋"]) {
+      expect(screen.getByRole("button", { name: label })).toHaveClass(
+        "sentry-unmask",
+      );
+    }
+  });
+
   it("jumps to a section that is on the page", () => {
     const onJump = vi.fn();
     render(

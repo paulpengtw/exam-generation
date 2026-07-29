@@ -92,10 +92,17 @@ export default function GenerationStatusBar({
           }`}
         >
           <span data-testid="statusbar-status" className="truncate">
-            {runState === "idle" ? t("statusbar.not_started") : null}
+            {runState === "idle" ? (
+              <span className="sentry-unmask">
+                {t("statusbar.not_started")}
+              </span>
+            ) : null}
             {runState === "running" ? (
               <>
-                ◐ {t("statusbar.running")} · {t("statusbar.completed_prefix")}{" "}
+                <span className="sentry-unmask">
+                  ◐ {t("statusbar.running")} ·{" "}
+                  {t("statusbar.completed_prefix")}
+                </span>{" "}
                 {completedCount} / {requestedTotal}
               </>
             ) : null}
@@ -103,8 +110,13 @@ export default function GenerationStatusBar({
             startedAt !== null &&
             finishedAt !== null ? (
               <>
-                ✓ {t("statusbar.done")} {completedCount}{" "}
-                {t("statusbar.unit_question")} ·{" "}
+                <span className="sentry-unmask">
+                  ✓ {t("statusbar.done")}
+                </span>{" "}
+                {completedCount}{" "}
+                <span className="sentry-unmask">
+                  {t("statusbar.unit_question")} ·
+                </span>{" "}
                 {formatDuration(
                   finishedAt - startedAt,
                   t("statusbar.unit_minute"),
@@ -112,7 +124,11 @@ export default function GenerationStatusBar({
                 )}
               </>
             ) : null}
-            {runState === "error" ? <>✕ {t("statusbar.error")}</> : null}
+            {runState === "error" ? (
+              <span className="sentry-unmask">
+                ✕ {t("statusbar.error")}
+              </span>
+            ) : null}
           </span>
           {runState === "running" && startedAt !== null ? (
             <ElapsedTime startedAt={startedAt} />
@@ -126,7 +142,7 @@ export default function GenerationStatusBar({
               type="button"
               disabled={!availableTargets.includes(target)}
               onClick={() => onJump(target)}
-              className="rounded border border-gray-300 bg-white px-1.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-2 sm:text-sm"
+              className="sentry-unmask rounded border border-gray-300 bg-white px-1.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-2 sm:text-sm"
             >
               {t(labelKey)}
             </button>
@@ -135,7 +151,7 @@ export default function GenerationStatusBar({
             <button
               type="button"
               onClick={onFeedback}
-              className="rounded border border-blue-600 bg-white px-1.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 sm:px-2 sm:text-sm"
+              className="sentry-unmask rounded border border-blue-600 bg-white px-1.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 sm:px-2 sm:text-sm"
             >
               {t("statusbar.feedback")}
             </button>

@@ -30,11 +30,18 @@ export function initSentry(): void {
     ...(release ? { release } : {}),
     integrations: [
       Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({
+        maskAllText: true,
+        blockAllMedia: true,
+        unmask: [".sentry-unmask"],
+      }),
       Sentry.consoleLoggingIntegration({ levels: ["warn", "error"] }),
       Sentry.feedbackIntegration({ autoInject: false, showBranding: false }),
     ],
     tracesSampleRate: 1,
     tracePropagationTargets: [/^\//],
+    replaysSessionSampleRate: 0,
+    replaysOnErrorSampleRate: 1.0,
     enableLogs: true,
     // Metrics default to enabled in @sentry/react 10.66, so no flag is needed.
     dataCollection: {

@@ -18,6 +18,14 @@ export function useFeedbackDialog(): {
     if (isOpeningRef.current) return;
     isOpeningRef.current = true;
     try {
+      const replay = Sentry.getReplay();
+      if (replay) {
+        try {
+          await replay.flush();
+        } catch {
+          // Replay upload is best-effort; feedback must still be available.
+        }
+      }
       const form = await feedback.createForm({
         formTitle: t("feedback.form_title"),
         showName: false,
