@@ -11,6 +11,9 @@ const browserTracingIntegrationMock = vi.hoisted(() =>
 const consoleLoggingIntegrationMock = vi.hoisted(() =>
   vi.fn(() => ({ name: "ConsoleLogs" })),
 );
+const replayIntegrationMock = vi.hoisted(() =>
+  vi.fn(() => ({ name: "Replay" })),
+);
 
 vi.mock("@sentry/react", () => ({
   init: initMock,
@@ -18,6 +21,7 @@ vi.mock("@sentry/react", () => ({
   feedbackIntegration: feedbackIntegrationMock,
   browserTracingIntegration: browserTracingIntegrationMock,
   consoleLoggingIntegration: consoleLoggingIntegrationMock,
+  replayIntegration: replayIntegrationMock,
 }));
 
 // initSentry() now guards on a module-level `_initialized` flag, so each
@@ -270,6 +274,28 @@ describe("sentry module", () => {
         String(target).includes("yourserver.io"),
       ),
     ).toBe(false);
+  });
+
+  it("records replays in buffer mode", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+
+    initSentry();
+
+    const options = initMock.mock.calls[0][0];
+    expect(options.replaysSessionSampleRate).toBe(0);
+    expect(options.replaysOnErrorSampleRate).toBe(1);
+  });
+
+  it("masks replay content except for explicitly allowlisted chrome", () => {
+    vi.stubEnv("VITE_SENTRY_DSN", "https://key@o0.ingest.sentry.io/0");
+
+    initSentry();
+
+    expect(replayIntegrationMock).toHaveBeenCalledWith({
+      maskAllText: true,
+      blockAllMedia: true,
+      unmask: [".sentry-unmask"],
+    });
   });
 
   it("pins every allowed data-collection category", () => {

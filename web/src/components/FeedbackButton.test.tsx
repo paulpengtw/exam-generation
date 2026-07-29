@@ -26,6 +26,7 @@ vi.mock("../sentry", () => ({
 
 vi.mock("@sentry/react", () => ({
   getFeedback: getFeedbackMock,
+  getReplay: () => undefined,
 }));
 
 import FeedbackButton from "./FeedbackButton";
@@ -49,6 +50,14 @@ describe("FeedbackButton", () => {
     sentryState.enabled = false;
     const { container } = renderAt("/history");
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("unmasks its static chrome text in replays", () => {
+    renderAt("/history");
+
+    expect(
+      screen.getByRole("button", { name: "Report a problem" }),
+    ).toHaveClass("sentry-unmask");
   });
 
   it("renders a ? button and opens the localized feedback form on click", async () => {
