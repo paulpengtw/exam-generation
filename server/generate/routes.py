@@ -94,7 +94,7 @@ async def generate_endpoint(
     context: list[NonEmptyQueryValue] | None = Query(default=None),
     set_type: NonEmptyQueryValue | None = Query(default=None),
     q_type: list[NonEmptyQueryValue] | None = Query(default=None),
-    count: int = Query(default=1, ge=1),
+    count: int = Query(default=1, ge=1, le=10),
     skip_verify: bool = Query(default=False),
     disable_reference_fewshot: bool = Query(default=False),
     seed: int | None = Query(default=None),

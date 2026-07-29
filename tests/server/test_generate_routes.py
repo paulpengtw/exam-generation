@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from urllib.parse import quote
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -61,6 +62,83 @@ def test_generate_route_rejects_malformed_per_question_params() -> None:
     assert response.status_code == 422
     assert "per_question_params" in response.text
     assert "valid JSON" in response.text
+
+
+@pytest.mark.parametrize("count", [11, 100000])
+def test_generate_route_rejects_count_above_ten(count: int) -> None:
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/api/generate", params={"count": count})
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    error = response.json()["detail"][0]
+    assert error["loc"] == ["query", "count"]
+    assert error["type"] == "less_than_equal"
+
+
+def test_generate_route_accepts_count_of_ten() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    from server.generate import routes as gen_routes
+
+    captured = {}
+
+    async def fake_stream(params, *_args, **_kwargs):
+        captured["params"] = params
+        yield {"event": "done", "data": ""}
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    original = gen_routes.generate_question_stream
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/generate?count=10",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200
+    assert captured["params"].count == 10
 
 
 def test_generate_route_forwards_social_studies_options(caplog) -> None:
