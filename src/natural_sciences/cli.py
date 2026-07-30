@@ -14,6 +14,7 @@ from typing import Any
 from src.common.batch_dedup import PriorScope, extract_ns_prior_scope
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import NATURAL_SCIENCES, SubjectGenerationSpec
+from src.common.subquestion_forcing import force_grade
 from src.config import Config
 from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.html_renderer import PlaywrightRenderer
@@ -221,6 +222,12 @@ def _parse_subquestion(
             誘答分析=distractor,
         )
         result.科目 = ["自然科學"]
+        # Issue #286: force 年級 from sampled params, never trust the LLM value.
+        # The prompt's own JSON example hard-codes 年級=8, causing junior-high
+        # values to leak into senior-high requests.  科目 is already forced
+        # above; 年級 gets the same treatment via the shared helper so that
+        # 社會領域 (issue #290) can reuse it later.
+        force_grade(result, params.grade)
         return result
     except Exception:
         return None
