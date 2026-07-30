@@ -137,8 +137,8 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | Variable name | Value to type | What it is |
 |---|---|---|
 | `GEMINI_API_KEY` | The `AIzaSy...` key from Step 1 | Lets the backend call Gemini (required for the default model) |
-| `LLM_MODEL_PLAN` | `gemini-3.1-pro-preview` | Which model handles planning |
-| `LLM_MODEL_EXECUTE` | `gemini-3.1-pro-preview` | Which model generates questions |
+| `LLM_MODEL_PLAN` | `claude-sonnet-4-6` | Which model handles planning |
+| `LLM_MODEL_EXECUTE` | `claude-sonnet-4-6` | Which model generates questions |
 | `LLM_API_KEY` | An Anthropic `sk-ant-...` key *(optional)* | Required only if using a `claude-*` model or the web-search fact-check feature |
 | `LLM_BASE_URL` | `https://api.anthropic.com/v1` | Anthropic API endpoint (leave as default if setting `LLM_API_KEY`) |
 | `OPENAI_API_KEY` | An OpenAI `sk-...` key *(optional)* | Required only if using a `gpt-*` or o-series model |

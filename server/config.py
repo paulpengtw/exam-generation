@@ -15,11 +15,11 @@ from src.config import Config
 # is not already in it).  When LLM_MODELS_ALLOWED is set it REPLACES this
 # roster entirely — no merge — and the plan/execute append still applies.
 _DEFAULT_MODELS_ALLOWED: tuple[str, ...] = (
+    "claude-sonnet-4-6",
     "gemini-3.1-pro-preview",
     "claude-opus-5",
     "claude-fable-5",
     "claude-sonnet-5",
-    "claude-sonnet-4-6",
     "claude-opus-4-6",
 )
 
@@ -82,8 +82,8 @@ class ServerConfig(Config):
         cfg = cls(
             api_key=os.environ.get("LLM_API_KEY", ""),
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
-            model_plan=os.environ.get("LLM_MODEL_PLAN", "gemini-3.1-pro-preview"),
-            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "gemini-3.1-pro-preview"),
+            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-sonnet-4-6"),
+            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
             image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),

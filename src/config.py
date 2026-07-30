@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 class Config:
     api_key: str = ""
     base_url: str = "https://api.anthropic.com/v1"
-    model_plan: str = "gemini-3.1-pro-preview"
-    model_execute: str = "gemini-3.1-pro-preview"
+    model_plan: str = "claude-sonnet-4-6"
+    model_execute: str = "claude-sonnet-4-6"
     image_api_key: str = ""
     image_base_url: str = "https://api.openai.com/v1"
     image_model: str = "gpt-image2"
@@ -49,8 +49,8 @@ class Config:
         return cls(
             api_key=os.environ.get("LLM_API_KEY", ""),
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
-            model_plan=os.environ.get("LLM_MODEL_PLAN", "gemini-3.1-pro-preview"),
-            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "gemini-3.1-pro-preview"),
+            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-sonnet-4-6"),
+            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
             image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),
