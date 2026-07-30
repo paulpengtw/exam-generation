@@ -76,7 +76,7 @@ export default defineConfig([
 
 | Variable | Purpose |
 |---|---|
-| `VITE_IS_STAGING` | Non-empty value shows the staging banner and tags Sentry events with environment `staging`. |
+| `VITE_IS_STAGING` | Non-empty value shows the staging banner, tags Sentry events with environment `staging`, and sets the browser-tab title to the localised staging prefix (e.g. `[Staging] 素養試題 AI Examgen` in English, `【測試機】素養試題 AI Examgen` in zh-TW). |
 | `VITE_SENTRY_DSN` | Sentry DSN (public client key). Enables error monitoring and the bottom-right "?" feedback button. Leave unset to disable Sentry entirely. |
 
 Both are **build-time** Vite variables: set them before `npm run build` (or
