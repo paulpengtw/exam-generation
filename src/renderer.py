@@ -360,15 +360,24 @@ def render_image(
         if not html and llm_client is not None:
             html = _generate_html_via_llm(image_spec, question_text, llm_client)
         if not html:
-            print("  Warning: no HTML content to render", file=sys.stderr)
+            _msg = "no HTML content to render (HTML generation failed or spec missing html)"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
         if html_renderer is None:
-            print("  Warning: html render_mode requires PlaywrightRenderer", file=sys.stderr)
+            _msg = "html render_mode requires PlaywrightRenderer (renderer not started)"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
         try:
             return html_renderer.render(html, output_path)
         except Exception as e:
-            print(f"  Warning: Playwright render failed: {e}", file=sys.stderr)
+            _msg = f"Playwright render failed: {e}"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
 
     print(f"  Warning: unknown render_mode '{render_mode}'", file=sys.stderr)
