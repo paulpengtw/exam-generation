@@ -22,6 +22,13 @@ export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
 }
 
+type PendingAction =
+  | { kind: "navigate"; target: string }
+  | { kind: "logout" }
+  | { kind: "clearResults" }
+  | { kind: "resubmit"; params: ReturnType<typeof toGenerateParams> }
+  | null;
+
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -64,20 +71,18 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [submittedSubQuestionCount, setSubmittedSubQuestionCount] =
     useState<number | null>(null);
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
-  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
-  const [isClearResultsConfirmOpen, setIsClearResultsConfirmOpen] =
-    useState(false);
-  const [pendingResubmitParams, setPendingResubmitParams] = useState<
-    ReturnType<typeof toGenerateParams> | null
-  >(null);
-  const [pendingNavigationTarget, setPendingNavigationTarget] = useState<
-    string | null
-  >(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const hasResults = displayResults.length > 0;
   const blocker = useBlocker(
     ({ historyAction }) =>
       (hasUnsubmittedInput || hasResults) && historyAction === "POP",
   );
+
+  // Derive the effective pending action: explicit state takes priority; the
+  // back guard derives directly from the live blocker so the blocker object
+  // is never snapshotted and is always available when proceed/reset are called.
+  const effectivePending =
+    pendingAction ?? (blocker.state === "blocked" ? ({ kind: "back" } as const) : null);
 
   useEffect(() => {
     if (!hasUnsubmittedInput && !hasResults) return;
@@ -101,7 +106,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     // future change that re-enables mid-run submission — do not delete.
     // See docs/adr/0010-the-resubmit-guard-is-dormant-by-design.md.
     if (status === "generating") {
-      setPendingResubmitParams(generateParams);
+      setPendingAction({ kind: "resubmit", params: generateParams });
       return;
     }
     setRequestedTotal(params.count);
@@ -156,19 +161,92 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       return;
     }
 
-    setPendingNavigationTarget(target);
-  };
-  const handleNavigationConfirm = () => {
-    if (pendingNavigationTarget === null) return;
-
-    const target = pendingNavigationTarget;
-    setPendingNavigationTarget(null);
-    navigate(target);
+    setPendingAction({ kind: "navigate", target });
   };
   const navigationBodyKeys = [
     ...(hasUnsubmittedInput ? ["confirm.navigate_away_body_params"] : []),
     ...(hasResults ? ["confirm.navigate_away_body_results"] : []),
   ];
+
+  // Derive dialog props from the single effective pending action.
+  const dialogProps = (() => {
+    if (effectivePending === null) {
+      return {
+        titleKey: "" as string,
+        bodyKeys: [] as string[],
+        confirmKey: "" as string,
+        onConfirm: () => {},
+        onCancel: () => {},
+      };
+    }
+    switch (effectivePending.kind) {
+      case "navigate": {
+        const target = effectivePending.target;
+        return {
+          titleKey: "confirm.navigate_away_title",
+          bodyKeys: navigationBodyKeys,
+          confirmKey: "confirm.navigate_away_confirm",
+          onConfirm: () => {
+            setPendingAction(null);
+            navigate(target);
+          },
+          onCancel: () => setPendingAction(null),
+        };
+      }
+      case "back":
+        return {
+          titleKey: "confirm.navigate_away_title",
+          bodyKeys: navigationBodyKeys,
+          confirmKey: "confirm.navigate_away_confirm",
+          onConfirm: () => blocker.proceed?.(),
+          onCancel: () => blocker.reset?.(),
+        };
+      case "logout":
+        return {
+          titleKey: "confirm.logout_title",
+          bodyKeys: [
+            "confirm.logout_body_session",
+            ...((hasUnsubmittedInput || hasResults)
+              ? ["confirm.logout_body_work_lost"]
+              : []),
+          ],
+          confirmKey: "confirm.logout_confirm",
+          onConfirm: handleLogout,
+          onCancel: () => setPendingAction(null),
+        };
+      case "clearResults":
+        return {
+          titleKey: "confirm.clear_results_title",
+          bodyKeys: [
+            "confirm.clear_results_body",
+            ...(status === "generating"
+              ? ["confirm.clear_results_body_streaming"]
+              : []),
+          ],
+          confirmKey: "confirm.clear_results_confirm",
+          onConfirm: () => {
+            setPendingAction(null);
+            handleReset();
+          },
+          onCancel: () => setPendingAction(null),
+        };
+      case "resubmit": {
+        const params = effectivePending.params;
+        return {
+          titleKey: "confirm.resubmit_title",
+          bodyKeys: ["confirm.resubmit_body"],
+          confirmKey: "confirm.resubmit_confirm",
+          onConfirm: () => {
+            setPendingAction(null);
+            setRequestedTotal(params.count ?? 0);
+            setSubmittedSubQuestionCount(params.sub_question_count ?? null);
+            generate(params);
+          },
+          onCancel: () => setPendingAction(null),
+        };
+      }
+    }
+  })();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -207,7 +285,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             )}
             <button
               type="button"
-              onClick={() => setIsLogoutConfirmOpen(true)}
+              onClick={() => setPendingAction({ kind: "logout" })}
               className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
             >
               {t("generate.btn_logout")}
@@ -265,7 +343,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsClearResultsConfirmOpen(true)}
+                  onClick={() => setPendingAction({ kind: "clearResults" })}
                   className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
                   {t("generate.btn_clear")}
@@ -286,64 +364,12 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         )}
       </main>
       <DestructiveConfirm
-        open={pendingNavigationTarget !== null}
-        titleKey="confirm.navigate_away_title"
-        bodyKeys={navigationBodyKeys}
-        confirmKey="confirm.navigate_away_confirm"
-        onConfirm={handleNavigationConfirm}
-        onCancel={() => setPendingNavigationTarget(null)}
-      />
-      <DestructiveConfirm
-        open={blocker.state === "blocked"}
-        titleKey="confirm.navigate_away_title"
-        bodyKeys={navigationBodyKeys}
-        confirmKey="confirm.navigate_away_confirm"
-        onConfirm={() => blocker.proceed?.()}
-        onCancel={() => blocker.reset?.()}
-      />
-      <DestructiveConfirm
-        open={isLogoutConfirmOpen}
-        titleKey="confirm.logout_title"
-        bodyKeys={[
-          "confirm.logout_body_session",
-          ...((hasUnsubmittedInput || hasResults)
-            ? ["confirm.logout_body_work_lost"]
-            : []),
-        ]}
-        confirmKey="confirm.logout_confirm"
-        onConfirm={handleLogout}
-        onCancel={() => setIsLogoutConfirmOpen(false)}
-      />
-      <DestructiveConfirm
-        open={isClearResultsConfirmOpen}
-        titleKey="confirm.clear_results_title"
-        bodyKeys={[
-          "confirm.clear_results_body",
-          ...(status === "generating"
-            ? ["confirm.clear_results_body_streaming"]
-            : []),
-        ]}
-        confirmKey="confirm.clear_results_confirm"
-        onConfirm={() => {
-          setIsClearResultsConfirmOpen(false);
-          handleReset();
-        }}
-        onCancel={() => setIsClearResultsConfirmOpen(false)}
-      />
-      <DestructiveConfirm
-        open={pendingResubmitParams !== null}
-        titleKey="confirm.resubmit_title"
-        bodyKeys={["confirm.resubmit_body"]}
-        confirmKey="confirm.resubmit_confirm"
-        onConfirm={() => {
-          if (pendingResubmitParams === null) return;
-          const params = pendingResubmitParams;
-          setPendingResubmitParams(null);
-          setRequestedTotal(params.count ?? 0);
-          setSubmittedSubQuestionCount(params.sub_question_count ?? null);
-          generate(params);
-        }}
-        onCancel={() => setPendingResubmitParams(null)}
+        open={effectivePending !== null}
+        titleKey={dialogProps.titleKey}
+        bodyKeys={dialogProps.bodyKeys}
+        confirmKey={dialogProps.confirmKey}
+        onConfirm={dialogProps.onConfirm}
+        onCancel={dialogProps.onCancel}
       />
       <GenerationStatusBar
         runState={runState}
