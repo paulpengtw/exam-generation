@@ -48,7 +48,7 @@ The `"html"` path handles geometry diagrams, coordinate planes, tables, and any 
 - **Randomness is script-side.** The program selects grade, question type, context, learning content — not the LLM.
 - **Two-stage generation (社會 / 自然).** For social studies and natural sciences, question generation runs a two-stage pipeline: a **文本生成器** call produces the shared 核心問題, 文本, and 取材來源 plus an N-entry 子題 plan; then N **子題產生器** calls each write one full 子題 concurrently (`ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6). A 子題產生器 call that raises or returns unparseable output is retried with a fresh LLM call for that slot only, up to `SUBGEN_RETRIES` times (default 1), before the slot is dropped. The assembled 題組 then flows through image rendering → verification → correction unchanged. Math generation stays a single flat call.
 - **Verify + correct loop.** Sonnet generates → Sonnet verifies → on failure, Sonnet applies a minimal targeted correction and re-verifies (up to `max_retries` times). Only the wrong field changes; classification, metadata, and correct fields are preserved.
-- **Per-request LLM provider dispatch.** The provider is resolved from the model id on each call: `claude-*` → Anthropic SDK (prompt caching, streaming, system param); `gemini-*` → Gemini via its OpenAI-compatible endpoint; `gpt-*/o-series` → OpenAI; unknown ids → Anthropic (proxy deployments). The default model for both planning and execution is `gemini-3.1-pro-preview`.
+- **Per-request LLM provider dispatch.** The provider is resolved from the model id on each call: `claude-*` → Anthropic SDK (prompt caching, streaming, system param); `gemini-*` → Gemini via its OpenAI-compatible endpoint; `gpt-*/o-series` → OpenAI; unknown ids → Anthropic (proxy deployments). The default model for both planning and execution is `claude-sonnet-4-6`.
 
 ## Project Structure
 
@@ -226,8 +226,8 @@ Environment variables (set in `.env` or export directly):
 | `OPENAI_BASE_URL` | CLI + server | Base URL for the OpenAI endpoint | `https://api.openai.com/v1` |
 | `LLM_API_KEY` | CLI + server | Anthropic API key — required when `model_plan`/`model_execute` resolves to a `claude-*` model, and for the web-search fact-check tool | — |
 | `LLM_BASE_URL` | CLI + server | Base URL for the Anthropic endpoint | `https://api.anthropic.com/v1` |
-| `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `gemini-3.1-pro-preview` |
-| `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `gemini-3.1-pro-preview` |
+| `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-sonnet-4-6` |
+| `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `claude-sonnet-4-6` |
 | `IMAGE_API_KEY` | CLI + server | API key for optional GPT image generation (used by both math and social studies when `image_generation_mode=gpt_image`) | — |
 | `IMAGE_BASE_URL` | CLI + server | Base URL for the image generation endpoint | `https://api.openai.com/v1` |
 | `IMAGE_MODEL` | CLI + server | Image generation model used when GPT image mode is selected | `gpt-image2` |
@@ -700,7 +700,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 
 4. `Config.from_env()` reads `.env` file via `dotenv`, then pulls env vars (lines 22-36):
    - `LLM_API_KEY`, `LLM_BASE_URL` (endpoint)
-   - `LLM_MODEL_PLAN` (default: `claude-opus-5`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
+   - `LLM_MODEL_PLAN` (default: `claude-sonnet-4-6`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
    - `LLM_RATE_LIMIT_DELAY` (default: `0`) — seconds slept before every `generate()` call to avoid 429 errors
    - `OUTPUT_DIR` (default: `./output`), `DATA_DIR` (default: `./data`)
 5. `config.validate()` ensures `LLM_API_KEY` is set (line 227 -> config.py:38-41)
