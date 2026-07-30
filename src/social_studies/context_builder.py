@@ -96,6 +96,17 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     ),
 }
 
+#: 題目內容類型 values that require the 小題 (or 題組) to carry its own image.
+VISUAL_CONTENT_TYPES: frozenset[str] = frozenset({"含圖片", "graphs/charts/tables"})
+
+#: The 小題-level image rule, stated verbatim to both the 文本生成器 (whose
+#: per-小題 plan is discarded downstream) and the 子題產生器 that actually
+#: writes the 小題 — one rulebook, two stages (issue #319).
+SUBQUESTION_IMAGE_RULE: str = (
+    "只有文本素材類型為 `含圖片` 或 `graphs/charts/tables` 的小題必須輸出該小題自己的 "
+    "`chart_spec`；`image_generation_mode` 只指定渲染方式，不能單獨視為需要圖片。"
+)
+
 DIFFICULTY_INSTRUCTIONS: dict[str, str] = _INSTRUCTIONS.get("難度", {})
 
 
@@ -540,13 +551,8 @@ def build_user_prompt(
             ct_instr = CONTENT_TYPE_INSTRUCTIONS.get(ct, "")
             if ct_instr:
                 sq_config_parts.append(f"  - **{ct} 說明**：{ct_instr}")
-        if any(ct in {"含圖片", "graphs/charts/tables"} for ct in sq_config_content_types):
-            sq_config_parts.append(
-                "  - **小題圖片規則**：只有文本素材類型為 `含圖片` 或 "
-                "`graphs/charts/tables` 的小題必須輸出該小題自己的 "
-                "`chart_spec`；`image_generation_mode` 只指定渲染方式，"
-                "不能單獨視為需要圖片。"
-            )
+        if any(ct in VISUAL_CONTENT_TYPES for ct in sq_config_content_types):
+            sq_config_parts.append(f"  - **小題圖片規則**：{SUBQUESTION_IMAGE_RULE}")
     subquestion_config_lines = (
         "\n## 各小題配置\n\n" + "\n".join(sq_config_parts) + "\n"
         if sq_config_parts else ""
@@ -893,6 +899,9 @@ def build_subquestion_system_prompt(
   "學習表現": [{{"編碼": "社1b-Ⅳ-1", "說明": "說明文字"}}],
   "出題概念": "評量學生能否……",
   "題型": "選擇題",
+  "題目內容類型": "純文字",
+  "image_generation_mode": null,
+  "chart_spec": null,
   "題目": "完整題目文字（含選項）",
   "答案": "A",
   "答案解析": "說明正答依據",
@@ -900,6 +909,20 @@ def build_subquestion_system_prompt(
   "誘答分析": {{"A": "...", "B": "正確答案：...", "C": "...", "D": "..."}}
 }}
 ```
+
+## 本小題圖片
+
+- `題目內容類型`：若各小題配置指定了本小題的文本素材類型，依該小題指定值填入
+  （純文字 / 含圖片 / graphs/charts/tables / 自訂類型）。
+- `image_generation_mode`：若該小題指定圖片產生方式，填入 `html` 或 `gpt_image`。
+- 若本小題的 `題目內容類型` 是 `含圖片` 或 `graphs/charts/tables`，
+  本小題必須輸出自己的 `chart_spec`。
+  `image_generation_mode` 只代表圖片渲染方式；若本小題仍是純文字，
+  不要只因 `image_generation_mode` 而輸出圖片。
+- `chart_spec.render_mode`：統計圖（直方圖、折線圖、圓餅圖等）用 `chart`，
+  並提供 `chart_type`、`data`、`labels`；廣告、表單、海報、網頁畫面或含語意標註的表格用
+  `html`；帶真實海岸線的地圖、歷史照片式情境圖等寫實圖像用 `gpt_image`。
+- 圖片必須是作答的必要條件：本小題的答案必須依賴圖片中才有的資訊，無法僅憑文本回答。
 
 ## 誘答分析的設計
 
@@ -944,7 +967,6 @@ def build_subquestion_user_prompt(
     cfg: "SubQuestionConfig | None" = None,
     disable_reference_fewshot: bool = False,
 ) -> tuple[str, list[Path]]:
-    del image_generation_mode
     if rng is None:
         rng = random.Random(params.seed)
 
@@ -1046,6 +1068,29 @@ def build_subquestion_user_prompt(
         config_parts.append(f"學習內容={','.join(cfg.learning_content)}")
     if cfg is not None and cfg.learning_performance:
         config_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
+    # #319: the 小題's own image contract — 文本素材類型 decides whether an image
+    # is required, 圖片生成模式 only decides how it is rendered. Gated exactly as
+    # the 文本生成器 gates it (see `build_user_prompt`), so slots without any
+    # 各小題配置 keep their previous prompt.
+    has_structural_config = cfg is not None and any((
+        cfg.question_type,
+        cfg.instruction,
+        cfg.content_type,
+        cfg.image_generation_mode,
+        cfg.question_word_limit,
+        cfg.option_word_limit,
+        cfg.learning_content,
+        cfg.learning_performance,
+    ))
+    slot_content_type = (
+        (cfg.content_type if cfg is not None else None) or params.題目內容類型 or "純文字"
+    )
+    slot_image_mode = (
+        cfg.image_generation_mode if cfg is not None else None
+    ) or image_generation_mode
+    if has_structural_config:
+        config_parts.append(f"文本素材類型={slot_content_type}")
+        config_parts.append(f"圖片生成模式={slot_image_mode}")
     question_limit = (
         cfg.question_word_limit
         if cfg is not None and cfg.question_word_limit
@@ -1060,10 +1105,12 @@ def build_subquestion_user_prompt(
         config_parts.append(f"題目字數上限={question_limit}")
     if option_limit:
         config_parts.append(f"選項字數上限={option_limit}")
-    subquestion_config_section = (
-        "## 各小題配置\n\n"
-        f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts)
-    )
+    config_lines = [
+        f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts),
+    ]
+    if has_structural_config and slot_content_type in VISUAL_CONTENT_TYPES:
+        config_lines.append(f"  - **小題圖片規則**：{SUBQUESTION_IMAGE_RULE}")
+    subquestion_config_section = "## 各小題配置\n\n" + "\n".join(config_lines)
     return f"""\
 請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題：
 
