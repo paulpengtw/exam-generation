@@ -1640,6 +1640,8 @@ export default function ParamForm({
       : [];
     const allLpEntries = schemas?.學習表現 ?? [];
     const allLcEntries = schemas?.學習內容 ?? [];
+    const lcEntryByCode = new Map(allLcEntries.map((e) => [e.value, e]));
+    const lpEntryByCode = new Map(allLpEntries.map((e) => [e.value, e]));
 
     const allSubjects = ["math", "social_studies", "natural_sciences"];
     const rows = ([
@@ -1857,8 +1859,16 @@ export default function ParamForm({
                                       : "form.confirm_subq_lc_selected",
                                   ).replace("{n}", String(row.learning_content.length))}
                                 </div>
-                                <ul className="list-disc pl-5 text-sm text-gray-700">
-                                  {row.learning_content.map((code) => <li key={code}>{code}</li>)}
+                                <ul className="space-y-1">
+                                  {row.learning_content.map((code) => {
+                                    const entry = lcEntryByCode.get(code);
+                                    return (
+                                      <li key={code} className="flex gap-2 text-sm">
+                                        <span className="shrink-0 font-mono font-semibold text-gray-800">{code}</span>
+                                        {entry?.instruction && <span className="text-gray-600">— {entry.instruction}</span>}
+                                      </li>
+                                    );
+                                  })}
                                 </ul>
                               </>
                             ) : (
@@ -1875,8 +1885,16 @@ export default function ParamForm({
                                       : "form.confirm_subq_lp_selected",
                                   ).replace("{n}", String(row.learning_performance.length))}
                                 </div>
-                                <ul className="list-disc pl-5 text-sm text-gray-700">
-                                  {row.learning_performance.map((code) => <li key={code}>{code}</li>)}
+                                <ul className="space-y-1">
+                                  {row.learning_performance.map((code) => {
+                                    const entry = lpEntryByCode.get(code);
+                                    return (
+                                      <li key={code} className="flex gap-2 text-sm">
+                                        <span className="shrink-0 font-mono font-semibold text-gray-800">{code}</span>
+                                        {entry?.instruction && <span className="text-gray-600">— {entry.instruction}</span>}
+                                      </li>
+                                    );
+                                  })}
                                 </ul>
                               </>
                             ) : (
