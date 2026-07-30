@@ -84,6 +84,13 @@ def _ns_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> 
                 else repair_lp_refs(_refs_from_raw(sq_raw.get("學習表現")), [])
             ),
             出題概念=original.出題概念 if original else sq_raw.get("出題概念", ""),
+            # reporting_scale is frozen: the resolved level is a fact about the
+            # generated question, not something the corrector should alter.
+            reporting_scale=(
+                original.reporting_scale
+                if original
+                else sq_raw.get("reporting_scale")
+            ),
             題型=original.題型 if original else sq_raw.get("題型", ""),
             題目=sq_raw.get("題目", original.題目 if original else ""),
             答案=sq_raw.get("答案", original.答案 if original else ""),

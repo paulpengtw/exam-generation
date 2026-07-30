@@ -462,11 +462,18 @@ def generate_with_corrections(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
+    sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
-    """generate_one followed by up to max_retries correction passes."""
-    return generate_with_corrections_core(
+    """generate_one followed by up to max_retries correction passes.
+
+    ``metadata.reporting_scales`` is set to the resolved Reporting Scale of
+    each surviving 小題 in 序號 order.  The list is written once here — after
+    the correction loop — so it is consistent with the final subquestion list
+    and cannot drift across correction passes.
+    """
+    result = generate_with_corrections_core(
         config=config,
         client=client,
         params=params,
@@ -484,9 +491,16 @@ def generate_with_corrections(
         user_topic=user_topic,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )
+    if isinstance(result, ExamQuestion) and result.metadata is not None:
+        result.metadata.reporting_scales = [
+            sq.reporting_scale or ""
+            for sq in result.subquestions
+        ]
+    return result
 
 
 def main(argv: list[str] | None = None) -> None:

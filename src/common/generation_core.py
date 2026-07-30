@@ -371,6 +371,7 @@ def generate_with_corrections_core(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     on_question_update: Callable | None = None,
+    sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
 ) -> Any:
@@ -392,6 +393,7 @@ def generate_with_corrections_core(
         user_topic=user_topic,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )

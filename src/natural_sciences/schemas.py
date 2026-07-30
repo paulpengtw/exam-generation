@@ -101,12 +101,21 @@ class SubQuestion(BaseModel):
 
 
 class QuestionMetadata(BaseModel):
+    """Metadata recorded once when the 題組 is finalised.
+
+    ``reporting_scales`` lists the resolved Reporting Scale for each
+    surviving 小題 in 序號 order — one entry per shipped 小題, no entry for
+    slots that were dropped after exhausting retries.  The list is frozen
+    through any subsequent correction passes.
+    """
+
     model_config = ConfigDict(extra="ignore")
 
     grade: int
     model: str
     generated_at: datetime = Field(default_factory=datetime.now)
     seed: int | None = None
+    reporting_scales: list[str] = Field(default_factory=list)
 
 
 class ExamQuestion(BaseModel):
