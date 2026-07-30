@@ -102,8 +102,13 @@ _PURPOSE_TO_AGENT: dict[str, str] = {
     "html_image": "image_agent",
     "gpt_image": "image_agent",
     "plan": "planner",
+    "plan_core_questions": "planner",
+    "plan_context_angles": "planner",
 }
 _PURPOSE_TO_AGENT["fact_check"] = "fact_checker"
+
+# All purpose strings that belong to the planning tier (→ effort_plan).
+_PLAN_PURPOSES: frozenset[str] = frozenset({"plan", "plan_core_questions", "plan_context_angles"})
 
 
 class Citation(BaseModel):
@@ -352,7 +357,7 @@ class LLMClient:
     def _effort_kwargs(self, purpose: str, provider: str = "anthropic") -> dict:
         """Return effort kwargs appropriate for the provider and call purpose.
 
-        plan purpose → effort_plan; everything else → effort_execute.
+        planning purposes (see ``_PLAN_PURPOSES``) → effort_plan; everything else → effort_execute.
 
         Anthropic: wraps effort in ``{"extra_body": {"output_config": {"effort": ...}}}``.
         gemini / openai: maps low/medium/high to ``{"reasoning_effort": effort}``.
@@ -360,7 +365,7 @@ class LLMClient:
             is omitted entirely and a WARNING is emitted once per (provider, effort)
             pair (module-level ``_warned_effort_drops`` suppresses repeats).
         """
-        effort = self.config.effort_plan if purpose == "plan" else self.config.effort_execute
+        effort = self.config.effort_plan if purpose in _PLAN_PURPOSES else self.config.effort_execute
         if provider == "anthropic":
             return {"extra_body": {"output_config": {"effort": effort}}}
         # gemini / openai — reasoning_effort only accepts low / medium / high
