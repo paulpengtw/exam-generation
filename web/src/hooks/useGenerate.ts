@@ -218,6 +218,8 @@ export function buildQueryString(params: GenerateParams): string {
   if (params.model_execute && params.model_execute.length > 0) {
     qs.append("model_execute", params.model_execute);
   }
+  if (params.effort_plan !== undefined) qs.append("effort_plan", params.effort_plan);
+  if (params.effort_execute !== undefined) qs.append("effort_execute", params.effort_execute);
   if (params.coverage_mode !== undefined) qs.append("coverage_mode", params.coverage_mode);
   return qs.toString();
 }

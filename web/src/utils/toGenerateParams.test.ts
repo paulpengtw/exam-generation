@@ -48,4 +48,24 @@ describe("toGenerateParams", () => {
       expect(params.reporting_scale).toBeUndefined();
     });
   });
+
+  // ── Issue #338: effort passthrough ──────────────────────────────────────────
+  describe("effort passthrough", () => {
+    it("passes effort_plan and effort_execute through to the returned params", () => {
+      const params = toGenerateParams("math", {
+        effort_plan: "high",
+        effort_execute: "low",
+      } as FormParams);
+
+      expect(params.effort_plan).toBe("high");
+      expect(params.effort_execute).toBe("low");
+    });
+
+    it("leaves effort_plan and effort_execute undefined when not provided", () => {
+      const params = toGenerateParams("math", {} as FormParams);
+
+      expect(params.effort_plan).toBeUndefined();
+      expect(params.effort_execute).toBeUndefined();
+    });
+  });
 });
