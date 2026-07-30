@@ -78,12 +78,12 @@ def test_allowlist_empty_string_falls_back_to_defaults(tmp_path: Path) -> None:
     assert cfg.llm_models_allowed == _DEFAULT_MODELS_ALLOWED
 
 
-def test_fresh_env_config_has_five_model_roster_and_opus5_default(tmp_path: Path) -> None:
-    """With no LLM_MODELS_ALLOWED set, from_env() returns the built-in 5-model
-    roster and the new plan default (claude-opus-5)."""
+def test_fresh_env_config_has_six_model_roster_and_gemini_default(tmp_path: Path) -> None:
+    """With no LLM_MODELS_ALLOWED set, from_env() returns the built-in 6-model
+    roster and the new plan default (gemini-3.1-pro-preview)."""
     env = {"LLM_API_KEY": "x", "JWT_SECRET": "s"}
     with mock.patch.dict(os.environ, env, clear=True):
         cfg = ServerConfig.from_env(env_file=tmp_path / ".env.missing")
-    assert cfg.model_plan == "claude-opus-5"
-    assert cfg.model_execute == "claude-sonnet-4-6"
+    assert cfg.model_plan == "gemini-3.1-pro-preview"
+    assert cfg.model_execute == "gemini-3.1-pro-preview"
     assert cfg.llm_models_allowed == _DEFAULT_MODELS_ALLOWED

@@ -47,7 +47,7 @@ def test_generate_route_rejects_malformed_per_question_params() -> None:
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
     limiter.reset()
 
     try:
@@ -100,7 +100,7 @@ def test_generate_route_accepts_count_of_ten() -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -155,7 +155,7 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret", image_api_key="sk-test-key")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x", image_api_key="sk-test-key")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -264,7 +264,7 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -394,7 +394,7 @@ def test_generate_route_accepts_difficulty_query_param() -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -460,7 +460,7 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -966,7 +966,7 @@ def test_generate_route_valid_subjects_still_accepted() -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -1075,7 +1075,7 @@ def test_route_outer_error_event_is_structured() -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -1142,7 +1142,7 @@ def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
