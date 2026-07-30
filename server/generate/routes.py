@@ -171,6 +171,7 @@ async def generate_endpoint(
     model_execute: str | None = Query(default=None),
     effort_plan: str | None = Query(default=None),
     effort_execute: str | None = Query(default=None),
+    reporting_scale: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -226,6 +227,7 @@ async def generate_endpoint(
             model_execute=model_execute,
             effort_plan=effort_plan,
             effort_execute=effort_execute,
+            reporting_scale=reporting_scale,
         )
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -102,3 +102,48 @@ def test_sample_params_unknown_grade_raises():
     """Mirror of tests/test_math_sampler.py::test_sample_params_unknown_grade_raises."""
     with pytest.raises(ValueError):
         sample_params(grade=99, seed=0)
+
+
+# ── Issue #279: 題組-level Reporting Scale inheritance ────────────────────────
+
+from src.natural_sciences.schemas import SubQuestionConfig  # noqa: E402
+
+
+def test_reporting_scale_request_level_propagates_to_all_subquestions() -> None:
+    """Slice 1: request naming level '4' → all three 小題 resolve to '4'."""
+    p = sample_params(
+        seed=1,
+        reporting_scale="4",
+        sub_question_count=3,
+    )
+    assert [cfg.reporting_scale for cfg in p.subquestion_configs] == ["4", "4", "4"]
+
+
+def test_reporting_scale_explicit_per_subquestion_wins_over_request_level() -> None:
+    """Slice 2: per-小題 explicit value wins; blank siblings inherit 題組-level."""
+    configs = [
+        SubQuestionConfig(reporting_scale="6"),
+        SubQuestionConfig(),
+        SubQuestionConfig(),
+    ]
+    p = sample_params(
+        seed=1,
+        reporting_scale="4",
+        sub_question_count=3,
+        subquestion_configs=configs,
+    )
+    assert p.subquestion_configs[0].reporting_scale == "6"
+    assert p.subquestion_configs[1].reporting_scale == "4"
+    assert p.subquestion_configs[2].reporting_scale == "4"
+
+
+def test_reporting_scale_absent_uses_independent_rng_scatter() -> None:
+    """Slice 3: no 題組-level → scatter via rng, same as before this feature.
+
+    Literal expected values captured from pre-feature code:
+        sample_params(seed=99, sub_question_count=3, subquestion_configs=[3×empty])
+        → ['2', '5', '2']
+    """
+    configs = [SubQuestionConfig(), SubQuestionConfig(), SubQuestionConfig()]
+    p = sample_params(seed=99, sub_question_count=3, subquestion_configs=configs)
+    assert [cfg.reporting_scale for cfg in p.subquestion_configs] == ["2", "5", "2"]

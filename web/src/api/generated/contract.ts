@@ -49,6 +49,7 @@ export interface GenerateParams {
   model_execute?: string;
   effort_plan?: string;
   effort_execute?: string;
+  reporting_scale?: string;
 }
 
 // ---------------------------------------------------------------------------

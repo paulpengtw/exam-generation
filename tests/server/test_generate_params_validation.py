@@ -148,3 +148,30 @@ def test_generate_params_rejects_per_question_params_length_mismatch() -> None:
         match=r"per_question_params array length 1 must equal count 2",
     ):
         GenerateParams(count=2, per_question_params='[{"grade": 7}]')
+
+
+# ── Issue #279: 題組-level Reporting Scale wire boundary ──────────────────────
+
+
+@pytest.mark.parametrize("level", ["1c", "1b", "1a", "2", "3", "4", "5", "6"])
+def test_generate_params_accepts_all_reporting_scale_levels_for_ns(level: str) -> None:
+    params = GenerateParams(subject="natural_sciences", reporting_scale=level)
+    assert params.reporting_scale == level
+
+
+@pytest.mark.parametrize("bad", ["7", "0", "99", "easy", "medium", "hard"])
+def test_generate_params_rejects_invalid_reporting_scale_for_ns(bad: str) -> None:
+    with pytest.raises(ValidationError, match="reporting_scale"):
+        GenerateParams(subject="natural_sciences", reporting_scale=bad)
+
+
+def test_generate_params_rejects_empty_reporting_scale() -> None:
+    with pytest.raises(ValidationError, match="reporting_scale"):
+        GenerateParams(subject="natural_sciences", reporting_scale="")
+
+
+@pytest.mark.parametrize("subject", ["math", "social_studies"])
+def test_generate_params_accepts_reporting_scale_for_non_ns_subjects(subject: str) -> None:
+    """Mirror science_competency pattern: non-NS subjects accept (and ignore) the field."""
+    params = GenerateParams(subject=subject, reporting_scale="4")
+    assert params.reporting_scale == "4"
