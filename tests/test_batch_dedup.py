@@ -449,7 +449,9 @@ def test_ns_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
 
     prior_scopes: list[PriorScope] = []
     for i in range(2):
-        params = sample_params(seed=300 + i)
+        # Pin grade=8 (第四學習階段) so the fake client's Ab-Ⅳ-{idx} codes
+        # are in-stage and survive the issue #287 stage-aware repair.
+        params = sample_params(seed=300 + i, grade=8)
         result = generate_with_corrections(
             config=config,
             client=client,
