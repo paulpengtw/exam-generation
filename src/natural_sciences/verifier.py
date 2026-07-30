@@ -10,6 +10,7 @@ from src.common.verifier import PostVerifyHook, verify_question_common
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient
 from src.natural_sciences.curriculum_codes import validate_question_codes
+from src.natural_sciences.curriculum_loader import grade_to_learning_stage
 from src.natural_sciences.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
 
 # Curriculum-free core — exported for tests that check subject-specific strings
@@ -108,14 +109,23 @@ def _ns_code_check_hook(
     result: VerificationResult,
     client: LLMClient,
 ) -> VerificationResult:
-    """Post-verify hook: deterministic curriculum-code hard-reject (issue #92).
+    """Post-verify hook: deterministic curriculum-code hard-reject (issue #92, #287).
 
-    Unlike the advisory distractor warnings, unknown or missing
+    Unlike the advisory distractor warnings, unknown, missing, or off-stage
     學習內容/學習表現 codes are a hard reject — the LLM's lenient verdict
     cannot overrule the curriculum JSON.  Appends ``[課綱代碼檢核]`` to
     ``details`` and forces ``passed=False`` when issues are found.
+
+    When ``question.metadata`` carries a ``grade``, the check is stage-aware
+    (issue #287): codes from a different 學習階段 also trigger rejection.
     """
-    code_issues = validate_question_codes(question)
+    learning_stage: str | None = None
+    if question.metadata is not None:
+        try:
+            learning_stage = grade_to_learning_stage(question.metadata.grade)
+        except ValueError:
+            pass
+    code_issues = validate_question_codes(question, learning_stage=learning_stage)
     if code_issues:
         result.details = result.details.rstrip()
         result.details += "\n\n[課綱代碼檢核] " + "；".join(code_issues)

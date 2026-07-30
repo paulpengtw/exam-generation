@@ -239,3 +239,25 @@ def test_ns_verifier_unknown_codes_fail_per_item_family(q_type, 題目, 答案, 
     assert result.passed is False
     assert "[課綱代碼檢核]" in result.details
     assert "xx-Ⅳ-99" in result.details
+
+
+def test_ns_verifier_fails_on_off_stage_lc_when_grade_in_metadata() -> None:
+    """Verifier forces passed=False for an off-stage LC code when metadata.grade is set.
+
+    Grade 10 → 第五學習階段.  "Aa-IV-3" belongs to 第四學習階段.
+    LLM verdict is passed=True; [課綱代碼檢核] must override it (issue #287).
+    """
+    from src.natural_sciences.schemas import QuestionMetadata
+
+    q = _ns_question()
+    q.metadata = QuestionMetadata(grade=10, model="test")
+    # Off-stage LC code (第四) on a 第五 question
+    q.subquestions[0].學習內容 = [LearningContentRef(編碼="Aa-IV-3")]
+    # Valid 第五 LP code to isolate the LC failure
+    q.subquestions[0].學習表現 = [LearningContentRef(編碼="pa-Ⅴa-1")]
+
+    result = verify_question(FakeClient(_passing_payload()), q)
+    assert result.passed is False
+    assert "[課綱代碼檢核]" in result.details
+    # The reported code may use either the submitted or canonical spelling
+    assert "Aa-IV-3" in result.details or "Aa-Ⅳ-3" in result.details

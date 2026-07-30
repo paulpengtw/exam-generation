@@ -4,7 +4,10 @@ Real curriculum facts these tests rely on (data/natural_sciences/curriculum/):
 - "Ab-Ⅳ-1" (Unicode Ⅳ) exists, 條目說明 "物質的粒子模型與物質三態。"
 - "Aa-Ⅳ-3" (Unicode Ⅳ) exists — the build script normalises all stages to Unicode.
   (Before issue #289 the XLSX had ASCII "Aa-IV-3"; normalisation now produces "Aa-Ⅳ-3".)
-- "tr-Ⅳ-1" exists in 學習表現.
+  Stage: 第四學習階段.
+- "BDa-Ⅴa-1" exists in 學習內容.  Stage: 第五學習階段.
+- "tr-Ⅳ-1" exists in 學習表現.  Stage: 第四學習階段.
+- "pa-Ⅴa-1" exists in 學習表現.  Stage: 第五學習階段.
 - "INc-Ⅳ-1" does NOT exist (INc rows only exist at stages II/III).
 - "CJa-Ⅴa-2" (Unicode Ⅴ) is the canonical form for the 第五學習階段 化學 code
   formerly stored as "CJa-Va-2" (ASCII V) in the XLSX (issue #289).
@@ -211,3 +214,84 @@ def test_lp_cross_links_point_to_valid_lc_codes() -> None:
     assert dangling == [], (
         f"Found {len(dangling)} dangling LP→LC cross-links: {dangling[:5]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Stage-aware repair and validation (issue #287)
+# ---------------------------------------------------------------------------
+
+
+def test_repair_lc_drops_off_stage_code_falls_back_to_pool() -> None:
+    """repair_lc_refs treats a real-but-off-stage code as invalid (issue #287).
+
+    "Aa-IV-3" is 第四學習階段; requesting 第五 must drop it and use the pool.
+    """
+    refs = [LearningContentRef(編碼="Aa-IV-3", 說明="")]
+    repaired = repair_lc_refs(refs, ["BDa-Ⅴa-1"], learning_stage="第五學習階段")
+    assert [r.編碼 for r in repaired] == ["BDa-Ⅴa-1"]
+
+
+def test_repair_lp_drops_off_stage_code_falls_back_to_pool() -> None:
+    """repair_lp_refs treats a real-but-off-stage code as invalid (issue #287).
+
+    "tr-Ⅳ-1" is 第四學習階段; requesting 第五 must drop it and use the pool.
+    """
+    refs = [LearningContentRef(編碼="tr-Ⅳ-1", 說明="")]
+    repaired = repair_lp_refs(refs, ["pa-Ⅴa-1"], learning_stage="第五學習階段")
+    assert [r.編碼 for r in repaired] == ["pa-Ⅴa-1"]
+
+
+def test_repair_lc_keeps_in_stage_code_when_stage_specified() -> None:
+    """In-stage LC codes are kept when learning_stage is specified (issue #287).
+
+    After issue #289, repair_lc_refs canonicalizes ASCII input to the Unicode
+    spelling now stored in the JSON — so "Aa-IV-3" (ASCII input) is returned
+    as "Aa-Ⅳ-3" (Unicode canonical form).
+    """
+    refs = [LearningContentRef(編碼="Aa-IV-3", 說明="")]
+    repaired = repair_lc_refs(refs, ["BDa-Ⅴa-1"], learning_stage="第四學習階段")
+    assert [r.編碼 for r in repaired] == ["Aa-Ⅳ-3"]
+
+
+def test_repair_lp_keeps_in_stage_code_when_stage_specified() -> None:
+    """In-stage LP codes are kept when learning_stage is specified (issue #287)."""
+    refs = [LearningContentRef(編碼="tr-IV-1", 說明="")]  # ASCII spelling
+    repaired = repair_lp_refs(refs, ["pa-Ⅴa-1"], learning_stage="第四學習階段")
+    assert [r.編碼 for r in repaired] == ["tr-Ⅳ-1"]  # canonical Unicode spelling
+
+
+def test_validate_flags_off_stage_lc_with_learning_stage() -> None:
+    """validate_question_codes with learning_stage flags off-stage LC codes (issue #287).
+
+    "Aa-IV-3" (第四) on a 第五學習階段 question must be reported.
+    """
+    q = _question([_sq(["Aa-IV-3"], ["pa-Ⅴa-1"])])
+    issues = validate_question_codes(q, learning_stage="第五學習階段")
+    assert len(issues) == 1
+    assert "學習內容" in issues[0]
+    # The reported code may use either the submitted spelling or the canonical one.
+    assert "Aa-IV-3" in issues[0] or "Aa-Ⅳ-3" in issues[0]
+
+
+def test_validate_flags_off_stage_lp_with_learning_stage() -> None:
+    """validate_question_codes with learning_stage flags off-stage LP codes (issue #287).
+
+    "tr-Ⅳ-1" (第四) on a 第五學習階段 question must be reported.
+    """
+    q = _question([_sq(["BDa-Ⅴa-1"], ["tr-Ⅳ-1"])])
+    issues = validate_question_codes(q, learning_stage="第五學習階段")
+    assert len(issues) == 1
+    assert "學習表現" in issues[0]
+    assert "tr-Ⅳ-1" in issues[0] or "tr-IV-1" in issues[0]
+
+
+def test_validate_passes_in_stage_codes_with_learning_stage() -> None:
+    """All codes from the expected stage produce no issues (issue #287)."""
+    q = _question([_sq(["Aa-IV-3"], ["tr-Ⅳ-1"])])
+    assert validate_question_codes(q, learning_stage="第四學習階段") == []
+
+
+def test_validate_without_learning_stage_accepts_real_cross_stage_codes() -> None:
+    """Old existence-only behavior preserved when no learning_stage given (issue #287)."""
+    q = _question([_sq(["Aa-IV-3"], ["tr-Ⅳ-1"])])
+    assert validate_question_codes(q) == []

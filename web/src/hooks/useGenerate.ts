@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
+import * as Sentry from "@sentry/react";
 
 import { useAuthStore } from "../store/authStore";
+import { isSentryEnabled } from "../sentry";
 import type { GenerateParams } from "../api/generated/contract";
 
 export type { GenerateParams };
@@ -362,10 +364,26 @@ export function useGenerate(): UseGenerateReturn {
         if (!res.ok) {
           if (res.status === 401) {
             useAuthStore.getState().logout();
+            const msg = "Session expired — please sign in again";
+            setErrorMessage(msg);
+            setFinishedAt(Date.now());
+            throw new FatalStreamError(msg);
           }
-          const msg = res.status === 401
-            ? "Session expired — please sign in again"
-            : `Stream open failed: HTTP ${res.status}`;
+          let msg = `Stream open failed: HTTP ${res.status}`;
+          try {
+            const body = await res.json() as unknown;
+            if (
+              body !== null &&
+              typeof body === "object" &&
+              "detail" in body &&
+              typeof (body as Record<string, unknown>).detail === "string" &&
+              (body as Record<string, unknown>).detail !== ""
+            ) {
+              msg = (body as Record<string, string>).detail;
+            }
+          } catch {
+            // non-JSON or unreadable body — keep the generic message
+          }
           setErrorMessage(msg);
           setFinishedAt(Date.now());
           throw new FatalStreamError(msg);
@@ -487,7 +505,10 @@ export function useGenerate(): UseGenerateReturn {
         setFinishedAt(Date.now());
         throw err instanceof Error ? err : new FatalStreamError(String(err));
       },
-    }).catch(() => {
+    }).catch((err: unknown) => {
+      if (err instanceof Error && err.name !== "AbortError" && isSentryEnabled()) {
+        Sentry.captureException(err, { tags: { source: "fetchEventSource" } });
+      }
       // Stream terminated (abort or fatal error). State already updated.
     });
   }, []);

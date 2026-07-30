@@ -1181,3 +1181,134 @@ def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
 
     assert response.status_code == 200
     assert captured["params"].reporting_scale == "4"
+
+
+# ---------------------------------------------------------------------------
+# Issue #317 — WARNING-level log on 422 validation rejection (no user content)
+# ---------------------------------------------------------------------------
+
+
+def test_generate_422_emits_warning_free_of_user_content(caplog) -> None:
+    """A Pydantic-validation 422 emits exactly one WARNING with no user-supplied content.
+
+    Acceptance criteria (issue #317):
+    - Exactly one WARNING is emitted from server.generate.routes.
+    - The warning does not contain user-supplied values (asserted with a sentinel string).
+    - The 422 response body seen by the client is unchanged.
+    """
+    from server.generate import routes as gen_routes
+
+    SENTINEL = "DISTINCTIVE_MARKER_ISSUE_317_MUST_NOT_APPEAR_IN_LOGS"
+
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    limiter.reset()
+
+    try:
+        gen_routes.logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(logging.WARNING, logger="server.generate.routes"):
+                with TestClient(app, raise_server_exceptions=False) as client:
+                    # Malformed JSON with embedded sentinel so any echo would be detectable.
+                    response = client.get(
+                        "/api/generate",
+                        params={"per_question_params": f"{{{SENTINEL}"},
+                    )
+        finally:
+            gen_routes.logger.removeHandler(caplog.handler)
+    finally:
+        limiter.reset()
+
+    # 422 response body is unchanged — Pydantic detail still present.
+    assert response.status_code == 422
+    assert "per_question_params" in response.text
+
+    # Exactly one WARNING must be emitted from the route logger.
+    route_warnings = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and r.name == "server.generate.routes"
+    ]
+    assert len(route_warnings) == 1, (
+        f"expected 1 WARNING, got {len(route_warnings)}: "
+        f"{[r.getMessage() for r in route_warnings]}"
+    )
+
+    # The warning must not echo the user-supplied sentinel value.
+    assert SENTINEL not in route_warnings[0].getMessage(), (
+        f"user-supplied sentinel found in warning: {route_warnings[0].getMessage()!r}"
+    )
+
+
+def test_generate_valid_request_emits_no_validation_warning(caplog) -> None:
+    """A valid generate request must not trigger the validation WARNING."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    from server.generate import routes as gen_routes
+
+    async def fake_stream(params, *_args, **_kwargs):
+        yield {"event": "done", "data": ""}
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    original = gen_routes.generate_question_stream
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        gen_routes.logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(logging.WARNING, logger="server.generate.routes"):
+                with TestClient(app) as client:
+                    response = client.get(
+                        "/api/generate?subject=math",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+        finally:
+            gen_routes.logger.removeHandler(caplog.handler)
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200
+
+    # No validation WARNING must be emitted for a valid request.
+    route_validation_warnings = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING
+        and r.name == "server.generate.routes"
+        and "validation_error" in r.getMessage()
+    ]
+    assert len(route_validation_warnings) == 0, (
+        f"unexpected validation warning on valid request: "
+        f"{[r.getMessage() for r in route_validation_warnings]}"
+    )

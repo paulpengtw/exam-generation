@@ -17,6 +17,17 @@ vi.mock("@microsoft/fetch-event-source", () => ({
   fetchEventSource: fetchEventSourceMock,
 }));
 
+const captureExceptionMock = vi.hoisted(() => vi.fn());
+const isSentryEnabledMock = vi.hoisted(() => vi.fn().mockReturnValue(true));
+
+vi.mock("@sentry/react", () => ({
+  captureException: captureExceptionMock,
+}));
+
+vi.mock("../sentry", () => ({
+  isSentryEnabled: isSentryEnabledMock,
+}));
+
 // The buildQueryString helper is currently module-private. This test file
 // intentionally imports it via a named re-export added in the implementation
 // step below.
@@ -304,5 +315,145 @@ describe("buildQueryString — per_question_params serialization", () => {
     });
 
     expect(new URLSearchParams(qs).get("per_question_params")).toBe(perQuestionParams);
+  });
+});
+
+describe("useGenerate — stream open error detail", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(8_000);
+    fetchEventSourceMock.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("surfaces the JSON detail field from the response body on a non-2xx open", async () => {
+    const { result } = renderStartedRun();
+    let thrown: unknown;
+
+    await act(async () => {
+      try {
+        await latestStreamOptions().onopen?.(
+          new Response(
+            JSON.stringify({ detail: "per_question_params[0] has unknown parameter(s): count" }),
+            { status: 422, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toEqual(new Error("per_question_params[0] has unknown parameter(s): count"));
+    expect(result.current.errorMessage).toBe("per_question_params[0] has unknown parameter(s): count");
+  });
+
+  it("falls back to the generic message when the body is not valid JSON", async () => {
+    const { result } = renderStartedRun();
+    let thrown: unknown;
+
+    await act(async () => {
+      try {
+        await latestStreamOptions().onopen?.(
+          new Response("Internal Server Error", { status: 500 }),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toEqual(new Error("Stream open failed: HTTP 500"));
+    expect(result.current.errorMessage).toBe("Stream open failed: HTTP 500");
+  });
+
+  it("falls back to the generic message when the JSON body has no detail field", async () => {
+    const { result } = renderStartedRun();
+    let thrown: unknown;
+
+    await act(async () => {
+      try {
+        await latestStreamOptions().onopen?.(
+          new Response(
+            JSON.stringify({ error: "something went wrong" }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toEqual(new Error("Stream open failed: HTTP 503"));
+    expect(result.current.errorMessage).toBe("Stream open failed: HTTP 503");
+  });
+
+  it("preserves the 401 branch behaviour with no body read", async () => {
+    const { result } = renderStartedRun();
+    let thrown: unknown;
+
+    await act(async () => {
+      try {
+        await latestStreamOptions().onopen?.(
+          new Response(null, { status: 401 }),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toEqual(new Error("Session expired — please sign in again"));
+    expect(result.current.errorMessage).toBe("Session expired — please sign in again");
+  });
+});
+
+describe("useGenerate — Sentry capture on fatal stream failure", () => {
+  beforeEach(() => {
+    fetchEventSourceMock.mockClear();
+    captureExceptionMock.mockClear();
+    isSentryEnabledMock.mockReturnValue(true);
+  });
+
+  it("captures a non-abort stream rejection in Sentry tagged as fetchEventSource", async () => {
+    const fatalErr = new Error("Stream open failed: HTTP 422");
+    fetchEventSourceMock.mockRejectedValueOnce(fatalErr);
+
+    const { result } = renderHook(() => useGenerate());
+    await act(async () => {
+      result.current.generate({ subject: "math", count: 1 });
+    });
+
+    expect(captureExceptionMock).toHaveBeenCalledOnce();
+    expect(captureExceptionMock).toHaveBeenCalledWith(fatalErr, {
+      tags: { source: "fetchEventSource" },
+    });
+  });
+
+  it("does not capture an AbortError in Sentry (user-initiated abort)", async () => {
+    const abortErr = Object.assign(new Error("The user aborted a request."), {
+      name: "AbortError",
+    });
+    fetchEventSourceMock.mockRejectedValueOnce(abortErr);
+
+    const { result } = renderHook(() => useGenerate());
+    await act(async () => {
+      result.current.generate({ subject: "math", count: 1 });
+    });
+
+    expect(captureExceptionMock).not.toHaveBeenCalled();
+  });
+
+  it("does not capture to Sentry when Sentry is disabled", async () => {
+    isSentryEnabledMock.mockReturnValue(false);
+    const fatalErr = new Error("connection lost");
+    fetchEventSourceMock.mockRejectedValueOnce(fatalErr);
+
+    const { result } = renderHook(() => useGenerate());
+    await act(async () => {
+      result.current.generate({ subject: "math", count: 1 });
+    });
+
+    expect(captureExceptionMock).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,7 @@ from typing import Any
 from src.common.batch_dedup import PriorScope, extract_ns_prior_scope
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import NATURAL_SCIENCES, SubjectGenerationSpec
+from src.common.subquestion_forcing import force_grade
 from src.config import Config
 from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.html_renderer import PlaywrightRenderer
@@ -172,6 +173,7 @@ def _parse_subquestion(
             for r in sq_raw.get("學習表現", [])
             if isinstance(r, dict) and r.get("編碼")
         ]
+        learning_stage = grade_to_learning_stage(params.grade)
         if cfg and cfg.learning_content:
             lc_refs = [
                 LearningContentRef(編碼=code, 說明=LC_INSTRUCTIONS.get(code, ""))
@@ -180,14 +182,15 @@ def _parse_subquestion(
         else:
             # Issue #92: canonicalize LLM-emitted codes; unknown codes are
             # dropped and an empty result falls back to the sampled pool.
-            lc_refs = repair_lc_refs(lc_refs, params.學習內容_pool)
+            # Issue #287: off-stage codes are also dropped and fall back.
+            lc_refs = repair_lc_refs(lc_refs, params.學習內容_pool, learning_stage=learning_stage)
         if cfg and cfg.learning_performance:
             lp_refs = [
                 LearningContentRef(編碼=code, 說明=LP_INSTRUCTIONS.get(code, ""))
                 for code in cfg.learning_performance
             ]
         else:
-            lp_refs = repair_lp_refs(lp_refs, params.學習表現_pool)
+            lp_refs = repair_lp_refs(lp_refs, params.學習表現_pool, learning_stage=learning_stage)
         rubric = [
             RubricEntry(
                 code=str(r.get("code", "")),
@@ -221,6 +224,12 @@ def _parse_subquestion(
             誘答分析=distractor,
         )
         result.科目 = ["自然科學"]
+        # Issue #286: force 年級 from sampled params, never trust the LLM value.
+        # The prompt's own JSON example hard-codes 年級=8, causing junior-high
+        # values to leak into senior-high requests.  科目 is already forced
+        # above; 年級 gets the same treatment via the shared helper so that
+        # 社會領域 (issue #290) can reuse it later.
+        force_grade(result, params.grade)
         return result
     except Exception:
         return None

@@ -893,13 +893,29 @@ def build_subquestion_system_prompt(
   "學習表現": [{{"編碼": "社1b-Ⅳ-1", "說明": "說明文字"}}],
   "出題概念": "評量學生能否……",
   "題型": "選擇題",
+  "題目內容類型": "含圖片",
+  "image_generation_mode": "gpt_image",
   "題目": "完整題目文字（含選項）",
   "答案": "A",
   "答案解析": "說明正答依據",
   "評分規準": [],
-  "誘答分析": {{"A": "...", "B": "正確答案：...", "C": "...", "D": "..."}}
+  "誘答分析": {{"A": "...", "B": "正確答案：...", "C": "...", "D": "..."}},
+  "chart_spec": null
 }}
 ```
+
+## 小題圖片規則（chart_spec）
+
+- 若「各小題配置」指定本小題的 `文本素材類型` 為 `含圖片` 或 `graphs/charts/tables`，
+  本小題必須輸出非 null 的 `chart_spec`，作為本小題獨有的視覺素材。
+- `image_generation_mode` 只指定渲染方式（`html` 或 `gpt_image`），不代表需要圖片；
+  若本小題為純文字，不要只因 `image_generation_mode` 而輸出圖片。
+- 無圖片需求時，`chart_spec` 可省略或輸出 `null`。
+- `chart_spec` 的 `render_mode` 有兩種：
+  - `"chart"`：統計圖表，需填 `chart_type`（histogram/boxplot/
+    line_chart/pie_chart）、`data`、`labels`
+  - `"html"`：圖片式素材（地圖、廣告、表單、流程圖、表格等），
+    需填 `description`（詳述素材內容與版面）
 
 ## 誘答分析的設計
 
@@ -1046,6 +1062,10 @@ def build_subquestion_user_prompt(
         config_parts.append(f"學習內容={','.join(cfg.learning_content)}")
     if cfg is not None and cfg.learning_performance:
         config_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
+    if cfg is not None and cfg.content_type:
+        config_parts.append(f"文本素材類型={cfg.content_type}")
+    if cfg is not None and cfg.image_generation_mode:
+        config_parts.append(f"圖片生成模式={cfg.image_generation_mode}")
     question_limit = (
         cfg.question_word_limit
         if cfg is not None and cfg.question_word_limit
@@ -1060,9 +1080,19 @@ def build_subquestion_user_prompt(
         config_parts.append(f"題目字數上限={question_limit}")
     if option_limit:
         config_parts.append(f"選項字數上限={option_limit}")
+    # Append chart_spec instruction when this slot requires a visual
+    slot_content_type = cfg.content_type if cfg is not None else None
+    visual_instruction = ""
+    if slot_content_type in {"含圖片", "graphs/charts/tables"}:
+        visual_instruction = (
+            "\n\n本小題的 `文本素材類型` 為 `含圖片` 或 `graphs/charts/tables`，"
+            "必須在本小題 JSON 中輸出非 null 的 `chart_spec`。"
+            "`image_generation_mode` 只指定渲染方式，不能單獨視為需要圖片。"
+        )
     subquestion_config_section = (
         "## 各小題配置\n\n"
         f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts)
+        + visual_instruction
     )
     return f"""\
 請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題：
