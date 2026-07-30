@@ -540,6 +540,69 @@ class LLMClient:
             })
         return content
 
+    def _openai_compat_streaming(
+        self,
+        oc,
+        kwargs: dict,
+        model: str,
+        purpose: str,
+        agent: str,
+    ) -> str:
+        """Stream via OpenAI-compat surface, emitting deltas to observer. Returns assembled content."""
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        usage: dict = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
+
+        stream = oc.chat.completions.create(
+            **kwargs,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        for chunk in stream:
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                usage = _openai_usage_to_internal(chunk_usage)
+
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+
+            delta = choices[0].delta
+            reasoning_text = (
+                getattr(delta, "reasoning_content", None)
+                or getattr(delta, "reasoning", None)
+            )
+            if reasoning_text:
+                reasoning_parts.append(reasoning_text)
+                self._emit({
+                    "type": "llm_reasoning_delta",
+                    "purpose": purpose,
+                    "agent": agent,
+                    "text": reasoning_text,
+                })
+
+            content_text = getattr(delta, "content", None)
+            if content_text:
+                content_parts.append(content_text)
+                self._emit({
+                    "type": "llm_content_delta",
+                    "purpose": purpose,
+                    "agent": agent,
+                    "text": content_text,
+                })
+
+        content = "".join(content_parts)
+        self._emit({
+            "type": "llm_response",
+            "purpose": purpose,
+            "agent": agent,
+            "model": model,
+            "content": content,
+            "reasoning": "".join(reasoning_parts) or None,
+            "usage": usage,
+        })
+        return content
+
     def _openai_compat_call(
         self,
         provider: str,
@@ -548,15 +611,25 @@ class LLMClient:
         purpose: str,
         agent: str,
     ) -> str:
-        """Non-streaming call through the OpenAI-compatible surface (gemini/openai providers)."""
+        """Call through the OpenAI-compatible surface (gemini/openai providers).
+
+        Builds a shared kwargs dict once and delegates to the streaming path when
+        ``self._observer and self.config.llm_stream`` are both set; otherwise falls
+        through to the non-streaming path.
+        """
         oc = self._openai_compat_client(provider)
-        response = oc.chat.completions.create(
-            model=model,
-            messages=messages,  # type: ignore[arg-type]
+        kwargs: dict = {
+            "model": model,
+            "messages": messages,  # type: ignore[arg-type]
             **_max_tokens_kwargs(provider),
             **self._temperature_kwargs(model),
             **self._effort_kwargs(purpose, provider),
-        )
+        }
+
+        if self._observer and self.config.llm_stream:
+            return self._openai_compat_streaming(oc, kwargs, model, purpose, agent)
+
+        response = oc.chat.completions.create(**kwargs)
         choices = response.choices if response.choices else []
         content = (choices[0].message.content or "") if choices else ""
         if self._observer:
