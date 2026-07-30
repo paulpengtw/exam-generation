@@ -155,7 +155,7 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", image_api_key="sk-test-key")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:

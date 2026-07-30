@@ -16,6 +16,9 @@ function StatusDot({ status }: { status: AgentStatus }) {
   if (status === "done") {
     return <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500 flex-shrink-0" />;
   }
+  if (status === "error") {
+    return <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 flex-shrink-0" />;
+  }
   return <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300 flex-shrink-0" />;
 }
 
@@ -66,6 +69,8 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
   const aggregateStatus: AgentStatus =
     activeCount > 0
       ? "running"
+      : lane.status === "error"
+      ? "error"
       : completedCount > 0
         ? "done"
         : "idle";
@@ -77,6 +82,8 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
         ? "border-blue-300 bg-blue-50"
         : effectiveStatus === "done"
         ? "border-green-200 bg-green-50"
+        : effectiveStatus === "error"
+        ? "border-red-300 bg-red-50"
         : "border-gray-200 bg-gray-50"
     }`}>
       {/* Header */}
@@ -163,6 +170,15 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
             })}
           </div>
         </details>
+      )}
+
+      {/* Error message from failed stage */}
+      {lane.errorMessage && (
+        <div data-testid="stage-error-message" className="rounded border border-red-200 bg-red-50 p-2 text-xs space-y-1">
+          <p className="text-red-700 font-medium">{t("agent_panel.stage_error")}</p>
+          <p className="text-red-600 font-semibold text-[10px]">{t("agent_panel.stage_error_message_label")}</p>
+          <pre className="whitespace-pre-wrap text-red-800 font-mono text-[10px] break-all">{lane.errorMessage}</pre>
+        </div>
       )}
     </div>
   );

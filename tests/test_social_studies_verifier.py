@@ -216,7 +216,7 @@ def test_verify_runs_fact_check_and_forces_fail_on_contradiction(monkeypatch) ->
         issues=["文本聲稱2024年台北市長為某某，實際為另一人。"],
     )
 
-    def _spy(client, question, *, provider, max_uses):
+    def _spy(client, question, *, provider, max_uses, on_error=None):
         assert provider == "anthropic"
         assert max_uses == 5
         return fake_result
@@ -281,6 +281,26 @@ def test_verify_leaves_details_untouched_when_fact_check_returns_none(monkeypatc
     assert result.passed is True
     assert result.fact_check is None
     assert result.details == "教師端通過。"
+
+
+def test_verify_question_tolerates_null_chart_verification() -> None:
+    """LLM may emit an explicit null for chart_verification on text-only (純文字) questions
+    despite the prompt asking to omit the field entirely; the verifier must not crash."""
+    client = FakeClient(
+        {
+            "my_answer": "作者支持擴大公共運輸。",
+            "provided_answer": "作者支持擴大公共運輸。",
+            "answer_match": True,
+            "passed": True,
+            "details": "通過。",
+            "chart_verification": None,
+        }
+    )
+
+    result = verify_question(client, _question())
+
+    assert result.passed is True
+    assert result.chart_verification is None
 
 
 def test_social_studies_verifier_prompt_contains_illustrative_figure_leniency_line() -> None:

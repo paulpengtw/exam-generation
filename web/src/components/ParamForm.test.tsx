@@ -107,6 +107,8 @@ describe("ParamForm subject-filter label", () => {
     render(<ParamForm subject="natural_sciences" onSubmit={() => {}} disabled={false} />);
 
     const subjectOption = await screen.findByRole("option", { name: "化學" });
+    // Switch to checkbox mode (default is search mode)
+    fireEvent.click(screen.getByRole("button", { name: "切換勾選模式" }));
     expect(screen.getByText("BDa-IV-1")).toBeInTheDocument();
     expect(screen.getByText("JFa-IV-1")).toBeInTheDocument();
     expect(screen.getByText("INa-IV-1")).toBeInTheDocument();

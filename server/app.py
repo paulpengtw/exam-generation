@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 import traceback
 from collections.abc import AsyncIterator
@@ -38,6 +39,8 @@ from src.data_loader import (
 )
 from src.html_renderer import PlaywrightRenderer
 from src.schema_loader import load_grades, load_schemas
+
+logger = logging.getLogger(__name__)
 
 
 async def _prune_generation_records(session: AsyncSession, retention_days: int) -> None:
@@ -150,6 +153,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.html_renderer = None  # legacy; service.py uses renderer_pool
     if started_renderers:
         print(f"Playwright renderer pool started ({len(started_renderers)} instances)")
+
+    # Surface CJK font availability to deploy logs (issue #258).
+    try:
+        from src.renderer import report_cjk_font_status
+        report_cjk_font_status(logger)
+    except Exception as exc:  # pragma: no cover — best effort
+        print(f"Warning: CJK font status check failed: {exc}", file=sys.stderr)
 
     try:
         yield
