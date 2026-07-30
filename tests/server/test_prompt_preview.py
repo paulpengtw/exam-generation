@@ -329,6 +329,36 @@ def test_natural_sciences_preview_is_byte_identical_to_text_generator_prompt() -
     assert preview["user_prompt"] == capture.prompts[1]
 
 
+def test_natural_sciences_preview_with_reporting_scale_is_byte_identical() -> None:
+    """Preview byte-identity holds when a 題組-level reporting_scale is supplied."""
+    seed = 189
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ns_curriculum_context=None)
+    params = GenerateParams(subject="natural_sciences", seed=seed, reporting_scale="6")
+
+    preview = build_prompt_previews(params, config, app_state)[0]
+    sampled = sample_natural_sciences(seed=seed, reporting_scale="6")
+    capture = _CapturingClient(
+        {
+            "核心問題": "測試核心問題",
+            "文本": "測試文本",
+            "取材來源": ["測試來源"],
+            "subquestions": [],
+        }
+    )
+    generate_natural_sciences(
+        config=config,
+        client=capture,
+        params=sampled,
+        question_id="preview-rs-equality",
+        skip_verify=True,
+    )
+
+    assert capture.prompts is not None
+    assert preview["system_prompt"] == capture.prompts[0]
+    assert preview["user_prompt"] == capture.prompts[1]
+
+
 def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeholder_substitution() -> None:
     seed = 192
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)

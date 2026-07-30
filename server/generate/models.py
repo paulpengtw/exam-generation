@@ -109,6 +109,8 @@ class GenerateParams(BaseModel):
     # at the route level; basic format validated here).
     effort_plan: str | None = None
     effort_execute: str | None = None
+    # #279: 題組-level Reporting Scale (natural_sciences only; other subjects accept and ignore).
+    reporting_scale: str | None = None
 
     @field_validator(
         "set_type",
@@ -118,6 +120,7 @@ class GenerateParams(BaseModel):
         "context",
         "subject_filter",
         "science_competency",
+        "reporting_scale",
         mode="before",
     )
     @classmethod

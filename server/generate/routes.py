@@ -55,6 +55,7 @@ async def preview_generate_endpoint(
     effective_execute_model = params.model_execute or config.model_execute
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
+    _check_image_api_key(params.image_generation_mode, params.subquestion_configs, config)
     return {"prompts": build_prompt_previews(params, config, request.app.state)}
 
 
@@ -105,6 +106,32 @@ def _check_subject_allowed(subject: str) -> None:
         )
 
 
+def _check_image_api_key(
+    image_generation_mode: str,
+    subquestion_configs_raw: str | None,
+    config: ServerConfig,
+) -> None:
+    """Raise HTTPException(422) when gpt_image is requested but IMAGE_API_KEY is empty."""
+    if config.image_api_key:
+        return
+    needs_gpt = image_generation_mode == "gpt_image"
+    if not needs_gpt and subquestion_configs_raw:
+        try:
+            items = json.loads(subquestion_configs_raw)
+            if isinstance(items, list):
+                needs_gpt = any(
+                    isinstance(item, dict) and item.get("image_generation_mode") == "gpt_image"
+                    for item in items
+                )
+        except Exception:
+            pass
+    if needs_gpt:
+        raise HTTPException(
+            status_code=422,
+            detail="image_generation_mode: gpt_image requires IMAGE_API_KEY to be set on the server",
+        )
+
+
 @router.get("/generate")
 @limiter.limit("10/hour", key_func=jwt_user_key)
 async def generate_endpoint(
@@ -144,6 +171,7 @@ async def generate_endpoint(
     model_execute: str | None = Query(default=None),
     effort_plan: str | None = Query(default=None),
     effort_execute: str | None = Query(default=None),
+    reporting_scale: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -161,6 +189,7 @@ async def generate_endpoint(
     effective_execute_model = model_execute or config.model_execute
     _check_effort_for_model(effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(effort_execute, effective_execute_model, "effort_execute")
+    _check_image_api_key(image_generation_mode, subquestion_configs, config)
     try:
         params = GenerateParams(
             subject=subject,
@@ -198,6 +227,7 @@ async def generate_endpoint(
             model_execute=model_execute,
             effort_plan=effort_plan,
             effort_execute=effort_execute,
+            reporting_scale=reporting_scale,
         )
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

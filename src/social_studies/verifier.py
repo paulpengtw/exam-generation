@@ -7,7 +7,7 @@ from pathlib import Path
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.common.verifier import PostVerifyHook, verify_question_common
 from src.curriculum_context import CurriculumContext, build_curriculum_section
-from src.llm_client import LLMClient
+from src.llm_client import LLMClient, emit_stage
 from src.social_studies.fact_check import fact_check_question, is_current_events
 from src.social_studies.schemas import (
     ChartVerificationResult,
@@ -120,8 +120,14 @@ def _ss_fact_check_hook(
     provider = getattr(getattr(client, "config", None), "web_search_provider", "none")
     max_uses = int(getattr(getattr(client, "config", None), "web_search_max_uses", 5))
     if provider == "anthropic" and is_current_events(question):
+        obs = client.get_observer() if hasattr(client, "get_observer") else None
+
+        def _on_fact_check_error(msg: str) -> None:
+            emit_stage(obs, "fact_checker", "fact_check", "error", message=msg)
+
         fc: FactCheckResult | None = fact_check_question(
             client, question, provider=provider, max_uses=max_uses,
+            on_error=_on_fact_check_error,
         )
         result.fact_check = fc
         if fc is not None and fc.verified is False:

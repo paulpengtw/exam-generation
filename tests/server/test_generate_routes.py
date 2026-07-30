@@ -155,7 +155,7 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", image_api_key="sk-test-key")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -1125,3 +1125,59 @@ def test_route_outer_error_event_is_structured() -> None:
     assert parsed["code"] == "stream_failed"
     assert "Traceback (most recent call last)" not in parsed["message"]
     assert '  File "' not in parsed["message"]
+
+
+def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
+    """Slice 5: GET /generate?reporting_scale=4 → params.reporting_scale == '4'."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    from server.generate import routes as gen_routes
+
+    captured = {}
+
+    async def fake_stream(params, *_args, **_kwargs):
+        captured["params"] = params
+        yield {"event": "done", "data": ""}
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    original = gen_routes.generate_question_stream
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/generate?subject=natural_sciences&reporting_scale=4",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200
+    assert captured["params"].reporting_scale == "4"

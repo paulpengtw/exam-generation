@@ -112,12 +112,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--learning-content", type=str, nargs="+", help="指定學習內容 編碼")
     gen.add_argument("--learning-performance", type=str, nargs="+", help="指定學習表現 編碼")
     gen.add_argument("--content-type", type=str, help="題目內容類型")
+    from src.natural_sciences.reporting_scale import REPORTING_SCALE_ORDER as _RS_ORDER
     gen.add_argument(
-        "--difficulty",
+        "--reporting-scale",
         type=str,
-        choices=["easy", "medium", "hard"],
+        choices=list(_RS_ORDER),
         default=None,
-        help="題組難度（easy / medium / hard；預設 medium，純粹傳遞不參與隨機抽樣）",
+        help="目標 PISA Science Reporting Scale 等級（取代舊有 --difficulty，自然科學專用）",
     )
     gen.add_argument("--count", type=int, default=1, help="Number of question sets to generate")
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
@@ -274,7 +275,6 @@ def _parse_text_shell(
             grade=params.grade,
             model=model,
             seed=None,
-            difficulty=params.difficulty,
         ),
     )
 
@@ -462,11 +462,18 @@ def generate_with_corrections(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
+    sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
-    """generate_one followed by up to max_retries correction passes."""
-    return generate_with_corrections_core(
+    """generate_one followed by up to max_retries correction passes.
+
+    ``metadata.reporting_scales`` is set to the resolved Reporting Scale of
+    each surviving 小題 in 序號 order.  The list is written once here — after
+    the correction loop — so it is consistent with the final subquestion list
+    and cannot drift across correction passes.
+    """
+    result = generate_with_corrections_core(
         config=config,
         client=client,
         params=params,
@@ -484,9 +491,16 @@ def generate_with_corrections(
         user_topic=user_topic,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )
+    if isinstance(result, ExamQuestion) and result.metadata is not None:
+        result.metadata.reporting_scales = [
+            sq.reporting_scale or ""
+            for sq in result.subquestions
+        ]
+    return result
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -559,7 +573,7 @@ def main(argv: list[str] | None = None) -> None:
                 learning_performance=learning_performance_override,
                 content_type=content_type_override,
                 seed=seed,
-                difficulty=args.difficulty,
+                reporting_scale=args.reporting_scale,
             )
 
             print(

@@ -82,6 +82,14 @@ _Avoid_: hint, suggestion, soft constraint
 A submitted setting enforced after generation regardless of what the model returned. Contrast 建議值.
 _Avoid_: enforced value, hard constraint, override
 
+**Reporting Scale**:
+The PISA Science proficiency level (1c, 1b, 1a, 2, 3, 4, 5, 6) that a 自然科學 小題 targets. 自然科學-only: 數學 and 社會領域 use 難度 instead. The headword is deliberately English in this Chinese-language glossary because the interface shows the literal English term untranslated in both zh-TW and en locales — no established Chinese equivalent exists. 每小題可各自指定，未指定者承襲題組層級的值，題組層級亦未設定時則每個空位各自隨機抽取。
+_Avoid_: 難度 (wrong term for 自然科學), 報告等級
+
+**難度**:
+The easy / medium / hard demand signal for 數學 and 社會領域. Not used for 自然科學, which uses Reporting Scale instead.
+_Avoid_: using 難度 for 自然科學
+
 ### 流程 (Pipeline)
 
 **文本生成器**:

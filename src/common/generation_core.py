@@ -22,7 +22,7 @@ from src.common.subject_spec import SubjectGenerationSpec
 from src.config import Config
 from src.curriculum_context import CurriculumContext
 from src.html_renderer import PlaywrightRenderer
-from src.llm_client import LLMClient, emit_plan, emit_stage
+from src.llm_client import LLMClient, emit_plan, emit_stage, make_render_error_sink
 from src.renderer import render_image
 
 
@@ -218,6 +218,7 @@ def generate_one_core(
 
         attempts = 1 + max(0, config.subgen_retries)
         result = None
+        last_exc_text: str = ""
         for attempt in range(1, attempts + 1):
             sub_client = (
                 sub_client_factory() if sub_client_factory is not None else LLMClient(config)
@@ -239,8 +240,9 @@ def generate_one_core(
                     file=sys.stderr,
                 )
                 result = None
-            emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
+                last_exc_text = str(e)
             if result is not None:
+                emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
                 configured_type = (
                     slot_cfg.question_type
                     if slot_cfg is not None else None
@@ -275,6 +277,12 @@ def generate_one_core(
                     f" (attempt {attempt + 1}/{attempts})...",
                     file=sys.stderr,
                 )
+        _drop_msg = (
+            f"子題 {idx} 生成失敗（{attempts} 次嘗試）: {last_exc_text}"
+            if last_exc_text
+            else f"子題 {idx} 生成失敗（{attempts} 次嘗試）"
+        )
+        emit_stage(obs, agent_id, "llm_generate", "error", message=_drop_msg)
         print(
             f"  Sub-generator {agent_id} dropped after {attempts} attempt(s)",
             file=sys.stderr,
@@ -309,6 +317,7 @@ def generate_one_core(
     if question.chart_spec:
         img_path = config.output_dir / f"{question_id}.png"
         print(f"  Rendering image: {img_path}", file=sys.stderr)
+        _on_render_error, _render_failed = make_render_error_sink(obs)
         emit_stage(obs, "image_agent", "render_image", "start")
         rendered = render_image(
             question.chart_spec.model_dump(),
@@ -317,8 +326,10 @@ def generate_one_core(
             html_renderer=html_renderer,
             llm_client=client,
             image_generation_mode=image_generation_mode,
+            on_error=_on_render_error,
         )
-        emit_stage(obs, "image_agent", "render_image", "end")
+        if not _render_failed:
+            emit_stage(obs, "image_agent", "render_image", "end")
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
@@ -371,6 +382,7 @@ def generate_with_corrections_core(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     on_question_update: Callable | None = None,
+    sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
 ) -> Any:
@@ -392,6 +404,7 @@ def generate_with_corrections_core(
         user_topic=user_topic,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )
@@ -432,6 +445,7 @@ def generate_with_corrections_core(
         if question.chart_spec and question.chart_spec != prior_chart_spec:
             img_path = config.output_dir / f"{question_id}.png"
             print(f"  Chart spec changed; re-rendering image: {img_path}", file=sys.stderr)
+            _on_render_error, _render_failed = make_render_error_sink(obs)
             emit_stage(obs, "image_agent", "render_image", "start")
             rendered = render_image(
                 question.chart_spec.model_dump(),
@@ -440,8 +454,10 @@ def generate_with_corrections_core(
                 html_renderer=html_renderer,
                 llm_client=client,
                 image_generation_mode=image_generation_mode,
+                on_error=_on_render_error,
             )
-            emit_stage(obs, "image_agent", "render_image", "end")
+            if not _render_failed:
+                emit_stage(obs, "image_agent", "render_image", "end")
             if rendered:
                 question.圖片 = f"{question_id}.png"
                 new_chart_image_path = rendered

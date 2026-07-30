@@ -190,6 +190,8 @@ describe("ParamForm coverage_mode dropdown", () => {
     render(
       <ParamForm subject="social_studies" onSubmit={(p) => submitted.push(p)} disabled={false} />,
     );
+    // Switch to checkbox mode (default is search mode)
+    fireEvent.click(await screen.findByRole("button", { name: "切換勾選模式" }));
     await screen.findByText("歷Ka-Ⅳ-1");
 
     fireEvent.click(screen.getByText("歷Ka-Ⅳ-1"));

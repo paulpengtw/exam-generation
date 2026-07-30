@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import random
 
-from src.common.difficulty import Difficulty, resolve_difficulty
 from src.natural_sciences.curriculum_loader import (
     allowed_learning_content,
     allowed_learning_performance,
@@ -81,12 +80,12 @@ def sample_params(
     question_word_limit: int | None = None,
     option_word_limit: int | None = None,
     subquestion_configs: list | None = None,
-    difficulty: Difficulty | str | None = None,
+    difficulty: object = None,  # accepted-and-ignored; 自然科學 uses Reporting Scale instead
+    reporting_scale: str | None = None,
 ) -> SampledParams:
     """Sample random PISA Science parameters for a single 題組."""
 
     rng = random.Random(seed)
-    resolved_difficulty: Difficulty = resolve_difficulty(difficulty)
 
     selected_grade = grade if grade is not None else rng.choice(_GRADES)
     learning_stage = grade_to_learning_stage(selected_grade)
@@ -189,9 +188,14 @@ def sample_params(
             ]
 
     if resolved_configs:
+        # Precedence: explicit per-小題 > 題組-level request value > rng scatter.
         resolved_configs = [
             cfg.model_copy(
-                update={"reporting_scale": cfg.reporting_scale or rng.choice(REPORTING_SCALE_ORDER)}
+                update={
+                    "reporting_scale": cfg.reporting_scale
+                    or reporting_scale
+                    or rng.choice(REPORTING_SCALE_ORDER)
+                }
             )
             for cfg in resolved_configs
         ]
@@ -212,5 +216,5 @@ def sample_params(
         question_word_limit=question_word_limit,
         option_word_limit=option_word_limit,
         subquestion_configs=resolved_configs,
-        difficulty=resolved_difficulty,
+        reporting_scale=reporting_scale,
     )

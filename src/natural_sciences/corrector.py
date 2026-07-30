@@ -24,8 +24,8 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 - 若問題在選項設計，請修正對應小題題目文字與答案，同步修正 正確解題分析。
 - 若問題在文本素材或小題敘述歧義，請最小幅度澄清文本或小題題目，同步調整答案解析。
 - 若 chart_verification 指出素材錯誤，請只修正 chart_spec 的 data/labels/description，保留 render_mode。
-- 絕對不可修改：核心問題、情境、情境子類別、題型種類、題型、科學能力、難度、id、metadata，
-  以及各小題的 學習內容/學習表現/科學能力/出題概念/科目/年級。
+- 絕對不可修改：核心問題、情境、情境子類別、題型種類、題型、科學能力、id、metadata，
+  以及各小題的 學習內容/學習表現/科學能力/出題概念/出題指示/Reporting Scale/科目/年級。
 - 若某小題的答案或選項有改動，該小題的 `誘答分析` 必須同步反映新的正解與誘答陷阱：正解鍵改為「正確答案：…」，其他鍵改為新的科學迷思描述。選項標籤必須與新題目一致；若題目為 Constructed-response 或沒有 (A)-(D) 標籤，可留空 `{}`。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
@@ -84,6 +84,14 @@ def _ns_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> 
                 else repair_lp_refs(_refs_from_raw(sq_raw.get("學習表現")), [])
             ),
             出題概念=original.出題概念 if original else sq_raw.get("出題概念", ""),
+            出題指示=original.出題指示 if original else sq_raw.get("出題指示"),
+            # reporting_scale is frozen: the resolved level is a fact about the
+            # generated question, not something the corrector should alter.
+            reporting_scale=(
+                original.reporting_scale
+                if original
+                else sq_raw.get("reporting_scale")
+            ),
             題型=original.題型 if original else sq_raw.get("題型", ""),
             題目=sq_raw.get("題目", original.題目 if original else ""),
             答案=sq_raw.get("答案", original.答案 if original else ""),

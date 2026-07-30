@@ -7,7 +7,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.common.difficulty import DEFAULT_DIFFICULTY, Difficulty
 from src.natural_sciences.schema_loader import build_enums, load_grades, load_schemas
 
 _schemas = load_schemas()
@@ -102,11 +101,21 @@ class SubQuestion(BaseModel):
 
 
 class QuestionMetadata(BaseModel):
+    """Metadata recorded once when the 題組 is finalised.
+
+    ``reporting_scales`` lists the resolved Reporting Scale for each
+    surviving 小題 in 序號 order — one entry per shipped 小題, no entry for
+    slots that were dropped after exhausting retries.  The list is frozen
+    through any subsequent correction passes.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
     grade: int
     model: str
     generated_at: datetime = Field(default_factory=datetime.now)
     seed: int | None = None
-    difficulty: Difficulty = DEFAULT_DIFFICULTY
+    reporting_scales: list[str] = Field(default_factory=list)
 
 
 class ExamQuestion(BaseModel):
@@ -160,5 +169,5 @@ class SampledParams(BaseModel):
     option_word_limit: int | None = None
     text_word_limit: int | None = None
     subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)
-    # Issue #116: explicit difficulty (pure passthrough — never randomized).
-    difficulty: Difficulty = DEFAULT_DIFFICULTY
+    # Issue #280: 題組-level Reporting Scale (None → not specified; never randomised here).
+    reporting_scale: str | None = None

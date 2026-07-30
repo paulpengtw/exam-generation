@@ -76,7 +76,8 @@ def test_social_studies_verifier_mentions_difficulty(monkeypatch):
     assert "僅供參考" in captured["user"]
 
 
-def test_natural_sciences_verifier_mentions_difficulty(monkeypatch):
+def test_natural_sciences_verifier_has_no_difficulty_line(monkeypatch):
+    """NS verifier must NOT mention 難度 (issue #282 — 難度 leaves NS pipeline)."""
     from src.natural_sciences import verifier as mod
     from src.natural_sciences.schemas import (
         ExamQuestion,
@@ -93,9 +94,8 @@ def test_natural_sciences_verifier_mentions_difficulty(monkeypatch):
         情境子類別=next(iter(QuestionSubContext)),
         題型種類=next(iter(QuestionSetType)),
         題型=next(iter(QuestionType)),
-        metadata=QuestionMetadata(grade=8, model="m", difficulty=Difficulty.medium),
+        metadata=QuestionMetadata(grade=8, model="m"),
     )
     mod.verify_question(client, q)
-    assert "難度" in captured["user"]
-    assert "medium" in captured["user"]
-    assert "僅供參考" in captured["user"]
+    assert "難度" not in captured["user"]
+    assert "Reporting Scale" not in captured["user"]
