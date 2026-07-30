@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import platform
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -23,8 +25,12 @@ _CJK_FONTS = [
 ]
 
 
-def _setup_chinese_font() -> None:
-    """Configure matplotlib to use a CJK font for Chinese labels."""
+def _setup_chinese_font() -> str | None:
+    """Configure matplotlib to use a CJK font for Chinese labels.
+
+    Returns the name of the selected font, or None when no CJK font is found.
+    Emits a warning to stderr on exhaustion so deploy logs surface the gap.
+    """
     if platform.system() == "Darwin":
         # macOS has PingFang built-in
         preferred = ["PingFang TC", "Heiti TC"] + _CJK_FONTS
@@ -36,15 +42,37 @@ def _setup_chinese_font() -> None:
             matplotlib.font_manager.findfont(font, fallback_to_default=False)
             plt.rcParams["font.sans-serif"] = [font] + plt.rcParams["font.sans-serif"]
             plt.rcParams["axes.unicode_minus"] = False
-            return
+            return font
         except Exception:
             continue
 
-    # Fallback: just disable minus sign issue
+    # Fallback: warn and disable minus sign issue
+    print(
+        "WARNING: No CJK font found. Chinese chart labels will render as tofu boxes (□□□). "
+        f"Fonts tried: {', '.join(preferred)}",
+        file=sys.stderr,
+    )
     plt.rcParams["axes.unicode_minus"] = False
+    return None
 
 
-_setup_chinese_font()
+CJK_FONT: str | None = _setup_chinese_font()
+
+
+def report_cjk_font_status(logger: logging.Logger) -> None:
+    """Log CJK font availability to *logger*; called from server lifespan on startup.
+
+    Logs logger.error when no CJK font was found (container image fault).
+    Does NOT abort startup — matplotlib charts are one render mode among several.
+    """
+    if CJK_FONT is None:
+        logger.error(
+            "CJK font unavailable: Chinese chart labels will render as tofu boxes. "
+            "Fonts tried: %s. Install one in the container image to fix.",
+            ", ".join(_CJK_FONTS),
+        )
+    else:
+        logger.info("CJK font active: %s", CJK_FONT)
 
 
 def render_chart(chart_spec: dict, output_path: str | Path) -> str | None:
