@@ -176,8 +176,9 @@ describe("ParamForm 未送出的輸入", () => {
     const onUnsubmittedInput = await renderSocial();
     const learningContent = within(getLearningContentSection());
 
+    // Default is now search mode; toggle to checkbox mode
     fireEvent.click(
-      learningContent.getByRole("button", { name: "切換搜尋模式" }),
+      learningContent.getByRole("button", { name: "切換勾選模式" }),
     );
 
     expect(onUnsubmittedInput).toHaveBeenCalled();
@@ -186,9 +187,7 @@ describe("ParamForm 未送出的輸入", () => {
   it("raises 未送出的輸入 when a selected code chip is removed", async () => {
     const onUnsubmittedInput = await renderSocial();
     const learningContent = within(getLearningContentSection());
-    fireEvent.click(
-      learningContent.getByRole("button", { name: "切換搜尋模式" }),
-    );
+    // Default is now search mode — no toggle needed before interacting with SearchPicker
     fireEvent.change(
       learningContent.getByPlaceholderText("搜尋學習內容..."),
       { target: { value: "歷Ka-Ⅳ-1" } },
