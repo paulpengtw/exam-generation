@@ -13,6 +13,7 @@ import itertools
 import json
 import logging
 import threading
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import datetime
@@ -154,17 +155,26 @@ def build_prompt_previews(
     return previews
 
 
-def _decode_subquestion_configs(raw: str | None) -> list[dict] | None:
+def _decode_subquestion_configs(
+    raw: str | None,
+    on_error: Callable[[str], None] | None = None,
+) -> list[dict] | None:
     """Decode social-studies per-subquestion configs from the GET query string."""
     if not raw:
         return None
     try:
         decoded = json.loads(raw)
     except json.JSONDecodeError as exc:
+        msg = f"subquestion_configs JSON parse failed: {exc} — per-小題 配置已被忽略"
         logger.warning("subquestion_configs JSON parse failed, ignoring: %s", exc)
+        if on_error is not None:
+            on_error(msg)
         return None
     if not isinstance(decoded, list):
+        msg = "subquestion_configs must be a JSON array — per-小題 配置已被忽略"
         logger.warning("subquestion_configs JSON must be an array, ignoring")
+        if on_error is not None:
+            on_error(msg)
         return None
     return [item for item in decoded if isinstance(item, dict)]
 
@@ -213,6 +223,7 @@ def _build_run_context(
     loop: asyncio.AbstractEventLoop,
     queue: asyncio.Queue,
     html_renderer: Any,
+    on_error: Callable[[str], None] | None = None,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -241,7 +252,7 @@ def _build_run_context(
         max_retries=params.max_retries,
         timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
         html_renderer=html_renderer,
-        decoded_subquestion_configs=_decode_subquestion_configs(params.subquestion_configs),
+        decoded_subquestion_configs=_decode_subquestion_configs(params.subquestion_configs, on_error=on_error),
         decoded_per_question_params=decode_per_question_params(
             params.per_question_params
         ),
@@ -384,6 +395,19 @@ async def generate_question_stream(
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
     spec = _subjects[params.subject]
+    def _emit_sq_config_error(msg: str) -> None:
+        queue.put_nowait({
+            "event": SSEEventName.STAGE,
+            "data": {
+                "type": "stage",
+                "agent": "generator",
+                "stage": "subquestion_configs",
+                "status": "error",
+                "message": msg,
+                "ts": time.time(),
+            },
+        })
+
     ctx = _build_run_context(
         params, config, app_state,
         spec=spec,
@@ -392,6 +416,7 @@ async def generate_question_stream(
         loop=loop,
         queue=queue,
         html_renderer=html_renderer,
+        on_error=_emit_sq_config_error,
     )
 
     # Site 2 (creative-brief / coverage planning): delegated to spec.

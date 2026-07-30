@@ -216,7 +216,7 @@ def test_verify_runs_fact_check_and_forces_fail_on_contradiction(monkeypatch) ->
         issues=["文本聲稱2024年台北市長為某某，實際為另一人。"],
     )
 
-    def _spy(client, question, *, provider, max_uses):
+    def _spy(client, question, *, provider, max_uses, on_error=None):
         assert provider == "anthropic"
         assert max_uses == 5
         return fake_result

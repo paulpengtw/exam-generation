@@ -218,6 +218,7 @@ def generate_one_core(
 
         attempts = 1 + max(0, config.subgen_retries)
         result = None
+        last_exc_text: str = ""
         for attempt in range(1, attempts + 1):
             sub_client = (
                 sub_client_factory() if sub_client_factory is not None else LLMClient(config)
@@ -239,8 +240,9 @@ def generate_one_core(
                     file=sys.stderr,
                 )
                 result = None
-            emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
+                last_exc_text = str(e)
             if result is not None:
+                emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
                 configured_type = (
                     slot_cfg.question_type
                     if slot_cfg is not None else None
@@ -275,6 +277,12 @@ def generate_one_core(
                     f" (attempt {attempt + 1}/{attempts})...",
                     file=sys.stderr,
                 )
+        _drop_msg = (
+            f"子題 {idx} 生成失敗（{attempts} 次嘗試）: {last_exc_text}"
+            if last_exc_text
+            else f"子題 {idx} 生成失敗（{attempts} 次嘗試）"
+        )
+        emit_stage(obs, agent_id, "llm_generate", "error", message=_drop_msg)
         print(
             f"  Sub-generator {agent_id} dropped after {attempts} attempt(s)",
             file=sys.stderr,

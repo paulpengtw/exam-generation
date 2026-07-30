@@ -522,6 +522,34 @@ def _parse_question(
     )
 
 
+
+def _start_html_renderer(client: "LLMClient | None") -> "PlaywrightRenderer | None":
+    """Start Playwright renderer; emit an error stage event on failure.
+
+    Returns the started renderer on success, or None on failure.
+    The stderr warning and None-renderer non-fatal behavior are preserved.
+    """
+    try:
+        renderer = PlaywrightRenderer()
+        renderer.start()
+        print("  Playwright browser started.", file=sys.stderr)
+        return renderer
+    except Exception as e:
+        print(
+            f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.",
+            file=sys.stderr,
+        )
+        if client is not None:
+            emit_stage(
+                client.get_observer(),
+                "image_agent",
+                "renderer_startup",
+                "error",
+                message=str(e),
+            )
+        return None
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
 
@@ -557,15 +585,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Initialize Playwright renderer (skip for dry-run)
     # Started once here and reused across all questions to amortize ~1-2s startup cost
-    html_renderer = None
-    if not args.dry_run:
-        try:
-            html_renderer = PlaywrightRenderer()
-            html_renderer.start()
-            print("  Playwright browser started.", file=sys.stderr)
-        except Exception as e:
-            print(f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.", file=sys.stderr)
-            html_renderer = None
+    html_renderer = _start_html_renderer(client) if not args.dry_run else None
 
     # Resolve optional overrides
     style_override = [QuestionStyle(v) for v in args.style] if args.style else None
