@@ -77,6 +77,33 @@ def emit_stage(
         pass
 
 
+def make_render_error_sink(
+    observer: LLMObserver | None,
+    agent: str = "image_agent",
+) -> tuple[Callable[[str], None], list[str]]:
+    """Return an (on_error, failed) pair for use at render_image call sites.
+
+    on_error(msg) emits a "render_image" error stage event and appends msg to
+    failed.  Pass on_error to render_image(..., on_error=on_error); check
+    ``if not failed`` before emitting the matching "end" event.
+
+    Example::
+
+        on_error, render_failed = make_render_error_sink(obs)
+        emit_stage(obs, "image_agent", "render_image", "start")
+        rendered = render_image(..., on_error=on_error)
+        if not render_failed:
+            emit_stage(obs, "image_agent", "render_image", "end")
+    """
+    failed: list[str] = []
+
+    def on_error(err: str) -> None:
+        emit_stage(observer, agent, "render_image", "error", message=err)
+        failed.append(err)
+
+    return on_error, failed
+
+
 def emit_plan(observer: LLMObserver | None, sub_question_total: int) -> None:
     """Emit the resolved sub-question plan total to the observer (if any)."""
     if observer is None:

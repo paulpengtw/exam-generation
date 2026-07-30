@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import platform
+from collections.abc import Callable
 from pathlib import Path
 
 import matplotlib
@@ -276,6 +277,7 @@ def render_image(
     html_renderer=None,
     llm_client=None,
     image_generation_mode: str = "html",
+    on_error: Callable[[str], None] | None = None,
 ) -> str | None:
     """Render a question image from an ImageSpec dict and save as PNG.
 
@@ -290,7 +292,10 @@ def render_image(
 
     if image_generation_mode == "gpt_image":
         if llm_client is None:
-            print("  Warning: gpt_image mode requires LLMClient", file=sys.stderr)
+            _msg = "gpt_image mode requires LLMClient"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
         try:
             prompt = _build_gpt_image_prompt(image_spec, question_text)
@@ -298,11 +303,16 @@ def render_image(
             return llm_client.generate_image(prompt, output_path)
         except Exception as e:
             print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
+            if on_error is not None:
+                on_error(str(e))
             return None
 
     if render_mode == "gpt_image":
         if llm_client is None:
-            print("  Warning: render_mode='gpt_image' requires LLMClient", file=sys.stderr)
+            _msg = "render_mode='gpt_image' requires LLMClient"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
         try:
             prompt = _build_gpt_image_prompt(image_spec, question_text)
@@ -310,6 +320,8 @@ def render_image(
             return llm_client.generate_image(prompt, output_path)
         except Exception as e:
             print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
+            if on_error is not None:
+                on_error(str(e))
             return None
 
     if render_mode == "chart":
