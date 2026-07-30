@@ -162,3 +162,5 @@ class SampledParams(BaseModel):
     subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)
     # Issue #116: explicit difficulty (pure passthrough — never randomized).
     difficulty: Difficulty = DEFAULT_DIFFICULTY
+    # Issue #280: 題組-level Reporting Scale (None → not specified; never randomised here).
+    reporting_scale: str | None = None

@@ -219,4 +219,5 @@ def sample_params(
         option_word_limit=option_word_limit,
         subquestion_configs=resolved_configs,
         difficulty=resolved_difficulty,
+        reporting_scale=reporting_scale,
     )
