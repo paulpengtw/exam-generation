@@ -1,4 +1,4 @@
-"""Deterministic validation & repair of 學習內容/學習表現 codes (issue #92).
+"""Deterministic validation & repair of 學習內容/學習表現 codes (issue #92, #287).
 
 The NS curriculum JSON mixes ASCII roman numerals ("Aa-IV-3") and Unicode
 numerals ("Ab-Ⅳ-1"); LLM output drifts between the two spellings and
@@ -7,10 +7,11 @@ a normalized form (Unicode Ⅰ–Ⅴ → ASCII, whitespace stripped), and the
 canonical spelling + 說明 from the curriculum JSON is restored on the way
 out.
 
-Validation is existence-based across all 學習階段: "is this a real 108課綱
-code" is the deterministic guarantee. Stage-appropriateness stays a
-judgement call for the LLM verifier, whose prompt only contains the
-stage-filtered curriculum.
+When ``learning_stage`` is supplied the check is stage-aware (issue #287):
+codes that exist in the curriculum but belong to a different 學習階段 are
+treated as invalid — repair drops them and falls back to the sampled pool,
+and validation emits a distinct "屬於其他學習階段" issue.  Without
+``learning_stage`` the old existence-only behaviour is preserved.
 
 Legacy flat questions (題目-only, no subquestions) are not validated.
 """
@@ -46,6 +47,16 @@ _LP_LOOKUP: dict[str, tuple[str, str]] = {
     for row in _PERFORMANCE_DATA["學習表現"]
 }
 
+# normalized code -> 學習階段 (for stage-aware checks, issue #287)
+_LC_STAGE: dict[str, str] = {
+    normalize_code(row["value"]): row["學習階段"]
+    for row in _CONTENT_DATA["學習內容"]
+}
+_LP_STAGE: dict[str, str] = {
+    normalize_code(row["value"]): row["學習階段"]
+    for row in _PERFORMANCE_DATA["學習表現"]
+}
+
 
 def canonical_lc(code: str) -> LearningContentRef | None:
     """Return the canonical 學習內容 ref for ``code``, or None if unknown."""
@@ -67,19 +78,30 @@ def _repair_refs(
     refs: list[LearningContentRef],
     fallback_codes: list[str],
     canonical: Callable[[str], LearningContentRef | None],
+    stage_lookup: dict[str, str] | None = None,
+    learning_stage: str | None = None,
 ) -> list[LearningContentRef]:
-    """Canonicalize valid refs, drop unknown ones, dedupe; fall back to pool.
+    """Canonicalize valid refs, drop unknown/off-stage ones, dedupe; fall back to pool.
 
     When every emitted ref is unknown (or refs is empty), the sampled-pool
     codes are substituted — they were drawn from the curriculum JSON, so
     they are valid by construction (still guarded through ``canonical``).
     Returns [] only when both refs and fallback yield nothing valid.
+
+    When *learning_stage* and *stage_lookup* are both provided (issue #287),
+    codes that exist in the curriculum but belong to a different 學習階段 are
+    treated as invalid and dropped (same path as unknown codes).
     """
+    check_stage = stage_lookup is not None and learning_stage is not None
+
     repaired: list[LearningContentRef] = []
     seen: set[str] = set()
     for ref in refs:
         fixed = canonical(ref.編碼)
         if fixed is None or fixed.編碼 in seen:
+            continue
+        # Issue #287: drop real codes that belong to a different stage.
+        if check_stage and stage_lookup.get(normalize_code(fixed.編碼)) != learning_stage:  # type: ignore[union-attr]
             continue
         if not fixed.說明 and ref.說明:
             fixed = fixed.model_copy(update={"說明": ref.說明})
@@ -99,34 +121,78 @@ def _repair_refs(
 def repair_lc_refs(
     refs: list[LearningContentRef],
     fallback_codes: list[str],
+    learning_stage: str | None = None,
 ) -> list[LearningContentRef]:
-    """Repair LLM-emitted 學習內容 refs against the curriculum + pool."""
-    return _repair_refs(refs, fallback_codes, canonical_lc)
+    """Repair LLM-emitted 學習內容 refs against the curriculum + pool.
+
+    When *learning_stage* is provided, off-stage codes are dropped (issue #287).
+    """
+    return _repair_refs(refs, fallback_codes, canonical_lc, _LC_STAGE, learning_stage)
 
 
 def repair_lp_refs(
     refs: list[LearningContentRef],
     fallback_codes: list[str],
+    learning_stage: str | None = None,
 ) -> list[LearningContentRef]:
-    """Repair LLM-emitted 學習表現 refs against the curriculum + pool."""
-    return _repair_refs(refs, fallback_codes, canonical_lp)
+    """Repair LLM-emitted 學習表現 refs against the curriculum + pool.
+
+    When *learning_stage* is provided, off-stage codes are dropped (issue #287).
+    """
+    return _repair_refs(refs, fallback_codes, canonical_lp, _LP_STAGE, learning_stage)
 
 
-def validate_question_codes(question: ExamQuestion) -> list[str]:
-    """Return deterministic issues for unknown or missing LC/LP codes."""
+def validate_question_codes(
+    question: ExamQuestion,
+    learning_stage: str | None = None,
+) -> list[str]:
+    """Return deterministic issues for unknown, missing, or off-stage LC/LP codes.
+
+    When *learning_stage* is provided (issue #287), codes that exist in the
+    curriculum but belong to a different 學習階段 are reported as off-stage
+    rather than just unknown — the distinction appears in the issue message so
+    the corrector and operator can tell them apart.
+    """
     issues: list[str] = []
+    check_stage = learning_stage is not None
+
     for sq in question.subquestions:
         label = f"第{sq.序號}小題"
         if not sq.學習內容:
             issues.append(f"{label}：缺少學習內容編碼")
         else:
-            unknown = [r.編碼 for r in sq.學習內容 if canonical_lc(r.編碼) is None]
+            unknown = []
+            off_stage = []
+            for r in sq.學習內容:
+                canon = canonical_lc(r.編碼)
+                if canon is None:
+                    unknown.append(r.編碼)
+                elif check_stage and _LC_STAGE.get(normalize_code(canon.編碼)) != learning_stage:
+                    off_stage.append(r.編碼)
             if unknown:
                 issues.append(f"{label}：學習內容編碼不存在於課綱：{'、'.join(unknown)}")
+            if off_stage:
+                issues.append(
+                    f"{label}：學習內容編碼屬於其他學習階段"
+                    f"（預期{learning_stage}）：{'、'.join(off_stage)}"
+                )
+
         if not sq.學習表現:
             issues.append(f"{label}：缺少學習表現編碼")
         else:
-            unknown = [r.編碼 for r in sq.學習表現 if canonical_lp(r.編碼) is None]
+            unknown = []
+            off_stage = []
+            for r in sq.學習表現:
+                canon = canonical_lp(r.編碼)
+                if canon is None:
+                    unknown.append(r.編碼)
+                elif check_stage and _LP_STAGE.get(normalize_code(canon.編碼)) != learning_stage:
+                    off_stage.append(r.編碼)
             if unknown:
                 issues.append(f"{label}：學習表現編碼不存在於課綱：{'、'.join(unknown)}")
+            if off_stage:
+                issues.append(
+                    f"{label}：學習表現編碼屬於其他學習階段"
+                    f"（預期{learning_stage}）：{'、'.join(off_stage)}"
+                )
     return issues

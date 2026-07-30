@@ -173,6 +173,7 @@ def _parse_subquestion(
             for r in sq_raw.get("學習表現", [])
             if isinstance(r, dict) and r.get("編碼")
         ]
+        learning_stage = grade_to_learning_stage(params.grade)
         if cfg and cfg.learning_content:
             lc_refs = [
                 LearningContentRef(編碼=code, 說明=LC_INSTRUCTIONS.get(code, ""))
@@ -181,14 +182,15 @@ def _parse_subquestion(
         else:
             # Issue #92: canonicalize LLM-emitted codes; unknown codes are
             # dropped and an empty result falls back to the sampled pool.
-            lc_refs = repair_lc_refs(lc_refs, params.學習內容_pool)
+            # Issue #287: off-stage codes are also dropped and fall back.
+            lc_refs = repair_lc_refs(lc_refs, params.學習內容_pool, learning_stage=learning_stage)
         if cfg and cfg.learning_performance:
             lp_refs = [
                 LearningContentRef(編碼=code, 說明=LP_INSTRUCTIONS.get(code, ""))
                 for code in cfg.learning_performance
             ]
         else:
-            lp_refs = repair_lp_refs(lp_refs, params.學習表現_pool)
+            lp_refs = repair_lp_refs(lp_refs, params.學習表現_pool, learning_stage=learning_stage)
         rubric = [
             RubricEntry(
                 code=str(r.get("code", "")),
