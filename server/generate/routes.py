@@ -51,6 +51,10 @@ async def preview_generate_endpoint(
     _check_model_allowed(params.model_plan, config, "model_plan")
     _check_model_allowed(params.model_execute, config, "model_execute")
     _check_subject_allowed(params.subject)
+    effective_plan_model = params.model_plan or config.model_plan
+    effective_execute_model = params.model_execute or config.model_execute
+    _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
+    _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
     return {"prompts": build_prompt_previews(params, config, request.app.state)}
 
 
@@ -71,6 +75,23 @@ def _check_model_allowed(model: str | None, config: ServerConfig, field: str) ->
         raise HTTPException(
             status_code=422,
             detail=f"{field}: model '{model}' not in allowlist: [{allowed}]",
+        )
+
+
+def _check_effort_for_model(effort: str | None, model: str, field: str) -> None:
+    """Raise HTTPException(422) when effort level is not in the model's roster."""
+    if effort is None:
+        return
+    from server.config import _EFFORT_LEVELS  # noqa: PLC0415
+
+    roster = _EFFORT_LEVELS.get(model, ["low", "medium", "high", "max"])
+    if effort not in roster:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{field}: effort '{effort}' not supported by model '{model}' "
+                f"(supported: {roster})"
+            ),
         )
 
 
@@ -121,6 +142,8 @@ async def generate_endpoint(
     per_question_params: str | None = Query(default=None),
     model_plan: str | None = Query(default=None),
     model_execute: str | None = Query(default=None),
+    effort_plan: str | None = Query(default=None),
+    effort_execute: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -133,6 +156,11 @@ async def generate_endpoint(
     _check_model_allowed(model_plan, config, "model_plan")
     _check_model_allowed(model_execute, config, "model_execute")
     _check_subject_allowed(subject)
+    # Validate effort levels against the effective model's roster (BEFORE any LLM call).
+    effective_plan_model = model_plan or config.model_plan
+    effective_execute_model = model_execute or config.model_execute
+    _check_effort_for_model(effort_plan, effective_plan_model, "effort_plan")
+    _check_effort_for_model(effort_execute, effective_execute_model, "effort_execute")
     try:
         params = GenerateParams(
             subject=subject,
@@ -168,6 +196,8 @@ async def generate_endpoint(
             per_question_params=per_question_params,
             model_plan=model_plan,
             model_execute=model_execute,
+            effort_plan=effort_plan,
+            effort_execute=effort_execute,
         )
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -239,6 +269,9 @@ async def plan_core_questions_endpoint(
     """Return three candidate 核心問題 for a given topic (Opus single call)."""
     _check_model_allowed(body.model_plan, config, "model_plan")
     _check_model_allowed(body.model_execute, config, "model_execute")
+    # Validate effort_plan against the effective plan model's roster.
+    effective_plan_model = body.model_plan or config.model_plan
+    _check_effort_for_model(body.effort_plan, effective_plan_model, "effort_plan")
     from src.config import Config as SrcConfig
     from src.llm_client import LLMClient
 
@@ -247,6 +280,7 @@ async def plan_core_questions_endpoint(
         src_config,
         model_plan=body.model_plan or src_config.model_plan,
         model_execute=body.model_execute or src_config.model_execute,
+        effort_plan=body.effort_plan or src_config.effort_plan,
     )
     client = LLMClient(src_config)
 

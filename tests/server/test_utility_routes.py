@@ -173,17 +173,18 @@ def test_models_endpoint_returns_allowlist_and_defaults() -> None:
     with TestClient(app) as client:
         r = client.get("/api/models")
     assert r.status_code == 200
-    assert r.json() == {
-        "allowed": [
-            "claude-opus-4-6",
-            "claude-sonnet-4-6",
-            "claude-haiku-4-6",
-        ],
-        "defaults": {
-            "plan": "claude-opus-4-6",
-            "execute": "claude-sonnet-4-6",
-        },
-    }
+    body = r.json()
+    assert body["allowed"] == [
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-6",
+    ]
+    assert body["defaults"]["plan"] == "claude-opus-4-6"
+    assert body["defaults"]["execute"] == "claude-sonnet-4-6"
+    # Effort defaults and roster are present (issue #254).
+    assert body["defaults"]["effort_plan"] == "medium"
+    assert body["defaults"]["effort_execute"] == "medium"
+    assert "effort" in body
 
 
 def test_models_endpoint_falls_back_to_defaults_only() -> None:
@@ -202,11 +203,12 @@ def test_models_endpoint_falls_back_to_defaults_only() -> None:
         r = client.get("/api/models")
     assert r.status_code == 200
     body = r.json()
-    assert body["defaults"] == {
-        "plan": "claude-opus-4-6",
-        "execute": "claude-sonnet-4-6",
-    }
+    assert body["defaults"]["plan"] == "claude-opus-4-6"
+    assert body["defaults"]["execute"] == "claude-sonnet-4-6"
     assert body["allowed"] == ["claude-opus-4-6", "claude-sonnet-4-6"]
+    # Effort defaults present (issue #254).
+    assert body["defaults"]["effort_plan"] == "medium"
+    assert body["defaults"]["effort_execute"] == "medium"
 
 
 def test_models_endpoint_fresh_env_returns_five_models_and_opus5_default(
@@ -223,11 +225,12 @@ def test_models_endpoint_fresh_env_returns_five_models_and_opus5_default(
         r = client.get("/api/models")
     assert r.status_code == 200
     body = r.json()
-    assert body["defaults"] == {
-        "plan": "claude-opus-5",
-        "execute": "claude-sonnet-4-6",
-    }
+    assert body["defaults"]["plan"] == "claude-opus-5"
+    assert body["defaults"]["execute"] == "claude-sonnet-4-6"
     assert body["allowed"] == list(_DEFAULT_MODELS_ALLOWED)
+    # Effort defaults are medium by default (issue #254).
+    assert body["defaults"]["effort_plan"] == "medium"
+    assert body["defaults"]["effort_execute"] == "medium"
 
 
 def test_schemas_rejects_unknown_subject_422(tmp_path: Path) -> None:

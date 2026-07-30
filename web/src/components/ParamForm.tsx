@@ -143,6 +143,8 @@ export interface FormFields {
   subquestionConfigs: SubQuestionConfig[];
   modelPlan: string;
   modelExecute: string;
+  effortPlan: string;
+  effortExecute: string;
 }
 
 type FormFieldUpdate<K extends keyof FormFields> =
@@ -437,6 +439,8 @@ function defaultFormFields(
   schemas: Schemas,
   modelPlan: string,
   modelExecute: string,
+  effortPlan: string,
+  effortExecute: string,
 ): FormFields {
   const isCurriculumSubject =
     subject === "social_studies" ||
@@ -491,6 +495,8 @@ function defaultFormFields(
     subquestionConfigs: [],
     modelPlan,
     modelExecute,
+    effortPlan,
+    effortExecute,
   };
 }
 
@@ -718,6 +724,8 @@ export default function ParamForm({
     subquestionConfigs: subquestionConfigsFromInit(),
     modelPlan: window.localStorage.getItem("model_plan") ?? "",
     modelExecute: window.localStorage.getItem("model_execute") ?? "",
+    effortPlan: window.localStorage.getItem("effort_plan") ?? "medium",
+    effortExecute: window.localStorage.getItem("effort_execute") ?? "medium",
   }));
   const formSnapshot = formFields;
   const restoreFormSnapshot = setFormFields;
@@ -764,6 +772,8 @@ export default function ParamForm({
     subquestionConfigs,
     modelPlan,
     modelExecute,
+    effortPlan,
+    effortExecute,
   } = formSnapshot;
   const configuredSeed = fromInit<number | undefined>("seed", undefined);
 
@@ -869,7 +879,7 @@ export default function ParamForm({
     setPrefillNotice(null);
     userChosenFields.current.clear();
     restoreFormSnapshot(
-      defaultFormFields(subject, schemas, modelPlan, modelExecute),
+      defaultFormFields(subject, schemas, modelPlan, modelExecute, effortPlan, effortExecute),
     );
   }
 
@@ -1038,24 +1048,79 @@ export default function ParamForm({
         // Reconcile any localStorage-hydrated selection against the live
         // allowlist — a stale value (e.g. a model that was removed server
         // side) must never be silently submitted.
+        // Effort levels are also reconciled atomically: if the persisted
+        // effort is not supported by the reconciled model, fall back to
+        // defaults.effort_plan / defaults.effort_execute ("medium").
         const allowed = new Set(m.allowed);
+        const reconcileEffortLevel = (
+          effortValue: string,
+          modelId: string,
+          effortMap: Record<string, string[]> | undefined,
+          defaultEffort: string,
+        ): string => {
+          if (!effortMap || !modelId || !effortMap[modelId]) return effortValue;
+          const levels = effortMap[modelId];
+          return levels.includes(effortValue) ? effortValue : defaultEffort;
+        };
+        const defaultEffortPlan = m.defaults.effort_plan ?? "medium";
+        const defaultEffortExecute = m.defaults.effort_execute ?? "medium";
+
+        restoreFormSnapshot((current) => {
+          const reconciledPlan =
+            current.modelPlan && !allowed.has(current.modelPlan)
+              ? ""
+              : current.modelPlan;
+          const reconciledExecute =
+            current.modelExecute && !allowed.has(current.modelExecute)
+              ? ""
+              : current.modelExecute;
+          return {
+            ...current,
+            modelPlan: reconciledPlan,
+            modelExecute: reconciledExecute,
+            effortPlan: reconcileEffortLevel(
+              current.effortPlan,
+              reconciledPlan,
+              m.effort,
+              defaultEffortPlan,
+            ),
+            effortExecute: reconcileEffortLevel(
+              current.effortExecute,
+              reconciledExecute,
+              m.effort,
+              defaultEffortExecute,
+            ),
+          };
+        });
+
         if (defaultsSnapshotRef.current) {
+          const snap = defaultsSnapshotRef.current;
+          const reconciledPlanSnap =
+            snap.modelPlan && !allowed.has(snap.modelPlan)
+              ? ""
+              : snap.modelPlan;
+          const reconciledExecuteSnap =
+            snap.modelExecute && !allowed.has(snap.modelExecute)
+              ? ""
+              : snap.modelExecute;
           defaultsSnapshotRef.current = {
-            ...defaultsSnapshotRef.current,
-            modelPlan:
-              defaultsSnapshotRef.current.modelPlan &&
-              !allowed.has(defaultsSnapshotRef.current.modelPlan)
-                ? ""
-                : defaultsSnapshotRef.current.modelPlan,
-            modelExecute:
-              defaultsSnapshotRef.current.modelExecute &&
-              !allowed.has(defaultsSnapshotRef.current.modelExecute)
-                ? ""
-                : defaultsSnapshotRef.current.modelExecute,
+            ...snap,
+            modelPlan: reconciledPlanSnap,
+            modelExecute: reconciledExecuteSnap,
+            effortPlan: reconcileEffortLevel(
+              snap.effortPlan,
+              reconciledPlanSnap,
+              m.effort,
+              defaultEffortPlan,
+            ),
+            effortExecute: reconcileEffortLevel(
+              snap.effortExecute,
+              reconciledExecuteSnap,
+              m.effort,
+              defaultEffortExecute,
+            ),
           };
         }
-        setField("modelPlan", (prev) => (prev && !allowed.has(prev) ? "" : prev));
-        setField("modelExecute", (prev) => (prev && !allowed.has(prev) ? "" : prev));
         setModelsResolved(true);
       })
       .catch(() => {
@@ -1070,10 +1135,14 @@ export default function ParamForm({
             ...defaultsSnapshotRef.current,
             modelPlan: "",
             modelExecute: "",
+            effortPlan: "",
+            effortExecute: "",
           };
         }
         setField("modelPlan", "");
         setField("modelExecute", "");
+        setField("effortPlan", "");
+        setField("effortExecute", "");
         setModelsResolved(true);
       });
     return () => {
@@ -1087,6 +1156,12 @@ export default function ParamForm({
   useEffect(() => {
     window.localStorage.setItem("model_execute", modelExecute);
   }, [modelExecute]);
+  useEffect(() => {
+    window.localStorage.setItem("effort_plan", effortPlan);
+  }, [effortPlan]);
+  useEffect(() => {
+    window.localStorage.setItem("effort_execute", effortExecute);
+  }, [effortExecute]);
 
   useEffect(() => {
     if (!schemas || !initialParams) return;
@@ -1180,6 +1255,18 @@ export default function ParamForm({
     }
     return entries;
   }, [schemas, subjectFilter, subject]);
+
+  const planEffortLevels = useMemo((): string[] => {
+    if (!models?.effort) return [];
+    if (modelPlan && models.effort[modelPlan]) return models.effort[modelPlan];
+    return [...new Set(Object.values(models.effort).flat())];
+  }, [models, modelPlan]);
+
+  const executeEffortLevels = useMemo((): string[] => {
+    if (!models?.effort) return [];
+    if (modelExecute && models.effort[modelExecute]) return models.effort[modelExecute];
+    return [...new Set(Object.values(models.effort).flat())];
+  }, [models, modelExecute]);
 
   useEffect(() => {
     if (subject !== "natural_sciences") return;
@@ -1379,6 +1466,8 @@ export default function ParamForm({
           : undefined,
       model_plan: modelPlan || undefined,
       model_execute: modelExecute || undefined,
+      effort_plan: models?.effort ? effortPlan : undefined,
+      effort_execute: models?.effort ? effortExecute : undefined,
     };
     const requestLevelFields = new Set([
       "subject",
@@ -1573,6 +1662,10 @@ export default function ParamForm({
       { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "natural_sciences"] },
       { label: t("form.confirm_model_plan"), value: p.model_plan, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       { label: t("form.confirm_model_execute"), value: p.model_execute, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
+      ...(models?.effort ? ([
+        { label: t("form.confirm_effort_plan"), value: p.effort_plan, subjects: allSubjects, kind: "defaulted" as const, defaultValue: t("form.confirm_system_default") },
+        { label: t("form.confirm_effort_execute"), value: p.effort_execute, subjects: allSubjects, kind: "defaulted" as const, defaultValue: t("form.confirm_system_default") },
+      ] satisfies ConfirmationRow[]) : []),
       {
         label: t("form.confirm_image_mode"),
         value: p.image_generation_mode,
@@ -2693,43 +2786,99 @@ export default function ParamForm({
       )}
 
       {models && models.allowed.length > 0 && (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs text-gray-700">
-            <span>{t("params.model_plan_label")}</span>
-            <select
-              aria-label={t("params.model_plan_label")}
-              value={modelPlan}
-              onChange={(e) => setField("modelPlan", e.target.value)}
-              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
-            >
-              <option value="">
-                {t("params.model_default_option")} ({models.defaults.plan})
-              </option>
-              {models.allowed.map((m) => (
-                <option key={`plan-${m}`} value={m}>
-                  {m}
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+              <span>{t("params.model_plan_label")}</span>
+              <select
+                aria-label={t("params.model_plan_label")}
+                value={modelPlan}
+                onChange={(e) => {
+                  const newModel = e.target.value;
+                  setField("modelPlan", newModel);
+                  if (models.effort) {
+                    const levels = newModel ? (models.effort[newModel] ?? []) : [];
+                    setField("effortPlan", (prev) =>
+                      levels.length === 0 || levels.includes(prev) ? prev : "medium",
+                    );
+                  }
+                }}
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              >
+                <option value="">
+                  {t("params.model_default_option")} ({models.defaults.plan})
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-gray-700">
-            <span>{t("params.model_execute_label")}</span>
-            <select
-              aria-label={t("params.model_execute_label")}
-              value={modelExecute}
-              onChange={(e) => setField("modelExecute", e.target.value)}
-              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
-            >
-              <option value="">
-                {t("params.model_default_option")} ({models.defaults.execute})
-              </option>
-              {models.allowed.map((m) => (
-                <option key={`exec-${m}`} value={m}>
-                  {m}
+                {models.allowed.map((m) => (
+                  <option key={`plan-${m}`} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {planEffortLevels.length > 0 && (
+              <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+                <span>{t("form.effort_plan")}</span>
+                <select
+                  aria-label={t("form.effort_plan")}
+                  value={effortPlan}
+                  onChange={(e) => setField("effortPlan", e.target.value)}
+                  className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                >
+                  {planEffortLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+              <span>{t("params.model_execute_label")}</span>
+              <select
+                aria-label={t("params.model_execute_label")}
+                value={modelExecute}
+                onChange={(e) => {
+                  const newModel = e.target.value;
+                  setField("modelExecute", newModel);
+                  if (models.effort) {
+                    const levels = newModel ? (models.effort[newModel] ?? []) : [];
+                    setField("effortExecute", (prev) =>
+                      levels.length === 0 || levels.includes(prev) ? prev : "medium",
+                    );
+                  }
+                }}
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              >
+                <option value="">
+                  {t("params.model_default_option")} ({models.defaults.execute})
                 </option>
-              ))}
-            </select>
-          </label>
+                {models.allowed.map((m) => (
+                  <option key={`exec-${m}`} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {executeEffortLevels.length > 0 && (
+              <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+                <span>{t("form.effort_execute")}</span>
+                <select
+                  aria-label={t("form.effort_execute")}
+                  value={effortExecute}
+                  onChange={(e) => setField("effortExecute", e.target.value)}
+                  className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                >
+                  {executeEffortLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
         </div>
       )}
 

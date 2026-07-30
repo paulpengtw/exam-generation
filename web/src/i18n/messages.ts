@@ -310,6 +310,10 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "params.model_plan_label": "Planner model",
     "params.model_execute_label": "Execution model",
     "params.model_default_option": "Default",
+    "form.effort_plan": "Planning effort",
+    "form.effort_execute": "Execution effort",
+    "form.confirm_effort_plan": "Planning effort",
+    "form.confirm_effort_execute": "Execution effort",
   },
   "zh-TW": {
     "login.title": "登入",
@@ -618,5 +622,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "params.model_plan_label": "規劃模型",
     "params.model_execute_label": "出題模型",
     "params.model_default_option": "預設",
+    "form.effort_plan": "規劃 Effort",
+    "form.effort_execute": "出題 Effort",
+    "form.confirm_effort_plan": "規劃 Effort",
+    "form.confirm_effort_execute": "出題 Effort",
   },
 };

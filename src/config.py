@@ -31,6 +31,8 @@ class Config:
     # per-batch Opus 情境-題材 planning (SS only); env CREATIVE_PLANNING
     creative_planning: bool = True
     temperature: float | None = None  # sampling temperature; None = provider default
+    effort_plan: str = "medium"  # output_config.effort for plan calls (LLM_EFFORT_PLAN)
+    effort_execute: str = "medium"  # output_config.effort for execute calls (LLM_EFFORT_EXECUTE)
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> Config:
@@ -61,6 +63,8 @@ class Config:
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
             not in ("0", "false", "False", ""),
             temperature=float(t) if (t := os.environ.get("LLM_TEMPERATURE", "").strip()) else None,
+            effort_plan=os.environ.get("LLM_EFFORT_PLAN", "medium"),
+            effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", "medium"),
         )
 
     def validate(self) -> None:

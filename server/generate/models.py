@@ -105,6 +105,10 @@ class GenerateParams(BaseModel):
     # at the route level).
     model_plan: str | None = None
     model_execute: str | None = None
+    # #254: per-request effort tier overrides (validated against per-model roster
+    # at the route level; basic format validated here).
+    effort_plan: str | None = None
+    effort_execute: str | None = None
 
     @field_validator(
         "set_type",
@@ -127,6 +131,16 @@ class GenerateParams(BaseModel):
     @classmethod
     def per_question_params_must_be_well_formed(cls, value: str | None) -> str | None:
         decode_per_question_params(value)
+        return value
+
+    @field_validator("effort_plan", "effort_execute")
+    @classmethod
+    def effort_level_must_be_valid(cls, value: str | None) -> str | None:
+        _VALID_EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
+        if value is not None and value not in _VALID_EFFORT_LEVELS:
+            raise ValueError(
+                f"must be one of {sorted(_VALID_EFFORT_LEVELS)}, got '{value}'"
+            )
         return value
 
     @model_validator(mode="after")
@@ -167,6 +181,9 @@ PER_QUESTION_FIELDS: frozenset[str] = (
 )
 
 
+_VALID_EFFORT_LEVELS: frozenset[str] = frozenset({"low", "medium", "high", "xhigh", "max"})
+
+
 class PlanCoreQuestionsRequest(BaseModel):
     topic: str
     subject_filter: list[str] | None = None
@@ -174,6 +191,16 @@ class PlanCoreQuestionsRequest(BaseModel):
     subject: Literal["math", "social_studies", "natural_sciences"] = "social_studies"
     model_plan: str | None = None
     model_execute: str | None = None
+    effort_plan: str | None = None
+
+    @field_validator("effort_plan")
+    @classmethod
+    def effort_plan_must_be_valid(cls, value: str | None) -> str | None:
+        if value is not None and value not in _VALID_EFFORT_LEVELS:
+            raise ValueError(
+                f"effort_plan must be one of {sorted(_VALID_EFFORT_LEVELS)}, got '{value}'"
+            )
+        return value
 
 
 class PlanCoreQuestionsResponse(BaseModel):

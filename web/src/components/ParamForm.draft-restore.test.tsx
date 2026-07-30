@@ -87,6 +87,8 @@ const SAVED_FIELDS: FormFields = {
   ],
   modelPlan: "planner-model",
   modelExecute: "execute-model",
+  effortPlan: "high",
+  effortExecute: "max",
 };
 
 function signIn(): void {
@@ -227,6 +229,8 @@ describe("ParamForm draft restoration", () => {
       subquestionConfigs: [],
       modelPlan: "",
       modelExecute: "",
+      effortPlan: "medium",
+      effortExecute: "medium",
     };
     const reorderedFields = Object.fromEntries(
       Object.entries(defaultFields).reverse(),

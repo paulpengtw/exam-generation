@@ -79,6 +79,8 @@ const IDENTIFIABLE_FIELDS: FormFields = {
   subquestionConfigs: [],
   modelPlan: "",
   modelExecute: "",
+  effortPlan: "medium",
+  effortExecute: "medium",
 };
 
 function signIn(): void {

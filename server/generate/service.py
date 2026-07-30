@@ -95,6 +95,8 @@ def build_prompt_previews(
         config,
         model_execute=params.model_execute or config.model_execute,
         model_plan=params.model_plan or config.model_plan,
+        effort_plan=params.effort_plan or config.effort_plan,
+        effort_execute=params.effort_execute or config.effort_execute,
     )
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
     previews = []
@@ -218,6 +220,8 @@ def _build_run_context(
         config,
         model_execute=params.model_execute or config.model_execute,
         model_plan=params.model_plan or config.model_plan,
+        effort_plan=params.effort_plan or config.effort_plan,
+        effort_execute=params.effort_execute or config.effort_execute,
     )
     order_counter = itertools.count(1)
     order_lock = threading.Lock()

@@ -84,6 +84,8 @@ const DRAFT_FIELDS: FormFields = {
   subquestionConfigs: [{ question_type: "填充題", instruction: "草稿小題" }],
   modelPlan: "",
   modelExecute: "",
+  effortPlan: "medium",
+  effortExecute: "medium",
 };
 
 const HISTORY_PARAMS = {
@@ -146,6 +148,8 @@ const HISTORY_FIELDS: FormFields = {
   ],
   modelPlan: "",
   modelExecute: "",
+  effortPlan: "medium",
+  effortExecute: "medium",
 };
 
 function signIn(): void {

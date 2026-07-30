@@ -101,7 +101,9 @@ function isFormFields(value: unknown): value is FormFields {
     Array.isArray(value.subquestionConfigs) &&
     value.subquestionConfigs.every(isSubQuestionConfig) &&
     typeof value.modelPlan === "string" &&
-    typeof value.modelExecute === "string"
+    typeof value.modelExecute === "string" &&
+    typeof value.effortPlan === "string" &&
+    typeof value.effortExecute === "string"
   );
 }
 

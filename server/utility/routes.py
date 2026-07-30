@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from server.auth.dependencies import get_config
-from server.config import ServerConfig
+from server.config import ServerConfig, _EFFORT_LEVELS
 from server.generate.models import ALLOWED_SUBJECTS
 from server.generate.subjects import SUBJECTS
 
@@ -21,12 +21,20 @@ async def health() -> dict[str, str]:
 async def get_models(
     config: ServerConfig = Depends(get_config),
 ) -> dict:
-    """Return the LLM model allowlist and the server-side defaults."""
+    """Return the LLM model allowlist, effort rosters, and server-side defaults."""
+    # Build per-model effort roster for every model in the allowlist.
+    effort_roster: dict[str, list[str]] = {
+        model: _EFFORT_LEVELS.get(model, ["low", "medium", "high", "max"])
+        for model in config.llm_models_allowed
+    }
     return {
         "allowed": list(config.llm_models_allowed),
+        "effort": effort_roster,
         "defaults": {
             "plan": config.model_plan,
             "execute": config.model_execute,
+            "effort_plan": config.effort_plan,
+            "effort_execute": config.effort_execute,
         },
     }
 

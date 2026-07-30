@@ -250,6 +250,14 @@ class LLMClient:
         )
         return {}
 
+    def _effort_kwargs(self, purpose: str) -> dict:
+        """Return extra_body with output_config.effort based on call purpose.
+
+        plan purpose → effort_plan; everything else → effort_execute.
+        """
+        effort = self.config.effort_plan if purpose == "plan" else self.config.effort_execute
+        return {"extra_body": {"output_config": {"effort": effort}}}
+
     def _generate_streaming(
         self,
         system: str,
@@ -272,6 +280,7 @@ class LLMClient:
             model=model,
             max_tokens=8192,
             **self._temperature_kwargs(model),
+            **self._effort_kwargs(purpose),
             system=system_param,
             messages=messages,  # type: ignore[arg-type]
         ) as stream:
@@ -364,6 +373,7 @@ class LLMClient:
             model=model,
             max_tokens=8192,
             **self._temperature_kwargs(model),
+            **self._effort_kwargs(purpose),
             system=system_param,
             messages=anthropic_messages,  # type: ignore[arg-type]
         )
@@ -600,6 +610,7 @@ class LLMClient:
                 model=call_model,
                 max_tokens=8192,
                 **self._temperature_kwargs(call_model),
+                **self._effort_kwargs(purpose),
                 system=system_param,
                 messages=messages,  # type: ignore[arg-type]
                 tools=tools,  # type: ignore[arg-type]

@@ -34,6 +34,8 @@ function makeFields(overrides: Partial<FormFields> = {}): FormFields {
     subquestionConfigs: [],
     modelPlan: "",
     modelExecute: "",
+    effortPlan: "medium",
+    effortExecute: "medium",
     ...overrides,
   };
 }

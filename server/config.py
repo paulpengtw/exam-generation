@@ -22,6 +22,20 @@ _DEFAULT_MODELS_ALLOWED: tuple[str, ...] = (
     "claude-opus-4-6",
 )
 
+# Per-model effort level roster.  Models that support the full five-level scale
+# include xhigh; the 4.x models stop at max.  Unknown models (custom roster
+# via env) default to the safe four-level subset (no xhigh).
+_FIVE_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "xhigh", "max"]
+_FOUR_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "max"]
+
+_EFFORT_LEVELS: dict[str, list[str]] = {
+    "claude-opus-5": _FIVE_EFFORT_LEVELS,
+    "claude-fable-5": _FIVE_EFFORT_LEVELS,
+    "claude-sonnet-5": _FIVE_EFFORT_LEVELS,
+    "claude-sonnet-4-6": _FOUR_EFFORT_LEVELS,
+    "claude-opus-4-6": _FOUR_EFFORT_LEVELS,
+}
+
 
 @dataclass
 class ServerConfig(Config):
@@ -50,6 +64,8 @@ class ServerConfig(Config):
     llm_models_allowed: tuple[str, ...] = ()
     llm_exchange_retention_days: int = 30
     creative_planning: bool = True
+    effort_plan: str = "medium"  # output_config.effort for plan calls (LLM_EFFORT_PLAN)
+    effort_execute: str = "medium"  # output_config.effort for execute calls (LLM_EFFORT_EXECUTE)
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -130,6 +146,8 @@ class ServerConfig(Config):
             web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
             not in ("0", "false", "False", ""),
+            effort_plan=os.environ.get("LLM_EFFORT_PLAN", "medium"),
+            effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", "medium"),
         )
         # When LLM_MODELS_ALLOWED is unset/empty fall back to the built-in
         # roster; when set it replaces the roster entirely (no merge).
