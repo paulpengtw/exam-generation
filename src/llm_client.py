@@ -8,7 +8,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 from anthropic import Anthropic
 from openai import OpenAI
@@ -39,6 +39,36 @@ def _accepts_sampling(model: str) -> bool:
         if model == prefix or model.startswith(prefix + "-"):
             return False
     return True
+
+
+Provider = Literal["anthropic", "gemini", "openai"]
+_OPENAI_O_SERIES_RE = re.compile(r"^o\d")
+
+_PROVIDER_ENV: dict[str, tuple[str, str, str]] = {
+    "gemini": ("gemini_api_key", "GEMINI_API_KEY", "gemini_base_url"),
+    "openai": ("openai_api_key", "OPENAI_API_KEY", "openai_base_url"),
+}
+
+
+def resolve_provider(model: str) -> Provider:
+    if model.startswith("gemini-"):
+        return "gemini"
+    if model.startswith("gpt-") or _OPENAI_O_SERIES_RE.match(model):
+        return "openai"
+    return "anthropic"
+
+
+def _openai_usage_to_internal(u) -> dict:
+    if u is None:
+        return {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
+    details = getattr(u, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", None) or 0
+    return {
+        "input": u.prompt_tokens,
+        "output": u.completion_tokens,
+        "cache_read": cached,
+        "cache_creation": 0,
+    }
 
 
 LLMObserver = Callable[[dict], None]
@@ -233,6 +263,7 @@ class LLMClient:
             base_url=_strip_v1(config.base_url),
         )
         self._image_client: OpenAI | None = None
+        self._compat_clients: dict[str, OpenAI] = {}
         self._observer: LLMObserver | None = None
         self._observer_warned: bool = False
 
@@ -303,6 +334,18 @@ class LLMClient:
         """
         effort = self.config.effort_plan if purpose == "plan" else self.config.effort_execute
         return {"extra_body": {"output_config": {"effort": effort}}}
+
+    def _openai_compat_client(self, provider: str) -> OpenAI:
+        if provider in self._compat_clients:
+            return self._compat_clients[provider]
+        key_attr, env_name, url_attr = _PROVIDER_ENV[provider]
+        api_key = getattr(self.config, key_attr)
+        if not api_key:
+            raise ValueError(f"{env_name} is required to call {provider} models.")
+        base_url = getattr(self.config, url_attr)
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        self._compat_clients[provider] = client
+        return client
 
     def _generate_streaming(
         self,
@@ -381,16 +424,8 @@ class LLMClient:
         purpose: str,
         agent_override: str | None = None,
     ) -> str:
-        """Emit request event, call Anthropic API (streaming or not), emit response event."""
+        """Emit request event, dispatch to provider-specific call, emit response event."""
         agent = agent_override if agent_override is not None else _PURPOSE_TO_AGENT.get(purpose, purpose)
-        # Separate system message from user/assistant turns
-        system = ""
-        user_messages_raw: list[dict] = []
-        for msg in messages:
-            if msg["role"] == "system":
-                system = msg["content"] if isinstance(msg["content"], str) else ""
-            else:
-                user_messages_raw.append(msg)
 
         if self._observer:
             self._emit({
@@ -402,7 +437,28 @@ class LLMClient:
                 "params": {"max_tokens": 8192, "temperature": self.config.temperature},
             })
 
-        # Convert image format to Anthropic style
+        provider = resolve_provider(model)
+        if provider == "anthropic":
+            return self._anthropic_call(messages, model, purpose, agent_override, agent)
+        return self._openai_compat_call(provider, messages, model, purpose, agent)
+
+    def _anthropic_call(
+        self,
+        messages: list[dict],
+        model: str,
+        purpose: str,
+        agent_override: str | None,
+        agent: str,
+    ) -> str:
+        """Call the Anthropic API (streaming or non-streaming)."""
+        system = ""
+        user_messages_raw: list[dict] = []
+        for msg in messages:
+            if msg["role"] == "system":
+                system = msg["content"] if isinstance(msg["content"], str) else ""
+            else:
+                user_messages_raw.append(msg)
+
         anthropic_messages = [
             {"role": msg["role"], "content": _to_anthropic_content(msg["content"])}
             for msg in user_messages_raw
@@ -439,6 +495,36 @@ class LLMClient:
                     "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0,
                     "cache_creation": getattr(u, "cache_creation_input_tokens", 0) or 0,
                 },
+            })
+        return content
+
+    def _openai_compat_call(
+        self,
+        provider: str,
+        messages: list[dict],
+        model: str,
+        purpose: str,
+        agent: str,
+    ) -> str:
+        """Non-streaming call through the OpenAI-compatible surface (gemini/openai providers)."""
+        oc = self._openai_compat_client(provider)
+        response = oc.chat.completions.create(
+            model=model,
+            messages=messages,  # type: ignore[arg-type]
+            max_tokens=8192,
+            **self._temperature_kwargs(model),
+        )
+        choices = response.choices if response.choices else []
+        content = (choices[0].message.content or "") if choices else ""
+        if self._observer:
+            self._emit({
+                "type": "llm_response",
+                "purpose": purpose,
+                "agent": agent,
+                "model": model,
+                "content": content,
+                "reasoning": None,
+                "usage": _openai_usage_to_internal(getattr(response, "usage", None)),
             })
         return content
 

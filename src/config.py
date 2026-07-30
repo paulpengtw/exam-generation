@@ -18,6 +18,10 @@ class Config:
     image_api_key: str = ""
     image_base_url: str = "https://api.openai.com/v1"
     image_model: str = "gpt-image2"
+    gemini_api_key: str = ""
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
     output_dir: Path = field(default_factory=lambda: Path("./output"))
     data_dir: Path = field(default_factory=lambda: Path("./data"))
     rate_limit_delay: float = 0.0  # seconds between API calls
@@ -50,6 +54,10 @@ class Config:
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
             image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),
+            gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
+            gemini_base_url=os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
+            openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+            openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             output_dir=Path(os.environ.get("OUTPUT_DIR", "./output")),
             data_dir=Path(os.environ.get("DATA_DIR", "./data")),
             rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),
