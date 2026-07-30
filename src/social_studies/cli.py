@@ -117,6 +117,32 @@ _TOP_LEVEL_IMAGE_REPAIR_USER_TEMPLATE = """\
 ```
 """
 
+_SQ_IMAGE_REPAIR_SYSTEM_PROMPT = """\
+你是一位108課綱社會領域素養導向題組的視覺素材設計教師。
+請只根據既有小題內容，補上一個該小題專用的視覺素材圖片規格。
+
+規則：
+- 只輸出合法 JSON 物件，不要輸出其他文字。
+- JSON 必須包含 `chart_spec` 欄位。
+- `chart_spec` 必須是此小題專用的視覺素材，不是整個題組共用圖片。
+- 若是圖片式素材、地圖、海報、表單、網頁畫面、流程圖或圖解，使用 `render_mode: "html"`。
+- 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
+- 不要加入答案提示。
+"""
+
+_SQ_IMAGE_REPAIR_USER_TEMPLATE = """\
+以下小題的題目內容類型是「{content_type}」，但缺少小題 chart_spec。
+請為此小題補上 `chart_spec`。
+
+題組文本：
+{text}
+
+小題：
+```json
+{sq_json}
+```
+"""
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -410,6 +436,47 @@ def _ensure_top_level_visual_spec(
         question.chart_spec = image_spec
 
 
+def _ensure_subquestion_visual_spec(
+    sub: SubQuestion,
+    question: ExamQuestion,
+    content_type: str,
+    client: Any,
+) -> None:
+    """Repair a missing chart_spec for a single 小題 whose config requires an image.
+
+    Mirrors :func:`_ensure_top_level_visual_spec` at the 小題 level (#320).
+    Repair failure degrades gracefully — the 小題 ships without an image rather
+    than aborting the 題組.
+    """
+    if sub.chart_spec or content_type not in _VISUAL_CONTENT_TYPES or client is None:
+        return
+
+    sq_json = sub.model_dump_json(exclude_none=True, exclude={"圖片"})
+    user_prompt = _SQ_IMAGE_REPAIR_USER_TEMPLATE.format(
+        content_type=content_type,
+        text=question.文本,
+        sq_json=sq_json,
+    )
+
+    try:
+        repaired = client.generate_json(
+            _SQ_IMAGE_REPAIR_SYSTEM_PROMPT,
+            user_prompt,
+            purpose="generate",
+        )
+    except Exception as exc:
+        print(
+            f"  Warning: subquestion image spec repair failed for 小題 {sub.序號}: {exc}",
+            file=sys.stderr,
+        )
+        return
+
+    raw_spec = repaired.get("image_spec") or repaired.get("chart_spec")
+    image_spec = _parse_image_spec(raw_spec)
+    if image_spec:
+        sub.chart_spec = image_spec
+
+
 def _render_subquestion_images(
     question: ExamQuestion,
     config: Config,
@@ -584,6 +651,21 @@ def _ss_render_subquestion_images(
     obs: Any,
     params: SampledParams,
 ) -> list[str]:
+    # Repair missing chart_specs for 小題 slots configured as visual (#320).
+    # Mirrors the 題組頂層 repair in _ensure_top_level_visual_spec.
+    # image_generation_mode alone does NOT trigger a repair — only an explicit
+    # visual content_type (含圖片 / graphs/charts/tables) does.
+    sq_visual_content_types = {
+        i: cfg.content_type
+        for i, cfg in enumerate(params.subquestion_configs, start=1)
+        if cfg.content_type in _VISUAL_CONTENT_TYPES
+    }
+    if sq_visual_content_types:
+        for sub in question.subquestions:
+            ct = sq_visual_content_types.get(sub.序號)
+            if ct is not None:
+                _ensure_subquestion_visual_spec(sub, question, ct, client)
+
     return _render_subquestion_images(
         question,
         config,
