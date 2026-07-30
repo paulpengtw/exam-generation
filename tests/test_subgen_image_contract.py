@@ -15,6 +15,7 @@ from pathlib import Path
 
 from src.config import Config
 from src.social_studies.cli import generate_one
+from src.social_studies.context_builder import SUBQUESTION_IMAGE_RULE
 from src.social_studies.sampler import sample_params
 
 # 需要小題自帶 chart_spec 的 題目內容類型。
@@ -138,6 +139,7 @@ def _generate(
     captured: dict[int, tuple[str, str]],
     *,
     image_generation_mode: str = "html",
+    topic_content_type: str = "純文字",
 ) -> tuple[object, _TextGeneratorFake]:
     config = Config(
         api_key="x",
@@ -148,7 +150,7 @@ def _generate(
     )
     params = sample_params(
         seed=23,
-        content_type="純文字",  # 題組頂層為純文字，排除題組頂層 chart_spec 修補
+        content_type=topic_content_type,
         sub_question_count=len(subquestion_configs),
         subquestion_configs=subquestion_configs,
     )
@@ -262,6 +264,11 @@ def test_image_generation_mode_alone_does_not_require_a_小題_image(tmp_path: P
     )
     assert "gpt_image" in line, f"第1小題配置未帶出 image_generation_mode：{line!r}"
     assert not _demands_own_chart_spec(system_prompt, user_prompt, 1)
+    # 確認 user prompt 不含小題圖片規則——此斷言能捕捉「誤對 純文字 slot 附加規則」
+    # 的實作錯誤，彌補 _demands_own_chart_spec 只看配置行而漏判此行的空白。
+    assert SUBQUESTION_IMAGE_RULE not in user_prompt, (
+        "純文字 小題的 user prompt 不得含有 小題圖片規則"
+    )
 
     # 行為端：沒有圖片端點呼叫，也沒有任何小題圖片。
     assert text_client.image_calls == []
@@ -269,3 +276,57 @@ def test_image_generation_mode_alone_does_not_require_a_小題_image(tmp_path: P
         assert sub.chart_spec is None
         assert sub.圖片 is None
     assert not list(tmp_path.glob("*.png"))
+
+
+def test_題組含圖片_但小題未指定_不得繼承圖片需求(tmp_path: Path) -> None:
+    """題組頂層 題目內容類型=含圖片，各小題未明確設定 content_type 時，
+    子題產生器 prompt 不得向這些小題施加圖片需求。
+
+    預抽（釘選）場景：學習內容已先行抽出並掛到各小題配置，
+    但小題本身的 content_type 未明確指定 → 繼承的含圖片不應傳入子題 prompt。
+
+    驗收標準（per issue #319）：
+    - 各小題 prompt 的配置行不得出現需要圖片的 文本素材類型（含圖片 / graphs/charts/tables）。
+    - 各小題 prompt 不得附加 小題圖片規則（即不要求該小題輸出 chart_spec）。
+    - 圖片端點不收到任何 per-小題 payload（無 *_sqN.png 呼叫）。
+    - 所有小題的 chart_spec 與 圖片 均為 None。
+    """
+    # 各小題只帶 learning_content（預抽結果），不帶 content_type——真實 UI 預設路徑。
+    captured: dict[int, tuple[str, str]] = {}
+    question, text_client = _generate(
+        tmp_path,
+        "ss319_inherit",
+        [
+            {"learning_content": ["歷Bb-Ⅳ-2"]},
+            {"learning_content": ["歷Bb-Ⅳ-1"]},
+            {"learning_content": ["歷Bb-Ⅳ-2"]},
+        ],
+        captured,
+        topic_content_type="含圖片",  # 題組頂層 含圖片，重現缺陷
+    )
+
+    for 序號 in (1, 2, 3):
+        system_prompt, user_prompt = captured[序號]
+        config_line = _slot_config_line(user_prompt, 序號)
+
+        # prompt 不得對這一小題聲明需要圖片的 文本素材類型。
+        assert not any(ct in config_line for ct in _IMAGE_CONTENT_TYPES), (
+            f"第{序號}小題配置行繼承了題組層級的圖片需求：{config_line!r}"
+        )
+
+        # prompt 不得要求這一小題自帶 chart_spec。
+        assert not _demands_own_chart_spec(system_prompt, user_prompt, 序號), (
+            f"第{序號}小題的 prompt 要求輸出 chart_spec，但該小題未明確設定 content_type"
+        )
+
+    # 圖片端點不得收到任何 per-小題 payload。
+    sq_image_calls = [c for c in text_client.image_calls if "_sq" in c]
+    assert sq_image_calls == [], (
+        f"圖片端點收到意外的 per-小題 payload：{sq_image_calls}"
+    )
+
+    # 所有小題均無 chart_spec 與 圖片。
+    by_序號 = {sub.序號: sub for sub in question.subquestions}
+    for 序號 in (1, 2, 3):
+        assert by_序號[序號].chart_spec is None, f"第{序號}小題不應帶 chart_spec"
+        assert by_序號[序號].圖片 is None, f"第{序號}小題不應帶圖片"

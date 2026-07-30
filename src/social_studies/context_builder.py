@@ -107,6 +107,21 @@ SUBQUESTION_IMAGE_RULE: str = (
     "`chart_spec`；`image_generation_mode` 只指定渲染方式，不能單獨視為需要圖片。"
 )
 
+
+def subquestion_needs_own_image(cfg: "SubQuestionConfig | None") -> bool:
+    """True iff this slot's OWN explicit 題目內容類型 requires a per-小題 image.
+
+    Checks cfg.content_type ONLY — never inherits from 題組-level
+    params.題目內容類型.  A slot whose user left content_type unset never
+    triggers a per-小題 chart_spec, even when the 題組 itself is 含圖片.
+
+    Single authoritative definition: both build_subquestion_user_prompt (prompt
+    gate) and cli._ensure_subquestion_visual_specs (repair gate) must call this
+    function so the two decision points can never drift apart (#319 / #320).
+    """
+    return cfg is not None and cfg.content_type in VISUAL_CONTENT_TYPES
+
+
 DIFFICULTY_INSTRUCTIONS: dict[str, str] = _INSTRUCTIONS.get("難度", {})
 
 
@@ -1068,29 +1083,20 @@ def build_subquestion_user_prompt(
         config_parts.append(f"學習內容={','.join(cfg.learning_content)}")
     if cfg is not None and cfg.learning_performance:
         config_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
-    # #319: the 小題's own image contract — 文本素材類型 decides whether an image
-    # is required, 圖片生成模式 only decides how it is rendered. Gated exactly as
-    # the 文本生成器 gates it (see `build_user_prompt`), so slots without any
-    # 各小題配置 keep their previous prompt.
-    has_structural_config = cfg is not None and any((
-        cfg.question_type,
-        cfg.instruction,
-        cfg.content_type,
-        cfg.image_generation_mode,
-        cfg.question_word_limit,
-        cfg.option_word_limit,
-        cfg.learning_content,
-        cfg.learning_performance,
-    ))
-    slot_content_type = (
-        (cfg.content_type if cfg is not None else None) or params.題目內容類型 or "純文字"
-    )
-    slot_image_mode = (
-        cfg.image_generation_mode if cfg is not None else None
-    ) or image_generation_mode
-    if has_structural_config:
-        config_parts.append(f"文本素材類型={slot_content_type}")
+    # #319 (fix): drive the per-小題 image contract from the slot's OWN explicit
+    # cfg.content_type ONLY — never inherit from params.題目內容類型. A 題組-level
+    # 含圖片 produces exactly one 題組頂層 chart_spec; it does not demand a
+    # per-小題 chart_spec from slots the user left unconfigured.
+    # Use the shared predicate so the prompt gate and the repair gate in cli.py
+    # always agree (#319 / #320).
+    if cfg is not None and cfg.content_type:
+        slot_image_mode = cfg.image_generation_mode or image_generation_mode
+        config_parts.append(f"文本素材類型={cfg.content_type}")
         config_parts.append(f"圖片生成模式={slot_image_mode}")
+    elif cfg is not None and cfg.image_generation_mode:
+        # image_generation_mode without an explicit content_type: show the mode
+        # so the model knows how to render, but do not imply a visual content type.
+        config_parts.append(f"圖片生成模式={cfg.image_generation_mode}")
     question_limit = (
         cfg.question_word_limit
         if cfg is not None and cfg.question_word_limit
@@ -1108,7 +1114,7 @@ def build_subquestion_user_prompt(
     config_lines = [
         f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts),
     ]
-    if has_structural_config and slot_content_type in VISUAL_CONTENT_TYPES:
+    if subquestion_needs_own_image(cfg):
         config_lines.append(f"  - **小題圖片規則**：{SUBQUESTION_IMAGE_RULE}")
     subquestion_config_section = "## 各小題配置\n\n" + "\n".join(config_lines)
     return f"""\
