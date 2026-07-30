@@ -179,8 +179,46 @@ class GenerateParams(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-PER_QUESTION_FIELDS: frozenset[str] = (
-    frozenset(GenerateParams.model_fields) - REQUEST_LEVEL_FIELDS
+# Explicit allowlist of GenerateParams fields that may be overridden on a
+# per-question basis via per_question_params[i].  Any new field added to
+# GenerateParams MUST be deliberately classified here or in REQUEST_LEVEL_FIELDS
+# above; the partition test in tests/server/test_per_question_params.py enforces
+# this so that a new field cannot silently become per-question-allowed.
+PER_QUESTION_FIELDS: frozenset[str] = frozenset(
+    {
+        "grade",
+        "style",
+        "context",
+        "set_type",
+        "q_type",
+        "skip_verify",
+        "disable_reference_fewshot",
+        "seed",
+        "image_generation_mode",
+        "difficulty",
+        "coverage_mode",
+        "subject_filter",
+        "content_type",
+        "passage",
+        "options",
+        "topic",
+        "core_question",
+        "sub_context",
+        "science_competency",
+        "learning_performance",
+        "core_competency",
+        "learning_content",
+        "sub_question_count",
+        "question_word_limit",
+        "option_word_limit",
+        "text_word_limit",
+        "subquestion_configs",
+        "model_plan",
+        "model_execute",
+        "effort_plan",
+        "effort_execute",
+        "reporting_scale",
+    }
 )
 
 
