@@ -57,6 +57,19 @@ loop sees them. Any failure — provider disabled, endpoint rejects the tool,
 malformed JSON, exhausted iterations — fails open: `fact_check=None` and the
 teacher verdict is unchanged.
 
+### 自然科學 measures Reporting Scale, not 難度
+自然科學 uses Reporting Scale — the PISA Science proficiency scale (levels 1c, 1b, 1a, 2, 3, 4, 5, 6) — as its per-小題 demand signal. 數學 and 社會領域 use 難度 (easy / medium / hard). The two signals never overlap across subjects.
+
+**Precedence for 自然科學:** an explicit per-小題 Reporting Scale overrides the 題組-level value; when neither is set, the slot draws independently at random. The 題組-level value is only a default-filler and is absent when the user leaves the field 隨機.
+
+**What each prompt stage receives:**
+- 文本生成器 user prompt — the 題組-level target stated with its single PISA level descriptor verbatim in English (## 目標報告等級 block, only when a 題組-level value is set), plus the resolved per-小題 levels in the 各小題配置 block. The eight-level calibration reference is deliberately NOT included here (~8.5K chars; the planner needs its target, not the whole scale).
+- 子題產生器 user prompt — the full eight-level PISA calibration reference verbatim plus the 小題's own target level, so the model writes to one specific level with the whole scale for calibration.
+- Verifier — receives neither 難度 nor Reporting Scale; it concentrates on answer correctness and 課綱代碼 validity.
+- Corrector — level assignment is frozen through all correction retries; the corrector may not alter it.
+
+**Output:** resolved per-小題 levels are recorded in `metadata.reporting_scales` in 序號 order; slots that were dropped or unresolved leave no entry.
+
 ### OpenAI-compatible endpoint
 Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-opus-5` for planning, `claude-sonnet-4-6` for generation and verification.
 
