@@ -116,6 +116,35 @@ _TOP_LEVEL_IMAGE_REPAIR_USER_TEMPLATE = """\
 ```
 """
 
+_SUBQUESTION_IMAGE_REPAIR_SYSTEM_PROMPT = """\
+你是一位108課綱社會領域素養導向題組的視覺素材設計教師。
+請只根據既有題組內容，為指定的那一道小題補上該小題專屬的素材圖片規格。
+
+規則：
+- 只輸出合法 JSON 物件，不要輸出其他文字。
+- JSON 必須包含 `chart_spec` 欄位。
+- `chart_spec` 只屬於指定的那一道小題，不是整個題組共用的素材。
+- 若是圖片式素材、地圖、海報、表單、網頁畫面、流程圖或圖解，使用 `render_mode: "html"`。
+- 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
+- 圖片必須是作答的必要條件：本小題的答案必須依賴圖片中才有的資訊。
+- 不要加入答案提示。
+"""
+
+_SUBQUESTION_IMAGE_REPAIR_USER_TEMPLATE = """\
+第{序號}小題的 題目內容類型 是「{content_type}」，但缺少該小題自己的 chart_spec。
+請只為第{序號}小題補上專屬的 `chart_spec`。
+
+## 題組共用文本
+
+{文本}
+
+## 第{序號}小題內容
+
+```json
+{subquestion_json}
+```
+"""
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -403,6 +432,61 @@ def _ensure_top_level_visual_spec(
         question.chart_spec = image_spec
 
 
+def _ensure_subquestion_visual_specs(
+    question: ExamQuestion,
+    params: SampledParams,
+    client: LLMClient | None,
+) -> None:
+    """Repair missing per-小題 visual specs when 各小題配置 requires an image.
+
+    各小題配置 的 題目內容類型 決定該小題是否需要圖片；`image_generation_mode`
+    只決定渲染方式，不能單獨要求圖片。每道缺圖的小題只追問一次，失敗就讓那道
+    小題不帶圖片出貨，絕不中斷整個題組。
+    """
+    if client is None:
+        return
+
+    for sub in question.subquestions:
+        if sub.chart_spec:
+            continue
+        cfg = (
+            params.subquestion_configs[sub.序號 - 1]
+            if 0 < sub.序號 <= len(params.subquestion_configs)
+            else None
+        )
+        content_type = cfg.content_type if cfg else None
+        if content_type not in _VISUAL_CONTENT_TYPES:
+            continue
+
+        user_prompt = _SUBQUESTION_IMAGE_REPAIR_USER_TEMPLATE.format(
+            序號=sub.序號,
+            content_type=content_type,
+            文本=question.文本,
+            subquestion_json=sub.model_dump_json(
+                exclude_none=True,
+                exclude={"圖片"},
+            ),
+        )
+        try:
+            repaired = client.generate_json(
+                _SUBQUESTION_IMAGE_REPAIR_SYSTEM_PROMPT,
+                user_prompt,
+                purpose="generate",
+            )
+            image_spec = _parse_image_spec(
+                repaired.get("image_spec") or repaired.get("chart_spec")
+            )
+        except Exception as exc:
+            print(
+                f"  Warning: subquestion {sub.序號} image spec repair failed: {exc}",
+                file=sys.stderr,
+            )
+            continue
+
+        if image_spec:
+            sub.chart_spec = image_spec
+
+
 def _render_subquestion_images(
     question: ExamQuestion,
     config: Config,
@@ -566,6 +650,7 @@ def _ss_ensure_visual_spec(
     question: ExamQuestion, params: SampledParams, client: Any,
 ) -> None:
     _ensure_top_level_visual_spec(question, params, client)
+    _ensure_subquestion_visual_specs(question, params, client)
 
 
 def _ss_render_subquestion_images(
