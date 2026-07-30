@@ -82,6 +82,7 @@ def sample_params(
     option_word_limit: int | None = None,
     subquestion_configs: list | None = None,
     difficulty: Difficulty | str | None = None,
+    reporting_scale: str | None = None,
 ) -> SampledParams:
     """Sample random PISA Science parameters for a single 題組."""
 
@@ -189,9 +190,14 @@ def sample_params(
             ]
 
     if resolved_configs:
+        # Precedence: explicit per-小題 > 題組-level request value > rng scatter.
         resolved_configs = [
             cfg.model_copy(
-                update={"reporting_scale": cfg.reporting_scale or rng.choice(REPORTING_SCALE_ORDER)}
+                update={
+                    "reporting_scale": cfg.reporting_scale
+                    or reporting_scale
+                    or rng.choice(REPORTING_SCALE_ORDER)
+                }
             )
             for cfg in resolved_configs
         ]

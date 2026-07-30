@@ -224,6 +224,15 @@ def _ns_validate_params(params: Any) -> None:
             "use science_competency instead"
         )
 
+    if params.reporting_scale is not None:
+        from src.natural_sciences.reporting_scale import REPORTING_SCALE_ORDER  # noqa: PLC0415
+
+        if params.reporting_scale not in REPORTING_SCALE_ORDER:
+            raise ValueError(
+                f"reporting_scale {params.reporting_scale!r} is not a valid level; "
+                f"allowed values: {REPORTING_SCALE_ORDER}"
+            )
+
     if params.context is None or params.sub_context is None:
         return
 
@@ -616,6 +625,7 @@ def _ns_do_sample_params(
         option_word_limit=params.option_word_limit,
         subquestion_configs=subquestion_configs_decoded,
         difficulty=params.difficulty,
+        reporting_scale=params.reporting_scale,
     )
 
 
