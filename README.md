@@ -48,7 +48,7 @@ The `"html"` path handles geometry diagrams, coordinate planes, tables, and any 
 - **Randomness is script-side.** The program selects grade, question type, context, learning content — not the LLM.
 - **Two-stage generation (社會 / 自然).** For social studies and natural sciences, question generation runs a two-stage pipeline: a **文本生成器** call produces the shared 核心問題, 文本, and 取材來源 plus an N-entry 子題 plan; then N **子題產生器** calls each write one full 子題 concurrently (`ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6). A 子題產生器 call that raises or returns unparseable output is retried with a fresh LLM call for that slot only, up to `SUBGEN_RETRIES` times (default 1), before the slot is dropped. The assembled 題組 then flows through image rendering → verification → correction unchanged. Math generation stays a single flat call.
 - **Verify + correct loop.** Sonnet generates → Sonnet verifies → on failure, Sonnet applies a minimal targeted correction and re-verifies (up to `max_retries` times). Only the wrong field changes; classification, metadata, and correct fields are preserved.
-- **OpenAI-compatible endpoint.** Uses the `openai` SDK for endpoint diversity. Opus plans, Sonnet executes.
+- **Per-request LLM provider dispatch.** The provider is resolved from the model id on each call: `claude-*` → Anthropic SDK (prompt caching, streaming, system param); `gemini-*` → Gemini via its OpenAI-compatible endpoint; `gpt-*/o-series` → OpenAI; unknown ids → Anthropic (proxy deployments). The default model for both planning and execution is `gemini-3.1-pro-preview`.
 
 ## Project Structure
 
@@ -220,10 +220,14 @@ Environment variables (set in `.env` or export directly):
 
 | Variable | Used by | Description | Default |
 |---|---|---|---|
-| `LLM_API_KEY` | CLI + server | API key for the OpenAI-compatible endpoint | **(required)** |
-| `LLM_BASE_URL` | CLI + server | Base URL for the API endpoint | `https://api.anthropic.com/v1` |
-| `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-opus-5` |
-| `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `claude-sonnet-4-6` |
+| `GEMINI_API_KEY` | CLI + server | API key for Gemini models — required when `model_plan`/`model_execute` resolves to a `gemini-*` model | — |
+| `GEMINI_BASE_URL` | CLI + server | Base URL for the Gemini OpenAI-compatible endpoint | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `OPENAI_API_KEY` | CLI + server | API key for OpenAI models — required when using a `gpt-*` or o-series model | — |
+| `OPENAI_BASE_URL` | CLI + server | Base URL for the OpenAI endpoint | `https://api.openai.com/v1` |
+| `LLM_API_KEY` | CLI + server | Anthropic API key — required when `model_plan`/`model_execute` resolves to a `claude-*` model, and for the web-search fact-check tool | — |
+| `LLM_BASE_URL` | CLI + server | Base URL for the Anthropic endpoint | `https://api.anthropic.com/v1` |
+| `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `gemini-3.1-pro-preview` |
+| `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `gemini-3.1-pro-preview` |
 | `IMAGE_API_KEY` | CLI + server | API key for optional GPT image generation (used by both math and social studies when `image_generation_mode=gpt_image`) | — |
 | `IMAGE_BASE_URL` | CLI + server | Base URL for the image generation endpoint | `https://api.openai.com/v1` |
 | `IMAGE_MODEL` | CLI + server | Image generation model used when GPT image mode is selected | `gpt-image2` |
@@ -722,7 +726,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 
 **File: `src/cli.py` line 207, `src/llm_client.py`**
 
-11. `LLMClient(config)` creates an `OpenAI(api_key=..., base_url=...)` client (llm_client.py:19-24). Skipped if `--dry-run`.
+11. `LLMClient(config)` initialises an `Anthropic` client (for `claude-*` calls) and lazily constructs `OpenAI` compat clients for Gemini/OpenAI providers on first use (`src/llm_client.py` `LLMClient.__init__`). Skipped if `--dry-run`.
     `PlaywrightRenderer` also started here once and reused across all questions (cli.py:245-253).
 
 ---
@@ -855,12 +859,12 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 
 ### LLM Calls Per Question
 
-| # | Purpose | Model | File | Line |
-|---|---|---|---|---|
-| 1 | Generate question JSON | Sonnet (`model_execute`) | llm_client.py | 26-40 |
-| 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet (`model_execute`) | renderer.py | 343 |
-| 3 | Verify question + image (multimodal) | Sonnet (`model_execute`) | verifier.py (`generate_with_image`) | — |
-| 4 | Correction (when verification fails; multimodal if chart was the issue) | Sonnet (`model_execute`) | corrector.py | — |
+| # | Purpose | Model | File |
+|---|---|---|---|
+| 1 | Generate question JSON | `model_execute` | `src/llm_client.py` |
+| 2 | Generate HTML image (only when `render_mode="html"`) | `model_execute` | `src/renderer.py` |
+| 3 | Verify question + image (multimodal) | `model_execute` | `src/verifier.py` |
+| 4 | Correction (when verification fails; multimodal if chart was the issue) | `model_execute` | `src/corrector.py` |
 
 > **Social studies & natural sciences only:** Call #1 is replaced by a two-stage pipeline — one **文本生成器** call (agent: `generator`) produces the shared passage and 子題 plan, followed by N concurrent **子題產生器** calls (agents: `sub_generator#1` … `sub_generator#N`, each writing one complete 子題). Calls #2–4 (image rendering, verification, correction) are unchanged and operate on the fully-assembled 題組.
 

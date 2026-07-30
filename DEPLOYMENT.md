@@ -27,7 +27,7 @@ You are paying for two separate things:
 | Service | Cost | What it does |
 |---|---|---|
 | Railway (hosting) | About **US$5 per month** (Hobby plan) | Runs the website and the database |
-| Anthropic API | **Pay-as-you-go**, around **US$0.05–0.15 per generated question** | Each question generation makes 2-3 calls to Claude |
+| Gemini API | **Pay-as-you-go** (see Google AI Studio pricing) | Each question generation makes 2-3 calls to the LLM |
 | Custom domain (optional) | About **US$10–15 per year** | A nicer URL like `examgen.yourschool.tw` |
 
 You can stop and delete everything at any time.
@@ -43,19 +43,20 @@ You can stop and delete everything at any time.
 
 ---
 
-## 4. Step 1 — Get an Anthropic API key
+## 4. Step 1 — Get a Gemini API key
 
-An **API key** is a password that lets your website talk to Claude (the AI that generates the questions).
+An **API key** is a password that lets your website talk to the AI that generates the questions. The default model is Gemini, so you need a Gemini API key to start.
 
-1. Open `https://console.anthropic.com` in your browser.
-2. Click **Sign up** and create an account with your email.
-3. After signing in, click **Billing** in the left menu and add a credit card.
-   - You can start with as little as US$5 of credit. Money is only spent when questions are generated.
-4. In the left menu, click **API Keys**.
-5. Click **Create Key**. Give it a name like `examgen-railway` and click **Create**.
-6. **Copy the key immediately** — it looks like `sk-ant-api03-XXXXXXXXX...`. Paste it into a safe place (Notes app, password manager). Anthropic will only show it to you once.
+1. Open `https://aistudio.google.com/apikey` in your browser.
+2. Sign in with a Google account.
+3. Click **Create API key**.
+4. **Copy the key immediately** — it looks like `AIzaSy...`. Paste it into a safe place (Notes app, password manager).
 
-> ⚠️ Treat this key like a credit card number. Anyone who has it can spend your Anthropic credit.
+> ⚠️ Treat this key like a password. Anyone who has it can make calls charged to your Google AI billing account.
+
+**Optional additions:**
+- **Anthropic key** (`sk-ant-...` from `https://console.anthropic.com`) — needed only if you change the model to a `claude-*` model, or if you enable the web-search fact-check feature (`WEB_SEARCH_PROVIDER=anthropic`).
+- **OpenAI key** (`sk-...` from `https://platform.openai.com/api-keys`) — needed only if you change the model to a `gpt-*` or o-series model.
 
 ---
 
@@ -135,10 +136,12 @@ Open the **backend** service, click the **Variables** tab, and add the following
 
 | Variable name | Value to type | What it is |
 |---|---|---|
-| `LLM_API_KEY` | The `sk-ant-api03-...` key from Step 1 | Lets the backend call Claude |
-| `LLM_BASE_URL` | `https://api.anthropic.com/v1` | Which AI service to use |
-| `LLM_MODEL_PLAN` | `claude-opus-5` | Which Claude model handles planning |
-| `LLM_MODEL_EXECUTE` | `claude-sonnet-4-6` | Which Claude model generates questions |
+| `GEMINI_API_KEY` | The `AIzaSy...` key from Step 1 | Lets the backend call Gemini (required for the default model) |
+| `LLM_MODEL_PLAN` | `gemini-3.1-pro-preview` | Which model handles planning |
+| `LLM_MODEL_EXECUTE` | `gemini-3.1-pro-preview` | Which model generates questions |
+| `LLM_API_KEY` | An Anthropic `sk-ant-...` key *(optional)* | Required only if using a `claude-*` model or the web-search fact-check feature |
+| `LLM_BASE_URL` | `https://api.anthropic.com/v1` | Anthropic API endpoint (leave as default if setting `LLM_API_KEY`) |
+| `OPENAI_API_KEY` | An OpenAI `sk-...` key *(optional)* | Required only if using a `gpt-*` or o-series model |
 | `LLM_RATE_LIMIT_DELAY` | `2` | Wait 2 seconds between Claude calls (avoids rate-limit errors) |
 | `LLM_TEMPERATURE` | (unset) | Optional sampling temperature; leave unset to use the provider default. Ignored for models that reject sampling params. |
 | `JWT_SECRET` | A long random string (see below) | Used to sign login tokens |
@@ -424,13 +427,9 @@ If something looks broken:
 1. Railway → Postgres service → **Backups** tab.
 2. Railway takes daily backups automatically on the Hobby plan.
 
-### Rotate the API key
+### Rotate an API key
 
-If you suspect your `LLM_API_KEY` has leaked:
-
-1. Open `https://console.anthropic.com` → **API Keys** → **Disable** the old key.
-2. Create a new key.
-3. In Railway, backend service → **Variables** → edit `LLM_API_KEY` → paste the new key → **Save**. The backend redeploys with the new key.
+If you suspect a key has leaked, rotate it at the provider (Google AI Studio for `GEMINI_API_KEY`, `console.anthropic.com` for `LLM_API_KEY`, `platform.openai.com` for `OPENAI_API_KEY`): disable the old key, create a new one, then update the matching variable in Railway → backend service → **Variables** → **Save**. The backend redeploys with the new key.
 
 ---
 
@@ -439,7 +438,7 @@ If you suspect your `LLM_API_KEY` has leaked:
 | What you see | Likely cause | What to do |
 |---|---|---|
 | Frontend loads but login fails | `FRONTEND_URL` on the backend doesn't match the actual frontend URL | Fix the value (Step 8.1) and let the backend redeploy |
-| "Invalid API key" when generating | `LLM_API_KEY` is wrong, or Anthropic billing isn't set up | Double-check the key. Open `console.anthropic.com` → Billing |
+| "Invalid API key" / 422 when generating | The provider key for the selected model is wrong or unset | Check `GEMINI_API_KEY` (Gemini models), `LLM_API_KEY` (Claude models), or `OPENAI_API_KEY` (GPT/o-series models) in the backend Variables tab |
 | Backend deployment crashes on startup | Wrong `DATABASE_URL` format | Make sure the value starts with `postgresql+asyncpg://` (not `postgres://`) |
 | Generation fails with "Rate limit exceeded" / 429 | You're calling Claude too fast | Raise `LLM_RATE_LIMIT_DELAY` from `2` to `5` |
 | Magic link request returns `403 email not allowed` | `EMAIL_WHITELIST` is set and the address doesn't match any entry | Add the address (or `*@theirdomain`) to `EMAIL_WHITELIST` on the backend, then save and redeploy |
@@ -458,7 +457,7 @@ If you suspect your `LLM_API_KEY` has leaked:
 
 | Word | What it means |
 |---|---|
-| **API key** | A password that lets one program use another program. The Anthropic API key lets your backend use Claude. |
+| **API key** | A password that lets one program use another program. The Gemini API key lets your backend call the AI that generates questions. |
 | **Environment variable** | A labelled setting that a program reads when it starts (e.g. `LLM_API_KEY = sk-ant-...`). |
 | **Fork** | Your personal copy of someone else's GitHub repository. You need a fork because Railway can only deploy from a repository you own. |
 | **Deploy** | Take the code and run it on a server connected to the internet. |

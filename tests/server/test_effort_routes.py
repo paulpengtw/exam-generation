@@ -47,6 +47,7 @@ def _make_app_and_token(
     config = ServerConfig(
         api_key="x",
         jwt_secret="test-secret",
+        gemini_api_key="x",
         llm_models_allowed=allowed,
         effort_plan=effort_plan,
         effort_execute=effort_execute,

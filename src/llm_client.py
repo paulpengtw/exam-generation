@@ -8,7 +8,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 from anthropic import Anthropic
 from openai import OpenAI
@@ -24,21 +24,73 @@ logger = logging.getLogger(__name__)
 # suppression — avoids log spam on repeated observer failures).
 _warned_emit_stage_observers: set[int] = set()
 
+# (provider, effort) pairs for which we have already emitted the "effort
+# parameter dropped" warning — avoids log spam on repeated calls.
+_warned_effort_drops: set[tuple[str, str]] = set()
+
 _SAMPLING_REJECT_PREFIXES: tuple[str, ...] = (
     "claude-opus-5",
     "claude-sonnet-5",
     "claude-fable-5",
     "claude-opus-4-7",
     "claude-opus-4-8",
+    # issue #340: gemini-3.x and OpenAI o-series / gpt-5.x reasoning models
+    "gemini-3",
+    "gpt-5",
+    "o1",
+    "o3",
+    "o4",
 )
 
 
 def _accepts_sampling(model: str) -> bool:
     """Return False for models known to reject sampling parameters."""
     for prefix in _SAMPLING_REJECT_PREFIXES:
-        if model == prefix or model.startswith(prefix + "-"):
+        if model == prefix or model.startswith(prefix + "-") or model.startswith(prefix + "."):
             return False
     return True
+
+
+def _max_tokens_kwargs(provider: str) -> dict:
+    """Return the appropriate token-limit kwarg for the given provider.
+
+    OpenAI's gpt-5.x / o-series reasoning models require ``max_completion_tokens``
+    instead of ``max_tokens``.  All other providers (including Gemini's
+    OpenAI-compat surface) accept the standard ``max_tokens`` key.
+    """
+    if provider == "openai":
+        return {"max_completion_tokens": 8192}
+    return {"max_tokens": 8192}
+
+
+Provider = Literal["anthropic", "gemini", "openai"]
+_OPENAI_O_SERIES_RE = re.compile(r"^o\d")
+
+_PROVIDER_ENV: dict[str, tuple[str, str, str]] = {
+    "gemini": ("gemini_api_key", "GEMINI_API_KEY", "gemini_base_url"),
+    "openai": ("openai_api_key", "OPENAI_API_KEY", "openai_base_url"),
+}
+
+
+def resolve_provider(model: str) -> Provider:
+    if model.startswith("gemini-"):
+        return "gemini"
+    if model.startswith("gpt-") or _OPENAI_O_SERIES_RE.match(model):
+        return "openai"
+    return "anthropic"
+
+
+def _openai_usage_to_internal(u) -> dict:
+    if u is None:
+        return {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
+    details = getattr(u, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", None) or 0
+    return {
+        "input": u.prompt_tokens,
+        "output": u.completion_tokens,
+        "cache_read": cached,
+        "cache_creation": 0,
+    }
 
 
 LLMObserver = Callable[[dict], None]
@@ -233,6 +285,7 @@ class LLMClient:
             base_url=_strip_v1(config.base_url),
         )
         self._image_client: OpenAI | None = None
+        self._compat_clients: dict[str, OpenAI] = {}
         self._observer: LLMObserver | None = None
         self._observer_warned: bool = False
 
@@ -296,13 +349,45 @@ class LLMClient:
         )
         return {}
 
-    def _effort_kwargs(self, purpose: str) -> dict:
-        """Return extra_body with output_config.effort based on call purpose.
+    def _effort_kwargs(self, purpose: str, provider: str = "anthropic") -> dict:
+        """Return effort kwargs appropriate for the provider and call purpose.
 
         plan purpose → effort_plan; everything else → effort_execute.
+
+        Anthropic: wraps effort in ``{"extra_body": {"output_config": {"effort": ...}}}``.
+        gemini / openai: maps low/medium/high to ``{"reasoning_effort": effort}``.
+            Any other effort value is unsupported on these providers — the parameter
+            is omitted entirely and a WARNING is emitted once per (provider, effort)
+            pair (module-level ``_warned_effort_drops`` suppresses repeats).
         """
         effort = self.config.effort_plan if purpose == "plan" else self.config.effort_execute
-        return {"extra_body": {"output_config": {"effort": effort}}}
+        if provider == "anthropic":
+            return {"extra_body": {"output_config": {"effort": effort}}}
+        # gemini / openai — reasoning_effort only accepts low / medium / high
+        if effort in ("low", "medium", "high"):
+            return {"reasoning_effort": effort}
+        key = (provider, effort)
+        if key not in _warned_effort_drops:
+            _warned_effort_drops.add(key)
+            logger.warning(
+                "reasoning_effort omitted for provider=%s effort=%r — "
+                "value is not in ('low', 'medium', 'high'); parameter dropped",
+                provider,
+                effort,
+            )
+        return {}
+
+    def _openai_compat_client(self, provider: str) -> OpenAI:
+        if provider in self._compat_clients:
+            return self._compat_clients[provider]
+        key_attr, env_name, url_attr = _PROVIDER_ENV[provider]
+        api_key = getattr(self.config, key_attr)
+        if not api_key:
+            raise ValueError(f"{env_name} is required to call {provider} models.")
+        base_url = getattr(self.config, url_attr)
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        self._compat_clients[provider] = client
+        return client
 
     def _generate_streaming(
         self,
@@ -381,16 +466,8 @@ class LLMClient:
         purpose: str,
         agent_override: str | None = None,
     ) -> str:
-        """Emit request event, call Anthropic API (streaming or not), emit response event."""
+        """Emit request event, dispatch to provider-specific call, emit response event."""
         agent = agent_override if agent_override is not None else _PURPOSE_TO_AGENT.get(purpose, purpose)
-        # Separate system message from user/assistant turns
-        system = ""
-        user_messages_raw: list[dict] = []
-        for msg in messages:
-            if msg["role"] == "system":
-                system = msg["content"] if isinstance(msg["content"], str) else ""
-            else:
-                user_messages_raw.append(msg)
 
         if self._observer:
             self._emit({
@@ -402,7 +479,28 @@ class LLMClient:
                 "params": {"max_tokens": 8192, "temperature": self.config.temperature},
             })
 
-        # Convert image format to Anthropic style
+        provider = resolve_provider(model)
+        if provider == "anthropic":
+            return self._anthropic_call(messages, model, purpose, agent_override, agent)
+        return self._openai_compat_call(provider, messages, model, purpose, agent)
+
+    def _anthropic_call(
+        self,
+        messages: list[dict],
+        model: str,
+        purpose: str,
+        agent_override: str | None,
+        agent: str,
+    ) -> str:
+        """Call the Anthropic API (streaming or non-streaming)."""
+        system = ""
+        user_messages_raw: list[dict] = []
+        for msg in messages:
+            if msg["role"] == "system":
+                system = msg["content"] if isinstance(msg["content"], str) else ""
+            else:
+                user_messages_raw.append(msg)
+
         anthropic_messages = [
             {"role": msg["role"], "content": _to_anthropic_content(msg["content"])}
             for msg in user_messages_raw
@@ -439,6 +537,110 @@ class LLMClient:
                     "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0,
                     "cache_creation": getattr(u, "cache_creation_input_tokens", 0) or 0,
                 },
+            })
+        return content
+
+    def _openai_compat_streaming(
+        self,
+        oc,
+        kwargs: dict,
+        model: str,
+        purpose: str,
+        agent: str,
+    ) -> str:
+        """Stream via OpenAI-compat surface, emitting deltas to observer. Returns assembled content."""
+        content_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        usage: dict = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
+
+        stream = oc.chat.completions.create(
+            **kwargs,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        for chunk in stream:
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                usage = _openai_usage_to_internal(chunk_usage)
+
+            choices = getattr(chunk, "choices", None) or []
+            if not choices:
+                continue
+
+            delta = choices[0].delta
+            reasoning_text = (
+                getattr(delta, "reasoning_content", None)
+                or getattr(delta, "reasoning", None)
+            )
+            if reasoning_text:
+                reasoning_parts.append(reasoning_text)
+                self._emit({
+                    "type": "llm_reasoning_delta",
+                    "purpose": purpose,
+                    "agent": agent,
+                    "text": reasoning_text,
+                })
+
+            content_text = getattr(delta, "content", None)
+            if content_text:
+                content_parts.append(content_text)
+                self._emit({
+                    "type": "llm_content_delta",
+                    "purpose": purpose,
+                    "agent": agent,
+                    "text": content_text,
+                })
+
+        content = "".join(content_parts)
+        self._emit({
+            "type": "llm_response",
+            "purpose": purpose,
+            "agent": agent,
+            "model": model,
+            "content": content,
+            "reasoning": "".join(reasoning_parts) or None,
+            "usage": usage,
+        })
+        return content
+
+    def _openai_compat_call(
+        self,
+        provider: str,
+        messages: list[dict],
+        model: str,
+        purpose: str,
+        agent: str,
+    ) -> str:
+        """Call through the OpenAI-compatible surface (gemini/openai providers).
+
+        Builds a shared kwargs dict once and delegates to the streaming path when
+        ``self._observer and self.config.llm_stream`` are both set; otherwise falls
+        through to the non-streaming path.
+        """
+        oc = self._openai_compat_client(provider)
+        kwargs: dict = {
+            "model": model,
+            "messages": messages,  # type: ignore[arg-type]
+            **_max_tokens_kwargs(provider),
+            **self._temperature_kwargs(model),
+            **self._effort_kwargs(purpose, provider),
+        }
+
+        if self._observer and self.config.llm_stream:
+            return self._openai_compat_streaming(oc, kwargs, model, purpose, agent)
+
+        response = oc.chat.completions.create(**kwargs)
+        choices = response.choices if response.choices else []
+        content = (choices[0].message.content or "") if choices else ""
+        if self._observer:
+            self._emit({
+                "type": "llm_response",
+                "purpose": purpose,
+                "agent": agent,
+                "model": model,
+                "content": content,
+                "reasoning": None,
+                "usage": _openai_usage_to_internal(getattr(response, "usage", None)),
             })
         return content
 

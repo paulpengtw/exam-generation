@@ -15,6 +15,7 @@ from src.config import Config
 # is not already in it).  When LLM_MODELS_ALLOWED is set it REPLACES this
 # roster entirely — no merge — and the plan/execute append still applies.
 _DEFAULT_MODELS_ALLOWED: tuple[str, ...] = (
+    "gemini-3.1-pro-preview",
     "claude-opus-5",
     "claude-fable-5",
     "claude-sonnet-5",
@@ -28,12 +29,15 @@ _DEFAULT_MODELS_ALLOWED: tuple[str, ...] = (
 _FIVE_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "xhigh", "max"]
 _FOUR_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "max"]
 
+_THREE_EFFORT_LEVELS: list[str] = ["low", "medium", "high"]
+
 _EFFORT_LEVELS: dict[str, list[str]] = {
     "claude-opus-5": _FIVE_EFFORT_LEVELS,
     "claude-fable-5": _FIVE_EFFORT_LEVELS,
     "claude-sonnet-5": _FIVE_EFFORT_LEVELS,
     "claude-sonnet-4-6": _FOUR_EFFORT_LEVELS,
     "claude-opus-4-6": _FOUR_EFFORT_LEVELS,
+    "gemini-3.1-pro-preview": _THREE_EFFORT_LEVELS,
 }
 
 
@@ -78,11 +82,15 @@ class ServerConfig(Config):
         cfg = cls(
             api_key=os.environ.get("LLM_API_KEY", ""),
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
-            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-opus-5"),
-            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
+            model_plan=os.environ.get("LLM_MODEL_PLAN", "gemini-3.1-pro-preview"),
+            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "gemini-3.1-pro-preview"),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
             image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),
+            gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
+            gemini_base_url=os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
+            openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+            openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             output_dir=Path(os.environ.get("OUTPUT_DIR", "./output")),
             data_dir=Path(os.environ.get("DATA_DIR", "./data")),
             rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),

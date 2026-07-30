@@ -21,7 +21,7 @@ def _make_client(image_api_key: str = "") -> TestClient:
     )
     app.dependency_overrides[get_async_session] = lambda: None
     app.dependency_overrides[get_config] = lambda: ServerConfig(
-        api_key="x", image_api_key=image_api_key
+        api_key="x", gemini_api_key="x", image_api_key=image_api_key
     )
     limiter.reset()
     return TestClient(app, raise_server_exceptions=False)

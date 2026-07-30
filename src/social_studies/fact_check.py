@@ -19,7 +19,7 @@ import re
 from collections.abc import Callable
 from typing import Protocol
 
-from src.llm_client import Citation, extract_json
+from src.llm_client import Citation, extract_json, resolve_provider
 from src.social_studies.schemas import ExamQuestion, FactCheckResult
 
 logger = logging.getLogger(__name__)
@@ -125,6 +125,11 @@ def fact_check_question(
     strings from the model's cited sources.
     """
     if provider != "anthropic":
+        return None
+
+    exec_model = getattr(getattr(client, "config", None), "model_execute", "") or ""
+    if resolve_provider(exec_model) != "anthropic":
+        logger.info("fact_check skipped: execute model %r is not an Anthropic model", exec_model)
         return None
 
     tools = [

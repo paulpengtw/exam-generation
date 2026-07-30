@@ -113,3 +113,13 @@ def test_server_config_effort_unset_gives_medium(tmp_path: Path) -> None:
         cfg = ServerConfig.from_env(env_file=tmp_path / ".env.missing")
     assert cfg.effort_plan == "medium"
     assert cfg.effort_execute == "medium"
+
+
+# ---------------------------------------------------------------------------
+# 4. issue #340 — gemini model in _EFFORT_LEVELS
+# ---------------------------------------------------------------------------
+
+
+def test_effort_levels_gemini_3_1_pro_preview() -> None:
+    """gemini-3.1-pro-preview supports low/medium/high but not xhigh/max."""
+    assert _EFFORT_LEVELS["gemini-3.1-pro-preview"] == ["low", "medium", "high"]

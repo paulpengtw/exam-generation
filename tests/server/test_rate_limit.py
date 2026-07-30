@@ -25,6 +25,7 @@ def _config() -> ServerConfig:
     return ServerConfig(
         api_key="x",
         jwt_secret="test-secret",
+        gemini_api_key="x",
         jwt_expire_days=7,
         frontend_url="https://example.com",
         email_backend="console",

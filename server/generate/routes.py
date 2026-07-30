@@ -56,6 +56,8 @@ async def preview_generate_endpoint(
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
     _check_image_api_key(params.image_generation_mode, params.subquestion_configs, config)
+    _check_provider_key_for_model(effective_plan_model, config, "model_plan")
+    _check_provider_key_for_model(effective_execute_model, config, "model_execute")
     return {"prompts": build_prompt_previews(params, config, request.app.state)}
 
 
@@ -132,6 +134,25 @@ def _check_image_api_key(
         )
 
 
+_PROVIDER_KEY_REQUIREMENTS: dict[str, tuple[str, str]] = {
+    "anthropic": ("api_key", "LLM_API_KEY"),
+    "gemini": ("gemini_api_key", "GEMINI_API_KEY"),
+    "openai": ("openai_api_key", "OPENAI_API_KEY"),
+}
+
+
+def _check_provider_key_for_model(model: str, config: ServerConfig, field: str) -> None:
+    """Raise HTTPException(422) when the model's provider API key is unset."""
+    from src.llm_client import resolve_provider  # noqa: PLC0415
+
+    attr, env_name = _PROVIDER_KEY_REQUIREMENTS[resolve_provider(model)]
+    if not getattr(config, attr):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{field}: model '{model}' requires {env_name} to be set on the server",
+        )
+
+
 @router.get("/generate")
 @limiter.limit("10/hour", key_func=jwt_user_key)
 async def generate_endpoint(
@@ -190,6 +211,8 @@ async def generate_endpoint(
     _check_effort_for_model(effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(effort_execute, effective_execute_model, "effort_execute")
     _check_image_api_key(image_generation_mode, subquestion_configs, config)
+    _check_provider_key_for_model(effective_plan_model, config, "model_plan")
+    _check_provider_key_for_model(effective_execute_model, config, "model_execute")
     try:
         params = GenerateParams(
             subject=subject,
@@ -310,7 +333,10 @@ async def plan_core_questions_endpoint(
     _check_model_allowed(body.model_execute, config, "model_execute")
     # Validate effort_plan against the effective plan model's roster.
     effective_plan_model = body.model_plan or config.model_plan
+    effective_execute_model = body.model_execute or config.model_execute
     _check_effort_for_model(body.effort_plan, effective_plan_model, "effort_plan")
+    _check_provider_key_for_model(effective_plan_model, config, "model_plan")
+    _check_provider_key_for_model(effective_execute_model, config, "model_execute")
     from src.config import Config as SrcConfig
     from src.llm_client import LLMClient
 

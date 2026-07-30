@@ -37,6 +37,7 @@ def _make_app_and_token(allowed: tuple[str, ...] = ()):
     config = ServerConfig(
         api_key="x",
         jwt_secret="test-secret",
+        gemini_api_key="x",
         llm_models_allowed=allowed,
     )
     user_id = uuid.uuid4()

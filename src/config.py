@@ -13,11 +13,15 @@ from dotenv import load_dotenv
 class Config:
     api_key: str = ""
     base_url: str = "https://api.anthropic.com/v1"
-    model_plan: str = "claude-opus-5"
-    model_execute: str = "claude-sonnet-4-6"
+    model_plan: str = "gemini-3.1-pro-preview"
+    model_execute: str = "gemini-3.1-pro-preview"
     image_api_key: str = ""
     image_base_url: str = "https://api.openai.com/v1"
     image_model: str = "gpt-image2"
+    gemini_api_key: str = ""
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
     output_dir: Path = field(default_factory=lambda: Path("./output"))
     data_dir: Path = field(default_factory=lambda: Path("./data"))
     rate_limit_delay: float = 0.0  # seconds between API calls
@@ -45,11 +49,15 @@ class Config:
         return cls(
             api_key=os.environ.get("LLM_API_KEY", ""),
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
-            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-opus-5"),
-            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
+            model_plan=os.environ.get("LLM_MODEL_PLAN", "gemini-3.1-pro-preview"),
+            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "gemini-3.1-pro-preview"),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
             image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),
+            gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
+            gemini_base_url=os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"),
+            openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+            openai_base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             output_dir=Path(os.environ.get("OUTPUT_DIR", "./output")),
             data_dir=Path(os.environ.get("DATA_DIR", "./data")),
             rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),
