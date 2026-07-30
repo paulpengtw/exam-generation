@@ -8,7 +8,12 @@ from types import SimpleNamespace
 import pytest
 
 from server.config import ServerConfig
-from server.generate.models import GenerateParams, decode_per_question_params
+from server.generate.models import (
+    PER_QUESTION_FIELDS,
+    REQUEST_LEVEL_FIELDS,
+    GenerateParams,
+    decode_per_question_params,
+)
 from server.generate.service import _sample_worker_params
 from server.generate.subjects import SUBJECTS
 from src.curriculum_context import load_curriculum_context
@@ -232,3 +237,31 @@ def test_omitting_per_question_params_preserves_sampled_params_bytes(
     )
 
     assert through_fan_out.model_dump_json() == legacy.model_dump_json()
+
+
+def test_every_generate_param_field_is_classified_request_level_or_per_question() -> None:
+    """Guard that every GenerateParams field is explicitly classified.
+
+    If this test fails, a new field was added to GenerateParams without being
+    deliberately placed into REQUEST_LEVEL_FIELDS or PER_QUESTION_FIELDS.
+    Add the new field to exactly one of those two frozensets in
+    server/generate/models.py to resolve the failure.
+    """
+    all_fields = frozenset(GenerateParams.model_fields)
+
+    unclassified = all_fields - REQUEST_LEVEL_FIELDS - PER_QUESTION_FIELDS
+    assert unclassified == frozenset(), (
+        f"New GenerateParams field(s) are not classified: {sorted(unclassified)}. "
+        "Explicitly add each field to either REQUEST_LEVEL_FIELDS (request-level, "
+        "not overridable per question) or PER_QUESTION_FIELDS (per-question override "
+        "allowlist) in server/generate/models.py."
+    )
+
+    assert REQUEST_LEVEL_FIELDS | PER_QUESTION_FIELDS == all_fields, (
+        "REQUEST_LEVEL_FIELDS | PER_QUESTION_FIELDS does not cover all GenerateParams fields."
+    )
+
+    assert REQUEST_LEVEL_FIELDS & PER_QUESTION_FIELDS == frozenset(), (
+        f"Fields appear in both sets: {sorted(REQUEST_LEVEL_FIELDS & PER_QUESTION_FIELDS)}. "
+        "Each field must belong to exactly one of the two sets."
+    )
