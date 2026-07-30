@@ -221,6 +221,26 @@ describe("useGenerate — model overrides", () => {
   });
 });
 
+describe("buildQueryString — effort overrides", () => {
+  it("does not emit effort_plan / effort_execute when unset", () => {
+    const qs = buildQueryString({ subject: "math", grade: 7 });
+    expect(qs).not.toContain("effort_plan");
+    expect(qs).not.toContain("effort_execute");
+  });
+
+  it("emits effort_plan / effort_execute when set to non-empty strings", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      grade: 7,
+      effort_plan: "high",
+      effort_execute: "low",
+    });
+    const params = new URLSearchParams(qs);
+    expect(params.get("effort_plan")).toBe("high");
+    expect(params.get("effort_execute")).toBe("low");
+  });
+});
+
 describe("useGenerate — parseErrorEventData", () => {
   it("returns .message from a valid structured JSON payload", () => {
     const raw = JSON.stringify({ code: "generation_failed", message: "Question generation failed (RuntimeError)" });
