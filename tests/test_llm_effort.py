@@ -165,3 +165,119 @@ def test_default_medium_effort_always_in_extra_body() -> None:
     assert len(fake.calls) == 1
     extra_body = fake.calls[0].get("extra_body", {})
     assert extra_body.get("output_config", {}).get("effort") == "medium"
+
+
+# ---------------------------------------------------------------------------
+# 6. Real planning purposes → effort_plan on Anthropic (issue #346)
+#
+# Callers in src/common/planner.py call client.plan(..., purpose="plan_core_questions")
+# and client.plan(..., purpose="plan_context_angles") — these are the purpose
+# strings real planners send.  Both must select the plan effort tier, not the
+# execute tier.  Fixed by widening _effort_kwargs to check purpose in _PLAN_PURPOSES.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("purpose", ["plan_core_questions", "plan_context_angles"])
+def test_real_plan_purposes_carry_effort_plan_anthropic(purpose: str) -> None:
+    """plan_core_questions / plan_context_angles → effort_plan tier (Anthropic).
+
+    Real planning callers (src/common/planner.py) send these purpose strings;
+    the Anthropic extra_body effort must reflect effort_plan, not effort_execute.
+    """
+    client, fake = _make_client(effort_plan="high", effort_execute="low")
+    client.generate("sys", "user", purpose=purpose)
+    assert len(fake.calls) == 1
+    extra_body = fake.calls[0].get("extra_body", {})
+    assert extra_body.get("output_config", {}).get("effort") == "high"
+
+
+# ---------------------------------------------------------------------------
+# 7. Real planning purposes → effort_plan on Gemini (issue #346)
+#
+# Same requirement on the OpenAI-compat (Gemini) provider.  For low/medium/high
+# effort values the provider uses reasoning_effort; real planning purposes must
+# select the plan tier so reasoning_effort reflects effort_plan, not effort_execute.
+# ---------------------------------------------------------------------------
+
+
+class _FakeGeminiCompletions:
+    """Records chat.completions.create() calls without hitting the network."""
+
+    def __init__(self, content: str = '{"ok": true}') -> None:
+        self.calls: list[dict] = []
+        self._content = content
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        msg = SimpleNamespace(content=self._content)
+        choice = SimpleNamespace(message=msg)
+        usage = SimpleNamespace(
+            prompt_tokens=1,
+            completion_tokens=1,
+            prompt_tokens_details=SimpleNamespace(cached_tokens=0),
+        )
+        return SimpleNamespace(choices=[choice], usage=usage)
+
+
+def _make_gemini_effort_client(
+    effort_plan: str = "medium",
+    effort_execute: str = "medium",
+    model: str = "gemini-3.1-pro-preview",
+) -> tuple[LLMClient, _FakeGeminiCompletions]:
+    """Build a non-streaming Gemini LLMClient with separate plan/execute effort config."""
+    cfg = Config(
+        api_key="x",
+        gemini_api_key="g-key",
+        llm_stream=False,
+        model_execute=model,
+        model_plan=model,
+        effort_plan=effort_plan,
+        effort_execute=effort_execute,
+    )
+    client = LLMClient(cfg)
+    fake = _FakeGeminiCompletions()
+    client._compat_clients["gemini"] = SimpleNamespace(
+        chat=SimpleNamespace(completions=fake)
+    )
+    return client, fake
+
+
+@pytest.mark.parametrize("purpose", ["plan_core_questions", "plan_context_angles"])
+def test_real_plan_purposes_carry_effort_plan_gemini(purpose: str) -> None:
+    """plan_core_questions / plan_context_angles → effort_plan tier (Gemini).
+
+    Real planning callers (src/common/planner.py) send these purpose strings;
+    the Gemini reasoning_effort must reflect effort_plan, not effort_execute.
+    """
+    client, fake = _make_gemini_effort_client(effort_plan="high", effort_execute="low")
+    client.generate("sys", "user", purpose=purpose)
+    assert len(fake.calls) == 1
+    assert fake.calls[0].get("reasoning_effort") == "high"
+
+
+# ---------------------------------------------------------------------------
+# 8. Events from real planning purposes carry agent == "planner" (issue #346)
+#
+# _PURPOSE_TO_AGENT maps both "plan_core_questions" and "plan_context_angles"
+# to "planner" so that observer events emitted by these real planning callers
+# (src/common/planner.py) carry the canonical planner agent id, not the raw
+# purpose string.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("purpose", ["plan_core_questions", "plan_context_angles"])
+def test_real_plan_purposes_emit_planner_agent_in_request_event(purpose: str) -> None:
+    """llm_request event for real plan purposes must have agent == 'planner'.
+
+    Both plan_core_questions and plan_context_angles are real planning callers
+    (src/common/planner.py); their observer events must identify the agent as
+    "planner", not expose the raw purpose string.
+    """
+    client, _fake = _make_client(effort_plan="high", effort_execute="low")
+    events: list[dict] = []
+    client.set_observer(events.append)
+    client.generate("sys", "user", purpose=purpose)
+
+    request_events = [e for e in events if e["type"] == "llm_request"]
+    assert len(request_events) == 1
+    assert request_events[0]["agent"] == "planner"
