@@ -31,6 +31,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.ns_title": "Natural Sciences 自然科學",
     "subject_select.ns_desc": "PISA Science blended with Taiwan natural sciences curriculum",
 
+    "app.title": "素養試題 AI Examgen",
+    "app.title_staging": "[Staging] 素養試題 AI Examgen",
+
     "staging.banner": "⚠ Staging environment — data may be reset at any time.",
 
     "feedback.button_aria": "Report a problem",
@@ -344,6 +347,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.ss_desc": "7-9年級社會課綱，素養導向試題。",
     "subject_select.ns_title": "自然科學領域",
     "subject_select.ns_desc": "融合 PISA Science 與7-9年級自然科學課綱。",
+
+    "app.title": "素養試題 AI Examgen",
+    "app.title_staging": "【測試機】素養試題 AI Examgen",
 
     "staging.banner": "⚠ 此為測試環境，運作可能不穩定。",
 

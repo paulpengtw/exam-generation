@@ -20,6 +20,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Observer ids that have already emitted a failure warning (once-per-observer
+# suppression — avoids log spam on repeated observer failures).
+_warned_emit_stage_observers: set[int] = set()
+
 _SAMPLING_REJECT_PREFIXES: tuple[str, ...] = (
     "claude-opus-5",
     "claude-sonnet-5",
@@ -73,8 +77,15 @@ def emit_stage(
     event.update(extra)
     try:
         observer(event)
-    except Exception:
-        pass
+    except Exception as exc:
+        obs_id = id(observer)
+        if obs_id not in _warned_emit_stage_observers:
+            _warned_emit_stage_observers.add(obs_id)
+            print(
+                f"[emit_stage] observer raised on event type 'stage': "
+                f"{type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
 
 
 def make_render_error_sink(
@@ -223,6 +234,7 @@ class LLMClient:
         )
         self._image_client: OpenAI | None = None
         self._observer: LLMObserver | None = None
+        self._observer_warned: bool = False
 
     def set_observer(self, cb: LLMObserver) -> None:
         self._observer = cb
@@ -237,8 +249,15 @@ class LLMClient:
         if self._observer:
             try:
                 self._observer(event)
-            except Exception:
-                pass
+            except Exception as exc:
+                if not self._observer_warned:
+                    self._observer_warned = True
+                    event_type = event.get("type", "unknown")
+                    print(
+                        f"[LLMClient._emit] observer raised on event type {event_type!r}: "
+                        f"{type(exc).__name__}: {exc}",
+                        file=sys.stderr,
+                    )
 
     def _summarize_for_observer(self, messages: list[dict]) -> list[dict]:
         """Replace image data URLs with size summaries to avoid huge SSE payloads."""
