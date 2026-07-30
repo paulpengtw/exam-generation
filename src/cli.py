@@ -27,7 +27,7 @@ from src.data_loader import (
     load_performance_standards,
 )
 from src.html_renderer import PlaywrightRenderer
-from src.llm_client import LLMClient, emit_stage, make_stderr_observer
+from src.llm_client import LLMClient, emit_stage, make_render_error_sink, make_stderr_observer
 from src.renderer import render_image
 from src.sampler import sample_params
 from src.schemas import (
@@ -219,6 +219,7 @@ def generate_one(
         img_path = config.output_dir / f"{question_id}.png"
         print(f"  Rendering image: {img_path}", file=sys.stderr)
         question_text = "\n".join(question.題目)
+        _on_render_error, _render_failed = make_render_error_sink(obs)
         emit_stage(obs, "image_agent", "render_image", "start")
         rendered = render_image(
             question.chart_spec.model_dump(),
@@ -227,8 +228,10 @@ def generate_one(
             html_renderer=html_renderer,
             llm_client=client,
             image_generation_mode=image_generation_mode,
+            on_error=_on_render_error,
         )
-        emit_stage(obs, "image_agent", "render_image", "end")
+        if not _render_failed:
+            emit_stage(obs, "image_agent", "render_image", "end")
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
@@ -373,6 +376,7 @@ def generate_with_corrections(
         if question.chart_spec and question.chart_spec != prior_chart_spec:
             img_path = config.output_dir / f"{question_id}.png"
             print(f"  Chart spec changed; re-rendering image: {img_path}", file=sys.stderr)
+            _on_render_error, _render_failed = make_render_error_sink(obs)
             emit_stage(obs, "image_agent", "render_image", "start")
             rendered = render_image(
                 question.chart_spec.model_dump(),
@@ -381,8 +385,10 @@ def generate_with_corrections(
                 html_renderer=html_renderer,
                 llm_client=client,
                 image_generation_mode=image_generation_mode,
+                on_error=_on_render_error,
             )
-            emit_stage(obs, "image_agent", "render_image", "end")
+            if not _render_failed:
+                emit_stage(obs, "image_agent", "render_image", "end")
             if rendered:
                 question.圖片 = f"{question_id}.png"
                 new_chart_image_path = rendered

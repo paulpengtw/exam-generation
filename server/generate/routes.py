@@ -55,6 +55,7 @@ async def preview_generate_endpoint(
     effective_execute_model = params.model_execute or config.model_execute
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
+    _check_image_api_key(params.image_generation_mode, params.subquestion_configs, config)
     return {"prompts": build_prompt_previews(params, config, request.app.state)}
 
 
@@ -102,6 +103,32 @@ def _check_subject_allowed(subject: str) -> None:
         raise HTTPException(
             status_code=422,
             detail=f"subject: subject '{subject}' not in allowlist: [{allowed}]",
+        )
+
+
+def _check_image_api_key(
+    image_generation_mode: str,
+    subquestion_configs_raw: str | None,
+    config: ServerConfig,
+) -> None:
+    """Raise HTTPException(422) when gpt_image is requested but IMAGE_API_KEY is empty."""
+    if config.image_api_key:
+        return
+    needs_gpt = image_generation_mode == "gpt_image"
+    if not needs_gpt and subquestion_configs_raw:
+        try:
+            items = json.loads(subquestion_configs_raw)
+            if isinstance(items, list):
+                needs_gpt = any(
+                    isinstance(item, dict) and item.get("image_generation_mode") == "gpt_image"
+                    for item in items
+                )
+        except Exception:
+            pass
+    if needs_gpt:
+        raise HTTPException(
+            status_code=422,
+            detail="image_generation_mode: gpt_image requires IMAGE_API_KEY to be set on the server",
         )
 
 
@@ -161,6 +188,7 @@ async def generate_endpoint(
     effective_execute_model = model_execute or config.model_execute
     _check_effort_for_model(effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(effort_execute, effective_execute_model, "effort_execute")
+    _check_image_api_key(image_generation_mode, subquestion_configs, config)
     try:
         params = GenerateParams(
             subject=subject,

@@ -275,6 +275,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "agent_panel.response": "Response",
     "agent_panel.retry": "retry",
     "agent_panel.history": "History",
+    "agent_panel.stage_error": "Image generation failed. Please report the complete error message below to the developer.",
+    "agent_panel.stage_error_message_label": "Error details:",
 
     "card.hide_solution": "Hide Solution",
     "card.show_solution": "Show Solution",
@@ -590,6 +592,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "agent_panel.response": "回應",
     "agent_panel.retry": "第 {n} 次重試",
     "agent_panel.history": "歷史紀錄",
+    "agent_panel.stage_error": "圖片生成失敗，請將下方的完整錯誤訊息回報給開發者。",
+    "agent_panel.stage_error_message_label": "錯誤詳情：",
 
     "card.hide_solution": "隱藏解題過程",
     "card.show_solution": "顯示解題過程",
