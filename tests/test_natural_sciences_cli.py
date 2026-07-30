@@ -66,10 +66,11 @@ def _sq_raw(q_type, 題目, 答案, rubric, lc, lp):
 
 @pytest.mark.parametrize("q_type,題目,答案,rubric", _FAMILIES)
 def test_parse_subquestion_keeps_valid_codes_per_family(q_type, 題目, 答案, rubric) -> None:
+    # "Aa-IV-3" (ASCII IV input) canonicalizes to "Aa-Ⅳ-3" (Unicode) after issue #289.
     raw = _sq_raw(q_type, 題目, 答案, rubric, ["Aa-IV-3"], ["pa-Ⅳ-1"])
     sq = _parse_subquestion(raw, "q1", _params(q_type), 1)
     assert sq is not None
-    assert [r.編碼 for r in sq.學習內容] == ["Aa-IV-3"]  # kept, not pool-replaced
+    assert [r.編碼 for r in sq.學習內容] == ["Aa-Ⅳ-3"]  # kept, not pool-replaced
     assert [r.編碼 for r in sq.學習表現] == ["pa-Ⅳ-1"]
 
 
@@ -112,7 +113,8 @@ def test_parse_subquestion_drops_only_invalid_codes_when_mixed() -> None:
     )
     sq = _parse_subquestion(raw, "q1", _params(), 1)
     assert sq is not None
-    assert [r.編碼 for r in sq.學習內容] == ["Aa-IV-3"]  # invalid dropped, no fallback
+    # "Aa-IV-3" (ASCII input) canonicalizes to "Aa-Ⅳ-3" (Unicode) after issue #289.
+    assert [r.編碼 for r in sq.學習內容] == ["Aa-Ⅳ-3"]  # invalid dropped, no fallback
     assert [r.編碼 for r in sq.學習表現] == ["pa-Ⅳ-1"]
 
 

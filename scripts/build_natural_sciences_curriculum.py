@@ -64,6 +64,26 @@ HIGH_SCHOOL_SUBJECTS = {
     "E": "地球科學",
 }
 
+# 第四學習階段 (國中) topic-letter → 科目 mapping.
+# Added alongside the stage-Ⅴ normalisation (issue #289) to make the build
+# script reproduce the manual 科目 fix from commit 8a263a9 exactly.
+# Letters not in this map (M, N — 跨科 topics) keep 科目="" so they appear in
+# every subject filter.
+FOURTH_STAGE_SUBJECT_PREFIXES = {
+    "A": "理化",
+    "B": "理化",
+    "C": "理化",
+    "E": "理化",
+    "J": "理化",
+    "K": "理化",
+    "D": "生物",
+    "G": "生物",
+    "L": "生物",
+    "F": "地球科學",
+    "H": "地球科學",
+    "I": "地球科學",
+}
+
 EXAMPLE_MARKER = "(我是範例)"
 CORE_CODE_RE = re.compile(r"^(自S-[EJU]-[ABC][1-3])")
 DASH_TRANSLATION = str.maketrans(
@@ -214,9 +234,11 @@ def note_text(parts: list[tuple[str, str]]) -> str:
 
 
 def subject_for_content(code: str, stage: str) -> str:
-    if stage != "第五學習階段":
-        return ""
-    return HIGH_SCHOOL_SUBJECTS.get(code[:1], "")
+    if stage == "第五學習階段":
+        return HIGH_SCHOOL_SUBJECTS.get(code[:1], "")
+    if stage == "第四學習階段":
+        return FOURTH_STAGE_SUBJECT_PREFIXES.get(code[:1], "")
+    return ""
 
 
 def data_rows(workbook: XlsxWorkbook, sheet_name: str) -> list[tuple[int, list[str]]]:
@@ -264,7 +286,7 @@ def build_learning_content(workbook: XlsxWorkbook) -> dict:
             if is_blank(source_row) or is_example(source_row):
                 continue
 
-            code = cell(source_row, 3)
+            code = normalize_code_for_lookup(cell(source_row, 3))
             description = text_cell(source_row, 4)
             if not code or not description:
                 raise ValueError(f"{sheet_name}!{row_number} has incomplete learning content")
