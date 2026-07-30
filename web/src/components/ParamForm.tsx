@@ -659,7 +659,7 @@ export default function ParamForm({
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
   const [models, setModels] = useState<AvailableModels | null>(null);
   const [modelsResolved, setModelsResolved] = useState(false);
-  const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(false);
+  const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(true);
   const previewRequestedRef = useRef(false);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
