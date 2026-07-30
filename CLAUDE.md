@@ -396,6 +396,7 @@ Orthogonal to `render_mode`, the caller-controlled `image_generation_mode` kwarg
 
 - `"html"` (default) — use the path described above (matplotlib for `render_mode: "chart"`, Playwright for `render_mode: "html"`).
 - `"gpt_image"` — bypass both deterministic paths and send the image spec to `LLMClient.generate_image()` (model from `IMAGE_MODEL`, default `gpt-image2`). Requires `IMAGE_API_KEY`; falls back to `None` (no image) on failure rather than to the Playwright path.
+> **UI default vs. API/CLI default:** The web form UI defaults `image_generation_mode` to `gpt_image`; the API and CLI still default to `html`.
 
 Math (`src/cli.py`), social studies (`src/social_studies/cli.py`), and natural sciences (`src/natural_sciences/cli.py`) all thread `image_generation_mode` from the CLI flag `--image-generation-mode` and the HTTP query param of the same name through to `render_image()`. Social-studies web rows can also send per-小題 `image_generation_mode` inside `subquestion_configs`; that value overrides the renderer only for that 小題, while the request-level `image_generation_mode` remains the fallback. The renderer does not trust model-emitted per-小題 image modes over submitted settings.
 

@@ -430,6 +430,7 @@ function drawQuestionSubset<T>(
 
 const TEXT_HINT = "500 字";
 const OPTION_HINT = "50 字";
+const DEFAULT_CONTENT_TYPE = "含圖片";
 
 function defaultFormFields(
   subject: string,
@@ -463,7 +464,8 @@ function defaultFormFields(
       isCurriculumSubject &&
       Array.isArray(contentTypes) &&
       contentTypes.length > 0
-        ? contentTypes[0].value
+        ? (contentTypes.find((t) => t.value === DEFAULT_CONTENT_TYPE)?.value ??
+            contentTypes[0].value)
         : "純文字",
     customContentType: "",
     context: defaultNaturalSciencesContext,
@@ -473,7 +475,7 @@ function defaultFormFields(
     coverageMode: "balanced",
     skipVerify: false,
     disableReferenceFewshot: false,
-    imageGenerationMode: "html",
+    imageGenerationMode: "gpt_image",
     difficulty: "",
     subjectFilter: "",
     passage: TEXT_HINT,
@@ -685,7 +687,7 @@ export default function ParamForm({
   const [formFields, setFormFields] = useState<FormFields>(() => ({
     grade: fromInit<number | "">("grade", ""),
     style: fromInit<string>("style", ""),
-    contentType: fromInit<string>("content_type", "純文字"),
+    contentType: fromInit<string>("content_type", DEFAULT_CONTENT_TYPE),
     customContentType: "",
     context: fromInit<string[]>("context", []),
     setType: fromInit<string>("set_type", ""),
@@ -694,7 +696,7 @@ export default function ParamForm({
     coverageMode: "balanced",
     skipVerify: fromInit<boolean>("skip_verify", false),
     disableReferenceFewshot: fromInit<boolean>("disable_reference_fewshot", false),
-    imageGenerationMode: fromInit<"html" | "gpt_image">("image_generation_mode", "html"),
+    imageGenerationMode: fromInit<"html" | "gpt_image">("image_generation_mode", "gpt_image"),
     difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
     subjectFilter: (() => {
       const value = fromInit<string | string[]>("subject_filter", "");
@@ -956,7 +958,7 @@ export default function ParamForm({
       qType: fromInit<string[]>("q_type", []),
       imageGenerationMode: fromInit<"html" | "gpt_image">(
         "image_generation_mode",
-        "html",
+        "gpt_image",
       ),
       difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
       passage: fromInit<string>("passage", TEXT_HINT),
@@ -1009,9 +1011,11 @@ export default function ParamForm({
             isCurriculumSubject &&
               Array.isArray(contentTypes) &&
               contentTypes.length > 0
-              ? contentTypes[0].value
+              ? (contentTypes.find((t) => t.value === DEFAULT_CONTENT_TYPE)?.value ??
+                  contentTypes[0].value)
               : "純文字",
           );
+          markUserChosen("content_type");
         }
         setField("customContentType", "");
         if (s.題型種類.length > 0 && ip.set_type === undefined) setField("setType", s.題型種類[0].value);

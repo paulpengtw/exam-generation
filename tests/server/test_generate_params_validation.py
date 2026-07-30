@@ -114,6 +114,13 @@ def test_generate_params_defaults_count_to_one() -> None:
     assert params.count == 1
 
 
+def test_generate_params_defaults_image_generation_mode_to_html() -> None:
+    """Backend/CLI default for image_generation_mode stays 'html'; only the web form UI defaults to gpt_image."""
+    params = GenerateParams()
+
+    assert params.image_generation_mode == "html"
+
+
 def test_generate_params_rejects_count_below_one() -> None:
     with pytest.raises(ValidationError, match="count"):
         GenerateParams(count=0)
