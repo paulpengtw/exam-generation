@@ -28,12 +28,15 @@ _DEFAULT_MODELS_ALLOWED: tuple[str, ...] = (
 _FIVE_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "xhigh", "max"]
 _FOUR_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "max"]
 
+_THREE_EFFORT_LEVELS: list[str] = ["low", "medium", "high"]
+
 _EFFORT_LEVELS: dict[str, list[str]] = {
     "claude-opus-5": _FIVE_EFFORT_LEVELS,
     "claude-fable-5": _FIVE_EFFORT_LEVELS,
     "claude-sonnet-5": _FIVE_EFFORT_LEVELS,
     "claude-sonnet-4-6": _FOUR_EFFORT_LEVELS,
     "claude-opus-4-6": _FOUR_EFFORT_LEVELS,
+    "gemini-3.1-pro-preview": _THREE_EFFORT_LEVELS,
 }
 
 

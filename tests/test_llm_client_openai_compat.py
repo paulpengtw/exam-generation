@@ -1,12 +1,15 @@
-"""Tests for LLMClient._openai_compat_call (issue #337)."""
+"""Tests for LLMClient._openai_compat_call (issue #337 + #340)."""
 
 from __future__ import annotations
 
 import base64
+import logging
 from types import SimpleNamespace
 
+import pytest
+
 from src.config import Config
-from src.llm_client import LLMClient, _openai_usage_to_internal
+from src.llm_client import LLMClient, _openai_usage_to_internal, _warned_effort_drops
 
 
 # ---------------------------------------------------------------------------
@@ -220,3 +223,120 @@ def test_openai_usage_to_internal_no_details() -> None:
     )
     result = _openai_usage_to_internal(u)
     assert result == {"input": 100, "output": 50, "cache_read": 0, "cache_creation": 0}
+
+
+# ---------------------------------------------------------------------------
+# 7. Per-provider effort kwargs (issue #340)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=False)
+def reset_warned_effort_drops():
+    """Clear module-level warning-suppression set before/after each test."""
+    _warned_effort_drops.clear()
+    yield
+    _warned_effort_drops.clear()
+
+
+def _make_compat_client_ex(
+    model: str = "gemini-3.1-pro-preview",
+    content: str | None = '{"ok": true}',
+    effort_execute: str = "medium",
+    temperature: float | None = None,
+) -> tuple[LLMClient, _RecordingCompletions]:
+    """Extended helper that also accepts effort_execute."""
+    provider = "gemini" if model.startswith("gemini-") else "openai"
+    cfg = Config(
+        api_key="x",
+        gemini_api_key="g-key",
+        openai_api_key="o-key",
+        llm_stream=False,
+        model_execute=model,
+        effort_execute=effort_execute,
+        temperature=temperature,
+    )
+    client = LLMClient(cfg)
+    fake = _RecordingCompletions(content=content)
+    client._compat_clients[provider] = SimpleNamespace(
+        chat=SimpleNamespace(completions=fake)
+    )
+    return client, fake
+
+
+def test_gemini_medium_effort_sends_reasoning_effort(reset_warned_effort_drops) -> None:
+    """gemini + effort=medium → reasoning_effort='medium', no extra_body."""
+    client, fake = _make_compat_client_ex(
+        model="gemini-3.1-pro-preview", effort_execute="medium"
+    )
+    client.generate("sys", "user", purpose="generate")
+    assert len(fake.calls) == 1
+    kw = fake.calls[0]
+    assert kw.get("reasoning_effort") == "medium"
+    assert "extra_body" not in kw
+
+
+def test_openai_high_effort_sends_reasoning_effort(reset_warned_effort_drops) -> None:
+    """openai (gpt-5.2) + effort=high → reasoning_effort='high', no extra_body."""
+    client, fake = _make_compat_client_ex(model="gpt-5.2", effort_execute="high")
+    client.generate("sys", "user", purpose="generate")
+    assert len(fake.calls) == 1
+    kw = fake.calls[0]
+    assert kw.get("reasoning_effort") == "high"
+    assert "extra_body" not in kw
+
+
+def test_gemini_unsupported_effort_omits_reasoning_effort_and_warns_once(
+    caplog, reset_warned_effort_drops
+) -> None:
+    """effort='max' on gemini → no reasoning_effort, no extra_body; exactly 1 WARNING across 2 calls."""
+    client, fake = _make_compat_client_ex(
+        model="gemini-3.1-pro-preview", effort_execute="max"
+    )
+    with caplog.at_level(logging.WARNING, logger="src.llm_client"):
+        client.generate("sys", "user", purpose="generate")
+        client.generate("sys", "user", purpose="generate")
+
+    assert len(fake.calls) == 2
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 1
+
+    for call_kw in fake.calls:
+        assert "reasoning_effort" not in call_kw
+        assert "extra_body" not in call_kw
+
+
+def test_gemini_call_has_max_tokens_not_max_completion_tokens(
+    reset_warned_effort_drops,
+) -> None:
+    """Gemini OpenAI-compat layer uses max_tokens=8192, not max_completion_tokens."""
+    client, fake = _make_compat_client_ex(model="gemini-3.1-pro-preview")
+    client.generate("sys", "user")
+    kw = fake.calls[0]
+    assert kw.get("max_tokens") == 8192
+    assert "max_completion_tokens" not in kw
+
+
+def test_openai_call_has_max_completion_tokens_not_max_tokens(
+    reset_warned_effort_drops,
+) -> None:
+    """OpenAI (gpt-5.2) uses max_completion_tokens=8192, not max_tokens."""
+    client, fake = _make_compat_client_ex(model="gpt-5.2")
+    client.generate("sys", "user")
+    kw = fake.calls[0]
+    assert kw.get("max_completion_tokens") == 8192
+    assert "max_tokens" not in kw
+
+
+def test_gemini3_drops_temperature(reset_warned_effort_drops) -> None:
+    """gemini-3.x models reject sampling → temperature kwarg dropped."""
+    client, fake = _make_compat_client_ex(
+        model="gemini-3.1-pro-preview", temperature=0.7
+    )
+    client.generate("sys", "user")
+    assert "temperature" not in fake.calls[0]
+
+
+def test_gpt4o_forwards_temperature(reset_warned_effort_drops) -> None:
+    """gpt-4o accepts sampling → temperature forwarded."""
+    client, fake = _make_compat_client_ex(model="gpt-4o", temperature=0.7)
+    client.generate("sys", "user")
+    assert fake.calls[0].get("temperature") == pytest.approx(0.7)

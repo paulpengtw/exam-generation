@@ -24,21 +24,43 @@ logger = logging.getLogger(__name__)
 # suppression — avoids log spam on repeated observer failures).
 _warned_emit_stage_observers: set[int] = set()
 
+# (provider, effort) pairs for which we have already emitted the "effort
+# parameter dropped" warning — avoids log spam on repeated calls.
+_warned_effort_drops: set[tuple[str, str]] = set()
+
 _SAMPLING_REJECT_PREFIXES: tuple[str, ...] = (
     "claude-opus-5",
     "claude-sonnet-5",
     "claude-fable-5",
     "claude-opus-4-7",
     "claude-opus-4-8",
+    # issue #340: gemini-3.x and OpenAI o-series / gpt-5.x reasoning models
+    "gemini-3",
+    "gpt-5",
+    "o1",
+    "o3",
+    "o4",
 )
 
 
 def _accepts_sampling(model: str) -> bool:
     """Return False for models known to reject sampling parameters."""
     for prefix in _SAMPLING_REJECT_PREFIXES:
-        if model == prefix or model.startswith(prefix + "-"):
+        if model == prefix or model.startswith(prefix + "-") or model.startswith(prefix + "."):
             return False
     return True
+
+
+def _max_tokens_kwargs(provider: str) -> dict:
+    """Return the appropriate token-limit kwarg for the given provider.
+
+    OpenAI's gpt-5.x / o-series reasoning models require ``max_completion_tokens``
+    instead of ``max_tokens``.  All other providers (including Gemini's
+    OpenAI-compat surface) accept the standard ``max_tokens`` key.
+    """
+    if provider == "openai":
+        return {"max_completion_tokens": 8192}
+    return {"max_tokens": 8192}
 
 
 Provider = Literal["anthropic", "gemini", "openai"]
@@ -327,13 +349,33 @@ class LLMClient:
         )
         return {}
 
-    def _effort_kwargs(self, purpose: str) -> dict:
-        """Return extra_body with output_config.effort based on call purpose.
+    def _effort_kwargs(self, purpose: str, provider: str = "anthropic") -> dict:
+        """Return effort kwargs appropriate for the provider and call purpose.
 
         plan purpose → effort_plan; everything else → effort_execute.
+
+        Anthropic: wraps effort in ``{"extra_body": {"output_config": {"effort": ...}}}``.
+        gemini / openai: maps low/medium/high to ``{"reasoning_effort": effort}``.
+            Any other effort value is unsupported on these providers — the parameter
+            is omitted entirely and a WARNING is emitted once per (provider, effort)
+            pair (module-level ``_warned_effort_drops`` suppresses repeats).
         """
         effort = self.config.effort_plan if purpose == "plan" else self.config.effort_execute
-        return {"extra_body": {"output_config": {"effort": effort}}}
+        if provider == "anthropic":
+            return {"extra_body": {"output_config": {"effort": effort}}}
+        # gemini / openai — reasoning_effort only accepts low / medium / high
+        if effort in ("low", "medium", "high"):
+            return {"reasoning_effort": effort}
+        key = (provider, effort)
+        if key not in _warned_effort_drops:
+            _warned_effort_drops.add(key)
+            logger.warning(
+                "reasoning_effort omitted for provider=%s effort=%r — "
+                "value is not in ('low', 'medium', 'high'); parameter dropped",
+                provider,
+                effort,
+            )
+        return {}
 
     def _openai_compat_client(self, provider: str) -> OpenAI:
         if provider in self._compat_clients:
@@ -511,8 +553,9 @@ class LLMClient:
         response = oc.chat.completions.create(
             model=model,
             messages=messages,  # type: ignore[arg-type]
-            max_tokens=8192,
+            **_max_tokens_kwargs(provider),
             **self._temperature_kwargs(model),
+            **self._effort_kwargs(purpose, provider),
         )
         choices = response.choices if response.choices else []
         content = (choices[0].message.content or "") if choices else ""

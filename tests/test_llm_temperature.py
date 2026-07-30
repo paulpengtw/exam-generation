@@ -58,6 +58,12 @@ def test_config_temperature_from_env_07(monkeypatch) -> None:
     "claude-opus-4-7-20250601",        # dated variant, issue spec example
     "claude-opus-4-8",
     "claude-opus-4-8-20250701",
+    # issue #340 additions — gemini/openai reasoning models reject sampling
+    "gemini-3.1-pro-preview",          # dot separator
+    "gpt-5.2",                         # dot separator
+    "o3-mini",
+    "o4-mini",
+    "o1",
 ])
 def test_accepts_sampling_false_for_rejected_models(model: str) -> None:
     assert _accepts_sampling(model) is False
@@ -69,6 +75,8 @@ def test_accepts_sampling_false_for_rejected_models(model: str) -> None:
     "claude-opus-4-5",
     "claude-haiku-3-5",
     "gpt-4o",
+    # issue #340 additions — these DO accept sampling
+    "gemini-2.5-flash",
 ])
 def test_accepts_sampling_true_for_normal_models(model: str) -> None:
     assert _accepts_sampling(model) is True
