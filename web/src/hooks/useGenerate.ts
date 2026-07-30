@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
+import * as Sentry from "@sentry/react";
 
 import { useAuthStore } from "../store/authStore";
+import { isSentryEnabled } from "../sentry";
 import type { GenerateParams } from "../api/generated/contract";
 
 export type { GenerateParams };
@@ -503,7 +505,10 @@ export function useGenerate(): UseGenerateReturn {
         setFinishedAt(Date.now());
         throw err instanceof Error ? err : new FatalStreamError(String(err));
       },
-    }).catch(() => {
+    }).catch((err: unknown) => {
+      if (err instanceof Error && err.name !== "AbortError" && isSentryEnabled()) {
+        Sentry.captureException(err, { tags: { source: "fetchEventSource" } });
+      }
       // Stream terminated (abort or fatal error). State already updated.
     });
   }, []);
