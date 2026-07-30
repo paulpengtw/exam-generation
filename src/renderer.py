@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import platform
+import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import matplotlib
@@ -23,8 +26,12 @@ _CJK_FONTS = [
 ]
 
 
-def _setup_chinese_font() -> None:
-    """Configure matplotlib to use a CJK font for Chinese labels."""
+def _setup_chinese_font() -> str | None:
+    """Configure matplotlib to use a CJK font for Chinese labels.
+
+    Returns the name of the selected font, or None when no CJK font is found.
+    Emits a warning to stderr on exhaustion so deploy logs surface the gap.
+    """
     if platform.system() == "Darwin":
         # macOS has PingFang built-in
         preferred = ["PingFang TC", "Heiti TC"] + _CJK_FONTS
@@ -36,15 +43,37 @@ def _setup_chinese_font() -> None:
             matplotlib.font_manager.findfont(font, fallback_to_default=False)
             plt.rcParams["font.sans-serif"] = [font] + plt.rcParams["font.sans-serif"]
             plt.rcParams["axes.unicode_minus"] = False
-            return
+            return font
         except Exception:
             continue
 
-    # Fallback: just disable minus sign issue
+    # Fallback: warn and disable minus sign issue
+    print(
+        "WARNING: No CJK font found. Chinese chart labels will render as tofu boxes (□□□). "
+        f"Fonts tried: {', '.join(preferred)}",
+        file=sys.stderr,
+    )
     plt.rcParams["axes.unicode_minus"] = False
+    return None
 
 
-_setup_chinese_font()
+CJK_FONT: str | None = _setup_chinese_font()
+
+
+def report_cjk_font_status(logger: logging.Logger) -> None:
+    """Log CJK font availability to *logger*; called from server lifespan on startup.
+
+    Logs logger.error when no CJK font was found (container image fault).
+    Does NOT abort startup — matplotlib charts are one render mode among several.
+    """
+    if CJK_FONT is None:
+        logger.error(
+            "CJK font unavailable: Chinese chart labels will render as tofu boxes. "
+            "Fonts tried: %s. Install one in the container image to fix.",
+            ", ".join(_CJK_FONTS),
+        )
+    else:
+        logger.info("CJK font active: %s", CJK_FONT)
 
 
 def render_chart(chart_spec: dict, output_path: str | Path) -> str | None:
@@ -276,6 +305,7 @@ def render_image(
     html_renderer=None,
     llm_client=None,
     image_generation_mode: str = "html",
+    on_error: Callable[[str], None] | None = None,
 ) -> str | None:
     """Render a question image from an ImageSpec dict and save as PNG.
 
@@ -290,7 +320,10 @@ def render_image(
 
     if image_generation_mode == "gpt_image":
         if llm_client is None:
-            print("  Warning: gpt_image mode requires LLMClient", file=sys.stderr)
+            _msg = "gpt_image mode requires LLMClient"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
         try:
             prompt = _build_gpt_image_prompt(image_spec, question_text)
@@ -298,11 +331,16 @@ def render_image(
             return llm_client.generate_image(prompt, output_path)
         except Exception as e:
             print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
+            if on_error is not None:
+                on_error(str(e))
             return None
 
     if render_mode == "gpt_image":
         if llm_client is None:
-            print("  Warning: render_mode='gpt_image' requires LLMClient", file=sys.stderr)
+            _msg = "render_mode='gpt_image' requires LLMClient"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
         try:
             prompt = _build_gpt_image_prompt(image_spec, question_text)
@@ -310,6 +348,8 @@ def render_image(
             return llm_client.generate_image(prompt, output_path)
         except Exception as e:
             print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
+            if on_error is not None:
+                on_error(str(e))
             return None
 
     if render_mode == "chart":
@@ -320,15 +360,24 @@ def render_image(
         if not html and llm_client is not None:
             html = _generate_html_via_llm(image_spec, question_text, llm_client)
         if not html:
-            print("  Warning: no HTML content to render", file=sys.stderr)
+            _msg = "no HTML content to render (HTML generation failed or spec missing html)"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
         if html_renderer is None:
-            print("  Warning: html render_mode requires PlaywrightRenderer", file=sys.stderr)
+            _msg = "html render_mode requires PlaywrightRenderer (renderer not started)"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
         try:
             return html_renderer.render(html, output_path)
         except Exception as e:
-            print(f"  Warning: Playwright render failed: {e}", file=sys.stderr)
+            _msg = f"Playwright render failed: {e}"
+            print(f"  Warning: {_msg}", file=sys.stderr)
+            if on_error is not None:
+                on_error(_msg)
             return None
 
     print(f"  Warning: unknown render_mode '{render_mode}'", file=sys.stderr)

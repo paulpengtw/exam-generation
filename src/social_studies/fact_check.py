@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from typing import Protocol
 
 from src.llm_client import Citation, extract_json
@@ -113,6 +114,7 @@ def fact_check_question(
     *,
     provider: str,
     max_uses: int,
+    on_error: Callable[[str], None] | None = None,
 ) -> FactCheckResult | None:
     """Run the web-search fact-check pass. Fail-open.
 
@@ -142,20 +144,29 @@ def fact_check_question(
             purpose="fact_check",
         )
     except Exception as exc:  # noqa: BLE001 — fail-open by design
+        msg = f"fact_check_question tool call failed: {exc}"
         logger.warning("fact_check_question tool call failed: %s", exc)
+        if on_error is not None:
+            on_error(msg)
         return None
 
     try:
         payload = extract_json(text)
     except Exception as exc:  # noqa: BLE001 — fail-open by design
+        msg = f"fact_check_question could not parse JSON envelope: {exc}"
         logger.warning("fact_check_question could not parse JSON envelope: %s", exc)
+        if on_error is not None:
+            on_error(msg)
         return None
 
     verified_raw = payload.get("verified") if isinstance(payload, dict) else None
     if not isinstance(verified_raw, bool):
+        msg = f"fact_check_question JSON missing boolean 'verified' field: {payload!r}"
         logger.warning(
             "fact_check_question JSON missing boolean 'verified' field: %r", payload,
         )
+        if on_error is not None:
+            on_error(msg)
         return None
     issues_raw = payload.get("issues") if isinstance(payload, dict) else []
     issues: list[str] = [str(x) for x in issues_raw] if isinstance(issues_raw, list) else []
@@ -167,5 +178,8 @@ def fact_check_question(
             issues=issues,
         )
     except Exception as exc:  # noqa: BLE001 — fail-open by design
+        msg = f"fact_check_question could not construct FactCheckResult: {exc}"
         logger.warning("fact_check_question could not construct FactCheckResult: %s", exc)
+        if on_error is not None:
+            on_error(msg)
         return None

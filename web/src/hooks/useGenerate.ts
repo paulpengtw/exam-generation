@@ -82,9 +82,9 @@ export type LlmCallEvent =
   | { type: "thinking"; purpose: string; agent: string; text: string }
   | { type: "content"; purpose: string; agent: string; text: string }
   | { type: "response"; purpose: string; agent: string; model: string; usage?: unknown }
-  | { type: "stage"; agent: string; stage: string; status: "start" | "end"; ts: number; retry?: number };
+  | { type: "stage"; agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
 
-export type AgentStatus = "idle" | "running" | "done";
+export type AgentStatus = "idle" | "running" | "done" | "error";
 
 export interface AgentLane {
   agent: string;
@@ -93,6 +93,7 @@ export interface AgentLane {
   streamingThinking: string;
   streamingContent: string;
   stageHistory: Array<{ stage: string; startedAt: number; endedAt?: number; retry?: number }>;
+  errorMessage?: string;
 }
 
 function purposeToAgent(purpose: string): string {
@@ -247,6 +248,12 @@ function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
         lane.status = "running";
         lane.currentStage = ev.stage;
         lane.stageHistory.push({ stage: ev.stage, startedAt: ev.ts, retry: ev.retry });
+      } else if (ev.status === "error") {
+        lane.status = "error";
+        lane.currentStage = null;
+        lane.errorMessage = ev.message;
+        const last = lane.stageHistory[lane.stageHistory.length - 1];
+        if (last && last.stage === ev.stage) last.endedAt = ev.ts;
       } else {
         lane.status = "done";
         lane.currentStage = null;
@@ -418,8 +425,8 @@ export function useGenerate(): UseGenerateReturn {
           }
           case "stage": {
             try {
-              const d = JSON.parse(ev.data) as { agent: string; stage: string; status: "start" | "end"; ts: number; retry?: number };
-              setLlmCalls((prev) => [...prev, { type: "stage", agent: d.agent, stage: d.stage, status: d.status, ts: d.ts, retry: d.retry }]);
+              const d = JSON.parse(ev.data) as { agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
+              setLlmCalls((prev) => [...prev, { type: "stage", agent: d.agent, stage: d.stage, status: d.status, ts: d.ts, retry: d.retry, message: d.message }]);
             } catch { /* ignore */ }
             break;
           }

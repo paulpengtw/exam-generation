@@ -129,6 +129,7 @@ export interface FormFields {
   disableReferenceFewshot: boolean;
   imageGenerationMode: "html" | "gpt_image";
   difficulty: "" | "easy" | "medium" | "hard";
+  reportingScale: string;
   subjectFilter: string;
   passage: string;
   textWordLimit: number | null;
@@ -481,6 +482,7 @@ function defaultFormFields(
     disableReferenceFewshot: false,
     imageGenerationMode: "gpt_image",
     difficulty: "",
+    reportingScale: "",
     subjectFilter: "",
     passage: TEXT_HINT,
     textWordLimit: null,
@@ -659,7 +661,7 @@ export default function ParamForm({
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
   const [models, setModels] = useState<AvailableModels | null>(null);
   const [modelsResolved, setModelsResolved] = useState(false);
-  const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(false);
+  const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(true);
   const previewRequestedRef = useRef(false);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
@@ -704,6 +706,7 @@ export default function ParamForm({
     disableReferenceFewshot: fromInit<boolean>("disable_reference_fewshot", false),
     imageGenerationMode: fromInit<"html" | "gpt_image">("image_generation_mode", "gpt_image"),
     difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
+    reportingScale: fromInit<string>("reporting_scale", ""),
     subjectFilter: (() => {
       const value = fromInit<string | string[]>("subject_filter", "");
       return Array.isArray(value) ? (value[0] ?? "") : value;
@@ -758,6 +761,7 @@ export default function ParamForm({
     disableReferenceFewshot,
     imageGenerationMode,
     difficulty,
+    reportingScale,
     subjectFilter,
     passage,
     textWordLimit,
@@ -1441,7 +1445,8 @@ export default function ParamForm({
       skip_verify: skipVerify,
       disable_reference_fewshot: disableReferenceFewshot,
       image_generation_mode: imageGenerationMode,
-      difficulty: difficulty === "" ? undefined : difficulty,
+      difficulty: subject !== "natural_sciences" ? (difficulty === "" ? undefined : difficulty) : undefined,
+      reporting_scale: subject === "natural_sciences" ? (reportingScale === "" ? undefined : reportingScale) : undefined,
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
       text_word_limit: supportsTextWordLimit ? (textWordLimit ?? undefined) : undefined,
@@ -1567,7 +1572,7 @@ export default function ParamForm({
         subject_filter: randomSubjectFilter ?? (baseParams.subject_filter ? [baseParams.subject_filter] : undefined),
         sub_context: randomSubContext?.[0] ?? baseParams.sub_context,
         science_competency: randomScienceCompetency ?? baseParams.science_competency,
-        difficulty: baseParams.difficulty ?? "medium",
+        difficulty: subject !== "natural_sciences" ? (baseParams.difficulty ?? "medium") : undefined,
         model_plan: baseParams.model_plan ?? models?.defaults.plan,
         model_execute: baseParams.model_execute ?? models?.defaults.execute,
         learning_performance: questionLp,
@@ -1648,7 +1653,8 @@ export default function ParamForm({
         badge: coreQuestionResolution === "generated" ? t("form.confirm_core_question_pre_generated") : undefined,
       },
       { label: t("form.confirm_grade"), value: String(p.grade), subjects: allSubjects },
-      { label: t("form.confirm_difficulty"), value: p.difficulty, subjects: allSubjects, kind: "defaulted", defaultValue: "medium" },
+      { label: t("form.confirm_difficulty"), value: p.difficulty, subjects: ["math", "social_studies"], kind: "defaulted", defaultValue: "medium" },
+      { label: t("form.confirm_reporting_scale"), value: p.reporting_scale, subjects: ["natural_sciences"], kind: "defaulted", defaultValue: t("form.confirm_random") },
       { label: t("form.confirm_subject_filter"), value: p.subject_filter, subjects: ["math", "social_studies"], kind: subject === "social_studies" ? "sampled" : "absent" },
       { label: t("form.confirm_count"), value: String(p.count), subjects: allSubjects },
       {
@@ -2118,22 +2124,46 @@ export default function ParamForm({
         </select>
       </div>
 
-      <div>
-        <label htmlFor="difficulty" className="block text-sm font-medium">
-          {t("form.difficulty")}
-        </label>
-        <select
-          id="difficulty"
-          value={difficulty}
-          onChange={(e) => setField("difficulty", e.target.value as "" | "easy" | "medium" | "hard")}
-          className="mt-1 block w-full border rounded px-2 py-1"
-        >
-          <option value="">{t("form.difficulty_default")}</option>
-          <option value="easy">{t("form.difficulty_easy")}</option>
-          <option value="medium">{t("form.difficulty_medium")}</option>
-          <option value="hard">{t("form.difficulty_hard")}</option>
-        </select>
-      </div>
+      {subject === "natural_sciences" ? (
+        <div>
+          <label htmlFor="reporting_scale" className="block text-sm font-medium">
+            {t("form.reporting_scale")}
+          </label>
+          <select
+            id="reporting_scale"
+            value={reportingScale}
+            onChange={(e) => setField("reportingScale", e.target.value)}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            <option value="">（隨機）</option>
+            <option value="1c">等級 1c</option>
+            <option value="1b">等級 1b</option>
+            <option value="1a">等級 1a</option>
+            <option value="2">等級 2</option>
+            <option value="3">等級 3</option>
+            <option value="4">等級 4</option>
+            <option value="5">等級 5</option>
+            <option value="6">等級 6</option>
+          </select>
+        </div>
+      ) : (
+        <div>
+          <label htmlFor="difficulty" className="block text-sm font-medium">
+            {t("form.difficulty")}
+          </label>
+          <select
+            id="difficulty"
+            value={difficulty}
+            onChange={(e) => setField("difficulty", e.target.value as "" | "easy" | "medium" | "hard")}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            <option value="">{t("form.difficulty_default")}</option>
+            <option value="easy">{t("form.difficulty_easy")}</option>
+            <option value="medium">{t("form.difficulty_medium")}</option>
+            <option value="hard">{t("form.difficulty_hard")}</option>
+          </select>
+        </div>
+      )}
 
       {schemas.科目 && schemas.科目.length > 0 && (
         <div>
@@ -2628,7 +2658,7 @@ export default function ParamForm({
                     </div>
                     {subject === "natural_sciences" && (
                       <div>
-                        <label className="block text-xs text-gray-500">報告等級</label>
+                        <label className="block text-xs text-gray-500">{t("form.reporting_scale")}</label>
                         <select
                           value={cfg.reporting_scale || ""}
                           onChange={(e) => updateSubquestionConfig(i, { reporting_scale: e.target.value || undefined })}

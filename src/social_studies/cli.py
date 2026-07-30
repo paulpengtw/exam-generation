@@ -19,7 +19,7 @@ from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
 from src.config import Config
 from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.html_renderer import PlaywrightRenderer
-from src.llm_client import LLMClient, emit_stage, make_stderr_observer
+from src.llm_client import LLMClient, emit_stage, make_render_error_sink, make_stderr_observer
 from src.renderer import render_image
 from src.social_studies.context_builder import (
     _LEARNING_STAGE,
@@ -424,6 +424,7 @@ def _render_subquestion_images(
             part for part in (question.文本, sub.題目) if part
         )
         print(f"  Rendering subquestion image: {img_path}", file=sys.stderr)
+        _on_render_error, _render_failed = make_render_error_sink(obs)
         emit_stage(obs, "image_agent", "render_image", "start")
         rendered = render_image(
             sub.chart_spec.model_dump(),
@@ -432,8 +433,10 @@ def _render_subquestion_images(
             html_renderer=html_renderer,
             llm_client=client,
             image_generation_mode=mode,
+            on_error=_on_render_error,
         )
-        emit_stage(obs, "image_agent", "render_image", "end")
+        if not _render_failed:
+            emit_stage(obs, "image_agent", "render_image", "end")
         if rendered:
             sub.圖片 = img_path.name
             rendered_paths.append(rendered)

@@ -31,6 +31,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.ns_title": "Natural Sciences 自然科學",
     "subject_select.ns_desc": "PISA Science blended with Taiwan natural sciences curriculum",
 
+    "app.title": "素養試題 AI Examgen",
+    "app.title_staging": "[Staging] 素養試題 AI Examgen",
+
     "staging.banner": "⚠ Staging environment — data may be reset at any time.",
 
     "feedback.button_aria": "Report a problem",
@@ -93,6 +96,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.difficulty_easy": "Easy",
     "form.difficulty_medium": "Medium",
     "form.difficulty_hard": "Hard",
+    "form.reporting_scale": "Reporting Scale",
     "form.style": "Style",
     "form.content_type": "Question content type",
     "form.content_type_customized": "Customized",
@@ -156,6 +160,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_core_question_generation_decides": "Will be decided during generation",
     "form.confirm_grade": "Grade",
     "form.confirm_difficulty": "Difficulty",
+    "form.confirm_reporting_scale": "Reporting Scale",
     "form.confirm_subject_filter": "Subject filter",
     "form.confirm_style": "Style",
     "form.confirm_content_type": "Content type",
@@ -207,7 +212,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_subq_q_word_limit": "Question word limit:",
     "form.confirm_subq_o_word_limit": "Option word limit:",
     "form.confirm_subq_text_word_limit": "Text word limit:",
-    "form.confirm_subq_reporting_scale": "報告等級:",
+    "form.confirm_subq_reporting_scale": "Reporting Scale:",
     "form.confirm_subq_lp_selected": "Learning performance ({n} selected)",
     "form.confirm_subq_lp_random_pool": "Learning performance ({n} pre-drawn from pool)",
     "form.confirm_subq_lc_selected": "Learning content ({n} selected)",
@@ -272,6 +277,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "agent_panel.response": "Response",
     "agent_panel.retry": "retry",
     "agent_panel.history": "History",
+    "agent_panel.stage_error": "A problem occurred during processing. Please report the complete error message below to the developer.",
+    "agent_panel.stage_error_message_label": "Error details:",
 
     "card.hide_solution": "Hide Solution",
     "card.show_solution": "Show Solution",
@@ -343,6 +350,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "subject_select.ns_title": "自然科學領域",
     "subject_select.ns_desc": "融合 PISA Science 與7-9年級自然科學課綱。",
 
+    "app.title": "素養試題 AI Examgen",
+    "app.title_staging": "【測試機】素養試題 AI Examgen",
+
     "staging.banner": "⚠ 此為測試環境，運作可能不穩定。",
 
     "feedback.button_aria": "回報問題",
@@ -405,6 +415,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.difficulty_easy": "簡單",
     "form.difficulty_medium": "中等",
     "form.difficulty_hard": "困難",
+    "form.reporting_scale": "Reporting Scale",
     "form.style": "題目風格",
     "form.content_type": "題目內容類型",
     "form.content_type_customized": "自訂",
@@ -468,6 +479,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_core_question_generation_decides": "將於生成時決定",
     "form.confirm_grade": "年級",
     "form.confirm_difficulty": "難度",
+    "form.confirm_reporting_scale": "Reporting Scale",
     "form.confirm_subject_filter": "科目",
     "form.confirm_style": "題目風格",
     "form.confirm_content_type": "題目內容類型",
@@ -519,7 +531,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_subq_q_word_limit": "題目字數限制:",
     "form.confirm_subq_o_word_limit": "選項字數限制:",
     "form.confirm_subq_text_word_limit": "文本字數限制:",
-    "form.confirm_subq_reporting_scale": "報告等級:",
+    "form.confirm_subq_reporting_scale": "Reporting Scale:",
     "form.confirm_subq_lp_selected": "學習表現（已選 {n} 項）",
     "form.confirm_subq_lp_random_pool": "學習表現（隨機抽取 {n} 項）",
     "form.confirm_subq_lc_selected": "學習內容（已選 {n} 項）",
@@ -584,6 +596,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "agent_panel.response": "回應",
     "agent_panel.retry": "第 {n} 次重試",
     "agent_panel.history": "歷史紀錄",
+    "agent_panel.stage_error": "處理過程發生問題，請將下方的完整錯誤訊息回報給開發者。",
+    "agent_panel.stage_error_message_label": "錯誤詳情：",
 
     "card.hide_solution": "隱藏解題過程",
     "card.show_solution": "顯示解題過程",

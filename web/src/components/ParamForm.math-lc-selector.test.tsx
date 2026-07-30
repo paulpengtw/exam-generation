@@ -85,7 +85,8 @@ describe("ParamForm math learning-content selector", () => {
 
     expect(await screen.findByText("form.learning_content", { selector: "label" }))
       .toBeInTheDocument();
-    expect(within(getLearningContentSection()).getByText("N-7-1")).toBeInTheDocument();
+    // Default is search mode — verify the SearchPicker appears in the section
+    expect(within(getLearningContentSection()).getByPlaceholderText("搜尋學習內容...")).toBeInTheDocument();
   });
 
   it("hides the 學習內容 selector when the pool is empty", async () => {
@@ -99,6 +100,9 @@ describe("ParamForm math learning-content selector", () => {
 
   it("narrows the visible 學習內容 pool by subject_filter strand prefix", async () => {
     render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+    // Switch to checkbox mode (default is search mode)
+    await screen.findByText("form.learning_content", { selector: "label" });
+    fireEvent.click(within(getLearningContentSection()).getByRole("button", { name: "切換勾選模式" }));
     await screen.findByText("N-7-1");
 
     fireEvent.change(getSubjectFilterSelect(), { target: { value: "幾何" } });
@@ -125,7 +129,10 @@ describe("ParamForm math learning-content selector", () => {
       <ParamForm subject="math" onSubmit={(params) => submitted.push(params)} disabled={false} />,
     );
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: /^A-7-3/ }));
+    // Switch to checkbox mode (default is search mode)
+    await screen.findByText("form.learning_content", { selector: "label" });
+    fireEvent.click(within(getLearningContentSection()).getByRole("button", { name: "切換勾選模式" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^A-7-3/ }));
     fireEvent.click(screen.getByText("form.btn_generate"));
     fireEvent.click(await screen.findByText("form.btn_confirm_send"));
 
@@ -136,7 +143,10 @@ describe("ParamForm math learning-content selector", () => {
   it("labels an explicit 數學 學習內容 selection as user-selected", async () => {
     render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
 
-    fireEvent.click(await screen.findByRole("checkbox", { name: /^S-8-1/ }));
+    // Switch to checkbox mode (default is search mode)
+    await screen.findByText("form.learning_content", { selector: "label" });
+    fireEvent.click(within(getLearningContentSection()).getByRole("button", { name: "切換勾選模式" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^S-8-1/ }));
     fireEvent.click(screen.getByText("form.btn_generate"));
     await screen.findByText("form.confirm_title");
 
@@ -152,7 +162,10 @@ describe("ParamForm math learning-content selector", () => {
       <ParamForm subject="math" onSubmit={(params) => submitted.push(params)} disabled={false} />,
     );
 
-    const checkbox = await screen.findByRole("checkbox", { name: /^A-7-3/ });
+    // Switch to checkbox mode (default is search mode)
+    await screen.findByText("form.learning_content", { selector: "label" });
+    fireEvent.click(within(getLearningContentSection()).getByRole("button", { name: "切換勾選模式" }));
+    const checkbox = screen.getByRole("checkbox", { name: /^A-7-3/ });
     fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
     fireEvent.click(checkbox);
@@ -174,11 +187,13 @@ describe("ParamForm math learning-content selector", () => {
     await screen.findByText("form.learning_content", { selector: "label" });
 
     const section = within(getLearningContentSection());
-    const toggle = section.getByRole("button", { name: "切換搜尋模式" });
+    // Default is now search mode
+    expect(section.getByPlaceholderText("搜尋學習內容...")).toBeInTheDocument();
+    const toggle = section.getByRole("button", { name: "切換勾選模式" });
     expect(toggle).toBeInTheDocument();
     fireEvent.click(toggle);
 
-    expect(section.getByRole("button", { name: "切換勾選模式" })).toBeInTheDocument();
-    expect(section.getByPlaceholderText("搜尋學習內容...")).toBeInTheDocument();
+    // After toggling to checkbox mode
+    expect(section.getByRole("button", { name: "切換搜尋模式" })).toBeInTheDocument();
   });
 });
