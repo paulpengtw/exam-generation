@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from src.common.difficulty import DEFAULT_DIFFICULTY, Difficulty
 from src.social_studies.core_competency_loader import (
@@ -135,6 +135,11 @@ class SubQuestion(BaseModel):
     image_generation_mode: Literal["html", "gpt_image"] | None = None
     圖片: str | None = None
     chart_spec: ChartSpec | None = None
+
+    # 建構這一小題時所用的 各小題配置 索引（PLAN 索引，1 起算，不進 JSON）。
+    # `序號` 是模型自報的，可能錯位或重複；要沿用同一格 各小題配置 的下游
+    # （例如小題圖片修補）必須看這個值，不能拿 `序號` 去查配置。
+    _plan_index: int | None = PrivateAttr(default=None)
 
 
 class QuestionMetadata(BaseModel):

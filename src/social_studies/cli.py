@@ -307,6 +307,9 @@ def _parse_subquestion(
             chart_spec=sq_chart_spec,
         )
         result.科目 = [params.科目.value]
+        # 記錄建構這一小題時所用的 PLAN 索引，供後續圖片修補沿用同一格 各小題配置。
+        # 模型自報的 `序號` 可能錯位；修補端必須走這個值，不能拿 `序號` 去查。
+        result._plan_index = i
         # Issue #290: force 年級 from sampled params, never trust the LLM value.
         # The LLM may copy 年級 from a prompt example that uses a different grade,
         # causing a silent mismatch. Parallel to how 科目 is forced on the line
@@ -451,7 +454,12 @@ def _ensure_subquestion_visual_spec(
     if sub.chart_spec or content_type not in _VISUAL_CONTENT_TYPES or client is None:
         return
 
-    sq_json = sub.model_dump_json(exclude_none=True, exclude={"圖片"})
+    # 修補只需要素材需求，不需要作答內容。system prompt 已明令「不要加入答案提示」，
+    # payload 就不能把答案送過去。
+    sq_json = sub.model_dump_json(
+        exclude_none=True,
+        exclude={"圖片", "答案", "答案解析", "評分規準", "誘答分析"},
+    )
     user_prompt = _SQ_IMAGE_REPAIR_USER_TEMPLATE.format(
         content_type=content_type,
         text=question.文本,
@@ -662,7 +670,11 @@ def _ss_render_subquestion_images(
     }
     if sq_visual_content_types:
         for sub in question.subquestions:
-            ct = sq_visual_content_types.get(sub.序號)
+            # 各小題配置 是建構小題時依 PLAN 索引套用的；模型自報的 序號 可能錯位，
+            # 拿它查配置會把甲格的題型／學習內容 配上乙格的圖片決定。
+            # 優先用 _plan_index（在 _parse_subquestion 中設定），無則退回 序號。
+            plan_idx = sub._plan_index if sub._plan_index is not None else sub.序號
+            ct = sq_visual_content_types.get(plan_idx)
             if ct is not None:
                 _ensure_subquestion_visual_spec(sub, question, ct, client)
 
