@@ -283,6 +283,26 @@ def test_verify_leaves_details_untouched_when_fact_check_returns_none(monkeypatc
     assert result.details == "教師端通過。"
 
 
+def test_verify_question_tolerates_null_chart_verification() -> None:
+    """LLM may emit an explicit null for chart_verification on text-only (純文字) questions
+    despite the prompt asking to omit the field entirely; the verifier must not crash."""
+    client = FakeClient(
+        {
+            "my_answer": "作者支持擴大公共運輸。",
+            "provided_answer": "作者支持擴大公共運輸。",
+            "answer_match": True,
+            "passed": True,
+            "details": "通過。",
+            "chart_verification": None,
+        }
+    )
+
+    result = verify_question(client, _question())
+
+    assert result.passed is True
+    assert result.chart_verification is None
+
+
 def test_social_studies_verifier_prompt_contains_illustrative_figure_leniency_line() -> None:
     assert "示意圖" in VERIFICATION_SYSTEM_PROMPT
     assert IMAGE_DISCLAIMER in VERIFICATION_SYSTEM_PROMPT

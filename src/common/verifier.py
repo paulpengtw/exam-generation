@@ -92,9 +92,8 @@ def verify_question_common(
         )
         result_dict = extract_json(raw)
 
-        chart_verif = None
-        if "chart_verification" in result_dict:
-            chart_verif = _parse_chart_verif(result_dict["chart_verification"], chart_verif_cls)
+        cv = result_dict.get("chart_verification")
+        chart_verif = _parse_chart_verif(cv, chart_verif_cls) if isinstance(cv, dict) else None
 
         # Non-blocking distractor-key audit — advisory only, never flips passed.
         # Format: "第N題：<warning>" entries joined with "；".
