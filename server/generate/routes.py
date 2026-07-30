@@ -230,6 +230,15 @@ async def generate_endpoint(
             reporting_scale=reporting_scale,
         )
     except ValidationError as exc:
+        # Emit a WARNING so Sentry (LoggingIntegration at WARNING level) captures
+        # validation-rejection spikes without widening failed_request_status_codes.
+        # Log only the error count and field names — never user-supplied values
+        # (ADR 0004).
+        logger.warning(
+            "generate 422 validation_error: %d error(s) on field(s) %s",
+            exc.error_count(),
+            [str(e["loc"]) for e in exc.errors()],
+        )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     logger.info("generate request params=%s", params.model_dump(mode="json"))
 
