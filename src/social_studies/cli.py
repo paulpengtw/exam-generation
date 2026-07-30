@@ -16,6 +16,7 @@ from typing import Any
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
+from src.common.subquestion_forcing import force_grade
 from src.config import Config
 from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.html_renderer import PlaywrightRenderer
@@ -280,6 +281,12 @@ def _parse_subquestion(
             chart_spec=sq_chart_spec,
         )
         result.科目 = [params.科目.value]
+        # Issue #290: force 年級 from sampled params, never trust the LLM value.
+        # The LLM may copy 年級 from a prompt example that uses a different grade,
+        # causing a silent mismatch. Parallel to how 科目 is forced on the line
+        # above; 年級 gets the same treatment via the shared helper so that both
+        # social studies and natural sciences share one authoritative rule.
+        force_grade(result, params.grade)
         return result
     except Exception:
         return None
