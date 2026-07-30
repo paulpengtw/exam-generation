@@ -29,6 +29,7 @@ from src.social_studies.context_builder import (
     build_subquestion_user_prompt,
     build_text_system_prompt,
     build_text_user_prompt,
+    subquestion_needs_own_image,
 )
 from src.social_studies.corrector import correct_question
 from src.social_studies.planner import plan_context_angles
@@ -230,6 +231,18 @@ def _resolve_enum(value: str | None, enum_cls: type) -> object | None:
     raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
 
 
+def _slot_config(params: SampledParams, plan_index: int) -> SubQuestionConfig | None:
+    """依 PLAN 索引取出那一格的 各小題配置。
+
+    單一定義：小題建構（`_parse_subquestion`）與小題圖片修補
+    （`_ensure_subquestion_visual_specs`）都走這裡，兩邊才不會各自用不同的索引
+    去查 各小題配置。模型自報的 `序號` 不是索引來源，它可能錯位或重複。
+    """
+    if plan_index - 1 < len(params.subquestion_configs):
+        return params.subquestion_configs[plan_index - 1]
+    return None
+
+
 def _parse_subquestion(
     sq_raw: dict,
     question_id: str,
@@ -240,10 +253,7 @@ def _parse_subquestion(
     if not isinstance(sq_raw, dict):
         return None
     try:
-        cfg = (
-            params.subquestion_configs[i - 1]
-            if i - 1 < len(params.subquestion_configs) else None
-        )
+        cfg = _slot_config(params, i)
         lc_refs = [
             LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
             for r in sq_raw.get("學習內容", [])
@@ -309,6 +319,8 @@ def _parse_subquestion(
             chart_spec=sq_chart_spec,
         )
         result.科目 = [params.科目.value]
+        # 記下建構這一小題時所用的那一格 各小題配置，供後續修補沿用同一格。
+        result._plan_index = i
         return result
     except Exception:
         return None
@@ -449,22 +461,25 @@ def _ensure_subquestion_visual_specs(
     for sub in question.subquestions:
         if sub.chart_spec:
             continue
-        cfg = (
-            params.subquestion_configs[sub.序號 - 1]
-            if 0 < sub.序號 <= len(params.subquestion_configs)
-            else None
-        )
-        content_type = cfg.content_type if cfg else None
-        if content_type not in _VISUAL_CONTENT_TYPES:
+        # 各小題配置 是建構小題時依 PLAN 索引套用的；模型自報的 序號 可能錯位，
+        # 拿它查配置會把甲格的 題型／學習內容 配上乙格的圖片決定。
+        plan_index = sub._plan_index if sub._plan_index is not None else sub.序號
+        cfg = _slot_config(params, plan_index)
+        # 與 子題產生器 prompt 共用同一個判準（#319 / #320）：這一格自己的
+        # 題目內容類型 才算數，題組層級的 題目內容類型 一律不繼承。
+        # 判準為真即保證 cfg 不是 None，且 cfg.content_type 是需要圖片的類型。
+        if not subquestion_needs_own_image(cfg):
             continue
 
         user_prompt = _SUBQUESTION_IMAGE_REPAIR_USER_TEMPLATE.format(
             序號=sub.序號,
-            content_type=content_type,
+            content_type=cfg.content_type,
             文本=question.文本,
             subquestion_json=sub.model_dump_json(
                 exclude_none=True,
-                exclude={"圖片"},
+                # 修補只需要素材需求，不需要作答內容。system prompt 已明令
+                # 「不要加入答案提示」，payload 就不能把答案送過去。
+                exclude={"圖片", "答案", "答案解析", "評分規準", "誘答分析"},
             ),
         )
         try:
