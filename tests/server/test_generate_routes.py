@@ -1205,7 +1205,7 @@ def test_generate_422_emits_warning_free_of_user_content(caplog) -> None:
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
     limiter.reset()
 
     try:
@@ -1259,7 +1259,7 @@ def test_generate_valid_request_emits_no_validation_warning(caplog) -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret")
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
