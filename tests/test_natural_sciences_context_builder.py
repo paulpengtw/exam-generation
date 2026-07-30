@@ -7,9 +7,51 @@ from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.natural_sciences.context_builder import (
     CONTENT_TYPE_INSTRUCTIONS as NS_CONTENT_TYPE_INSTRUCTIONS,
 )
-from src.natural_sciences.context_builder import build_user_prompt
+from src.natural_sciences.context_builder import build_text_user_prompt, build_user_prompt
 from src.natural_sciences.sampler import sample_params
 from src.natural_sciences.schema_loader import load_schemas
+
+# Literal copy of PISA level descriptors — if the data file drifts these tests fail.
+_LEVEL_6_DESCRIPTOR = (
+    "At level 6, working in unfamiliar contexts, students can draw on a range of scientific"
+    " ideas of high demand from different disciplines to build models, consider their"
+    " limitations, and use those models to construct or evaluate scientific explanations of"
+    " complex phenomena. They can apply those explanations to make predictions not only about"
+    " the phenomena but also about potential future developments or implications for society."
+    " Students can identify and explain the purposes of particular enquiries of different"
+    " types, and which question they are answering. They can apply epistemic and procedural"
+    " knowledge to evaluate competing designs of complex enquiries such as experiments, field"
+    " studies or simulations and justify their choices of design. They can transform data"
+    " from one representation to another and correctly interpret more complex data sets."
+    " Students can evaluate the interpretation of data sets drawing on procedural and"
+    " epistemic knowledge to make reasoned judgements about their accuracy and precision."
+    " Drawing on multiple sources of information of high cognitive demand, containing both"
+    " textual and graphical information, students can identify those sources which are most"
+    " trustworthy based on one or more scientific criteria or more sophisticated"
+    " fact-checking procedures. They can provide a justification for their choice drawing on"
+    " content, procedural or epistemic knowledge of science, and/or social, ethical or"
+    " economic considerations. In addition, they are able to identify flaws in sources of"
+    " scientific information – either in their trustworthiness, their use of data, or in"
+    " the arguments from the evidence. Based on their evaluation, they can provide"
+    " justifications considering multiple issues for possible decisions and actions."
+)
+
+_LEVEL_2_DESCRIPTOR = (
+    "At level 2, students can identify an appropriate scientific explanation from a"
+    " non-scientific explanation for everyday/common scientific phenomena in familiar"
+    " personal, local or global contexts, by drawing on appropriate content knowledge of low"
+    " to medium cognitive demand. They can offer a simple explanation of an everyday or"
+    " familiar scientific phenomenon such as why you might need a balanced diet that draws on"
+    " basic school science concepts. They are able to evaluate designs for simple enquiries"
+    " drawing on elements of procedural knowledge and identify appropriate interpretations of"
+    " data sets with simple relationships and identify outliers and possible reasons for their"
+    " occurrence. Using their epistemic knowledge, they can identify appropriate explanations"
+    " for variations in measurement. Given a need for information for decision-making or"
+    " action, students can identify relevant sources of information from several of low to"
+    " medium cognitive demand, that is needed to inform action on a given scientific problem"
+    " and summarise its main argument. Using a single criterion e.g. relevant expertise,"
+    " scientific consensus, they can identify whether the source is trustworthy."
+)
 
 
 def test_natural_sciences_schema_contains_pisa_science_dimensions() -> None:
@@ -106,3 +148,40 @@ def test_ns_user_prompt_omits_disclaimer_for_text_only(tmp_path) -> None:
     params = sample_params(seed=1, content_type="純文字")
     prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER not in prompt
+
+
+# --- Issue #280: 文本生成器 sees target Reporting Scale ---
+
+
+def test_text_prompt_includes_level6_descriptor_verbatim(tmp_path: Path) -> None:
+    """When 題組 targets level 6, the full PISA descriptor must appear verbatim."""
+    params = sample_params(seed=1, reporting_scale="6", content_type="純文字")
+    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    assert _LEVEL_6_DESCRIPTOR in prompt
+
+
+def test_text_prompt_level6_excludes_level2_descriptor(tmp_path: Path) -> None:
+    """Targeting level 6 must NOT emit all eight descriptors — level-2 text absent."""
+    params = sample_params(seed=1, reporting_scale="6", content_type="純文字")
+    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    assert _LEVEL_2_DESCRIPTOR not in prompt
+
+
+def test_text_prompt_per_subquestion_target_level_in_config(tmp_path: Path) -> None:
+    """Each 小題's target reporting level appears in the ## 各小題配置 section."""
+    params = sample_params(
+        seed=1, reporting_scale="6", sub_question_count=3, content_type="純文字"
+    )
+    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    assert "## 各小題配置" in prompt
+    # All three 小題 should show their target level (sampler inherits 題組-level → "6")
+    assert prompt.count("目標報告等級=6") >= 3
+
+
+def test_text_prompt_no_reporting_scale_block_when_none(tmp_path: Path) -> None:
+    """When no 題組-level reporting_scale is set, no Reporting Scale block appears."""
+    params = sample_params(seed=1, content_type="純文字")
+    # Ensure params has no reporting_scale
+    assert params.reporting_scale is None  # type: ignore[attr-defined]
+    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    assert "Reporting Scale" not in prompt

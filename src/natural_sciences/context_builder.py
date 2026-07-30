@@ -260,7 +260,7 @@ USER_PROMPT_TEMPLATE = """\
 - **科學能力**：{science_competencies}
 - **題目內容類型**：{content_type}
 - **小題數量**：{sub_question_count}
-{subquestion_config_lines}{lc_pool_lines}{lp_pool_lines}{param_instructions}{difficulty_section}{user_materials}
+{subquestion_config_lines}{lc_pool_lines}{lp_pool_lines}{param_instructions}{difficulty_section}{reporting_scale_section}{user_materials}
 ## 參考範例
 
 {few_shot_examples}
@@ -380,6 +380,17 @@ def build_user_prompt(
 
     difficulty_section = _difficulty_section(params)
 
+    # Issue #280: 題組-level Reporting Scale block (verbatim PISA descriptor; no all-eight ref).
+    rs_level = params.reporting_scale
+    reporting_scale_section = (
+        "\n## 目標報告等級（Reporting Scale）\n\n"
+        f"本題組的命題目標等級為 **{rs_level}**。"
+        "請確保題組整體認知需求符合以下 PISA Science 等級描述：\n\n"
+        f"{REPORTING_SCALE_LEVELS[rs_level]}\n"
+        if rs_level
+        else ""
+    )
+
     example_groups = (
         []
         if disable_reference_fewshot
@@ -429,6 +440,7 @@ def build_user_prompt(
             cfg.image_generation_mode, cfg.question_word_limit,
             cfg.option_word_limit,
             cfg.learning_content, cfg.learning_performance,
+            cfg.reporting_scale,
         ))
         if cfg.question_type:
             cfg_parts.append(f"題型={cfg.question_type.value}")
@@ -438,6 +450,8 @@ def build_user_prompt(
             cfg_parts.append(f"學習內容={','.join(cfg.learning_content)}")
         if cfg.learning_performance:
             cfg_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
+        if cfg.reporting_scale:
+            cfg_parts.append(f"目標報告等級={cfg.reporting_scale}")
         if has_structural_config:
             cfg_parts.append(f"文本素材類型={cfg.content_type or params.題目內容類型 or '純文字'}")
             cfg_parts.append(f"圖片生成模式={cfg.image_generation_mode or image_generation_mode}")
@@ -522,6 +536,7 @@ def build_user_prompt(
         lp_pool_lines=lp_pool_lines,
         param_instructions=param_instructions,
         difficulty_section=difficulty_section,
+        reporting_scale_section=reporting_scale_section,
         user_materials=user_materials,
         few_shot_examples=few_shot_text,
     )
