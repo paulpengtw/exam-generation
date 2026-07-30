@@ -76,7 +76,9 @@ def test_social_studies_corrector_freezes_difficulty():
     assert fixed.metadata.difficulty is Difficulty.easy
 
 
-def test_natural_sciences_corrector_freezes_difficulty():
+def test_natural_sciences_corrector_old_difficulty_in_output_ignored():
+    """NS QuestionMetadata no longer has difficulty (#282); old JSON with
+    difficulty=easy in the LLM correction output must be silently ignored."""
     from src.natural_sciences.corrector import correct_question
     from src.natural_sciences.schemas import (
         ExamQuestion,
@@ -94,12 +96,14 @@ def test_natural_sciences_corrector_freezes_difficulty():
         情境子類別=next(iter(QuestionSubContext)),
         題型種類=next(iter(QuestionSetType)),
         題型=next(iter(QuestionType)),
-        metadata=QuestionMetadata(grade=8, model="m", difficulty=Difficulty.hard),
+        metadata=QuestionMetadata(grade=8, model="m"),
     )
     verification = VerificationResult(passed=False, answer_match=False, details="wrong")
 
     client = MagicMock()
+    # LLM may still emit difficulty in its correction JSON — it must be ignored
     client.generate_json.return_value = {"metadata": {"difficulty": "easy"}}
 
     fixed = correct_question(client, q, verification)
-    assert fixed.metadata.difficulty is Difficulty.hard
+    # No AttributeError — the field simply doesn't exist on NS QuestionMetadata
+    assert not hasattr(fixed.metadata, "difficulty") or fixed.metadata.difficulty is None
