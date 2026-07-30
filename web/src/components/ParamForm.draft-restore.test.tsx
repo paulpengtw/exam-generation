@@ -215,6 +215,7 @@ describe("ParamForm draft restoration", () => {
       disableReferenceFewshot: false,
       imageGenerationMode: "gpt_image",
       difficulty: "",
+      reportingScale: "",
       subjectFilter: "",
       passage: "500 字",
       textWordLimit: null,
