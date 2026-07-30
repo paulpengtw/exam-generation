@@ -528,7 +528,7 @@ All RNG is `random.Random(seed)` per question. Points: grade from `_GRADES` (sam
 
 ### Issue tracker
 
-Issues live in GitHub Issues at `paulpengtw/exam-generation`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues at `paulpengtw/exam-generation`, via the `gh` CLI. See `docs/agents/issue-tracker.md`. Issues are closed when the resolving PR merges to `staging` (close manually — `Closes #N` only auto-fires on `main`); see the close convention in that doc.
 
 ### Triage labels
 
