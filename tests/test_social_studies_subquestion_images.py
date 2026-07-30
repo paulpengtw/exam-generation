@@ -1,20 +1,24 @@
 """社會領域 小題 圖片 的 pipeline 測試 —— 一律走真正的 子題產生器 階段（#321）。
 
 Seam：`generate_one` 一律帶 `sub_client_factory`，所以 `generation_core` 的
-embedded-小題 捷徑（`sub_client_factory is None` 且 client 不是 `LLMClient`）
-不會被吃到。每一小題都是 子題產生器 自己寫出來的，而不是從 文本生成器 的罐頭
-輸出直接解析——這正是這批測試原本的盲點：小題圖片契約整段從 子題產生器 prompt
-消失，這些測試卻照樣綠燈。
+embedded-小題 捷徑（`sub_client_factory is None` 且 `client is not None`
+且 client 不是 `LLMClient`）不會被吃到。每一小題都是 子題產生器 自己寫出來的，
+而不是從 文本生成器 的罐頭輸出直接解析——這正是這批測試原本的盲點：小題圖片契約
+整段從 子題產生器 prompt 消失，這些測試卻照樣綠燈。
 
 因此這裡的 子題產生器 替身是「忠實模型」：只有在自己收到的 prompt 真的要求時
-才輸出小題層級 `chart_spec`。判斷依據是 prompt 的語意內容（輸出結構是否提供
-`chart_spec` 欄位、本小題的 各小題配置 行寫的 題目內容類型 是否屬於需要圖片的
-類型），不是任何為測試而設的記號。`image_generation_mode` 刻意不列為訊號——它
-只決定「怎麼渲染」，不能單獨要求圖片。
+才輸出小題層級 `chart_spec`。判斷依據是 prompt 的語意內容，不是任何為測試而設的
+記號；四個訊號缺一不可（見 `_demands_own_chart_spec`）：輸出結構要有放圖的欄位、
+規則書要說出「視覺類文本素材類型 → 本小題自帶 chart_spec」、本小題的 各小題配置
+行要寫著需要圖片的 題目內容類型、而且這條規則要真的隨這一小題送出。少了任何一項，
+真實模型都沒有理由畫圖，替身也就不畫。`image_generation_mode` 刻意不列為訊號——
+它只決定「怎麼渲染」，不能單獨要求圖片。
 """
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 from server.config import ServerConfig
@@ -29,6 +33,10 @@ _ALL_CONTENT_TYPES = (*_IMAGE_CONTENT_TYPES, "純文字")
 
 _CORE_QUESTION = "都市更新如何影響居民生活？"
 _PASSAGE = "某市正在推動都市更新，居民對公共設施與租金變化有不同看法。"
+
+# 以空行切開的段落——prompt 的規則就是寫在這種段落裡。
+_PARAGRAPH_SPLIT = re.compile(r"\n[ \t]*\n")
+_JSON_FENCE = re.compile(r"```json\n(.*?)```", re.DOTALL)
 
 
 def _slot_config_line(user_prompt: str, 序號: int) -> str:
@@ -45,16 +53,56 @@ def _stated_content_type(user_prompt: str, 序號: int) -> str | None:
     return next((ct for ct in _ALL_CONTENT_TYPES if ct in line), None)
 
 
+def _output_schema_fields(system_prompt: str) -> set[str]:
+    """子題產生器 system prompt 交代的輸出結構有哪些欄位。
+
+    讀第一個能解析成 JSON 物件的 ```json 區塊——那就是「輸出必須是合法 JSON
+    物件，格式如下」的骨架。模型只會填骨架上有的欄位，所以骨架沒有 `chart_spec`
+    就等於沒有地方放這張圖。這裡看的是結構而不是字串出現與否：`chart_spec` 在
+    別處被順帶提到，不代表輸出結構收得下它。
+    """
+    for block in _JSON_FENCE.findall(system_prompt):
+        try:
+            parsed = json.loads(block)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return set(parsed)
+    return set()
+
+
+def _states_own_image_rule(prompt: str) -> bool:
+    """prompt 是否真的說出「視覺類 文本素材類型 的小題要自帶 chart_spec」這條規則。
+
+    忠實模型的讀法：規則必須把「需要圖片的 文本素材類型」與 `chart_spec` 綁在同一
+    個段落裡，模型才知道那個欄位該在什麼條件下填。只比對這個語意連結，不比對逐字
+    文案——規則怎麼改寫都行，整段被拿掉才算失去這個訊號。
+    """
+    return any(
+        "chart_spec" in block and any(ct in block for ct in _IMAGE_CONTENT_TYPES)
+        for block in _PARAGRAPH_SPLIT.split(prompt)
+    )
+
+
 def _demands_own_chart_spec(system_prompt: str, user_prompt: str, 序號: int) -> bool:
     """用「忠實模型」的讀法判斷這一小題是否被要求自帶 chart_spec。
 
-    兩個語意訊號都必須成立：輸出結構提供 `chart_spec` 欄位（模型才有地方放
-    這張圖），且這一小題自己的 各小題配置 行寫的 題目內容類型 屬於需要圖片的
-    類型。
+    四個語意訊號缺一不可：
+
+    1. 輸出結構提供 `chart_spec` 欄位——模型才有地方放這張圖。
+    2. 規則書（system prompt）說出視覺類 文本素材類型 與 `chart_spec` 的關係——
+       模型才知道這個欄位何時該填。
+    3. 這一小題自己的 各小題配置 行寫的 題目內容類型 屬於需要圖片的類型——
+       這是「這一題要圖」的判準。
+    4. 這條規則確實隨這一小題的 user prompt 送出（各小題配置 的 小題圖片規則）——
+       子題產生器 是一小題一次呼叫，規則沒跟著這一次送出就等於沒對它下過指示。
     """
-    if "chart_spec" not in system_prompt and "chart_spec" not in user_prompt:
-        return False
-    return _stated_content_type(user_prompt, 序號) in _IMAGE_CONTENT_TYPES
+    return (
+        "chart_spec" in _output_schema_fields(system_prompt)
+        and _states_own_image_rule(system_prompt)
+        and _stated_content_type(user_prompt, 序號) in _IMAGE_CONTENT_TYPES
+        and _states_own_image_rule(user_prompt)
+    )
 
 
 class _TextGeneratorFake:
@@ -182,7 +230,11 @@ def _config(tmp_path: Path, slot_count: int) -> Config:
 
 
 def test_social_studies_subquestion_chart_spec_renders_png(tmp_path: Path) -> None:
-    """含圖片 小題：per-小題 圖片生成模式 勝過請求層級，並掛上該小題的 PNG。"""
+    """含圖片 小題：per-小題 圖片生成模式 勝過請求層級，並掛上該小題的 PNG。
+
+    同時釘住「只有這一小題要圖」：圖片端點只被打一次（第1小題），未做 各小題配置
+    的兄弟小題（第2、3小題）不得產生任何圖片。
+    """
     params = sample_params(
         seed=1,
         content_type="純文字",  # 題組頂層純文字，排除 題組頂層 chart_spec 修補的干擾
@@ -196,9 +248,10 @@ def test_social_studies_subquestion_chart_spec_renders_png(tmp_path: Path) -> No
         ],
     )
 
+    text_client = _TextGeneratorFake(3)
     question = generate_one(
         config=_config(tmp_path, 3),
-        client=_TextGeneratorFake(3),
+        client=text_client,
         params=params,
         question_id="ss_test",
         skip_verify=True,
@@ -213,6 +266,16 @@ def test_social_studies_subquestion_chart_spec_renders_png(tmp_path: Path) -> No
     assert question.subquestions[0].image_generation_mode == "gpt_image"
     assert question.subquestions[0].出題指示 == "請聚焦在都市更新前後比較"
     assert (tmp_path / "ss_test_sq1.png").read_bytes() == b"subquestion-png"
+
+    # 圖片端點恰好被打一次，而且是為第1小題打的。
+    assert text_client.image_calls == ["ss_test_sq1.png"], (
+        f"圖片端點的呼叫不只第1小題：{text_client.image_calls}"
+    )
+    # 未做 各小題配置 的兄弟小題（純文字）不得帶 chart_spec 或圖片。
+    for sub in question.subquestions[1:]:
+        assert sub.chart_spec is None, f"第{sub.序號}小題不應帶 chart_spec"
+        assert sub.圖片 is None, f"第{sub.序號}小題不應帶圖片"
+    assert sorted(p.name for p in tmp_path.glob("*.png")) == ["ss_test_sq1.png"]
 
 
 def test_global_image_content_type_repairs_and_renders_parent_png(tmp_path: Path) -> None:
@@ -242,12 +305,18 @@ def test_global_image_content_type_repairs_and_renders_parent_png(tmp_path: Path
         question,
         ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
     )
-    assert payload["圖片"] == "ss_test.png"
-    assert payload["image_base64"] == "cGFyZW50LXBuZw=="
+    # 用 .get：欄位是 exclude_none 序列化的，缺圖時整個鍵會不見——直接索引只會
+    # 得到 KeyError，讀不出「圖片沒掛上」這件事。
+    assert payload.get("圖片") == "ss_test.png"
+    assert payload.get("image_base64") == "cGFyZW50LXBuZw=="
 
 
 def test_social_studies_subquestion_inherits_request_image_mode(tmp_path: Path) -> None:
-    """per-小題 圖片生成模式 留空時，承襲請求層級的 gpt_image。"""
+    """per-小題 圖片生成模式 留空時，承襲請求層級的 gpt_image。
+
+    請求層級就是 gpt_image，所以任何一個兄弟小題若被誤判為需要圖片，都會直接
+    打在圖片端點上——這裡因此也是「圖片端點只被打一次」最靈敏的觀測點。
+    """
     params = sample_params(
         seed=1,
         content_type="純文字",
@@ -257,9 +326,10 @@ def test_social_studies_subquestion_inherits_request_image_mode(tmp_path: Path) 
         ],
     )
 
+    text_client = _TextGeneratorFake(3)
     question = generate_one(
         config=_config(tmp_path, 3),
-        client=_TextGeneratorFake(3),
+        client=text_client,
         params=params,
         question_id="ss_test",
         skip_verify=True,
@@ -273,9 +343,18 @@ def test_social_studies_subquestion_inherits_request_image_mode(tmp_path: Path) 
     assert question.subquestions[0].image_generation_mode == "gpt_image"
     assert (tmp_path / "ss_test_sq1.png").read_bytes() == b"subquestion-png"
 
+    # 圖片端點恰好被打一次，而且是為做了 各小題配置 的第1小題打的。
+    assert text_client.image_calls == ["ss_test_sq1.png"], (
+        f"圖片端點的呼叫不只第1小題：{text_client.image_calls}"
+    )
 
-def test_question_to_event_embeds_subquestion_png(tmp_path: Path) -> None:
-    """子題產生器 產出的小題 PNG 會被嵌進 SSE payload 的 subquestions[*]。"""
+
+def test_subgen_subquestion_png_embedded_in_sse_payload(tmp_path: Path) -> None:
+    """子題產生器 產出的小題 PNG 會被嵌進 SSE payload 的 subquestions[*]。
+
+    名稱刻意與 tests/server/test_marshalling.py 的同名純序列化測試區隔，
+    `pytest -k` 才選得到其中一個。
+    """
     params = sample_params(
         seed=1,
         content_type="純文字",
@@ -301,5 +380,5 @@ def test_question_to_event_embeds_subquestion_png(tmp_path: Path) -> None:
         ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
     )
 
-    assert payload["subquestions"][0]["圖片"] == "ss_test_sq1.png"
-    assert payload["subquestions"][0]["image_base64"] == "c3VicXVlc3Rpb24tcG5n"
+    assert payload["subquestions"][0].get("圖片") == "ss_test_sq1.png"
+    assert payload["subquestions"][0].get("image_base64") == "c3VicXVlc3Rpb24tcG5n"
