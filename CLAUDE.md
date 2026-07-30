@@ -35,10 +35,10 @@ fallback still applies at generation time.
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.
 
 ### Verify + correct loop
-1. First call (Sonnet): generates the question and solution. **For math,** this is a single call producing the full question. **For social studies and natural sciences,** this is a two-stage pipeline: a **文本生成器** call produces the shared 核心問題/文本/取材來源 plus an N-entry 子題 plan, then N concurrent **子題產生器** calls each write one complete 子題 (via `ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6; failed/unparseable 子題 calls get up to `SUBGEN_RETRIES` fresh retries, default 1, before the slot is dropped); the assembled 題組 then enters the verify/correct loop.
+1. First call (execute model): generates the question and solution. **For math,** this is a single call producing the full question. **For social studies and natural sciences,** this is a two-stage pipeline: a **文本生成器** call produces the shared 核心問題/文本/取材來源 plus an N-entry 子題 plan, then N concurrent **子題產生器** calls each write one complete 子題 (via `ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6; failed/unparseable 子題 calls get up to `SUBGEN_RETRIES` fresh retries, default 1, before the slot is dropped); the assembled 題組 then enters the verify/correct loop.
 2. Chart/image specs are rendered to PNG before verification so the verifier can see them. Math and natural sciences render top-level `chart_spec`; social studies also renders `subquestions[*].chart_spec` to per-小題 PNGs.
-3. Second call (Sonnet, multimodal): independently solves the question, inspects PNG, returns `VerificationResult` with `passed`, `answer_match`, `details`, `my_answer`, `provided_answer`, and optional `chart_verification`.
-4. If `passed=False`, a correction pass sends the failed question + verifier feedback back to Sonnet for a minimal targeted fix (`src/corrector.py`). PNG re-renders only when `chart_spec` actually changes. Re-verify and loop up to `max_retries` (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
+3. Second call (execute model, multimodal): independently solves the question, inspects PNG, returns `VerificationResult` with `passed`, `answer_match`, `details`, `my_answer`, `provided_answer`, and optional `chart_verification`.
+4. If `passed=False`, a correction pass sends the failed question + verifier feedback back to the execute model for a minimal targeted fix (`src/corrector.py`). PNG re-renders only when `chart_spec` actually changes. Re-verify and loop up to `max_retries` (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
 
 ### Fact-check pass (social studies only)
 
@@ -70,8 +70,9 @@ teacher verdict is unchanged.
 
 **Output:** resolved per-小題 levels are recorded in `metadata.reporting_scales` in 序號 order; slots that were dropped or unresolved leave no entry.
 
-### OpenAI-compatible endpoint
-Uses the `openai` Python SDK for endpoint flexibility. Model routing: `claude-opus-5` for planning, `claude-sonnet-4-6` for generation and verification.
+### LLM provider is selected per-request from the model id
+
+`resolve_provider(model)` in `src/llm_client.py` maps each call to a provider at call time: `gemini-*` → Gemini via its OpenAI-compatible endpoint (OpenAI SDK, `GEMINI_API_KEY` / `GEMINI_BASE_URL`); `gpt-*/o-series` → OpenAI SDK (`OPENAI_API_KEY` / `OPENAI_BASE_URL`); `claude-*` → Anthropic SDK (prompt caching, streaming, `system` param, `LLM_API_KEY` / `LLM_BASE_URL`); unknown ids → Anthropic (proxy deployments). The code default is `gemini-3.1-pro-preview` for both `model_plan` and `model_execute`; it heads the built-in `_DEFAULT_MODELS_ALLOWED` roster. Effort translation: Anthropic uses `extra_body.output_config.effort`; Gemini/OpenAI use `reasoning_effort` (low/medium/high only — other values are dropped with a one-time WARNING). Temperature is withheld from `gemini-3.x`, `gpt-5.x`, and o-series models. OpenAI provider gets `max_completion_tokens` instead of `max_tokens`. A missing provider key returns HTTP 422 naming the env var. Fact-check (`web_search_20250305`) is Anthropic-only: `fact_check_question` silently returns `None` (fail-open) when the execute model is not `claude-*`. Image generation (IMAGE\_API\_KEY / IMAGE\_BASE\_URL / IMAGE\_MODEL, `gpt-image2`) is unchanged — Gemini image generation is future work. Known gaps: #338 (UI effort fields dropped before reaching server), #346 (planner purpose string never matches `"plan"` so plan calls get `effort_execute`).
 
 ### Web-ready design
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
@@ -468,7 +469,7 @@ Complete waterfall trace of `uv run python -m src.cli generate`. Full reference:
 8. Build grade content index `{g: [...] for g in _GRADES}` via `get_grade_content()` (data_loader.py:23-35); `_GRADES` from `question_schemas.json["grades"]`
 
 ### Phase 3: LLM Client Init (`src/llm_client.py`, cli.py:241)
-9. `LLMClient(config)` wraps `OpenAI(api_key, base_url)` (llm_client.py:19-24). Skipped if `--dry-run`.
+9. `LLMClient(config)` initialises an `Anthropic` client (for `claude-*` calls) eagerly and lazily constructs `OpenAI` compat clients for Gemini/OpenAI providers on first use (`src/llm_client.py` `LLMClient.__init__`). Skipped if `--dry-run`.
    Playwright renderer also started here once and reused across questions (cli.py:245-253).
 
 ### Phase 4: Generation Loop (`src/cli.py` lines 269-310)
@@ -509,13 +510,13 @@ Image rendering happens **before** verification so the verifier can see the PNG.
 
 ### LLM Calls Summary
 
-| # | Purpose | Model | File:Line |
+| # | Purpose | Model | File |
 |---|---|---|---|
-| 0 | Plan 核心問題 candidates (optional; only when called via `/api/plan-core-questions` or upstream of CLI `--core-question`) | Opus (`model_plan`) | src/planner.py + src/common/planner.py |
-| 1 | Generate question | Sonnet | llm_client.py:26-40 |
-| 2 | Generate HTML image (only when `render_mode="html"`) | Sonnet | renderer.py:343 |
-| 3 | Verify answer + image (multimodal) | Sonnet | verifier.py (`generate_with_image`) |
-| 4 | Correction (when verification fails; multimodal if chart failed) | Sonnet | corrector.py |
+| 0 | Plan 核心問題 candidates (optional; only when called via `/api/plan-core-questions` or upstream of CLI `--core-question`) | `model_plan` | `src/planner.py` + `src/common/planner.py` |
+| 1 | Generate question | `model_execute` | `src/llm_client.py` |
+| 2 | Generate HTML image (only when `render_mode="html"`) | `model_execute` | `src/renderer.py` |
+| 3 | Verify answer + image (multimodal) | `model_execute` | `src/verifier.py` |
+| 4 | Correction (when verification fails; multimodal if chart failed) | `model_execute` | `src/corrector.py` |
 > **Social studies & natural sciences:** Call #1 is replaced by a 文本生成器 call (agent `generator`) + N concurrent 子題產生器 calls (agents `sub_generator#1`…`sub_generator#N`), each on its own `LLMClient` instance. Calls #2–4 (image/verify/correct) are unchanged.
 
 Calls 3 + 4 may repeat up to `max_retries` times (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).

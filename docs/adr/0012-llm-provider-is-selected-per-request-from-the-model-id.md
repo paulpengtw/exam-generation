@@ -1,0 +1,15 @@
+# LLM provider is selected per-request from the model id
+
+The provider used for each LLM call is resolved at call time from the model id string rather than from a deployment-wide setting. `resolve_provider(model)` in `src/llm_client.py` maps `gemini-*` to the Gemini OpenAI-compatible surface, `gpt-*/o-series` to OpenAI, `claude-*` to the Anthropic SDK, and unknown ids to Anthropic (supporting proxy deployments). Each provider has its own credential pair: `GEMINI_API_KEY`/`GEMINI_BASE_URL`, `OPENAI_API_KEY`/`OPENAI_BASE_URL`, and `LLM_API_KEY`/`LLM_BASE_URL` (Anthropic, unchanged). The default model for both `model_plan` and `model_execute` is `gemini-3.1-pro-preview`, which heads the built-in `_DEFAULT_MODELS_ALLOWED` roster in `server/config.py`. A missing provider key causes an HTTP 422 that names the required env var, returned by the `_check_provider_key_for_model` guard on `/api/generate`, `/api/generate/preview`, and `/api/plan-core-questions`.
+
+## Considered Options
+
+**Deploy-time `LLM_PROVIDER` environment switch** — A single env var selects Anthropic, Gemini, or OpenAI for the whole deployment. This was rejected because it is not selectable per request: a teacher wanting to mix `claude-*` for one question type and `gemini-*` for another would need a restart to switch, and the model id already encodes all the information needed to route the call.
+
+**Explicit provider request field + UI dropdown** — The API would accept a `provider` field alongside the model id, and the UI would expose a provider picker. This was rejected because it introduces a new API contract and new UI surface for information that is already fully derivable from the model id. Deriving the provider from the id keeps the API simple and makes the provider selection implicit and unsurprising.
+
+**Filtering keyless providers out of `GET /api/models`** — Models whose provider key is absent would be hidden from the `GET /api/models` response so the UI cannot offer them. This was rejected because it hides the reason from the operator (a missing key looks identical to a model not being configured) and conflicts with the appended-defaults rule (the plan/execute models are always appended to the allowlist, so they would disappear from the list silently). The 422 response naming the env var was chosen instead: the model stays visible and the operator gets an actionable error message.
+
+## Consequences
+
+Fresh deployments need `GEMINI_API_KEY` set because the default model is `gemini-3.1-pro-preview`. Anthropic-only features degrade gracefully: the web-search fact-check (`web_search_20250305`) silently skips and returns `None` when the execute model is not `claude-*`, and prompt caching is an Anthropic SDK feature that is implicit on `claude-*` calls and simply absent on Gemini/OpenAI calls. Unknown model ids route to the Anthropic provider, so existing proxy setups that pass a custom model id through `LLM_BASE_URL` continue to work without changes. Image generation (IMAGE\_API\_KEY / IMAGE\_BASE\_URL / IMAGE\_MODEL, default `gpt-image2`) remains on the OpenAI images endpoint; Gemini image generation is future work.
