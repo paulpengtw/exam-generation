@@ -278,5 +278,5 @@ def test_plan_core_questions_absent_override_keeps_defaults(monkeypatch) -> None
 
     assert response.status_code == 200
     # Defaults from SrcConfig.from_env() — not user-supplied.
-    assert captured["model_plan"] == "claude-opus-5"
+    assert captured["model_plan"] == "claude-sonnet-4-6"
     assert captured["model_execute"] == "claude-sonnet-4-6"

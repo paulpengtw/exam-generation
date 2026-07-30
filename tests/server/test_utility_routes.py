@@ -209,11 +209,11 @@ def test_models_endpoint_falls_back_to_defaults_only() -> None:
     assert body["allowed"] == ["claude-opus-4-6", "claude-sonnet-4-6"]
 
 
-def test_models_endpoint_fresh_env_returns_five_models_and_opus5_default(
+def test_models_endpoint_fresh_env_returns_five_models_and_sonnet_default(
     tmp_path: Path,
 ) -> None:
     """GET /api/models on a fresh (env-less) config must return the built-in
-    5-model roster and plan default of claude-opus-5 (issue #252)."""
+    5-model roster and plan default of claude-sonnet-4-6 (issue #252, updated by #379)."""
     env = {"LLM_API_KEY": "x", "JWT_SECRET": "test-secret"}
     with mock.patch.dict(os.environ, env, clear=True):
         cfg = ServerConfig.from_env(env_file=tmp_path / ".env.missing")
@@ -223,10 +223,7 @@ def test_models_endpoint_fresh_env_returns_five_models_and_opus5_default(
         r = client.get("/api/models")
     assert r.status_code == 200
     body = r.json()
-    assert body["defaults"] == {
-        "plan": "claude-opus-5",
-        "execute": "claude-sonnet-4-6",
-    }
+    assert body["defaults"] == {"plan": "claude-sonnet-4-6", "execute": "claude-sonnet-4-6"}
     assert body["allowed"] == list(_DEFAULT_MODELS_ALLOWED)
 
 

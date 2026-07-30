@@ -137,7 +137,7 @@ Open the **backend** service, click the **Variables** tab, and add the following
 |---|---|---|
 | `LLM_API_KEY` | The `sk-ant-api03-...` key from Step 1 | Lets the backend call Claude |
 | `LLM_BASE_URL` | `https://api.anthropic.com/v1` | Which AI service to use |
-| `LLM_MODEL_PLAN` | `claude-opus-5` | Which Claude model handles planning |
+| `LLM_MODEL_PLAN` | `claude-sonnet-4-6` | Which Claude model handles planning |
 | `LLM_MODEL_EXECUTE` | `claude-sonnet-4-6` | Which Claude model generates questions |
 | `LLM_RATE_LIMIT_DELAY` | `2` | Wait 2 seconds between Claude calls (avoids rate-limit errors) |
 | `LLM_TEMPERATURE` | (unset) | Optional sampling temperature; leave unset to use the provider default. Ignored for models that reject sampling params. |
