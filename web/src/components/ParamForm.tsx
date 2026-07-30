@@ -1640,6 +1640,11 @@ export default function ParamForm({
       : [];
     const allLpEntries = schemas?.學習表現 ?? [];
     const allLcEntries = schemas?.學習內容 ?? [];
+    // #318: 各小題配置 card 的代號名稱查詢（學習內容 條目說明 / 學習表現 說明）。
+    // 與題目層級的 filter 不同，未知代號不得被過濾掉 — 顯示的代號會照送
+    // 給後端（所見即所送），查不到名稱時退化為裸代號。
+    const lcNameByCode = new Map(allLcEntries.map((entry) => [entry.value, entry.instruction]));
+    const lpNameByCode = new Map(allLpEntries.map((entry) => [entry.value, entry.instruction]));
 
     const allSubjects = ["math", "social_studies", "natural_sciences"];
     const rows = ([
@@ -1857,8 +1862,13 @@ export default function ParamForm({
                                       : "form.confirm_subq_lc_selected",
                                   ).replace("{n}", String(row.learning_content.length))}
                                 </div>
-                                <ul className="list-disc pl-5 text-sm text-gray-700">
-                                  {row.learning_content.map((code) => <li key={code}>{code}</li>)}
+                                <ul className="space-y-1">
+                                  {row.learning_content.map((code) => (
+                                    <li key={code} className="flex gap-2 text-sm">
+                                      <span className="shrink-0 font-mono font-semibold text-gray-800">{code}</span>
+                                      {lcNameByCode.get(code) && <span className="text-gray-600">— {lcNameByCode.get(code)}</span>}
+                                    </li>
+                                  ))}
                                 </ul>
                               </>
                             ) : (
@@ -1875,8 +1885,13 @@ export default function ParamForm({
                                       : "form.confirm_subq_lp_selected",
                                   ).replace("{n}", String(row.learning_performance.length))}
                                 </div>
-                                <ul className="list-disc pl-5 text-sm text-gray-700">
-                                  {row.learning_performance.map((code) => <li key={code}>{code}</li>)}
+                                <ul className="space-y-1">
+                                  {row.learning_performance.map((code) => (
+                                    <li key={code} className="flex gap-2 text-sm">
+                                      <span className="shrink-0 font-mono font-semibold text-gray-800">{code}</span>
+                                      {lpNameByCode.get(code) && <span className="text-gray-600">— {lpNameByCode.get(code)}</span>}
+                                    </li>
+                                  ))}
                                 </ul>
                               </>
                             ) : (
