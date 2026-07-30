@@ -362,10 +362,26 @@ export function useGenerate(): UseGenerateReturn {
         if (!res.ok) {
           if (res.status === 401) {
             useAuthStore.getState().logout();
+            const msg = "Session expired — please sign in again";
+            setErrorMessage(msg);
+            setFinishedAt(Date.now());
+            throw new FatalStreamError(msg);
           }
-          const msg = res.status === 401
-            ? "Session expired — please sign in again"
-            : `Stream open failed: HTTP ${res.status}`;
+          let msg = `Stream open failed: HTTP ${res.status}`;
+          try {
+            const body = await res.json() as unknown;
+            if (
+              body !== null &&
+              typeof body === "object" &&
+              "detail" in body &&
+              typeof (body as Record<string, unknown>).detail === "string" &&
+              (body as Record<string, unknown>).detail !== ""
+            ) {
+              msg = (body as Record<string, string>).detail;
+            }
+          } catch {
+            // non-JSON or unreadable body — keep the generic message
+          }
           setErrorMessage(msg);
           setFinishedAt(Date.now());
           throw new FatalStreamError(msg);
