@@ -89,6 +89,20 @@ _CONTENT_TEXT: str = json.dumps(
 )
 _STAGE_TO_GRADES: dict[str, list[int]] = _CONTENT_DATA.get("學習階段_to_grades", {})
 
+# One representative (grade, LC code, LP code) per 學習階段 — used in prompt examples so
+# the example JSON always matches the request's stage and never leaks codes from another stage.
+_STAGE_EXAMPLE: dict[str, tuple[int, str, str]] = {
+    "第二學習階段": (3, "INa-II-1", "ti-Ⅱ-1"),
+    "第三學習階段": (5, "INa-III-1", "ti-Ⅲ-1"),
+    "第四學習階段": (8, "Ka-Ⅳ-1", "tr-Ⅳ-1"),
+    "第五學習階段": (11, "BDa-Ⅴa-1", "pa-Ⅴa-1"),
+}
+
+
+def _example_for_stage(stage: str) -> tuple[int, str, str]:
+    """Return (example_grade, example_lc, example_lp) for the given 學習階段."""
+    return _STAGE_EXAMPLE.get(stage, _STAGE_EXAMPLE["第四學習階段"])
+
 
 def curriculum_texts(
     learning_stage: str,
@@ -203,11 +217,11 @@ SYSTEM_PROMPT_TEMPLATE = """\
   "subquestions": [
     {{
       "序號": 1,
-      "年級": 8,
+      "年級": {example_grade},
       "科目": ["自然科學"],
       "科學能力": ["能力一：以科學的角度解釋現象"],
-      "學習內容": [{{"編碼": "Ka-Ⅳ-1", "說明": "說明文字"}}],
-      "學習表現": [{{"編碼": "tr-Ⅳ-1", "說明": "說明文字"}}],
+      "學習內容": [{{"編碼": "{example_lc}", "說明": "說明文字"}}],
+      "學習表現": [{{"編碼": "{example_lp}", "說明": "說明文字"}}],
       "出題概念": "評量學生能否……",
       "題型": "Simple multiple-choice",
       "題目": "問題一……",
@@ -253,7 +267,7 @@ USER_PROMPT_TEMPLATE = """\
 
 1. 不要複製範例題目，必須原創。
 2. 題組情境必須貼近指定的 PISA Science 情境與子類別。
-3. 每道小題的 `學習內容` / `學習表現` 應優先使用上述指定代號；如需引入其他代號，仍以系統提供的課綱資料為限。
+3. 每道小題的 `學習內容` / `學習表現` 必須使用指定學習階段的代號；不得使用其他學習階段的學習內容或學習表現代號。
 4. 整個題組應盡量讓每個指定的 `科學能力` 至少出現一次。
 5. 題型為 Constructed response 時必須附完整評分規準；Complex multiple-choice 若有部分得分也需附規準。
 6. `題目` 陣列：第一個元素放文本素材，其後每個元素放一道小題完整文字。
@@ -303,10 +317,14 @@ def build_system_prompt(
     c_text = content_text if content_text is not None else _CONTENT_TEXT
     p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
     curriculum_section = _build_curriculum_section(c_text, p_text)
+    example_grade, example_lc, example_lp = _example_for_stage(stage)
     return SYSTEM_PROMPT_TEMPLATE.format(
         learning_stage=stage,
         grade_names=grade_names,
         curriculum_section=curriculum_section,
+        example_grade=example_grade,
+        example_lc=example_lc,
+        example_lp=example_lp,
     )
 
 
@@ -563,11 +581,11 @@ _FULL_OUTPUT_FORMAT_BLOCK = """\
   "subquestions": [
     {{
       "序號": 1,
-      "年級": 8,
+      "年級": {example_grade},
       "科目": ["自然科學"],
       "科學能力": ["能力一：以科學的角度解釋現象"],
-      "學習內容": [{{"編碼": "Ka-Ⅳ-1", "說明": "說明文字"}}],
-      "學習表現": [{{"編碼": "tr-Ⅳ-1", "說明": "說明文字"}}],
+      "學習內容": [{{"編碼": "{example_lc}", "說明": "說明文字"}}],
+      "學習表現": [{{"編碼": "{example_lp}", "說明": "說明文字"}}],
       "出題概念": "評量學生能否……",
       "題型": "Simple multiple-choice",
       "題目": "問題一……",
@@ -615,10 +633,14 @@ def build_text_system_prompt(
     c_text = content_text if content_text is not None else _CONTENT_TEXT
     p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
     curriculum_section = _build_curriculum_section(c_text, p_text)
+    example_grade, example_lc, example_lp = _example_for_stage(stage)
     return TEXT_SYSTEM_PROMPT_TEMPLATE.format(
         learning_stage=stage,
         grade_names=grade_names,
         curriculum_section=curriculum_section,
+        example_grade=example_grade,
+        example_lc=example_lc,
+        example_lp=example_lp,
     )
 
 
@@ -674,6 +696,7 @@ def build_subquestion_system_prompt(
     c_text = content_text if content_text is not None else _CONTENT_TEXT
     p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
     curriculum_section = _build_curriculum_section(c_text, p_text)
+    example_grade, example_lc, example_lp = _example_for_stage(learning_stage)
     return f"""\
 你是一位108課綱自然科學領域子題命題教師。你會收到一份共用科學文本，以及一道小題的出題規劃；請只根據該文本與規劃撰寫 exactly one SubQuestion JSON。
 
@@ -684,12 +707,12 @@ def build_subquestion_system_prompt(
 ```json
 {{
   "序號": 1,
-  "年級": 8,
+  "年級": {example_grade},
   "科目": ["自然科學"],
   "科學能力": ["能力一：以科學的角度解釋現象"],
   "核心素養": [],
-  "學習內容": [{{"編碼": "Ka-Ⅳ-1", "說明": "說明文字"}}],
-  "學習表現": [{{"編碼": "tr-Ⅳ-1", "說明": "說明文字"}}],
+  "學習內容": [{{"編碼": "{example_lc}", "說明": "說明文字"}}],
+  "學習表現": [{{"編碼": "{example_lp}", "說明": "說明文字"}}],
   "出題概念": "評量學生能否……",
   "reporting_scale": "3",
   "題型": "Simple multiple-choice",
@@ -899,7 +922,7 @@ def build_subquestion_user_prompt(
 
 1. 只撰寫序號 {sq_plan.get("序號", 1)} 的一道小題。
 2. 小題必須能依據共用文本作答，不要引入無法由文本支持的新情境。
-3. `學習內容` / `學習表現` 應優先使用上述指定代號；如需引入其他代號，仍以系統提供的課綱資料為限。
+3. `學習內容` / `學習表現` 必須使用指定學習階段的代號；不得使用其他學習階段的學習內容或學習表現代號。
 4. **誘答分析**：本小題若為 `Simple multiple-choice` 或 `Complex multiple-choice`，`誘答分析` **必須**同時涵蓋題目所有選項標籤（預設 A/B/C/D）；正確選項填「正確答案：…」，其餘選項描述其針對的科學迷思。若為 `Constructed response`，可留空 `{{}}` 或使用 `{{"常見錯誤": "..."}}` 描述一項最常見的科學迷思。
 5. 請只輸出一道小題的 JSON，不要輸出其他文字。
 """, all_image_paths
