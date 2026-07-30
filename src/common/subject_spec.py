@@ -126,7 +126,7 @@ NATURAL_SCIENCES = SubjectLoaderSpec(
     core_competency_subject_prefix="自",
     core_competency_enum_name="NaturalCoreCompetency",
     schema_categories=(
-        "情境", "情境子類別", "題型種類", "題型", "科學能力", "題目內容類型", "難度",
+        "情境", "情境子類別", "題型種類", "題型", "科學能力", "題目內容類型",
     ),
 )
 

@@ -31,10 +31,12 @@ def test_social_studies_csv_has_difficulty_rows():
     )
 
 
-def test_natural_sciences_csv_has_difficulty_rows():
+def test_natural_sciences_csv_has_no_difficulty_rows():
+    """NS #282: 難度 rows must be absent from NS schema_parameters.csv."""
     values = _csv_values(NS_CSV, "難度")
-    assert set(values) == _REQUIRED
-    assert all(v.strip() for v in values.values())
+    assert len(values) == 0, (
+        f"NS schema_parameters.csv must have no 難度 rows, found: {list(values)}"
+    )
 
 
 def test_math_schemas_json_has_difficulty_category():

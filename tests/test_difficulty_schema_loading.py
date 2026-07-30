@@ -18,8 +18,10 @@ def test_social_studies_build_instructions_exposes_難度():
     assert set(instr["難度"]) == {"easy", "medium", "hard"}
 
 
-def test_natural_sciences_build_instructions_exposes_難度():
+def test_natural_sciences_build_instructions_has_no_難度():
+    """NS #282: 難度 removed from NS schema — must not appear in instructions."""
     from src.natural_sciences.schema_loader import build_instructions, load_schemas
     instr = build_instructions(load_schemas())
-    assert "難度" in instr
-    assert set(instr["難度"]) == {"easy", "medium", "hard"}
+    assert "難度" not in instr, (
+        "NS build_instructions must not expose 難度 after issue #282"
+    )
