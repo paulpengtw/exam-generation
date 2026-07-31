@@ -79,6 +79,8 @@ const IDENTIFIABLE_FIELDS: FormFields = {
   subquestionConfigs: [],
   modelPlan: "",
   modelExecute: "",
+  modelVerify: "",
+  modelCorrect: "",
   effortPlan: "medium",
   effortExecute: "medium",
 };
@@ -231,6 +233,8 @@ describe("ParamForm draft summary", () => {
       "各小題配置",
       "規劃模型",
       "出題模型",
+      "驗證模型",
+      "修正模型",
     ]);
     expect(details).toHaveTextContent("素養");
     expect(details).toHaveTextContent("純文字");

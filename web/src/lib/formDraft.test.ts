@@ -34,6 +34,8 @@ function makeFields(overrides: Partial<FormFields> = {}): FormFields {
     subquestionConfigs: [],
     modelPlan: "",
     modelExecute: "",
+    modelVerify: "",
+    modelCorrect: "",
     effortPlan: "medium",
     effortExecute: "medium",
     ...overrides,
@@ -103,5 +105,25 @@ describe("formDraft", () => {
 
     expect(loadDraft("teacher-1")).toBeNull();
     expect(localStorage.getItem("exam_form_draft_teacher-1")).toBeNull();
+  });
+
+  it("loads a draft saved by an older build (without modelVerify/modelCorrect) and normalises missing fields to empty string", () => {
+    // Simulate a draft persisted before issue #376 added modelVerify / modelCorrect.
+    const oldFields = makeFields({ topic: "舊版草稿" });
+    const { modelVerify: _v, modelCorrect: _c, ...fieldsWithoutNewKeys } = oldFields;
+    localStorage.setItem(
+      "exam_form_draft_teacher-1",
+      JSON.stringify({
+        savedAt: NOW.toISOString(),
+        fields: fieldsWithoutNewKeys,
+      }),
+    );
+
+    const draft = loadDraft("teacher-1");
+    expect(draft).not.toBeNull();
+    expect(draft?.fields.topic).toBe("舊版草稿");
+    // Missing fields must be normalised to "" rather than left as undefined.
+    expect(draft?.fields.modelVerify).toBe("");
+    expect(draft?.fields.modelCorrect).toBe("");
   });
 });
