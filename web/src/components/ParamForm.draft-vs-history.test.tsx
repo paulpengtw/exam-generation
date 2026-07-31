@@ -89,6 +89,8 @@ const DRAFT_FIELDS: FormFields = {
   modelCorrect: "",
   effortPlan: "medium",
   effortExecute: "medium",
+  effortVerify: "",
+  effortCorrect: "",
 };
 
 const HISTORY_PARAMS = {
@@ -156,6 +158,8 @@ const HISTORY_FIELDS: FormFields = {
   modelCorrect: "",
   effortPlan: "medium",
   effortExecute: "medium",
+  effortVerify: "",
+  effortCorrect: "",
 };
 
 function signIn(): void {

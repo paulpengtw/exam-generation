@@ -59,7 +59,14 @@ async def preview_generate_endpoint(
     effective_verify_model = params.model_verify or config.model_verify or effective_execute_model
     effective_correct_model = params.model_correct or config.model_correct or effective_execute_model
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
+    # #377: effective execute effort (with per-request override applied)
+    effective_execute_effort = params.effort_execute or config.effort_execute
     _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
+    # #377: validate tier efforts against their effective model using the full inherited chain
+    effective_verify_effort = params.effort_verify or config.effort_verify or effective_execute_effort
+    _check_effort_for_model(effective_verify_effort, effective_verify_model, "effort_verify")
+    effective_correct_effort = params.effort_correct or config.effort_correct or effective_execute_effort
+    _check_effort_for_model(effective_correct_effort, effective_correct_model, "effort_correct")
     _check_image_api_key(params.image_generation_mode, params.subquestion_configs, config)
     _check_provider_key_for_model(effective_plan_model, config, "model_plan")
     _check_provider_key_for_model(effective_execute_model, config, "model_execute")
@@ -201,6 +208,8 @@ async def generate_endpoint(
     model_correct: str | None = Query(default=None),   # #375: per-request tier model override
     effort_plan: str | None = Query(default=None),
     effort_execute: str | None = Query(default=None),
+    effort_verify: str | None = Query(default=None),   # #377: per-request tier effort override
+    effort_correct: str | None = Query(default=None),  # #377: per-request tier effort override
     reporting_scale: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
@@ -225,6 +234,14 @@ async def generate_endpoint(
     effective_correct_model = model_correct or config.model_correct or effective_execute_model
     _check_effort_for_model(effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(effort_execute, effective_execute_model, "effort_execute")
+    # #377: validate tier efforts against their effective model using the full inherited chain.
+    # Note: effective_execute_effort chains off the per-request override so that an unset
+    # tier effort inherits the per-request execute override (not the env-time default).
+    effective_execute_effort = effort_execute or config.effort_execute
+    effective_verify_effort = effort_verify or config.effort_verify or effective_execute_effort
+    _check_effort_for_model(effective_verify_effort, effective_verify_model, "effort_verify")
+    effective_correct_effort = effort_correct or config.effort_correct or effective_execute_effort
+    _check_effort_for_model(effective_correct_effort, effective_correct_model, "effort_correct")
     _check_image_api_key(image_generation_mode, subquestion_configs, config)
     _check_provider_key_for_model(effective_plan_model, config, "model_plan")
     _check_provider_key_for_model(effective_execute_model, config, "model_execute")
@@ -269,6 +286,8 @@ async def generate_endpoint(
             model_correct=model_correct,  # #375
             effort_plan=effort_plan,
             effort_execute=effort_execute,
+            effort_verify=effort_verify,   # #377
+            effort_correct=effort_correct,  # #377
             reporting_scale=reporting_scale,
         )
     except ValidationError as exc:

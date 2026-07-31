@@ -53,6 +53,8 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
     model_correct: params.model_correct,
     effort_plan: params.effort_plan,
     effort_execute: params.effort_execute,
+    effort_verify: params.effort_verify,
+    effort_correct: params.effort_correct,
     difficulty: subject !== "natural_sciences" ? params.difficulty : undefined,
     reporting_scale: subject === "natural_sciences" ? params.reporting_scale : undefined,
     coverage_mode: subject === "social_studies" ? params.coverage_mode : undefined,

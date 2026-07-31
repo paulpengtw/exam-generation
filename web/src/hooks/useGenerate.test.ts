@@ -272,6 +272,37 @@ describe("buildQueryString — effort overrides", () => {
   });
 });
 
+describe("buildQueryString — effort_verify / effort_correct overrides", () => {
+  it("does not emit effort_verify / effort_correct when unset", () => {
+    const qs = buildQueryString({ subject: "math", grade: 7 });
+    expect(qs).not.toContain("effort_verify");
+    expect(qs).not.toContain("effort_correct");
+  });
+
+  it("does not emit effort_verify / effort_correct when set to empty string", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      grade: 7,
+      effort_verify: "",
+      effort_correct: "",
+    });
+    expect(qs).not.toContain("effort_verify");
+    expect(qs).not.toContain("effort_correct");
+  });
+
+  it("emits effort_verify / effort_correct when set to non-empty strings", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      grade: 7,
+      effort_verify: "high",
+      effort_correct: "low",
+    });
+    const params = new URLSearchParams(qs);
+    expect(params.get("effort_verify")).toBe("high");
+    expect(params.get("effort_correct")).toBe("low");
+  });
+});
+
 describe("useGenerate — parseErrorEventData", () => {
   it("returns .message from a valid structured JSON payload", () => {
     const raw = JSON.stringify({ code: "generation_failed", message: "Question generation failed (RuntimeError)" });

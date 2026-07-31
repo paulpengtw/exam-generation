@@ -63,6 +63,9 @@ class ServerConfig(Config):
     # ServerConfig.from_env re-reads every env var independently.
     # model_verify: str = ""   # inherited — declared in Config
     # model_correct: str = ""  # inherited — declared in Config
+    # Tier-specific effort overrides (issue #377); inherited from Config.
+    # effort_verify: str = ""  # inherited — declared in Config
+    # effort_correct: str = "" # inherited — declared in Config
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -151,6 +154,8 @@ class ServerConfig(Config):
             not in ("0", "false", "False", ""),
             effort_plan=os.environ.get("LLM_EFFORT_PLAN", "medium"),
             effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", "medium"),
+            effort_verify=os.environ.get("LLM_EFFORT_VERIFY", ""),
+            effort_correct=os.environ.get("LLM_EFFORT_CORRECT", ""),
         )
         # When LLM_MODELS_ALLOWED is unset/empty fall back to the built-in
         # roster; when set it replaces the roster entirely (no merge).

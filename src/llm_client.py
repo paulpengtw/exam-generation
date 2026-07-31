@@ -14,7 +14,7 @@ from anthropic import Anthropic
 from openai import OpenAI
 from pydantic import BaseModel
 
-from src.config import Config, EFFORT_LEVELS, DEFAULT_EFFORT_LEVELS
+from src.config import Config
 
 import logging
 
@@ -27,10 +27,6 @@ _warned_emit_stage_observers: set[int] = set()
 # (provider, effort) pairs for which we have already emitted the "effort
 # parameter dropped" warning — avoids log spam on repeated calls.
 _warned_effort_drops: set[tuple[str, str]] = set()
-
-# (model, effort) pairs for which we have already emitted the "tier effort
-# dropped" warning — avoids log spam on repeated calls.
-_warned_tier_effort_drops: set[tuple[str, str]] = set()
 
 _SAMPLING_REJECT_PREFIXES: tuple[str, ...] = (
     "claude-opus-5",
@@ -378,12 +374,32 @@ class LLMClient:
             return self.config.model_correct or self.config.model_execute
         return self.config.model_execute
 
-    def _effort_kwargs(
-        self, purpose: str, provider: str = "anthropic", model: str | None = None
-    ) -> dict:
+    def _effort_for_purpose(self, purpose: str) -> str:
+        """Resolve the effort tier for a call purpose: tier override → effort_execute.
+
+        Resolution chain per tier (issue #377):
+            plan purposes    → effort_plan
+            verify purposes  → effort_verify or effort_execute (resolved at call time)
+            correct purposes → effort_correct or effort_execute (resolved at call time)
+            everything else  → effort_execute
+
+        The ``or effort_execute`` fallback resolves at call time (NOT at Config
+        construction time) so that per-request ``dataclasses.replace(cfg,
+        effort_execute=...)`` overrides flow through to the tiers when their own
+        effort is unset.
+        """
+        if purpose in _PLAN_PURPOSES:
+            return self.config.effort_plan
+        if purpose in _VERIFY_PURPOSES:
+            return self.config.effort_verify or self.config.effort_execute
+        if purpose in _CORRECT_PURPOSES:
+            return self.config.effort_correct or self.config.effort_execute
+        return self.config.effort_execute
+
+    def _effort_kwargs(self, purpose: str, provider: str = "anthropic") -> dict:
         """Return effort kwargs appropriate for the provider and call purpose.
 
-        planning purposes (see ``_PLAN_PURPOSES``) → effort_plan; everything else → effort_execute.
+        Delegates tier selection to ``_effort_for_purpose`` (plan/verify/correct/execute).
 
         Anthropic: wraps effort in ``{"extra_body": {"output_config": {"effort": ...}}}``.
         gemini / openai: maps low/medium/high to ``{"reasoning_effort": effort}``.
@@ -391,31 +407,11 @@ class LLMClient:
             is omitted entirely and a WARNING is emitted once per (provider, effort)
             pair (module-level ``_warned_effort_drops`` suppresses repeats).
 
-        Interim per-tier effort guard (issue #374): verify/correct still inherit
-        effort_execute; when the resolved tier model diverges from model_execute AND
-        that model does not accept the inherited effort, drop the effort rather than
-        sending a value the tier's model will reject.  Per-tier effort is issue #377.
+        Route-level validation (issue #377) ensures that the effective effort is
+        compatible with the tier's model before any LLM call, so invalid values
+        are caught upstream rather than being silently dropped here.
         """
-        effort = self.config.effort_plan if purpose in _PLAN_PURPOSES else self.config.effort_execute
-
-        # Interim per-tier effort guard: only fires when the resolved model diverges
-        # from config.model_execute (i.e. a tier model is actually in use).
-        if model and model != self.config.model_execute:
-            roster = EFFORT_LEVELS.get(model, DEFAULT_EFFORT_LEVELS)
-            if effort not in roster:
-                key = (model, effort)
-                if key not in _warned_tier_effort_drops:
-                    _warned_tier_effort_drops.add(key)
-                    logger.warning(
-                        "effort=%r dropped for tier model %r — "
-                        "value not in supported roster %r; "
-                        "configure LLM_EFFORT_EXECUTE to a supported value "
-                        "or wait for per-tier effort (issue #377)",
-                        effort,
-                        model,
-                        roster,
-                    )
-                return {}
+        effort = self._effort_for_purpose(purpose)
 
         if provider == "anthropic":
             return {"extra_body": {"output_config": {"effort": effort}}}
@@ -467,7 +463,7 @@ class LLMClient:
             model=model,
             max_tokens=8192,
             **self._temperature_kwargs(model),
-            **self._effort_kwargs(purpose, model=model),
+            **self._effort_kwargs(purpose),
             system=system_param,
             messages=messages,  # type: ignore[arg-type]
         ) as stream:
@@ -573,7 +569,7 @@ class LLMClient:
             model=model,
             max_tokens=8192,
             **self._temperature_kwargs(model),
-            **self._effort_kwargs(purpose, model=model),
+            **self._effort_kwargs(purpose),
             system=system_param,
             messages=anthropic_messages,  # type: ignore[arg-type]
         )
@@ -679,7 +675,7 @@ class LLMClient:
             "messages": messages,  # type: ignore[arg-type]
             **_max_tokens_kwargs(provider),
             **self._temperature_kwargs(model),
-            **self._effort_kwargs(purpose, provider, model=model),
+            **self._effort_kwargs(purpose, provider),
         }
 
         if self._observer and self.config.llm_stream:
@@ -914,7 +910,7 @@ class LLMClient:
                 model=call_model,
                 max_tokens=8192,
                 **self._temperature_kwargs(call_model),
-                **self._effort_kwargs(purpose, model=call_model),
+                **self._effort_kwargs(purpose),
                 system=system_param,
                 messages=messages,  # type: ignore[arg-type]
                 tools=tools,  # type: ignore[arg-type]

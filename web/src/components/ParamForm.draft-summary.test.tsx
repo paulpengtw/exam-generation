@@ -83,6 +83,8 @@ const IDENTIFIABLE_FIELDS: FormFields = {
   modelCorrect: "",
   effortPlan: "medium",
   effortExecute: "medium",
+  effortVerify: "",
+  effortCorrect: "",
 };
 
 function signIn(): void {
@@ -235,6 +237,8 @@ describe("ParamForm draft summary", () => {
       "出題模型",
       "驗證模型",
       "修正模型",
+      "驗證 Effort",
+      "修正 Effort",
     ]);
     expect(details).toHaveTextContent("素養");
     expect(details).toHaveTextContent("純文字");

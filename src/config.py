@@ -67,6 +67,9 @@ class Config:
     temperature: float | None = None  # sampling temperature; None = provider default
     effort_plan: str = "medium"  # output_config.effort for plan calls (LLM_EFFORT_PLAN)
     effort_execute: str = "medium"  # output_config.effort for execute calls (LLM_EFFORT_EXECUTE)
+    # Tier-specific effort overrides (issue #377); empty = inherit effort_execute at call time.
+    effort_verify: str = ""   # empty → inherit effort_execute (LLM_EFFORT_VERIFY)
+    effort_correct: str = ""  # empty → inherit effort_execute (LLM_EFFORT_CORRECT)
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> Config:
@@ -105,6 +108,8 @@ class Config:
             temperature=float(t) if (t := os.environ.get("LLM_TEMPERATURE", "").strip()) else None,
             effort_plan=os.environ.get("LLM_EFFORT_PLAN", "medium"),
             effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", "medium"),
+            effort_verify=os.environ.get("LLM_EFFORT_VERIFY", ""),
+            effort_correct=os.environ.get("LLM_EFFORT_CORRECT", ""),
         )
 
     def validate(self) -> None:

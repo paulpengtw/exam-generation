@@ -113,6 +113,10 @@ class GenerateParams(BaseModel):
     # at the route level; basic format validated here).
     effort_plan: str | None = None
     effort_execute: str | None = None
+    # #377: per-request tier effort overrides; resolution order is
+    # request param → env var (config.effort_verify/correct) → effective execute effort.
+    effort_verify: str | None = None
+    effort_correct: str | None = None
     # #279: 題組-level Reporting Scale (natural_sciences only; other subjects accept and ignore).
     reporting_scale: str | None = None
 
@@ -140,7 +144,7 @@ class GenerateParams(BaseModel):
         decode_per_question_params(value)
         return value
 
-    @field_validator("effort_plan", "effort_execute")
+    @field_validator("effort_plan", "effort_execute", "effort_verify", "effort_correct")
     @classmethod
     def effort_level_must_be_valid(cls, value: str | None) -> str | None:
         _VALID_EFFORT_LEVELS = {"low", "medium", "high", "xhigh", "max"}
@@ -223,6 +227,8 @@ PER_QUESTION_FIELDS: frozenset[str] = frozenset(
         "model_correct",  # #375: per-request tier model override
         "effort_plan",
         "effort_execute",
+        "effort_verify",   # #377: per-request tier effort override
+        "effort_correct",  # #377: per-request tier effort override
         "reporting_scale",
     }
 )
