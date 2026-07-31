@@ -50,14 +50,21 @@ async def preview_generate_endpoint(
     """Return exact first-stage prompts without invoking an LLM."""
     _check_model_allowed(params.model_plan, config, "model_plan")
     _check_model_allowed(params.model_execute, config, "model_execute")
+    _check_model_allowed(params.model_verify, config, "model_verify")    # #375
+    _check_model_allowed(params.model_correct, config, "model_correct")  # #375
     _check_subject_allowed(params.subject)
     effective_plan_model = params.model_plan or config.model_plan
     effective_execute_model = params.model_execute or config.model_execute
+    # #375: tier model resolution — request param → env var → effective execute model
+    effective_verify_model = params.model_verify or config.model_verify or effective_execute_model
+    effective_correct_model = params.model_correct or config.model_correct or effective_execute_model
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
     _check_image_api_key(params.image_generation_mode, params.subquestion_configs, config)
     _check_provider_key_for_model(effective_plan_model, config, "model_plan")
     _check_provider_key_for_model(effective_execute_model, config, "model_execute")
+    _check_provider_key_for_model(effective_verify_model, config, "model_verify")    # #375
+    _check_provider_key_for_model(effective_correct_model, config, "model_correct")  # #375
     return {"prompts": build_prompt_previews(params, config, request.app.state)}
 
 
@@ -190,6 +197,8 @@ async def generate_endpoint(
     per_question_params: str | None = Query(default=None),
     model_plan: str | None = Query(default=None),
     model_execute: str | None = Query(default=None),
+    model_verify: str | None = Query(default=None),    # #375: per-request tier model override
+    model_correct: str | None = Query(default=None),   # #375: per-request tier model override
     effort_plan: str | None = Query(default=None),
     effort_execute: str | None = Query(default=None),
     reporting_scale: str | None = Query(default=None),
@@ -204,15 +213,23 @@ async def generate_endpoint(
     """
     _check_model_allowed(model_plan, config, "model_plan")
     _check_model_allowed(model_execute, config, "model_execute")
+    _check_model_allowed(model_verify, config, "model_verify")    # #375
+    _check_model_allowed(model_correct, config, "model_correct")  # #375
     _check_subject_allowed(subject)
     # Validate effort levels against the effective model's roster (BEFORE any LLM call).
     effective_plan_model = model_plan or config.model_plan
     effective_execute_model = model_execute or config.model_execute
+    # #375: tier model resolution — request param → env var → effective execute model.
+    # Note: chains off effective_execute_model (honours per-request model_execute override).
+    effective_verify_model = model_verify or config.model_verify or effective_execute_model
+    effective_correct_model = model_correct or config.model_correct or effective_execute_model
     _check_effort_for_model(effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(effort_execute, effective_execute_model, "effort_execute")
     _check_image_api_key(image_generation_mode, subquestion_configs, config)
     _check_provider_key_for_model(effective_plan_model, config, "model_plan")
     _check_provider_key_for_model(effective_execute_model, config, "model_execute")
+    _check_provider_key_for_model(effective_verify_model, config, "model_verify")    # #375
+    _check_provider_key_for_model(effective_correct_model, config, "model_correct")  # #375
     try:
         params = GenerateParams(
             subject=subject,
@@ -248,6 +265,8 @@ async def generate_endpoint(
             per_question_params=per_question_params,
             model_plan=model_plan,
             model_execute=model_execute,
+            model_verify=model_verify,    # #375
+            model_correct=model_correct,  # #375
             effort_plan=effort_plan,
             effort_execute=effort_execute,
             reporting_scale=reporting_scale,

@@ -105,6 +105,10 @@ class GenerateParams(BaseModel):
     # at the route level).
     model_plan: str | None = None
     model_execute: str | None = None
+    # #375: per-request tier model overrides; resolution order is
+    # request param → env var (config.model_verify/correct) → effective execute model.
+    model_verify: str | None = None
+    model_correct: str | None = None
     # #254: per-request effort tier overrides (validated against per-model roster
     # at the route level; basic format validated here).
     effort_plan: str | None = None
@@ -215,6 +219,8 @@ PER_QUESTION_FIELDS: frozenset[str] = frozenset(
         "subquestion_configs",
         "model_plan",
         "model_execute",
+        "model_verify",   # #375: per-request tier model override
+        "model_correct",  # #375: per-request tier model override
         "effort_plan",
         "effort_execute",
         "reporting_scale",

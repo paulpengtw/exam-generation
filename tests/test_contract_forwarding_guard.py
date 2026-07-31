@@ -89,6 +89,17 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
+    # #375: per-request tier model overrides — forwarded via client_config for all subjects
+    "model_verify": {
+        _MA: (FORWARDED, ""),
+        _SS: (FORWARDED, ""),
+        _NS: (FORWARDED, ""),
+    },
+    "model_correct": {
+        _MA: (FORWARDED, ""),
+        _SS: (FORWARDED, ""),
+        _NS: (FORWARDED, ""),
+    },
     "effort_plan": {
         _MA: (FORWARDED, ""),
         _SS: (FORWARDED, ""),
@@ -291,6 +302,13 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("model_execute", _MA): (_svc._build_run_context, "params.model_execute"),
     ("model_execute", _SS): (_svc._build_run_context, "params.model_execute"),
     ("model_execute", _NS): (_svc._build_run_context, "params.model_execute"),
+    # #375: tier model overrides — forwarded via client_config in _build_run_context
+    ("model_verify",  _MA): (_svc._build_run_context, "params.model_verify"),
+    ("model_verify",  _SS): (_svc._build_run_context, "params.model_verify"),
+    ("model_verify",  _NS): (_svc._build_run_context, "params.model_verify"),
+    ("model_correct", _MA): (_svc._build_run_context, "params.model_correct"),
+    ("model_correct", _SS): (_svc._build_run_context, "params.model_correct"),
+    ("model_correct", _NS): (_svc._build_run_context, "params.model_correct"),
     ("effort_plan",   _MA): (_svc._build_run_context, "params.effort_plan"),
     ("effort_plan",   _SS): (_svc._build_run_context, "params.effort_plan"),
     ("effort_plan",   _NS): (_svc._build_run_context, "params.effort_plan"),
@@ -558,6 +576,6 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    assert forwarded    == 81, f"Expected 81 FORWARDED, got {forwarded}"
+    assert forwarded    == 87, f"Expected 87 FORWARDED, got {forwarded}"  # +6 for #375 model_verify/model_correct × 3 subjects
     assert rejected     == 6,  f"Expected 6 REJECTED, got {rejected}"
     assert inapplicable == 21, f"Expected 21 INAPPLICABLE, got {inapplicable}"

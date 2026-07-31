@@ -33,6 +33,8 @@ async def get_models(
         "defaults": {
             "plan": config.model_plan,
             "execute": config.model_execute,
+            "verify": config.model_verify,    # #375: "" when unset (signals "follows execute" to frontend #376)
+            "correct": config.model_correct,  # #375: "" when unset
             "effort_plan": config.effort_plan,
             "effort_execute": config.effort_execute,
         },
