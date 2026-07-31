@@ -8,6 +8,31 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# ---------------------------------------------------------------------------
+# Per-model effort level roster (moved here from server/config.py so that
+# src/ code can reference it without importing server/).
+#
+# Models that support the full five-level scale include xhigh; the 4.x models
+# stop at max.  Unknown models (custom roster via env) default to the safe
+# four-level subset (no xhigh).
+# ---------------------------------------------------------------------------
+
+FIVE_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "xhigh", "max"]
+FOUR_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "max"]
+THREE_EFFORT_LEVELS: list[str] = ["low", "medium", "high"]
+
+# Unknown-model fallback (conservative: no xhigh).
+DEFAULT_EFFORT_LEVELS: list[str] = FOUR_EFFORT_LEVELS
+
+EFFORT_LEVELS: dict[str, list[str]] = {
+    "claude-opus-5": FIVE_EFFORT_LEVELS,
+    "claude-fable-5": FIVE_EFFORT_LEVELS,
+    "claude-sonnet-5": FIVE_EFFORT_LEVELS,
+    "claude-sonnet-4-6": FOUR_EFFORT_LEVELS,
+    "claude-opus-4-6": FOUR_EFFORT_LEVELS,
+    "gemini-3.1-pro-preview": THREE_EFFORT_LEVELS,
+}
+
 
 @dataclass
 class Config:
@@ -15,6 +40,11 @@ class Config:
     base_url: str = "https://api.anthropic.com/v1"
     model_plan: str = "claude-sonnet-4-6"
     model_execute: str = "claude-sonnet-4-6"
+    # Tier-specific model overrides (empty = follow the effective execute model,
+    # resolved at call time so per-request dataclasses.replace overrides land
+    # correctly — see issue #374).
+    model_verify: str = ""   # 驗證模型; empty → effective execute model
+    model_correct: str = ""  # 修正模型; empty → effective execute model
     image_api_key: str = ""
     image_base_url: str = "https://api.openai.com/v1"
     image_model: str = "gpt-image2"
@@ -51,6 +81,8 @@ class Config:
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
             model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-sonnet-4-6"),
             model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
+            model_verify=os.environ.get("LLM_MODEL_VERIFY", ""),
+            model_correct=os.environ.get("LLM_MODEL_CORRECT", ""),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
             image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),
