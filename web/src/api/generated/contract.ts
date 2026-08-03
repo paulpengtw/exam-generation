@@ -47,6 +47,8 @@ export interface GenerateParams {
   per_question_params?: string;
   model_plan?: string;
   model_execute?: string;
+  model_verify?: string;
+  model_correct?: string;
   effort_plan?: string;
   effort_execute?: string;
   reporting_scale?: string;
