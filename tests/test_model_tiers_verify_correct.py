@@ -19,16 +19,13 @@ from unittest import mock
 
 import pytest
 
-# ── imports that will FAIL until implementation (confirming RED) ───────────────
-# EFFORT_LEVELS / DEFAULT_EFFORT_LEVELS must move to src.config (issue #374 §4).
+# ── imports ───────────────────────────────────────────────────────────────────
 from src.config import Config, EFFORT_LEVELS, DEFAULT_EFFORT_LEVELS  # noqa: E402
 
-# _VERIFY_PURPOSES, _CORRECT_PURPOSES, and _warned_tier_effort_drops are new.
 from src.llm_client import (  # noqa: E402
     LLMClient,
     _VERIFY_PURPOSES,
     _CORRECT_PURPOSES,
-    _warned_tier_effort_drops,
 )
 from server.config import ServerConfig  # noqa: E402
 
@@ -179,17 +176,6 @@ def _make_ns_question() -> NSExamQuestion:
         題型=next(iter(NSQType)),
         subquestions=[sq],
     )
-
-
-@pytest.fixture(autouse=False)
-def reset_warned_tier_effort_drops():
-    """Clear _warned_tier_effort_drops before and after each test.
-
-    Mirrors reset_warned_effort_drops in tests/test_llm_client_openai_compat.py.
-    """
-    _warned_tier_effort_drops.clear()
-    yield
-    _warned_tier_effort_drops.clear()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -506,142 +492,104 @@ def test_generate_purpose_stays_on_execute_when_tier_models_set() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Effort guard (interim guard: diverged tier model + incompatible effort)
+# 6. Per-tier effort resolution (replaces interim guard tests from #374)
+#
+# The interim guard (which silently dropped the effort when the tier model
+# diverged from model_execute) has been replaced by route-level 422 validation
+# (issue #377).  These tests verify the new _effort_for_purpose() resolution
+# at the client level.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_effort_guard_drops_effort_when_verify_tier_diverges_and_effort_incompatible(
-    reset_warned_tier_effort_drops, caplog
-) -> None:
-    """Verify tier: model diverges from execute AND effort is incompatible → effort dropped.
-
-    Setup: model_execute='claude-opus-5' (supports xhigh), model_verify='claude-sonnet-4-6'
-    (only low/medium/high/max — NOT xhigh), effort_execute='xhigh'.
-    The guard must drop the effort (return {}) and emit one WARNING.
-    """
-    client, fake = _make_tier_client(
-        model_execute="claude-opus-5",
-        model_verify="claude-sonnet-4-6",
-        effort_execute="xhigh",
+def _make_tier_effort_client(
+    model_execute: str = "claude-sonnet-4-6",
+    model_verify: str = "",
+    model_correct: str = "",
+    effort_execute: str = "medium",
+    effort_verify: str = "",
+    effort_correct: str = "",
+) -> tuple[LLMClient, _FakeMessagesAPI]:
+    """Build a client with both tier model and tier effort config."""
+    cfg = Config(
+        api_key="x",
+        llm_stream=False,
+        model_execute=model_execute,
+        model_verify=model_verify,
+        model_correct=model_correct,
+        effort_execute=effort_execute,
+        effort_verify=effort_verify,
+        effort_correct=effort_correct,
     )
-    with caplog.at_level(logging.WARNING, logger="src.llm_client"):
-        client.generate("sys", "user", purpose="verify")
-
-    assert len(fake.calls) == 1
-    call_kw = fake.calls[0]
-    # Effort must be absent (guard dropped it)
-    effort_in_call = call_kw.get("extra_body", {}).get("output_config", {}).get("effort")
-    assert effort_in_call is None, f"Expected effort to be dropped, got {effort_in_call!r}"
+    client = LLMClient(cfg)
+    fake = _FakeMessagesAPI()
+    client.client = SimpleNamespace(messages=fake)
+    return client, fake
 
 
-def test_effort_guard_emits_warning_for_dropped_effort(
-    reset_warned_tier_effort_drops, caplog
-) -> None:
-    """The WARNING must mention the tier model and the dropped effort value."""
-    client, fake = _make_tier_client(
-        model_execute="claude-opus-5",
-        model_verify="claude-sonnet-4-6",
-        effort_execute="xhigh",
-    )
-    with caplog.at_level(logging.WARNING, logger="src.llm_client"):
-        client.generate("sys", "user", purpose="verify")
-
-    warning_texts = [r.message for r in caplog.records if r.levelno == logging.WARNING]
-    # At least one warning must be present
-    assert warning_texts, "Expected at least one WARNING log, got none"
-    combined = " ".join(warning_texts)
-    # The warning must reference the problematic effort value
-    assert "xhigh" in combined, f"Expected 'xhigh' in warning; got: {combined!r}"
+def _get_effort(call: dict) -> str | None:
+    return call.get("extra_body", {}).get("output_config", {}).get("effort")
 
 
-def test_effort_guard_warning_emitted_only_once_for_same_pair(
-    reset_warned_tier_effort_drops, caplog
-) -> None:
-    """The WARNING must be emitted at most once per (model, effort) pair
-    (dedup via _warned_tier_effort_drops)."""
-    client, fake = _make_tier_client(
-        model_execute="claude-opus-5",
-        model_verify="claude-sonnet-4-6",
-        effort_execute="xhigh",
-    )
-    with caplog.at_level(logging.WARNING, logger="src.llm_client"):
-        client.generate("sys", "user", purpose="verify")
-        client.generate("sys", "user", purpose="verify")  # second call, same pair
-
-    tier_drop_warnings = [
-        r for r in caplog.records
-        if r.levelno == logging.WARNING and "xhigh" in r.message
-    ]
-    assert len(tier_drop_warnings) == 1, (
-        f"Expected exactly 1 tier-effort-drop warning, got {len(tier_drop_warnings)}"
-    )
-
-
-def test_effort_guard_compatible_effort_not_dropped(
-    reset_warned_tier_effort_drops, caplog
-) -> None:
-    """When the inherited effort is valid for the tier model, it must NOT be dropped."""
-    # claude-sonnet-4-6 supports high (low/medium/high/max)
-    client, fake = _make_tier_client(
-        model_execute="claude-opus-5",
-        model_verify="claude-sonnet-4-6",
-        effort_execute="high",  # compatible with sonnet-4-6
-    )
-    with caplog.at_level(logging.WARNING, logger="src.llm_client"):
-        client.generate("sys", "user", purpose="verify")
-
-    call_kw = fake.calls[0]
-    effort_in_call = call_kw.get("extra_body", {}).get("output_config", {}).get("effort")
-    assert effort_in_call == "high", f"Expected effort='high' to be kept, got {effort_in_call!r}"
-
-    # No tier-effort-drop warning
-    tier_drops = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert not any("tier" in r.message.lower() or "drop" in r.message.lower() for r in tier_drops), (
-        "Should emit no tier-effort-drop warning for compatible effort"
-    )
-
-
-def test_effort_guard_no_divergence_never_drops(
-    reset_warned_tier_effort_drops, caplog
-) -> None:
-    """When the tier model IS the execute model (no divergence), the guard must not
-    fire even if the effort value would fail the roster check for some other model.
-
-    This preserves the pre-374 behavior when model_verify == model_execute.
-    """
-    # model_verify == model_execute → no divergence → guard never applies
-    client, fake = _make_tier_client(
-        model_execute="claude-sonnet-4-6",
-        model_verify="claude-sonnet-4-6",  # explicitly same as execute
+def test_verify_uses_effort_verify_when_set() -> None:
+    """When effort_verify is set, verify calls use it, not effort_execute."""
+    client, fake = _make_tier_effort_client(
         effort_execute="medium",
+        effort_verify="high",
     )
-    with caplog.at_level(logging.WARNING, logger="src.llm_client"):
-        client.generate("sys", "user", purpose="verify")
-
-    call_kw = fake.calls[0]
-    effort_in_call = call_kw.get("extra_body", {}).get("output_config", {}).get("effort")
-    assert effort_in_call == "medium", (
-        f"Guard should not fire when tier == execute; effort was {effort_in_call!r}"
-    )
+    client.generate("sys", "user", purpose="verify")
+    assert _get_effort(fake.calls[0]) == "high"
 
 
-def test_effort_guard_correct_tier_model_diverges_incompatible(
-    reset_warned_tier_effort_drops, caplog
-) -> None:
-    """Parallel effort-guard test for the correct tier."""
-    client, fake = _make_tier_client(
-        model_execute="claude-opus-5",
-        model_correct="claude-sonnet-4-6",
-        effort_execute="xhigh",
+def test_correct_uses_effort_correct_when_set() -> None:
+    """When effort_correct is set, correct calls use it, not effort_execute."""
+    client, fake = _make_tier_effort_client(
+        effort_execute="medium",
+        effort_correct="max",
     )
-    with caplog.at_level(logging.WARNING, logger="src.llm_client"):
-        client.generate("sys", "user", purpose="correct")
+    client.generate("sys", "user", purpose="correct")
+    assert _get_effort(fake.calls[0]) == "max"
 
-    call_kw = fake.calls[0]
-    effort_in_call = call_kw.get("extra_body", {}).get("output_config", {}).get("effort")
-    assert effort_in_call is None, (
-        f"Expected effort to be dropped for correct tier; got {effort_in_call!r}"
+
+def test_verify_falls_back_to_effort_execute_when_unset() -> None:
+    """When effort_verify is '' (unset), verify inherits effort_execute."""
+    client, fake = _make_tier_effort_client(
+        effort_execute="high",
+        effort_verify="",
     )
+    client.generate("sys", "user", purpose="verify")
+    assert _get_effort(fake.calls[0]) == "high"
+
+
+def test_correct_falls_back_to_effort_execute_when_unset() -> None:
+    """When effort_correct is '' (unset), correct inherits effort_execute."""
+    client, fake = _make_tier_effort_client(
+        effort_execute="high",
+        effort_correct="",
+    )
+    client.generate("sys", "user", purpose="correct")
+    assert _get_effort(fake.calls[0]) == "high"
+
+
+def test_tier_effort_does_not_affect_generate_purpose() -> None:
+    """generate purpose always uses effort_execute regardless of tier effort settings."""
+    client, fake = _make_tier_effort_client(
+        effort_execute="max",
+        effort_verify="low",
+        effort_correct="low",
+    )
+    client.generate("sys", "user", purpose="generate")
+    assert _get_effort(fake.calls[0]) == "max"
+
+
+def test_tier_effort_does_not_affect_html_image_purpose() -> None:
+    """html_image purpose always uses effort_execute regardless of tier effort settings."""
+    client, fake = _make_tier_effort_client(
+        effort_execute="max",
+        effort_verify="low",
+        effort_correct="low",
+    )
+    client.generate("sys", "user", purpose="html_image")
+    assert _get_effort(fake.calls[0]) == "max"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

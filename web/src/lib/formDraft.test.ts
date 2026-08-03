@@ -20,6 +20,7 @@ function makeFields(overrides: Partial<FormFields> = {}): FormFields {
     disableReferenceFewshot: false,
     imageGenerationMode: "html",
     difficulty: "",
+    reportingScale: "",
     subjectFilter: "數與量",
     passage: "500 字",
     textWordLimit: null,
@@ -38,6 +39,8 @@ function makeFields(overrides: Partial<FormFields> = {}): FormFields {
     modelCorrect: "",
     effortPlan: "medium",
     effortExecute: "medium",
+    effortVerify: "",
+    effortCorrect: "",
     ...overrides,
   };
 }
@@ -125,5 +128,25 @@ describe("formDraft", () => {
     // Missing fields must be normalised to "" rather than left as undefined.
     expect(draft?.fields.modelVerify).toBe("");
     expect(draft?.fields.modelCorrect).toBe("");
+  });
+
+  it("loads a draft saved by an older build (without effortVerify/effortCorrect) and normalises missing fields to empty string", () => {
+    // Simulate a draft persisted before issue #377 added effortVerify / effortCorrect.
+    const oldFields = makeFields({ topic: "效能草稿" });
+    const { effortVerify: _ev, effortCorrect: _ec, ...fieldsWithoutNewKeys } = oldFields;
+    localStorage.setItem(
+      "exam_form_draft_teacher-1",
+      JSON.stringify({
+        savedAt: NOW.toISOString(),
+        fields: fieldsWithoutNewKeys,
+      }),
+    );
+
+    const draft = loadDraft("teacher-1");
+    expect(draft).not.toBeNull();
+    expect(draft?.fields.topic).toBe("效能草稿");
+    // Missing fields must be normalised to "" (inherit) rather than left as undefined.
+    expect(draft?.fields.effortVerify).toBe("");
+    expect(draft?.fields.effortCorrect).toBe("");
   });
 });

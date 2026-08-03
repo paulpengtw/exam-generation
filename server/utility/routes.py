@@ -37,6 +37,8 @@ async def get_models(
             "correct": config.model_correct,  # #375: "" when unset
             "effort_plan": config.effort_plan,
             "effort_execute": config.effort_execute,
+            "effort_verify": config.effort_verify,    # #377: "" = inherits effort_execute
+            "effort_correct": config.effort_correct,  # #377: "" = inherits effort_execute
         },
     }
 

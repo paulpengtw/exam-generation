@@ -91,6 +91,8 @@ const SAVED_FIELDS: FormFields = {
   modelCorrect: "",
   effortPlan: "high",
   effortExecute: "max",
+  effortVerify: "",
+  effortCorrect: "",
 };
 
 function signIn(): void {
@@ -236,6 +238,8 @@ describe("ParamForm draft restoration", () => {
       modelCorrect: "",
       effortPlan: "medium",
       effortExecute: "medium",
+      effortVerify: "",
+      effortCorrect: "",
     };
     const reorderedFields = Object.fromEntries(
       Object.entries(defaultFields).reverse(),

@@ -108,7 +108,12 @@ function isFormFields(value: unknown): value is FormFields {
     (value.modelVerify === undefined || typeof value.modelVerify === "string") &&
     (value.modelCorrect === undefined || typeof value.modelCorrect === "string") &&
     typeof value.effortPlan === "string" &&
-    typeof value.effortExecute === "string"
+    typeof value.effortExecute === "string" &&
+    // effortVerify / effortCorrect were added in issue #377. Accept undefined so
+    // drafts persisted by older builds (which lack these fields) still load;
+    // loadDraft normalises undefined → "" (inherit) on hydration.
+    (value.effortVerify === undefined || typeof value.effortVerify === "string") &&
+    (value.effortCorrect === undefined || typeof value.effortCorrect === "string")
   );
 }
 
@@ -147,9 +152,9 @@ export function loadDraft(userId: string): FormDraft | null {
     }
 
     // Normalise fields that older builds may not have persisted (e.g. modelVerify /
-    // modelCorrect added in issue #376). The type guard accepts undefined for those
-    // fields so old drafts still pass; here we coerce them to "" so the returned
-    // FormFields always satisfies the required string type.
+    // modelCorrect added in issue #376; effortVerify / effortCorrect added in issue #377).
+    // The type guard accepts undefined for those fields so old drafts still pass;
+    // here we coerce them to "" so the returned FormFields always satisfies the required type.
     const rawFields = parsed.fields as unknown as Record<string, unknown>;
     return {
       savedAt: parsed.savedAt as string,
@@ -157,6 +162,8 @@ export function loadDraft(userId: string): FormDraft | null {
         ...(parsed.fields as FormFields),
         modelVerify: typeof rawFields.modelVerify === "string" ? rawFields.modelVerify : "",
         modelCorrect: typeof rawFields.modelCorrect === "string" ? rawFields.modelCorrect : "",
+        effortVerify: typeof rawFields.effortVerify === "string" ? rawFields.effortVerify : "",
+        effortCorrect: typeof rawFields.effortCorrect === "string" ? rawFields.effortCorrect : "",
       },
     };
   } catch {

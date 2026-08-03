@@ -51,6 +51,8 @@ export interface GenerateParams {
   model_correct?: string;
   effort_plan?: string;
   effort_execute?: string;
+  effort_verify?: string;
+  effort_correct?: string;
   reporting_scale?: string;
 }
 
