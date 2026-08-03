@@ -221,6 +221,37 @@ describe("useGenerate — model overrides", () => {
   });
 });
 
+describe("buildQueryString — model_verify / model_correct overrides", () => {
+  it("does not emit model_verify / model_correct when unset", () => {
+    const qs = buildQueryString({ subject: "math", grade: 7 });
+    expect(qs).not.toContain("model_verify");
+    expect(qs).not.toContain("model_correct");
+  });
+
+  it("emits model_verify / model_correct when set to non-empty strings", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      grade: 7,
+      model_verify: "claude-opus-4-6",
+      model_correct: "claude-haiku-4-6",
+    });
+    const params = new URLSearchParams(qs);
+    expect(params.get("model_verify")).toBe("claude-opus-4-6");
+    expect(params.get("model_correct")).toBe("claude-haiku-4-6");
+  });
+
+  it("does not emit model_verify / model_correct when set to empty string", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      grade: 7,
+      model_verify: "",
+      model_correct: "",
+    });
+    expect(qs).not.toContain("model_verify");
+    expect(qs).not.toContain("model_correct");
+  });
+});
+
 describe("buildQueryString — effort overrides", () => {
   it("does not emit effort_plan / effort_execute when unset", () => {
     const qs = buildQueryString({ subject: "math", grade: 7 });

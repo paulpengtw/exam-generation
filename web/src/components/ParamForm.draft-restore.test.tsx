@@ -87,6 +87,8 @@ const SAVED_FIELDS: FormFields = {
   ],
   modelPlan: "planner-model",
   modelExecute: "execute-model",
+  modelVerify: "",
+  modelCorrect: "",
   effortPlan: "high",
   effortExecute: "max",
 };
@@ -230,6 +232,8 @@ describe("ParamForm draft restoration", () => {
       subquestionConfigs: [],
       modelPlan: "",
       modelExecute: "",
+      modelVerify: "",
+      modelCorrect: "",
       effortPlan: "medium",
       effortExecute: "medium",
     };

@@ -85,6 +85,8 @@ const DRAFT_FIELDS: FormFields = {
   subquestionConfigs: [{ question_type: "填充題", instruction: "草稿小題" }],
   modelPlan: "",
   modelExecute: "",
+  modelVerify: "",
+  modelCorrect: "",
   effortPlan: "medium",
   effortExecute: "medium",
 };
@@ -150,6 +152,8 @@ const HISTORY_FIELDS: FormFields = {
   ],
   modelPlan: "",
   modelExecute: "",
+  modelVerify: "",
+  modelCorrect: "",
   effortPlan: "medium",
   effortExecute: "medium",
 };

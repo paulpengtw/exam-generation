@@ -144,6 +144,8 @@ export interface FormFields {
   subquestionConfigs: SubQuestionConfig[];
   modelPlan: string;
   modelExecute: string;
+  modelVerify: string;
+  modelCorrect: string;
   effortPlan: string;
   effortExecute: string;
 }
@@ -402,6 +404,14 @@ function DraftSummary({
               label: t("params.model_execute_label"),
               value: fields.modelExecute,
             },
+            {
+              label: t("params.model_verify_label"),
+              value: fields.modelVerify,
+            },
+            {
+              label: t("params.model_correct_label"),
+              value: fields.modelCorrect,
+            },
           ].map(({ label, value }) => (
             <div key={label} className="flex min-w-0 gap-3">
               <dt className="w-40 shrink-0 font-medium text-amber-800">{label}</dt>
@@ -440,6 +450,8 @@ function defaultFormFields(
   schemas: Schemas,
   modelPlan: string,
   modelExecute: string,
+  modelVerify: string,
+  modelCorrect: string,
   effortPlan: string,
   effortExecute: string,
 ): FormFields {
@@ -497,6 +509,8 @@ function defaultFormFields(
     subquestionConfigs: [],
     modelPlan,
     modelExecute,
+    modelVerify,
+    modelCorrect,
     effortPlan,
     effortExecute,
   };
@@ -727,6 +741,8 @@ export default function ParamForm({
     subquestionConfigs: subquestionConfigsFromInit(),
     modelPlan: window.localStorage.getItem("model_plan") ?? "",
     modelExecute: window.localStorage.getItem("model_execute") ?? "",
+    modelVerify: window.localStorage.getItem("model_verify") ?? "",
+    modelCorrect: window.localStorage.getItem("model_correct") ?? "",
     effortPlan: window.localStorage.getItem("effort_plan") ?? "medium",
     effortExecute: window.localStorage.getItem("effort_execute") ?? "medium",
   }));
@@ -776,6 +792,8 @@ export default function ParamForm({
     subquestionConfigs,
     modelPlan,
     modelExecute,
+    modelVerify,
+    modelCorrect,
     effortPlan,
     effortExecute,
   } = formSnapshot;
@@ -883,7 +901,7 @@ export default function ParamForm({
     setPrefillNotice(null);
     userChosenFields.current.clear();
     restoreFormSnapshot(
-      defaultFormFields(subject, schemas, modelPlan, modelExecute, effortPlan, effortExecute),
+      defaultFormFields(subject, schemas, modelPlan, modelExecute, modelVerify, modelCorrect, effortPlan, effortExecute),
     );
   }
 
@@ -1078,10 +1096,20 @@ export default function ParamForm({
             current.modelExecute && !allowed.has(current.modelExecute)
               ? ""
               : current.modelExecute;
+          const reconciledVerify =
+            current.modelVerify && !allowed.has(current.modelVerify)
+              ? ""
+              : current.modelVerify;
+          const reconciledCorrect =
+            current.modelCorrect && !allowed.has(current.modelCorrect)
+              ? ""
+              : current.modelCorrect;
           return {
             ...current,
             modelPlan: reconciledPlan,
             modelExecute: reconciledExecute,
+            modelVerify: reconciledVerify,
+            modelCorrect: reconciledCorrect,
             effortPlan: reconcileEffortLevel(
               current.effortPlan,
               reconciledPlan,
@@ -1107,10 +1135,20 @@ export default function ParamForm({
             snap.modelExecute && !allowed.has(snap.modelExecute)
               ? ""
               : snap.modelExecute;
+          const reconciledVerifySnap =
+            snap.modelVerify && !allowed.has(snap.modelVerify)
+              ? ""
+              : snap.modelVerify;
+          const reconciledCorrectSnap =
+            snap.modelCorrect && !allowed.has(snap.modelCorrect)
+              ? ""
+              : snap.modelCorrect;
           defaultsSnapshotRef.current = {
             ...snap,
             modelPlan: reconciledPlanSnap,
             modelExecute: reconciledExecuteSnap,
+            modelVerify: reconciledVerifySnap,
+            modelCorrect: reconciledCorrectSnap,
             effortPlan: reconcileEffortLevel(
               snap.effortPlan,
               reconciledPlanSnap,
@@ -1139,12 +1177,16 @@ export default function ParamForm({
             ...defaultsSnapshotRef.current,
             modelPlan: "",
             modelExecute: "",
+            modelVerify: "",
+            modelCorrect: "",
             effortPlan: "",
             effortExecute: "",
           };
         }
         setField("modelPlan", "");
         setField("modelExecute", "");
+        setField("modelVerify", "");
+        setField("modelCorrect", "");
         setField("effortPlan", "");
         setField("effortExecute", "");
         setModelsResolved(true);
@@ -1160,6 +1202,12 @@ export default function ParamForm({
   useEffect(() => {
     window.localStorage.setItem("model_execute", modelExecute);
   }, [modelExecute]);
+  useEffect(() => {
+    window.localStorage.setItem("model_verify", modelVerify);
+  }, [modelVerify]);
+  useEffect(() => {
+    window.localStorage.setItem("model_correct", modelCorrect);
+  }, [modelCorrect]);
   useEffect(() => {
     window.localStorage.setItem("effort_plan", effortPlan);
   }, [effortPlan]);
@@ -1471,6 +1519,8 @@ export default function ParamForm({
           : undefined,
       model_plan: modelPlan || undefined,
       model_execute: modelExecute || undefined,
+      model_verify: modelVerify || undefined,
+      model_correct: modelCorrect || undefined,
       effort_plan: models?.effort ? effortPlan : undefined,
       effort_execute: models?.effort ? effortExecute : undefined,
     };
@@ -1575,6 +1625,12 @@ export default function ParamForm({
         difficulty: subject !== "natural_sciences" ? (baseParams.difficulty ?? "medium") : undefined,
         model_plan: baseParams.model_plan ?? models?.defaults.plan,
         model_execute: baseParams.model_execute ?? models?.defaults.execute,
+        // For verify/correct tiers, defaults.verify / defaults.correct are "" when unset.
+        // Substituting "" would be wrong (it means "no override"). Only apply the default
+        // when the base param is explicitly undefined (user made no selection) AND the
+        // server-configured default is actually a non-empty model id.
+        model_verify: baseParams.model_verify ?? (models?.defaults.verify || undefined),
+        model_correct: baseParams.model_correct ?? (models?.defaults.correct || undefined),
         learning_performance: questionLp,
         learning_content: questionLc,
         subquestion_configs: shouldSendSubquestionConfigs
@@ -1670,6 +1726,8 @@ export default function ParamForm({
       { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "natural_sciences"] },
       { label: t("form.confirm_model_plan"), value: p.model_plan, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       { label: t("form.confirm_model_execute"), value: p.model_execute, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
+      { label: t("form.confirm_model_verify"), value: p.model_verify, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
+      { label: t("form.confirm_model_correct"), value: p.model_correct, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       ...(models?.effort ? ([
         { label: t("form.confirm_effort_plan"), value: p.effort_plan, subjects: allSubjects, kind: "defaulted" as const, defaultValue: t("form.confirm_system_default") },
         { label: t("form.confirm_effort_execute"), value: p.effort_execute, subjects: allSubjects, kind: "defaulted" as const, defaultValue: t("form.confirm_system_default") },
@@ -2926,6 +2984,50 @@ export default function ParamForm({
                 </select>
               </label>
             )}
+          </div>
+          <div className="flex gap-2">
+            <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+              <span>{t("params.model_verify_label")}</span>
+              <select
+                aria-label={t("params.model_verify_label")}
+                value={modelVerify}
+                onChange={(e) => setField("modelVerify", e.target.value)}
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              >
+                <option value="">
+                  {models.defaults.verify
+                    ? `${t("params.model_follow_execute_option")} (${models.defaults.verify})`
+                    : t("params.model_follow_execute_option")}
+                </option>
+                {models.allowed.map((m) => (
+                  <option key={`verify-${m}`} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+              <span>{t("params.model_correct_label")}</span>
+              <select
+                aria-label={t("params.model_correct_label")}
+                value={modelCorrect}
+                onChange={(e) => setField("modelCorrect", e.target.value)}
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              >
+                <option value="">
+                  {models.defaults.correct
+                    ? `${t("params.model_follow_execute_option")} (${models.defaults.correct})`
+                    : t("params.model_follow_execute_option")}
+                </option>
+                {models.allowed.map((m) => (
+                  <option key={`correct-${m}`} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
       )}
