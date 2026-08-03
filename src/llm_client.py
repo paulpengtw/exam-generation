@@ -14,7 +14,7 @@ from anthropic import Anthropic
 from openai import OpenAI
 from pydantic import BaseModel
 
-from src.config import Config
+from src.config import Config, EFFORT_LEVELS, DEFAULT_EFFORT_LEVELS
 
 import logging
 
@@ -27,6 +27,10 @@ _warned_emit_stage_observers: set[int] = set()
 # (provider, effort) pairs for which we have already emitted the "effort
 # parameter dropped" warning — avoids log spam on repeated calls.
 _warned_effort_drops: set[tuple[str, str]] = set()
+
+# (model, effort) pairs for which we have already emitted the "tier effort
+# dropped" warning — avoids log spam on repeated calls.
+_warned_tier_effort_drops: set[tuple[str, str]] = set()
 
 _SAMPLING_REJECT_PREFIXES: tuple[str, ...] = (
     "claude-opus-5",
@@ -109,6 +113,12 @@ _PURPOSE_TO_AGENT["fact_check"] = "fact_checker"
 
 # All purpose strings that belong to the planning tier (→ effort_plan).
 _PLAN_PURPOSES: frozenset[str] = frozenset({"plan", "plan_core_questions", "plan_context_angles"})
+
+# Purpose strings that belong to the 驗證 / 修正 model tiers (→ model_verify / model_correct).
+# Exact-string sets, mirroring _PLAN_PURPOSES — see issue #346: a `purpose == "..."`
+# equality check against a string no caller sends silently degrades to the execute tier.
+_VERIFY_PURPOSES: frozenset[str] = frozenset({"verify"})
+_CORRECT_PURPOSES: frozenset[str] = frozenset({"correct"})
 
 
 class Citation(BaseModel):
@@ -354,7 +364,23 @@ class LLMClient:
         )
         return {}
 
-    def _effort_kwargs(self, purpose: str, provider: str = "anthropic") -> dict:
+    def _model_for_purpose(self, purpose: str) -> str:
+        """Resolve the model tier for a call purpose: tier override → effective execute model.
+
+        Resolution chain per tier (issue #374):
+            env var (model_verify / model_correct) → effective execute model (resolved at
+            call time, NOT at Config construction time, so per-request
+            ``dataclasses.replace(cfg, model_execute=...)`` overrides land correctly).
+        """
+        if purpose in _VERIFY_PURPOSES:
+            return self.config.model_verify or self.config.model_execute
+        if purpose in _CORRECT_PURPOSES:
+            return self.config.model_correct or self.config.model_execute
+        return self.config.model_execute
+
+    def _effort_kwargs(
+        self, purpose: str, provider: str = "anthropic", model: str | None = None
+    ) -> dict:
         """Return effort kwargs appropriate for the provider and call purpose.
 
         planning purposes (see ``_PLAN_PURPOSES``) → effort_plan; everything else → effort_execute.
@@ -364,8 +390,33 @@ class LLMClient:
             Any other effort value is unsupported on these providers — the parameter
             is omitted entirely and a WARNING is emitted once per (provider, effort)
             pair (module-level ``_warned_effort_drops`` suppresses repeats).
+
+        Interim per-tier effort guard (issue #374): verify/correct still inherit
+        effort_execute; when the resolved tier model diverges from model_execute AND
+        that model does not accept the inherited effort, drop the effort rather than
+        sending a value the tier's model will reject.  Per-tier effort is issue #377.
         """
         effort = self.config.effort_plan if purpose in _PLAN_PURPOSES else self.config.effort_execute
+
+        # Interim per-tier effort guard: only fires when the resolved model diverges
+        # from config.model_execute (i.e. a tier model is actually in use).
+        if model and model != self.config.model_execute:
+            roster = EFFORT_LEVELS.get(model, DEFAULT_EFFORT_LEVELS)
+            if effort not in roster:
+                key = (model, effort)
+                if key not in _warned_tier_effort_drops:
+                    _warned_tier_effort_drops.add(key)
+                    logger.warning(
+                        "effort=%r dropped for tier model %r — "
+                        "value not in supported roster %r; "
+                        "configure LLM_EFFORT_EXECUTE to a supported value "
+                        "or wait for per-tier effort (issue #377)",
+                        effort,
+                        model,
+                        roster,
+                    )
+                return {}
+
         if provider == "anthropic":
             return {"extra_body": {"output_config": {"effort": effort}}}
         # gemini / openai — reasoning_effort only accepts low / medium / high
@@ -416,7 +467,7 @@ class LLMClient:
             model=model,
             max_tokens=8192,
             **self._temperature_kwargs(model),
-            **self._effort_kwargs(purpose),
+            **self._effort_kwargs(purpose, model=model),
             system=system_param,
             messages=messages,  # type: ignore[arg-type]
         ) as stream:
@@ -522,7 +573,7 @@ class LLMClient:
             model=model,
             max_tokens=8192,
             **self._temperature_kwargs(model),
-            **self._effort_kwargs(purpose),
+            **self._effort_kwargs(purpose, model=model),
             system=system_param,
             messages=anthropic_messages,  # type: ignore[arg-type]
         )
@@ -628,7 +679,7 @@ class LLMClient:
             "messages": messages,  # type: ignore[arg-type]
             **_max_tokens_kwargs(provider),
             **self._temperature_kwargs(model),
-            **self._effort_kwargs(purpose, provider),
+            **self._effort_kwargs(purpose, provider, model=model),
         }
 
         if self._observer and self.config.llm_stream:
@@ -660,7 +711,7 @@ class LLMClient:
         """Call the execution model (default: Sonnet) and return raw text response."""
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
-        model = model or self.config.model_execute
+        model = model or self._model_for_purpose(purpose)
 
         if images:
             user_content: list[dict] = [{"type": "text", "text": user}]
@@ -693,7 +744,7 @@ class LLMClient:
             return self.generate(system, user, model, purpose=purpose)
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
-        model = model or self.config.model_execute
+        model = model or self._model_for_purpose(purpose)
         b64_data = base64.b64encode(Path(image_path).read_bytes()).decode("utf-8")
         messages = [
             {"role": "system", "content": system},
@@ -724,7 +775,7 @@ class LLMClient:
         for attempt in range(max_parse_retries):
             if self.config.rate_limit_delay > 0:
                 time.sleep(self.config.rate_limit_delay)
-            call_model = model or self.config.model_execute
+            call_model = model or self._model_for_purpose(purpose)
 
             if images:
                 user_content: list[dict] = [{"type": "text", "text": current_user}]
@@ -825,7 +876,7 @@ class LLMClient:
         """
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
-        call_model = model or self.config.model_execute
+        call_model = model or self._model_for_purpose(purpose)
         agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
 
         system_param = (
@@ -863,7 +914,7 @@ class LLMClient:
                 model=call_model,
                 max_tokens=8192,
                 **self._temperature_kwargs(call_model),
-                **self._effort_kwargs(purpose),
+                **self._effort_kwargs(purpose, model=call_model),
                 system=system_param,
                 messages=messages,  # type: ignore[arg-type]
                 tools=tools,  # type: ignore[arg-type]
