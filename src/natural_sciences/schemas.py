@@ -116,6 +116,7 @@ class QuestionMetadata(BaseModel):
     generated_at: datetime = Field(default_factory=datetime.now)
     seed: int | None = None
     reporting_scales: list[str] = Field(default_factory=list)
+    coverage_mode_used: Literal["balanced", "random"] | None = None
 
 
 class ExamQuestion(BaseModel):

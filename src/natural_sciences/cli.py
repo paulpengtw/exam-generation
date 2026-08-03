@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import dataclasses
+
 from src.common.batch_dedup import PriorScope, extract_ns_prior_scope
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import NATURAL_SCIENCES, SubjectGenerationSpec
@@ -307,6 +309,7 @@ def _ns_build_text_user(
     params, few_shot_dir,
     user_passage, user_options, user_topic, user_core_question,
     image_generation_mode, disable_reference_fewshot, prior_scopes,
+    balanced_batch: bool = False,
 ):
     return build_text_user_prompt(
         params,
@@ -319,6 +322,7 @@ def _ns_build_text_user(
         image_generation_mode=image_generation_mode,
         disable_reference_fewshot=disable_reference_fewshot,
         prior_scopes=prior_scopes,
+        balanced_batch=balanced_batch,
     )
 
 
@@ -371,6 +375,16 @@ _NS_SPEC = SubjectGenerationSpec(
 )
 
 
+def _ns_spec_for_batch(balanced_batch: bool) -> SubjectGenerationSpec:
+    if not balanced_batch:
+        return _NS_SPEC
+
+    def build_text_user(*args: Any) -> tuple[str, list[Path]]:
+        return _ns_build_text_user(*args, balanced_batch=True)
+
+    return dataclasses.replace(_NS_SPEC, build_text_user_fn=build_text_user)
+
+
 def generate_one(
     config: Config,
     client: LLMClient | None,
@@ -390,6 +404,7 @@ def generate_one(
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    balanced_batch: bool = False,
 ) -> ExamQuestion | str:
     """Generate a single PISA Science question set."""
     params = _with_text_word_limit(params, text_word_limit)
@@ -398,7 +413,7 @@ def generate_one(
         client=client,
         params=params,
         question_id=question_id,
-        spec=_NS_SPEC,
+        spec=_ns_spec_for_batch(balanced_batch),
         dry_run=dry_run,
         skip_verify=skip_verify,
         disable_reference_fewshot=disable_reference_fewshot,
@@ -424,8 +439,9 @@ def build_generation_prompts(
     from src.common.generation_core import build_text_generation_prompts
 
     params = _with_text_word_limit(params, kwargs.pop("text_word_limit", None))
+    spec = _ns_spec_for_batch(kwargs.pop("balanced_batch", False))
     system, user, images, _stage_ctx = build_text_generation_prompts(
-        config, params, _NS_SPEC, **kwargs
+        config, params, spec, **kwargs
     )
     return system, user, images
 
@@ -474,6 +490,7 @@ def generate_with_corrections(
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    balanced_batch: bool = False,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
@@ -487,7 +504,7 @@ def generate_with_corrections(
         client=client,
         params=params,
         question_id=question_id,
-        spec=_NS_SPEC,
+        spec=_ns_spec_for_batch(balanced_batch),
         max_retries=max_retries,
         skip_verify=skip_verify,
         disable_reference_fewshot=disable_reference_fewshot,

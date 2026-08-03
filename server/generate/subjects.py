@@ -648,6 +648,7 @@ def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         on_question_update=kwargs["on_question_update"],
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ns_curriculum_context"],
+        balanced_batch=kwargs["balanced_batch"],
     )
 
 
@@ -665,6 +666,7 @@ def _ns_build_generation_prompts(
         user_topic=kwargs["user_topic"],
         user_core_question=kwargs["user_core_question"],
         prior_scopes=kwargs["prior_scopes"],
+        balanced_batch=kwargs["balanced_batch"],
     )
 
 
@@ -682,6 +684,25 @@ def _ns_build_subquestion_prompt_previews(
         user_core_question=kwargs["user_core_question"],
         prior_scopes=kwargs["prior_scopes"],
     )
+
+
+def _ns_patch_metadata(question: Any, coverage_mode: str) -> Any:
+    from src.natural_sciences.schemas import ExamQuestion as _NSExamQuestion  # noqa: PLC0415
+    from src.natural_sciences.schemas import QuestionMetadata as _NSQM  # noqa: PLC0415
+
+    if not isinstance(question, _NSExamQuestion):
+        return question
+    if question.metadata is None:
+        question.metadata = _NSQM(
+            grade=question.subquestions[0].年級 if question.subquestions else 0,
+            model="unknown",
+            coverage_mode_used=coverage_mode,
+        )
+    else:
+        question.metadata = question.metadata.model_copy(
+            update={"coverage_mode_used": coverage_mode}
+        )
+    return question
 
 
 def _ns_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:
@@ -927,7 +948,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         build_generation_prompts=_ns_build_generation_prompts,
         build_subquestion_prompt_previews=_ns_build_subquestion_prompt_previews,
         extract_prior_scope=extract_ns_prior_scope,
-        patch_metadata=None,
+        patch_metadata=_ns_patch_metadata,
         plan_core_questions=_ns_plan_core_questions,
         load_planner_stage=_ns_load_planner_stage,
         build_schemas=_ns_build_schemas,
