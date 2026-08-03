@@ -79,6 +79,7 @@ function isFormFields(value: unknown): value is FormFields {
       value.difficulty === "medium" ||
       value.difficulty === "hard"
     ) &&
+    (value.reportingScale === undefined || typeof value.reportingScale === "string") &&
     typeof value.subjectFilter === "string" &&
     typeof value.passage === "string" &&
     (
@@ -164,6 +165,7 @@ export function loadDraft(userId: string): FormDraft | null {
         modelCorrect: typeof rawFields.modelCorrect === "string" ? rawFields.modelCorrect : "",
         effortVerify: typeof rawFields.effortVerify === "string" ? rawFields.effortVerify : "",
         effortCorrect: typeof rawFields.effortCorrect === "string" ? rawFields.effortCorrect : "",
+        reportingScale: typeof rawFields.reportingScale === "string" ? rawFields.reportingScale : "",
       },
     };
   } catch {

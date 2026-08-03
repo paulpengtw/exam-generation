@@ -69,6 +69,7 @@ const SAVED_FIELDS: FormFields = {
   disableReferenceFewshot: true,
   imageGenerationMode: "gpt_image",
   difficulty: "hard",
+  reportingScale: "",
   subjectFilter: "數與量",
   passage: "保存的文本",
   textWordLimit: 120,

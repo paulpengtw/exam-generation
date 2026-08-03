@@ -263,6 +263,7 @@ describe("ParamForm draft summary", () => {
       "關閉參考範例",
       "圖片產生方式",
       "難度",
+      "Reporting Scale",
       "文本字數限制",
       "選項",
       "情境子類別",
@@ -288,6 +289,36 @@ describe("ParamForm draft summary", () => {
       { selector: "dt" },
     ).parentElement;
     expect(within(customContentTypeRow!).getByText("未填寫")).toBeInTheDocument();
+  });
+
+  it("shows a saved reporting scale in the full settings", async () => {
+    storeDraft({ ...IDENTIFIABLE_FIELDS, reportingScale: "2" });
+
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    const prompt = await screen.findByRole("status");
+    fireEvent.click(
+      within(prompt).getByText("完整設定", { selector: "summary" }),
+    );
+
+    const row = within(prompt).getByText("Reporting Scale", { selector: "dt" })
+      .parentElement;
+    expect(within(row!).getByText("2", { exact: true })).toBeInTheDocument();
+  });
+
+  it("shows the unset marker for a blank reporting scale", async () => {
+    storeDraft({ ...IDENTIFIABLE_FIELDS, reportingScale: "" });
+
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    const prompt = await screen.findByRole("status");
+    fireEvent.click(
+      within(prompt).getByText("完整設定", { selector: "summary" }),
+    );
+
+    const row = within(prompt).getByText("Reporting Scale", { selector: "dt" })
+      .parentElement;
+    expect(within(row!).getByText("未填寫", { exact: true })).toBeInTheDocument();
   });
 
   it("renders curriculum instructions and preserves unknown draft codes in the full settings", async () => {
