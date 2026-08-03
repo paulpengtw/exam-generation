@@ -271,11 +271,11 @@ function DraftSummary({
                 }]),
             {
               label: t("form.q_type"),
-              value: fields.qType.join("、"),
+              value: fields.qType.join(lang === "zh-TW" ? "、" : ", "),
             },
             {
               label: t("form.context"),
-              value: fields.context.join("、"),
+              value: fields.context.join(lang === "zh-TW" ? "、" : ", "),
             },
             ...(fields.passage
               ? [{
