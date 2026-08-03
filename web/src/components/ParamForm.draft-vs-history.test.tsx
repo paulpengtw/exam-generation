@@ -97,6 +97,12 @@ const DRAFT_FIELDS_WITH_SUBQUESTION_CONFIGS: FormFields = {
   ],
 };
 
+const DRAFT_FIELDS_WITH_UNKNOWN_CURRICULUM_CODES: FormFields = {
+  ...DRAFT_FIELDS,
+  learningPerformance: ["n-IV-1", "ZZ-IV-9"],
+  learningContent: ["N-7-1", "ZZ-IV-9"],
+};
+
 const HISTORY_PARAMS = {
   grade: 9,
   style: "課本",
@@ -186,6 +192,16 @@ function storeDraftWithSubquestionConfigs(): void {
     JSON.stringify({
       savedAt: new Date(NOW.getTime() - 60_000).toISOString(),
       fields: DRAFT_FIELDS_WITH_SUBQUESTION_CONFIGS,
+    }),
+  );
+}
+
+function storeDraftWithUnknownCurriculumCodes(): void {
+  localStorage.setItem(
+    DRAFT_KEY,
+    JSON.stringify({
+      savedAt: new Date(NOW.getTime() - 60_000).toISOString(),
+      fields: DRAFT_FIELDS_WITH_UNKNOWN_CURRICULUM_CODES,
     }),
   );
 }
@@ -301,6 +317,36 @@ describe("ParamForm draft versus history choice", () => {
     expect(secondCard).toHaveTextContent("不限");
     expect(secondCard).toHaveTextContent("學習內容: （沿用全域設定）");
     expect(secondCard).toHaveTextContent("學習表現: （沿用全域設定）");
+  });
+
+  it("renders curriculum instructions and preserves unknown draft codes in the history dialog", async () => {
+    storeDraftWithUnknownCurriculumCodes();
+    renderWithHistory();
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByText("完整設定", { selector: "summary" }),
+    );
+
+    const performanceRow = within(dialog).getByText("學習表現", { selector: "dt" })
+      .parentElement!;
+    expect(performanceRow).toHaveTextContent("理解數與量");
+    const unknownPerformanceItem = within(performanceRow)
+      .getByText("ZZ-IV-9", { exact: true })
+      .closest("li");
+    expect(unknownPerformanceItem).not.toBeNull();
+    expect(unknownPerformanceItem).toHaveTextContent("ZZ-IV-9");
+    expect(unknownPerformanceItem).not.toHaveTextContent("—");
+
+    const contentRow = within(dialog).getByText("學習內容", { selector: "dt" })
+      .parentElement!;
+    expect(contentRow).toHaveTextContent("負數與數線");
+    const unknownContentItem = within(contentRow)
+      .getByText("ZZ-IV-9", { exact: true })
+      .closest("li");
+    expect(unknownContentItem).not.toBeNull();
+    expect(unknownContentItem).toHaveTextContent("ZZ-IV-9");
+    expect(unknownContentItem).not.toHaveTextContent("—");
   });
 
   it("restores the stored draft when the draft option is chosen", async () => {

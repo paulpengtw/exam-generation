@@ -47,8 +47,12 @@ const MATH_SCHEMA = {
   question_style: [{ value: "素養", instruction: "" }],
   題目內容類型: [{ value: "純文字", instruction: "" }],
   科目: [{ value: "數與量", instruction: "" }],
-  學習表現: [],
-  學習內容: [],
+  學習表現: [
+    { value: "n-IV-1", instruction: "理解數與量", 科目: "n" },
+  ],
+  學習內容: [
+    { value: "N-7-1", instruction: "負數與數線", 科目: "N" },
+  ],
 };
 
 const IDENTIFIABLE_FIELDS: FormFields = {
@@ -243,6 +247,42 @@ describe("ParamForm draft summary", () => {
       { selector: "dt" },
     ).parentElement;
     expect(within(customContentTypeRow!).getByText("未填寫")).toBeInTheDocument();
+  });
+
+  it("renders curriculum instructions and preserves unknown draft codes in the full settings", async () => {
+    storeDraft({
+      ...IDENTIFIABLE_FIELDS,
+      learningPerformance: ["n-IV-1", "ZZ-IV-9"],
+      learningContent: ["N-7-1", "ZZ-IV-9"],
+    });
+
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    const prompt = await screen.findByRole("status");
+    const details = within(prompt)
+      .getByText("完整設定", { selector: "summary" })
+      .closest("details");
+    fireEvent.click(within(prompt).getByText("完整設定", { selector: "summary" }));
+
+    const performanceRow = within(details!).getByText("學習表現", { selector: "dt" })
+      .parentElement!;
+    expect(performanceRow).toHaveTextContent("理解數與量");
+    const unknownPerformanceItem = within(performanceRow)
+      .getByText("ZZ-IV-9", { exact: true })
+      .closest("li");
+    expect(unknownPerformanceItem).not.toBeNull();
+    expect(unknownPerformanceItem).toHaveTextContent("ZZ-IV-9");
+    expect(unknownPerformanceItem).not.toHaveTextContent("—");
+
+    const contentRow = within(details!).getByText("學習內容", { selector: "dt" })
+      .parentElement!;
+    expect(contentRow).toHaveTextContent("負數與數線");
+    const unknownContentItem = within(contentRow)
+      .getByText("ZZ-IV-9", { exact: true })
+      .closest("li");
+    expect(unknownContentItem).not.toBeNull();
+    expect(unknownContentItem).toHaveTextContent("ZZ-IV-9");
+    expect(unknownContentItem).not.toHaveTextContent("—");
   });
 
   it("renders saved per-subquestion settings as labelled cards in the restore banner", async () => {
