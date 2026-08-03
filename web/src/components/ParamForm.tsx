@@ -394,15 +394,55 @@ function DraftSummary({
             },
             {
               label: t("form.learning_performance"),
-              value: fields.learningPerformance.join(
-                lang === "zh-TW" ? "、" : ", ",
-              ),
+              ...(fields.learningPerformance.length > 0
+                ? {
+                    content: (
+                      <ul className="space-y-1">
+                        {fields.learningPerformance.map((code) => {
+                          const entry = lpEntryByCode.get(code);
+                          return (
+                            <li key={code} className="flex gap-2 text-sm">
+                              <span className="shrink-0 font-mono font-semibold text-gray-800">
+                                {code}
+                              </span>
+                              {entry?.instruction && (
+                                <span className="text-gray-600">
+                                  — {entry.instruction}
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ),
+                  }
+                : { value: "" }),
             },
             {
               label: t("form.learning_content"),
-              value: fields.learningContent.join(
-                lang === "zh-TW" ? "、" : ", ",
-              ),
+              ...(fields.learningContent.length > 0
+                ? {
+                    content: (
+                      <ul className="space-y-1">
+                        {fields.learningContent.map((code) => {
+                          const entry = lcEntryByCode.get(code);
+                          return (
+                            <li key={code} className="flex gap-2 text-sm">
+                              <span className="shrink-0 font-mono font-semibold text-gray-800">
+                                {code}
+                              </span>
+                              {entry?.instruction && (
+                                <span className="text-gray-600">
+                                  — {entry.instruction}
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ),
+                  }
+                : { value: "" }),
             },
             {
               label: t("form.confirm_subquestion_heading"),
