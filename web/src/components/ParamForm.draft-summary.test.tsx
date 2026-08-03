@@ -160,6 +160,39 @@ describe("ParamForm draft summary", () => {
     expect(summary).toHaveTextContent("社會");
   });
 
+  it("uses a Latin comma-space for multiple draft question types and contexts in en-US", async () => {
+    const previousLang = useLangStore.getState().lang;
+    useLangStore.setState({ lang: "en-US" });
+
+    try {
+      storeDraft({
+        ...IDENTIFIABLE_FIELDS,
+        context: ["個人", "社會"],
+        qType: ["選擇題", "填充題"],
+      });
+
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+      const summary = within(await screen.findByRole("status")).getByRole(
+        "region",
+        { name: "Draft summary" },
+      );
+      const questionTypeRow = within(summary).getByText("題型 (q_type)", {
+        selector: "dt",
+      }).parentElement;
+      const contextRow = within(summary).getByText("情境 (context)", {
+        selector: "dt",
+      }).parentElement;
+
+      expect(questionTypeRow).toHaveTextContent("選擇題, 填充題");
+      expect(questionTypeRow).not.toHaveTextContent("選擇題、填充題");
+      expect(contextRow).toHaveTextContent("個人, 社會");
+      expect(contextRow).not.toHaveTextContent("個人、社會");
+    } finally {
+      useLangStore.setState({ lang: previousLang });
+    }
+  });
+
   it("hard-truncates a long pasted passage and constrains the visible excerpt", async () => {
     const longPassage = `辨認草稿的開頭${"甲".repeat(1_000)}不應出現的結尾`;
     storeDraft({ ...IDENTIFIABLE_FIELDS, passage: longPassage });
