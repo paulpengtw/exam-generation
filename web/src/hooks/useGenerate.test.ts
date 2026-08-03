@@ -221,6 +221,37 @@ describe("useGenerate — model overrides", () => {
   });
 });
 
+describe("buildQueryString — model_verify / model_correct overrides", () => {
+  it("does not emit model_verify / model_correct when unset", () => {
+    const qs = buildQueryString({ subject: "math", grade: 7 });
+    expect(qs).not.toContain("model_verify");
+    expect(qs).not.toContain("model_correct");
+  });
+
+  it("emits model_verify / model_correct when set to non-empty strings", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      grade: 7,
+      model_verify: "claude-opus-4-6",
+      model_correct: "claude-haiku-4-6",
+    });
+    const params = new URLSearchParams(qs);
+    expect(params.get("model_verify")).toBe("claude-opus-4-6");
+    expect(params.get("model_correct")).toBe("claude-haiku-4-6");
+  });
+
+  it("does not emit model_verify / model_correct when set to empty string", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      grade: 7,
+      model_verify: "",
+      model_correct: "",
+    });
+    expect(qs).not.toContain("model_verify");
+    expect(qs).not.toContain("model_correct");
+  });
+});
+
 describe("buildQueryString — effort overrides", () => {
   it("does not emit effort_plan / effort_execute when unset", () => {
     const qs = buildQueryString({ subject: "math", grade: 7 });
@@ -238,6 +269,37 @@ describe("buildQueryString — effort overrides", () => {
     const params = new URLSearchParams(qs);
     expect(params.get("effort_plan")).toBe("high");
     expect(params.get("effort_execute")).toBe("low");
+  });
+});
+
+describe("buildQueryString — effort_verify / effort_correct overrides", () => {
+  it("does not emit effort_verify / effort_correct when unset", () => {
+    const qs = buildQueryString({ subject: "math", grade: 7 });
+    expect(qs).not.toContain("effort_verify");
+    expect(qs).not.toContain("effort_correct");
+  });
+
+  it("does not emit effort_verify / effort_correct when set to empty string", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      grade: 7,
+      effort_verify: "",
+      effort_correct: "",
+    });
+    expect(qs).not.toContain("effort_verify");
+    expect(qs).not.toContain("effort_correct");
+  });
+
+  it("emits effort_verify / effort_correct when set to non-empty strings", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      grade: 7,
+      effort_verify: "high",
+      effort_correct: "low",
+    });
+    const params = new URLSearchParams(qs);
+    expect(params.get("effort_verify")).toBe("high");
+    expect(params.get("effort_correct")).toBe("low");
   });
 });
 

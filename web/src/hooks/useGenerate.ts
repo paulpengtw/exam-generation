@@ -220,8 +220,20 @@ export function buildQueryString(params: GenerateParams): string {
   if (params.model_execute && params.model_execute.length > 0) {
     qs.append("model_execute", params.model_execute);
   }
+  if (params.model_verify && params.model_verify.length > 0) {
+    qs.append("model_verify", params.model_verify);
+  }
+  if (params.model_correct && params.model_correct.length > 0) {
+    qs.append("model_correct", params.model_correct);
+  }
   if (params.effort_plan !== undefined) qs.append("effort_plan", params.effort_plan);
   if (params.effort_execute !== undefined) qs.append("effort_execute", params.effort_execute);
+  if (params.effort_verify && params.effort_verify.length > 0) {
+    qs.append("effort_verify", params.effort_verify);
+  }
+  if (params.effort_correct && params.effort_correct.length > 0) {
+    qs.append("effort_correct", params.effort_correct);
+  }
   if (params.coverage_mode !== undefined) qs.append("coverage_mode", params.coverage_mode);
   return qs.toString();
 }

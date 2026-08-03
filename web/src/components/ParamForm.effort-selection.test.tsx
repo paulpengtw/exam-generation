@@ -42,8 +42,12 @@ const MODELS_WITH_EFFORT = {
   defaults: {
     plan: "claude-opus-4-6",
     execute: "claude-sonnet-4-6",
+    verify: "",
+    correct: "",
     effort_plan: "medium",
     effort_execute: "medium",
+    effort_verify: "medium",
+    effort_correct: "",
   },
 };
 
@@ -212,6 +216,222 @@ describe("ParamForm — effort-tier selection", () => {
       const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
       expect(submitted.effort_plan).toBe("medium");
       expect(submitted.effort_execute).toBe("medium");
+    });
+  });
+});
+
+describe("ParamForm — verify/correct effort-tier selection", () => {
+  describe("default state", () => {
+    it("does not send effort_verify or effort_correct when left at inherit", async () => {
+      const onSubmit = vi.fn();
+      const user = userEvent.setup();
+      render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+      await screen.findByLabelText("Verification effort");
+      await user.click(screen.getByRole("button", { name: /generate/i }));
+      await user.click(await screen.findByRole("button", { name: /confirm/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      expect(submitted.effort_verify).toBeUndefined();
+      expect(submitted.effort_correct).toBeUndefined();
+    });
+
+    it("defaults effort_verify and effort_correct to '' (inherit) on first load", async () => {
+      window.localStorage.clear();
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      const verifySelect = await screen.findByLabelText("Verification effort");
+      const correctSelect = screen.getByLabelText("Correction effort");
+      expect((verifySelect as HTMLSelectElement).value).toBe("");
+      expect((correctSelect as HTMLSelectElement).value).toBe("");
+    });
+  });
+
+  describe("selecting a level", () => {
+    it("sends effort_verify when a level is selected", async () => {
+      const onSubmit = vi.fn();
+      const user = userEvent.setup();
+      render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+      const verifySelect = await screen.findByLabelText("Verification effort");
+      await user.selectOptions(verifySelect, "high");
+      await user.click(screen.getByRole("button", { name: /generate/i }));
+      await user.click(await screen.findByRole("button", { name: /confirm/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      expect(submitted.effort_verify).toBe("high");
+    });
+
+    it("sends effort_correct when a level is selected", async () => {
+      const onSubmit = vi.fn();
+      const user = userEvent.setup();
+      render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+      const correctSelect = await screen.findByLabelText("Correction effort");
+      await user.selectOptions(correctSelect, "low");
+      await user.click(screen.getByRole("button", { name: /generate/i }));
+      await user.click(await screen.findByRole("button", { name: /confirm/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      expect(submitted.effort_correct).toBe("low");
+    });
+
+    it("stops sending effort_verify when reset to inherit", async () => {
+      const onSubmit = vi.fn();
+      const user = userEvent.setup();
+      render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+      const verifySelect = await screen.findByLabelText("Verification effort");
+      await user.selectOptions(verifySelect, "high");
+      await user.selectOptions(verifySelect, "");
+      await user.click(screen.getByRole("button", { name: /generate/i }));
+      await user.click(await screen.findByRole("button", { name: /confirm/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      expect(submitted.effort_verify).toBeUndefined();
+    });
+  });
+
+  describe("localStorage persistence", () => {
+    it("persists effort_verify and effort_correct to localStorage under correct keys", async () => {
+      const user = userEvent.setup();
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      const verifySelect = await screen.findByLabelText("Verification effort");
+      await user.selectOptions(verifySelect, "max");
+      expect(window.localStorage.getItem("effort_verify")).toBe("max");
+      const correctSelect = screen.getByLabelText("Correction effort");
+      await user.selectOptions(correctSelect, "low");
+      expect(window.localStorage.getItem("effort_correct")).toBe("low");
+    });
+
+    it("hydrates effortVerify and effortCorrect from localStorage on remount", async () => {
+      window.localStorage.setItem("effort_verify", "high");
+      window.localStorage.setItem("effort_correct", "low");
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      const verifySelect = await screen.findByLabelText("Verification effort");
+      const correctSelect = screen.getByLabelText("Correction effort");
+      expect((verifySelect as HTMLSelectElement).value).toBe("high");
+      expect((correctSelect as HTMLSelectElement).value).toBe("low");
+    });
+  });
+
+  describe("effective model determines offered levels", () => {
+    it("verify effort offers levels of the effective model when modelVerify is set", async () => {
+      const user = userEvent.setup();
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      const verifyModelSelect = await screen.findByLabelText("Verification model");
+      // Set modelVerify to opus (which supports xhigh)
+      await user.selectOptions(verifyModelSelect, "claude-opus-4-6");
+      const verifyEffortSelect = screen.getByLabelText("Verification effort");
+      const options = Array.from(verifyEffortSelect.querySelectorAll("option")).map(
+        (o) => (o as HTMLOptionElement).value,
+      );
+      expect(options).toContain("xhigh");
+    });
+
+    it("verify effort follows execute model levels when modelVerify is not set", async () => {
+      const user = userEvent.setup();
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      // Set execute model to sonnet (no xhigh), leave verify unset
+      const execModelSelect = await screen.findByLabelText("Execution model");
+      await user.selectOptions(execModelSelect, "claude-sonnet-4-6");
+      const verifyEffortSelect = screen.getByLabelText("Verification effort");
+      const options = Array.from(verifyEffortSelect.querySelectorAll("option")).map(
+        (o) => (o as HTMLOptionElement).value,
+      );
+      expect(options).not.toContain("xhigh");
+      expect(options).toContain("max");
+    });
+  });
+
+  describe("model change resets effort to inherit when level unavailable", () => {
+    it("resets effortVerify to inherit when switching to a model that lacks the selected level", async () => {
+      const user = userEvent.setup();
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      const verifyModelSelect = await screen.findByLabelText("Verification model");
+      // Switch verify model to opus (supports xhigh)
+      await user.selectOptions(verifyModelSelect, "claude-opus-4-6");
+      const verifyEffortSelect = screen.getByLabelText("Verification effort");
+      await user.selectOptions(verifyEffortSelect, "xhigh");
+      expect((verifyEffortSelect as HTMLSelectElement).value).toBe("xhigh");
+      // Switch verify model to sonnet (no xhigh) — effort should reset to ""
+      await user.selectOptions(verifyModelSelect, "claude-sonnet-4-6");
+      expect((verifyEffortSelect as HTMLSelectElement).value).toBe("");
+    });
+  });
+
+  describe("discovery failure", () => {
+    it("hides verify/correct effort selects when /api/models fails", async () => {
+      getAvailableModelsMock.mockRejectedValueOnce(new Error("boom"));
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      await screen.findByText("第四學習階段", { exact: false }).catch(() => {});
+      await waitFor(() => {
+        expect(screen.queryByLabelText("Verification effort")).toBeNull();
+        expect(screen.queryByLabelText("Correction effort")).toBeNull();
+      });
+    });
+
+    it("does not send effort_verify/effort_correct when /api/models fails", async () => {
+      window.localStorage.setItem("effort_verify", "high");
+      window.localStorage.setItem("effort_correct", "low");
+      getAvailableModelsMock.mockRejectedValueOnce(new Error("boom"));
+      const onSubmit = vi.fn();
+      render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+      await screen.findByText("第四學習階段", { exact: false }).catch(() => {});
+      await waitFor(() => {
+        expect(screen.queryByLabelText("Verification effort")).toBeNull();
+      });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /generate/i }));
+      await user.click(await screen.findByRole("button", { name: /confirm/i }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      expect(submitted.effort_verify).toBeUndefined();
+      expect(submitted.effort_correct).toBeUndefined();
+    });
+  });
+
+  describe("labels and i18n", () => {
+    it("shows 'Verification effort' and 'Correction effort' labels (en-US)", async () => {
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      expect(await screen.findByLabelText("Verification effort")).toBeInTheDocument();
+      expect(screen.getByLabelText("Correction effort")).toBeInTheDocument();
+    });
+
+    it("shows inherit option with env default in parentheses when defaults.effort_verify is non-empty", async () => {
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      const verifySelect = await screen.findByLabelText("Verification effort");
+      const inheritOption = Array.from(verifySelect.querySelectorAll("option")).find(
+        (o) => (o as HTMLOptionElement).value === "",
+      );
+      expect(inheritOption).toBeDefined();
+      // defaults.effort_verify = "medium" → should show "(medium)"
+      expect(inheritOption!.textContent).toContain("medium");
+    });
+
+    it("shows plain inherit option text when defaults.effort_correct is empty", async () => {
+      render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+      const correctSelect = await screen.findByLabelText("Correction effort");
+      const inheritOption = Array.from(correctSelect.querySelectorAll("option")).find(
+        (o) => (o as HTMLOptionElement).value === "",
+      );
+      expect(inheritOption).toBeDefined();
+      // defaults.effort_correct = "" → should NOT show parentheses with a value
+      expect(inheritOption!.textContent).not.toMatch(/\(.+\)/);
+    });
+  });
+
+  describe("confirmation screen rows", () => {
+    it("shows Verification effort and Correction effort rows when values are set", async () => {
+      const user = userEvent.setup();
+      render(<ParamForm subject="math" onSubmit={vi.fn()} disabled={false} />);
+      const verifySelect = await screen.findByLabelText("Verification effort");
+      await user.selectOptions(verifySelect, "high");
+      const correctSelect = screen.getByLabelText("Correction effort");
+      await user.selectOptions(correctSelect, "low");
+      await user.click(screen.getByRole("button", { name: /generate/i }));
+      await screen.findByRole("heading", { name: /review settings/i });
+      expect(
+        screen.getByText("Verification effort", { selector: "dt" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Correction effort", { selector: "dt" }),
+      ).toBeInTheDocument();
     });
   });
 });

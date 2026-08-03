@@ -8,7 +8,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.config import Config
+from src.config import (
+    Config,
+    EFFORT_LEVELS as _EFFORT_LEVELS,  # noqa: F401  (re-export: server.generate.routes + tests import this name)
+    FIVE_EFFORT_LEVELS as _FIVE_EFFORT_LEVELS,  # noqa: F401
+    FOUR_EFFORT_LEVELS as _FOUR_EFFORT_LEVELS,  # noqa: F401
+    THREE_EFFORT_LEVELS as _THREE_EFFORT_LEVELS,  # noqa: F401
+)
 
 # Code-level allowlist shipped with the server.  When LLM_MODELS_ALLOWED is
 # unset or empty this roster is used as-is (plus any plan/execute model that
@@ -22,23 +28,6 @@ _DEFAULT_MODELS_ALLOWED: tuple[str, ...] = (
     "claude-sonnet-5",
     "claude-opus-4-6",
 )
-
-# Per-model effort level roster.  Models that support the full five-level scale
-# include xhigh; the 4.x models stop at max.  Unknown models (custom roster
-# via env) default to the safe four-level subset (no xhigh).
-_FIVE_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "xhigh", "max"]
-_FOUR_EFFORT_LEVELS: list[str] = ["low", "medium", "high", "max"]
-
-_THREE_EFFORT_LEVELS: list[str] = ["low", "medium", "high"]
-
-_EFFORT_LEVELS: dict[str, list[str]] = {
-    "claude-opus-5": _FIVE_EFFORT_LEVELS,
-    "claude-fable-5": _FIVE_EFFORT_LEVELS,
-    "claude-sonnet-5": _FIVE_EFFORT_LEVELS,
-    "claude-sonnet-4-6": _FOUR_EFFORT_LEVELS,
-    "claude-opus-4-6": _FOUR_EFFORT_LEVELS,
-    "gemini-3.1-pro-preview": _THREE_EFFORT_LEVELS,
-}
 
 
 @dataclass
@@ -70,6 +59,13 @@ class ServerConfig(Config):
     creative_planning: bool = True
     effort_plan: str = "medium"  # output_config.effort for plan calls (LLM_EFFORT_PLAN)
     effort_execute: str = "medium"  # output_config.effort for execute calls (LLM_EFFORT_EXECUTE)
+    # Tier-specific model overrides (issue #374); inherited from Config but
+    # ServerConfig.from_env re-reads every env var independently.
+    # model_verify: str = ""   # inherited — declared in Config
+    # model_correct: str = ""  # inherited — declared in Config
+    # Tier-specific effort overrides (issue #377); inherited from Config.
+    # effort_verify: str = ""  # inherited — declared in Config
+    # effort_correct: str = "" # inherited — declared in Config
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -84,6 +80,8 @@ class ServerConfig(Config):
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
             model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-sonnet-4-6"),
             model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
+            model_verify=os.environ.get("LLM_MODEL_VERIFY", ""),
+            model_correct=os.environ.get("LLM_MODEL_CORRECT", ""),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
             image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),
@@ -156,6 +154,8 @@ class ServerConfig(Config):
             not in ("0", "false", "False", ""),
             effort_plan=os.environ.get("LLM_EFFORT_PLAN", "medium"),
             effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", "medium"),
+            effort_verify=os.environ.get("LLM_EFFORT_VERIFY", ""),
+            effort_correct=os.environ.get("LLM_EFFORT_CORRECT", ""),
         )
         # When LLM_MODELS_ALLOWED is unset/empty fall back to the built-in
         # roster; when set it replaces the roster entirely (no merge).
@@ -164,10 +164,10 @@ class ServerConfig(Config):
         for m in initial:
             if m and m not in seen:
                 seen[m] = None
-        # Always ensure the configured plan/execute models are present so
-        # GET /api/models never advertises a default that the 422 gate
-        # would then reject.
-        for m in (cfg.model_plan, cfg.model_execute):
+        # Always ensure the configured plan/execute/verify/correct models are
+        # present so GET /api/models never advertises a default that the 422
+        # gate would then reject.  Empty strings are skipped by the `if m` guard.
+        for m in (cfg.model_plan, cfg.model_execute, cfg.model_verify, cfg.model_correct):
             if m and m not in seen:
                 seen[m] = None
         cfg.llm_models_allowed = tuple(seen)

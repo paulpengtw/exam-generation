@@ -89,12 +89,34 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
+    # #375: per-request tier model overrides — forwarded via client_config for all subjects
+    "model_verify": {
+        _MA: (FORWARDED, ""),
+        _SS: (FORWARDED, ""),
+        _NS: (FORWARDED, ""),
+    },
+    "model_correct": {
+        _MA: (FORWARDED, ""),
+        _SS: (FORWARDED, ""),
+        _NS: (FORWARDED, ""),
+    },
     "effort_plan": {
         _MA: (FORWARDED, ""),
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
     "effort_execute": {
+        _MA: (FORWARDED, ""),
+        _SS: (FORWARDED, ""),
+        _NS: (FORWARDED, ""),
+    },
+    # #377: per-request tier effort overrides — forwarded via client_config for all subjects
+    "effort_verify": {
+        _MA: (FORWARDED, ""),
+        _SS: (FORWARDED, ""),
+        _NS: (FORWARDED, ""),
+    },
+    "effort_correct": {
         _MA: (FORWARDED, ""),
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
@@ -238,11 +260,11 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (INAPPLICABLE, "SS uses difficulty not Reporting Scale; §279: other subjects ignore"),
         _NS: (FORWARDED, ""),
     },
-    # ── coverage_mode — SS uses balanced_batch; math/NS do not ──
+    # ── coverage_mode — SS and NS use balanced_batch; math does not ──
     "coverage_mode": {
-        _MA: (INAPPLICABLE, "math has no 文本生成器 stage; balanced-batch hint is SS-only"),
+        _MA: (INAPPLICABLE, "math has no 文本生成器 stage; balanced-batch hint is SS/NS-only"),
         _SS: (FORWARDED, ""),
-        _NS: (INAPPLICABLE, "not forwarded to _ns_generate_with_corrections — TODO(#208)"),
+        _NS: (FORWARDED, ""),
     },
     # ── sub-question / word-limit fields — math rejects; SS and NS forward ──
     "sub_question_count": {
@@ -291,12 +313,26 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("model_execute", _MA): (_svc._build_run_context, "params.model_execute"),
     ("model_execute", _SS): (_svc._build_run_context, "params.model_execute"),
     ("model_execute", _NS): (_svc._build_run_context, "params.model_execute"),
+    # #375: tier model overrides — forwarded via client_config in _build_run_context
+    ("model_verify",  _MA): (_svc._build_run_context, "params.model_verify"),
+    ("model_verify",  _SS): (_svc._build_run_context, "params.model_verify"),
+    ("model_verify",  _NS): (_svc._build_run_context, "params.model_verify"),
+    ("model_correct", _MA): (_svc._build_run_context, "params.model_correct"),
+    ("model_correct", _SS): (_svc._build_run_context, "params.model_correct"),
+    ("model_correct", _NS): (_svc._build_run_context, "params.model_correct"),
     ("effort_plan",   _MA): (_svc._build_run_context, "params.effort_plan"),
     ("effort_plan",   _SS): (_svc._build_run_context, "params.effort_plan"),
     ("effort_plan",   _NS): (_svc._build_run_context, "params.effort_plan"),
     ("effort_execute",_MA): (_svc._build_run_context, "params.effort_execute"),
     ("effort_execute",_SS): (_svc._build_run_context, "params.effort_execute"),
     ("effort_execute",_NS): (_svc._build_run_context, "params.effort_execute"),
+    # #377: tier effort overrides — forwarded via client_config in _build_run_context
+    ("effort_verify",  _MA): (_svc._build_run_context, "params.effort_verify"),
+    ("effort_verify",  _SS): (_svc._build_run_context, "params.effort_verify"),
+    ("effort_verify",  _NS): (_svc._build_run_context, "params.effort_verify"),
+    ("effort_correct", _MA): (_svc._build_run_context, "params.effort_correct"),
+    ("effort_correct", _SS): (_svc._build_run_context, "params.effort_correct"),
+    ("effort_correct", _NS): (_svc._build_run_context, "params.effort_correct"),
     # max_retries — stored in _RunContext from params.max_retries
     ("max_retries",   _MA): (_svc._build_run_context, "params.max_retries"),
     ("max_retries",   _SS): (_svc._build_run_context, "params.max_retries"),
@@ -396,8 +432,9 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     # subquestion_configs — forwarded via decoded configs in _build_run_context; math rejects
     ("subquestion_configs", _SS): (_svc._build_run_context, "params.subquestion_configs"),
     ("subquestion_configs", _NS): (_svc._build_run_context, "params.subquestion_configs"),
-    # coverage_mode — SS: forwarded via balanced_batch in _build_run_context
+    # coverage_mode — SS and NS: forwarded via balanced_batch in _build_run_context
     ("coverage_mode", _SS): (_svc._build_run_context, "params.coverage_mode"),
+    ("coverage_mode", _NS): (_svc._build_run_context, "params.coverage_mode"),
 }
 
 
@@ -558,6 +595,6 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    assert forwarded    == 81, f"Expected 81 FORWARDED, got {forwarded}"
+    assert forwarded    == 94, f"Expected 94 FORWARDED, got {forwarded}"  # +6 for #377 effort_verify/effort_correct × 3 subjects
     assert rejected     == 6,  f"Expected 6 REJECTED, got {rejected}"
-    assert inapplicable == 21, f"Expected 21 INAPPLICABLE, got {inapplicable}"
+    assert inapplicable == 20, f"Expected 20 INAPPLICABLE, got {inapplicable}"

@@ -100,6 +100,14 @@ _Avoid_: text generator, stage one, planner
 The second generation stage. One call per planned 小題, each writing one complete 小題.
 _Avoid_: subquestion generator, stage two, worker
 
+**驗證模型**:
+The model tier that runs the 驗證 生成階段. When unset, calls fall through to the 執行模型. Contrast 修正模型.
+_Avoid_: verify model, verifier model
+
+**修正模型**:
+The model tier that runs the 修正 生成階段. When unset, calls fall through to the 執行模型. Contrast 驗證模型.
+_Avoid_: correct model, corrector model
+
 **發送前確認**:
 The screen shown after the user submits the form and before generation begins, stating what will be sent.
 _Avoid_: confirmation dialog, review screen, preview

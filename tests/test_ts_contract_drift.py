@@ -38,8 +38,7 @@ def test_every_generated_request_field_is_reachable_on_generate_route() -> None:
 
     # Deliberately controlled only by the server; the web client does not expose
     # or forward this retry-policy setting.
-    # effort_plan / effort_execute: backend-half of issue #254; frontend PR pending.
-    web_client_exclusions = {"max_retries", "effort_plan", "effort_execute"}
+    web_client_exclusions = {"max_retries"}
     web_client_fields = set(GenerateParams.model_fields) - web_client_exclusions
     use_generate_source = USE_GENERATE_PATH.read_text(encoding="utf-8")
 

@@ -110,6 +110,12 @@ _PURPOSE_TO_AGENT["fact_check"] = "fact_checker"
 # All purpose strings that belong to the planning tier (→ effort_plan).
 _PLAN_PURPOSES: frozenset[str] = frozenset({"plan", "plan_core_questions", "plan_context_angles"})
 
+# Purpose strings that belong to the 驗證 / 修正 model tiers (→ model_verify / model_correct).
+# Exact-string sets, mirroring _PLAN_PURPOSES — see issue #346: a `purpose == "..."`
+# equality check against a string no caller sends silently degrades to the execute tier.
+_VERIFY_PURPOSES: frozenset[str] = frozenset({"verify"})
+_CORRECT_PURPOSES: frozenset[str] = frozenset({"correct"})
+
 
 class Citation(BaseModel):
     """A single web-search source cited by the model in its final response."""
@@ -354,18 +360,59 @@ class LLMClient:
         )
         return {}
 
+    def _model_for_purpose(self, purpose: str) -> str:
+        """Resolve the model tier for a call purpose: tier override → effective execute model.
+
+        Resolution chain per tier (issue #374):
+            env var (model_verify / model_correct) → effective execute model (resolved at
+            call time, NOT at Config construction time, so per-request
+            ``dataclasses.replace(cfg, model_execute=...)`` overrides land correctly).
+        """
+        if purpose in _VERIFY_PURPOSES:
+            return self.config.model_verify or self.config.model_execute
+        if purpose in _CORRECT_PURPOSES:
+            return self.config.model_correct or self.config.model_execute
+        return self.config.model_execute
+
+    def _effort_for_purpose(self, purpose: str) -> str:
+        """Resolve the effort tier for a call purpose: tier override → effort_execute.
+
+        Resolution chain per tier (issue #377):
+            plan purposes    → effort_plan
+            verify purposes  → effort_verify or effort_execute (resolved at call time)
+            correct purposes → effort_correct or effort_execute (resolved at call time)
+            everything else  → effort_execute
+
+        The ``or effort_execute`` fallback resolves at call time (NOT at Config
+        construction time) so that per-request ``dataclasses.replace(cfg,
+        effort_execute=...)`` overrides flow through to the tiers when their own
+        effort is unset.
+        """
+        if purpose in _PLAN_PURPOSES:
+            return self.config.effort_plan
+        if purpose in _VERIFY_PURPOSES:
+            return self.config.effort_verify or self.config.effort_execute
+        if purpose in _CORRECT_PURPOSES:
+            return self.config.effort_correct or self.config.effort_execute
+        return self.config.effort_execute
+
     def _effort_kwargs(self, purpose: str, provider: str = "anthropic") -> dict:
         """Return effort kwargs appropriate for the provider and call purpose.
 
-        planning purposes (see ``_PLAN_PURPOSES``) → effort_plan; everything else → effort_execute.
+        Delegates tier selection to ``_effort_for_purpose`` (plan/verify/correct/execute).
 
         Anthropic: wraps effort in ``{"extra_body": {"output_config": {"effort": ...}}}``.
         gemini / openai: maps low/medium/high to ``{"reasoning_effort": effort}``.
             Any other effort value is unsupported on these providers — the parameter
             is omitted entirely and a WARNING is emitted once per (provider, effort)
             pair (module-level ``_warned_effort_drops`` suppresses repeats).
+
+        Route-level validation (issue #377) ensures that the effective effort is
+        compatible with the tier's model before any LLM call, so invalid values
+        are caught upstream rather than being silently dropped here.
         """
-        effort = self.config.effort_plan if purpose in _PLAN_PURPOSES else self.config.effort_execute
+        effort = self._effort_for_purpose(purpose)
+
         if provider == "anthropic":
             return {"extra_body": {"output_config": {"effort": effort}}}
         # gemini / openai — reasoning_effort only accepts low / medium / high
@@ -660,7 +707,7 @@ class LLMClient:
         """Call the execution model (default: Sonnet) and return raw text response."""
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
-        model = model or self.config.model_execute
+        model = model or self._model_for_purpose(purpose)
 
         if images:
             user_content: list[dict] = [{"type": "text", "text": user}]
@@ -693,7 +740,7 @@ class LLMClient:
             return self.generate(system, user, model, purpose=purpose)
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
-        model = model or self.config.model_execute
+        model = model or self._model_for_purpose(purpose)
         b64_data = base64.b64encode(Path(image_path).read_bytes()).decode("utf-8")
         messages = [
             {"role": "system", "content": system},
@@ -724,7 +771,7 @@ class LLMClient:
         for attempt in range(max_parse_retries):
             if self.config.rate_limit_delay > 0:
                 time.sleep(self.config.rate_limit_delay)
-            call_model = model or self.config.model_execute
+            call_model = model or self._model_for_purpose(purpose)
 
             if images:
                 user_content: list[dict] = [{"type": "text", "text": current_user}]
@@ -825,7 +872,7 @@ class LLMClient:
         """
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
-        call_model = model or self.config.model_execute
+        call_model = model or self._model_for_purpose(purpose)
         agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
 
         system_param = (

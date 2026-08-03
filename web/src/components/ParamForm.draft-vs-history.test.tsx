@@ -85,8 +85,12 @@ const DRAFT_FIELDS: FormFields = {
   subquestionConfigs: [{ question_type: "填充題", instruction: "草稿小題" }],
   modelPlan: "",
   modelExecute: "",
+  modelVerify: "",
+  modelCorrect: "",
   effortPlan: "medium",
   effortExecute: "medium",
+  effortVerify: "",
+  effortCorrect: "",
 };
 
 const DRAFT_FIELDS_WITH_SUBQUESTION_CONFIGS: FormFields = {
@@ -158,8 +162,12 @@ const HISTORY_FIELDS: FormFields = {
   ],
   modelPlan: "",
   modelExecute: "",
+  modelVerify: "",
+  modelCorrect: "",
   effortPlan: "medium",
   effortExecute: "medium",
+  effortVerify: "",
+  effortCorrect: "",
 };
 
 function signIn(): void {
