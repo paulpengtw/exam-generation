@@ -238,11 +238,11 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (INAPPLICABLE, "SS uses difficulty not Reporting Scale; §279: other subjects ignore"),
         _NS: (FORWARDED, ""),
     },
-    # ── coverage_mode — SS uses balanced_batch; math/NS do not ──
+    # ── coverage_mode — SS and NS use balanced_batch; math does not ──
     "coverage_mode": {
-        _MA: (INAPPLICABLE, "math has no 文本生成器 stage; balanced-batch hint is SS-only"),
+        _MA: (INAPPLICABLE, "math has no 文本生成器 stage; balanced-batch hint is SS/NS-only"),
         _SS: (FORWARDED, ""),
-        _NS: (INAPPLICABLE, "not forwarded to _ns_generate_with_corrections — TODO(#208)"),
+        _NS: (FORWARDED, ""),
     },
     # ── sub-question / word-limit fields — math rejects; SS and NS forward ──
     "sub_question_count": {
@@ -396,8 +396,9 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     # subquestion_configs — forwarded via decoded configs in _build_run_context; math rejects
     ("subquestion_configs", _SS): (_svc._build_run_context, "params.subquestion_configs"),
     ("subquestion_configs", _NS): (_svc._build_run_context, "params.subquestion_configs"),
-    # coverage_mode — SS: forwarded via balanced_batch in _build_run_context
+    # coverage_mode — SS and NS: forwarded via balanced_batch in _build_run_context
     ("coverage_mode", _SS): (_svc._build_run_context, "params.coverage_mode"),
+    ("coverage_mode", _NS): (_svc._build_run_context, "params.coverage_mode"),
 }
 
 
@@ -558,6 +559,6 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    assert forwarded    == 81, f"Expected 81 FORWARDED, got {forwarded}"
+    assert forwarded    == 82, f"Expected 82 FORWARDED, got {forwarded}"
     assert rejected     == 6,  f"Expected 6 REJECTED, got {rejected}"
-    assert inapplicable == 21, f"Expected 21 INAPPLICABLE, got {inapplicable}"
+    assert inapplicable == 20, f"Expected 20 INAPPLICABLE, got {inapplicable}"
