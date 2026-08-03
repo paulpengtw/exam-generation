@@ -93,6 +93,14 @@ const DRAFT_FIELDS: FormFields = {
   effortCorrect: "",
 };
 
+const DRAFT_FIELDS_WITH_SUBQUESTION_CONFIGS: FormFields = {
+  ...DRAFT_FIELDS,
+  subquestionConfigs: [
+    { question_type: "選擇題", learning_performance: ["n-IV-1"] },
+    {},
+  ],
+};
+
 const HISTORY_PARAMS = {
   grade: 9,
   style: "課本",
@@ -180,6 +188,16 @@ function storeDraft(): void {
   );
 }
 
+function storeDraftWithSubquestionConfigs(): void {
+  localStorage.setItem(
+    DRAFT_KEY,
+    JSON.stringify({
+      savedAt: new Date(NOW.getTime() - 60_000).toISOString(),
+      fields: DRAFT_FIELDS_WITH_SUBQUESTION_CONFIGS,
+    }),
+  );
+}
+
 function renderWithHistory() {
   return render(
     <ParamForm
@@ -251,6 +269,46 @@ describe("ParamForm draft versus history choice", () => {
     expect(
       within(dialog).getByRole("button", { name: "重新開始" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders saved per-subquestion settings as labelled cards in the history dialog", async () => {
+    storeDraftWithSubquestionConfigs();
+    renderWithHistory();
+
+    const dialog = await screen.findByRole("dialog");
+    within(dialog).getByRole("region", { name: "草稿摘要" });
+    fireEvent.click(
+      within(dialog).getByText("完整設定", { selector: "summary" }),
+    );
+
+    for (const label of [
+      "第 1 小題",
+      "第 2 小題",
+      "題型:",
+      "出題指示:",
+      "題目內容類型:",
+      "圖片生成模式:",
+      "題目字數限制:",
+      "選項字數限制:",
+      "文本字數限制:",
+    ]) {
+      expect(dialog).toHaveTextContent(label);
+    }
+
+    expect(dialog).not.toHaveTextContent('"question_type"');
+    expect(dialog).not.toHaveTextContent(
+      JSON.stringify(DRAFT_FIELDS_WITH_SUBQUESTION_CONFIGS.subquestionConfigs),
+    );
+
+    const secondCard = within(dialog)
+      .getByRole("heading", { name: "第 2 小題" })
+      .closest("li");
+    expect(secondCard).not.toBeNull();
+    expect(secondCard).toHaveTextContent("（隨機）");
+    expect(secondCard).toHaveTextContent("（沿用文本設定）");
+    expect(secondCard).toHaveTextContent("不限");
+    expect(secondCard).toHaveTextContent("學習內容: （沿用全域設定）");
+    expect(secondCard).toHaveTextContent("學習表現: （沿用全域設定）");
   });
 
   it("restores the stored draft when the draft option is chosen", async () => {
