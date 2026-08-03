@@ -140,8 +140,12 @@ export interface FormFields {
   subquestionConfigs: SubQuestionConfig[];
   modelPlan: string;
   modelExecute: string;
+  modelVerify: string;
+  modelCorrect: string;
   effortPlan: string;
   effortExecute: string;
+  effortVerify: string;
+  effortCorrect: string;
 }
 
 type FormFieldUpdate<K extends keyof FormFields> =
@@ -284,11 +288,11 @@ function DraftSummary({
                 }]),
             {
               label: t("form.q_type"),
-              value: fields.qType.join("、"),
+              value: fields.qType.join(lang === "zh-TW" ? "、" : ", "),
             },
             {
               label: t("form.context"),
-              value: fields.context.join("、"),
+              value: fields.context.join(lang === "zh-TW" ? "、" : ", "),
             },
             ...(fields.passage
               ? [{
@@ -467,6 +471,22 @@ function DraftSummary({
               label: t("params.model_execute_label"),
               value: fields.modelExecute,
             },
+            {
+              label: t("params.model_verify_label"),
+              value: fields.modelVerify,
+            },
+            {
+              label: t("params.model_correct_label"),
+              value: fields.modelCorrect,
+            },
+            {
+              label: t("form.effort_verify"),
+              value: fields.effortVerify,
+            },
+            {
+              label: t("form.effort_correct"),
+              value: fields.effortCorrect,
+            },
           ].map(({ label, value, content }: DraftSummarySettingRow) => {
             const displayValue =
               content !== undefined
@@ -513,8 +533,12 @@ function defaultFormFields(
   schemas: Schemas,
   modelPlan: string,
   modelExecute: string,
+  modelVerify: string,
+  modelCorrect: string,
   effortPlan: string,
   effortExecute: string,
+  effortVerify: string,
+  effortCorrect: string,
 ): FormFields {
   const isCurriculumSubject =
     subject === "social_studies" ||
@@ -570,8 +594,12 @@ function defaultFormFields(
     subquestionConfigs: [],
     modelPlan,
     modelExecute,
+    modelVerify,
+    modelCorrect,
     effortPlan,
     effortExecute,
+    effortVerify,
+    effortCorrect,
   };
 }
 
@@ -800,8 +828,12 @@ export default function ParamForm({
     subquestionConfigs: subquestionConfigsFromInit(),
     modelPlan: window.localStorage.getItem("model_plan") ?? "",
     modelExecute: window.localStorage.getItem("model_execute") ?? "",
+    modelVerify: window.localStorage.getItem("model_verify") ?? "",
+    modelCorrect: window.localStorage.getItem("model_correct") ?? "",
     effortPlan: window.localStorage.getItem("effort_plan") ?? "medium",
     effortExecute: window.localStorage.getItem("effort_execute") ?? "medium",
+    effortVerify: window.localStorage.getItem("effort_verify") ?? "",
+    effortCorrect: window.localStorage.getItem("effort_correct") ?? "",
   }));
   const formSnapshot = formFields;
   const restoreFormSnapshot = setFormFields;
@@ -849,8 +881,12 @@ export default function ParamForm({
     subquestionConfigs,
     modelPlan,
     modelExecute,
+    modelVerify,
+    modelCorrect,
     effortPlan,
     effortExecute,
+    effortVerify,
+    effortCorrect,
   } = formSnapshot;
   const configuredSeed = fromInit<number | undefined>("seed", undefined);
 
@@ -956,7 +992,7 @@ export default function ParamForm({
     setPrefillNotice(null);
     userChosenFields.current.clear();
     restoreFormSnapshot(
-      defaultFormFields(subject, schemas, modelPlan, modelExecute, effortPlan, effortExecute),
+      defaultFormFields(subject, schemas, modelPlan, modelExecute, modelVerify, modelCorrect, effortPlan, effortExecute, effortVerify, effortCorrect),
     );
   }
 
@@ -1141,6 +1177,22 @@ export default function ParamForm({
         };
         const defaultEffortPlan = m.defaults.effort_plan ?? "medium";
         const defaultEffortExecute = m.defaults.effort_execute ?? "medium";
+        // For tier effort levels, the effective model is the tier model (if set),
+        // falling back to the execute model or server default.
+        const reconcileTierEffortLevel = (
+          effortValue: string,
+          tierModelId: string,
+          executeModelId: string,
+          defaultExecuteModelId: string,
+          effortMap: Record<string, string[]> | undefined,
+        ): string => {
+          if (effortValue === "") return ""; // "" = inherit, always valid
+          if (!effortMap) return effortValue;
+          const effectiveModel = tierModelId || executeModelId || defaultExecuteModelId;
+          if (!effectiveModel || !effortMap[effectiveModel]) return effortValue;
+          const levels = effortMap[effectiveModel];
+          return levels.includes(effortValue) ? effortValue : "";
+        };
 
         restoreFormSnapshot((current) => {
           const reconciledPlan =
@@ -1151,10 +1203,20 @@ export default function ParamForm({
             current.modelExecute && !allowed.has(current.modelExecute)
               ? ""
               : current.modelExecute;
+          const reconciledVerify =
+            current.modelVerify && !allowed.has(current.modelVerify)
+              ? ""
+              : current.modelVerify;
+          const reconciledCorrect =
+            current.modelCorrect && !allowed.has(current.modelCorrect)
+              ? ""
+              : current.modelCorrect;
           return {
             ...current,
             modelPlan: reconciledPlan,
             modelExecute: reconciledExecute,
+            modelVerify: reconciledVerify,
+            modelCorrect: reconciledCorrect,
             effortPlan: reconcileEffortLevel(
               current.effortPlan,
               reconciledPlan,
@@ -1166,6 +1228,20 @@ export default function ParamForm({
               reconciledExecute,
               m.effort,
               defaultEffortExecute,
+            ),
+            effortVerify: reconcileTierEffortLevel(
+              current.effortVerify,
+              reconciledVerify,
+              reconciledExecute,
+              m.defaults.execute,
+              m.effort,
+            ),
+            effortCorrect: reconcileTierEffortLevel(
+              current.effortCorrect,
+              reconciledCorrect,
+              reconciledExecute,
+              m.defaults.execute,
+              m.effort,
             ),
           };
         });
@@ -1180,10 +1256,20 @@ export default function ParamForm({
             snap.modelExecute && !allowed.has(snap.modelExecute)
               ? ""
               : snap.modelExecute;
+          const reconciledVerifySnap =
+            snap.modelVerify && !allowed.has(snap.modelVerify)
+              ? ""
+              : snap.modelVerify;
+          const reconciledCorrectSnap =
+            snap.modelCorrect && !allowed.has(snap.modelCorrect)
+              ? ""
+              : snap.modelCorrect;
           defaultsSnapshotRef.current = {
             ...snap,
             modelPlan: reconciledPlanSnap,
             modelExecute: reconciledExecuteSnap,
+            modelVerify: reconciledVerifySnap,
+            modelCorrect: reconciledCorrectSnap,
             effortPlan: reconcileEffortLevel(
               snap.effortPlan,
               reconciledPlanSnap,
@@ -1195,6 +1281,20 @@ export default function ParamForm({
               reconciledExecuteSnap,
               m.effort,
               defaultEffortExecute,
+            ),
+            effortVerify: reconcileTierEffortLevel(
+              snap.effortVerify,
+              reconciledVerifySnap,
+              reconciledExecuteSnap,
+              m.defaults.execute,
+              m.effort,
+            ),
+            effortCorrect: reconcileTierEffortLevel(
+              snap.effortCorrect,
+              reconciledCorrectSnap,
+              reconciledExecuteSnap,
+              m.defaults.execute,
+              m.effort,
             ),
           };
         }
@@ -1212,14 +1312,22 @@ export default function ParamForm({
             ...defaultsSnapshotRef.current,
             modelPlan: "",
             modelExecute: "",
+            modelVerify: "",
+            modelCorrect: "",
             effortPlan: "",
             effortExecute: "",
+            effortVerify: "",
+            effortCorrect: "",
           };
         }
         setField("modelPlan", "");
         setField("modelExecute", "");
+        setField("modelVerify", "");
+        setField("modelCorrect", "");
         setField("effortPlan", "");
         setField("effortExecute", "");
+        setField("effortVerify", "");
+        setField("effortCorrect", "");
         setModelsResolved(true);
       });
     return () => {
@@ -1234,11 +1342,23 @@ export default function ParamForm({
     window.localStorage.setItem("model_execute", modelExecute);
   }, [modelExecute]);
   useEffect(() => {
+    window.localStorage.setItem("model_verify", modelVerify);
+  }, [modelVerify]);
+  useEffect(() => {
+    window.localStorage.setItem("model_correct", modelCorrect);
+  }, [modelCorrect]);
+  useEffect(() => {
     window.localStorage.setItem("effort_plan", effortPlan);
   }, [effortPlan]);
   useEffect(() => {
     window.localStorage.setItem("effort_execute", effortExecute);
   }, [effortExecute]);
+  useEffect(() => {
+    window.localStorage.setItem("effort_verify", effortVerify);
+  }, [effortVerify]);
+  useEffect(() => {
+    window.localStorage.setItem("effort_correct", effortCorrect);
+  }, [effortCorrect]);
 
   useEffect(() => {
     if (!schemas || !initialParams) return;
@@ -1344,6 +1464,21 @@ export default function ParamForm({
     if (modelExecute && models.effort[modelExecute]) return models.effort[modelExecute];
     return [...new Set(Object.values(models.effort).flat())];
   }, [models, modelExecute]);
+
+  // For verify/correct tiers, effective model = tier model || execute model || server default.
+  const verifyEffortLevels = useMemo((): string[] => {
+    if (!models?.effort) return [];
+    const effectiveModel = modelVerify || modelExecute || models.defaults.execute;
+    if (effectiveModel && models.effort[effectiveModel]) return models.effort[effectiveModel];
+    return [...new Set(Object.values(models.effort).flat())];
+  }, [models, modelVerify, modelExecute]);
+
+  const correctEffortLevels = useMemo((): string[] => {
+    if (!models?.effort) return [];
+    const effectiveModel = modelCorrect || modelExecute || models.defaults.execute;
+    if (effectiveModel && models.effort[effectiveModel]) return models.effort[effectiveModel];
+    return [...new Set(Object.values(models.effort).flat())];
+  }, [models, modelCorrect, modelExecute]);
 
   useEffect(() => {
     if (subject !== "natural_sciences") return;
@@ -1544,8 +1679,12 @@ export default function ParamForm({
           : undefined,
       model_plan: modelPlan || undefined,
       model_execute: modelExecute || undefined,
+      model_verify: modelVerify || undefined,
+      model_correct: modelCorrect || undefined,
       effort_plan: models?.effort ? effortPlan : undefined,
       effort_execute: models?.effort ? effortExecute : undefined,
+      effort_verify: models?.effort ? (effortVerify || undefined) : undefined,
+      effort_correct: models?.effort ? (effortCorrect || undefined) : undefined,
     };
     const requestLevelFields = new Set([
       "subject",
@@ -1648,6 +1787,16 @@ export default function ParamForm({
         difficulty: subject !== "natural_sciences" ? (baseParams.difficulty ?? "medium") : undefined,
         model_plan: baseParams.model_plan ?? models?.defaults.plan,
         model_execute: baseParams.model_execute ?? models?.defaults.execute,
+        // For verify/correct tiers, defaults.verify / defaults.correct are "" when unset.
+        // Substituting "" would be wrong (it means "no override"). Only apply the default
+        // when the base param is explicitly undefined (user made no selection) AND the
+        // server-configured default is actually a non-empty model id.
+        model_verify: baseParams.model_verify ?? (models?.defaults.verify || undefined),
+        model_correct: baseParams.model_correct ?? (models?.defaults.correct || undefined),
+        // For tier effort levels, "" means "inherit 出題 Effort" — never send it.
+        // Use the server-configured effort default only when it is actually non-empty.
+        effort_verify: baseParams.effort_verify ?? (models?.defaults.effort_verify || undefined),
+        effort_correct: baseParams.effort_correct ?? (models?.defaults.effort_correct || undefined),
         learning_performance: questionLp,
         learning_content: questionLc,
         subquestion_configs: shouldSendSubquestionConfigs
@@ -1743,9 +1892,13 @@ export default function ParamForm({
       { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "natural_sciences"] },
       { label: t("form.confirm_model_plan"), value: p.model_plan, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       { label: t("form.confirm_model_execute"), value: p.model_execute, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
+      { label: t("form.confirm_model_verify"), value: p.model_verify, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
+      { label: t("form.confirm_model_correct"), value: p.model_correct, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       ...(models?.effort ? ([
         { label: t("form.confirm_effort_plan"), value: p.effort_plan, subjects: allSubjects, kind: "defaulted" as const, defaultValue: t("form.confirm_system_default") },
         { label: t("form.confirm_effort_execute"), value: p.effort_execute, subjects: allSubjects, kind: "defaulted" as const, defaultValue: t("form.confirm_system_default") },
+        { label: t("form.confirm_effort_verify"), value: p.effort_verify, subjects: allSubjects, kind: "absent" as const },
+        { label: t("form.confirm_effort_correct"), value: p.effort_correct, subjects: allSubjects, kind: "absent" as const },
       ] satisfies ConfirmationRow[]) : []),
       {
         label: t("form.confirm_image_mode"),
@@ -2930,6 +3083,116 @@ export default function ParamForm({
                   className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
                 >
                   {executeEffortLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+              <span>{t("params.model_verify_label")}</span>
+              <select
+                aria-label={t("params.model_verify_label")}
+                value={modelVerify}
+                onChange={(e) => {
+                  const newModel = e.target.value;
+                  setField("modelVerify", newModel);
+                  if (models.effort) {
+                    // Effective model after change: newModel || modelExecute || defaults.execute
+                    const effectiveModel = newModel || modelExecute || models.defaults.execute;
+                    const levels = effectiveModel ? (models.effort[effectiveModel] ?? []) : [];
+                    setField("effortVerify", (prev) =>
+                      prev === "" || levels.length === 0 || levels.includes(prev) ? prev : "",
+                    );
+                  }
+                }}
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              >
+                <option value="">
+                  {models.defaults.verify
+                    ? `${t("params.model_follow_execute_option")} (${models.defaults.verify})`
+                    : t("params.model_follow_execute_option")}
+                </option>
+                {models.allowed.map((m) => (
+                  <option key={`verify-${m}`} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {verifyEffortLevels.length > 0 && (
+              <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+                <span>{t("form.effort_verify")}</span>
+                <select
+                  aria-label={t("form.effort_verify")}
+                  value={effortVerify}
+                  onChange={(e) => setField("effortVerify", e.target.value)}
+                  className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                >
+                  <option value="">
+                    {models.defaults.effort_verify
+                      ? `${t("form.effort_follow_execute_option")} (${models.defaults.effort_verify})`
+                      : t("form.effort_follow_execute_option")}
+                  </option>
+                  {verifyEffortLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+              <span>{t("params.model_correct_label")}</span>
+              <select
+                aria-label={t("params.model_correct_label")}
+                value={modelCorrect}
+                onChange={(e) => {
+                  const newModel = e.target.value;
+                  setField("modelCorrect", newModel);
+                  if (models.effort) {
+                    // Effective model after change: newModel || modelExecute || defaults.execute
+                    const effectiveModel = newModel || modelExecute || models.defaults.execute;
+                    const levels = effectiveModel ? (models.effort[effectiveModel] ?? []) : [];
+                    setField("effortCorrect", (prev) =>
+                      prev === "" || levels.length === 0 || levels.includes(prev) ? prev : "",
+                    );
+                  }
+                }}
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              >
+                <option value="">
+                  {models.defaults.correct
+                    ? `${t("params.model_follow_execute_option")} (${models.defaults.correct})`
+                    : t("params.model_follow_execute_option")}
+                </option>
+                {models.allowed.map((m) => (
+                  <option key={`correct-${m}`} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {correctEffortLevels.length > 0 && (
+              <label className="flex flex-1 flex-col gap-1 text-xs text-gray-700">
+                <span>{t("form.effort_correct")}</span>
+                <select
+                  aria-label={t("form.effort_correct")}
+                  value={effortCorrect}
+                  onChange={(e) => setField("effortCorrect", e.target.value)}
+                  className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+                >
+                  <option value="">
+                    {models.defaults.effort_correct
+                      ? `${t("form.effort_follow_execute_option")} (${models.defaults.effort_correct})`
+                      : t("form.effort_follow_execute_option")}
+                  </option>
+                  {correctEffortLevels.map((level) => (
                     <option key={level} value={level}>
                       {level}
                     </option>

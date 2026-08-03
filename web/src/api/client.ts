@@ -176,7 +176,7 @@ export async function previewGenerate(params: GenerateParams): Promise<PreviewGe
 export interface AvailableModels {
   allowed: string[];
   effort?: Record<string, string[]>;
-  defaults: { plan: string; execute: string; effort_plan?: string; effort_execute?: string };
+  defaults: { plan: string; execute: string; verify: string; correct: string; effort_plan?: string; effort_execute?: string; effort_verify?: string; effort_correct?: string };
 }
 
 export async function getAvailableModels(): Promise<AvailableModels> {
