@@ -368,6 +368,10 @@ function DraftSummary({
                 : "",
             },
             {
+              label: t("form.confirm_reporting_scale"),
+              value: fields.reportingScale,
+            },
+            {
               label: t("form.text_word_limit"),
               value:
                 fields.textWordLimit === null

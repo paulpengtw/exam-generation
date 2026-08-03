@@ -20,6 +20,7 @@ function makeFields(overrides: Partial<FormFields> = {}): FormFields {
     disableReferenceFewshot: false,
     imageGenerationMode: "html",
     difficulty: "",
+    reportingScale: "",
     subjectFilter: "數與量",
     passage: "500 字",
     textWordLimit: null,
@@ -60,6 +61,36 @@ describe("formDraft", () => {
       savedAt: NOW.toISOString(),
       fields,
     });
+  });
+
+  it("loads a legacy draft without reportingScale and normalizes it to an empty string", () => {
+    const fields = Object.fromEntries(
+      Object.entries(makeFields()).filter(([key]) => key !== "reportingScale"),
+    );
+    localStorage.setItem(
+      "exam_form_draft_teacher-1",
+      JSON.stringify({ savedAt: NOW.toISOString(), fields }),
+    );
+
+    expect(loadDraft("teacher-1")?.fields.reportingScale).toBe("");
+  });
+
+  it("rejects a draft with a non-string reportingScale", () => {
+    localStorage.setItem(
+      "exam_form_draft_teacher-1",
+      JSON.stringify({
+        savedAt: NOW.toISOString(),
+        fields: { ...makeFields(), reportingScale: 42 },
+      }),
+    );
+
+    expect(loadDraft("teacher-1")).toBeNull();
+  });
+
+  it("round-trips a string reportingScale", () => {
+    saveDraft("teacher-1", makeFields({ reportingScale: "2" }));
+
+    expect(loadDraft("teacher-1")?.fields.reportingScale).toBe("2");
   });
 
   it("removes and returns null for a draft older than seven days", () => {

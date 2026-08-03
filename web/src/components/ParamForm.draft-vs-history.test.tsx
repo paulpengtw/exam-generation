@@ -186,6 +186,16 @@ function storeDraft(): void {
   );
 }
 
+function storeDraftWithReportingScale(): void {
+  localStorage.setItem(
+    DRAFT_KEY,
+    JSON.stringify({
+      savedAt: new Date(NOW.getTime() - 60_000).toISOString(),
+      fields: { ...DRAFT_FIELDS, reportingScale: "2" },
+    }),
+  );
+}
+
 function storeDraftWithSubquestionConfigs(): void {
   localStorage.setItem(
     DRAFT_KEY,
@@ -277,6 +287,20 @@ describe("ParamForm draft versus history choice", () => {
     expect(
       within(dialog).getByRole("button", { name: "重新開始" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows the reporting scale in the history choice dialog full settings", async () => {
+    storeDraftWithReportingScale();
+    renderWithHistory();
+
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(
+      within(dialog).getByText("完整設定", { selector: "summary" }),
+    );
+
+    const row = within(dialog).getByText("Reporting Scale", { selector: "dt" })
+      .parentElement;
+    expect(within(row!).getByText("2", { exact: true })).toBeInTheDocument();
   });
 
   it("renders saved per-subquestion settings as labelled cards in the history dialog", async () => {

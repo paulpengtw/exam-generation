@@ -79,6 +79,7 @@ function isFormFields(value: unknown): value is FormFields {
       value.difficulty === "medium" ||
       value.difficulty === "hard"
     ) &&
+    (value.reportingScale === undefined || typeof value.reportingScale === "string") &&
     typeof value.subjectFilter === "string" &&
     typeof value.passage === "string" &&
     (
@@ -143,7 +144,13 @@ export function loadDraft(userId: string): FormDraft | null {
 
     return {
       savedAt: parsed.savedAt as string,
-      fields: parsed.fields,
+      fields: {
+        ...parsed.fields,
+        reportingScale:
+          typeof parsed.fields.reportingScale === "string"
+            ? parsed.fields.reportingScale
+            : "",
+      },
     };
   } catch {
     clearDraft(userId);
