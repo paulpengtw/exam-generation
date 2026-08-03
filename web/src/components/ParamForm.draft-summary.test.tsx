@@ -245,6 +245,49 @@ describe("ParamForm draft summary", () => {
     expect(within(customContentTypeRow!).getByText("未填寫")).toBeInTheDocument();
   });
 
+  it("renders saved per-subquestion settings as labelled cards in the restore banner", async () => {
+    const subquestionConfigs = [
+      { question_type: "選擇題", learning_performance: ["n-IV-1"] },
+      {},
+    ];
+    storeDraft({ ...IDENTIFIABLE_FIELDS, subquestionConfigs });
+
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    const banner = await screen.findByRole("status");
+    within(banner).getByRole("region", { name: "草稿摘要" });
+    fireEvent.click(
+      within(banner).getByText("完整設定", { selector: "summary" }),
+    );
+
+    for (const label of [
+      "第 1 小題",
+      "第 2 小題",
+      "題型:",
+      "出題指示:",
+      "題目內容類型:",
+      "圖片生成模式:",
+      "題目字數限制:",
+      "選項字數限制:",
+      "文本字數限制:",
+    ]) {
+      expect(banner).toHaveTextContent(label);
+    }
+
+    expect(banner).not.toHaveTextContent('"question_type"');
+    expect(banner).not.toHaveTextContent(JSON.stringify(subquestionConfigs));
+
+    const secondCard = within(banner)
+      .getByRole("heading", { name: "第 2 小題" })
+      .closest("li");
+    expect(secondCard).not.toBeNull();
+    expect(secondCard).toHaveTextContent("（隨機）");
+    expect(secondCard).toHaveTextContent("（沿用文本設定）");
+    expect(secondCard).toHaveTextContent("不限");
+    expect(secondCard).toHaveTextContent("學習內容: （沿用全域設定）");
+    expect(secondCard).toHaveTextContent("學習表現: （沿用全域設定）");
+  });
+
   it("warns that starting over permanently discards the draft", async () => {
     storeDraft();
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
@@ -230,15 +230,32 @@ function truncateDraftPassage(passage: string): string {
     : passage;
 }
 
+type DraftSummarySettingRow = {
+  label: string;
+  value?: string;
+  content?: ReactNode;
+};
+
 function DraftSummary({
   fields,
   lang,
   t,
+  subject,
+  schemas,
 }: {
   fields: FormFields;
   lang: string;
   t: (key: string) => string;
+  subject: string;
+  schemas: Schemas | null;
 }) {
+  const lcEntryByCode = new Map(
+    (schemas?.學習內容 ?? []).map((entry) => [entry.value, entry]),
+  );
+  const lpEntryByCode = new Map(
+    (schemas?.學習表現 ?? []).map((entry) => [entry.value, entry]),
+  );
+
   return (
     <>
       <section
@@ -385,10 +402,18 @@ function DraftSummary({
             },
             {
               label: t("form.confirm_subquestion_heading"),
-              value:
-                fields.subquestionConfigs.length > 0
-                  ? JSON.stringify(fields.subquestionConfigs)
-                  : "",
+              ...(fields.subquestionConfigs.length > 0
+                ? {
+                    content: (
+                      <SubquestionConfigCards
+                        configs={fields.subquestionConfigs}
+                        subject={subject}
+                        lcEntryByCode={lcEntryByCode}
+                        lpEntryByCode={lpEntryByCode}
+                      />
+                    ),
+                  }
+                : { value: "" }),
             },
             {
               label: t("params.model_plan_label"),
@@ -398,14 +423,22 @@ function DraftSummary({
               label: t("params.model_execute_label"),
               value: fields.modelExecute,
             },
-          ].map(({ label, value }) => (
-            <div key={label} className="flex min-w-0 gap-3">
-              <dt className="w-40 shrink-0 font-medium text-amber-800">{label}</dt>
-              <dd className="min-w-0 flex-1 break-words text-amber-950">
-                {value || t("form.confirm_not_filled")}
-              </dd>
-            </div>
-          ))}
+          ].map(({ label, value, content }: DraftSummarySettingRow) => {
+            const displayValue =
+              content !== undefined
+                ? content
+                : value !== undefined && value !== ""
+                  ? value
+                  : t("form.confirm_not_filled");
+            return (
+              <div key={label} className="flex min-w-0 gap-3">
+                <dt className="w-40 shrink-0 font-medium text-amber-800">{label}</dt>
+                <dd className="min-w-0 flex-1 break-words text-amber-950">
+                  {displayValue}
+                </dd>
+              </div>
+            );
+          })}
         </dl>
       </details>
     </>
@@ -1973,7 +2006,13 @@ export default function ParamForm({
               {new Date(draftToRestore.savedAt).toLocaleString(lang)}
             </span>
           </p>
-          <DraftSummary fields={draftToRestore.fields} lang={lang} t={t} />
+          <DraftSummary
+            fields={draftToRestore.fields}
+            lang={lang}
+            t={t}
+            subject={subject}
+            schemas={schemas}
+          />
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
