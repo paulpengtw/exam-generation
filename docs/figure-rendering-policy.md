@@ -139,6 +139,8 @@ The three prompt assemblers already encode this rule in their
   asserts `render_mode: "gpt_image"` routes to `LLMClient.generate_image()`.
 - `tests/test_hybrid_routing_schema.py::test_imagespec_accepts_gpt_image_render_mode`
   asserts the schema Literal accepts `"gpt_image"` across all three subjects.
+- `src/common/figure_policy.py` — pure validator: `validate_figure_routing` and `validate_question_figure_routing` enforce the policy table programmatically.
+- `tests/test_figure_rendering_policy.py` — classification tests (appended section): given a parsed item, asserts `chart_spec.render_mode` matches declared `題目內容類型`; also checks instruction-string/validator consistency.
 
 ## Out of scope of this policy
 

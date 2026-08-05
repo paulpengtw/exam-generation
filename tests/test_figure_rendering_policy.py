@@ -255,3 +255,255 @@ def test_dispatch_unknown_render_mode_returns_none(tmp_path) -> None:
     assert html_renderer.calls == []
     assert llm_client.html_calls == []
     assert llm_client.image_calls == []
+
+
+# --- Classification validation tests ---------------------------------------
+
+
+def test_validator_plain_text_requires_no_chart_spec() -> None:
+    """純文字 forbids every chart_spec and allows an absent one."""
+    from src.common.figure_policy import validate_figure_routing
+
+    assert validate_figure_routing("純文字", None) == []
+    violations = validate_figure_routing("純文字", {"render_mode": "chart"})
+    assert len(violations) == 1
+    assert "純文字" in violations[0]
+
+
+@pytest.mark.parametrize("render_mode", ["gpt_image", "html"])
+def test_validator_illustrative_content_accepts_allowed_modes(render_mode: str) -> None:
+    """含圖片 accepts gpt_image and html chart specs."""
+    from src.common.figure_policy import validate_figure_routing
+
+    assert validate_figure_routing("含圖片", {"render_mode": render_mode}) == []
+
+
+def test_validator_illustrative_content_rejects_chart_and_missing_spec() -> None:
+    """含圖片 rejects chart and a missing chart_spec."""
+    from src.common.figure_policy import validate_figure_routing
+
+    assert validate_figure_routing("含圖片", {"render_mode": "chart"})
+    assert validate_figure_routing("含圖片", None)
+
+
+@pytest.mark.parametrize("render_mode", ["chart", "html"])
+def test_validator_quantitative_content_accepts_allowed_modes(render_mode: str) -> None:
+    """graphs/charts/tables accepts chart and html chart specs."""
+    from src.common.figure_policy import validate_figure_routing
+
+    assert validate_figure_routing("graphs/charts/tables", {"render_mode": render_mode}) == []
+
+
+def test_validator_quantitative_content_rejects_gpt_image_and_missing_spec() -> None:
+    """graphs/charts/tables rejects gpt_image and a missing chart_spec."""
+    from src.common.figure_policy import validate_figure_routing
+
+    assert validate_figure_routing("graphs/charts/tables", {"render_mode": "gpt_image"})
+    assert validate_figure_routing("graphs/charts/tables", None)
+
+
+@pytest.mark.parametrize("content_type", ["customized", None, "unrecognized"])
+@pytest.mark.parametrize(
+    "chart_spec",
+    [None, {"render_mode": "chart"}, {"render_mode": "gpt_image"}],
+)
+def test_validator_unconstrained_content_types_always_pass(
+    content_type: str | None, chart_spec: dict | None
+) -> None:
+    """customized, None, and unknown content types have no routing constraint."""
+    from src.common.figure_policy import validate_figure_routing
+
+    assert validate_figure_routing(content_type, chart_spec) == []
+
+
+def test_validator_accepts_conforming_math_exam_question() -> None:
+    """A math ExamQuestion with an ImageSpec follows its declared type."""
+    from src.common.figure_policy import validate_question_figure_routing
+    from src.schemas import ExamQuestion, ImageSpec, LearningContentItem
+
+    question = ExamQuestion(
+        情境=["個人"],
+        題型種類="單一題",
+        題型="選擇題",
+        數學思考=["形成"],
+        學習內容=[LearningContentItem(編碼="N-7-1", 說明="整數")],
+        題目=["下列何者正確？"],
+        正確解題分析=["依題意判斷。"],
+        題目內容類型="含圖片",
+        chart_spec=ImageSpec(render_mode="gpt_image", description="示意圖"),
+    )
+
+    assert validate_question_figure_routing(question) == []
+
+
+def test_validator_rejects_nonconforming_math_exam_question() -> None:
+    """A math ExamQuestion reports a mismatched ImageSpec mode."""
+    from src.common.figure_policy import validate_question_figure_routing
+    from src.schemas import ExamQuestion, ImageSpec, LearningContentItem
+
+    question = ExamQuestion(
+        情境=["個人"],
+        題型種類="單一題",
+        題型="選擇題",
+        數學思考=["形成"],
+        學習內容=[LearningContentItem(編碼="N-7-1", 說明="整數")],
+        題目=["下列何者正確？"],
+        正確解題分析=["依題意判斷。"],
+        題目內容類型="含圖片",
+        chart_spec=ImageSpec(render_mode="chart", description="示意圖"),
+    )
+
+    assert validate_question_figure_routing(question)
+
+
+def test_validator_accepts_conforming_social_studies_question_and_subquestion() -> None:
+    """A social-studies question and subquestion can route their ImageSpecs."""
+    from src.common.figure_policy import validate_question_figure_routing
+    from src.social_studies.schemas import ExamQuestion, ImageSpec, SubQuestion
+
+    subquestion = SubQuestion(
+        序號=2,
+        題型="選擇題",
+        題目="請依圖片作答。",
+        題目內容類型="含圖片",
+        chart_spec=ImageSpec(render_mode="html", description="表單"),
+    )
+    question = ExamQuestion(
+        情境=["公共"],
+        題型種類="題組題",
+        題型="選擇題",
+        閱讀歷程=["擷取訊息"],
+        文本形式="連續文本—敘事文",
+        題目內容類型="含圖片",
+        chart_spec=ImageSpec(render_mode="gpt_image", description="地圖"),
+        subquestions=[subquestion],
+    )
+
+    assert validate_question_figure_routing(question) == []
+
+
+def test_validator_names_nonconforming_social_studies_subquestion() -> None:
+    """A social-studies subquestion violation names its 序號."""
+    from src.common.figure_policy import validate_question_figure_routing
+    from src.social_studies.schemas import ExamQuestion, ImageSpec, SubQuestion
+
+    subquestion = SubQuestion(
+        序號=2,
+        題型="選擇題",
+        題目="請依圖片作答。",
+        題目內容類型="含圖片",
+        chart_spec=ImageSpec(render_mode="chart", description="錯誤模式"),
+    )
+    question = ExamQuestion(
+        情境=["公共"],
+        題型種類="題組題",
+        題型="選擇題",
+        閱讀歷程=["擷取訊息"],
+        文本形式="連續文本—敘事文",
+        題目內容類型="含圖片",
+        chart_spec=ImageSpec(render_mode="gpt_image", description="地圖"),
+        subquestions=[subquestion],
+    )
+
+    violations = validate_question_figure_routing(question)
+    assert violations
+    assert any("小題 2" in violation for violation in violations)
+
+
+def test_natural_sciences_subquestion_has_no_figure_fields() -> None:
+    """Natural-sciences subquestions carry no per-subquestion figure fields."""
+    from src.natural_sciences.schemas import SubQuestion
+
+    assert "題目內容類型" not in SubQuestion.model_fields
+    assert "chart_spec" not in SubQuestion.model_fields
+
+
+def test_validator_accepts_conforming_natural_sciences_question_and_subquestion() -> None:
+    """NS 小題 carry no per-小題 figure, so they contribute no violations."""
+    from src.common.figure_policy import validate_question_figure_routing
+    from src.natural_sciences.schemas import ExamQuestion, ImageSpec, SubQuestion
+
+    subquestion = SubQuestion(
+        序號=2,
+        題型="Simple multiple-choice",
+        題目="請依圖片作答。",
+    )
+    question = ExamQuestion(
+        情境=["Personal"],
+        題型種類="題組題",
+        題型="Simple multiple-choice",
+        題目內容類型="含圖片",
+        chart_spec=ImageSpec(render_mode="gpt_image", description="實驗裝置"),
+        subquestions=[subquestion],
+    )
+
+    assert validate_question_figure_routing(question) == []
+
+
+def test_validator_names_nonconforming_natural_sciences_subquestion() -> None:
+    """An NS top-level violation is not attributed to any 小題."""
+    from src.common.figure_policy import validate_question_figure_routing
+    from src.natural_sciences.schemas import ExamQuestion, ImageSpec, SubQuestion
+
+    subquestion = SubQuestion(
+        序號=2,
+        題型="Simple multiple-choice",
+        題目="請依圖片作答。",
+    )
+    question = ExamQuestion(
+        情境=["Personal"],
+        題型種類="題組題",
+        題型="Simple multiple-choice",
+        題目內容類型="graphs/charts/tables",
+        chart_spec=ImageSpec(render_mode="gpt_image", description="實驗裝置"),
+        subquestions=[subquestion],
+    )
+
+    violations = validate_question_figure_routing(question)
+    assert violations
+    assert all("小題" not in violation for violation in violations)
+
+
+def test_validator_treats_dict_and_pydantic_chart_specs_identically() -> None:
+    """Dict and Pydantic chart specs produce the same routing result."""
+    from src.common.figure_policy import validate_figure_routing
+    from src.schemas import ImageSpec
+
+    pydantic_spec = ImageSpec(render_mode="html", description="表格")
+    dict_spec = {"render_mode": "html", "description": "表格"}
+    assert validate_figure_routing("含圖片", pydantic_spec) == validate_figure_routing(
+        "含圖片", dict_spec
+    )
+
+    bad_pydantic_spec = ImageSpec(render_mode="chart", description="表格")
+    bad_dict_spec = {"render_mode": "chart", "description": "表格"}
+    assert validate_figure_routing("含圖片", bad_pydantic_spec) == validate_figure_routing(
+        "含圖片", bad_dict_spec
+    )
+
+
+def test_validator_handles_missing_question_fields_without_raising() -> None:
+    """A question-like object without routing fields is unconstrained."""
+    from src.common.figure_policy import validate_question_figure_routing
+
+    class EmptyQuestion:
+        pass
+
+    assert validate_question_figure_routing(EmptyQuestion()) == []
+
+
+def test_instruction_render_modes_are_allowed_by_validator() -> None:
+    """Every instruction render_mode fragment is accepted by its policy entry."""
+    import re
+
+    from src.common.figure_policy import allowed_render_modes
+
+    for table in (MATH_CT, SS_CT, NS_CT):
+        for content_type, instruction in table.items():
+            allowed = allowed_render_modes(content_type)
+            if allowed is None:
+                continue
+            modes = re.findall(r'render_mode:\s*"([^"]+)"', instruction)
+            assert all(mode in allowed for mode in modes), (
+                f"{content_type}: instruction modes {modes} exceed allowed {allowed}"
+            )
