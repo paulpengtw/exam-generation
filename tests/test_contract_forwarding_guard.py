@@ -266,9 +266,9 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
-    # ── sub-question / word-limit fields — math rejects; SS and NS forward ──
+    # ── sub-question / word-limit fields — all subjects forward where supported ──
     "sub_question_count": {
-        _MA: (REJECTED, ""),
+        _MA: (FORWARDED, ""),
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
@@ -420,7 +420,11 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("subject_filter", _SS): (_ss_coerce_overrides,   "params.subject_filter"),
     # reporting_scale — NS-specific, forwarded directly in NS sampler adapter
     ("reporting_scale", _NS): (_ns_do_sample_params, "params.reporting_scale"),
-    # sub_question_count — SS/NS; math rejects
+    # sub_question_count — forwarded directly by every subject sampler adapter
+    ("sub_question_count", _MA): (
+        _math_do_sample_params,
+        "sub_question_count=params.sub_question_count",
+    ),
     ("sub_question_count", _SS): (_ss_do_sample_params, "params.sub_question_count"),
     ("sub_question_count", _NS): (_ns_do_sample_params, "params.sub_question_count"),
     # question_word_limit — SS/NS; math rejects
@@ -595,6 +599,6 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    assert forwarded    == 94, f"Expected 94 FORWARDED, got {forwarded}"  # +6 for #377 effort_verify/effort_correct × 3 subjects
-    assert rejected     == 6,  f"Expected 6 REJECTED, got {rejected}"
+    assert forwarded    == 95, f"Expected 95 FORWARDED, got {forwarded}"  # +6 for #377 effort_verify/effort_correct × 3 subjects
+    assert rejected     == 5,  f"Expected 5 REJECTED, got {rejected}"
     assert inapplicable == 20, f"Expected 20 INAPPLICABLE, got {inapplicable}"

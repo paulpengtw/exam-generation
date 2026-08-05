@@ -78,6 +78,7 @@ def sample_params(
     learning_performance: list[str] | None = None,
     content_type: str | None = None,
     subject_filter: str | None = None,
+    sub_question_count: int | None = None,
     difficulty: Difficulty | str | None = None,
 ) -> SampledParams:
     """Sample random question parameters.
@@ -106,7 +107,15 @@ def sample_params(
         selected_context = rng.sample(all_contexts, context_count)
 
     # 題型種類
-    selected_set_type = set_type if set_type is not None else rng.choice(list(QuestionSetType))
+    selected_set_type = (
+        set_type
+        if set_type is not None
+        else (
+            QuestionSetType("題組題")
+            if sub_question_count is not None
+            else rng.choice(list(QuestionSetType))
+        )
+    )
 
     # 題型
     selected_q_type = rng.choice(q_type) if q_type is not None else rng.choice(list(QuestionType))
@@ -195,5 +204,6 @@ def sample_params(
         學習表現=selected_performance,
         題目內容類型=selected_content_type,
         subject_filter=subject_filter,
+        sub_question_count=sub_question_count,
         difficulty=resolved_difficulty,
     )

@@ -46,6 +46,22 @@ class LearningContentItem(BaseModel):
     說明: str
 
 
+class SubQuestion(BaseModel):
+    """One 小題 within an opt-in math 題組."""
+
+    id: str = ""
+    序號: int = 1
+    年級: int = 0
+    題型: QuestionType  # type: ignore[valid-type]
+    題目: str
+    答案: str = ""
+    答案解析: str = ""
+    誘答分析: dict[str, str] = Field(default_factory=dict)
+    學習內容: list[LearningContentItem] = Field(default_factory=list)
+    學習表現: list[LearningContentItem] = Field(default_factory=list)
+    出題概念: str = ""
+
+
 class ImageSpec(BaseModel):
     """Specification for generating a question image.
 
@@ -99,6 +115,13 @@ class QuestionMetadata(BaseModel):
 class ExamQuestion(BaseModel):
     """A complete generated exam question."""
     id: str = ""
+    文本: str = Field(default="", exclude_if=lambda value: value == "")
+    核心問題: str = Field(default="", exclude_if=lambda value: value == "")
+    取材來源: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    subquestions: list[SubQuestion] = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+    )
     情境: list[QuestionContext]  # type: ignore[valid-type]
     題型種類: QuestionSetType  # type: ignore[valid-type]
     題型: QuestionType  # type: ignore[valid-type]
@@ -141,5 +164,6 @@ class SampledParams(BaseModel):
     題目內容類型: str | None = None
     出題概念: str = ""
     subject_filter: str | None = None
+    sub_question_count: int | None = None
     # Issue #116: explicit difficulty (pure passthrough — never randomized).
     difficulty: Difficulty = DEFAULT_DIFFICULTY

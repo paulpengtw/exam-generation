@@ -35,7 +35,7 @@ fallback still applies at generation time.
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.
 
 ### Verify + correct loop
-1. First call (execute model): generates the question and solution. **For math,** this is a single call producing the full question. **For social studies and natural sciences,** this is a two-stage pipeline: a **文本生成器** call produces the shared 核心問題/文本/取材來源 plus an N-entry 子題 plan, then N concurrent **子題產生器** calls each write one complete 子題 (via `ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6; failed/unparseable 子題 calls get up to `SUBGEN_RETRIES` fresh retries, default 1, before the slot is dropped); the assembled 題組 then enters the verify/correct loop.
+1. First call (execute model): generates the question and solution. **For math without `sub_question_count`,** this remains one call producing the full flat question. **For math with `sub_question_count`,** the shared core runs a **文本生成器** call for the shared 核心問題/文本/取材來源 and an N-entry 小題 plan, then N concurrent **子題產生器** calls each write one complete 小題. **For social studies and natural sciences,** this is also a two-stage pipeline: a **文本生成器** call produces the shared 核心問題/文本/取材來源 plus an N-entry 子題 plan, then N concurrent **子題產生器** calls each write one complete 子題 (via `ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6; failed/unparseable 子題 calls get up to `SUBGEN_RETRIES` fresh retries, default 1, before the slot is dropped); the assembled 題組 then enters the verify/correct loop.
 2. Chart/image specs are rendered to PNG before verification so the verifier can see them. Math and natural sciences render top-level `chart_spec`; social studies also renders `subquestions[*].chart_spec` to per-小題 PNGs.
 3. Second call (execute model, multimodal): independently solves the question, inspects PNG, returns `VerificationResult` with `passed`, `answer_match`, `details`, `my_answer`, `provided_answer`, and optional `chart_verification`.
 4. If `passed=False`, a correction pass sends the failed question + verifier feedback back to the execute model for a minimal targeted fix (`src/corrector.py`). PNG re-renders only when `chart_spec` actually changes. Re-verify and loop up to `max_retries` (default 3, via `LLM_MAX_RETRIES` / `--max-retries`).
@@ -78,7 +78,7 @@ teacher verdict is unchanged.
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
 
 ### Shared loaders, three subject pipelines
-Math (`src/*.py`), social studies (`src/social_studies/*.py`), and natural sciences (`src/natural_sciences/*.py`) are three parallel question-generation pipelines that share their curriculum-loading core. The subject-agnostic loaders live in `src/common/`: Social studies and natural sciences `generate_one` now run a **文本生成器 → N parallel 子題產生器** pipeline; math's `generate_one` retains the original single-call structure.
+Math (`src/*.py`), social studies (`src/social_studies/*.py`), and natural sciences (`src/natural_sciences/*.py`) are three parallel question-generation pipelines that share their curriculum-loading core. The subject-agnostic loaders live in `src/common/`: Social studies and natural sciences `generate_one` now run a **文本生成器 → N parallel 子題產生器** pipeline; math's `generate_one` keeps its original single-call structure when `sub_question_count` is absent and uses the shared **文本生成器 → N 子題產生器** core when it is present.
 
 - `src/common/curriculum_loader.py` — JSON loaders + `allowed_learning_content` / `allowed_learning_performance` filters, parameterized by `data_dir` and a `subject_to_prefixes` map.
 - `src/common/core_competency_loader.py` — JSON loader + `build_core_competency_enum` + `allowed_competencies(stage)`.
@@ -90,7 +90,7 @@ Each subject package wraps these with its own data directory and prefix map:
 - **Social studies** uses `data/social_studies/curriculum/` and `_SUBJECT_TO_PREFIXES` (in `src/social_studies/curriculum_loader.py`). The `src/social_studies/{curriculum_loader, core_competency_loader, planner}.py` modules are thin shims over `src.common.*`.
 - **Natural sciences** uses `data/natural_sciences/curriculum/`, subject_prefix `"自"` (in `src/natural_sciences/core_competency_loader.py`). Unlike the other two subjects, natural sciences has **no per-subject bucketing** — `科目` is fixed as `"自然科學"` on all subquestions, and `src/natural_sciences/curriculum_loader.py` overrides `allowed_learning_content` / `allowed_learning_performance` to skip the subject filter entirely. Subject prompts live in `src/natural_sciences/planner.py` (PISA-Science scientific literacy template). The `src/natural_sciences/{curriculum_loader, core_competency_loader, planner}.py` modules are thin shims over `src.common.*`.
 
-Math keeps its single-question, flat output structure (one 題目 + 正確解題分析 + math-specific fields like 數學思考 and `chart_spec`). ADR 0014 decides that 數學 gains an opt-in 題組 shape via `sub_question_count`, to be implemented by #202/#203; the flat structure remains the behaviour until those land. Social studies and natural sciences both use a 題組 structure with `subquestions[]` and rubric entries. Social-studies parent items are fixed as 題組題; social studies keeps `閱讀歷程` and `文本形式` (PISA reading literacy axes), supports mixed `subquestions[*].題型`, and can inject per-小題 題型, 出題指示, count/word-limit/content/image constraints from the web/API. Natural sciences replaces `核心素養` with `科學能力` (6 entries: 能力一/二/三 + 環境能力一/二/三) and adds `情境子類別` (a PISA sub-context parented to the top-level 情境). Natural sciences now also supports per-小題 SubQuestionConfig (question_type, instruction, LC/LP overrides, word limits, content_type, image_generation_mode) and sub_question_count — parallel to social studies. The natural sciences verifier uses the lenient "寬鬆通過、只攔重大問題" stance, distinct from math's strict "明確錯誤" stance.
+Math keeps its byte-identical single-call flat output when `sub_question_count` is absent. When `sub_question_count` is present, it pins `題型種類=題組題` and opts into the shared `src/common/generation_core.py` **文本生成器 → N 子題產生器** pipeline; the shared core truncates or pads the plan so exactly the requested number of 小題 is generated. Social studies and natural sciences both use a 題組 structure with `subquestions[]` and rubric entries. Social-studies parent items are fixed as 題組題; social studies keeps `閱讀歷程` and `文本形式` (PISA reading literacy axes), supports mixed `subquestions[*].題型`, and can inject per-小題 題型, 出題指示, count/word-limit/content/image constraints from the web/API. Natural sciences replaces `核心素養` with `科學能力` (6 entries: 能力一/二/三 + 環境能力一/二/三) and adds `情境子類別` (a PISA sub-context parented to the top-level 情境). Natural sciences now also supports per-小題 SubQuestionConfig (question_type, instruction, LC/LP overrides, word limits, content_type, image_generation_mode) and sub_question_count — parallel to social studies. The natural sciences verifier uses the lenient "寬鬆通過、只攔重大問題" stance, distinct from math's strict "明確錯誤" stance.
 
 PISA-style tags (`閱讀歷程`, `文本形式`) are retained on social studies as secondary diversity axes to influence question design, but the primary framing is 108課綱, not PISA reading literacy.
 
@@ -242,11 +242,19 @@ The output JSON follows this structure (Chinese keys are required):
 題目: array of strings (question text, options, etc.)
 正確解題分析: array of strings (step-by-step solution)
 
-# Optional curriculum-aware fields (Phase 3+); math output stays flat:
+# Optional curriculum-aware fields (Phase 3+):
 核心素養: list[str]                          # e.g. ["數-J-A2"] (codes only)
 學習表現: list[{編碼, 說明}]
 題目內容類型: str | None                     # 純文字 / 含圖片 / graphs/charts/tables / customized
 出題概念: str
+
+# Optional 題組 fields; emitted only when sub_question_count is supplied:
+核心問題: str
+文本: str
+取材來源: list[str]
+subquestions: list[SubQuestion]               # exactly sub_question_count entries
+  SubQuestion: {id, 序號, 年級, 題型, 題目, 答案, 答案解析, 誘答分析,
+                學習內容, 學習表現, 出題概念}  # math has no 評分規準
 ```
 
 ### Social studies question schema (108課綱)

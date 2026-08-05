@@ -468,3 +468,281 @@ def build_user_prompt(
         few_shot_examples=few_shot_text,
     )
     return text, []
+
+
+def _math_group_few_shot_text(
+    few_shot_dir: Path,
+    rng: random.Random,
+    *,
+    subquestion_type: str | None = None,
+) -> str:
+    """Format 題組題 examples from the loader-isolated ``grouped`` style."""
+    examples = load_few_shot_examples(few_shot_dir, "grouped")
+    flattened: list[dict] = []
+    for example in examples:
+        if isinstance(example, list):
+            flattened.extend(item for item in example if isinstance(item, dict))
+        elif isinstance(example, dict):
+            flattened.append(example)
+
+    if not flattened:
+        return "（目前暫無數學題組題範例，請根據指定條件自行設計。）"
+
+    selected = rng.sample(flattened, min(2, len(flattened)))
+    rendered: list[str] = []
+    for index, example in enumerate(selected, start=1):
+        question = example.get("question", example)
+        if subquestion_type and isinstance(question, dict):
+            subquestions = question.get("subquestions", [])
+            matching = [
+                item for item in subquestions
+                if isinstance(item, dict) and item.get("題型") == subquestion_type
+            ]
+            question = matching[0] if matching else (subquestions[0] if subquestions else question)
+        rendered.append(
+            f"### 範例 {index}：{example.get('description', '')}\n"
+            f"```json\n{json.dumps(question, ensure_ascii=False, indent=2)}\n```"
+        )
+    return "\n\n".join(rendered)
+
+
+def build_text_system_prompt(
+    grades: list[int] | None = None,
+    learning_stage: str | None = None,
+    content_text: str | None = None,
+    performance_text: str | None = None,
+) -> str:
+    """Build the math 文本生成器 system prompt for an opt-in 題組."""
+    prompt = build_system_prompt(
+        grades=grades,
+        learning_stage=learning_stage,
+        curriculum_json=content_text,
+        performance_json=performance_text,
+    )
+    prompt_intro = prompt.split("## 輸出格式", 1)[0].rstrip()
+    prompt_intro = prompt_intro.replace(
+        "保留math單題（非題組）輸出結構。",
+        "本提示詞選用題組輸出結構：先產生共用文本，再規劃多道小題。",
+    )
+    return prompt_intro + """
+
+## 輸出格式
+
+你必須輸出一個合法的 JSON 物件，格式如下：
+
+```json
+{
+  "核心問題": "本題組的核心問題",
+  "文本": "完整數學情境素材",
+  "取材來源": ["來源一"],
+  "subquestions": [
+    {
+      "序號": 1,
+      "題型": "選擇題",
+      "出題概念": "一句話說明此小題要評量的數學概念"
+    }
+  ]
+}
+```
+
+`subquestions` 陣列是小題規劃；每筆提供序號、題型與出題概念即可，
+完整題目、答案、答案解析與誘答分析由後續子題產生器負責。請只輸出 JSON，不要輸出其他文字。
+"""
+
+
+def build_text_user_prompt(
+    params: SampledParams,
+    few_shot_dir: Path,
+    rng: random.Random | None = None,
+    image_generation_mode: str = "html",
+    user_passage: str | None = None,
+    user_options: list[str] | None = None,
+    user_topic: str | None = None,
+    user_core_question: str | None = None,
+    disable_reference_fewshot: bool = False,
+    prior_scopes: Sequence[PriorScope] | None = None,
+) -> tuple[str, list[Path]]:
+    """Build the math 文本生成器 user prompt for an opt-in 題組."""
+    del image_generation_mode
+    if rng is None:
+        rng = random.Random(params.seed)
+
+    text, image_paths = build_user_prompt(
+        params,
+        few_shot_dir,
+        rng=rng,
+        user_topic=user_topic or "",
+        user_passage=user_passage or "",
+        user_options=user_options,
+        user_core_question=user_core_question or "",
+        prior_scopes=prior_scopes,
+    )
+    text = text.replace(
+        "請根據以下條件生成一道數學考試題目：",
+        "請根據以下條件生成一道數學題組：",
+        1,
+    )
+    count = (
+        str(params.sub_question_count)
+        if params.sub_question_count is not None
+        else "由文本生成器依素材決定"
+    )
+    set_type_marker = f"- **題型種類**：{params.題型種類.value}\n"
+    text = text.replace(
+        set_type_marker,
+        set_type_marker + f"- **小題數量**：{count}\n",
+        1,
+    )
+
+    reference_start = text.find("\n## 參考範例\n")
+    reminder_start = text.find("\n## 重要提醒\n", reference_start)
+    if reference_start >= 0 and reminder_start >= 0:
+        examples = (
+            "（目前停用參考範例，請根據指定條件自行設計。）"
+            if disable_reference_fewshot
+            else _math_group_few_shot_text(few_shot_dir, rng)
+        )
+        text = (
+            text[:reference_start]
+            + "\n## 參考範例\n\n"
+            + examples
+            + text[reminder_start:]
+        )
+
+    reminder_start = text.find("\n## 重要提醒\n")
+    if reminder_start >= 0:
+        text = text[:reminder_start] + f"""
+## 題組輸出要求
+
+1. 請輸出 `核心問題`、`文本`、`取材來源` 與 `subquestions`。
+   `subquestions` 必須規劃 {count} 道小題。
+2. `文本` 應提供所有小題共同使用的數學情境與必要資料，
+   `核心問題` 應以一句話界定題組的主要問題。
+3. `subquestions` 先提供每道小題的 `序號`、`題型` 與 `出題概念`，
+   不要在此階段撰寫完整題目、答案或答案解析。
+4. 請依指定的學習內容與數學思考設計小題，並確保每道小題可根據共用文本作答。
+5. 只輸出 JSON 格式的結果。
+"""
+    return text, image_paths
+
+
+def build_subquestion_system_prompt(
+    learning_stage: str | None = None,
+    content_text: str | None = None,
+    performance_text: str | None = None,
+) -> str:
+    """Build the math 子題產生器 system prompt for one complete 小題."""
+    stage = learning_stage if learning_stage is not None else _LEARNING_STAGE
+    curriculum = _build_curriculum_section(
+        content_text if content_text is not None else _CONTENT_TEXT,
+        performance_text if performance_text is not None else _PERFORMANCE_TEXT,
+        _PERFORMANCE_INTRO,
+    )
+    return f"""\
+你是一位108課綱數學領域子題命題教師。你會收到一份共用數學文本，以及一道小題的出題規劃；
+請只根據該文本與規劃撰寫一道完整的小題 JSON，不要撰寫其他小題。
+
+目前學習階段：{stage}
+
+輸出必須是合法 JSON 物件，格式如下：
+
+```json
+{{
+  "id": "題組編號-01",
+  "序號": 1,
+  "年級": 8,
+  "題型": "選擇題",
+  "題目": "完整題目文字（含選項，若為選擇題）",
+  "答案": "A",
+  "答案解析": "詳細計算與推理",
+  "誘答分析": {{"A": "正確答案：A"}},
+  "學習內容": [{{"編碼": "A-8-1", "說明": "說明文字"}}],
+  "學習表現": [{{"編碼": "a-IV-1", "說明": "說明文字"}}],
+  "出題概念": "評量學生能否……"
+}}
+```
+
+## 課程綱要參考
+
+{curriculum}
+
+請只輸出 JSON，不要輸出其他文字。
+"""
+
+
+def build_subquestion_user_prompt(
+    核心問題: str,
+    文本: str,
+    取材來源: list[str],
+    sq_plan: dict,
+    params: SampledParams,
+    few_shot_dir: Path,
+    rng: random.Random | None = None,
+    image_generation_mode: str = "html",
+    cfg: object | None = None,
+    disable_reference_fewshot: bool = False,
+) -> tuple[str, list[Path]]:
+    """Build the math 子題產生器 user prompt for one planned 小題."""
+    del image_generation_mode, cfg
+    if rng is None:
+        rng = random.Random(params.seed)
+
+    q_type = sq_plan.get("題型", params.題型.value)
+    content_lines = "\n".join(
+        f"  - {item.編碼}：{item.說明}" for item in params.學習內容
+    ) or "  - （依課綱自行選用）"
+    performance_lines = "\n".join(
+        f"  - {item.編碼}：{item.說明}" for item in params.學習表現
+    ) or "  - （依課綱自行選用）"
+    few_shot_text = (
+        "（目前停用參考範例，請根據指定條件自行設計。）"
+        if disable_reference_fewshot
+        else _math_group_few_shot_text(few_shot_dir, rng, subquestion_type=q_type)
+    )
+    source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
+    slot_number = sq_plan.get("序號", 1)
+    return f"""\
+請根據以下共用素材與小題規劃，生成一道數學領域小題：
+
+## 共用素材
+
+- **核心問題**：{核心問題}
+- **文本**：
+
+```
+{文本}
+```
+
+- **取材來源**：
+
+```json
+{source_text}
+```
+
+## 本小題規劃
+
+- **序號**：第 {slot_number} 小題
+- **題型**：{q_type}
+- **出題概念**：{sq_plan.get("出題概念", "")}
+
+## 指定條件
+
+- **年級重心**：{params.grade}年級
+- **情境**：{"、".join(c.value for c in params.情境)}
+- **數學思考**：{"、".join(t.value for t in params.數學思考)}
+- **學習內容**：
+{content_lines}
+- **學習表現**：
+{performance_lines}
+
+## 參考範例
+
+{few_shot_text}
+
+## 重要提醒
+
+1. 只撰寫序號 {slot_number} 的一道完整小題，題目必須能依據共用文本作答。
+2. 題型必須嚴格遵守本小題規劃中的 `題型`，出題概念需回應規劃中的能力提示。
+3. 請輸出 `題目`、`答案`、`答案解析`、`誘答分析`、`學習內容`、`學習表現` 與 `出題概念`。
+4. 只輸出一道小題的 JSON，不要輸出其他文字。
+""", []

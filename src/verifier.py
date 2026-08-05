@@ -85,8 +85,31 @@ def verify_question(
     if chart_image_path is not None and not Path(chart_image_path).exists():
         chart_image_path = None
 
-    question_text = "\n".join(question.題目)
-    solution_text = "\n".join(question.正確解題分析)
+    if question.subquestions:
+        group_parts = [
+            f"## 核心問題\n{question.核心問題}",
+            f"## 文本\n{question.文本}",
+            "## 小題\n"
+            + "\n\n".join(
+                "### 第{序號}小題\n題目：{題目}\n答案：{答案}".format(
+                    序號=sub.序號,
+                    題目=sub.題目,
+                    答案=sub.答案,
+                )
+                for sub in question.subquestions
+            ),
+        ]
+        question_text = "\n\n".join(group_parts)
+        solution_text = "\n\n".join(
+            "第{序號}小題答案解析：{答案解析}".format(
+                序號=sub.序號,
+                答案解析=sub.答案解析,
+            )
+            for sub in question.subquestions
+        )
+    else:
+        question_text = "\n".join(question.題目)
+        solution_text = "\n".join(question.正確解題分析)
 
     difficulty_value = (
         question.metadata.difficulty.value if question.metadata is not None else "medium"

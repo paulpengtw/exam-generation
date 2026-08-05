@@ -6,7 +6,7 @@ import json
 
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, extract_json
-from src.schemas import ExamQuestion, ImageSpec, VerificationResult
+from src.schemas import ExamQuestion, ImageSpec, SubQuestion, VerificationResult
 
 _CORRECTION_SYSTEM_PROMPT_CORE = """\
 你是一位數學教師，剛剛收到審核老師對一道考試題目的意見回饋。
@@ -20,6 +20,7 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 - 若 chart_verification 指出圖表錯誤 → 只修正 image_spec/chart_spec 的 data/labels，
   保留 description、title、render_mode、chart_type 不變（除非審核明確要求）。
 - 絕對不可修改：情境、題型種類、題型、數學思考、學習內容、學習表現、核心素養、出題概念、題目內容類型、難度、id、metadata。
+- 題組的 `subquestions` 若需要修正，必須保留並輸出完整的小題清單；不得刪除未涉及的小題。
 - 若答案或選項有改動，`誘答分析` 必須同步反映新的正解與誘答陷阱：正解鍵改為「正確答案：…」，其他鍵改為對應新誘答的錯誤概念。選項標籤必須與新的題目一致；若題目沒有 (A)-(D) 標籤，可留空 `{}`。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同（含所有原欄位）。只輸出 JSON，不要輸出其他文字。
@@ -42,6 +43,43 @@ CORRECTION_USER_TEMPLATE = """\
 """
 
 
+def _rebuild_math_subquestion(
+    raw: object,
+    original: SubQuestion | None,
+    index: int,
+) -> SubQuestion | None:
+    """Merge one corrected 小題 onto its original schema-valid value."""
+    if not isinstance(raw, dict):
+        return None
+    data = original.model_dump() if original is not None else {}
+    data.update(raw)
+    data.setdefault("id", f"subquestion-{index:02d}")
+    data.setdefault("序號", index)
+    try:
+        return SubQuestion.model_validate(data)
+    except Exception:
+        return None
+
+
+def _parse_corrected_math_subquestions(
+    corrected_data: dict,
+    original: list[SubQuestion],
+) -> list[SubQuestion] | None:
+    """Parse a non-empty corrected 小題 list, or preserve it on bad output."""
+    raw_subquestions = corrected_data.get("subquestions")
+    if not isinstance(raw_subquestions, list) or not raw_subquestions:
+        return None
+
+    parsed: list[SubQuestion] = []
+    for index, raw in enumerate(raw_subquestions, start=1):
+        previous = original[index - 1] if index <= len(original) else None
+        subquestion = _rebuild_math_subquestion(raw, previous, index)
+        if subquestion is None:
+            return None
+        parsed.append(subquestion)
+    return parsed
+
+
 def correct_question(
     client: LLMClient,
     question: ExamQuestion,
@@ -51,8 +89,9 @@ def correct_question(
 ) -> ExamQuestion:
     """Apply verification feedback to produce a minimally corrected question.
 
-    Only 題目, 正確解題分析, and chart_spec may be updated; all classification
-    and metadata fields are restored from the original regardless of LLM output.
+    Only 題目, 正確解題分析, chart_spec, and a complete math 題組
+    ``subquestions`` list may be updated; all other fields are restored from the
+    original regardless of LLM output.
     Returns the original question unchanged if the LLM output cannot be parsed.
 
     Args:
@@ -131,6 +170,13 @@ def correct_question(
     raw_distractor = corrected_data.get("誘答分析")
     if isinstance(raw_distractor, dict):
         update["誘答分析"] = {str(k): str(v) for k, v in raw_distractor.items()}
+
+    corrected_subquestions = _parse_corrected_math_subquestions(
+        corrected_data,
+        question.subquestions,
+    )
+    if corrected_subquestions is not None:
+        update["subquestions"] = corrected_subquestions
 
     # Restore all frozen fields from original and clear stale verification
     update["verification"] = None

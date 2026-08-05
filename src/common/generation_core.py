@@ -87,11 +87,8 @@ def build_subquestion_generation_prompts(
         user_core_question=user_core_question,
         prior_scopes=prior_scopes,
     )
-    slot_count = (
-        params.sub_question_count
-        or len(params.subquestion_configs)
-        or 3
-    )
+    subquestion_configs = getattr(params, "subquestion_configs", [])
+    slot_count = params.sub_question_count or len(subquestion_configs) or 3
     plans = spec.make_fallback_sq_plans_fn(params, slot_count)
     sub_system = spec.build_subquestion_system_fn(stage_ctx)
     few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
@@ -107,11 +104,7 @@ def build_subquestion_generation_prompts(
             "序號": idx,
             "出題概念": "{{子題 plan：由前一階段產生}}",
         }
-        slot_cfg = (
-            params.subquestion_configs[idx - 1]
-            if idx - 1 < len(params.subquestion_configs)
-            else None
-        )
+        slot_cfg = subquestion_configs[idx - 1] if idx - 1 < len(subquestion_configs) else None
         sub_user, sub_images = spec.build_subquestion_user_fn(
             text_raw,
             params,
@@ -207,10 +200,8 @@ def generate_one_core(
         if use_embedded_subquestions:
             return spec.parse_subquestion_fn(sq_plan, question_id, params, idx)
 
-        slot_cfg = (
-            params.subquestion_configs[idx - 1]
-            if idx - 1 < len(params.subquestion_configs) else None
-        )
+        subquestion_configs = getattr(params, "subquestion_configs", [])
+        slot_cfg = subquestion_configs[idx - 1] if idx - 1 < len(subquestion_configs) else None
         sub_user, sub_images = spec.build_subquestion_user_fn(
             text_raw, params, few_shot_dir, sq_plan, slot_cfg,
             image_generation_mode, disable_reference_fewshot,

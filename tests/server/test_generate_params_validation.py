@@ -9,7 +9,6 @@ from server.generate.models import GenerateParams
 
 MATH_UNSUPPORTED_PARAMS: list[tuple[str, object]] = [
     ("text_word_limit", 500),
-    ("sub_question_count", 3),
     ("question_word_limit", 80),
     ("option_word_limit", 30),
     ("subquestion_configs", "[]"),
@@ -57,12 +56,13 @@ def test_generate_params_rejects_unhonoured_math_parameter(
 def test_generate_params_lists_all_unhonoured_math_parameters() -> None:
     with pytest.raises(
         ValidationError,
-        match=r"text_word_limit.*question_word_limit.*subquestion_configs",
+        match=r"text_word_limit.*question_word_limit.*option_word_limit.*subquestion_configs",
     ):
         GenerateParams(
             subject="math",
             text_word_limit=500,
             question_word_limit=80,
+            option_word_limit=30,
             subquestion_configs="[]",
         )
 
@@ -83,6 +83,24 @@ def test_generate_params_accepts_plain_math_request() -> None:
     params = GenerateParams(subject="math")
 
     assert params.subject == "math"
+
+
+def test_generate_params_accepts_math_sub_question_count() -> None:
+    params = GenerateParams(subject="math", sub_question_count=4)
+
+    assert params.sub_question_count == 4
+
+
+def test_generate_params_rejects_math_count_with_explicit_single_question_type() -> None:
+    with pytest.raises(
+        ValidationError,
+        match=r"sub_question_count.*題組題.*單一題",
+    ):
+        GenerateParams(
+            subject="math",
+            sub_question_count=4,
+            set_type="單一題",
+        )
 
 
 @pytest.mark.parametrize("disable_reference_fewshot", [False, True])
