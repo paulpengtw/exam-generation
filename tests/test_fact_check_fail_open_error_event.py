@@ -68,6 +68,23 @@ class _MissingVerifiedClient:
         return json.dumps({"result": "ok"}), []
 
 
+class _GeminiClient:
+    """Script a Gemini grounding response or exception for fail-open tests."""
+
+    def __init__(self, text: str = "", raises: Exception | None = None) -> None:
+        self.config = type("cfg", (), {
+            "model_verify": "gemini-3.1-pro-preview",
+            "model_execute": "claude-sonnet-4-6",
+        })()
+        self._text = text
+        self._raises = raises
+
+    def generate_with_google_search(self, *args, **kwargs):
+        if self._raises is not None:
+            raise self._raises
+        return self._text, []
+
+
 # ── Tests for fact_check_question on_error callback ──────────────────────────
 
 def test_tool_call_failure_calls_on_error() -> None:
@@ -129,6 +146,44 @@ def test_fail_open_contract_preserved_on_tool_failure() -> None:
         provider="anthropic", max_uses=5,
     )
     assert result is None  # not an exception
+
+
+def test_gemini_client_failure_calls_on_error_and_fails_open() -> None:
+    """A Gemini grounding exception returns None and reports one error."""
+    errors: list[str] = []
+    result = fact_check_question(
+        _GeminiClient(raises=RuntimeError("gemini connection error")), _question(),
+        provider="gemini", max_uses=5, on_error=errors.append,
+    )
+
+    assert result is None
+    assert len(errors) == 1
+    assert "gemini connection error" in errors[0]
+
+
+def test_gemini_malformed_json_calls_on_error() -> None:
+    """Malformed Gemini text returns None and reports one error."""
+    errors: list[str] = []
+    result = fact_check_question(
+        _GeminiClient(text="not JSON"), _question(),
+        provider="gemini", max_uses=5, on_error=errors.append,
+    )
+
+    assert result is None
+    assert len(errors) == 1
+
+
+def test_gemini_missing_verified_calls_on_error() -> None:
+    """Gemini JSON without boolean verified returns None and reports one error."""
+    errors: list[str] = []
+    result = fact_check_question(
+        _GeminiClient(text=json.dumps({"result": "ok"})), _question(),
+        provider="gemini", max_uses=5, on_error=errors.append,
+    )
+
+    assert result is None
+    assert len(errors) == 1
+    assert "verified" in errors[0].lower()
 
 
 # ── Tests for _ss_fact_check_hook integration ─────────────────────────────────
@@ -196,7 +251,7 @@ def test_ss_fact_check_hook_fail_open_passed_unchanged() -> None:
 
 
 def test_ss_fact_check_hook_disabled_provider_emits_no_error_event() -> None:
-    """When provider is not 'anthropic', _ss_fact_check_hook must not emit any error event.
+    """When provider is disabled, _ss_fact_check_hook must not emit an error event.
 
     fc is None (disabled path, not an exception), so no error is expected.
     """
@@ -228,4 +283,73 @@ def test_ss_fact_check_hook_disabled_provider_emits_no_error_event() -> None:
         e for e in events
         if e.get("type") == "stage" and e.get("status") == "error"
     ]
-    assert error_events == [], f"No error events expected when provider disabled, got: {error_events}"
+    assert error_events == [], (
+        f"No error events expected when provider disabled, got: {error_events}"
+    )
+
+
+def test_ss_fact_check_hook_reaches_gemini_fact_check_path() -> None:
+    """A Gemini provider reaches fact_check_question for a current-events question."""
+    from src.social_studies.verifier import _ss_fact_check_hook
+
+    class _ClientWithGemini:
+        config = type("cfg", (), {
+            "model_verify": "gemini-3.1-pro-preview",
+            "model_execute": "claude-sonnet-4-6",
+            "web_search_provider": "gemini",
+            "web_search_max_uses": 5,
+        })()
+
+        def get_observer(self):
+            return lambda event: None
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate_with_google_search(self, *args, **kwargs):
+            self.calls += 1
+            return json.dumps({"verified": True, "issues": []}), []
+
+    client = _ClientWithGemini()
+    result = VerificationResult(
+        passed=True, answer_match=True, details="", my_answer="A", provided_answer="A"
+    )
+
+    _ss_fact_check_hook(_question(), result, client)
+
+    assert client.calls == 1
+    assert result.fact_check is not None
+
+
+def test_ss_fact_check_hook_gemini_negative_forces_failure_and_appends_issues() -> None:
+    """A negative Gemini fact-check forces passed false and appends its issues."""
+    from src.social_studies.verifier import _ss_fact_check_hook
+
+    class _ClientWithGemini:
+        config = type("cfg", (), {
+            "model_verify": "gemini-3.1-pro-preview",
+            "model_execute": "claude-sonnet-4-6",
+            "web_search_provider": "gemini",
+            "web_search_max_uses": 5,
+        })()
+
+        def get_observer(self):
+            return lambda event: None
+
+        def generate_with_google_search(self, *args, **kwargs):
+            return json.dumps({"verified": False, "issues": ["Gemini found a contradiction."]}), []
+
+    result = VerificationResult(
+        passed=True,
+        answer_match=True,
+        details="teacher details",
+        my_answer="A",
+        provided_answer="A",
+    )
+
+    _ss_fact_check_hook(_question(), result, _ClientWithGemini())
+
+    assert result.fact_check is not None
+    assert result.fact_check.verified is False
+    assert result.passed is False
+    assert "Gemini found a contradiction." in result.details

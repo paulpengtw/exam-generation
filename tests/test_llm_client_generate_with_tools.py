@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from src.config import Config
 from src.llm_client import Citation, LLMClient
 
@@ -132,3 +134,110 @@ def test_generate_with_tools_deduplicates_citations_by_url() -> None:
     )
     urls = [c.url for c in citations]
     assert urls == ["https://example.org/a", "https://example.org/b"]
+
+
+class _FakeGeminiCompletions:
+    """Record Gemini OpenAI-compat completion calls."""
+
+    def __init__(self, response: object | None = None, raises: Exception | None = None) -> None:
+        self.calls: list[dict] = []
+        self.response = response
+        self.raises = raises
+
+    def create(self, **kwargs):  # noqa: ANN001 — mimic SDK signature
+        self.calls.append(kwargs)
+        if self.raises is not None:
+            raise self.raises
+        return self.response
+
+
+def _gemini_response(text: str = "Gemini response") -> object:
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=text))],
+        usage=SimpleNamespace(prompt_tokens=2, completion_tokens=3),
+        model_extra={
+            "candidates": [{
+                "groundingMetadata": {
+                    "groundingChunks": [
+                        {"web": {"uri": "https://example.org/gemini", "title": "Gemini source"}}
+                    ]
+                }
+            }]
+        },
+    )
+
+
+def _make_gemini_client(
+    fake_completions: _FakeGeminiCompletions,
+    *,
+    rate_limit_delay: float = 0.0,
+) -> LLMClient:
+    cfg = Config(
+        api_key="x",
+        llm_stream=False,
+        model_execute="claude-sonnet-4-6",
+        model_verify="gemini-3.1-pro-preview",
+        effort_execute="medium",
+        effort_verify="high",
+        rate_limit_delay=rate_limit_delay,
+    )
+    client = LLMClient(cfg)
+    client._openai_compat_client = lambda provider: SimpleNamespace(  # type: ignore[method-assign]
+        chat=SimpleNamespace(completions=fake_completions)
+    )
+    return client
+
+
+def test_generate_with_google_search_uses_gemini_grounding_and_verify_tier() -> None:
+    """Gemini grounding uses the verify model, effort, and native extra_body tools."""
+    fake = _FakeGeminiCompletions(_gemini_response())
+    client = _make_gemini_client(fake)
+
+    text, citations = client.generate_with_google_search(
+        system="system prompt",
+        user="user prompt",
+        purpose="fact_check",
+        max_uses=99,
+    )
+
+    assert text == "Gemini response"
+    assert citations == [Citation(url="https://example.org/gemini", title="Gemini source")]
+    assert len(fake.calls) == 1
+    call = fake.calls[0]
+    assert call["model"] == "gemini-3.1-pro-preview"
+    assert call["messages"] == [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "user prompt"},
+    ]
+    assert call["extra_body"] == {"tools": [{"google_search": {}}]}
+    assert call["reasoning_effort"] == "high"
+    assert "max_uses" not in call
+
+
+def test_generate_with_google_search_emits_observer_events_and_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gemini grounding emits fact-check lifecycle events and honors rate limiting."""
+    fake = _FakeGeminiCompletions(_gemini_response())
+    client = _make_gemini_client(fake, rate_limit_delay=0.25)
+    events: list[dict] = []
+    sleeps: list[float] = []
+    client.set_observer(events.append)
+    monkeypatch.setattr("src.llm_client.time.sleep", sleeps.append)
+
+    client.generate_with_google_search("sys", "usr")
+
+    assert sleeps == [0.25]
+    assert [event["type"] for event in events] == ["llm_request", "llm_response"]
+    assert all(event["purpose"] == "fact_check" for event in events)
+    assert all(event["agent"] == "fact_checker" for event in events)
+    assert all(event["model"] == "gemini-3.1-pro-preview" for event in events)
+
+
+def test_generate_with_google_search_propagates_api_errors() -> None:
+    """Gemini API exceptions propagate to the fact-check caller."""
+    fake = _FakeGeminiCompletions(raises=RuntimeError("gemini unavailable"))
+    client = _make_gemini_client(fake)
+
+    with pytest.raises(RuntimeError, match="gemini unavailable"):
+        client.generate_with_google_search("sys", "usr")

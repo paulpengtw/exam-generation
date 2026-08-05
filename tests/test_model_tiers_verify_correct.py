@@ -469,15 +469,25 @@ def test_html_image_purpose_stays_on_execute_when_verify_correct_set() -> None:
     assert fake.calls[0]["model"] == "claude-sonnet-4-6"
 
 
-def test_fact_check_purpose_stays_on_execute_when_tier_models_set() -> None:
-    """fact_check is not in _VERIFY_PURPOSES or _CORRECT_PURPOSES."""
+def test_fact_check_purpose_belongs_to_verify_tier_issue_378() -> None:
+    """fact_check belongs to the 驗證 tier and resolves its fallback per #378."""
+    assert "fact_check" in _VERIFY_PURPOSES
+
     client, fake = _make_tier_client(
         model_execute="claude-sonnet-4-6",
         model_verify="claude-opus-5",
         model_correct="claude-fable-5",
     )
     client.generate("sys", "user", purpose="fact_check")
-    assert fake.calls[0]["model"] == "claude-sonnet-4-6"
+    assert fake.calls[0]["model"] == "claude-opus-5"
+
+    fallback_client, fallback_fake = _make_tier_client(
+        model_execute="claude-sonnet-4-6",
+        model_verify="",
+        model_correct="claude-fable-5",
+    )
+    fallback_client.generate("sys", "user", purpose="fact_check")
+    assert fallback_fake.calls[0]["model"] == "claude-sonnet-4-6"
 
 
 def test_generate_purpose_stays_on_execute_when_tier_models_set() -> None:

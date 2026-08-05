@@ -1,9 +1,9 @@
-"""Tests for the exec-model provider gate in fact_check_question (issue #343).
+"""Tests for the effective verify-model provider gate (issues #343 and #378).
 
-The web_search_20250305 server tool is Anthropic-native and has no
-OpenAI-compat equivalent.  When the execute model resolves to a
-non-Anthropic provider, fact_check_question must skip (return None)
-without calling generate_with_tools, and must log an INFO record.
+The Anthropic ``web_search_20250305`` server tool and Gemini grounding are
+provider-specific. When the configured provider does not match the effective
+verify model, fact_check_question must skip (return None) without making a
+client call, and must log an INFO record.
 """
 
 from __future__ import annotations

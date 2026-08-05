@@ -194,11 +194,22 @@ def test_html_image_purpose_uses_effort_execute() -> None:
     assert _effort_from_call(fake.calls[0]) == "max"
 
 
-def test_fact_check_purpose_uses_effort_execute() -> None:
+def test_fact_check_purpose_uses_effort_verify() -> None:
+    """fact_check belongs to the 驗證 tier per #378, so it follows effort_verify
+    with fallback to the effective execute effort."""
     client, fake = _make_tier_effort_client(
         effort_execute="high",
         effort_verify="low",
-        effort_correct="low",
+    )
+    client.generate("sys", "user", purpose="fact_check")
+    assert _effort_from_call(fake.calls[0]) == "low"
+
+
+def test_fact_check_purpose_falls_back_to_effort_execute_when_unset() -> None:
+    """fact_check falls back to effort_execute when effort_verify is unset."""
+    client, fake = _make_tier_effort_client(
+        effort_execute="high",
+        effort_verify="",
     )
     client.generate("sys", "user", purpose="fact_check")
     assert _effort_from_call(fake.calls[0]) == "high"

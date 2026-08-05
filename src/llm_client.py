@@ -113,7 +113,7 @@ _PLAN_PURPOSES: frozenset[str] = frozenset({"plan", "plan_core_questions", "plan
 # Purpose strings that belong to the 驗證 / 修正 model tiers (→ model_verify / model_correct).
 # Exact-string sets, mirroring _PLAN_PURPOSES — see issue #346: a `purpose == "..."`
 # equality check against a string no caller sends silently degrades to the execute tier.
-_VERIFY_PURPOSES: frozenset[str] = frozenset({"verify"})
+_VERIFY_PURPOSES: frozenset[str] = frozenset({"verify", "fact_check"})
 _CORRECT_PURPOSES: frozenset[str] = frozenset({"correct"})
 
 
@@ -122,6 +122,95 @@ class Citation(BaseModel):
 
     url: str
     title: str = ""
+
+
+def _safe_field(obj: object, name: str, default: object | None = None) -> object | None:
+    """Read a field from either a mapping or an SDK object without raising."""
+    try:
+        if isinstance(obj, dict):
+            return obj.get(name, default)
+        return getattr(obj, name, default)
+    except Exception:  # noqa: BLE001 — response metadata must never break fact-checking
+        return default
+
+
+def _first_field(obj: object, names: tuple[str, ...]) -> object | None:
+    """Return the first non-None field value from a mapping or SDK object."""
+    for name in names:
+        value = _safe_field(obj, name)
+        if value is not None:
+            return value
+    return None
+
+
+def _first_item(value: object) -> object | None:
+    """Return the first item from a likely sequence without assuming its type."""
+    try:
+        if isinstance(value, (list, tuple)):
+            return value[0] if value else None
+        if isinstance(value, (str, bytes, dict)) or value is None:
+            return None
+        return next(iter(value))
+    except Exception:  # noqa: BLE001 — defensive response probing
+        return None
+
+
+def _entries(value: object) -> list[object]:
+    """Normalize a grounding-chunk container for defensive iteration."""
+    try:
+        if isinstance(value, dict):
+            return [value]
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        if isinstance(value, (str, bytes)) or value is None:
+            return []
+        return list(value)
+    except Exception:  # noqa: BLE001 — defensive response probing
+        return []
+
+
+def _extract_google_search_citations(response: object) -> list[Citation]:
+    """Extract and deduplicate Gemini grounding citations without trusting its shape.
+
+    The Gemini OpenAI-compat grounding response shape is unverified against a live
+    endpoint (issue #370); an empty citation list is an accepted outcome, not a
+    failure.
+    """
+    citations: list[Citation] = []
+    seen_urls: set[str] = set()
+    try:
+        model_extra = _safe_field(response, "model_extra")
+        metadata_sources: list[object] = []
+        sources: list[object] = []
+        if model_extra is not None:
+            sources.append(model_extra)
+            root_metadata = _first_field(model_extra, ("groundingMetadata", "grounding_metadata"))
+            if root_metadata is not None:
+                metadata_sources.append(root_metadata)
+
+        for candidate_source in (model_extra, response):
+            candidates = _safe_field(candidate_source, "candidates")
+            candidate = _first_item(candidates)
+            if candidate is None:
+                continue
+            metadata = _first_field(candidate, ("groundingMetadata", "grounding_metadata"))
+            if metadata is not None:
+                metadata_sources.append(metadata)
+
+        sources.extend(metadata_sources)
+        for source in sources:
+            chunks = _first_field(source, ("groundingChunks", "grounding_chunks"))
+            for chunk in _entries(chunks):
+                web = _safe_field(chunk, "web")
+                url = _safe_field(web, "uri")
+                if not isinstance(url, str) or not url or url in seen_urls:
+                    continue
+                title = _safe_field(web, "title", "")
+                citations.append(Citation(url=url, title=title if isinstance(title, str) else ""))
+                seen_urls.add(url)
+    except Exception:  # noqa: BLE001 — citation extraction must never fail the pass
+        return citations
+    return citations
 
 
 def emit_stage(
@@ -947,6 +1036,69 @@ class LLMClient:
                 "usage": None,
             })
         return final_text, collected_citations
+
+    def generate_with_google_search(
+        self,
+        system: str,
+        user: str,
+        purpose: str = "fact_check",
+        max_uses: int = 5,
+        model: str | None = None,
+    ) -> tuple[str, list[Citation]]:
+        """Call Gemini grounding through its OpenAI-compatible endpoint.
+
+        ``max_uses`` is accepted for signature parity with
+        :meth:`generate_with_tools`; Gemini has no equivalent limit, so it is
+        intentionally ignored. Grounding citation metadata is best-effort and
+        may produce an empty citation list when the endpoint omits it.
+        """
+        if self.config.rate_limit_delay > 0:
+            time.sleep(self.config.rate_limit_delay)
+        call_model = model or self._model_for_purpose(purpose)
+        agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        extra_body = {"tools": [{"google_search": {}}]}
+
+        if self._observer:
+            self._emit({
+                "type": "llm_request",
+                "purpose": purpose,
+                "agent": agent,
+                "model": call_model,
+                "messages": messages,
+                "params": {
+                    "max_tokens": 8192,
+                    "temperature": self.config.temperature,
+                    "extra_body": extra_body,
+                },
+            })
+
+        oc = self._openai_compat_client("gemini")
+        response = oc.chat.completions.create(
+            model=call_model,
+            messages=messages,
+            **_max_tokens_kwargs("gemini"),
+            **self._temperature_kwargs(call_model),
+            **self._effort_kwargs(purpose, "gemini"),
+            extra_body=extra_body,
+        )
+        content = response.choices[0].message.content or ""
+        citations = _extract_google_search_citations(response)
+
+        if self._observer:
+            self._emit({
+                "type": "llm_response",
+                "purpose": purpose,
+                "agent": agent,
+                "model": call_model,
+                "content": content,
+                "reasoning": None,
+                "usage": _openai_usage_to_internal(getattr(response, "usage", None)),
+            })
+        return content, citations
 
 
 def _try_loads(text: str) -> dict:
