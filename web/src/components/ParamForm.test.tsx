@@ -166,11 +166,11 @@ describe("ParamForm top-level text word limit", () => {
     getSchemasMock.mockResolvedValue(FAKE_MATH_SCHEMA);
   });
 
-  it("hides 文本字數限制 for math", async () => {
+  it("shows 文本字數限制 for math", async () => {
     render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
 
     await screen.findByRole("button", { name: /generate/i });
-    expect(screen.queryByText("文本字數限制", { selector: "label" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("文本字數限制")).toBeInTheDocument();
   });
 
   it.each(["social_studies", "natural_sciences"])(
@@ -179,8 +179,7 @@ describe("ParamForm top-level text word limit", () => {
       render(<ParamForm subject={subject} onSubmit={() => {}} disabled={false} />);
 
       await screen.findByRole("button", { name: /generate/i });
-      const label = screen.getByText("文本字數限制", { selector: "label" });
-      expect(label.parentElement?.querySelector("input")).toHaveAttribute("placeholder", "不限");
+      expect(screen.getByLabelText("文本字數限制")).toHaveAttribute("placeholder", "不限");
     },
   );
 });

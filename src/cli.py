@@ -245,6 +245,15 @@ def _make_math_fallback_sq_plans(params: SampledParams, n: int) -> list[dict]:
     ]
 
 
+def _with_text_word_limit(
+    params: SampledParams,
+    text_word_limit: int | None,
+) -> SampledParams:
+    if text_word_limit is None:
+        return params
+    return params.model_copy(update={"text_word_limit": text_word_limit})
+
+
 def _math_build_text_system(params: SampledParams) -> tuple[str, dict]:
     learning_stage = grade_to_learning_stage(params.grade)
     return build_text_system_prompt(learning_stage=learning_stage), {
@@ -274,6 +283,7 @@ def _math_build_text_user(
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
         prior_scopes=prior_scopes,
+        text_word_limit=params.text_word_limit,
     )
 
 
@@ -336,6 +346,7 @@ def generate_one(
     image_generation_mode: str = "html",
     user_topic: str = "",
     user_passage: str = "",
+    text_word_limit: int | None = None,
     user_options: list[str] | None = None,
     user_core_question: str = "",
     on_question_update: QuestionUpdateCallback | None = None,
@@ -353,6 +364,7 @@ def generate_one(
             When ``None``, ``build_system_prompt`` falls back to its own
             module-level math corpus defaults.
     """
+    params = _with_text_word_limit(params, text_word_limit)
     if params.sub_question_count is not None:
         return generate_one_core(
             config=config,
@@ -384,6 +396,7 @@ def generate_one(
         params,
         user_topic=user_topic,
         user_passage=user_passage,
+        text_word_limit=text_word_limit,
         user_options=user_options,
         user_core_question=user_core_question,
         prior_scopes=prior_scopes,
@@ -458,6 +471,7 @@ def build_generation_prompts(
     *,
     user_topic: str = "",
     user_passage: str = "",
+    text_word_limit: int | None = None,
     user_options: list[str] | None = None,
     user_core_question: str = "",
     prior_scopes: Sequence[PriorScope] | None = None,
@@ -465,6 +479,7 @@ def build_generation_prompts(
     disable_reference_fewshot: bool = False,
 ) -> tuple[str, str, list[str]]:
     """Build the exact prompts used by math's first model call."""
+    params = _with_text_word_limit(params, text_word_limit)
     if params.sub_question_count is not None:
         learning_stage = grade_to_learning_stage(params.grade)
         system_prompt = build_text_system_prompt(learning_stage=learning_stage)
@@ -512,6 +527,7 @@ def generate_with_corrections(
     image_generation_mode: str = "html",
     user_topic: str = "",
     user_passage: str = "",
+    text_word_limit: int | None = None,
     user_options: list[str] | None = None,
     user_core_question: str = "",
     on_question_update: QuestionUpdateCallback | None = None,
@@ -531,6 +547,7 @@ def generate_with_corrections(
             see the same curriculum section.  When ``None``, each component
             falls back to its own defaults.
     """
+    params = _with_text_word_limit(params, text_word_limit)
     if params.sub_question_count is not None:
         return generate_with_corrections_core(
             config=config,
@@ -570,6 +587,7 @@ def generate_with_corrections(
         image_generation_mode=image_generation_mode,
         user_topic=user_topic,
         user_passage=user_passage,
+        text_word_limit=text_word_limit,
         user_options=user_options,
         user_core_question=user_core_question,
         on_question_update=on_question_update,

@@ -663,17 +663,17 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(confirmationRow("文本").getByText("共享文本")).toBeInTheDocument();
   });
 
-  it("does not render the top-level 文本字數限制 row for math", async () => {
+  it("renders the top-level 文本字數限制 row for math", async () => {
     await openConfirmation("math", { text_word_limit: 321 });
-    expect(screen.queryByText("文本字數限制", { selector: "dt" })).not.toBeInTheDocument();
+    expect(confirmationRow("文本字數限制").getByText("321")).toBeInTheDocument();
   });
 
-  it("does not include stale 文本字數限制 in the math confirmation payload", async () => {
+  it("includes math 文本字數限制 in the confirmation payload without per-question materialisation", async () => {
     await openConfirmation("math", { text_word_limit: 321 });
 
     await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(1));
     const payload = previewGenerateMock.mock.calls[0][0];
-    expect(payload.text_word_limit).toBeUndefined();
+    expect(payload.text_word_limit).toBe(321);
     expect(JSON.parse(payload.per_question_params)[0]).not.toHaveProperty("text_word_limit");
   });
 

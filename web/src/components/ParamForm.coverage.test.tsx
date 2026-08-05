@@ -82,7 +82,7 @@ describe("ParamForm coverage_mode dropdown", () => {
       expect(screen.getByLabelText("form.coverage_mode")).toBeInTheDocument(),
     );
 
-    fireEvent.change(screen.getAllByRole("spinbutton")[0], {
+    fireEvent.change(screen.getByLabelText("form.count"), {
       target: { value: "3" },
     });
     fireEvent.click(screen.getByText("form.btn_generate"));
@@ -113,7 +113,7 @@ describe("ParamForm coverage_mode dropdown", () => {
       expect(screen.getByLabelText("form.coverage_mode")).toBeInTheDocument(),
     );
 
-    fireEvent.change(screen.getAllByRole("spinbutton")[0], {
+    fireEvent.change(screen.getByLabelText("form.count"), {
       target: { value: "3" },
     });
     fireEvent.click(screen.getByText("form.btn_generate"));
@@ -162,7 +162,7 @@ describe("ParamForm coverage_mode dropdown", () => {
     fireEvent.change(screen.getByLabelText("form.coverage_mode"), {
       target: { value: "random" },
     });
-    fireEvent.change(screen.getAllByRole("spinbutton")[0], {
+    fireEvent.change(screen.getByLabelText("form.count"), {
       target: { value: "3" },
     });
     fireEvent.click(screen.getByText("form.btn_generate"));

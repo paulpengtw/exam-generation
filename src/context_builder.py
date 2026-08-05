@@ -561,6 +561,7 @@ def build_text_user_prompt(
     user_core_question: str | None = None,
     disable_reference_fewshot: bool = False,
     prior_scopes: Sequence[PriorScope] | None = None,
+    text_word_limit: int | None = None,
 ) -> tuple[str, list[Path]]:
     """Build the math 文本生成器 user prompt for an opt-in 題組."""
     del image_generation_mode
@@ -593,6 +594,16 @@ def build_text_user_prompt(
         set_type_marker + f"- **小題數量**：{count}\n",
         1,
     )
+
+    effective_text_word_limit = (
+        params.text_word_limit if text_word_limit is None else text_word_limit
+    )
+    if effective_text_word_limit is not None:
+        text = text.replace(
+            "\n## 參考範例\n",
+            f"\n- **文本字數上限**：{effective_text_word_limit} 字\n\n## 參考範例\n",
+            1,
+        )
 
     reference_start = text.find("\n## 參考範例\n")
     reminder_start = text.find("\n## 重要提醒\n", reference_start)

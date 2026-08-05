@@ -2,6 +2,9 @@ import type { GenerateParams } from "../api/generated/contract";
 import type { FormParams } from "../components/ParamForm";
 
 export function toGenerateParams(subject: string, params: FormParams): GenerateParams {
+  const mathHasUserAuthoredPassage =
+    subject === "math" && typeof params.passage === "string" && params.passage.trim() !== "";
+
   return {
     subject,
     grade: params.grade,
@@ -39,7 +42,7 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
         ? params.learning_content
         : undefined,
     sub_question_count:
-      subject === "social_studies" || subject === "natural_sciences"
+      subject === "social_studies" || subject === "math" || subject === "natural_sciences"
         ? params.sub_question_count
         : undefined,
     subquestion_configs:
@@ -59,7 +62,7 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
     reporting_scale: subject === "natural_sciences" ? params.reporting_scale : undefined,
     coverage_mode: subject === "social_studies" ? params.coverage_mode : undefined,
     text_word_limit:
-      subject === "social_studies" || subject === "natural_sciences"
+      (subject === "social_studies" || subject === "math" || subject === "natural_sciences") && !mathHasUserAuthoredPassage
         ? params.text_word_limit
         : undefined,
   };

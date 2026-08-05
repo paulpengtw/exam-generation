@@ -127,8 +127,7 @@ describe("ParamForm 未送出的輸入", () => {
 
   it("raises 未送出的輸入 when the count number input changes", async () => {
     const onUnsubmittedInput = await renderSocial();
-    const countLabel = screen.getByText("form.count", { selector: "label" });
-    const countInput = countLabel.parentElement!.querySelector("input")!;
+    const countInput = screen.getByLabelText("form.count");
 
     fireEvent.change(countInput, { target: { value: "2" } });
 

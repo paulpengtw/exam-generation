@@ -257,10 +257,15 @@ def _math_validate_params(params: Any) -> None:
             "題型種類=單一題 was supplied"
         )
 
+    if params.text_word_limit is not None and params.passage and params.passage.strip():
+        raise ValueError(
+            "text_word_limit cannot be used with passage for math: "
+            "passage is user-authored 文本"
+        )
+
     unsupported = [
         field
         for field in (
-            "text_word_limit",
             "question_word_limit",
             "option_word_limit",
             "subquestion_configs",
@@ -834,6 +839,7 @@ def _math_do_sample_params(
         content_type=params.content_type,
         subject_filter=math_subject_filter,
         sub_question_count=params.sub_question_count,
+        text_word_limit=params.text_word_limit,
         difficulty=params.difficulty,
     )
 
@@ -856,6 +862,7 @@ def _math_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         image_generation_mode=kwargs["image_generation_mode"],
         user_topic=kwargs["user_topic"] or "",
         user_passage=kwargs["user_passage"] or "",
+        text_word_limit=kwargs["text_word_limit"],
         user_options=kwargs["user_options"],
         user_core_question=kwargs["user_core_question"] or "",
         on_question_update=kwargs["on_question_update"],
@@ -872,6 +879,7 @@ def _math_build_generation_prompts(
         rng_params,
         user_topic=kwargs["user_topic"] or "",
         user_passage=kwargs["user_passage"] or "",
+        text_word_limit=kwargs["text_word_limit"],
         user_options=kwargs["user_options"],
         user_core_question=kwargs["user_core_question"] or "",
         disable_reference_fewshot=kwargs["disable_reference_fewshot"],
