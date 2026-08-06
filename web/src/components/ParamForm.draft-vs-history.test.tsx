@@ -242,10 +242,7 @@ function topicInput(): HTMLInputElement {
 }
 
 function countInput(): HTMLInputElement {
-  const label = screen.getByText("題數", { selector: "label" });
-  return label.parentElement!.querySelector(
-    'input[type="number"]',
-  ) as HTMLInputElement;
+  return screen.getByLabelText("題數") as HTMLInputElement;
 }
 
 function storedDraftFields(): FormFields {

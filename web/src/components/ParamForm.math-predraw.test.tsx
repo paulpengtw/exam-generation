@@ -92,7 +92,8 @@ describe("ParamForm math learning-content predraw", () => {
     );
 
     await screen.findByText("form.btn_generate");
-    fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "3" } });
+    const countInput = screen.getByLabelText("form.count");
+    fireEvent.change(countInput, { target: { value: "3" } });
     fireEvent.click(screen.getByText("form.btn_generate"));
     fireEvent.click(await screen.findByText("form.btn_confirm_send"));
 

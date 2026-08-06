@@ -1069,7 +1069,10 @@ export default function ParamForm({
   }, [coreQuestionResolution, pendingParams, subject]);
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
-  const supportsTextWordLimit = isCurriculumSubject && subject !== "math";
+  const supportsTextWordLimit = isCurriculumSubject;
+  const hasUserAuthoredMathPassage =
+    subject === "math" && passage !== TEXT_HINT && passage.trim().length > 0;
+  const canUseTextWordLimit = supportsTextWordLimit && !hasUserAuthoredMathPassage;
 
   useEffect(() => {
     let cancelled = false;
@@ -1657,7 +1660,7 @@ export default function ParamForm({
       reporting_scale: subject === "natural_sciences" ? (reportingScale === "" ? undefined : reportingScale) : undefined,
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
-      text_word_limit: supportsTextWordLimit ? (textWordLimit ?? undefined) : undefined,
+      text_word_limit: canUseTextWordLimit ? (textWordLimit ?? undefined) : undefined,
       options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,
       topic:
         isCurriculumSubject && cleanTopic
@@ -1672,7 +1675,7 @@ export default function ParamForm({
           : undefined,
       learning_content:
         finalLc,
-      sub_question_count: (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== "" ? subQuestionCount : undefined,
+      sub_question_count: (subject === "social_studies" || subject === "math" || subject === "natural_sciences") && subQuestionCount !== "" ? subQuestionCount : undefined,
       subquestion_configs:
         shouldSendSubquestionConfigs
           ? JSON.stringify(effectiveSubquestionConfigs)
@@ -1693,7 +1696,11 @@ export default function ParamForm({
       "max_retries",
     ]);
     const perQuestionBase = Object.fromEntries(
-      Object.entries(baseParams).filter(([key]) => !requestLevelFields.has(key)),
+      Object.entries(baseParams).filter(
+        ([key]) =>
+          !requestLevelFields.has(key) &&
+          !(subject === "math" && key === "text_word_limit"),
+      ),
     );
 
     let previousQuestionLp: string[] | undefined;
@@ -1888,8 +1895,8 @@ export default function ParamForm({
       },
       { label: t("form.confirm_passage"), value: p.passage, subjects: allSubjects },
       { label: t("form.confirm_options"), value: p.options?.join(", "), subjects: ["math"] },
-      { label: t("form.confirm_text_word_limit"), value: p.text_word_limit !== undefined ? String(p.text_word_limit) : undefined, subjects: ["social_studies", "natural_sciences"], kind: "defaulted", defaultValue: t("form.confirm_unlimited") },
-      { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "natural_sciences"] },
+      { label: t("form.confirm_text_word_limit"), value: p.text_word_limit !== undefined ? String(p.text_word_limit) : undefined, subjects: ["social_studies", "natural_sciences", ...(p.passage?.trim() ? [] : ["math"])], kind: "defaulted", defaultValue: t("form.confirm_unlimited") },
+      { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "math", "natural_sciences"] },
       { label: t("form.confirm_model_plan"), value: p.model_plan, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       { label: t("form.confirm_model_execute"), value: p.model_execute, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       { label: t("form.confirm_model_verify"), value: p.model_verify, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
@@ -2696,8 +2703,9 @@ export default function ParamForm({
       )}
 
       <div>
-        <label className="block text-sm font-medium">{t("form.count")}</label>
+        <label htmlFor="param-form-count" className="block text-sm font-medium">{t("form.count")}</label>
         <input
+          id="param-form-count"
           type="number"
           min={1}
           max={10}
@@ -2725,15 +2733,16 @@ export default function ParamForm({
         </div>
       )}
 
-      {(subject === "social_studies" || subject === "natural_sciences") && (
+      {(subject === "social_studies" || subject === "math" || subject === "natural_sciences") && (
         <div className="space-y-4 rounded-lg border border-gray-200 p-4">
           <h3 className="text-sm font-semibold text-gray-700">子題設定</h3>
           <div className="max-w-40">
             <div>
-              <label className="block text-sm font-medium">
+              <label htmlFor="param-form-sub-question-count" className="block text-sm font-medium">
                 {t("form.confirm_sub_question_count")}
               </label>
               <input
+                id="param-form-sub-question-count"
                 type="number"
                 min={3}
                 max={7}
@@ -2907,10 +2916,11 @@ export default function ParamForm({
         </div>
       )}
 
-      {supportsTextWordLimit && (
+      {canUseTextWordLimit && (
         <div>
-          <label className="block text-sm font-medium">{t("form.text_word_limit")}</label>
+          <label htmlFor="text-word-limit" className="block text-sm font-medium">{t("form.text_word_limit")}</label>
           <input
+            id="text-word-limit"
             type="number"
             min={1}
             value={textWordLimit ?? ""}
@@ -2919,6 +2929,12 @@ export default function ParamForm({
             className="mt-1 block w-full border rounded px-2 py-1"
           />
         </div>
+      )}
+
+      {hasUserAuthoredMathPassage && (
+        <p role="note" className="text-sm text-gray-500">
+          {t("form.math_text_word_limit_unavailable")}
+        </p>
       )}
 
       {subject === "math" && (

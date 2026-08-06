@@ -165,5 +165,6 @@ class SampledParams(BaseModel):
     出題概念: str = ""
     subject_filter: str | None = None
     sub_question_count: int | None = None
+    text_word_limit: int | None = None
     # Issue #116: explicit difficulty (pure passthrough — never randomized).
     difficulty: Difficulty = DEFAULT_DIFFICULTY

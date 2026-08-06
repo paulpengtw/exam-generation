@@ -4,8 +4,25 @@ import type { FormParams } from "../components/ParamForm";
 import { toGenerateParams } from "./toGenerateParams";
 
 describe("toGenerateParams", () => {
-  it("omits text_word_limit for math even when form state carries a stale value", () => {
+  it("forwards text_word_limit for math", () => {
     const params = toGenerateParams("math", {
+      text_word_limit: 321,
+    } as FormParams);
+
+    expect(params.text_word_limit).toBe(321);
+  });
+
+  it("forwards sub_question_count for math", () => {
+    const params = toGenerateParams("math", {
+      sub_question_count: 4,
+    } as FormParams);
+
+    expect(params.sub_question_count).toBe(4);
+  });
+
+  it("omits the math limit when the form carries user-authored 文本", () => {
+    const params = toGenerateParams("math", {
+      passage: "使用者提供的文本",
       text_word_limit: 321,
     } as FormParams);
 

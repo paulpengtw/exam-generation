@@ -283,7 +283,7 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _NS: (FORWARDED, ""),
     },
     "text_word_limit": {
-        _MA: (REJECTED, ""),
+        _MA: (FORWARDED, ""),
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
@@ -365,7 +365,8 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("core_question", _MA): (_svc._worker_one, "ctx.params.core_question"),
     ("core_question", _SS): (_svc._worker_one, "ctx.params.core_question"),
     ("core_question", _NS): (_svc._worker_one, "ctx.params.core_question"),
-    # text_word_limit — forwarded in _worker_one (SS/NS); math rejects so no proof needed
+    # text_word_limit — forwarded in _worker_one (SS/NS) and into math's canonical sampler value
+    ("text_word_limit", _MA): (_math_do_sample_params, "text_word_limit=params.text_word_limit"),
     ("text_word_limit", _SS): (_svc._worker_one, "ctx.params.text_word_limit"),
     ("text_word_limit", _NS): (_svc._worker_one, "ctx.params.text_word_limit"),
     # disable_reference_fewshot — forwarded in _worker_one (SS/NS)
@@ -599,6 +600,6 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    assert forwarded    == 95, f"Expected 95 FORWARDED, got {forwarded}"  # +6 for #377 effort_verify/effort_correct × 3 subjects
-    assert rejected     == 5,  f"Expected 5 REJECTED, got {rejected}"
+    assert forwarded    == 96, f"Expected 96 FORWARDED, got {forwarded}"  # +1 for math text_word_limit
+    assert rejected     == 4,  f"Expected 4 REJECTED, got {rejected}"
     assert inapplicable == 20, f"Expected 20 INAPPLICABLE, got {inapplicable}"

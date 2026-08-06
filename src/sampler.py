@@ -79,6 +79,7 @@ def sample_params(
     content_type: str | None = None,
     subject_filter: str | None = None,
     sub_question_count: int | None = None,
+    text_word_limit: int | None = None,
     difficulty: Difficulty | str | None = None,
 ) -> SampledParams:
     """Sample random question parameters.
@@ -205,5 +206,6 @@ def sample_params(
         題目內容類型=selected_content_type,
         subject_filter=subject_filter,
         sub_question_count=sub_question_count,
+        text_word_limit=text_word_limit,
         difficulty=resolved_difficulty,
     )
