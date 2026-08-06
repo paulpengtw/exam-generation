@@ -113,13 +113,13 @@ def _ss_fact_check_hook(
 ) -> VerificationResult:
     """Post-verify hook: optional web-search fact-check for 時事 questions.
 
-    Runs only when the provider is ``"anthropic"`` and the question is
-    classified as 時事 by ``is_current_events``.  Any failure fails open —
+    Runs when the provider is ``"anthropic"`` or ``"gemini"`` and the question
+    is classified as 時事 by ``is_current_events``. Any failure fails open —
     ``result`` is returned unchanged.
     """
     provider = getattr(getattr(client, "config", None), "web_search_provider", "none")
     max_uses = int(getattr(getattr(client, "config", None), "web_search_max_uses", 5))
-    if provider == "anthropic" and is_current_events(question):
+    if provider in {"anthropic", "gemini"} and is_current_events(question):
         obs = client.get_observer() if hasattr(client, "get_observer") else None
 
         def _on_fact_check_error(msg: str) -> None:

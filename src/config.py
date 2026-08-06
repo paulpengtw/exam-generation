@@ -60,7 +60,7 @@ class Config:
     subgen_retries: int = 1  # extra fresh 子題 calls per failed slot (0 = drop on first)
     llm_stream: bool = True  # use streaming API when observer is set
     log_truncate: int | None = None  # max chars per message in llm_request events; None = no limit
-    web_search_provider: str = "none"  # "anthropic" | "none" (default: opt-in disabled)
+    web_search_provider: str = "none"  # "anthropic" | "gemini" | "none" (default: opt-in disabled)
     web_search_max_uses: int = 5
     # per-batch Opus 情境-題材 planning (SS only); env CREATIVE_PLANNING
     creative_planning: bool = True

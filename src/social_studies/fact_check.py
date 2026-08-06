@@ -6,10 +6,10 @@ Additive to the teacher verification pass. See issue #104 and
 The public surface is two pure/near-pure functions:
 
 * :func:`is_current_events` — heuristic classifier, no I/O, no LLM.
-* :func:`fact_check_question` — single ``generate_with_tools`` call with the
-  Anthropic native ``web_search_20250305`` server tool. Fails open (returns
-  ``None``) on any exception or malformed model output — a broken web search
-  must never block generation.
+* :func:`fact_check_question` — provider-specific web-search call using either
+  Anthropic's native ``web_search_20250305`` tool or Gemini grounding. Fails
+  open (returns ``None``) on any exception or malformed model output — a broken
+  web search must never block generation.
 """
 
 from __future__ import annotations
@@ -62,6 +62,15 @@ class _ToolClient(Protocol):
         tools: list[dict],
         purpose: str = ...,
         max_iterations: int = ...,
+        model: str | None = ...,
+    ) -> tuple[str, list[Citation]]: ...
+
+    def generate_with_google_search(
+        self,
+        system: str,
+        user: str,
+        purpose: str = ...,
+        max_uses: int = ...,
         model: str | None = ...,
     ) -> tuple[str, list[Citation]]: ...
 
@@ -118,18 +127,25 @@ def fact_check_question(
 ) -> FactCheckResult | None:
     """Run the web-search fact-check pass. Fail-open.
 
-    Returns ``None`` when the pass is skipped (provider disabled) or when any
-    step fails (tool loop exhausts, endpoint rejects the tool, malformed JSON,
-    unexpected exception). Otherwise returns a populated
+    Returns ``None`` when the pass is skipped (provider disabled or mismatched
+    effective verify model) or when any step fails (tool loop exhausts, endpoint
+    rejects the tool, malformed JSON, unexpected exception). Otherwise returns a populated
     :class:`FactCheckResult` — including ``citations`` flattened to URL
     strings from the model's cited sources.
     """
-    if provider != "anthropic":
+    if provider not in {"anthropic", "gemini"}:
         return None
 
-    exec_model = getattr(getattr(client, "config", None), "model_execute", "") or ""
-    if resolve_provider(exec_model) != "anthropic":
-        logger.info("fact_check skipped: execute model %r is not an Anthropic model", exec_model)
+    cfg = getattr(client, "config", None)
+    effective_verify_model = (
+        getattr(cfg, "model_verify", "") or getattr(cfg, "model_execute", "") or ""
+    )
+    if resolve_provider(effective_verify_model) != provider:
+        logger.info(
+            "fact_check skipped: effective verify model %r does not match provider %r",
+            effective_verify_model,
+            provider,
+        )
         return None
 
     tools = [
@@ -142,12 +158,20 @@ def fact_check_question(
     user_prompt = _build_user_prompt(question)
 
     try:
-        text, citations = client.generate_with_tools(
-            system=_FACT_CHECK_SYSTEM_PROMPT,
-            user=user_prompt,
-            tools=tools,
-            purpose="fact_check",
-        )
+        if provider == "anthropic":
+            text, citations = client.generate_with_tools(
+                system=_FACT_CHECK_SYSTEM_PROMPT,
+                user=user_prompt,
+                tools=tools,
+                purpose="fact_check",
+            )
+        else:
+            text, citations = client.generate_with_google_search(
+                system=_FACT_CHECK_SYSTEM_PROMPT,
+                user=user_prompt,
+                purpose="fact_check",
+                max_uses=max_uses,
+            )
     except Exception as exc:  # noqa: BLE001 — fail-open by design
         msg = f"fact_check_question tool call failed: {exc}"
         logger.warning("fact_check_question tool call failed: %s", exc)

@@ -48,18 +48,23 @@ top-level values, but it does not pre-draw or submit `subquestion_configs`.
 
 Optional web-search fact-check runs after the teacher verify pass for
 時事-flagged social-studies questions (issue #104). Enable by setting
-`WEB_SEARCH_PROVIDER=anthropic` (default `none` — opt-in) and optionally
-`WEB_SEARCH_MAX_USES=N` (default `5`). The pass uses the Anthropic native
-`web_search_20250305` server tool via `LLMClient.generate_with_tools`. When
+`WEB_SEARCH_PROVIDER=anthropic`, `gemini`, or `none` (default `none` — opt-in)
+and optionally `WEB_SEARCH_MAX_USES=N` (default `5`). The gate is keyed to the
+effective 驗證模型 (`model_verify` or, when empty, `model_execute`); the
+configured provider must match that model's provider or the pass is skipped.
+Anthropic uses its native `web_search_20250305` server tool, while Gemini uses
+Google grounding through its OpenAI-compatible endpoint. The fact-check call
+uses the 驗證 tier because `fact_check` belongs to `_VERIFY_PURPOSES`, and
+therefore also uses `effort_verify` (falling back to `effort_execute`). When
 enabled, `src/social_studies/verifier.py::verify_question` calls
 `src/social_studies/fact_check.py::fact_check_question` only when
 `is_current_events(question)` is True (heuristic: any subquestion's 學習內容
 編碼 starts with `公`, or `核心問題`/`文本` matches `近年|最近|今年|去年|本屆|
 現任|當前`). A definitive negative (`fact_check.verified is False`) forces
 `passed=False` and appends issues to `details` so the existing correction
-loop sees them. Any failure — provider disabled, endpoint rejects the tool,
-malformed JSON, exhausted iterations — fails open: `fact_check=None` and the
-teacher verdict is unchanged.
+loop sees them. Any failure — provider disabled, provider/model mismatch,
+endpoint rejection, malformed JSON, or exhausted iterations — fails open:
+`fact_check=None` and the teacher verdict is unchanged.
 
 ### 自然科學 measures Reporting Scale, not 難度
 自然科學 uses Reporting Scale — the PISA Science proficiency scale (levels 1c, 1b, 1a, 2, 3, 4, 5, 6) — as its per-小題 demand signal. 數學 and 社會領域 use 難度 (easy / medium / hard). The two signals never overlap across subjects.
@@ -76,7 +81,7 @@ teacher verdict is unchanged.
 
 ### LLM provider is selected per-request from the model id
 
-`resolve_provider(model)` in `src/llm_client.py` maps each call to a provider at call time: `gemini-*` → Gemini via its OpenAI-compatible endpoint (OpenAI SDK, `GEMINI_API_KEY` / `GEMINI_BASE_URL`); `gpt-*/o-series` → OpenAI SDK (`OPENAI_API_KEY` / `OPENAI_BASE_URL`); `claude-*` → Anthropic SDK (prompt caching, streaming, `system` param, `LLM_API_KEY` / `LLM_BASE_URL`); unknown ids → Anthropic (proxy deployments). The code default is `claude-sonnet-4-6` for planning, generation, and verification (`model_plan` and `model_execute`); it now heads the built-in `_DEFAULT_MODELS_ALLOWED` roster. Effort translation: Anthropic uses `extra_body.output_config.effort`; Gemini/OpenAI use `reasoning_effort` (low/medium/high only — other values are dropped with a one-time WARNING). Temperature is withheld from `gemini-3.x`, `gpt-5.x`, and o-series models. OpenAI provider gets `max_completion_tokens` instead of `max_tokens`. A missing provider key returns HTTP 422 naming the env var. Fact-check (`web_search_20250305`) is Anthropic-only: `fact_check_question` silently returns `None` (fail-open) when the execute model is not `claude-*`. Image generation (IMAGE\_API\_KEY / IMAGE\_BASE\_URL / IMAGE\_MODEL, `gpt-image2`) is unchanged — Gemini image generation is future work. Known gaps: #338 (UI effort fields dropped before reaching server), #346 (planner purpose string never matches `"plan"` so plan calls get `effort_execute`).
+`resolve_provider(model)` in `src/llm_client.py` maps each call to a provider at call time: `gemini-*` → Gemini via its OpenAI-compatible endpoint (OpenAI SDK, `GEMINI_API_KEY` / `GEMINI_BASE_URL`); `gpt-*/o-series` → OpenAI SDK (`OPENAI_API_KEY` / `OPENAI_BASE_URL`); `claude-*` → Anthropic SDK (prompt caching, streaming, `system` param, `LLM_API_KEY` / `LLM_BASE_URL`); unknown ids → Anthropic (proxy deployments). The code default is `claude-sonnet-4-6` for planning, generation, and verification (`model_plan` and `model_execute`); it now heads the built-in `_DEFAULT_MODELS_ALLOWED` roster. Effort translation: Anthropic uses `extra_body.output_config.effort`; Gemini/OpenAI use `reasoning_effort` (low/medium/high only — other values are dropped with a one-time WARNING). Temperature is withheld from `gemini-3.x`, `gpt-5.x`, and o-series models. OpenAI provider gets `max_completion_tokens` instead of `max_tokens`. A missing provider key returns HTTP 422 naming the env var. Fact-check is provider-general: Anthropic uses `web_search_20250305` and Gemini uses Google grounding; `fact_check_question` silently returns `None` (fail-open) when `WEB_SEARCH_PROVIDER` is disabled or does not match the effective 驗證模型 (`model_verify` or `model_execute`). The call itself resolves through the 驗證 tier and uses `effort_verify`. Image generation (IMAGE\_API\_KEY / IMAGE\_BASE\_URL / IMAGE\_MODEL, `gpt-image2`) is unchanged — Gemini image generation is future work. Known gaps: #338 (UI effort fields dropped before reaching server), #346 (planner purpose string never matches `"plan"` so plan calls get `effort_execute`).
 
 ### Web-ready design
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
