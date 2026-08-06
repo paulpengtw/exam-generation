@@ -251,11 +251,16 @@ def _ns_validate_params(params: Any) -> None:
 
 
 def _math_validate_params(params: Any) -> None:
+    if params.sub_question_count is not None and params.set_type == "單一題":
+        raise ValueError(
+            "sub_question_count implies 題型種類=題組題, but explicit "
+            "題型種類=單一題 was supplied"
+        )
+
     unsupported = [
         field
         for field in (
             "text_word_limit",
-            "sub_question_count",
             "question_word_limit",
             "option_word_limit",
             "subquestion_configs",
@@ -828,11 +833,14 @@ def _math_do_sample_params(
         learning_performance=params.learning_performance,
         content_type=params.content_type,
         subject_filter=math_subject_filter,
+        sub_question_count=params.sub_question_count,
         difficulty=params.difficulty,
     )
 
 
 def _math_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
+    # Keep the complete SampledParams object intact: generate_with_corrections
+    # reads sub_question_count from it to select the shared 題組 core.
     return _math_generate_with_corrections(
         config=kwargs["config"],
         client=kwargs["client"],
@@ -866,6 +874,7 @@ def _math_build_generation_prompts(
         user_passage=kwargs["user_passage"] or "",
         user_options=kwargs["user_options"],
         user_core_question=kwargs["user_core_question"] or "",
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["math_curriculum_context"],
     )

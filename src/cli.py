@@ -10,8 +10,11 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 from random import Random
+from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_math_prior_scope
+from src.common.generation_core import generate_one_core, generate_with_corrections_core
+from src.common.subject_spec import SubjectGenerationSpec
 from src.config import Config
 from src.corrector import correct_question
 from src.curriculum_context import CurriculumContext, load_curriculum_context
@@ -19,7 +22,14 @@ from src.schema_loader import load_grades, load_schemas
 
 _GRADES: list[int] = load_grades(load_schemas())
 
-from src.context_builder import build_system_prompt, build_user_prompt
+from src.context_builder import (
+    build_subquestion_system_prompt,
+    build_subquestion_user_prompt,
+    build_system_prompt,
+    build_text_system_prompt,
+    build_text_user_prompt,
+    build_user_prompt,
+)
 from src.data_loader import (
     get_grade_content,
     load_curriculum,
@@ -29,7 +39,7 @@ from src.data_loader import (
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_render_error_sink, make_stderr_observer
 from src.renderer import render_image
-from src.sampler import sample_params
+from src.sampler import grade_to_learning_stage, sample_params
 from src.schemas import (
     CoreCompetency,
     ImageSpec,
@@ -42,6 +52,7 @@ from src.schemas import (
     QuestionSubject,
     QuestionType,
     SampledParams,
+    SubQuestion,
 )
 from src.verifier import verify_question
 
@@ -148,6 +159,167 @@ def _resolve_enum(value: str | None, enum_cls: type) -> object | None:
     raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
 
 
+def _parse_math_learning_items(
+    raw_items: object,
+    fallback: list[LearningContentItem],
+) -> list[LearningContentItem]:
+    """Parse a math 小題's curriculum references, falling back to sampled values."""
+    if not isinstance(raw_items, list):
+        return list(fallback)
+    parsed: list[LearningContentItem] = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            parsed.append(
+                LearningContentItem(
+                    編碼=str(item.get("編碼", "")),
+                    說明=str(item.get("說明", "")),
+                )
+            )
+        elif isinstance(item, str):
+            parts = item.split("：", 1)
+            parsed.append(
+                LearningContentItem(
+                    編碼=parts[0].strip() if len(parts) > 1 else item,
+                    說明=parts[1].strip() if len(parts) > 1 else "",
+                )
+            )
+    return parsed or list(fallback)
+
+
+def _parse_math_text_shell(
+    raw: dict,
+    question_id: str,
+    params: SampledParams,
+    model: str,
+) -> ExamQuestion:
+    """Parse 文本生成器 output into a math 題組 shell."""
+    question = _parse_question(raw, question_id, params, model)
+    return question.model_copy(
+        update={
+            "核心問題": raw.get("核心問題", ""),
+            "文本": raw.get("文本", ""),
+            "取材來源": raw.get("取材來源", []),
+            "subquestions": [],
+        },
+    )
+
+
+def _parse_math_subquestion(
+    sq_raw: dict,
+    question_id: str,
+    params: SampledParams,
+    idx: int,
+) -> SubQuestion | None:
+    """Parse one complete math 小題 from a 子題產生器 response."""
+    if not isinstance(sq_raw, dict):
+        return None
+    try:
+        raw_distractor = sq_raw.get("誘答分析", {})
+        distractor = (
+            {str(key): str(value) for key, value in raw_distractor.items()}
+            if isinstance(raw_distractor, dict)
+            else {}
+        )
+        return SubQuestion(
+            id=sq_raw.get("id", f"{question_id}-{idx:02d}"),
+            序號=sq_raw.get("序號", idx),
+            年級=params.grade,
+            題型=sq_raw.get("題型", params.題型.value),
+            題目=sq_raw.get("題目", ""),
+            答案=sq_raw.get("答案", ""),
+            答案解析=sq_raw.get("答案解析", ""),
+            誘答分析=distractor,
+            學習內容=_parse_math_learning_items(sq_raw.get("學習內容"), params.學習內容),
+            學習表現=_parse_math_learning_items(sq_raw.get("學習表現"), params.學習表現),
+            出題概念=sq_raw.get("出題概念", ""),
+        )
+    except Exception:
+        return None
+
+
+def _make_math_fallback_sq_plans(params: SampledParams, n: int) -> list[dict]:
+    """Create fallback 小題 plans for the shared 強制值 count guarantee."""
+    return [
+        {"序號": i, "題型": params.題型.value, "出題概念": ""}
+        for i in range(1, n + 1)
+    ]
+
+
+def _math_build_text_system(params: SampledParams) -> tuple[str, dict]:
+    learning_stage = grade_to_learning_stage(params.grade)
+    return build_text_system_prompt(learning_stage=learning_stage), {
+        "learning_stage": learning_stage,
+    }
+
+
+def _math_build_text_user(
+    params: SampledParams,
+    few_shot_dir: Path,
+    user_passage: str | None,
+    user_options: list[str] | None,
+    user_topic: str | None,
+    user_core_question: str | None,
+    image_generation_mode: str,
+    disable_reference_fewshot: bool,
+    prior_scopes: Sequence[PriorScope] | None,
+) -> tuple[str, list[Path]]:
+    return build_text_user_prompt(
+        params,
+        few_shot_dir,
+        rng=Random(params.seed),
+        image_generation_mode=image_generation_mode,
+        user_passage=user_passage,
+        user_options=user_options,
+        user_topic=user_topic,
+        user_core_question=user_core_question,
+        disable_reference_fewshot=disable_reference_fewshot,
+        prior_scopes=prior_scopes,
+    )
+
+
+def _math_build_subquestion_system(stage_ctx: dict) -> str:
+    return build_subquestion_system_prompt(learning_stage=stage_ctx["learning_stage"])
+
+
+def _math_build_subquestion_user(
+    text_raw: dict,
+    params: SampledParams,
+    few_shot_dir: Path,
+    sq_plan: dict,
+    slot_cfg: object | None,
+    image_generation_mode: str,
+    disable_reference_fewshot: bool,
+) -> tuple[str, list[Path]]:
+    return build_subquestion_user_prompt(
+        核心問題=text_raw.get("核心問題", ""),
+        文本=text_raw.get("文本", ""),
+        取材來源=text_raw.get("取材來源", []),
+        sq_plan=sq_plan,
+        params=params,
+        few_shot_dir=few_shot_dir,
+        image_generation_mode=image_generation_mode,
+        cfg=slot_cfg,
+        disable_reference_fewshot=disable_reference_fewshot,
+    )
+
+
+_MATH_SPEC = SubjectGenerationSpec(
+    few_shot_subdir="",
+    build_text_system_fn=_math_build_text_system,
+    build_text_user_fn=_math_build_text_user,
+    build_subquestion_system_fn=_math_build_subquestion_system,
+    build_subquestion_user_fn=_math_build_subquestion_user,
+    parse_text_shell_fn=_parse_math_text_shell,
+    parse_subquestion_fn=_parse_math_subquestion,
+    make_fallback_sq_plans_fn=_make_math_fallback_sq_plans,
+    ensure_visual_spec_fn=None,
+    render_subquestion_images_fn=None,
+    image_question_text_fn=lambda question: "\n".join(question.題目) or question.文本,
+    verify_fn=verify_question,
+    correct_fn=correct_question,
+)
+
+
 def generate_one(
     config: Config,
     client: LLMClient | None,
@@ -159,6 +331,7 @@ def generate_one(
     question_id: str,
     dry_run: bool = False,
     skip_verify: bool = False,
+    disable_reference_fewshot: bool = False,
     html_renderer: PlaywrightRenderer | None = None,
     image_generation_mode: str = "html",
     user_topic: str = "",
@@ -166,6 +339,7 @@ def generate_one(
     user_options: list[str] | None = None,
     user_core_question: str = "",
     on_question_update: QuestionUpdateCallback | None = None,
+    sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
@@ -179,6 +353,28 @@ def generate_one(
             When ``None``, ``build_system_prompt`` falls back to its own
             module-level math corpus defaults.
     """
+    if params.sub_question_count is not None:
+        return generate_one_core(
+            config=config,
+            client=client,
+            params=params,
+            question_id=question_id,
+            spec=_MATH_SPEC,
+            dry_run=dry_run,
+            skip_verify=skip_verify,
+            disable_reference_fewshot=disable_reference_fewshot,
+            html_renderer=html_renderer,
+            image_generation_mode=image_generation_mode,
+            user_passage=user_passage or None,
+            user_options=user_options,
+            user_topic=user_topic or None,
+            user_core_question=user_core_question or None,
+            on_question_update=on_question_update,
+            sub_client_factory=sub_client_factory,
+            prior_scopes=prior_scopes,
+            curriculum_context=curriculum_context,
+        )
+
     # Build prompts using the canonical math curriculum corpus.
     # The legacy ``curriculum`` / ``performance`` / ``intro_text`` positional
     # params are retained for backward compat (grade_content derivation) but
@@ -266,8 +462,25 @@ def build_generation_prompts(
     user_core_question: str = "",
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    disable_reference_fewshot: bool = False,
 ) -> tuple[str, str, list[str]]:
     """Build the exact prompts used by math's first model call."""
+    if params.sub_question_count is not None:
+        learning_stage = grade_to_learning_stage(params.grade)
+        system_prompt = build_text_system_prompt(learning_stage=learning_stage)
+        user_prompt, few_shot_images = build_text_user_prompt(
+            params,
+            config.data_dir / "few_shot",
+            rng=Random(params.seed),
+            user_passage=user_passage,
+            user_options=user_options,
+            user_topic=user_topic,
+            user_core_question=user_core_question,
+            disable_reference_fewshot=disable_reference_fewshot,
+            prior_scopes=prior_scopes,
+        )
+        return system_prompt, user_prompt, few_shot_images
+
     system_prompt = build_system_prompt(curriculum_context=curriculum_context)
     user_prompt, few_shot_images = build_user_prompt(
         params,
@@ -293,6 +506,7 @@ def generate_with_corrections(
     question_id: str,
     max_retries: int = 3,
     skip_verify: bool = False,
+    disable_reference_fewshot: bool = False,
     html_renderer: PlaywrightRenderer | None = None,
     dry_run: bool = False,
     image_generation_mode: str = "html",
@@ -301,6 +515,7 @@ def generate_with_corrections(
     user_options: list[str] | None = None,
     user_core_question: str = "",
     on_question_update: QuestionUpdateCallback | None = None,
+    sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
 ) -> ExamQuestion | str:
@@ -316,6 +531,29 @@ def generate_with_corrections(
             see the same curriculum section.  When ``None``, each component
             falls back to its own defaults.
     """
+    if params.sub_question_count is not None:
+        return generate_with_corrections_core(
+            config=config,
+            client=client,
+            params=params,
+            question_id=question_id,
+            spec=_MATH_SPEC,
+            max_retries=max_retries,
+            skip_verify=skip_verify,
+            disable_reference_fewshot=disable_reference_fewshot,
+            html_renderer=html_renderer,
+            image_generation_mode=image_generation_mode,
+            dry_run=dry_run,
+            user_passage=user_passage or None,
+            user_options=user_options,
+            user_topic=user_topic or None,
+            user_core_question=user_core_question or None,
+            on_question_update=on_question_update,
+            sub_client_factory=sub_client_factory,
+            prior_scopes=prior_scopes,
+            curriculum_context=curriculum_context,
+        )
+
     question = generate_one(
         config=config,
         client=client,
@@ -327,6 +565,7 @@ def generate_with_corrections(
         question_id=question_id,
         dry_run=dry_run,
         skip_verify=skip_verify,
+        disable_reference_fewshot=disable_reference_fewshot,
         html_renderer=html_renderer,
         image_generation_mode=image_generation_mode,
         user_topic=user_topic,
@@ -334,6 +573,7 @@ def generate_with_corrections(
         user_options=user_options,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )

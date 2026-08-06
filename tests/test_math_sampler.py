@@ -57,6 +57,27 @@ def test_sample_params_subject_filter_stored():
     assert p.subject_filter == "幾何"
 
 
+def test_sample_params_sub_question_count_pins_math_to_group_question():
+    p = sample_params(grade=8, seed=3, sub_question_count=4)
+
+    assert p.sub_question_count == 4
+    assert p.題型種類.value == "題組題"
+
+
+def test_omitting_sub_question_count_preserves_the_seeded_math_draw_snapshot():
+    p = sample_params(grade=8, seed=314159, sub_question_count=None)
+
+    assert p.情境 == ["科學", "數學文字情境"]
+    assert p.題型種類.value == "單一題"
+    assert p.題型.value == "選擇題"
+    assert [item.value for item in p.數學思考] == ["運用", "詮釋評估", "形成"]
+    assert [item.編碼 for item in p.學習內容] == ["S-9-9"]
+    assert [item.編碼 for item in p.學習表現] == ["a-IV-3", "n-IV-1", "s-IV-4"]
+    assert p.核心素養 == ["數-J-A3", "數-J-C3", "數-J-C1"]
+    assert p.題目內容類型 == "含圖片"
+    assert p.style.value == "text_only"
+
+
 def test_sample_params_unknown_grade_raises():
     with pytest.raises(ValueError):
         sample_params(grade=99, seed=0)
