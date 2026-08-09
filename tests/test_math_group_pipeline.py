@@ -70,6 +70,86 @@ def _config(tmp_path: Path) -> Config:
     )
 
 
+def test_sample_params_derives_count_for_drawn_題組題_without_count() -> None:
+    from src.sampler import sample_params
+
+    params = sample_params(
+        grade=8,
+        seed=0,
+        content_type="純文字",
+        sub_question_count=None,
+    )
+
+    assert params.題型種類.value == "題組題"
+    assert params.sub_question_count is not None
+    assert 3 <= params.sub_question_count <= 7
+
+
+def test_sample_params_derives_count_for_explicit_題組題_without_count() -> None:
+    from src.sampler import sample_params
+    from src.schemas import QuestionSetType
+
+    params = sample_params(
+        grade=8,
+        seed=0,
+        set_type=QuestionSetType("題組題"),
+        content_type="純文字",
+        sub_question_count=None,
+    )
+
+    assert params.sub_question_count is not None
+    assert 3 <= params.sub_question_count <= 7
+
+
+def test_sample_params_preserves_single_question_snapshot_without_count() -> None:
+    from src.sampler import sample_params
+    from src.schemas import SampledParams
+
+    params = sample_params(
+        grade=8,
+        seed=8,
+        content_type="純文字",
+        sub_question_count=None,
+    )
+    expected = SampledParams(
+        grade=8,
+        seed=8,
+        情境=["科學", "職業"],
+        題型種類="單一題",
+        題型="是非題",
+        數學思考=["形成", "詮釋評估", "運用"],
+        學習內容=[
+            {
+                "編碼": "S-9-13",
+                "說明": (
+                    "表面積與體積：直角柱、直圓錐、正角錐的展開圖；"
+                    "直角柱、直圓錐、正角錐的表面積；直角柱的體積。"
+                ),
+            }
+        ],
+        style="creative_scenario",
+        核心素養=["數-J-A1", "數-J-C2", "數-J-B1"],
+        學習表現=[
+            {
+                "編碼": "s-IV-12",
+                "說明": (
+                    "理解直角三角形中某一銳角的角度決定邊長的比值，"
+                    "認識這些比值的符號，"
+                    "並能運用到日常生活的情境解決問題。"
+                ),
+            }
+        ],
+        題目內容類型="純文字",
+        出題概念="",
+        subject_filter=None,
+        sub_question_count=None,
+        text_word_limit=None,
+        difficulty="medium",
+    )
+
+    assert params == expected
+
+
 def test_math_opt_in_generation_returns_the_requested_four_subquestions(tmp_path) -> None:
     from src.cli import generate_one
     from src.sampler import sample_params
@@ -175,7 +255,9 @@ def test_math_without_sub_question_count_never_enters_the_shared_core(
         raise AssertionError("flat math generation must not enter the shared core")
 
     monkeypatch.setattr(math_cli, "generate_one_core", fail_if_called)
-    params = sample_params(grade=8, seed=23, content_type="純文字")
+    params = sample_params(grade=8, seed=8, content_type="純文字")
+
+    assert params.題型種類.value == "單一題"
     question = generate_one(
         config=_config(tmp_path),
         client=_MathFlatClient(),
@@ -192,33 +274,27 @@ def test_math_without_sub_question_count_never_enters_the_shared_core(
     assert question.subquestions == []
 
 
-def test_math_flat_path_runs_when_drawn_題組題_but_no_sub_question_count(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    """The opt-in boundary is sub_question_count, not the drawn 題型種類. A drawn 題組題 alone
-    does not produce a 題組 — this is deliberate and leaves the drawn-題組題 half of the schema
-    contradiction open (filed as a follow-up issue)."""
-    import src.cli as math_cli
+def test_math_drawn_題組題_without_count_now_produces_a_real_題組(tmp_path) -> None:
+    """A sampled 題組題 without an explicit count follows the shared 題組 pipeline."""
     from src.cli import generate_one
     from src.sampler import sample_params
 
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("flat math generation must not enter the shared core")
-
-    monkeypatch.setattr(math_cli, "generate_one_core", fail_if_called)
     params = sample_params(
         grade=8,
         seed=0,
         content_type="純文字",
         sub_question_count=None,
     )
+    sub_client_calls = 0
 
-    assert params.sub_question_count is None
-    assert params.題型種類.value == "題組題"
+    def sub_client_factory():
+        nonlocal sub_client_calls
+        sub_client_calls += 1
+        return _MathSubQuestionClient()
+
     question = generate_one(
         config=_config(tmp_path),
-        client=_MathFlatClient(),
+        client=_MathTextClient(plan_count=4),
         curriculum=[],
         performance={},
         intro_text="",
@@ -226,9 +302,53 @@ def test_math_flat_path_runs_when_drawn_題組題_but_no_sub_question_count(
         params=params,
         question_id="math_flat_drawn_group",
         skip_verify=True,
+        sub_client_factory=sub_client_factory,
     )
 
-    assert question.subquestions == []
+    assert sub_client_calls > 0
+    assert question.subquestions
+    assert len(question.subquestions) == params.sub_question_count
+    assert question.題型種類.value == "題組題"
+
+
+def test_math_no_題組題_item_has_empty_subquestions(tmp_path) -> None:
+    from src.cli import generate_one
+    from src.sampler import sample_params
+
+    drawn_types = set()
+    for seed in range(12):
+        params = sample_params(
+            grade=8,
+            seed=seed,
+            content_type="純文字",
+            sub_question_count=None,
+        )
+        drawn_types.add(params.題型種類.value)
+        if params.題型種類.value == "題組題":
+            client = _MathTextClient(plan_count=params.sub_question_count or 4)
+            sub_client_factory = _MathSubQuestionClient
+        else:
+            client = _MathFlatClient()
+            sub_client_factory = None
+
+        item = generate_one(
+            config=_config(tmp_path),
+            client=client,
+            curriculum=[],
+            performance={},
+            intro_text="",
+            grade_content={},
+            params=params,
+            question_id=f"math_seed_{seed}",
+            skip_verify=True,
+            sub_client_factory=sub_client_factory,
+        )
+
+        assert not (
+            item.題型種類.value == "題組題" and item.subquestions == []
+        ), f"seed {seed} produced an empty 題組"
+
+    assert drawn_types == {"單一題", "題組題"}
 
 
 def test_math_group_prompt_preview_uses_the_text_generator_prompt(tmp_path) -> None:

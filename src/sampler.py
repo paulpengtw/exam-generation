@@ -117,6 +117,8 @@ def sample_params(
             else rng.choice(list(QuestionSetType))
         )
     )
+    if selected_set_type == QuestionSetType("題組題") and sub_question_count is None:
+        sub_question_count = rng.randint(3, 7)
 
     # 題型
     selected_q_type = rng.choice(q_type) if q_type is not None else rng.choice(list(QuestionType))
