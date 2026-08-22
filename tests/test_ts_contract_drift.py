@@ -7,11 +7,11 @@ If this test fails, the checked-in file is stale. Regenerate with:
 
 from __future__ import annotations
 
-from pathlib import Path
 import inspect
+from pathlib import Path
 
 from scripts.generate_ts_contract import generate_contract
-from server.generate.models import GenerateParams
+from server.generate.models import SERVER_ONLY_GENERATE_FIELDS, GenerateParams
 from server.generate.routes import generate_endpoint
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,7 +38,7 @@ def test_every_generated_request_field_is_reachable_on_generate_route() -> None:
 
     # Deliberately controlled only by the server; the web client does not expose
     # or forward this retry-policy setting.
-    web_client_exclusions = {"max_retries"}
+    web_client_exclusions = {"max_retries", *SERVER_ONLY_GENERATE_FIELDS}
     web_client_fields = set(GenerateParams.model_fields) - web_client_exclusions
     use_generate_source = USE_GENERATE_PATH.read_text(encoding="utf-8")
 

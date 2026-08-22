@@ -124,6 +124,8 @@ The three prompt assemblers already encode this rule in their
 
 ## Enforcement
 
+- Figure-kind diversity across SS 題幹 and 小題 images is specified in [ADR 0015](adr/0015-figure-kind-diversity-is-a-layered-guarantee.md).
+
 - `tests/test_figure_rendering_policy.py::test_plain_text_bans_chart_spec`,
   `::test_illustrative_content_routes_to_gpt_image_or_html`, and
   `::test_quantitative_content_routes_to_chart_and_html_for_tables` assert the

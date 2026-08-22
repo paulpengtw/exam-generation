@@ -11,6 +11,7 @@ from server.config import ServerConfig
 from server.generate.models import (
     PER_QUESTION_FIELDS,
     REQUEST_LEVEL_FIELDS,
+    SERVER_ONLY_GENERATE_FIELDS,
     GenerateParams,
     decode_per_question_params,
 )
@@ -249,7 +250,8 @@ def test_every_generate_param_field_is_classified_request_level_or_per_question(
     """
     all_fields = frozenset(GenerateParams.model_fields)
 
-    unclassified = all_fields - REQUEST_LEVEL_FIELDS - PER_QUESTION_FIELDS
+    request_level_fields = REQUEST_LEVEL_FIELDS | SERVER_ONLY_GENERATE_FIELDS
+    unclassified = all_fields - request_level_fields - PER_QUESTION_FIELDS
     assert unclassified == frozenset(), (
         f"New GenerateParams field(s) are not classified: {sorted(unclassified)}. "
         "Explicitly add each field to either REQUEST_LEVEL_FIELDS (request-level, "
@@ -257,11 +259,11 @@ def test_every_generate_param_field_is_classified_request_level_or_per_question(
         "allowlist) in server/generate/models.py."
     )
 
-    assert REQUEST_LEVEL_FIELDS | PER_QUESTION_FIELDS == all_fields, (
+    assert request_level_fields | PER_QUESTION_FIELDS == all_fields, (
         "REQUEST_LEVEL_FIELDS | PER_QUESTION_FIELDS does not cover all GenerateParams fields."
     )
 
-    assert REQUEST_LEVEL_FIELDS & PER_QUESTION_FIELDS == frozenset(), (
-        f"Fields appear in both sets: {sorted(REQUEST_LEVEL_FIELDS & PER_QUESTION_FIELDS)}. "
+    assert request_level_fields & PER_QUESTION_FIELDS == frozenset(), (
+        f"Fields appear in both sets: {sorted(request_level_fields & PER_QUESTION_FIELDS)}. "
         "Each field must belong to exactly one of the two sets."
     )

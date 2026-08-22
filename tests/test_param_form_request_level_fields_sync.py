@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from server.generate.models import GenerateParams, REQUEST_LEVEL_FIELDS
+from server.generate.models import (
+    REQUEST_LEVEL_FIELDS,
+    SERVER_ONLY_GENERATE_FIELDS,
+    GenerateParams,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 PARAM_FORM_PATH = ROOT / "web" / "src" / "components" / "ParamForm.tsx"
@@ -35,11 +39,12 @@ def test_param_form_request_level_fields_match_server_contract() -> None:
     )
 
     frontend_fields = set(re.findall(r"""["']([^"']+)["']""", match.group("items")))
-    assert frontend_fields == REQUEST_LEVEL_FIELDS, (
+    expected_frontend_fields = REQUEST_LEVEL_FIELDS - SERVER_ONLY_GENERATE_FIELDS
+    assert frontend_fields == expected_frontend_fields, (
         "ParamForm.tsx requestLevelFields is out of sync with "
         "server.generate.models.REQUEST_LEVEL_FIELDS: "
         f"frontend={sorted(frontend_fields)}, "
-        f"server={sorted(REQUEST_LEVEL_FIELDS)}"
+        f"server={sorted(expected_frontend_fields)}"
     )
 
 

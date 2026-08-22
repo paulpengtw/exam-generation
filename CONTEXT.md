@@ -10,6 +10,10 @@ Generates 108課綱-aligned exam items for 數學, 社會領域 and 自然科學
 A parent item consisting of a shared 文本 plus several 小題. The unit that 社會領域 and 自然科學 always produce.
 _Avoid_: question set, question group
 
+**圖像種類**:
+The concrete visual genre of a 題組 image — 直方圖, 圓餅圖, 表格, 地圖, 實驗裝置 and similar — independent of which renderer produces it. By default every image in a 題組 has a distinct 圖像種類.
+_Avoid_: image kind / figure type / chart kind
+
 **小題**:
 One answerable question inside a 題組, carrying its own 題型, 答案 and 評分規準.
 _Avoid_: subquestion, sub-item, part

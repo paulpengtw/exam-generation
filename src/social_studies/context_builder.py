@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from src.common.batch_dedup import PriorScope, format_prior_scopes_block
+from src.common.figure_policy import effective_figure_kind
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.social_studies.core_competency_loader import (
     competency_instructions,
@@ -33,6 +34,7 @@ from src.social_studies.curriculum_loader import (
     performance_instructions,
 )
 from src.social_studies.data_loader import load_few_shot_example_groups
+from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
 from src.social_studies.schema_loader import (
     build_instructions,
     load_grades,
@@ -97,6 +99,61 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
 }
 
 DIFFICULTY_INSTRUCTIONS: dict[str, str] = _INSTRUCTIONS.get("難度", {})
+
+_FIGURE_KIND_VOCABULARY_TEXT = "、".join(CANONICAL_FIGURE_KINDS)
+
+
+def _figure_kind_guidance(
+    params: SampledParams,
+    known_kinds: Sequence[str] = (),
+    required_kind: str | None = None,
+) -> str:
+    """Build the shared 圖像種類 instruction for SS image-spec prompts."""
+    vocabulary = _FIGURE_KIND_VOCABULARY_TEXT or "（目前無預載詞彙；請使用具體中文圖像種類）"
+    lines = [
+        "  - **圖像種類（`figure_kind`）**：請描述圖片的具體視覺類型；適用時請從 canonical vocabulary 選擇："
+        + vocabulary
+        + "。`figure_kind` 是自由文字欄位，未知類型仍可使用具體名稱。"
+    ]
+    if required_kind:
+        lines.append(f"  - **釘選圖像種類**：本小題必須使用 `{required_kind}`，這是強制值。")
+    if getattr(params, "allow_duplicate_figure_kinds", False):
+        lines.append("  - 本請求允許圖像種類重複；若可行，仍請優先安排不同的具體圖像種類。")
+    else:
+        lines.append(
+            "  - **圖像種類多樣性**：每張圖（含題幹與所有小題）的圖像種類不得重複；"
+            "同一具體圖像類型即使使用不同 render_mode 仍視為重複。"
+        )
+    normalized_known = [kind.strip() for kind in known_kinds if isinstance(kind, str) and kind.strip()]
+    if normalized_known:
+        lines.append(
+            "  - **已使用圖像種類**："
+            + "、".join(dict.fromkeys(normalized_known))
+            + "；未釘選的本張圖不得使用上述種類。"
+        )
+        if required_kind:
+            lines.append("  - 顯式釘選值優先於上述不得重複建議；仍須將 `figure_kind` 填為釘選值。")
+    return "\n".join(lines)
+
+
+def _known_figure_kinds_for_subquestion(
+    text: object,
+    params: SampledParams,
+    slot_number: int,
+) -> list[str]:
+    """Return figure kinds known before a parallel 小題 prompt is drafted."""
+    known: list[str] = []
+    if isinstance(text, dict):
+        raw_spec = text.get("chart_spec") or text.get("image_spec")
+        kind = effective_figure_kind(raw_spec)
+        if kind:
+            known.append(kind)
+    for index, config in enumerate(params.subquestion_configs, start=1):
+        if index == slot_number:
+            continue
+        if config.figure_kind:
+            known.append(config.figure_kind)
+    return known
 
 
 def _difficulty_section(params: "SampledParams") -> str:
@@ -253,6 +310,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 {{
   "render_mode": "chart",
   "chart_type": "histogram" | "boxplot" | "line_chart" | "pie_chart",
+  "figure_kind": "直方圖 / 盒鬚圖 / 折線圖 / 圓餅圖",
   "title": "圖表標題",
   "data": {{ ... }},
   "labels": {{"x": "x軸標籤", "y": "y軸標籤"}}
@@ -263,12 +321,17 @@ SYSTEM_PROMPT_TEMPLATE = """\
 ```json
 {{
   "render_mode": "html",
+  "figure_kind": "表格 / 地圖 / 廣告 / 表單 / 其他具體種類",
   "description": "詳細描述素材內容與版面結構。請在 description 結尾要求下游 HTML 產生器於素材下緣加註 caption：「{image_disclaimer}」。",
   "title": "素材標題（選填）",
   "data": {{ "key": "value" }}
 }}
 ```
 所有輸出的 `chart_spec` 圖片皆為示意用途、非完全等比例繪製；因此無論 `render_mode` 是 `chart` 或 `html`，`description` 都必須要求下游產生器附上 caption「{image_disclaimer}」。圖表中的數值、標籤與分類仍必須忠實對應 `data`。
+
+### 圖像種類多樣性
+- `figure_kind` 描述具體圖像種類，適用時請從 canonical vocabulary 選擇；它與 `render_mode` 無關。
+- 請優先安排不同的具體圖像種類；request-level 條件會提供本題組是否禁止重複的明確要求。
 
 ### 圖片必要性原則
 - 凡輸出非 null 的 `chart_spec`，該圖片、圖表或表格必須承載至少一道小題作答所必需的資訊。
@@ -416,6 +479,14 @@ def build_user_prompt(
             "`chart_spec`；`subquestions[*].chart_spec` 只能作為特定小題補充，"
             "不能取代全域 `文本素材類型` 要求的題組頂層 `chart_spec`。"
         )
+    pinned_figure_kinds = [
+        cfg.figure_kind
+        for cfg in params.subquestion_configs
+        if cfg.figure_kind
+    ]
+    param_instruction_lines.append(
+        _figure_kind_guidance(params, known_kinds=pinned_figure_kinds)
+    )
     param_instructions = (
         "\n## 條件補充說明\n\n" + "\n".join(param_instruction_lines) + "\n"
         if param_instruction_lines else ""
@@ -479,6 +550,7 @@ def build_user_prompt(
             cfg.instruction,
             cfg.content_type,
             cfg.image_generation_mode,
+            cfg.figure_kind,
             cfg.question_word_limit,
             cfg.option_word_limit,
             cfg.learning_content,
@@ -527,6 +599,7 @@ def build_user_prompt(
                 if any((
                     cfg.content_type,
                     cfg.image_generation_mode,
+                    cfg.figure_kind,
                     cfg.question_word_limit,
                     cfg.option_word_limit,
                     cfg.question_type,
@@ -662,6 +735,8 @@ _TEXT_GENERATION_SYSTEM_PROMPT_TEMPLATE = """\
 
 若全域 `題目內容類型` 是 `含圖片` 或 `graphs/charts/tables`，必須輸出非 null 的 `chart_spec`。
 統計圖使用 `render_mode: "chart"`；HTML排版素材（地圖、表格、廣告等）使用 `render_mode: "html"`。
+請在 `chart_spec.figure_kind` 填寫具體圖像種類，適用時從 canonical vocabulary 選擇。
+預設每張圖（含題幹與所有小題）的圖像種類不得重複，且跨 render_mode 仍以具體種類比較。
 純連續文本不需 `chart_spec`。請只輸出 JSON，不要輸出其他文字。
 """
 
@@ -771,6 +846,7 @@ def build_text_system_prompt(
     content_text: str | None = None,
     performance_text: str | None = None,
     creative_brief: CreativeBrief | None = None,
+    params: SampledParams | None = None,
 ) -> str:
     prompt = build_system_prompt(
         grades=grades,
@@ -802,6 +878,8 @@ def build_text_system_prompt(
 
 `subquestions` 陣列為各小題的出題規劃，每筆只需序號、題型與一句出題概念說明；詳細題目與答案將由後續子題產生器負責。請只輸出 JSON，不要輸出其他文字。
 """
+    if params is not None:
+        body += "\n## 圖像種類要求\n\n" + _figure_kind_guidance(params) + "\n"
     if creative_brief is not None:
         body += _CREATIVE_BRIEF_SYSTEM_BLOCK
     return body
@@ -911,6 +989,8 @@ def build_subquestion_system_prompt(
 - `image_generation_mode` 只指定渲染方式（`html` 或 `gpt_image`），不代表需要圖片；
   若本小題為純文字，不要只因 `image_generation_mode` 而輸出圖片。
 - 無圖片需求時，`chart_spec` 可省略或輸出 `null`。
+- `figure_kind` 描述具體圖像種類，適用時請從 canonical vocabulary 選擇（例如直方圖、折線圖、表格、地圖、實驗裝置），
+  並且與 `render_mode` 分開指定。
 - `chart_spec` 的 `render_mode` 有兩種：
   - `"chart"`：統計圖表，需填 `chart_type`（histogram/boxplot/
     line_chart/pie_chart）、`data`、`labels`
@@ -950,7 +1030,7 @@ def build_subquestion_system_prompt(
 
 def build_subquestion_user_prompt(
     核心問題: str,
-    文本: str,
+    文本: object,
     取材來源: list[str],
     sq_plan: dict,
     params: SampledParams,
@@ -1054,6 +1134,7 @@ def build_subquestion_user_prompt(
         lp_pool_lines = "- **指定學習表現**：（依課綱自行選用）\n"
 
     source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
+    display_text = 文本.get("文本", "") if isinstance(文本, dict) else 文本
     difficulty_section = _difficulty_section(params).lstrip("\n")
     config_parts = [f"題型={q_type}"]
     if cfg is not None and cfg.instruction:
@@ -1066,6 +1147,8 @@ def build_subquestion_user_prompt(
         config_parts.append(f"文本素材類型={cfg.content_type}")
     if cfg is not None and cfg.image_generation_mode:
         config_parts.append(f"圖片生成模式={cfg.image_generation_mode}")
+    if cfg is not None and cfg.figure_kind:
+        config_parts.append(f"圖像種類={cfg.figure_kind}（強制值）")
     question_limit = (
         cfg.question_word_limit
         if cfg is not None and cfg.question_word_limit
@@ -1083,11 +1166,24 @@ def build_subquestion_user_prompt(
     # Append chart_spec instruction when this slot requires a visual
     slot_content_type = cfg.content_type if cfg is not None else None
     visual_instruction = ""
+    slot_number = int(sq_plan.get("序號", 1))
+    known_figure_kinds = _known_figure_kinds_for_subquestion(text=文本, params=params, slot_number=slot_number)
     if slot_content_type in {"含圖片", "graphs/charts/tables"}:
         visual_instruction = (
             "\n\n本小題的 `文本素材類型` 為 `含圖片` 或 `graphs/charts/tables`，"
             "必須在本小題 JSON 中輸出非 null 的 `chart_spec`。"
             "`image_generation_mode` 只指定渲染方式，不能單獨視為需要圖片。"
+        )
+    elif cfg and cfg.figure_kind:
+        visual_instruction = (
+            "\n\n本小題已釘選圖像種類，必須在本小題 JSON 中輸出非 null 的 `chart_spec`，"
+            "並將 `figure_kind` 填為指定值。"
+        )
+    if visual_instruction:
+        visual_instruction += "\n" + _figure_kind_guidance(
+            params,
+            known_kinds=known_figure_kinds,
+            required_kind=cfg.figure_kind if cfg else None,
         )
     subquestion_config_section = (
         "## 各小題配置\n\n"
@@ -1103,7 +1199,7 @@ def build_subquestion_user_prompt(
 - **文本**：
 
 ```
-{文本}
+{display_text}
 ```
 
 - **取材來源**：

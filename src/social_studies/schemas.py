@@ -12,6 +12,7 @@ from src.social_studies.core_competency_loader import (
     build_core_competency_enum,
     load_core_competencies,
 )
+from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
 from src.social_studies.schema_loader import build_enums, load_grades, load_schemas
 
 _schemas = load_schemas()
@@ -20,11 +21,13 @@ QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, Questi
 )
 CoreCompetency = build_core_competency_enum(load_core_competencies())
 _GRADES: list[int] = load_grades(_schemas)
+FIGURE_KIND_VOCABULARY: tuple[str, ...] = CANONICAL_FIGURE_KINDS
 
 
 class ImageSpec(BaseModel):
     render_mode: Literal["chart", "html", "gpt_image"] = "chart"
     chart_type: Literal["histogram", "boxplot", "line_chart", "pie_chart"] | None = None
+    figure_kind: str = ""
     title: str = ""
     data: dict = Field(default_factory=dict)
     labels: dict = Field(default_factory=dict)
@@ -92,6 +95,7 @@ class SubQuestionConfig(BaseModel):
     instruction: str | None = None
     content_type: str | None = None
     image_generation_mode: Literal["html", "gpt_image"] | None = None
+    figure_kind: str | None = None
     question_word_limit: int | None = None
     option_word_limit: int | None = None
     text_word_limit: int | None = None
@@ -212,6 +216,8 @@ class SampledParams(BaseModel):
     text_word_limit: int | None = None
     # #101: per-子題 content_type and image_generation_mode
     subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)
+    # Figure-kind diversity can be disabled only at request level.
+    allow_duplicate_figure_kinds: bool = False
     # Issue #116: explicit difficulty (pure passthrough — never randomized).
     difficulty: Difficulty = DEFAULT_DIFFICULTY
     # #114: per-batch Opus 創意 brief; None when planning is disabled or unavailable
