@@ -74,6 +74,14 @@ _Avoid_: unsaved changes, dirty state, unsubmitted changes
 Sending a resolved value with the request so nothing downstream re-randomises it. A 預抽 value is always 釘選.
 _Avoid_: pin, lock, fix
 
+**確認頁修改**:
+Editing a resolved 各小題配置 value on the confirmation screen. The edited value becomes user-supplied and 釘選; untouched values keep their 預抽 state. Applies per 題組 — it never writes back to the shared form configuration.
+_Avoid_: final modification, confirmation edit, last-minute tweak
+
+**重抽**:
+Clearing a resolved value on the confirmation screen, causing an immediate new 預抽 from the 全域池 for that field only. Sibling fields and the seed are untouched.
+_Avoid_: re-roll, re-draw, re-randomise
+
 **建議值**:
 A submitted setting the generator is asked to honour but is not required to. Contrast 強制值.
 _Avoid_: hint, suggestion, soft constraint
