@@ -62,6 +62,10 @@ _Avoid_: balanced sampling, stratified mode, even allocation
 The 出題模式 that adds no batch-variety instruction to the prompt and leaves the existing independent draws unchanged.
 _Avoid_: random sampling mode, shuffle mode, unbalanced mode
 
+**回扣核心問題**:
+The request option asking that a 題組's last 小題 be a synthesis question explicitly asking the student to address that 題組's own 核心問題, integrating the earlier 小題. On by default; a 建議值 that composes with any 各小題配置 on the last 小題 and never affects which 題型 is drawn.
+_Avoid_: callback, echo, 總結小題, 呼應核心問題
+
 **預抽**:
 Resolving a value that would otherwise be chosen randomly during generation, before the user confirms, so the confirmation screen can show it.
 _Avoid_: pre-draw, pre-roll, client-side sampling
