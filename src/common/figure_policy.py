@@ -5,6 +5,8 @@ from __future__ import annotations
 __all__ = [
     "CONTENT_TYPE_ALLOWED_RENDER_MODES",
     "allowed_render_modes",
+    "effective_figure_kind",
+    "find_figure_kind_collisions",
     "validate_figure_routing",
     "validate_question_figure_routing",
 ]
@@ -15,6 +17,17 @@ CONTENT_TYPE_ALLOWED_RENDER_MODES: dict[str, frozenset[str] | None] = {
     "含圖片": frozenset({"gpt_image", "html"}),
     "graphs/charts/tables": frozenset({"chart", "html"}),
     "customized": None,
+}
+
+
+# ``chart_type`` is a renderer-facing identifier.  Diversity is compared by
+# concrete figure genre, so chart identifiers need the same canonical key as
+# their Chinese vocabulary labels when they meet an HTML/gpt-image spec.
+_CHART_TYPE_TO_FIGURE_KIND: dict[str, str] = {
+    "histogram": "直方圖",
+    "boxplot": "盒鬚圖",
+    "line_chart": "折線圖",
+    "pie_chart": "圓餅圖",
 }
 
 
@@ -40,6 +53,64 @@ def _get_render_mode(chart_spec: object) -> object | None:
         return getattr(chart_spec, "render_mode", None)
     except Exception:
         return None
+
+
+def effective_figure_kind(spec: object | None) -> str:
+    """Return the declared kind, or a chart type fallback for chart specs.
+
+    The field remains free text.  A non-chart spec without ``figure_kind`` has
+    no comparable kind rather than borrowing its renderer or description.
+    """
+    if spec is None:
+        return ""
+    try:
+        figure_kind = spec.get("figure_kind") if isinstance(spec, dict) else getattr(spec, "figure_kind", "")
+        if isinstance(figure_kind, str) and figure_kind.strip():
+            return figure_kind.strip()
+
+        render_mode = _get_render_mode(spec)
+        chart_type = spec.get("chart_type") if isinstance(spec, dict) else getattr(spec, "chart_type", None)
+        if render_mode == "chart" and isinstance(chart_type, str):
+            return chart_type.strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def _normalized_figure_kind(spec: object | None) -> str:
+    value = effective_figure_kind(spec).strip().casefold()
+    if not value:
+        return ""
+    return _CHART_TYPE_TO_FIGURE_KIND.get(value, value).casefold()
+
+
+def find_figure_kind_collisions(
+    specs: list,
+    pinned: set[int],
+    allow_duplicates: bool,
+) -> list[tuple[int, int, str]]:
+    """Return pairwise figure-kind collisions as ``(left, right, normalized_kind)``.
+
+    Empty kinds never collide.  Pinned specs reserve their kind for the
+    unpinned specs to yield to, while two pinned specs are allowed to share a
+    kind.  When ``allow_duplicates`` is true the request-level kill-switch
+    makes this a no-op.
+    """
+    if allow_duplicates:
+        return []
+
+    pinned_indices = set(pinned)
+    collisions: list[tuple[int, int, str]] = []
+    seen: dict[str, list[int]] = {}
+    for index, spec in enumerate(specs):
+        normalized = _normalized_figure_kind(spec)
+        if not normalized:
+            continue
+        for previous in seen.get(normalized, []):
+            if not (previous in pinned_indices and index in pinned_indices):
+                collisions.append((previous, index, normalized))
+        seen.setdefault(normalized, []).append(index)
+    return collisions
 
 
 def _allowed_modes_text(allowed: frozenset[str]) -> str:

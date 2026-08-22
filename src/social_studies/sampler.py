@@ -61,6 +61,7 @@ def sample_params(
     option_word_limit: int | None = None,
     subquestion_configs: list | None = None,
     difficulty: Difficulty | str | None = None,
+    allow_duplicate_figure_kinds: bool = False,
 ) -> SampledParams:
     """Sample random PISA-reading question parameters.
 
@@ -198,6 +199,7 @@ def sample_params(
         question_word_limit=question_word_limit,
         option_word_limit=option_word_limit,
         subquestion_configs=resolved_configs,
+        allow_duplicate_figure_kinds=allow_duplicate_figure_kinds,
         difficulty=resolved_difficulty,
     )
 

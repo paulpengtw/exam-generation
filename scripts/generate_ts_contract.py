@@ -21,7 +21,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from server.generate.marshalling import EMITTED_EVENT_NAMES, SSEEventName  # noqa: E402
-from server.generate.models import GenerateParams  # noqa: E402
+from server.generate.models import (  # noqa: E402
+    SERVER_ONLY_GENERATE_FIELDS,
+    GenerateParams,
+)
 
 _REGEN_CMD = "python scripts/generate_ts_contract.py"
 _OUTPUT_PATH = ROOT / "web" / "src" / "api" / "generated" / "contract.ts"
@@ -88,6 +91,8 @@ def _generate_params_block() -> str:
     hints = typing.get_type_hints(GenerateParams)
     # model_fields preserves declaration order (Pydantic v2)
     for field_name, field_info in GenerateParams.model_fields.items():
+        if field_name in SERVER_ONLY_GENERATE_FIELDS:
+            continue
         annotation = hints.get(field_name, field_info.annotation)
         ts_type, optional = _ts_type(annotation)
         # Fields with defaults are optional on the wire (caller can omit them)

@@ -6,8 +6,14 @@ from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.social_studies.context_builder import (
     CONTENT_TYPE_INSTRUCTIONS as SS_CONTENT_TYPE_INSTRUCTIONS,
 )
-from src.social_studies.context_builder import build_system_prompt as ss_build_system_prompt
-from src.social_studies.context_builder import build_user_prompt
+from src.social_studies.context_builder import (
+    build_subquestion_system_prompt,
+    build_text_system_prompt,
+    build_user_prompt,
+)
+from src.social_studies.context_builder import (
+    build_system_prompt as ss_build_system_prompt,
+)
 from src.social_studies.sampler import sample_params
 
 
@@ -257,6 +263,63 @@ def test_subquestion_prompt_replays_few_shot_selection_from_sampled_seed() -> No
 def test_ss_content_type_instructions_include_disclaimer_for_image_types() -> None:
     assert IMAGE_DISCLAIMER in SS_CONTENT_TYPE_INSTRUCTIONS["含圖片"]
     assert IMAGE_DISCLAIMER in SS_CONTENT_TYPE_INSTRUCTIONS["graphs/charts/tables"]
+
+
+def test_social_studies_loads_canonical_figure_kind_vocabulary() -> None:
+    from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
+
+    assert "直方圖" in CANONICAL_FIGURE_KINDS
+    assert "地圖" in CANONICAL_FIGURE_KINDS
+    assert "實驗裝置" in CANONICAL_FIGURE_KINDS
+
+
+def test_visual_prompts_steer_distinct_figure_kinds_and_show_known_pins(tmp_path) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="含圖片",
+        sub_question_count=3,
+        subquestion_configs=[
+            {"content_type": "含圖片", "figure_kind": "地圖"},
+            {"content_type": "含圖片", "figure_kind": "表格"},
+            {"content_type": "含圖片"},
+        ],
+    )
+
+    parent_prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    sub_prompt, _ = __import__(
+        "src.social_studies.context_builder",
+        fromlist=["build_subquestion_user_prompt"],
+    ).build_subquestion_user_prompt(
+        核心問題="測試核心問題",
+        文本={"文本": "測試文本", "chart_spec": {"render_mode": "html", "figure_kind": "廣告"}},
+        取材來源=["來源A"],
+        sq_plan={"序號": 3, "題型": "選擇題", "出題概念": "測試"},
+        params=params,
+        few_shot_dir=tmp_path,
+        rng=random.Random(1),
+        cfg=params.subquestion_configs[2],
+    )
+
+    assert "圖像種類" in parent_prompt
+    assert "圖像種類不得重複" in parent_prompt
+    assert "直方圖、盒鬚圖" in parent_prompt
+    assert "已使用圖像種類" in sub_prompt
+    assert "廣告" in sub_prompt
+    assert "地圖" in sub_prompt
+    assert "canonical vocabulary 選擇" in build_subquestion_system_prompt("第四")
+
+
+def test_visual_prompts_drop_hard_diversity_wording_when_kill_switch_is_on(tmp_path) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="含圖片",
+        allow_duplicate_figure_kinds=True,
+    )
+
+    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+
+    assert "圖像種類不得重複" not in prompt
+    assert "圖像種類不得重複" not in build_text_system_prompt(params=params)
 
 
 def test_ss_content_type_instructions_omit_disclaimer_for_text_only() -> None:

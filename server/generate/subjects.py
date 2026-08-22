@@ -418,6 +418,7 @@ def _ss_plan_all_batch_briefs(
                 question_word_limit=params.question_word_limit,
                 option_word_limit=params.option_word_limit,
                 subquestion_configs=decoded_subquestion_configs,
+                allow_duplicate_figure_kinds=params.allow_duplicate_figure_kinds,
             ),
         )
     planning_client = client_factory(config)
@@ -447,6 +448,7 @@ def _ss_do_sample_params(
         option_word_limit=params.option_word_limit,
         subquestion_configs=subquestion_configs_decoded,
         difficulty=params.difficulty,
+        allow_duplicate_figure_kinds=params.allow_duplicate_figure_kinds,
     )
 
 

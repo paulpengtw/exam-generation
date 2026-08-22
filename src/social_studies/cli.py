@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
+from src.common.figure_policy import effective_figure_kind, find_figure_kind_collisions
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
 from src.common.subquestion_forcing import force_grade
@@ -32,6 +33,7 @@ from src.social_studies.context_builder import (
     build_text_user_prompt,
 )
 from src.social_studies.corrector import correct_question
+from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
 from src.social_studies.planner import plan_context_angles
 from src.social_studies.sampler import sample_params
 from src.social_studies.schema_loader import load_grades, load_schemas
@@ -95,6 +97,40 @@ def _with_text_word_limit(
         },
     )
 
+
+def _figure_kind_repair_instruction(
+    params: SampledParams | None,
+    forbidden_kinds: list[str] | None = None,
+    required_kind: str | None = None,
+    allow_duplicates: bool | None = None,
+) -> str:
+    """Return the figure-kind constraints for a targeted image-spec repair."""
+    vocabulary = "、".join(CANONICAL_FIGURE_KINDS)
+    lines = [
+        "- `figure_kind` 必須描述具體圖像種類；適用時請從 canonical vocabulary 選擇："
+        f"{vocabulary}。未知類型仍可使用具體自由文字。"
+    ]
+    if required_kind:
+        lines.append(f"- 本小題的 `figure_kind` 是強制值：`{required_kind}`。")
+    if (
+        getattr(params, "allow_duplicate_figure_kinds", False)
+        if allow_duplicates is None
+        else allow_duplicates
+    ):
+        lines.append("- 本請求允許圖像種類重複；不需套用不得重複限制。")
+    elif forbidden_kinds:
+        unique_kinds = list(
+            dict.fromkeys(kind.strip() for kind in forbidden_kinds if kind.strip())
+        )
+        lines.append("- **圖像種類不得為：**" + "、".join(unique_kinds))
+    else:
+        lines.append(
+            "- 預設每張圖（含題幹與所有小題）的圖像種類不得重複；"
+            "不同 render_mode 的同一具體種類仍視為重複。"
+        )
+    return "\n".join(lines)
+
+
 _TOP_LEVEL_IMAGE_REPAIR_SYSTEM_PROMPT = """\
 你是一位108課綱社會領域素養導向題組的視覺素材設計教師。
 請只根據既有題組內容，補上一個整個題組共用的主要素材圖片規格。
@@ -105,12 +141,15 @@ _TOP_LEVEL_IMAGE_REPAIR_SYSTEM_PROMPT = """\
 - `chart_spec` 必須是整個題組共用的視覺素材，不是單一小題專用圖片。
 - 若是圖片式素材、地圖、海報、表單、網頁畫面、流程圖或圖解，使用 `render_mode: "html"`。
 - 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
+- 每個 `chart_spec` 都必須填寫具體的 `figure_kind`；適用時從 canonical vocabulary 選擇。
 - 不要加入答案提示。
 """
 
 _TOP_LEVEL_IMAGE_REPAIR_USER_TEMPLATE = """\
 以下題組的全域文本素材類型是「{content_type}」，但缺少題組頂層 chart_spec。
 請為整個題組共用的主要素材補上 `chart_spec`。
+
+{figure_kind_instruction}
 
 ```json
 {question_json}
@@ -127,12 +166,15 @@ _SQ_IMAGE_REPAIR_SYSTEM_PROMPT = """\
 - `chart_spec` 必須是此小題專用的視覺素材，不是整個題組共用圖片。
 - 若是圖片式素材、地圖、海報、表單、網頁畫面、流程圖或圖解，使用 `render_mode: "html"`。
 - 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
+- 每個 `chart_spec` 都必須填寫具體的 `figure_kind`；適用時從 canonical vocabulary 選擇。
 - 不要加入答案提示。
 """
 
 _SQ_IMAGE_REPAIR_USER_TEMPLATE = """\
 以下小題的題目內容類型是「{content_type}」，但缺少小題 chart_spec。
 請為此小題補上 `chart_spec`。
+
+{figure_kind_instruction}
 
 題組文本：
 {text}
@@ -310,6 +352,8 @@ def _parse_subquestion(
         # 記錄建構這一小題時所用的 PLAN 索引，供後續圖片修補沿用同一格 各小題配置。
         # 模型自報的 `序號` 可能錯位；修補端必須走這個值，不能拿 `序號` 去查。
         result._plan_index = i
+        if cfg is not None:
+            _force_subquestion_figure_kind(result, cfg.figure_kind)
         # Issue #290: force 年級 from sampled params, never trust the LLM value.
         # The LLM may copy 年級 from a prompt example that uses a different grade,
         # causing a silent mismatch. Parallel to how 科目 is forced on the line
@@ -338,6 +382,7 @@ def _parse_text_shell(
                 chart_spec = ImageSpec(
                     render_mode="chart",
                     chart_type=raw_spec.get("chart_type"),
+                    figure_kind=raw_spec.get("figure_kind", ""),
                     data=raw_spec.get("data", {}),
                     labels=raw_spec.get("labels", {}),
                     title=raw_spec.get("title", ""),
@@ -346,6 +391,7 @@ def _parse_text_shell(
             else:
                 chart_spec = ImageSpec(
                     render_mode="html",
+                    figure_kind=raw_spec.get("figure_kind", ""),
                     description=raw_spec.get("description", raw_spec.get("title", "")),
                     title=raw_spec.get("title", ""),
                     data=raw_spec.get("data", {}),
@@ -386,6 +432,7 @@ def _parse_image_spec(raw_spec: object) -> ImageSpec | None:
                 return ImageSpec(
                     render_mode="chart",
                     chart_type=raw_spec.get("chart_type"),
+                    figure_kind=raw_spec.get("figure_kind", ""),
                     data=raw_spec.get("data", {}),
                     labels=raw_spec.get("labels", {}),
                     title=raw_spec.get("title", ""),
@@ -396,6 +443,7 @@ def _parse_image_spec(raw_spec: object) -> ImageSpec | None:
         try:
             return ImageSpec(
                 render_mode="html",
+                figure_kind=raw_spec.get("figure_kind", ""),
                 description=raw_spec.get("description", raw_spec.get("title", "")),
                 title=raw_spec.get("title", ""),
                 data=raw_spec.get("data", {}),
@@ -405,13 +453,27 @@ def _parse_image_spec(raw_spec: object) -> ImageSpec | None:
             return None
 
 
+def _force_subquestion_figure_kind(sub: SubQuestion, figure_kind: str | None) -> None:
+    """Apply an explicit per-slot figure-kind pin after model parsing."""
+    if not sub.chart_spec or not isinstance(figure_kind, str) or not figure_kind.strip():
+        return
+    sub.chart_spec = sub.chart_spec.model_copy(update={"figure_kind": figure_kind.strip()})
+
+
 def _ensure_top_level_visual_spec(
     question: ExamQuestion,
     params: SampledParams,
     client: LLMClient | None,
+    *,
+    forbidden_kinds: list[str] | None = None,
+    force_repair: bool = False,
 ) -> None:
     """Repair missing shared visual specs for globally visual social-studies 題組."""
-    if question.chart_spec or params.題目內容類型 not in _VISUAL_CONTENT_TYPES or client is None:
+    if (
+        (question.chart_spec and not force_repair)
+        or (params.題目內容類型 not in _VISUAL_CONTENT_TYPES and not force_repair)
+        or client is None
+    ):
         return
 
     question_json = question.model_dump_json(
@@ -421,6 +483,7 @@ def _ensure_top_level_visual_spec(
     user_prompt = _TOP_LEVEL_IMAGE_REPAIR_USER_TEMPLATE.format(
         content_type=params.題目內容類型,
         question_json=question_json,
+        figure_kind_instruction=_figure_kind_repair_instruction(params, forbidden_kinds),
     )
 
     try:
@@ -444,6 +507,11 @@ def _ensure_subquestion_visual_spec(
     question: ExamQuestion,
     content_type: str,
     client: Any,
+    *,
+    figure_kind: str | None = None,
+    forbidden_kinds: list[str] | None = None,
+    force_repair: bool = False,
+    allow_duplicates: bool = False,
 ) -> None:
     """Repair a missing chart_spec for a single 小題 whose config requires an image.
 
@@ -451,7 +519,12 @@ def _ensure_subquestion_visual_spec(
     Repair failure degrades gracefully — the 小題 ships without an image rather
     than aborting the 題組.
     """
-    if sub.chart_spec or content_type not in _VISUAL_CONTENT_TYPES or client is None:
+    _force_subquestion_figure_kind(sub, figure_kind)
+    if (
+        (sub.chart_spec and not force_repair)
+        or (content_type not in _VISUAL_CONTENT_TYPES and not figure_kind and not force_repair)
+        or client is None
+    ):
         return
 
     # 修補只需要素材需求，不需要作答內容。system prompt 已明令「不要加入答案提示」，
@@ -464,6 +537,12 @@ def _ensure_subquestion_visual_spec(
         content_type=content_type,
         text=question.文本,
         sq_json=sq_json,
+        figure_kind_instruction=_figure_kind_repair_instruction(
+            params=None,
+            forbidden_kinds=forbidden_kinds,
+            required_kind=figure_kind,
+            allow_duplicates=allow_duplicates,
+        ),
     )
 
     try:
@@ -482,6 +561,8 @@ def _ensure_subquestion_visual_spec(
     raw_spec = repaired.get("image_spec") or repaired.get("chart_spec")
     image_spec = _parse_image_spec(raw_spec)
     if image_spec:
+        if figure_kind and figure_kind.strip():
+            image_spec = image_spec.model_copy(update={"figure_kind": figure_kind.strip()})
         sub.chart_spec = image_spec
 
 
@@ -500,7 +581,8 @@ def _render_subquestion_images(
         if not sub.chart_spec:
             continue
         img_path = config.output_dir / f"{question.id}_sq{sub.序號}.png"
-        mode = (subquestion_image_modes or {}).get(sub.序號, image_generation_mode)
+        plan_index = sub._plan_index if sub._plan_index is not None else sub.序號
+        mode = (subquestion_image_modes or {}).get(plan_index, image_generation_mode)
         sub.image_generation_mode = mode
         question_text = "\n\n".join(
             part for part in (question.文本, sub.題目) if part
@@ -587,7 +669,7 @@ def _plan_batch_briefs(
 
 
 def _ss_build_text_system(params: SampledParams) -> tuple[str, dict]:
-    return build_text_system_prompt(creative_brief=params.creative_brief), {}
+    return build_text_system_prompt(creative_brief=params.creative_brief, params=params), {}
 
 
 def _ss_build_text_user(
@@ -622,7 +704,9 @@ def _ss_build_subquestion_user(
 ):
     return build_subquestion_user_prompt(
         核心問題=text_raw.get("核心問題", ""),
-        文本=text_raw.get("文本", ""),
+        # Pass the structured shell so the prompt builder can list a known
+        # top-level figure_kind while still rendering only the text content.
+        文本=text_raw,
         取材來源=text_raw.get("取材來源", []),
         sq_plan=sq_plan,
         params=params,
@@ -647,7 +731,229 @@ def _ss_make_fallback_sq_plans(params: SampledParams, n: int) -> list[dict]:
 def _ss_ensure_visual_spec(
     question: ExamQuestion, params: SampledParams, client: Any,
 ) -> None:
-    _ensure_top_level_visual_spec(question, params, client)
+    known_kinds = [
+        cfg.figure_kind
+        for cfg in params.subquestion_configs
+        if cfg.figure_kind
+    ]
+    known_kinds.extend(
+        kind
+        for sub in question.subquestions
+        if sub.chart_spec is not None
+        for kind in [effective_figure_kind(sub.chart_spec)]
+        if kind
+    )
+    _ensure_top_level_visual_spec(
+        question,
+        params,
+        client,
+        forbidden_kinds=known_kinds,
+    )
+
+
+def _subquestion_config_for(params: SampledParams, sub: SubQuestion) -> SubQuestionConfig | None:
+    """Resolve a subquestion's config by PLAN index, never by model 序號."""
+    plan_index = sub._plan_index if sub._plan_index is not None else sub.序號
+    if plan_index < 1 or plan_index > len(params.subquestion_configs):
+        return None
+    return params.subquestion_configs[plan_index - 1]
+
+
+def _figure_spec_entries(
+    question: ExamQuestion,
+    params: SampledParams,
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    if question.chart_spec is not None:
+        entries.append(
+            {
+                "spec": question.chart_spec,
+                "sub": None,
+                "config": None,
+                "label": "題幹",
+                "序號": 0,
+                "pinned": False,
+            }
+        )
+    for sub in question.subquestions:
+        if sub.chart_spec is None:
+            continue
+        cfg = _subquestion_config_for(params, sub)
+        entries.append(
+            {
+                "spec": sub.chart_spec,
+                "sub": sub,
+                "config": cfg,
+                "label": f"小題 {sub.序號}",
+                "序號": sub.序號,
+                "pinned": bool(cfg and cfg.figure_kind and cfg.figure_kind.strip()),
+            }
+        )
+    return entries
+
+
+def _collision_repair_target(
+    entries: list[dict[str, Any]],
+    left: int,
+    right: int,
+) -> int | None:
+    candidates = [
+        index for index in (left, right)
+        if not entries[index]["pinned"]
+    ]
+    if not candidates:
+        return None
+
+    sub_candidates = [index for index in candidates if entries[index]["sub"] is not None]
+    top_candidates = [index for index in candidates if entries[index]["sub"] is None]
+    if sub_candidates:
+        # Later 序號 wins when both colliders are unpinned 小題; this keeps the
+        # already-established earlier figure stable whenever possible.
+        return max(sub_candidates, key=lambda index: (entries[index]["序號"], index))
+    return top_candidates[0] if top_candidates else candidates[0]
+
+
+def _rerender_top_level_image(
+    question: ExamQuestion,
+    config: Config,
+    client: Any,
+    html_renderer: Any,
+    image_generation_mode: str,
+    obs: Any,
+) -> None:
+    """Re-render the already-created 題幹 PNG after its spec is repaired."""
+    if question.chart_spec is None:
+        return
+    img_path = config.output_dir / f"{question.id}.png"
+    print(f"  Re-rendering image after figure-kind repair: {img_path}", file=sys.stderr)
+    _on_render_error, _render_failed = make_render_error_sink(obs)
+    emit_stage(obs, "image_agent", "render_image", "start")
+    rendered = render_image(
+        question.chart_spec.model_dump(),
+        img_path,
+        question_text="\n".join(question.題目) or question.文本,
+        html_renderer=html_renderer,
+        llm_client=client,
+        image_generation_mode=image_generation_mode,
+        on_error=_on_render_error,
+    )
+    if not _render_failed:
+        emit_stage(obs, "image_agent", "render_image", "end")
+    if rendered:
+        question.圖片 = img_path.name
+
+
+def _known_figure_kinds_for_subquestion_repair(
+    question: ExamQuestion,
+    params: SampledParams,
+    sub: SubQuestion,
+) -> list[str]:
+    """List figure kinds already known when repairing one 小題 spec."""
+    known: list[str] = []
+    if question.chart_spec is not None:
+        top_kind = effective_figure_kind(question.chart_spec)
+        if top_kind:
+            known.append(top_kind)
+    current_plan_index = sub._plan_index
+    for other in question.subquestions:
+        if other is sub or other.chart_spec is None:
+            continue
+        kind = effective_figure_kind(other.chart_spec)
+        if kind:
+            known.append(kind)
+    for index, cfg in enumerate(params.subquestion_configs, start=1):
+        if index != current_plan_index and cfg.figure_kind:
+            known.append(cfg.figure_kind)
+    return list(dict.fromkeys(known))
+
+
+def _enforce_figure_kind_diversity(
+    question: ExamQuestion,
+    config: Config,
+    client: Any,
+    html_renderer: Any,
+    image_generation_mode: str,
+    obs: Any,
+    params: SampledParams,
+) -> None:
+    """Repair each detected SS figure-kind collision once, then warn if needed."""
+    if params.allow_duplicate_figure_kinds:
+        return
+
+    entries = _figure_spec_entries(question, params)
+    if not entries:
+        return
+    specs = [entry["spec"] for entry in entries]
+    pinned = {index for index, entry in enumerate(entries) if entry["pinned"]}
+    collisions = find_figure_kind_collisions(specs, pinned, allow_duplicates=False)
+
+    for left, right, _kind in collisions:
+        entries = _figure_spec_entries(question, params)
+        if left >= len(entries) or right >= len(entries):
+            continue
+        target = _collision_repair_target(entries, left, right)
+        if target is None:
+            continue
+        forbidden = [
+            effective_figure_kind(entry["spec"])
+            for index, entry in enumerate(entries)
+            if index != target and effective_figure_kind(entry["spec"])
+        ]
+        target_entry = entries[target]
+        try:
+            if target_entry["sub"] is None:
+                before = question.chart_spec
+                _ensure_top_level_visual_spec(
+                    question,
+                    params,
+                    client,
+                    forbidden_kinds=forbidden,
+                    force_repair=True,
+                )
+                if question.chart_spec != before:
+                    _rerender_top_level_image(
+                        question,
+                        config,
+                        client,
+                        html_renderer,
+                        image_generation_mode,
+                        obs,
+                    )
+            else:
+                sub = target_entry["sub"]
+                cfg = target_entry["config"]
+                _ensure_subquestion_visual_spec(
+                    sub,
+                    question,
+                    cfg.content_type if cfg and cfg.content_type else "",
+                    client,
+                    forbidden_kinds=forbidden,
+                    force_repair=True,
+                    allow_duplicates=params.allow_duplicate_figure_kinds,
+                )
+        except Exception as exc:
+            message = (
+                f"Warning: 圖像種類 targeted repair failed for "
+                f"{target_entry['label']}: {exc}; duplicate image shipped"
+            )
+            print(f"  {message}", file=sys.stderr)
+            emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+
+    entries = _figure_spec_entries(question, params)
+    final_collisions = find_figure_kind_collisions(
+        [entry["spec"] for entry in entries],
+        {index for index, entry in enumerate(entries) if entry["pinned"]},
+        allow_duplicates=False,
+    )
+    for left, right, kind in final_collisions:
+        left_label = entries[left]["label"]
+        right_label = entries[right]["label"]
+        message = (
+            f"Warning: 圖像種類 diversity violation remains between "
+            f"{left_label} and {right_label} ({kind}); duplicate image shipped"
+        )
+        print(f"  {message}", file=sys.stderr)
+        emit_stage(obs, "image_agent", "render_image", "warning", message=message)
 
 
 def _ss_render_subquestion_images(
@@ -666,7 +972,7 @@ def _ss_render_subquestion_images(
     sq_visual_content_types = {
         i: cfg.content_type
         for i, cfg in enumerate(params.subquestion_configs, start=1)
-        if cfg.content_type in _VISUAL_CONTENT_TYPES
+        if cfg.content_type in _VISUAL_CONTENT_TYPES or cfg.figure_kind
     }
     if sq_visual_content_types:
         for sub in question.subquestions:
@@ -674,9 +980,30 @@ def _ss_render_subquestion_images(
             # 拿它查配置會把甲格的題型／學習內容 配上乙格的圖片決定。
             # 優先用 _plan_index（在 _parse_subquestion 中設定），無則退回 序號。
             plan_idx = sub._plan_index if sub._plan_index is not None else sub.序號
+            cfg = _subquestion_config_for(params, sub)
             ct = sq_visual_content_types.get(plan_idx)
-            if ct is not None:
-                _ensure_subquestion_visual_spec(sub, question, ct, client)
+            if ct is not None and cfg is not None:
+                _ensure_subquestion_visual_spec(
+                    sub,
+                    question,
+                    ct or "",
+                    client,
+                    figure_kind=cfg.figure_kind,
+                    forbidden_kinds=_known_figure_kinds_for_subquestion_repair(
+                        question, params, sub,
+                    ),
+                    allow_duplicates=params.allow_duplicate_figure_kinds,
+                )
+
+    _enforce_figure_kind_diversity(
+        question,
+        config,
+        client,
+        html_renderer,
+        image_generation_mode,
+        obs,
+        params,
+    )
 
     return _render_subquestion_images(
         question,
