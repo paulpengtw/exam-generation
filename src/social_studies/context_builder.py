@@ -180,6 +180,20 @@ def _difficulty_section(params: "SampledParams") -> str:
     )
 
 
+def _cognitive_process_for_slot(
+    params: "SampledParams",
+    cfg: "SubQuestionConfig | None",
+    slot_number: int,
+) -> str:
+    if cfg is not None and cfg.認知歷程:
+        return cfg.認知歷程
+    pool = getattr(params, "認知歷程_pool", [])
+    index = slot_number - 1
+    if 0 <= index < len(pool):
+        return pool[index]
+    return ""
+
+
 _CREATIVE_BRIEF_SYSTEM_BLOCK = """\
 
 ### 創意指引
@@ -366,6 +380,7 @@ USER_PROMPT_TEMPLATE = """\
 - **閱讀歷程（PISA）**：{reading_process}
 - **文本形式**：{text_form}
 - **文本素材類型**：{content_type}
+- **內容領域**：{content_domain}
 - **圖片生成模式**：{image_generation_mode}
 - **核心素養（限定使用）**：{core_competencies}
 {lc_pool_lines}{lp_pool_lines}{subquestion_config_lines}{param_instructions}{difficulty_section}{user_materials}
@@ -696,6 +711,7 @@ def build_user_prompt(
         reading_process=reading_process,
         text_form=params.文本形式.value,
         content_type=content_type,
+        content_domain=(params.內容領域.value if params.內容領域 is not None else ""),
         image_generation_mode=image_generation_mode,
         core_competencies=core_competencies,
         lc_pool_lines=lc_pool_lines,
@@ -1157,6 +1173,8 @@ def build_subquestion_user_prompt(
     source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
     display_text = 文本.get("文本", "") if isinstance(文本, dict) else 文本
     difficulty_section = _difficulty_section(params).lstrip("\n")
+    slot_number = int(sq_plan.get("序號", 1))
+    cognitive_process = _cognitive_process_for_slot(params, cfg, slot_number)
     config_parts = [f"題型={q_type}"]
     if cfg is not None and cfg.instruction:
         config_parts.append(f"出題指示={cfg.instruction}")
@@ -1187,7 +1205,6 @@ def build_subquestion_user_prompt(
     # Append chart_spec instruction when this slot requires a visual
     slot_content_type = cfg.content_type if cfg is not None else None
     visual_instruction = ""
-    slot_number = int(sq_plan.get("序號", 1))
     known_figure_kinds = _known_figure_kinds_for_subquestion(text=文本, params=params, slot_number=slot_number)
     if slot_content_type in {"含圖片", "graphs/charts/tables"}:
         visual_instruction = (
@@ -1249,6 +1266,7 @@ def build_subquestion_user_prompt(
 - **年級重心**：{params.grade}年級（{_LEARNING_STAGE}）
 - **情境**：{"、".join(c.value for c in params.情境)}
 - **科目焦點**：{subject_value}
+- **認知歷程**：{cognitive_process}
 - **核心素養（限定使用）**：{core_competencies}
 {lc_pool_lines}{lp_pool_lines}
 {difficulty_section}
