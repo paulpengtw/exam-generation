@@ -46,6 +46,7 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "pgserver>=0.1.4",
     "pytest>=9.0.2",
     "ruff>=0.15.9",
 ]
