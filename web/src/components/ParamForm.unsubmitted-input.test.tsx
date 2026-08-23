@@ -142,6 +142,16 @@ describe("ParamForm 未送出的輸入", () => {
     expect(onUnsubmittedInput).toHaveBeenCalled();
   });
 
+  it("raises 未送出的輸入 when the core-question callback checkbox is toggled", async () => {
+    const onUnsubmittedInput = await renderSocial();
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "form.core_question_callback" }),
+    );
+
+    expect(onUnsubmittedInput).toHaveBeenCalled();
+  });
+
   it("raises 未送出的輸入 when a per-subquestion field changes", async () => {
     const onUnsubmittedInput = await renderSocial();
 

@@ -18,6 +18,7 @@ function makeFields(overrides: Partial<FormFields> = {}): FormFields {
     coverageMode: "balanced",
     skipVerify: false,
     disableReferenceFewshot: false,
+    coreQuestionCallback: true,
     imageGenerationMode: "html",
     difficulty: "",
     reportingScale: "",
@@ -77,6 +78,18 @@ describe("formDraft", () => {
     );
 
     expect(loadDraft("teacher-1")?.fields.reportingScale).toBe("");
+  });
+
+  it("loads a legacy draft without coreQuestionCallback and defaults it on", () => {
+    const fields = Object.fromEntries(
+      Object.entries(makeFields()).filter(([key]) => key !== "coreQuestionCallback"),
+    );
+    localStorage.setItem(
+      "exam_form_draft_teacher-1",
+      JSON.stringify({ savedAt: NOW.toISOString(), fields }),
+    );
+
+    expect(loadDraft("teacher-1")?.fields.coreQuestionCallback).toBe(true);
   });
 
   it("rejects a draft with a non-string reportingScale", () => {

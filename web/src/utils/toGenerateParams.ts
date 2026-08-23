@@ -61,8 +61,9 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
     difficulty: subject !== "natural_sciences" ? params.difficulty : undefined,
     reporting_scale: subject === "natural_sciences" ? params.reporting_scale : undefined,
     coverage_mode: subject === "social_studies" ? params.coverage_mode : undefined,
-    core_question_callback:
-      subject === "social_studies" ? params.core_question_callback : undefined,
+    ...(subject === "social_studies" || subject === "natural_sciences"
+      ? { core_question_callback: params.core_question_callback }
+      : {}),
     text_word_limit:
       (subject === "social_studies" || subject === "math" || subject === "natural_sciences") && !mathHasUserAuthoredPassage
         ? params.text_word_limit
