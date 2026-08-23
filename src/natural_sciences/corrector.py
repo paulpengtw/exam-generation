@@ -14,6 +14,42 @@ from src.natural_sciences.schemas import (
     VerificationResult,
 )
 
+# Shared with the 人工審題修正 admission route.  The route must reject
+# annotations aimed at fields this corrector restores from the original.
+FROZEN_TOP_LEVEL_FIELDS: frozenset[str] = frozenset(
+    {
+        "id",
+        "核心問題",
+        "情境",
+        "情境子類別",
+        "題型種類",
+        "題型",
+        "科學能力",
+        "題目內容類型",
+        "取材來源",
+        "圖片",
+        "verification",
+        "metadata",
+    }
+)
+FROZEN_SUBQUESTION_FIELDS: frozenset[str] = frozenset(
+    {
+        "id",
+        "序號",
+        "年級",
+        "科目",
+        "科學能力",
+        "核心素養",
+        "學習內容",
+        "學習表現",
+        "出題概念",
+        "出題指示",
+        "Reporting Scale",
+        "reporting_scale",
+        "題型",
+    }
+)
+
 _CORRECTION_SYSTEM_PROMPT_CORE = """\
 你是一位 PISA Science 與108課綱自然科學領域命題教師，剛收到審核老師對一道題組的意見回饋。
 請根據審核意見「最小幅度」修正題目，保留所有正確的部分。

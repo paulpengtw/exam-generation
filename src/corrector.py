@@ -9,6 +9,33 @@ from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ExamQuestion, ImageSpec, SubQuestion, VerificationResult
 
+# The manual-modification admission route imports these sets so the route and
+# the correction implementation share one source of truth for immutable fields.
+FROZEN_TOP_LEVEL_FIELDS: frozenset[str] = frozenset(
+    {
+        "id",
+        "情境",
+        "題型種類",
+        "題型",
+        "數學思考",
+        "學習內容",
+        "學習表現",
+        "核心素養",
+        "出題概念",
+        "題目內容類型",
+        "難度",
+        "取材來源",
+        "文本",
+        "核心問題",
+        "圖片",
+        "verification",
+        "metadata",
+    }
+)
+FROZEN_SUBQUESTION_FIELDS: frozenset[str] = frozenset(
+    {"id", "序號", "年級", "題型", "學習內容", "學習表現", "出題概念"}
+)
+
 _CORRECTION_SYSTEM_PROMPT_CORE = """\
 你是一位數學教師，剛剛收到審核老師對一道考試題目的意見回饋。
 請根據審核意見「最小幅度」修正題目，保留所有正確的部分。
