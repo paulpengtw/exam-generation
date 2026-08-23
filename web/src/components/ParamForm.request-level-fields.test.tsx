@@ -6,6 +6,7 @@ const REQUEST_LEVEL_FIELDS = [
   "subject",
   "per_question_params",
   "max_retries",
+  "core_question_callback",
 ] as const;
 
 vi.mock("../api/client", () => ({

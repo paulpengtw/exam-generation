@@ -271,6 +271,12 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
+    # ── core_question_callback — SS-only prompt suggestion ──
+    "core_question_callback": {
+        _MA: (INAPPLICABLE, "SS-only prompt suggestion; math has no callback prompt"),
+        _SS: (FORWARDED, ""),
+        _NS: (INAPPLICABLE, "SS-only prompt suggestion; natural sciences ignores it"),
+    },
     # ── sub-question / word-limit fields — all subjects forward where supported ──
     "sub_question_count": {
         _MA: (FORWARDED, ""),
@@ -450,6 +456,11 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     # coverage_mode — SS and NS: forwarded via balanced_batch in _build_run_context
     ("coverage_mode", _SS): (_svc._build_run_context, "params.coverage_mode"),
     ("coverage_mode", _NS): (_svc._build_run_context, "params.coverage_mode"),
+    # core_question_callback — forwarded to the SS generator in _worker_one
+    ("core_question_callback", _SS): (
+        _svc._worker_one,
+        "ctx.params.core_question_callback",
+    ),
 }
 
 
@@ -610,6 +621,6 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    assert forwarded    == 97, f"Expected 97 FORWARDED, got {forwarded}"  # +1 SS kill-switch
+    assert forwarded    == 98, f"Expected 98 FORWARDED, got {forwarded}"  # +1 SS callback option
     assert rejected     == 4,  f"Expected 4 REJECTED, got {rejected}"
-    assert inapplicable == 22, f"Expected 22 INAPPLICABLE, got {inapplicable}"
+    assert inapplicable == 24, f"Expected 24 INAPPLICABLE, got {inapplicable}"

@@ -47,6 +47,7 @@ REQUEST_LEVEL_FIELDS: frozenset[str] = frozenset(
         "per_question_params",
         "max_retries",
         "allow_duplicate_figure_kinds",
+        "core_question_callback",
     }
 )
 # Backend-only request fields are valid on the API route but intentionally have
@@ -107,6 +108,7 @@ class GenerateParams(BaseModel):
     image_generation_mode: ImageGenerationMode = "html"
     difficulty: Literal["easy", "medium", "hard"] | None = None
     coverage_mode: CoverageMode = "balanced"
+    core_question_callback: bool = True
     subject_filter: list[str] | None = None
     content_type: str | None = None
     passage: str | None = None

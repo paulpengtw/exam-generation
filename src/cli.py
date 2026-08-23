@@ -271,6 +271,7 @@ def _math_build_text_user(
     image_generation_mode: str,
     disable_reference_fewshot: bool,
     prior_scopes: Sequence[PriorScope] | None,
+    _core_question_callback: bool,
 ) -> tuple[str, list[Path]]:
     return build_text_user_prompt(
         params,
@@ -299,6 +300,8 @@ def _math_build_subquestion_user(
     slot_cfg: object | None,
     image_generation_mode: str,
     disable_reference_fewshot: bool,
+    _core_question_callback: bool,
+    _is_last: bool,
 ) -> tuple[str, list[Path]]:
     return build_subquestion_user_prompt(
         核心問題=text_raw.get("核心問題", ""),

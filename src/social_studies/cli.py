@@ -245,6 +245,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="balanced",
         help="出題模式：balanced（跨題目平均分配題型/學習內容）或 random（每題獨立隨機）",
     )
+    gen.add_argument(
+        "--no-core-question-callback",
+        dest="core_question_callback",
+        action="store_false",
+        default=True,
+        help="關閉最後小題回扣本題組核心問題的提示",
+    )
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
     gen.add_argument("--max-retries", type=int, default=None,
                      help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)")
@@ -676,6 +683,7 @@ def _ss_build_text_user(
     params, few_shot_dir,
     user_passage, user_options, user_topic, user_core_question,
     image_generation_mode, disable_reference_fewshot, prior_scopes,
+    core_question_callback,
     *,
     balanced_batch=False,
 ):
@@ -690,6 +698,7 @@ def _ss_build_text_user(
         user_core_question=user_core_question,
         disable_reference_fewshot=disable_reference_fewshot,
         prior_scopes=prior_scopes,
+        core_question_callback=core_question_callback,
         balanced_batch=balanced_batch,
     )
 
@@ -701,6 +710,7 @@ def _ss_build_subquestion_system(stage_ctx: dict) -> str:
 def _ss_build_subquestion_user(
     text_raw, params, few_shot_dir, sq_plan, slot_cfg,
     image_generation_mode, disable_reference_fewshot,
+    core_question_callback, is_last,
 ):
     return build_subquestion_user_prompt(
         核心問題=text_raw.get("核心問題", ""),
@@ -714,6 +724,8 @@ def _ss_build_subquestion_user(
         image_generation_mode=image_generation_mode,
         cfg=slot_cfg,
         disable_reference_fewshot=disable_reference_fewshot,
+        core_question_callback=core_question_callback,
+        is_last=is_last,
     )
 
 
@@ -1067,6 +1079,7 @@ def generate_one(
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
+    core_question_callback: bool = True,
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     params = _with_text_word_limit(params, text_word_limit)
@@ -1079,6 +1092,7 @@ def generate_one(
         dry_run=dry_run,
         skip_verify=skip_verify,
         disable_reference_fewshot=disable_reference_fewshot,
+        core_question_callback=core_question_callback,
         html_renderer=html_renderer,
         image_generation_mode=image_generation_mode,
         user_passage=user_passage,
@@ -1102,6 +1116,7 @@ def build_generation_prompts(
 
     params = _with_text_word_limit(params, kwargs.pop("text_word_limit", None))
     spec = _ss_spec_for_batch(kwargs.pop("balanced_batch", False))
+    kwargs.setdefault("core_question_callback", True)
     system, user, images, _stage_ctx = build_text_generation_prompts(
         config, params, spec, **kwargs
     )
@@ -1129,6 +1144,7 @@ def build_subquestion_prompt_previews(
         user_topic=kwargs.get("user_topic"),
         user_core_question=kwargs.get("user_core_question"),
         prior_scopes=kwargs.get("prior_scopes"),
+        core_question_callback=kwargs.get("core_question_callback", True),
     )
 
 
@@ -1152,6 +1168,7 @@ def generate_with_corrections(
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
+    core_question_callback: bool = True,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     return generate_with_corrections_core(
@@ -1163,6 +1180,7 @@ def generate_with_corrections(
         max_retries=max_retries,
         skip_verify=skip_verify,
         disable_reference_fewshot=disable_reference_fewshot,
+        core_question_callback=core_question_callback,
         html_renderer=html_renderer,
         image_generation_mode=image_generation_mode,
         dry_run=dry_run,
@@ -1270,6 +1288,7 @@ def main(argv: list[str] | None = None) -> None:
                 question_id=question_id,
                 max_retries=max_retries,
                 skip_verify=args.no_verify,
+                core_question_callback=args.core_question_callback,
                 html_renderer=html_renderer,
                 image_generation_mode=args.image_generation_mode,
                 dry_run=args.dry_run,

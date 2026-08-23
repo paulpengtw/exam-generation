@@ -28,6 +28,7 @@ export interface GenerateParams {
   image_generation_mode?: "html" | "gpt_image";
   difficulty?: "easy" | "medium" | "hard";
   coverage_mode?: "balanced" | "random";
+  core_question_callback?: boolean;
   subject_filter?: string[];
   content_type?: string;
   passage?: string;

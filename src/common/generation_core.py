@@ -43,6 +43,7 @@ def build_text_generation_prompts(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     prior_scopes: Sequence[Any] | None = None,
+    core_question_callback: bool = False,
 ) -> tuple[str, str, list, dict]:
     """Build the exact prompts used by a 文本生成器 call."""
     few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
@@ -57,6 +58,7 @@ def build_text_generation_prompts(
         image_generation_mode,
         disable_reference_fewshot,
         prior_scopes,
+        core_question_callback,
     )
     return text_system, text_user, text_images, stage_ctx
 
@@ -73,6 +75,7 @@ def build_subquestion_generation_prompts(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     prior_scopes: Sequence[Any] | None = None,
+    core_question_callback: bool = False,
 ) -> list[tuple[int, str, str, list]]:
     """Build deterministic 子題產生器 prompts with visible 文本生成器 placeholders."""
     _, _, _, stage_ctx = build_text_generation_prompts(
@@ -86,6 +89,7 @@ def build_subquestion_generation_prompts(
         user_topic=user_topic,
         user_core_question=user_core_question,
         prior_scopes=prior_scopes,
+        core_question_callback=core_question_callback,
     )
     subquestion_configs = getattr(params, "subquestion_configs", [])
     slot_count = params.sub_question_count or len(subquestion_configs) or 3
@@ -113,6 +117,8 @@ def build_subquestion_generation_prompts(
             slot_cfg,
             image_generation_mode,
             disable_reference_fewshot,
+            core_question_callback,
+            idx == len(plans),
         )
         previews.append((idx, sub_system, sub_user, sub_images))
     return previews
@@ -135,6 +141,7 @@ def generate_one_core(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    core_question_callback: bool = False,
     on_question_update: Callable | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
@@ -153,6 +160,7 @@ def generate_one_core(
         user_topic=user_topic,
         user_core_question=user_core_question,
         prior_scopes=prior_scopes,
+        core_question_callback=core_question_callback,
     )
     if dry_run:
         img_note = f" ({len(text_images)} few-shot images)" if text_images else ""
@@ -194,8 +202,9 @@ def generate_one_core(
         sub_client_factory is None and client is not None and not isinstance(client, LLMClient)
     )
 
-    def _generate_subquestion(sq_plan: dict) -> Any:
-        idx = sq_plan.get("序號", sq_plans.index(sq_plan) + 1)
+    def _generate_subquestion(plan_item: tuple[int, dict]) -> Any:
+        plan_position, sq_plan = plan_item
+        idx = sq_plan.get("序號", plan_position + 1)
         agent_id = f"sub_generator#{idx}"
         if use_embedded_subquestions:
             return spec.parse_subquestion_fn(sq_plan, question_id, params, idx)
@@ -205,6 +214,8 @@ def generate_one_core(
         sub_user, sub_images = spec.build_subquestion_user_fn(
             text_raw, params, few_shot_dir, sq_plan, slot_cfg,
             image_generation_mode, disable_reference_fewshot,
+            core_question_callback,
+            plan_position == len(sq_plans) - 1,
         )
 
         attempts = 1 + max(0, config.subgen_retries)
@@ -283,12 +294,12 @@ def generate_one_core(
     sq_results: dict[int, Any] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_generate_subquestion, sq_plan): sq_plan
-            for sq_plan in sq_plans
+            executor.submit(_generate_subquestion, plan_item): plan_item
+            for plan_item in enumerate(sq_plans)
         }
         for future in concurrent.futures.as_completed(futures):
-            sq_plan = futures[future]
-            idx = sq_plan.get("序號", sq_plans.index(sq_plan) + 1)
+            plan_position, sq_plan = futures[future]
+            idx = sq_plan.get("序號", plan_position + 1)
             result = future.result()
             if result is not None:
                 sq_results[idx] = result
@@ -372,6 +383,7 @@ def generate_with_corrections_core(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    core_question_callback: bool = False,
     on_question_update: Callable | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
@@ -394,6 +406,7 @@ def generate_with_corrections_core(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        core_question_callback=core_question_callback,
         on_question_update=on_question_update,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,

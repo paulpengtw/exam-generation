@@ -154,7 +154,8 @@ class SubjectGenerationSpec:
     # Build text-generator user prompt.
     # Signature: (params, few_shot_dir, user_passage, user_options, user_topic,
     #              user_core_question, image_generation_mode,
-    #              disable_reference_fewshot, prior_scopes) -> tuple[str, list]
+    #              disable_reference_fewshot, prior_scopes,
+    #              core_question_callback) -> tuple[str, list]
     build_text_user_fn: Callable
 
     # Build subquestion system prompt.
@@ -163,7 +164,8 @@ class SubjectGenerationSpec:
 
     # Build subquestion user prompt.
     # Signature: (text_raw, params, few_shot_dir, sq_plan, slot_cfg,
-    #              image_generation_mode, disable_reference_fewshot) -> tuple[str, list]
+    #              image_generation_mode, disable_reference_fewshot,
+    #              core_question_callback, is_last) -> tuple[str, list]
     build_subquestion_user_fn: Callable
 
     # Parse text-generator JSON into an ExamQuestion shell (subquestions=[]).
