@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
@@ -113,12 +113,6 @@ const MATH_HISTORY_PARAMS = {
   learning_content: ["N-7-1"],
   text_word_limit: 180,
   per_question_params: JSON.stringify(MATH_PER_QUESTION_PARAMS),
-  predrawn_fields: JSON.stringify([
-    "per_question_params[0].seed",
-    "per_question_params[0].style",
-    "per_question_params[1].seed",
-    "per_question_params[1].style",
-  ]),
 };
 
 const SOCIAL_SCHEMA = {
@@ -142,8 +136,8 @@ const SOCIAL_SCHEMA = {
     { value: "社1a-Ⅳ-2", instruction: "解讀史料", 科目: "社" },
   ],
   學習內容: [
-    { value: "歷Ka-Ⅳ-1", instruction: "臺灣早期歷史", 科目: "歷史" },
-    { value: "歷Ka-Ⅳ-2", instruction: "清代臺灣社會", 科目: "歷史" },
+    { value: "歷Ka-Ⅳ-1", instruction: "臺灣早期歷史", 科目: "歷" },
+    { value: "歷Ka-Ⅳ-2", instruction: "清代臺灣社會", 科目: "歷" },
   ],
 };
 
@@ -280,6 +274,104 @@ const SOCIAL_HISTORY_PARAMS = {
   per_question_params: JSON.stringify(SOCIAL_PER_QUESTION_PARAMS),
 };
 
+const NATURAL_SCHEMA = {
+  學習階段: "第四學習階段",
+  grades: [7, 8, 9],
+  情境: [{ value: "個人", instruction: "" }],
+  情境子類別: [{ value: "健康", parent: "個人", instruction: "" }],
+  題型種類: [{ value: "題組題", instruction: "" }],
+  題型: [
+    { value: "自然選擇題", instruction: "" },
+    { value: "自然開放題", instruction: "" },
+  ],
+  科學能力: [{ value: "探究能力", instruction: "" }],
+  題目內容類型: [{ value: "純文字", instruction: "" }],
+  科目: [{ value: "自然科學", instruction: "" }],
+  學習表現: [
+    { value: "tr-IV-1", instruction: "觀察與推理", 科目: "自然科學" },
+    { value: "tr-IV-2", instruction: "分析資料", 科目: "自然科學" },
+  ],
+  學習內容: [
+    { value: "INc-IV-1", instruction: "物質組成", 科目: "自然科學" },
+    { value: "INc-IV-2", instruction: "尺度與單位", 科目: "自然科學" },
+  ],
+};
+
+const NATURAL_SUBQUESTION_ROWS = [
+  {
+    question_type: "自然選擇題",
+    instruction: "第一自然小題",
+    content_type: "純文字",
+    text_word_limit: 44,
+    reporting_scale: "4",
+    learning_content: ["INc-IV-1"],
+    learning_performance: ["tr-IV-1"],
+  },
+  {
+    question_type: "自然開放題",
+    instruction: "第二自然小題",
+    content_type: "純文字",
+    text_word_limit: 45,
+    reporting_scale: "5",
+    learning_content: ["INc-IV-2"],
+    learning_performance: ["tr-IV-2"],
+  },
+  {
+    question_type: "自然選擇題",
+    instruction: "第三自然小題",
+    content_type: "純文字",
+    text_word_limit: 46,
+    reporting_scale: "6",
+    learning_content: ["INc-IV-1", "INc-IV-2"],
+    learning_performance: ["tr-IV-1", "tr-IV-2"],
+  },
+];
+
+const NATURAL_PER_QUESTION_PARAMS = [{
+  seed: 505,
+  context: ["個人"],
+  set_type: "題組題",
+  q_type: ["自然選擇題"],
+  skip_verify: true,
+  disable_reference_fewshot: true,
+  image_generation_mode: "gpt_image",
+  content_type: "純文字",
+  sub_context: "健康",
+  science_competency: ["探究能力"],
+  topic: "校園飲水",
+  core_question: "如何判斷飲水安全？",
+  learning_performance: ["tr-IV-1", "tr-IV-2"],
+  learning_content: ["INc-IV-1", "INc-IV-2"],
+  sub_question_count: 3,
+  reporting_scale: "3",
+  text_word_limit: 260,
+  subquestion_configs: JSON.stringify(NATURAL_SUBQUESTION_ROWS),
+}];
+
+const NATURAL_HISTORY_PARAMS = {
+  grade: 7,
+  context: ["個人"],
+  set_type: "題組題",
+  q_type: ["自然選擇題"],
+  count: 1,
+  skip_verify: true,
+  disable_reference_fewshot: true,
+  image_generation_mode: "gpt_image",
+  core_question_callback: false,
+  content_type: "純文字",
+  sub_context: "健康",
+  science_competency: ["探究能力"],
+  topic: "校園飲水",
+  core_question: "如何判斷飲水安全？",
+  learning_performance: ["tr-IV-1", "tr-IV-2"],
+  learning_content: ["INc-IV-1", "INc-IV-2"],
+  sub_question_count: 3,
+  reporting_scale: "3",
+  text_word_limit: 260,
+  subquestion_configs: JSON.stringify(NATURAL_SUBQUESTION_ROWS),
+  per_question_params: JSON.stringify(NATURAL_PER_QUESTION_PARAMS),
+};
+
 describe("ParamForm history prefill", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -332,6 +424,258 @@ describe("ParamForm history prefill", () => {
     expect(JSON.parse(submitted.per_question_params as string)).toEqual(
       MATH_PER_QUESTION_PARAMS,
     );
+  });
+
+  it("restores a provenance-marked request-level slot to random before re-submitting", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const onSubmit = vi.fn();
+      render(
+        <ParamForm
+          subject="math"
+          initialParams={{
+            grade: 7,
+            style: "課本",
+            content_type: "純文字",
+            context: ["個人"],
+            set_type: "單一題",
+            q_type: ["選擇題"],
+            count: 1,
+            learning_performance: ["n-IV-1"],
+            learning_content: ["N-7-1"],
+            predrawn_fields: JSON.stringify(["learning_content"]),
+          }}
+          onSubmit={onSubmit}
+          disabled={false}
+        />,
+      );
+
+      fireEvent.click(await screen.findByText("form.btn_generate"));
+      await screen.findByText("form.confirm_title");
+
+      const learningContentRow = screen
+        .getByText("form.confirm_learning_content", { selector: "dt" })
+        .parentElement!;
+      expect(learningContentRow).toHaveTextContent("form.confirm_lc_random_pool");
+      expect(learningContentRow).toHaveTextContent("A-7-2");
+
+      fireEvent.click(screen.getByText("form.btn_confirm_send"));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
+
+      expect(submitted.learning_content).toEqual(["A-7-2"]);
+      expect(submitted.learning_performance).toEqual(["n-IV-1"]);
+      expect(predrawnFields).toContain("learning_content");
+      expect(predrawnFields).not.toContain("learning_performance");
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("restores a provenance-marked per-question slot while preserving its siblings", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const onSubmit = vi.fn();
+      render(
+        <ParamForm
+          subject="math"
+          initialParams={{
+            ...MATH_HISTORY_PARAMS,
+            predrawn_fields: JSON.stringify(["per_question_params[0].style"]),
+          }}
+          onSubmit={onSubmit}
+          disabled={false}
+        />,
+      );
+
+      fireEvent.click(await screen.findByText("form.btn_generate"));
+      await screen.findByText("form.confirm_title");
+
+      const styleRows = screen.getAllByText("form.confirm_style", { selector: "dt" });
+      expect(styleRows[0].parentElement).toHaveTextContent("form.confirm_badge_random");
+      expect(styleRows[1].parentElement).toHaveTextContent("form.confirm_badge_user");
+
+      fireEvent.click(screen.getByText("form.btn_confirm_send"));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
+      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
+
+      expect(perQuestion[0].style).toEqual(["素養"]);
+      expect(perQuestion[0].seed).toBe(101);
+      expect(perQuestion[1]).toEqual(MATH_PER_QUESTION_PARAMS[1]);
+      expect(predrawnFields).toContain("per_question_params[0].style");
+      expect(predrawnFields).not.toContain("per_question_params[1].style");
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("restores a provenance-marked social-studies per-question slot", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+      const onSubmit = vi.fn();
+      render(
+        <ParamForm
+          subject="social_studies"
+          initialParams={{
+            ...SOCIAL_HISTORY_PARAMS,
+            predrawn_fields: JSON.stringify(["per_question_params[0].subject_filter"]),
+          }}
+          onSubmit={onSubmit}
+          disabled={false}
+        />,
+      );
+
+      fireEvent.click(await screen.findByText("form.btn_generate"));
+      await screen.findByText("form.confirm_title");
+
+      const questionRegions = screen.getAllByRole("region", { name: "form.confirm_question_block" });
+      const subjectFilterRows = questionRegions.map((region) =>
+        within(region).getByText("form.confirm_subject_filter", { selector: "dt" }),
+      );
+      expect(subjectFilterRows[0].parentElement).toHaveTextContent("form.confirm_badge_random");
+      expect(subjectFilterRows[1].parentElement).toHaveTextContent("form.confirm_badge_user");
+
+      fireEvent.click(screen.getByText("form.btn_confirm_send"));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
+      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
+
+      expect(perQuestion[0].subject_filter).toEqual(["地理"]);
+      expect(perQuestion[1]).toEqual(SOCIAL_PER_QUESTION_PARAMS[1]);
+      expect(predrawnFields).toContain("per_question_params[0].subject_filter");
+      expect(predrawnFields).not.toContain("per_question_params[1].subject_filter");
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("restores a provenance-marked natural-sciences per-question slot", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      getSchemasMock.mockResolvedValue(NATURAL_SCHEMA);
+      const onSubmit = vi.fn();
+      render(
+        <ParamForm
+          subject="natural_sciences"
+          initialParams={{
+            ...NATURAL_HISTORY_PARAMS,
+            predrawn_fields: JSON.stringify(["per_question_params[0].q_type"]),
+          }}
+          onSubmit={onSubmit}
+          disabled={false}
+        />,
+      );
+
+      fireEvent.click(await screen.findByText("form.btn_generate"));
+      await screen.findByText("form.confirm_title");
+
+      const questionTypeRows = screen.getAllByText("form.confirm_q_type", { selector: "dt" });
+      expect(questionTypeRows[0].parentElement).toHaveTextContent("form.confirm_badge_random");
+
+      fireEvent.click(screen.getByText("form.btn_confirm_send"));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
+      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
+
+      expect(perQuestion[0].q_type).toEqual(["自然開放題"]);
+      expect(predrawnFields).toContain("per_question_params[0].q_type");
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("restores a provenance-marked social-studies per-小題 slot", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+      const onSubmit = vi.fn();
+      render(
+        <ParamForm
+          subject="social_studies"
+          initialParams={{
+            ...SOCIAL_HISTORY_PARAMS,
+            learning_content: ["歷Ka-Ⅳ-1", "歷Ka-Ⅳ-2"],
+            predrawn_fields: JSON.stringify([
+              "per_question_params[0].subquestion_configs[0].learning_content",
+            ]),
+          }}
+          onSubmit={onSubmit}
+          disabled={false}
+        />,
+      );
+
+      fireEvent.click(await screen.findByText("form.btn_generate"));
+      await screen.findByText("form.confirm_title");
+
+      const questionRegions = screen.getAllByRole("region", { name: "form.confirm_question_block" });
+      expect(within(questionRegions[0]).getByText("form.confirm_subq_lc_random_pool")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText("form.btn_confirm_send"));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
+      const firstQuestionRows = JSON.parse(perQuestion[0].subquestion_configs as string) as Record<string, unknown>[];
+      const secondQuestionRows = JSON.parse(perQuestion[1].subquestion_configs as string) as Record<string, unknown>[];
+      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
+
+      expect(firstQuestionRows[0].learning_content).toEqual(["歷Ka-Ⅳ-2"]);
+      expect(firstQuestionRows[1]).toEqual(SOCIAL_ROWS_ONE[1]);
+      expect(secondQuestionRows).toEqual(SOCIAL_ROWS_TWO);
+      expect(predrawnFields).toContain(
+        "per_question_params[0].subquestion_configs[0].learning_content",
+      );
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("restores a provenance-marked natural-sciences per-小題 slot", async () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      getSchemasMock.mockResolvedValue(NATURAL_SCHEMA);
+      const onSubmit = vi.fn();
+      render(
+        <ParamForm
+          subject="natural_sciences"
+          initialParams={{
+            ...NATURAL_HISTORY_PARAMS,
+            predrawn_fields: JSON.stringify([
+              "per_question_params[0].subquestion_configs[0].learning_content",
+            ]),
+          }}
+          onSubmit={onSubmit}
+          disabled={false}
+        />,
+      );
+
+      fireEvent.click(await screen.findByText("form.btn_generate"));
+      await screen.findByText("form.confirm_title");
+
+      const questionRegions = screen.getAllByRole("region", { name: "form.confirm_question_block" });
+      expect(within(questionRegions[0]).getByText("form.confirm_subq_lc_random_pool")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText("form.btn_confirm_send"));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
+      const rows = JSON.parse(perQuestion[0].subquestion_configs as string) as Record<string, unknown>[];
+      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
+
+      expect(rows[0].learning_content).toEqual(["INc-IV-2"]);
+      expect(rows[1]).toEqual(NATURAL_SUBQUESTION_ROWS[1]);
+      expect(rows[2]).toEqual(NATURAL_SUBQUESTION_ROWS[2]);
+      expect(predrawnFields).toContain(
+        "per_question_params[0].subquestion_configs[0].learning_content",
+      );
+    } finally {
+      random.mockRestore();
+    }
   });
 
   it("re-submits social-studies history with coverage mode and every 各小題配置 row preserved", async () => {
