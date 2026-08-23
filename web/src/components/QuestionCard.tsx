@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import { submitModificationBatch } from "../api/client";
+import { ApiError, submitModificationBatch } from "../api/client";
 import type { DraftPhase, ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
@@ -33,6 +33,30 @@ interface ModificationAnnotation {
   id: number;
   segments: SelectionSegment[];
   instruction: string;
+}
+
+interface ModificationSubmitError {
+  code?: string;
+  message: string;
+}
+
+const MODIFICATION_ERROR_TITLE_KEYS: Record<string, string> = {
+  stale_base: "card.modificationError.stale_base",
+  frozen_field: "card.modificationError.frozen_field",
+  empty_annotation: "card.modificationError.empty_annotation",
+  missing_instruction: "card.modificationError.missing_instruction",
+  not_latest: "card.modificationError.not_latest",
+  not_latest_version: "card.modificationError.not_latest_version",
+  run_in_progress: "card.modificationError.run_in_progress",
+};
+
+function getModificationSubmitError(error: unknown, fallback: string): ModificationSubmitError {
+  if (error instanceof ApiError) {
+    return { code: error.code, message: error.detail };
+  }
+  return {
+    message: error instanceof Error ? error.message : fallback,
+  };
 }
 
 function getQuestionId(question: ExamQuestion): string {
@@ -376,7 +400,7 @@ export default function QuestionCard({
   const nextAnnotationId = useRef(0);
   const [annotations, setAnnotations] = useState<ModificationAnnotation[]>([]);
   const [selectionError, setSelectionError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<ModificationSubmitError | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const questionId = getQuestionId(question);
@@ -491,7 +515,7 @@ export default function QuestionCard({
       });
       setSubmitted(true);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : t("card.modificationSubmitError"));
+      setSubmitError(getModificationSubmitError(error, t("card.modificationSubmitError")));
     } finally {
       setIsSubmitting(false);
     }
@@ -727,9 +751,27 @@ export default function QuestionCard({
                 {t("card.modificationSubmitted")}
               </p>
             )}
-            {submitError && (
-              <p role="alert" className="text-sm text-red-700">{submitError}</p>
-            )}
+            {submitError && (() => {
+              const isStaleBase = submitError.code === "stale_base";
+              const titleKey = submitError.code
+                ? MODIFICATION_ERROR_TITLE_KEYS[submitError.code]
+                : undefined;
+              return (
+                <div
+                  role="alert"
+                  data-error-code={submitError.code}
+                  data-severity={isStaleBase ? "warning" : "error"}
+                  className={isStaleBase
+                    ? "rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                    : "rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800"}
+                >
+                  <p className="font-semibold">
+                    {t(titleKey ?? "card.modificationErrorTitle")}
+                  </p>
+                  <p className="mt-1 whitespace-pre-wrap">{submitError.message}</p>
+                </div>
+              );
+            })()}
           </div>
         </section>
       )}
