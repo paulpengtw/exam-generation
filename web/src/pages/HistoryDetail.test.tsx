@@ -86,4 +86,39 @@ describe("HistoryDetail", () => {
       ),
     );
   });
+
+  it("renders failed detail params and error without question content or download", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      id: "failed-id",
+      subject: "social_studies",
+      question_id: "",
+      created_at: "2026-07-16T00:00:00Z",
+      status: "failed",
+      error: "Question generation failed (RuntimeError)",
+      params_json: { subject: "social_studies", topic: "climate" },
+      question_json: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/failed-id"]}>
+        <Routes>
+          <Route
+            path="/history/:id"
+            element={<HistoryDetail recordId="failed-id" />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Question generation failed (RuntimeError)"),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/"topic": "climate"/)).toBeInTheDocument();
+    expect(screen.queryByTestId("qc")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Download JSON/i }),
+    ).not.toBeInTheDocument();
+  });
 });

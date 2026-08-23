@@ -130,12 +130,21 @@ function HistoryList() {
                   <span className="rounded bg-gray-100 px-2 py-0.5 font-medium text-gray-700">
                     {subjectLabel(t, item.subject)}
                   </span>
+                  {item.status === "failed" && (
+                    <span className="rounded bg-red-100 px-2 py-0.5 font-medium text-red-700">
+                      {t("history.failed_badge")}
+                    </span>
+                  )}
                   <span>{new Date(item.created_at).toLocaleString()}</span>
                 </div>
-                <div className="text-sm text-gray-800">{item.preview}</div>
+                <div className="text-sm text-gray-800">
+                  {item.status === "failed" ? item.error || item.preview : item.preview}
+                </div>
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="text-gray-500">{item.question_id}</span>
-                  {item.verified && (
+                  {item.status !== "failed" && (
+                    <span className="text-gray-500">{item.question_id}</span>
+                  )}
+                  {item.status !== "failed" && item.verified && (
                     <span className="rounded bg-green-100 px-1.5 py-0.5 font-medium text-green-700">
                       {t("history.verified_badge")}
                     </span>

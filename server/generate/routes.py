@@ -28,6 +28,7 @@ from server.generate.models import (
     PlanCoreQuestionsResponse,
     build_sse_error,
 )
+from server.generate.persistence import persist_failed_generation_record
 from server.generate.service import build_prompt_previews, generate_question_stream
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
@@ -322,9 +323,30 @@ async def generate_endpoint(
     async def event_generator() -> AsyncIterator[dict[str, Any]]:
         status = "completed"
         error_msg: str | None = None
+        failed_record_written = False
+
+        async def persist_failure_once(message: str) -> None:
+            nonlocal failed_record_written
+            if failed_record_written:
+                return
+            failed_record_written = True
+            await persist_failed_generation_record(
+                user_id=user.id,
+                generation_log_id=log_id,
+                subject=params.subject,
+                params=params,
+                error=message,
+                session_factory=AsyncSessionLocal,
+            )
+
         try:
             async for event in generate_question_stream(
-                params, config, app_state, user_id=user.id, generation_log_id=log_id
+                params,
+                config,
+                app_state,
+                user_id=user.id,
+                generation_log_id=log_id,
+                session_factory=AsyncSessionLocal,
             ):
                 if event["event"] == "error":
                     status = "failed"
@@ -332,6 +354,7 @@ async def generate_endpoint(
                     error_msg = (
                         data.get("message", str(data)) if isinstance(data, dict) else str(data)
                     )
+                    await persist_failure_once(error_msg)
                 yield _serialize_event(event)
         except Exception as exc:
             status = "failed"
@@ -341,6 +364,7 @@ async def generate_endpoint(
             )
             error_msg = error_payload["message"]
             logger.exception("generate_endpoint stream error")
+            await persist_failure_once(error_msg)
             yield _serialize_event({"event": "error", "data": error_payload})
             yield {"event": "done", "data": ""}
         finally:
