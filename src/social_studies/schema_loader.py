@@ -24,6 +24,8 @@ _ENUM_NAMES = {
     "閱讀歷程": "ReadingProcess",
     "文本形式": "TextForm",
     "科目": "QuestionSubject",
+    "認知歷程": "CognitiveProcess",
+    "內容領域": "ContentDomain",
 }
 _SCHEMA_METADATA_KEYS = {"學習階段", "grades"}
 
