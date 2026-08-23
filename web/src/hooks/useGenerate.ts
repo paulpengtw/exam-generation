@@ -355,6 +355,12 @@ export function useGenerate(): UseGenerateReturn {
     const controller = new AbortController();
     controllerRef.current = controller;
 
+    const streamContext = {
+      startedAt: Date.now(),
+      messageCount: 0,
+      lastEventType: "none",
+    };
+
     const token = useAuthStore.getState().token;
     const qs = buildQueryString(params);
     const url = qs ? `/api/generate?${qs}` : "/api/generate";
@@ -365,7 +371,7 @@ export function useGenerate(): UseGenerateReturn {
     setDisplayResults([]);
     setLlmCalls([]);
     setErrorMessage(null);
-    setStartedAt(Date.now());
+    setStartedAt(streamContext.startedAt);
     setFinishedAt(null);
     setSubQuestionTotal(null);
     nextFinalIndexRef.current = 0;
@@ -404,6 +410,9 @@ export function useGenerate(): UseGenerateReturn {
         }
       },
       onmessage(ev) {
+        streamContext.messageCount += 1;
+        streamContext.lastEventType = ev.event || "none";
+
         switch (ev.event) {
           case "started":
             setStatus("generating");
@@ -521,7 +530,19 @@ export function useGenerate(): UseGenerateReturn {
       },
     }).catch((err: unknown) => {
       if (err instanceof Error && err.name !== "AbortError" && isSentryEnabled()) {
-        Sentry.captureException(err, { tags: { source: "fetchEventSource" } });
+        Sentry.captureException(err, {
+          tags: {
+            source: "fetchEventSource",
+            last_event_type: streamContext.lastEventType,
+            navigator_online: String(navigator.onLine),
+          },
+          contexts: {
+            stream: {
+              elapsed_ms: Date.now() - streamContext.startedAt,
+              message_count: streamContext.messageCount,
+            },
+          },
+        });
       }
       // Stream terminated (abort or fatal error). State already updated.
     });
