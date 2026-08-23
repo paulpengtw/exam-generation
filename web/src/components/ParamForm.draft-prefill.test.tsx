@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import {
   afterEach,
   beforeEach,
@@ -52,26 +52,33 @@ describe("ParamForm route prefill draft behavior", () => {
     vi.useRealTimers();
   });
 
-  it("treats route-prefilled fields as dirty and saves them after the debounce", async () => {
+  it("does not save route-prefilled fields until a real edit", async () => {
+    const onUnsubmittedInput = vi.fn();
     render(
       <ParamForm
         subject="math"
         initialParams={{ topic: "紀錄帶入的主題", count: 4 }}
         onSubmit={() => {}}
         disabled={false}
+        onUnsubmittedInput={onUnsubmittedInput}
       />,
     );
     await screen.findByDisplayValue("紀錄帶入的主題");
-    await waitFor(
-      () => expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull(),
-      { timeout: 1_500 },
-    );
+    await new Promise((resolve) => window.setTimeout(resolve, 1_100));
+    expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(onUnsubmittedInput).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByDisplayValue("紀錄帶入的主題"), {
+      target: { value: "使用者修改的主題" },
+    });
+    expect(onUnsubmittedInput).toHaveBeenCalledTimes(1);
+    await new Promise((resolve) => window.setTimeout(resolve, 1_100));
 
     const stored = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? "null") as {
       fields: { topic: string; count: number };
     };
     expect(stored.fields).toMatchObject({
-      topic: "紀錄帶入的主題",
+      topic: "使用者修改的主題",
       count: 4,
     });
   });

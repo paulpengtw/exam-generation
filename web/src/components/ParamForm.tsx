@@ -39,6 +39,27 @@ function parseSubquestionConfigs(value: unknown): SubQuestionConfig[] {
   }
 }
 
+function parsePerQuestionParams(value: unknown): Record<string, unknown>[] {
+  const parsed = (() => {
+    if (Array.isArray(value)) return value;
+    if (typeof value !== "string") return null;
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return null;
+    }
+  })();
+  if (
+    !Array.isArray(parsed) ||
+    parsed.some(
+      (row) => typeof row !== "object" || row === null || Array.isArray(row),
+    )
+  ) {
+    return [];
+  }
+  return parsed as Record<string, unknown>[];
+}
+
 function serialisableSubquestionConfig(config: SubQuestionConfig): SubQuestionConfig {
   return Object.fromEntries(
     Object.entries(config).filter(([, value]) => value !== undefined),
@@ -677,6 +698,12 @@ export default function ParamForm({
   function fromInit<T>(key: string, fallback: T): T {
     return (ip[key] as T | undefined) ?? fallback;
   }
+  function stringFromInit(key: string, fallback: string): string {
+    const value = ip[key];
+    if (typeof value === "string") return value;
+    if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+    return fallback;
+  }
   function subquestionConfigsFromInit(): SubQuestionConfig[] {
     const value = ip.subquestion_configs;
     const configs = Array.isArray(value)
@@ -693,14 +720,14 @@ export default function ParamForm({
 
   const [formFields, setFormFields] = useState<FormFields>(() => ({
     grade: fromInit<number | "">("grade", ""),
-    style: fromInit<string>("style", ""),
+    style: stringFromInit("style", ""),
     contentType: fromInit<string>("content_type", DEFAULT_CONTENT_TYPE),
     customContentType: "",
     context: fromInit<string[]>("context", []),
     setType: fromInit<string>("set_type", ""),
     qType: fromInit<string[]>("q_type", []),
     count: fromInit<number>("count", 1),
-    coverageMode: "balanced",
+    coverageMode: ip.coverage_mode === "random" ? "random" : "balanced",
     skipVerify: fromInit<boolean>("skip_verify", false),
     disableReferenceFewshot: fromInit<boolean>("disable_reference_fewshot", false),
     coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
@@ -711,7 +738,7 @@ export default function ParamForm({
       const value = fromInit<string | string[]>("subject_filter", "");
       return Array.isArray(value) ? (value[0] ?? "") : value;
     })(),
-    passage: fromInit<string>("passage", TEXT_HINT),
+    passage: stringFromInit("passage", TEXT_HINT),
     textWordLimit: fromInit<number | undefined>("text_word_limit", undefined) ?? null,
     options: fromInit<string[]>(
       "options",
@@ -725,14 +752,14 @@ export default function ParamForm({
     learningContent: fromInit<string[]>("learning_content", []),
     subQuestionCount: fromInit<number | "">("sub_question_count", ""),
     subquestionConfigs: subquestionConfigsFromInit(),
-    modelPlan: window.localStorage.getItem("model_plan") ?? "",
-    modelExecute: window.localStorage.getItem("model_execute") ?? "",
-    modelVerify: window.localStorage.getItem("model_verify") ?? "",
-    modelCorrect: window.localStorage.getItem("model_correct") ?? "",
-    effortPlan: window.localStorage.getItem("effort_plan") ?? "medium",
-    effortExecute: window.localStorage.getItem("effort_execute") ?? "medium",
-    effortVerify: window.localStorage.getItem("effort_verify") ?? "",
-    effortCorrect: window.localStorage.getItem("effort_correct") ?? "",
+    modelPlan: stringFromInit("model_plan", window.localStorage.getItem("model_plan") ?? ""),
+    modelExecute: stringFromInit("model_execute", window.localStorage.getItem("model_execute") ?? ""),
+    modelVerify: stringFromInit("model_verify", window.localStorage.getItem("model_verify") ?? ""),
+    modelCorrect: stringFromInit("model_correct", window.localStorage.getItem("model_correct") ?? ""),
+    effortPlan: stringFromInit("effort_plan", window.localStorage.getItem("effort_plan") ?? "medium"),
+    effortExecute: stringFromInit("effort_execute", window.localStorage.getItem("effort_execute") ?? "medium"),
+    effortVerify: stringFromInit("effort_verify", window.localStorage.getItem("effort_verify") ?? ""),
+    effortCorrect: stringFromInit("effort_correct", window.localStorage.getItem("effort_correct") ?? ""),
   }));
   const formSnapshot = formFields;
   const restoreFormSnapshot = setFormFields;
@@ -789,6 +816,7 @@ export default function ParamForm({
     effortCorrect,
   } = formSnapshot;
   const configuredSeed = fromInit<number | undefined>("seed", undefined);
+  const historyPerQuestionParams = parsePerQuestionParams(ip.per_question_params);
 
   useEffect(() => {
     let cancelled = false;
@@ -824,6 +852,7 @@ export default function ParamForm({
           historyDraftChoice === "defaults") &&
         !hasUserEditedRef.current
       ) ||
+      (hasInitialParams && !hasUserEditedRef.current) ||
       defaultsSnapshotRef.current === null ||
       (
         !hasInitialParams &&
@@ -1385,7 +1414,7 @@ export default function ParamForm({
   }, [models, modelCorrect, modelExecute]);
 
   useEffect(() => {
-    if (subject !== "natural_sciences") return;
+    if (subject !== "natural_sciences" || !schemas || availableSubContexts.length === 0) return;
     const allowed = new Set(availableSubContexts.map((entry) => entry.value));
     if (!subContext || !allowed.has(subContext)) {
       setField("subContext", availableSubContexts[0]?.value ?? "");
@@ -1452,11 +1481,12 @@ export default function ParamForm({
     if (isCurriculumSubject && !effectiveContentType) return;
     const lpPoolValues = availableLearningPerformance.map((e) => e.value);
     const lcPoolValues = availableLearningContent.map((e) => e.value);
+    const hasHistoryPerQuestionParams = historyPerQuestionParams.length === count;
 
     // If no learning_performance selected, pre-draw randomly to match backend sampling
     let finalLp: string[] | undefined;
     let autoDrawn = false;
-    if (isCurriculumSubject && learningPerformance.length === 0 && lpPoolValues.length > 0) {
+    if (!hasHistoryPerQuestionParams && isCurriculumSubject && learningPerformance.length === 0 && lpPoolValues.length > 0) {
       const maxDraw = subject === "math" ? 3 : 2;
       finalLp = drawRandomSubset(lpPoolValues, 1, maxDraw);
       autoDrawn = true;
@@ -1468,6 +1498,7 @@ export default function ParamForm({
     let finalLc: string[] | undefined;
     let lcAutoDrawn = false;
     if (
+      !hasHistoryPerQuestionParams &&
       (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
       learningContent.length === 0 &&
       lcPoolValues.length > 0
@@ -1538,7 +1569,11 @@ export default function ParamForm({
       );
 
     setPendingResolvedSubquestionConfigs(effectiveSubquestionConfigsInternal);
-    setCoreQuestionResolution(coreQuestion ? "idle" : "loading");
+    const hasHistoryCoreQuestion = hasHistoryPerQuestionParams &&
+      historyPerQuestionParams.some(
+        (params) => typeof params.core_question === "string" && params.core_question.length > 0,
+      );
+    setCoreQuestionResolution(coreQuestion || hasHistoryCoreQuestion ? "idle" : "loading");
     const baseParams: FormParams = {
       grade,
       style: subject === "math" ? style : undefined,
@@ -1615,7 +1650,7 @@ export default function ParamForm({
       if (userChosenFields.current.has(key) || pool.length === 0) return undefined;
       return drawQuestionSubset(pool, 1, max, previousRandomValues[key]);
     };
-    const perQuestionParams = Array.from({ length: count }, (_, questionIndex) => {
+    const buildPerQuestionParams = () => Array.from({ length: count }, (_, questionIndex) => {
       const resolvedSeed = configuredSeed !== undefined
         ? configuredSeed + questionIndex
         : Math.floor(Math.random() * 2_147_483_648);
@@ -1777,24 +1812,30 @@ export default function ParamForm({
       predrawnFields.push(...questionPredrawnFields);
       return result;
     });
+    const perQuestionParams: Record<string, unknown>[] = hasHistoryPerQuestionParams
+      ? historyPerQuestionParams
+      : buildPerQuestionParams();
+    const usingHistoryPerQuestionParams = hasHistoryPerQuestionParams;
     setPerQuestionAutoFields(
-      perQuestionParams.map(() => [
-        ...(configuredSeed === undefined ? ["seed"] : []),
-        ...(!userChosenFields.current.has("style") && subject === "math" ? ["style"] : []),
-        ...(!userChosenFields.current.has("content_type") ? ["content_type"] : []),
-        ...(!userChosenFields.current.has("context") ? ["context"] : []),
-        ...(!userChosenFields.current.has("set_type") ? ["set_type"] : []),
-        ...(!userChosenFields.current.has("q_type") && subject !== "social_studies" ? ["q_type"] : []),
-        ...(!userChosenFields.current.has("subject_filter") && subject === "social_studies" ? ["subject_filter"] : []),
-        ...(!userChosenFields.current.has("sub_context") && subject === "natural_sciences" ? ["sub_context"] : []),
-        ...(!userChosenFields.current.has("science_competency") && subject === "natural_sciences" ? ["science_competency"] : []),
-        ...(autoDrawn ? ["learning_performance"] : []),
-        ...(lcAutoDrawn ? ["learning_content"] : []),
-      ]),
+      usingHistoryPerQuestionParams
+        ? perQuestionParams.map(() => [])
+        : perQuestionParams.map(() => [
+            ...(configuredSeed === undefined ? ["seed"] : []),
+            ...(!userChosenFields.current.has("style") && subject === "math" ? ["style"] : []),
+            ...(!userChosenFields.current.has("content_type") ? ["content_type"] : []),
+            ...(!userChosenFields.current.has("context") ? ["context"] : []),
+            ...(!userChosenFields.current.has("set_type") ? ["set_type"] : []),
+            ...(!userChosenFields.current.has("q_type") && subject !== "social_studies" ? ["q_type"] : []),
+            ...(!userChosenFields.current.has("subject_filter") && subject === "social_studies" ? ["subject_filter"] : []),
+            ...(!userChosenFields.current.has("sub_context") && subject === "natural_sciences" ? ["sub_context"] : []),
+            ...(!userChosenFields.current.has("science_competency") && subject === "natural_sciences" ? ["science_competency"] : []),
+            ...(autoDrawn ? ["learning_performance"] : []),
+            ...(lcAutoDrawn ? ["learning_content"] : []),
+          ]),
     );
     setPendingParams({
       ...baseParams,
-      predrawn_fields: JSON.stringify(predrawnFields),
+      predrawn_fields: JSON.stringify(usingHistoryPerQuestionParams ? [] : predrawnFields),
       per_question_params: JSON.stringify(perQuestionParams),
     });
   }

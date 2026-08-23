@@ -467,7 +467,7 @@ describe("ParamForm draft versus history choice", () => {
     expect(countInput()).toHaveValue(5);
   });
 
-  it("persists all history-carried form fields and offers them after a fresh remount", async () => {
+  it("keeps history-carried fields out of the draft until a user edit", async () => {
     const firstMount = renderWithHistory();
     await screen.findByDisplayValue("歷史紀錄帶入的主題");
 
@@ -477,7 +477,18 @@ describe("ParamForm draft versus history choice", () => {
     await act(async () => {
       vi.advanceTimersByTime(1_000);
     });
-    expect(storedDraftFields()).toEqual(HISTORY_FIELDS);
+    expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+
+    fireEvent.change(countInput(), {
+      target: { value: "6" },
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(storedDraftFields()).toEqual({
+      ...HISTORY_FIELDS,
+      count: 6,
+    });
 
     firstMount.unmount();
     render(
@@ -499,6 +510,6 @@ describe("ParamForm draft versus history choice", () => {
     });
     expect(topicInput()).toHaveValue("歷史紀錄帶入的主題");
     expect(screen.getByLabelText("年級")).toHaveValue("9");
-    expect(countInput()).toHaveValue(5);
+    expect(countInput()).toHaveValue(6);
   });
 });
