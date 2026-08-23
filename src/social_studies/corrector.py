@@ -81,6 +81,7 @@ def correct_question(
     verification: VerificationResult,
     chart_image_path: str | None = None,
     curriculum_context: CurriculumContext | None = None,
+    annotations: str | None = None,
 ) -> ExamQuestion:
     if curriculum_context is not None:
         curriculum_prefix = build_curriculum_section(curriculum_context)
@@ -99,4 +100,5 @@ def correct_question(
         system_prompt=system_prompt,
         rebuild_subquestion_fn=_ss_rebuild_subquestion,
         image_spec_cls=ImageSpec,
+        annotations=annotations,
     )
