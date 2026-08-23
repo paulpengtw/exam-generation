@@ -72,7 +72,7 @@ describe("HistoryDetail", () => {
     await waitFor(() => expect(downloadMock).toHaveBeenCalledWith("abc"));
   });
 
-  it("regenerate button navigates to /generate/<subject> with params in router state", async () => {
+  it("重新帶入 is offered for completed and aborted details and carries params", async () => {
     getDetailMock.mockResolvedValueOnce({
       id: "abc",
       subject: "social_studies",
@@ -82,7 +82,7 @@ describe("HistoryDetail", () => {
       question_json: { id: "ss_1" },
     });
 
-    render(
+    const firstRender = render(
       <MemoryRouter initialEntries={["/history/abc"]}>
         <Routes>
           <Route path="/history/:id" element={<HistoryDetail recordId="abc" />} />
@@ -92,14 +92,50 @@ describe("HistoryDetail", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Re-run in generator/i }))
+      expect(screen.getByRole("button", { name: /Reload saved parameters/i }))
         .toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByRole("button", { name: /Re-run in generator/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Reload saved parameters/i }));
 
     await waitFor(() =>
       expect(screen.getByTestId("loc-state").textContent).toContain(
         '"topic":"climate"',
+      ),
+    );
+    firstRender.unmount();
+
+    getDetailMock.mockResolvedValueOnce({
+      id: "aborted-id",
+      subject: "social_studies",
+      question_id: "",
+      created_at: "2026-07-16T00:00:00Z",
+      status: "aborted",
+      error: null,
+      params_json: { subject: "social_studies", topic: "aborted climate" },
+      question_json: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/aborted-id"]}>
+        <Routes>
+          <Route
+            path="/history/:id"
+            element={<HistoryDetail recordId="aborted-id" />}
+          />
+          <Route path="/generate/social_studies" element={<LocationSpy />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Reload saved parameters/i }))
+        .toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Reload saved parameters/i }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("loc-state").textContent).toContain(
+        '"topic":"aborted climate"',
       ),
     );
   });
