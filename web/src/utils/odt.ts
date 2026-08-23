@@ -95,6 +95,10 @@ function buildImageParagraph(name: string, imageRef: string, zIndex: number): st
 
 function buildMetadataItems(question: ExamQuestion): string[] {
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+  const iccsMetadata = [
+    question.內容領域,
+    ...(question.認知歷程 ?? []),
+  ];
   if (isSocialStudies) {
     const subs = question.subquestions!;
     const unique = <T>(arr: T[]): T[] => [...new Set(arr)];
@@ -104,7 +108,8 @@ function buildMetadataItems(question: ExamQuestion): string[] {
       ...unique(subs.flatMap((s) => s.核心素養)),
       ...unique(subs.flatMap((s) => s.學習內容.map((lc) => lc.編碼))),
       ...unique(subs.flatMap((s) => s.學習表現.map((lp) => lp.編碼))),
-    ].filter(Boolean);
+      ...iccsMetadata,
+    ].filter((item): item is string => Boolean(item));
   }
   return [
     ...(question.情境 ?? []),
@@ -114,6 +119,7 @@ function buildMetadataItems(question: ExamQuestion): string[] {
     ...(question.閱讀歷程 ?? []),
     question.文本形式,
     ...(question.學習內容 ?? []).map((c) => c.編碼).filter(Boolean),
+    ...iccsMetadata,
   ].filter((item): item is string => Boolean(item));
 }
 
@@ -166,7 +172,8 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
           ...sub.核心素養,
           ...sub.學習內容.map((lc) => lc.編碼),
           ...sub.學習表現.map((lp) => lp.編碼),
-        ].filter(Boolean).map(xmlEscape).join(" ｜ ");
+          sub.認知歷程,
+        ].filter((item): item is string => Boolean(item)).map(xmlEscape).join(" ｜ ");
         paras.push(`<text:p text:style-name="Heading2">${xmlEscape(`第${sub.序號}題`)}</text:p>`);
         if (subMeta) {
           paras.push(`<text:p text:style-name="MetaLine">${subMeta}</text:p>`);
