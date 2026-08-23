@@ -344,6 +344,27 @@ describe("buildQueryString — text_word_limit serialization", () => {
   });
 });
 
+describe("buildQueryString — predrawn_fields serialization", () => {
+  it("serializes the optional provenance JSON as one query value", () => {
+    const params = {
+      subject: "math",
+      predrawn_fields: '["learning_content", "per_question_params[0].seed"]',
+    } as Parameters<typeof buildQueryString>[0];
+
+    const qs = buildQueryString(params);
+
+    expect(new URLSearchParams(qs).get("predrawn_fields")).toBe(
+      '["learning_content", "per_question_params[0].seed"]',
+    );
+  });
+
+  it("omits predrawn_fields when the optional metadata is absent", () => {
+    const qs = buildQueryString({ subject: "math" });
+
+    expect(qs).not.toContain("predrawn_fields");
+  });
+});
+
 describe("buildQueryString — subject_filter as repeated keys", () => {
   it("sends subject_filter as two repeated keys for a two-element array", () => {
     const qs = buildQueryString({ subject: "social_studies", subject_filter: ["歷史", "地理"] });

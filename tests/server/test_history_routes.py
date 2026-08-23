@@ -49,7 +49,14 @@ def _setup(tmp_path):
                     user_id=user_a,
                     subject="social_studies",
                     question_id=f"ss_a_{i}",
-                    params_json={"subject": "social_studies"},
+                    params_json={
+                        "subject": "social_studies",
+                        **(
+                            {"predrawn_fields": '["learning_content"]'}
+                            if i == 0
+                            else {}
+                        ),
+                    },
                     question_json={"id": f"ss_a_{i}", "核心問題": f"核心 {i}"},
                     image_files=[],
                 ))
@@ -306,6 +313,33 @@ def test_download_returns_attachment_with_content_disposition(tmp_path) -> None:
             disp = r.headers["content-disposition"]
             assert "attachment" in disp
             assert ".json" in disp
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_download_includes_saved_request_params_with_predraw_provenance(tmp_path) -> None:
+    app, _config, engine, _sm, token, _ua, _ub = _setup(tmp_path)
+    try:
+        with TestClient(app) as client:
+            list_r = client.get(
+                "/api/history",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            record_id = next(
+                item["id"]
+                for item in list_r.json()["items"]
+                if item["question_id"] == "ss_a_0"
+            )
+            response = client.get(
+                f"/api/history/{record_id}/download",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["params_json"]["predrawn_fields"] == '["learning_content"]'
+        assert body["id"] == "ss_a_0"
     finally:
         limiter.reset()
         asyncio.run(engine.dispose())

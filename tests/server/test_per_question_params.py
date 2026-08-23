@@ -240,6 +240,22 @@ def test_omitting_per_question_params_preserves_sampled_params_bytes(
     assert through_fan_out.model_dump_json() == legacy.model_dump_json()
 
 
+@pytest.mark.parametrize("subject", ["math", "social_studies", "natural_sciences"])
+def test_predrawn_metadata_preserves_seed_pinned_sampling_bytes(subject: str) -> None:
+    baseline = GenerateParams(subject=subject, seed=184, coverage_mode="random")
+    with_metadata = GenerateParams(
+        subject=subject,
+        seed=184,
+        coverage_mode="random",
+        predrawn_fields='["learning_content", "per_question_params[0].seed"]',
+    )
+
+    baseline_sampled = _sample(baseline, 0, None)
+    metadata_sampled = _sample(with_metadata, 0, None)
+
+    assert metadata_sampled.model_dump_json() == baseline_sampled.model_dump_json()
+
+
 def test_every_generate_param_field_is_classified_request_level_or_per_question() -> None:
     """Guard that every GenerateParams field is explicitly classified.
 

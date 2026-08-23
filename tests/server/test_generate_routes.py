@@ -190,6 +190,7 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
             '"content_type":"純文字","image_generation_mode":"html",'
             '"question_type":"選擇題","instruction":"聚焦資料判讀"}]',
         )
+        predrawn_fields = quote('["learning_content"]')
         with TestClient(app) as client:
             gen_routes.logger.addHandler(caplog.handler)
             try:
@@ -205,6 +206,7 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
                         "&learning_performance=%E7%A4%BE1b-%E2%85%A3-1"
                         "&learning_performance=%E7%A4%BE2a-%E2%85%A3-1"
                         "&sub_question_count=3"
+                        f"&predrawn_fields={predrawn_fields}"
                         f"&subquestion_configs={sq_configs}",
                         headers={"Authorization": f"Bearer {token}"},
                     )
@@ -224,6 +226,7 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
     assert captured["params"].options == ["A", "B"]
     assert captured["params"].learning_performance == ["社1b-Ⅳ-1", "社2a-Ⅳ-1"]
     assert captured["params"].sub_question_count == 3
+    assert captured["params"].predrawn_fields == '["learning_content"]'
     assert "question_word_limit" in captured["params"].subquestion_configs
     assert "question_type" in captured["params"].subquestion_configs
     assert "instruction" in captured["params"].subquestion_configs

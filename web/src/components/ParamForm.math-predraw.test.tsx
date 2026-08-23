@@ -104,4 +104,58 @@ describe("ParamForm math learning-content predraw", () => {
       expectLearningContentFromPool(question.learning_content);
     }
   });
+
+  it("records global and per-question pre-drawn slots in the submitted metadata", async () => {
+    const submitted: GenerateParams[] = [];
+    render(
+      <ParamForm subject="math" onSubmit={(params) => submitted.push(params)} disabled={false} />,
+    );
+
+    fireEvent.click(await screen.findByText("form.btn_generate"));
+    fireEvent.click(await screen.findByText("form.btn_confirm_send"));
+
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    const predrawnFields = JSON.parse(
+      (submitted[0] as unknown as { predrawn_fields: string }).predrawn_fields,
+    ) as string[];
+
+    expect(predrawnFields).toEqual(expect.arrayContaining([
+      "learning_content",
+      "learning_performance",
+      "per_question_params[0].learning_content",
+      "per_question_params[0].learning_performance",
+      "per_question_params[0].seed",
+    ]));
+  });
+
+  it("sends an empty provenance list when every value is user-chosen", async () => {
+    const submitted: GenerateParams[] = [];
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={(params) => submitted.push(params)}
+        disabled={false}
+        initialParams={{
+          grade: 7,
+          style: "課本",
+          content_type: "純文字",
+          context: ["個人"],
+          set_type: "單一題",
+          q_type: ["選擇題"],
+          count: 1,
+          seed: 41,
+          learning_content: ["N-7-1"],
+          learning_performance: ["n-IV-1"],
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByText("form.btn_generate"));
+    fireEvent.click(await screen.findByText("form.btn_confirm_send"));
+
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(
+      (submitted[0] as unknown as { predrawn_fields: string }).predrawn_fields,
+    ).toBe("[]");
+  });
 });

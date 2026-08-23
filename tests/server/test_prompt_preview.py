@@ -121,6 +121,32 @@ def test_math_preview_is_byte_identical_to_submit_prompt() -> None:
     assert preview["user_prompt"] == capture.prompts[1]
 
 
+def test_predrawn_fields_are_persisted_but_do_not_change_seed_pinned_preview() -> None:
+    seed = 196
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = _math_state(config)
+    baseline = GenerateParams(
+        subject="math",
+        seed=seed,
+        disable_reference_fewshot=True,
+    )
+    with_metadata = GenerateParams(
+        subject="math",
+        seed=seed,
+        disable_reference_fewshot=True,
+        predrawn_fields='["learning_content", "per_question_params[0].seed"]',
+    )
+
+    assert with_metadata.model_dump(mode="json")["predrawn_fields"] == (
+        '["learning_content", "per_question_params[0].seed"]'
+    )
+    assert build_prompt_previews(baseline, config, app_state) == build_prompt_previews(
+        with_metadata,
+        config,
+        app_state,
+    )
+
+
 def test_social_studies_preview_is_byte_identical_to_text_generator_prompt() -> None:
     seed = 188
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)

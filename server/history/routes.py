@@ -184,7 +184,9 @@ async def download_history(
     row = await _load_owned(record_id, user, session)
     if row.status != "completed":
         raise HTTPException(status_code=404, detail="Not found")
-    body = json.dumps(row.question_json or {}, ensure_ascii=False, indent=2)
+    download_payload = dict(row.question_json or {})
+    download_payload["params_json"] = row.params_json or {}
+    body = json.dumps(download_payload, ensure_ascii=False, indent=2)
     filename = f"{row.question_id or row.id}.json"
     return Response(
         content=body,

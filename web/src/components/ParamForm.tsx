@@ -1591,6 +1591,7 @@ export default function ParamForm({
       "subject",
       "count",
       "per_question_params",
+      "predrawn_fields",
       "max_retries",
       "core_question_callback",
     ]);
@@ -1606,6 +1607,10 @@ export default function ParamForm({
     let previousQuestionLc: string[] | undefined;
     let previousQuestionSubquestions: SubQuestionConfig[] | undefined;
     let previousRandomValues: Record<string, string[] | undefined> = {};
+    const predrawnFields: string[] = [
+      ...(autoDrawn ? ["learning_performance"] : []),
+      ...(lcAutoDrawn ? ["learning_content"] : []),
+    ];
     const drawField = (key: string, pool: string[], max = 1): string[] | undefined => {
       if (userChosenFields.current.has(key) || pool.length === 0) return undefined;
       return drawQuestionSubset(pool, 1, max, previousRandomValues[key]);
@@ -1641,12 +1646,77 @@ export default function ParamForm({
       const questionLc = lcAutoDrawn
         ? drawQuestionSubset(lcPoolValues, 1, 3, previousQuestionLc)
         : finalLc;
+      const questionPredrawnFields: string[] = [
+        ...(configuredSeed === undefined
+          ? [`per_question_params[${questionIndex}].seed`]
+          : []),
+        ...(randomStyle !== undefined
+          ? [`per_question_params[${questionIndex}].style`]
+          : []),
+        ...(randomContentType !== undefined
+          ? [`per_question_params[${questionIndex}].content_type`]
+          : []),
+        ...(randomContext !== undefined
+          ? [`per_question_params[${questionIndex}].context`]
+          : []),
+        ...(randomSetType !== undefined
+          ? [`per_question_params[${questionIndex}].set_type`]
+          : []),
+        ...(randomQuestionType !== undefined
+          ? [`per_question_params[${questionIndex}].q_type`]
+          : []),
+        ...(randomSubjectFilter !== undefined
+          ? [`per_question_params[${questionIndex}].subject_filter`]
+          : []),
+        ...(randomSubContext !== undefined
+          ? [`per_question_params[${questionIndex}].sub_context`]
+          : []),
+        ...(randomScienceCompetency !== undefined
+          ? [`per_question_params[${questionIndex}].science_competency`]
+          : []),
+        ...(autoDrawn && questionLp?.length
+          ? [`per_question_params[${questionIndex}].learning_performance`]
+          : []),
+        ...(lcAutoDrawn && questionLc?.length
+          ? [`per_question_params[${questionIndex}].learning_content`]
+          : []),
+      ];
       const questionSubquestionConfigs = shouldDrawPerSubq
         ? subquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
             const hasExplicitLc = (cfg.learning_content?.length ?? 0) > 0;
             const hasExplicitLp = (cfg.learning_performance?.length ?? 0) > 0;
             const lcPool = learningContent.length > 0 ? learningContent : (questionLc ?? []);
             const lpPool = learningPerformance.length > 0 ? learningPerformance : (questionLp ?? []);
+            const resolvedLc = hasExplicitLc
+              ? cfg.learning_content
+              : lcPool.length > 0
+                ? drawQuestionSubset(
+                    lcPool,
+                    1,
+                    3,
+                    previousQuestionSubquestions?.[subquestionIndex]?.learning_content,
+                  )
+                : undefined;
+            const resolvedLp = hasExplicitLp
+              ? cfg.learning_performance
+              : lpPool.length > 0
+                ? drawQuestionSubset(
+                    lpPool,
+                    1,
+                    2,
+                    previousQuestionSubquestions?.[subquestionIndex]?.learning_performance,
+                  )
+                : undefined;
+            if (!hasExplicitLc && resolvedLc?.length) {
+              questionPredrawnFields.push(
+                `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_content`,
+              );
+            }
+            if (!hasExplicitLp && resolvedLp?.length) {
+              questionPredrawnFields.push(
+                `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_performance`,
+              );
+            }
             return {
               question_type: cfg.question_type || undefined,
               instruction: cfg.instruction?.trim() || undefined,
@@ -1656,26 +1726,8 @@ export default function ParamForm({
               option_word_limit: cfg.option_word_limit,
               text_word_limit: cfg.text_word_limit,
               reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
-              learning_content: hasExplicitLc
-                ? cfg.learning_content
-                : lcPool.length > 0
-                  ? drawQuestionSubset(
-                      lcPool,
-                      1,
-                      3,
-                      previousQuestionSubquestions?.[subquestionIndex]?.learning_content,
-                    )
-                  : undefined,
-              learning_performance: hasExplicitLp
-                ? cfg.learning_performance
-                : lpPool.length > 0
-                  ? drawQuestionSubset(
-                      lpPool,
-                      1,
-                      2,
-                      previousQuestionSubquestions?.[subquestionIndex]?.learning_performance,
-                    )
-                  : undefined,
+              learning_content: resolvedLc,
+              learning_performance: resolvedLp,
             };
           })
         : [];
@@ -1722,6 +1774,7 @@ export default function ParamForm({
         sub_context: randomSubContext,
         science_competency: randomScienceCompetency,
       };
+      predrawnFields.push(...questionPredrawnFields);
       return result;
     });
     setPerQuestionAutoFields(
@@ -1741,6 +1794,7 @@ export default function ParamForm({
     );
     setPendingParams({
       ...baseParams,
+      predrawn_fields: JSON.stringify(predrawnFields),
       per_question_params: JSON.stringify(perQuestionParams),
     });
   }

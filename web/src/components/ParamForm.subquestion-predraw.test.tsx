@@ -134,6 +134,26 @@ describe("per-子題 pre-draw (natural_sciences)", () => {
     }
   });
 
+  it("records each per-小題 LC/LP pre-draw as an addressed field slot", async () => {
+    const onSubmit = vi.fn();
+    render(<ParamForm subject="natural_sciences" onSubmit={onSubmit} />);
+    await screen.findByPlaceholderText("自動 3-7");
+    fireEvent.change(screen.getByPlaceholderText("自動 3-7"), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: /form\.btn_generate/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_confirm_send/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const payload = onSubmit.mock.calls[0][0] as { predrawn_fields: string };
+    const predrawnFields = JSON.parse(payload.predrawn_fields) as string[];
+
+    expect(predrawnFields).toEqual(expect.arrayContaining([
+      "per_question_params[0].subquestion_configs[0].learning_content",
+      "per_question_params[0].subquestion_configs[0].learning_performance",
+      "per_question_params[0].subquestion_configs[1].learning_content",
+      "per_question_params[0].subquestion_configs[1].learning_performance",
+    ]));
+  });
+
   it("renders each 子題's pre-drawn LC/LP codes in the confirmation screen", async () => {
     const onSubmit = vi.fn();
     render(<ParamForm subject="natural_sciences" onSubmit={onSubmit} />);

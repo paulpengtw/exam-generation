@@ -46,6 +46,7 @@ export interface GenerateParams {
   text_word_limit?: number;
   subquestion_configs?: string;
   per_question_params?: string;
+  predrawn_fields?: string;
   model_plan?: string;
   model_execute?: string;
   model_verify?: string;
