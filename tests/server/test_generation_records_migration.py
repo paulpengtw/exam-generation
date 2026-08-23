@@ -46,9 +46,11 @@ def test_generation_record_migration_creates_nullable_tombstone_schema(
 
     columns, indexes = asyncio.run(_inspect_generation_records(db_url))
     by_name = {column["name"]: column for column in columns}
-    assert {"status", "error"}.issubset(by_name)
+    assert {"status", "error", "parent_record_id", "annotations_json"}.issubset(by_name)
     assert by_name["status"]["nullable"] is False
     assert by_name["error"]["nullable"] is True
+    assert by_name["parent_record_id"]["nullable"] is True
+    assert by_name["annotations_json"]["nullable"] is True
     assert by_name["question_json"]["nullable"] is True
     assert any("user_id" in index["column_names"] for index in indexes)
 
@@ -101,20 +103,25 @@ def test_generation_record_migration_upgrades_existing_rows_and_round_trips(
 
     engine = create_async_engine(db_url)
     try:
-        async def read_upgraded_row() -> tuple[str, str]:
+        async def read_upgraded_row() -> tuple[str, str, str | None, str | None]:
             async with engine.connect() as conn:
                 result = await conn.execute(
                     text(
-                        "SELECT status, question_json FROM generation_records "
+                        "SELECT status, question_json, parent_record_id, annotations_json "
+                        "FROM generation_records "
                         "WHERE id = :id"
                     ),
                     {"id": record_id},
                 )
                 return result.one()
 
-        status, question_json = asyncio.run(read_upgraded_row())
+        status, question_json, parent_record_id, annotations_json = asyncio.run(
+            read_upgraded_row()
+        )
         assert status == "completed"
         assert json.loads(question_json)["題目"] == ["舊題目"]
+        assert parent_record_id is None
+        assert annotations_json is None
 
         async def insert_failed_tombstone() -> None:
             async with engine.begin() as conn:
@@ -147,6 +154,8 @@ def test_generation_record_migration_upgrades_existing_rows_and_round_trips(
     names = {column["name"] for column in columns}
     assert "status" not in names
     assert "error" not in names
+    assert "parent_record_id" not in names
+    assert "annotations_json" not in names
     assert (
         next(column for column in columns if column["name"] == "question_json")["nullable"]
         is False

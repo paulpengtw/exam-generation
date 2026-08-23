@@ -74,9 +74,13 @@ class GenerationRecord(Base):
     generation_log_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("generation_logs.id"), nullable=True
     )
+    parent_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("generation_records.id"), nullable=True
+    )
     subject: Mapped[str] = mapped_column(String(30), nullable=False)
     question_id: Mapped[str] = mapped_column(String(100), nullable=False)
     params_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    annotations_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     question_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     image_files: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     status: Mapped[str] = mapped_column(
