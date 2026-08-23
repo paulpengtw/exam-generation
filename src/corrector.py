@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from src.common.corrector import build_annotations_block
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ExamQuestion, ImageSpec, SubQuestion, VerificationResult
@@ -38,7 +39,7 @@ CORRECTION_USER_TEMPLATE = """\
 ## 審核意見
 
 {verification_details}
-{answer_block}{chart_details_block}
+{answer_block}{chart_details_block}{annotations_block}
 請輸出修正後的題目 JSON。
 """
 
@@ -86,6 +87,7 @@ def correct_question(
     verification: VerificationResult,
     chart_image_path: str | None = None,
     curriculum_context: CurriculumContext | None = None,
+    annotations: str | None = None,
 ) -> ExamQuestion:
     """Apply verification feedback to produce a minimally corrected question.
 
@@ -98,6 +100,7 @@ def correct_question(
         curriculum_context: When supplied, the curriculum section is prepended
             to the system prompt so the corrector is grounded in the same corpus
             as the generator.  Pass ``None`` to omit the curriculum prefix.
+        annotations: Optional user 修改指示 that the correction must preserve.
     """
     # Serialize without ephemeral fields so the corrector sees clean source
     question_data = json.loads(
@@ -127,6 +130,7 @@ def correct_question(
         verification_details=verification.details,
         answer_block=answer_block,
         chart_details_block=chart_details_block,
+        annotations_block=build_annotations_block(annotations),
     )
 
     if curriculum_context is not None:

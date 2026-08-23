@@ -33,9 +33,21 @@ _CORRECTION_USER_TEMPLATE = """\
 ## 審核意見
 
 {verification_details}
-{answer_block}{chart_details_block}
+{answer_block}{chart_details_block}{annotations_block}
 請輸出修正後的題目 JSON。
 """
+
+
+def build_annotations_block(annotations: str | None) -> str:
+    """Render user 修改指示 as constraints the correction must preserve."""
+    if not annotations:
+        return ""
+    return (
+        "\n## 修改指示（必須保留）\n"
+        "以下是使用者明確要求的修改指示。修正時必須保留使用者明確要求的內容，"
+        "不得悄悄恢復或撤銷使用者明確要求的內容。\n\n"
+        f"{annotations}\n"
+    )
 
 
 def parse_rubric(sq_raw: dict, rubric_entry_cls: type) -> list:
@@ -64,6 +76,7 @@ def correct_question_common(
     system_prompt: str = "",
     rebuild_subquestion_fn: RebuildSubquestionFn | None = None,
     image_spec_cls: type | None = None,
+    annotations: str | None = None,
 ) -> Any:
     """Shared corrector core for questions with subquestions.
 
@@ -86,6 +99,7 @@ def correct_question_common(
             ``None`` drops the row.
         image_spec_cls: ``ImageSpec`` class for the subject (used to
             deserialise the top-level ``chart_spec``).
+        annotations: Optional user 修改指示 that the correction must preserve.
 
     Returns:
         The corrected question (a ``model_copy`` of *question* with updated
@@ -118,6 +132,7 @@ def correct_question_common(
         verification_details=verification.details,
         answer_block=answer_block,
         chart_details_block=chart_details_block,
+        annotations_block=build_annotations_block(annotations),
     )
 
     try:
