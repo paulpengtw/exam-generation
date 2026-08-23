@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -265,6 +266,137 @@ def test_detail_degrades_when_image_file_missing(tmp_path) -> None:
             assert r.status_code == 200
             body = r.json()
             assert "image_base64" not in body["question_json"]
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_detail_resolves_a_chain_to_the_latest_record(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+
+    async def add_chain() -> tuple[uuid.UUID, uuid.UUID]:
+        async with SessionLocal() as s:
+            parent = (
+                await s.execute(
+                    __import__("sqlalchemy").select(GenerationRecord).where(
+                        GenerationRecord.user_id == user_a,
+                        GenerationRecord.question_id == "ss_a_0",
+                    )
+                )
+            ).scalar_one()
+            child_id = uuid.uuid4()
+            grandchild_id = uuid.uuid4()
+            s.add(
+                GenerationRecord(
+                    id=child_id,
+                    user_id=user_a,
+                    parent_record_id=parent.id,
+                    subject="social_studies",
+                    question_id="ss_a_0_v2",
+                    params_json={"subject": "social_studies"},
+                    question_json={"id": "ss_a_0_v2", "核心問題": "中間版本"},
+                    image_files=[],
+                )
+            )
+            s.add(
+                GenerationRecord(
+                    id=grandchild_id,
+                    user_id=user_a,
+                    parent_record_id=child_id,
+                    subject="social_studies",
+                    question_id="ss_a_0_v3",
+                    params_json={"subject": "social_studies"},
+                    question_json={"id": "ss_a_0_v3", "核心問題": "最新版本"},
+                    image_files=[],
+                )
+            )
+            await s.commit()
+            return parent.id, grandchild_id
+
+    parent_id, latest_id = asyncio.run(add_chain())
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                f"/api/history/{parent_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == str(latest_id)
+        assert body["question_id"] == "ss_a_0_v3"
+        assert body["question_json"]["核心問題"] == "最新版本"
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_detail_resolves_the_newest_terminal_branch(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+
+    async def add_branching_chain() -> tuple[uuid.UUID, uuid.UUID]:
+        async with SessionLocal() as s:
+            parent = (
+                await s.execute(
+                    __import__("sqlalchemy").select(GenerationRecord).where(
+                        GenerationRecord.user_id == user_a,
+                        GenerationRecord.question_id == "ss_a_0",
+                    )
+                )
+            ).scalar_one()
+            branch_a_id = uuid.uuid4()
+            branch_b_id = uuid.uuid4()
+            latest_id = uuid.uuid4()
+            s.add_all(
+                [
+                    GenerationRecord(
+                        id=branch_a_id,
+                        user_id=user_a,
+                        parent_record_id=parent.id,
+                        subject="social_studies",
+                        question_id="ss_a_0_branch_a",
+                        params_json={"subject": "social_studies"},
+                        question_json={"id": "ss_a_0_branch_a", "核心問題": "分支 A"},
+                        image_files=[],
+                        created_at=datetime(2026, 8, 24, 0, 0, tzinfo=timezone.utc),
+                    ),
+                    GenerationRecord(
+                        id=branch_b_id,
+                        user_id=user_a,
+                        parent_record_id=parent.id,
+                        subject="social_studies",
+                        question_id="ss_a_0_branch_b",
+                        params_json={"subject": "social_studies"},
+                        question_json={"id": "ss_a_0_branch_b", "核心問題": "分支 B"},
+                        image_files=[],
+                        created_at=datetime(2026, 8, 24, 1, 0, tzinfo=timezone.utc),
+                    ),
+                    GenerationRecord(
+                        id=latest_id,
+                        user_id=user_a,
+                        parent_record_id=branch_a_id,
+                        subject="social_studies",
+                        question_id="ss_a_0_branch_a_v2",
+                        params_json={"subject": "social_studies"},
+                        question_json={"id": "ss_a_0_branch_a_v2", "核心問題": "分支 A 最新"},
+                        image_files=[],
+                        created_at=datetime(2026, 8, 24, 2, 0, tzinfo=timezone.utc),
+                    ),
+                ]
+            )
+            await s.commit()
+            return parent.id, latest_id
+
+    parent_id, latest_id = asyncio.run(add_branching_chain())
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                f"/api/history/{parent_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == str(latest_id)
+        assert body["question_id"] == "ss_a_0_branch_a_v2"
     finally:
         limiter.reset()
         asyncio.run(engine.dispose())

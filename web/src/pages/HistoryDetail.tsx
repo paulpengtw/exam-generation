@@ -55,7 +55,7 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
 
   const handleDownload = async () => {
     if (!detail || !canDownload) return;
-    const blob = await downloadHistoryJson(recordId);
+    const blob = await downloadHistoryJson(detail.id);
     saveBlob(blob, `${detail.question_id || detail.id}.json`);
   };
 
@@ -136,9 +136,9 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
             </section>
           ) : (
             <QuestionCard
-              key={recordId}
+              key={detail.id}
               question={detail.question_json as unknown as ExamQuestion}
-              recordId={recordId}
+              recordId={detail.id}
               phase="verified"
               isFinal
             />

@@ -15,8 +15,25 @@ vi.mock("../api/client", () => ({
 }));
 
 vi.mock("../components/QuestionCard", () => ({
-  default: ({ question }: { question: { id?: string } }) => (
-    <div data-testid="qc">{question?.id ?? ""}</div>
+  default: ({
+    question,
+    recordId,
+    phase,
+    isFinal,
+  }: {
+    question: { id?: string };
+    recordId?: string;
+    phase?: string;
+    isFinal?: boolean;
+  }) => (
+    <div
+      data-testid="qc"
+      data-record-id={recordId}
+      data-phase={phase}
+      data-final={String(isFinal)}
+    >
+      {question?.id ?? ""}
+    </div>
   ),
 }));
 
@@ -85,6 +102,30 @@ describe("HistoryDetail", () => {
         '"topic":"climate"',
       ),
     );
+  });
+
+  it("uses the latest record identity returned by history detail for the card", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      id: "latest-id",
+      subject: "social_studies",
+      question_id: "ss-child",
+      created_at: "2026-07-16T00:00:00Z",
+      params_json: { subject: "social_studies" },
+      question_json: { id: "ss-child", verification: { passed: true } },
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/old-id"]}>
+        <Routes>
+          <Route path="/history/:id" element={<HistoryDetail recordId="old-id" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("qc")).toHaveAttribute("data-record-id", "latest-id");
+    });
+    expect(screen.getByTestId("qc")).toHaveAttribute("data-final", "true");
   });
 
   it("renders failed detail params and error without question content or download", async () => {

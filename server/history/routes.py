@@ -109,6 +109,49 @@ async def _load_owned(
     return row
 
 
+async def _load_latest_owned(
+    row: GenerationRecord, user: User, session: AsyncSession
+) -> GenerationRecord:
+    """Follow this user's version chain to its newest terminal descendant."""
+    visited = {row.id}
+    descendants: dict[uuid.UUID, GenerationRecord] = {}
+    parents_with_children: set[uuid.UUID] = set()
+    frontier = [row.id]
+    while frontier:
+        children = (
+            await session.execute(
+                select(GenerationRecord)
+                .where(
+                    GenerationRecord.parent_record_id.in_(frontier),
+                    GenerationRecord.user_id == user.id,
+                )
+            )
+        ).scalars().all()
+        parents_with_children.update(
+            child.parent_record_id
+            for child in children
+            if child.parent_record_id is not None
+        )
+        frontier = []
+        for child in children:
+            if child.id in visited:
+                continue
+            visited.add(child.id)
+            frontier.append(child.id)
+            descendants[child.id] = child
+    terminal_descendants = [
+        child
+        for child_id, child in descendants.items()
+        if child_id not in parents_with_children
+    ]
+    candidates = terminal_descendants or list(descendants.values())
+    return max(
+        candidates,
+        key=lambda child: (child.created_at, str(child.id)),
+        default=row,
+    )
+
+
 def _embed_images_sync(question_json: dict, config: ServerConfig) -> dict:
     """Copy question_json and embed image_base64 for any PNG still on disk.
 
@@ -157,6 +200,7 @@ async def get_history_detail(
     config: ServerConfig = Depends(get_config),
 ) -> dict:
     row = await _load_owned(record_id, user, session)
+    row = await _load_latest_owned(row, user, session)
     return {
         "id": str(row.id),
         "subject": row.subject,
