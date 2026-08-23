@@ -633,12 +633,26 @@ def _full_social_studies_question() -> dict:
 
 
 class _ScriptedModificationLLM:
-    """Route-seam fake that returns one whole-question correction candidate."""
+    """Route-seam fake for modification, verification, and correction calls."""
 
-    def __init__(self, response: dict) -> None:
+    def __init__(
+        self,
+        response: dict,
+        *,
+        verification_responses: list[dict] | None = None,
+        correction_responses: list[dict] | None = None,
+    ) -> None:
         self.response = response
         self.calls = 0
         self.prompts: list[tuple[str, str]] = []
+        self.verification_calls = 0
+        self.verification_prompts: list[tuple[str, str]] = []
+        self.correction_calls = 0
+        self.correction_prompts: list[tuple[str, str]] = []
+        self.verification_responses = verification_responses or [
+            {"passed": True, "answer_match": True, "details": "驗證通過"}
+        ]
+        self.correction_responses = correction_responses
         self._observer = None
 
     def set_observer(self, observer) -> None:
@@ -647,6 +661,9 @@ class _ScriptedModificationLLM:
     def generate_json(self, system: str, user: str, **_kwargs):
         self.calls += 1
         self.prompts.append((system, user))
+        if self.calls > 1:
+            self.correction_calls += 1
+            self.correction_prompts.append((system, user))
         if self._observer is not None:
             self._observer(
                 {
@@ -661,7 +678,13 @@ class _ScriptedModificationLLM:
                     "params": {"max_tokens": 8192},
                 }
             )
-        response = copy.deepcopy(self.response)
+        if self.correction_responses is not None and self.correction_responses:
+            response_index = min(
+                self.correction_calls - 1, len(self.correction_responses) - 1
+            )
+            response = copy.deepcopy(self.correction_responses[response_index])
+        else:
+            response = copy.deepcopy(self.response)
         if self._observer is not None:
             self._observer(
                 {
@@ -675,6 +698,50 @@ class _ScriptedModificationLLM:
                 }
             )
         return response
+
+    def generate_with_image(
+        self,
+        system: str,
+        user: str,
+        *,
+        image_path: str | None = None,
+        purpose: str = "verify",
+        **_kwargs,
+    ) -> str:
+        assert purpose == "verify"
+        self.verification_calls += 1
+        self.verification_prompts.append((system, user))
+        if self._observer is not None:
+            self._observer(
+                {
+                    "type": "llm_request",
+                    "agent": "verifier",
+                    "purpose": "verify",
+                    "model": "scripted-fake",
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    "params": {"max_tokens": 8192},
+                }
+            )
+        response_index = min(
+            self.verification_calls - 1, len(self.verification_responses) - 1
+        )
+        response = copy.deepcopy(self.verification_responses[response_index])
+        if self._observer is not None:
+            self._observer(
+                {
+                    "type": "llm_response",
+                    "agent": "verifier",
+                    "purpose": "verify",
+                    "model": "scripted-fake",
+                    "content": json.dumps(response, ensure_ascii=False),
+                    "reasoning": None,
+                    "usage": {"input": 10, "output": 20},
+                }
+            )
+        return json.dumps(response, ensure_ascii=False)
 
 
 def _modification_payload() -> dict:
@@ -885,10 +952,13 @@ def test_modification_stream_logs_exchange_under_its_own_generation_log(
             )
 
     exchanges = asyncio.run(read_exchanges())
-    assert len(exchanges) == 1
+    assert len(exchanges) == 2
     assert exchanges[0].agent == "corrector"
     assert exchanges[0].purpose == "correct"
     assert exchanges[0].generation_log_id == uuid.UUID(run_id)
+    assert exchanges[1].agent == "verifier"
+    assert exchanges[1].purpose == "verify"
+    assert exchanges[1].generation_log_id == uuid.UUID(run_id)
 
 
 def test_modification_stream_allows_chart_spec_edits(app_ctx, monkeypatch) -> None:
@@ -907,3 +977,186 @@ def test_modification_stream_allows_chart_spec_edits(app_ctx, monkeypatch) -> No
 
     assert result["chart_spec"]["description"] == "修正圖表說明"
     assert result["chart_spec"]["title"] == base["chart_spec"]["title"]
+
+
+def _read_modification_records(SessionLocal) -> list[GenerationRecord]:
+    async def read() -> list[GenerationRecord]:
+        async with SessionLocal() as session:
+            return list(
+                (
+                    await session.execute(
+                        select(GenerationRecord).order_by(GenerationRecord.created_at)
+                    )
+                ).scalars()
+            )
+
+    return asyncio.run(read())
+
+
+def _read_modification_run(SessionLocal, run_id: str) -> GenerationLog:
+    async def read() -> GenerationLog:
+        async with SessionLocal() as session:
+            return (
+                await session.execute(
+                    select(GenerationLog).where(GenerationLog.id == uuid.UUID(run_id))
+                )
+            ).scalar_one()
+
+    return asyncio.run(read())
+
+
+def test_modification_stream_verification_pass_marks_final_and_persists_verified(
+    app_ctx, monkeypatch
+) -> None:
+    """A passing full verifier completes the child record as verified."""
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _ScriptedModificationLLM(
+        _scripted_candidate(base),
+        verification_responses=[
+            {"passed": True, "answer_match": True, "details": "驗證通過"}
+        ],
+    )
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    run_id, events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+
+    stage_starts = [
+        (event["data"]["agent"], event["data"]["stage"])
+        for event in events
+        if event["event"] == "stage" and event["data"].get("status") == "start"
+    ]
+    assert stage_starts == [("corrector", "modification"), ("verifier", "verify")]
+    done = next(event for event in events if event["event"] == "done")
+    assert done["data"]["verified"] is True
+    assert done["data"]["question"]["verification"]["passed"] is True
+
+    records = _read_modification_records(SessionLocal)
+    assert len(records) == 2
+    assert records[1].status == "completed"
+    assert records[1].question_json["verification"]["passed"] is True
+    assert _read_modification_run(SessionLocal, run_id).status == "completed"
+
+
+def test_modification_verifier_failure_sends_findings_and_annotations_to_correction(
+    app_ctx, monkeypatch
+) -> None:
+    """A failed verifier round gives the next corrector both constraint channels."""
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    corrected = _scripted_candidate(base)
+    corrected["文本"] = "驗證後修正文本"
+    fake = _ScriptedModificationLLM(
+        _scripted_candidate(base),
+        verification_responses=[
+            {
+                "passed": False,
+                "answer_match": False,
+                "details": "答案與文本矛盾：請修正第一小題。",
+            },
+            {"passed": True, "answer_match": True, "details": "已修正"},
+        ],
+        correction_responses=[corrected],
+    )
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    _run_id, events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+
+    assert fake.verification_calls == 2
+    assert fake.correction_calls == 1
+    correction_prompt = fake.correction_prompts[0][1]
+    assert "答案與文本矛盾：請修正第一小題。" in correction_prompt
+    assert "## 修改指示（必須保留）" in correction_prompt
+    assert "請將文本改成修正文本" in correction_prompt
+    done = next(event for event in events if event["event"] == "done")
+    assert done["data"]["verified"] is True
+    assert done["data"]["question"]["文本"] == "驗證後修正文本"
+
+
+def test_modification_retry_cap_persists_last_attempt_and_failure_details(
+    app_ctx, monkeypatch
+) -> None:
+    """Exhaustion keeps the user edit and records the final verifier failure."""
+    app, SessionLocal, config = app_ctx
+    config.max_retries = 2
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    modified = _scripted_candidate(base)
+    fake = _ScriptedModificationLLM(
+        modified,
+        verification_responses=[
+            {
+                "passed": False,
+                "answer_match": False,
+                "details": "無法同時滿足驗證與使用者修改指示。",
+            }
+        ],
+        correction_responses=[modified],
+    )
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    run_id, events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+
+    assert fake.correction_calls == 2
+    assert fake.verification_calls == 3
+    done = next(event for event in events if event["event"] == "done")
+    assert done["data"]["verified"] is False
+    assert done["data"]["failure_details"] == "無法同時滿足驗證與使用者修改指示。"
+    assert done["data"]["question"]["文本"] == "修正文本"
+    assert done["data"]["question"]["verification"]["details"] == (
+        "無法同時滿足驗證與使用者修改指示。"
+    )
+
+    records = _read_modification_records(SessionLocal)
+    assert records[1].status == "completed"
+    assert records[1].question_json["文本"] == "修正文本"
+    assert records[1].question_json["verification"]["passed"] is False
+    assert records[1].question_json["verification"]["details"] == (
+        "無法同時滿足驗證與使用者修改指示。"
+    )
+    assert _read_modification_run(SessionLocal, run_id).status == "completed"
+
+
+def test_modification_stream_orders_modify_verify_correct_verify_steps(
+    app_ctx, monkeypatch
+) -> None:
+    """The visible step starts follow 修改 → 驗證 → 修正 → 驗證."""
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _ScriptedModificationLLM(
+        _scripted_candidate(base),
+        verification_responses=[
+            {"passed": False, "answer_match": False, "details": "需要修正"},
+            {"passed": True, "answer_match": True, "details": "通過"},
+        ],
+        correction_responses=[_scripted_candidate(base)],
+    )
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    _run_id, events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+
+    starts = [
+        event["data"]["stage"]
+        for event in events
+        if event["event"] == "stage" and event["data"].get("status") == "start"
+    ]
+    assert starts == ["modification", "verify", "correct", "verify"]

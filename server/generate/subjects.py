@@ -70,6 +70,7 @@ from src.natural_sciences.schemas import (
 from src.natural_sciences.schemas import (
     ScienceCompetency as NSScienceCompetency,
 )
+from src.natural_sciences.verifier import verify_question as _ns_verify_question
 from src.sampler import grade_to_learning_stage
 from src.sampler import sample_params as _math_sample_params
 from src.schemas import (
@@ -129,6 +130,8 @@ from src.social_studies.schemas import (
 from src.social_studies.schemas import (
     QuestionType as SSQuestionType,
 )
+from src.social_studies.verifier import verify_question as _ss_verify_question
+from src.verifier import verify_question as _math_verify_question
 
 # ── utility used by coerce_overrides ─────────────────────────────────────────
 
@@ -187,6 +190,8 @@ class SubjectSpec:
                             hook for subject-specific parameter relationships.
     correct_question        Shared corrector entry point used by manual
                             modification runs.
+    verify_question         Shared verifier entry point used by manual
+                            modification runs.
     """
 
     key: str
@@ -208,6 +213,7 @@ class SubjectSpec:
     build_subquestion_prompt_previews: Callable | None = None
     validate_params: Callable | None = None
     correct_question: Callable | None = None
+    verify_question: Callable | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -968,6 +974,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         load_planner_stage=_ss_load_planner_stage,
         build_schemas=_ss_build_schemas,
         correct_question=_ss_correct_question,
+        verify_question=_ss_verify_question,
     ),
     "natural_sciences": SubjectSpec(
         key="natural_sciences",
@@ -986,6 +993,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         build_schemas=_ns_build_schemas,
         validate_params=_ns_validate_params,
         correct_question=_ns_correct_question,
+        verify_question=_ns_verify_question,
     ),
     "math": SubjectSpec(
         key="math",
@@ -1003,5 +1011,6 @@ SUBJECTS: dict[str, SubjectSpec] = {
         build_schemas=_math_build_schemas,
         validate_params=_math_validate_params,
         correct_question=_math_correct_question,
+        verify_question=_math_verify_question,
     ),
 }
