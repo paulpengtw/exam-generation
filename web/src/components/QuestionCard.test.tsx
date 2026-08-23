@@ -177,6 +177,13 @@ function selectRange(
   fireEvent.mouseUp(startElement);
 }
 
+function rejectionResponse(error: string, message: string): Response {
+  return new Response(JSON.stringify({ error, message }), {
+    status: 422,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("QuestionCard 圈選 capture", () => {
   it("captures a within-field DOM Range as one segment with its field path, offsets, and quote", () => {
     render(<QuestionCard question={ssQuestion} isFinal />);
@@ -326,6 +333,108 @@ describe("QuestionCard 圈選 capture", () => {
           ],
           修改指示: "Fix the passage",
         },
+        {
+          segments: [
+            {
+              field_path: "subquestions[0].題目",
+              start: 0,
+              end: 8,
+              quoted_text: "Question",
+            },
+          ],
+          修改指示: "Fix the subquestion",
+        },
+      ],
+    });
+  });
+
+  it("renders the frozen field and suggested alternative from a structured rejection", async () => {
+    fetchMock.mockResolvedValueOnce(
+      rejectionResponse(
+        "frozen_field",
+        "The field '核心問題' is fixed by the corrector; regenerate the record or change the request settings.",
+      ),
+    );
+    render(<QuestionCard question={ssQuestion} recordId="record-419" isFinal />);
+
+    selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+      target: { value: "Fix the passage" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveAttribute("data-error-code", "frozen_field");
+    expect(alert).toHaveTextContent("核心問題");
+    expect(alert).toHaveTextContent("regenerate the record or change the request settings");
+  });
+
+  it("marks stale-base rejections with warning severity", async () => {
+    fetchMock.mockResolvedValueOnce(
+      rejectionResponse(
+        "stale_base",
+        "The selected text for '文本' no longer matches this record.",
+      ),
+    );
+    render(<QuestionCard question={ssQuestion} recordId="record-419" isFinal />);
+
+    selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+      target: { value: "Fix the passage" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveAttribute("data-error-code", "stale_base");
+    expect(alert).toHaveAttribute("data-severity", "warning");
+  });
+
+  it("preserves every annotation after rejection and resubmits after deleting the offending selection", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        rejectionResponse(
+          "frozen_field",
+          "The field '核心問題' is fixed by the corrector; regenerate the record or change the request settings.",
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+    render(<QuestionCard question={ssQuestion} recordId="record-419" isFinal />);
+
+    selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+      target: { value: "Fix the passage" },
+    });
+    selectRange(
+      getSelectionField("subquestions[0].題目"),
+      0,
+      getSelectionField("subquestions[0].題目"),
+      8,
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 2" }), {
+      target: { value: "Fix the subquestion" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await screen.findByRole("alert");
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("textbox", { name: "Modification instruction 1" }))
+      .toHaveValue("Fix the passage");
+    expect(screen.getByRole("textbox", { name: "Modification instruction 2" }))
+      .toHaveValue("Fix the subquestion");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete selection 1" }));
+    expect(screen.getByRole("button", { name: "Submit modifications" })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const [, options] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(options.body))).toEqual({
+      annotations: [
         {
           segments: [
             {

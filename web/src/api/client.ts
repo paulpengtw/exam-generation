@@ -46,23 +46,34 @@ export interface Schemas {
 export class ApiError extends Error {
   status: number;
   detail: string;
+  code?: string;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, code?: string) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 
-async function extractDetail(res: Response): Promise<string> {
+async function extractError(res: Response): Promise<{ detail: string; code?: string }> {
   try {
-    const body = await res.json();
-    if (body && typeof body.detail === "string") return body.detail;
+    const body = await res.json() as unknown;
+    if (body && typeof body === "object") {
+      const payload = body as Record<string, unknown>;
+      const detail = typeof payload.message === "string"
+        ? payload.message
+        : typeof payload.detail === "string"
+          ? payload.detail
+          : undefined;
+      const code = typeof payload.error === "string" ? payload.error : undefined;
+      if (detail) return { detail, code };
+    }
   } catch {
     // ignore
   }
-  return `Request failed with status ${res.status}`;
+  return { detail: `Request failed with status ${res.status}` };
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
@@ -76,7 +87,8 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
     if (res.status === 401) {
       useAuthStore.getState().logout();
     }
-    throw new ApiError(res.status, await extractDetail(res));
+    const error = await extractError(res);
+    throw new ApiError(res.status, error.detail, error.code);
   }
   return res;
 }
