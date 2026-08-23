@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ApiError, submitModificationBatch } from "../api/client";
+import { ApiError } from "../api/client";
 import type { DraftPhase, ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
+import { useModificationRun } from "../hooks/useModificationRun";
 import { useT } from "../i18n/useT";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
@@ -10,6 +11,7 @@ import FigureRenderer, {
   isFrontendTsEnabled,
   type ChartSpecInput,
 } from "./FigureRenderer";
+import GenerationStatusBar from "./GenerationStatusBar";
 
 export interface QuestionCardProps {
   question: ExamQuestion;
@@ -385,24 +387,34 @@ function SubQuestionBlock({
 }
 
 export default function QuestionCard({
-  question,
+  question: initialQuestion,
   recordId,
   phase = "verified",
   isFinal = true,
 }: QuestionCardProps) {
   const t = useT();
   const [showSolution, setShowSolution] = useState(!isFinal);
-
-  const verification = question.verification as VerificationShape | undefined;
-  const passed = Boolean(verification?.passed);
-  const selectionEnabled = isFinal && passed;
   const cardRef = useRef<HTMLDivElement>(null);
   const nextAnnotationId = useRef(0);
   const [annotations, setAnnotations] = useState<ModificationAnnotation[]>([]);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<ModificationSubmitError | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const modificationRun = useModificationRun(recordId);
+  const modificationResult = modificationRun.result;
+  const isRunInFlight = modificationRun.status === "running";
+
+  useEffect(() => {
+    if (modificationRun.result === null) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the prior review round when the SSE stream publishes a replacement question
+    setAnnotations([]);
+    setSelectionError(null);
+    setSubmitError(null);
+  }, [modificationRun.result]);
+
+  const question = modificationResult?.question ?? initialQuestion;
+  const verification = question.verification as VerificationShape | undefined;
+  const passed = Boolean(verification?.passed);
+  const selectionEnabled = isFinal && (passed || modificationResult !== null);
   const questionId = getQuestionId(question);
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
   const phaseLabel = isFinal
@@ -456,7 +468,7 @@ export default function QuestionCard({
   };
 
   const handleSelectionMouseUp = useCallback(() => {
-    if (!selectionEnabled || !cardRef.current) return;
+    if (!selectionEnabled || isRunInFlight || !cardRef.current) return;
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
 
@@ -469,7 +481,6 @@ export default function QuestionCard({
 
     setSelectionError(null);
     setSubmitError(null);
-    setSubmitted(false);
     setAnnotations((previous) => [
       ...previous,
       {
@@ -479,47 +490,43 @@ export default function QuestionCard({
       },
     ]);
     selection.removeAllRanges();
-  }, [selectionEnabled, t]);
+  }, [isRunInFlight, selectionEnabled, t]);
 
   const handleInstructionChange = (annotationId: number, instruction: string) => {
     setAnnotations((previous) => previous.map((annotation) => (
       annotation.id === annotationId ? { ...annotation, instruction } : annotation
     )));
     setSubmitError(null);
-    setSubmitted(false);
   };
 
   const handleDeleteAnnotation = (annotationId: number) => {
     setAnnotations((previous) => previous.filter((annotation) => annotation.id !== annotationId));
     setSubmitError(null);
-    setSubmitted(false);
   };
 
   const canSubmit = Boolean(
     recordId &&
+    !isRunInFlight &&
     annotations.length > 0 &&
     annotations.every((annotation) => annotation.instruction.trim().length > 0),
   );
 
   const handleSubmit = async () => {
-    if (!recordId || !canSubmit || isSubmitting) return;
+    if (!recordId || !canSubmit || isRunInFlight) return;
 
-    setIsSubmitting(true);
     setSubmitError(null);
-    try {
-      await submitModificationBatch(recordId, {
-        annotations: annotations.map((annotation) => ({
-          segments: annotation.segments,
-          修改指示: annotation.instruction,
-        })),
-      });
-      setSubmitted(true);
-    } catch (error) {
-      setSubmitError(getModificationSubmitError(error, t("card.modificationSubmitError")));
-    } finally {
-      setIsSubmitting(false);
-    }
+    void modificationRun.start({
+      annotations: annotations.map((annotation) => ({
+        segments: annotation.segments,
+        修改指示: annotation.instruction,
+      })),
+    });
   };
+
+  const runError = modificationRun.error === null
+    ? null
+    : getModificationSubmitError(modificationRun.error, t("card.modificationSubmitError"));
+  const displayedSubmitError = runError ?? submitError;
 
   return (
     <div
@@ -527,6 +534,24 @@ export default function QuestionCard({
       onMouseUp={handleSelectionMouseUp}
       className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3"
     >
+      {isRunInFlight && (
+        <GenerationStatusBar
+          runState="running"
+          completedCount={0}
+          requestedTotal={1}
+          subject="math"
+          stageEvents={[]}
+          subQuestionCount={null}
+          startedAt={null}
+          finishedAt={null}
+          availableTargets={[]}
+          onJump={() => {}}
+          onFeedback={null}
+          mode="modification"
+          modificationStageEvents={modificationRun.stageEvents}
+        />
+      )}
+
       {/* Header chips */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
@@ -571,6 +596,9 @@ export default function QuestionCard({
                 <Chip key={`code-${code}`} label={code} tone="gray" />
               ))}
             </>
+          )}
+          {modificationResult && (
+            <Chip label={t("card.modified")} tone="green" />
           )}
         </div>
         <VerificationBadge passed={passed} verifiedLabel={t("card.verified")} unverifiedLabel={t("card.unverified")} />
@@ -678,6 +706,38 @@ export default function QuestionCard({
         </>
       )}
 
+      {modificationResult && (
+        <>
+          <section
+            aria-label={t("card.rippleReport")}
+            className="rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
+          >
+            <h3 className="font-semibold">{t("card.rippleReport")}</h3>
+            {modificationResult.ripple_report.length > 0 ? (
+              <ul className="mt-1 list-disc space-y-1 pl-5">
+                {modificationResult.ripple_report.map((fieldPath) => (
+                  <li key={fieldPath}>{fieldPath}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1">{t("card.rippleReportNone")}</p>
+            )}
+          </section>
+          {!modificationResult.verified && modificationResult.failure_details && (
+            <div
+              role="alert"
+              aria-label={t("card.modificationFailureTitle")}
+              className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+            >
+              <h3 className="font-semibold">{t("card.modificationFailureTitle")}</h3>
+              <p className="mt-1 whitespace-pre-wrap">
+                {modificationResult.failure_details}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
       {selectionEnabled && (
         <section aria-label={t("card.annotations")} className="space-y-2 border-t border-gray-100 pt-2">
           {annotations.length > 0 && (
@@ -741,25 +801,20 @@ export default function QuestionCard({
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={!canSubmit || isSubmitting}
+              disabled={!canSubmit || isRunInFlight}
               className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSubmitting ? t("card.submittingModifications") : t("card.submitModifications")}
+              {isRunInFlight ? t("card.submittingModifications") : t("card.submitModifications")}
             </button>
-            {submitted && (
-              <p role="status" className="text-sm text-green-700">
-                {t("card.modificationSubmitted")}
-              </p>
-            )}
-            {submitError && (() => {
-              const isStaleBase = submitError.code === "stale_base";
-              const titleKey = submitError.code
-                ? MODIFICATION_ERROR_TITLE_KEYS[submitError.code]
+            {displayedSubmitError && (() => {
+              const isStaleBase = displayedSubmitError.code === "stale_base";
+              const titleKey = displayedSubmitError.code
+                ? MODIFICATION_ERROR_TITLE_KEYS[displayedSubmitError.code]
                 : undefined;
               return (
                 <div
                   role="alert"
-                  data-error-code={submitError.code}
+                  data-error-code={displayedSubmitError.code}
                   data-severity={isStaleBase ? "warning" : "error"}
                   className={isStaleBase
                     ? "rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
@@ -768,7 +823,7 @@ export default function QuestionCard({
                   <p className="font-semibold">
                     {t(titleKey ?? "card.modificationErrorTitle")}
                   </p>
-                  <p className="mt-1 whitespace-pre-wrap">{submitError.message}</p>
+                  <p className="mt-1 whitespace-pre-wrap">{displayedSubmitError.message}</p>
                 </div>
               );
             })()}
@@ -808,7 +863,7 @@ export default function QuestionCard({
   );
 }
 
-type ChipTone = "blue" | "purple" | "amber" | "gray" | "teal" | "orange";
+type ChipTone = "blue" | "purple" | "amber" | "gray" | "teal" | "orange" | "green";
 
 const TONE_CLASSES: Record<ChipTone, string> = {
   blue: "bg-blue-100 text-blue-800",
@@ -817,6 +872,7 @@ const TONE_CLASSES: Record<ChipTone, string> = {
   gray: "bg-gray-100 text-gray-800",
   teal: "bg-teal-100 text-teal-800",
   orange: "bg-orange-100 text-orange-800",
+  green: "bg-green-100 text-green-800",
 };
 
 function Chip({ label, tone, title }: { label: string; tone: ChipTone; title?: string }) {

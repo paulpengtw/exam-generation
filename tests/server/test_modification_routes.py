@@ -866,6 +866,7 @@ def test_modification_stream_emits_modification_step_and_final_ripple_report(
     final = next(event for event in events if event["event"] == "result")
     assert final["data"]["question"]["文本"] == "修正文本"
     assert "subquestions[0].答案" in final["data"]["ripple_report"]
+    assert uuid.UUID(final["data"]["record_id"])
     assert uuid.UUID(run_id)
 
 
