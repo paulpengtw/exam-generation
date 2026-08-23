@@ -13,6 +13,7 @@ const tMock = vi.hoisted(() => {
     "form.subject_filter": "科目",
     "form.subject_filter_natural_sciences": "依科目篩選學習內容選項",
     "form.subject_filter_natural_sciences_help": "此選擇僅篩選學習內容選項，不會作為出題參數送出。",
+    "form.core_question_callback": "末小題回扣核心問題",
     "form.btn_generate": "Generate",
     "form.btn_confirm_send": "Confirm",
     "form.error_set_type_required": "題型種類 is required.",
@@ -118,6 +119,37 @@ describe("ParamForm subject-filter label", () => {
     await waitFor(() => expect(screen.queryByText("BDa-IV-1")).not.toBeInTheDocument());
     expect(screen.getByText("JFa-IV-1")).toBeInTheDocument();
     expect(screen.getByText("INa-IV-1")).toBeInTheDocument();
+  });
+});
+
+describe("ParamForm core-question callback option", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  it.each([
+    ["social_studies", FAKE_SOCIAL_SCHEMA],
+    ["natural_sciences", FAKE_SCIENCE_SCHEMA],
+  ] as const)("renders a checked 「末小題回扣核心問題」 checkbox for %s", async (subject, schema) => {
+    getSchemasMock.mockResolvedValue(schema);
+
+    render(<ParamForm subject={subject} onSubmit={() => {}} disabled={false} />);
+
+    expect(
+      await screen.findByRole("checkbox", { name: "末小題回扣核心問題" }),
+    ).toBeChecked();
+  });
+
+  it("does not render the callback checkbox for math", async () => {
+    getSchemasMock.mockResolvedValue(FAKE_MATH_SCHEMA);
+
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    await screen.findByRole("button", { name: "Generate" });
+    expect(
+      screen.queryByRole("checkbox", { name: "末小題回扣核心問題" }),
+    ).not.toBeInTheDocument();
   });
 });
 

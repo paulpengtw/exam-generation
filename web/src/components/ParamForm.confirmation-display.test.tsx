@@ -254,6 +254,64 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(within(question).queryByText(/子題產生器/)).not.toBeInTheDocument();
   });
 
+  it("shows the selected core-question callback setting on 發送前確認", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={vi.fn()}
+        disabled={false}
+        initialParams={{ core_question: "已提供的核心問題" }}
+      />,
+    );
+
+    const checkbox = await screen.findByRole("checkbox", {
+      name: "末小題回扣核心問題",
+    });
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "產生" }));
+
+    const row = await screen.findByText("末小題回扣核心問題", { selector: "dt" });
+    expect(within(row.parentElement!).getByText("否")).toBeInTheDocument();
+  });
+
+  it("uses the toggled core-question callback state in 提示詞預覽", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    previewGenerateMock.mockImplementation(async (params: { core_question_callback?: boolean }) => ({
+      prompts: [{
+        index: 0,
+        system_prompt: "系統提示",
+        user_prompt: params.core_question_callback ? "包含回扣核心問題" : "不包含回扣核心問題",
+      }],
+    }));
+    render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={vi.fn()}
+        disabled={false}
+        initialParams={{ core_question: "已提供的核心問題" }}
+      />,
+    );
+
+    const checkbox = await screen.findByRole("checkbox", {
+      name: "末小題回扣核心問題",
+    });
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "產生" }));
+
+    await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(1));
+    expect(previewGenerateMock.mock.calls[0][0].core_question_callback).toBe(false);
+    expect(await screen.findByText("不包含回扣核心問題")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "末小題回扣核心問題" }));
+    fireEvent.click(screen.getByRole("button", { name: "產生" }));
+
+    await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(2));
+    expect(previewGenerateMock.mock.calls[1][0].core_question_callback).toBe(true);
+    expect(await screen.findByText("包含回扣核心問題")).toBeInTheDocument();
+  });
+
   it("keeps 發送前確認 usable and 確定發送 working when 提示詞預覽 returns malformed data", async () => {
     previewGenerateMock.mockResolvedValue({ prompts: null });
     const onSubmit = vi.fn();

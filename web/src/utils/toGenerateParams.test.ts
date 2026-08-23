@@ -28,6 +28,22 @@ describe("toGenerateParams", () => {
     expect(params.core_question_callback).toBe(false);
   });
 
+  it("forwards the natural-sciences core-question callback option", () => {
+    const params = toGenerateParams("natural_sciences", {
+      core_question_callback: false,
+    } as FormParams);
+
+    expect(params.core_question_callback).toBe(false);
+  });
+
+  it("omits the core-question callback option for math", () => {
+    const params = toGenerateParams("math", {
+      core_question_callback: true,
+    } as FormParams);
+
+    expect(params).not.toHaveProperty("core_question_callback");
+  });
+
   it("omits the math limit when the form carries user-authored 文本", () => {
     const params = toGenerateParams("math", {
       passage: "使用者提供的文本",

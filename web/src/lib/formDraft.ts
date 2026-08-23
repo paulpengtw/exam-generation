@@ -69,6 +69,7 @@ function isFormFields(value: unknown): value is FormFields {
     (value.coverageMode === "balanced" || value.coverageMode === "random") &&
     typeof value.skipVerify === "boolean" &&
     typeof value.disableReferenceFewshot === "boolean" &&
+    (value.coreQuestionCallback === undefined || typeof value.coreQuestionCallback === "boolean") &&
     (
       value.imageGenerationMode === "html" ||
       value.imageGenerationMode === "gpt_image"
@@ -165,6 +166,10 @@ export function loadDraft(userId: string): FormDraft | null {
         modelCorrect: typeof rawFields.modelCorrect === "string" ? rawFields.modelCorrect : "",
         effortVerify: typeof rawFields.effortVerify === "string" ? rawFields.effortVerify : "",
         effortCorrect: typeof rawFields.effortCorrect === "string" ? rawFields.effortCorrect : "",
+        coreQuestionCallback:
+          typeof rawFields.coreQuestionCallback === "boolean"
+            ? rawFields.coreQuestionCallback
+            : true,
         reportingScale: typeof rawFields.reportingScale === "string" ? rawFields.reportingScale : "",
       },
     };

@@ -67,6 +67,7 @@ const IDENTIFIABLE_FIELDS: FormFields = {
   coverageMode: "balanced",
   skipVerify: false,
   disableReferenceFewshot: false,
+  coreQuestionCallback: true,
   imageGenerationMode: "html",
   difficulty: "medium",
   subjectFilter: "數與量",

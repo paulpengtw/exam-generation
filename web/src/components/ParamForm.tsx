@@ -123,6 +123,7 @@ export interface FormFields {
   coverageMode: "balanced" | "random";
   skipVerify: boolean;
   disableReferenceFewshot: boolean;
+  coreQuestionCallback: boolean;
   imageGenerationMode: "html" | "gpt_image";
   difficulty: "" | "easy" | "medium" | "hard";
   reportingScale: string;
@@ -577,6 +578,7 @@ function defaultFormFields(
     coverageMode: "balanced",
     skipVerify: false,
     disableReferenceFewshot: false,
+    coreQuestionCallback: true,
     imageGenerationMode: "gpt_image",
     difficulty: "",
     reportingScale: "",
@@ -805,6 +807,7 @@ export default function ParamForm({
     coverageMode: "balanced",
     skipVerify: fromInit<boolean>("skip_verify", false),
     disableReferenceFewshot: fromInit<boolean>("disable_reference_fewshot", false),
+    coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
     imageGenerationMode: fromInit<"html" | "gpt_image">("image_generation_mode", "gpt_image"),
     difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
     reportingScale: fromInit<string>("reporting_scale", ""),
@@ -864,6 +867,7 @@ export default function ParamForm({
     coverageMode,
     skipVerify,
     disableReferenceFewshot,
+    coreQuestionCallback,
     imageGenerationMode,
     difficulty,
     reportingScale,
@@ -1105,6 +1109,7 @@ export default function ParamForm({
       subquestionConfigs: subquestionConfigsFromInit(),
       topic: fromInit<string>("topic", ""),
       coreQuestion: fromInit<string | null>("core_question", null),
+      coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
     }));
     getSchemas(subject)
       .then((s) => {
@@ -1658,6 +1663,9 @@ export default function ParamForm({
       image_generation_mode: imageGenerationMode,
       difficulty: subject !== "natural_sciences" ? (difficulty === "" ? undefined : difficulty) : undefined,
       reporting_scale: subject === "natural_sciences" ? (reportingScale === "" ? undefined : reportingScale) : undefined,
+      ...(subject === "social_studies" || subject === "natural_sciences"
+        ? { core_question_callback: coreQuestionCallback }
+        : {}),
       subject_filter: subjectFilter || undefined,
       passage: cleanPassage,
       text_word_limit: canUseTextWordLimit ? (textWordLimit ?? undefined) : undefined,
@@ -1917,6 +1925,13 @@ export default function ParamForm({
       {
         label: t("form.confirm_disable_reference_fewshot"),
         value: p.disable_reference_fewshot ? "✓" : undefined,
+        subjects: ["social_studies", "natural_sciences"],
+        kind: "defaulted",
+        defaultValue: t("form.confirm_no"),
+      },
+      {
+        label: t("form.confirm_core_question_callback"),
+        value: p.core_question_callback ? t("form.confirm_yes") : undefined,
         subjects: ["social_studies", "natural_sciences"],
         kind: "defaulted",
         defaultValue: t("form.confirm_no"),
@@ -3005,6 +3020,17 @@ export default function ParamForm({
             onChange={(e) => setField("disableReferenceFewshot", e.target.checked)}
           />
           <span className="text-sm">{t("form.disable_reference_fewshot")}</span>
+        </label>
+      )}
+
+      {(subject === "social_studies" || subject === "natural_sciences") && (
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={coreQuestionCallback}
+            onChange={(e) => setField("coreQuestionCallback", e.target.checked)}
+          />
+          <span className="text-sm">{t("form.core_question_callback")}</span>
         </label>
       )}
 
