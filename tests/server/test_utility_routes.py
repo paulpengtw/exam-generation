@@ -69,7 +69,14 @@ def test_social_studies_schemas_include_content_types() -> None:
     assert r.status_code == 200
     body = r.json()
     values = [entry["value"] for entry in body["題目內容類型"]]
-    assert values == ["純文字", "含圖片", "graphs/charts/tables", "customized"]
+    assert values == [
+        "純文字",
+        "含圖片",
+        "graphs/charts/tables",
+        "customized",
+        "混合",
+        "數位閱讀",
+    ]
 
     learning_performance = body["學習表現"]
     assert learning_performance
