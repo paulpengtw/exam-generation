@@ -136,6 +136,10 @@ _Avoid_: verify model, verifier model
 The model tier that runs the 修正 生成階段. When unset, calls fall through to the 執行模型. Contrast 驗證模型.
 _Avoid_: correct model, corrector model
 
+**Agent 自主驗證修正歷程**:
+The per-question record of the 驗證/修正 loop — every 驗證 verdict and every 修正 pass with its resulting question snapshot. Exists even when 驗證 passes first try; sibling of the question, never inside it.
+_Avoid_: trail, correction trail, 修正紀錄, audit log, correction_trail.
+
 **發送前確認**:
 The screen shown after the user submits the form and before generation begins, stating what will be sent.
 _Avoid_: confirmation dialog, review screen, preview
