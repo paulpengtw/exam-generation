@@ -30,6 +30,8 @@ async def persist_generation_record(
     params: Any,
     payload: dict[str, Any],
     session_factory: Any,
+    parent_record_id: uuid.UUID | None = None,
+    annotations_json: dict[str, Any] | None = None,
 ) -> None:
     """Insert one generation_records row; log-and-swallow on failure so
     persistence never breaks generation."""
@@ -37,9 +39,15 @@ async def persist_generation_record(
         record = GenerationRecord(
             user_id=user_id,
             generation_log_id=generation_log_id,
+            parent_record_id=parent_record_id,
             subject=subject,
             question_id=payload.get("id", ""),
-            params_json=params.model_dump(mode="json"),
+            params_json=(
+                params.model_dump(mode="json")
+                if hasattr(params, "model_dump")
+                else dict(params)
+            ),
+            annotations_json=annotations_json,
             question_json=strip_image_base64(payload),
             image_files=extract_image_files(payload),
             status="completed",

@@ -77,6 +77,7 @@ def correct_question_common(
     rebuild_subquestion_fn: RebuildSubquestionFn | None = None,
     image_spec_cls: type | None = None,
     annotations: str | None = None,
+    editable_paths: set[str] | None = None,
 ) -> Any:
     """Shared corrector core for questions with subquestions.
 
@@ -100,6 +101,9 @@ def correct_question_common(
         image_spec_cls: ``ImageSpec`` class for the subject (used to
             deserialise the top-level ``chart_spec``).
         annotations: Optional user 修改指示 that the correction must preserve.
+        editable_paths: Optional field paths for a 人工審題修正 call.  The
+            server remains the authoritative scope enforcer; this parameter
+            lets subject rebuilders admit an explicitly selected chart_spec.
 
     Returns:
         The corrected question (a ``model_copy`` of *question* with updated
@@ -176,7 +180,16 @@ def correct_question_common(
             update["subquestions"] = new_sqs
 
     raw_spec = corrected_data.get("image_spec") or corrected_data.get("chart_spec")
-    if raw_spec and isinstance(raw_spec, dict) and image_spec_cls is not None:
+    chart_is_editable = editable_paths is None or any(
+        path == "chart_spec" or path.startswith("chart_spec.")
+        for path in editable_paths
+    )
+    if (
+        raw_spec
+        and isinstance(raw_spec, dict)
+        and image_spec_cls is not None
+        and chart_is_editable
+    ):
         try:
             update["chart_spec"] = image_spec_cls(**raw_spec)
         except Exception:

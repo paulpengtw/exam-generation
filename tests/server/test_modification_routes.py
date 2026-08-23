@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import json
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -16,7 +18,7 @@ from server.auth.dependencies import get_config
 from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
-from server.models import Base, GenerationLog, GenerationRecord, User
+from server.models import Base, GenerationLog, GenerationRecord, LLMExchange, User
 from server.rate_limit import limiter
 
 
@@ -570,3 +572,338 @@ def test_one_invalid_annotation_rejects_the_entire_batch_atomically(app_ctx) -> 
     assert response.status_code == 422
     assert response.json()["error"] == "stale_base"
     assert _run_count(SessionLocal) == 0
+
+
+def _full_social_studies_question() -> dict:
+    from src.social_studies.schemas import (
+        ExamQuestion,
+        ImageSpec,
+        QuestionContext,
+        QuestionSetType,
+        QuestionType,
+        ReadingProcess,
+        RubricEntry,
+        SubQuestion,
+        TextForm,
+    )
+
+    question = ExamQuestion(
+        id="ss-manual-modification",
+        核心問題="原始核心問題",
+        文本="原始文本",
+        取材來源=["原始來源"],
+        情境=[next(iter(QuestionContext))],
+        題型種類=next(iter(QuestionSetType)),
+        題型=next(iter(QuestionType)),
+        閱讀歷程=[next(iter(ReadingProcess))],
+        文本形式=next(iter(TextForm)),
+        subquestions=[
+            SubQuestion(
+                id="sq-1",
+                序號=1,
+                年級=8,
+                題型=next(iter(QuestionType)),
+                題目="第一小題原題目",
+                答案="第一小題原答案",
+                答案解析="第一小題原解析",
+                出題概念="第一小題原概念",
+                評分規準=[
+                    RubricEntry(code="1", 規準說明="第一小題原規準")
+                ],
+            ),
+            SubQuestion(
+                id="sq-2",
+                序號=2,
+                年級=8,
+                題型=next(iter(QuestionType)),
+                題目="第二小題原題目",
+                答案="第二小題原答案",
+                答案解析="第二小題原解析",
+                出題概念="第二小題原概念",
+            ),
+        ],
+        chart_spec=ImageSpec(
+            title="原始圖表標題",
+            description="原始圖表說明",
+            data={"values": [1, 2]},
+            labels={"x": "原始標籤"},
+        ),
+    )
+    return json.loads(question.model_dump_json(exclude_none=True))
+
+
+class _ScriptedModificationLLM:
+    """Route-seam fake that returns one whole-question correction candidate."""
+
+    def __init__(self, response: dict) -> None:
+        self.response = response
+        self.calls = 0
+        self.prompts: list[tuple[str, str]] = []
+        self._observer = None
+
+    def set_observer(self, observer) -> None:
+        self._observer = observer
+
+    def generate_json(self, system: str, user: str, **_kwargs):
+        self.calls += 1
+        self.prompts.append((system, user))
+        if self._observer is not None:
+            self._observer(
+                {
+                    "type": "llm_request",
+                    "agent": "corrector",
+                    "purpose": "correct",
+                    "model": "scripted-fake",
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    "params": {"max_tokens": 8192},
+                }
+            )
+        response = copy.deepcopy(self.response)
+        if self._observer is not None:
+            self._observer(
+                {
+                    "type": "llm_response",
+                    "agent": "corrector",
+                    "purpose": "correct",
+                    "model": "scripted-fake",
+                    "content": json.dumps(response, ensure_ascii=False),
+                    "reasoning": None,
+                    "usage": {"input": 10, "output": 20},
+                }
+            )
+        return response
+
+
+def _modification_payload() -> dict:
+    return {
+        "annotations": [
+            {
+                "segments": [
+                    {
+                        "field_path": "文本",
+                        "start": 0,
+                        "end": 4,
+                        "quoted_text": "原始文本",
+                    }
+                ],
+                "修改指示": "請將文本改成修正文本",
+            },
+            {
+                "segments": [
+                    {
+                        "field_path": "chart_spec.description",
+                        "start": 0,
+                        "end": 6,
+                        "quoted_text": "原始圖表說明",
+                    }
+                ],
+                "修改指示": "請更新圖表說明",
+            },
+        ]
+    }
+
+
+def _scripted_candidate(base: dict) -> dict:
+    candidate = copy.deepcopy(base)
+    candidate["文本"] = "修正文本"
+    # Deliberate out-of-scope mutations: the route must restore these.
+    candidate["核心問題"] = "未授權核心問題"
+    candidate["取材來源"] = ["未授權來源"]
+    candidate["subquestions"][0]["出題概念"] = "未授權概念"
+    candidate["subquestions"][1]["題目"] = "未授權第二小題"
+    # These are dependent on 文本 and therefore are in scope.
+    candidate["subquestions"][0]["答案"] = "修正後第一答案"
+    candidate["subquestions"][0]["答案解析"] = "修正後第一解析"
+    candidate["subquestions"][0]["評分規準"] = [
+        {"code": "1", "規準說明": "修正後第一規準", "學生作答實例": []}
+    ]
+    candidate["chart_spec"]["description"] = "修正圖表說明"
+    return candidate
+
+
+def _parse_sse_events(body: str) -> list[dict]:
+    events: list[dict] = []
+    current: dict[str, str] = {}
+    for line in body.splitlines():
+        if line.startswith("event:"):
+            current["event"] = line.split(":", 1)[1].strip()
+        elif line.startswith("data:"):
+            current["data"] = line.split(":", 1)[1].strip()
+        elif not line and current:
+            raw_data = current.get("data", "")
+            events.append(
+                {
+                    "event": current["event"],
+                    "data": json.loads(raw_data) if raw_data else "",
+                }
+            )
+            current = {}
+    if current:
+        raw_data = current.get("data", "")
+        events.append(
+            {
+                "event": current["event"],
+                "data": json.loads(raw_data) if raw_data else "",
+            }
+        )
+    return events
+
+
+def _execute_scripted_modification(app, config, user_id, record_id, fake) -> tuple[str, list[dict]]:
+
+    token = create_jwt(user_id, "user@example.com", config=config)
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/generation-records/{record_id}/modifications",
+            json=_modification_payload(),
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200, response.text
+        run_id = response.json()["run_id"]
+        stream = client.get(
+            f"/api/generation-records/{record_id}/modifications/{run_id}/stream",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert stream.status_code == 200, stream.text
+    assert stream.headers["content-type"].startswith("text/event-stream")
+    return run_id, _parse_sse_events(stream.text)
+
+
+def test_modification_stream_emits_modification_step_and_final_ripple_report(
+    app_ctx, monkeypatch
+) -> None:
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _ScriptedModificationLLM(_scripted_candidate(base))
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    run_id, events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+
+    assert fake.calls == 1
+    assert "圈選 1" in fake.prompts[0][1]
+    assert "文本[0:4]" in fake.prompts[0][1]
+    assert "請將文本改成修正文本" in fake.prompts[0][1]
+    assert any(
+        event["event"] == "pipeline"
+        and event["data"].get("stage") == "modification"
+        for event in events
+    )
+    final = next(event for event in events if event["event"] == "result")
+    assert final["data"]["question"]["文本"] == "修正文本"
+    assert "subquestions[0].答案" in final["data"]["ripple_report"]
+    assert uuid.UUID(run_id)
+
+
+def test_modification_stream_restores_out_of_scope_fields_server_side(app_ctx, monkeypatch) -> None:
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _ScriptedModificationLLM(_scripted_candidate(base))
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    _run_id, events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+    result = next(event for event in events if event["event"] == "result")["data"]["question"]
+
+    assert result["核心問題"] == base["核心問題"]
+    assert result["取材來源"] == base["取材來源"]
+    assert result["subquestions"][0]["出題概念"] == base["subquestions"][0]["出題概念"]
+    assert result["subquestions"][1]["題目"] == base["subquestions"][1]["題目"]
+
+
+def test_modification_stream_appends_child_and_leaves_parent_immutable(
+    app_ctx, monkeypatch
+) -> None:
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _ScriptedModificationLLM(_scripted_candidate(base))
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    run_id, _events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+
+    async def read_records() -> list[GenerationRecord]:
+        async with SessionLocal() as session:
+            return list(
+                (
+                    await session.execute(
+                        select(GenerationRecord).order_by(GenerationRecord.created_at)
+                    )
+                ).scalars()
+            )
+
+    records = asyncio.run(read_records())
+    assert len(records) == 2
+    parent, child = records
+    assert parent.id == record_id
+    assert parent.question_json == base
+    assert child.parent_record_id == record_id
+    assert child.generation_log_id == uuid.UUID(run_id)
+    assert child.annotations_json == _modification_payload()
+
+
+def test_modification_stream_logs_exchange_under_its_own_generation_log(
+    app_ctx, monkeypatch
+) -> None:
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _ScriptedModificationLLM(_scripted_candidate(base))
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    run_id, _events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+
+    async def read_exchanges() -> list[LLMExchange]:
+        async with SessionLocal() as session:
+            return list(
+                (
+                    await session.execute(
+                        select(LLMExchange).where(
+                            LLMExchange.generation_log_id == uuid.UUID(run_id)
+                        )
+                    )
+                ).scalars()
+            )
+
+    exchanges = asyncio.run(read_exchanges())
+    assert len(exchanges) == 1
+    assert exchanges[0].agent == "corrector"
+    assert exchanges[0].purpose == "correct"
+    assert exchanges[0].generation_log_id == uuid.UUID(run_id)
+
+
+def test_modification_stream_allows_chart_spec_edits(app_ctx, monkeypatch) -> None:
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _ScriptedModificationLLM(_scripted_candidate(base))
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    _run_id, events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+    result = next(event for event in events if event["event"] == "result")["data"]["question"]
+
+    assert result["chart_spec"]["description"] == "修正圖表說明"
+    assert result["chart_spec"]["title"] == base["chart_spec"]["title"]

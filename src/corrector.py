@@ -115,6 +115,7 @@ def correct_question(
     chart_image_path: str | None = None,
     curriculum_context: CurriculumContext | None = None,
     annotations: str | None = None,
+    editable_paths: set[str] | None = None,
 ) -> ExamQuestion:
     """Apply verification feedback to produce a minimally corrected question.
 
