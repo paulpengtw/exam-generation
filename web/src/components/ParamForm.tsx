@@ -60,6 +60,19 @@ function parsePerQuestionParams(value: unknown): Record<string, unknown>[] {
   return parsed as Record<string, unknown>[];
 }
 
+function parsePredrawnFields(value: unknown): Set<string> | null {
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed) || parsed.some((field) => typeof field !== "string")) {
+      return null;
+    }
+    return new Set(parsed);
+  } catch {
+    return null;
+  }
+}
+
 function serialisableSubquestionConfig(config: SubQuestionConfig): SubQuestionConfig {
   return Object.fromEntries(
     Object.entries(config).filter(([, value]) => value !== undefined),
@@ -675,7 +688,7 @@ export default function ParamForm({
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
   const [pendingResolvedSubquestionConfigs, setPendingResolvedSubquestionConfigs] = useState<
-    ResolvedSubQuestionConfig[]
+    ResolvedSubQuestionConfig[][]
   >([]);
   const [perQuestionAutoFields, setPerQuestionAutoFields] = useState<string[][]>([]);
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
@@ -694,7 +707,10 @@ export default function ParamForm({
   >(null);
 
   const ip = initialParams ?? {};
-  const userChosenFields = useRef(new Set(Object.keys(ip)));
+  const historyPredrawnFields = parsePredrawnFields(ip.predrawn_fields);
+  const userChosenFields = useRef(
+    new Set(Object.keys(ip).filter((key) => !historyPredrawnFields?.has(key))),
+  );
   function fromInit<T>(key: string, fallback: T): T {
     return (ip[key] as T | undefined) ?? fallback;
   }
@@ -748,8 +764,12 @@ export default function ParamForm({
     coreQuestion: fromInit<string | null>("core_question", null),
     subContext: fromInit<string>("sub_context", ""),
     scienceCompetency: fromInit<string[]>("science_competency", []),
-    learningPerformance: fromInit<string[]>("learning_performance", []),
-    learningContent: fromInit<string[]>("learning_content", []),
+    learningPerformance: historyPredrawnFields?.has("learning_performance")
+      ? []
+      : fromInit<string[]>("learning_performance", []),
+    learningContent: historyPredrawnFields?.has("learning_content")
+      ? []
+      : fromInit<string[]>("learning_content", []),
     subQuestionCount: fromInit<number | "">("sub_question_count", ""),
     subquestionConfigs: subquestionConfigsFromInit(),
     modelPlan: stringFromInit("model_plan", window.localStorage.getItem("model_plan") ?? ""),
@@ -1028,8 +1048,12 @@ export default function ParamForm({
       })(),
       subContext: fromInit<string>("sub_context", ""),
       scienceCompetency: fromInit<string[]>("science_competency", []),
-      learningPerformance: fromInit<string[]>("learning_performance", []),
-      learningContent: fromInit<string[]>("learning_content", []),
+      learningPerformance: historyPredrawnFields?.has("learning_performance")
+        ? []
+        : fromInit<string[]>("learning_performance", []),
+      learningContent: historyPredrawnFields?.has("learning_content")
+        ? []
+        : fromInit<string[]>("learning_content", []),
       subQuestionCount: fromInit<number | "">("sub_question_count", ""),
       subquestionConfigs: subquestionConfigsFromInit(),
       topic: fromInit<string>("topic", ""),
@@ -1482,11 +1506,13 @@ export default function ParamForm({
     const lpPoolValues = availableLearningPerformance.map((e) => e.value);
     const lcPoolValues = availableLearningContent.map((e) => e.value);
     const hasHistoryPerQuestionParams = historyPerQuestionParams.length === count;
+    const preserveHistoryPerQuestionParams =
+      hasHistoryPerQuestionParams && historyPredrawnFields === null;
 
     // If no learning_performance selected, pre-draw randomly to match backend sampling
     let finalLp: string[] | undefined;
     let autoDrawn = false;
-    if (!hasHistoryPerQuestionParams && isCurriculumSubject && learningPerformance.length === 0 && lpPoolValues.length > 0) {
+    if (!preserveHistoryPerQuestionParams && isCurriculumSubject && learningPerformance.length === 0 && lpPoolValues.length > 0) {
       const maxDraw = subject === "math" ? 3 : 2;
       finalLp = drawRandomSubset(lpPoolValues, 1, maxDraw);
       autoDrawn = true;
@@ -1498,7 +1524,7 @@ export default function ParamForm({
     let finalLc: string[] | undefined;
     let lcAutoDrawn = false;
     if (
-      !hasHistoryPerQuestionParams &&
+      !preserveHistoryPerQuestionParams &&
       (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
       learningContent.length === 0 &&
       lcPoolValues.length > 0
@@ -1518,6 +1544,7 @@ export default function ParamForm({
     const shouldDrawPerSubq =
       (subject === "social_studies" || subject === "natural_sciences") &&
       subQuestionCount !== "";
+    const builtSubquestionAutoFields: ResolvedSubQuestionConfig[][] = [];
 
     const effectiveSubquestionConfigsInternal: (SubQuestionConfig & {
       _lcWasAutoDrawn?: boolean;
@@ -1568,7 +1595,6 @@ export default function ParamForm({
         hasSubquestionConfig || effectiveSubquestionConfigs.length > 0
       );
 
-    setPendingResolvedSubquestionConfigs(effectiveSubquestionConfigsInternal);
     const hasHistoryCoreQuestion = hasHistoryPerQuestionParams &&
       historyPerQuestionParams.some(
         (params) => typeof params.core_question === "string" && params.core_question.length > 0,
@@ -1642,48 +1668,86 @@ export default function ParamForm({
     let previousQuestionLc: string[] | undefined;
     let previousQuestionSubquestions: SubQuestionConfig[] | undefined;
     let previousRandomValues: Record<string, string[] | undefined> = {};
+    const builtPerQuestionAutoFields: string[][] = [];
     const predrawnFields: string[] = [
       ...(autoDrawn ? ["learning_performance"] : []),
       ...(lcAutoDrawn ? ["learning_content"] : []),
     ];
-    const drawField = (key: string, pool: string[], max = 1): string[] | undefined => {
+    const drawField = (key: string, pool: string[], questionIndex: number, max = 1): string[] | undefined => {
+      const fieldAddress = `per_question_params[${questionIndex}].${key}`;
+      if (historyPredrawnFields?.has(fieldAddress)) {
+        return pool.length > 0
+          ? drawQuestionSubset(pool, 1, max, previousRandomValues[key])
+          : undefined;
+      }
+      if (hasHistoryPerQuestionParams && historyPredrawnFields !== null) return undefined;
       if (userChosenFields.current.has(key) || pool.length === 0) return undefined;
       return drawQuestionSubset(pool, 1, max, previousRandomValues[key]);
     };
     const buildPerQuestionParams = () => Array.from({ length: count }, (_, questionIndex) => {
-      const resolvedSeed = configuredSeed !== undefined
-        ? configuredSeed + questionIndex
-        : Math.floor(Math.random() * 2_147_483_648);
+      const historyQuestionParams = hasHistoryPerQuestionParams
+        ? historyPerQuestionParams[questionIndex]
+        : undefined;
+      const seedAddress = `per_question_params[${questionIndex}].seed`;
+      const seedWasPredrawn = historyPredrawnFields?.has(seedAddress) ?? false;
+      const resolvedSeed = historyQuestionParams?.seed !== undefined && !seedWasPredrawn
+        ? historyQuestionParams.seed
+        : configuredSeed !== undefined
+          ? configuredSeed + questionIndex
+          : Math.floor(Math.random() * 2_147_483_648);
       const randomStyle = subject === "math"
-        ? drawField("style", (schemas?.question_style ?? []).map((entry) => entry.value))
+        ? drawField("style", (schemas?.question_style ?? []).map((entry) => entry.value), questionIndex)
         : undefined;
       const randomContentType = drawField(
         "content_type",
         (schemas?.題目內容類型 ?? []).filter((entry) => entry.value !== "customized").map((entry) => entry.value),
+        questionIndex,
       );
-      const randomContext = drawField("context", (schemas?.情境 ?? []).map((entry) => entry.value));
-      const randomSetType = drawField("set_type", (schemas?.題型種類 ?? []).map((entry) => entry.value));
+      const randomContext = drawField("context", (schemas?.情境 ?? []).map((entry) => entry.value), questionIndex);
+      const randomSetType = drawField("set_type", (schemas?.題型種類 ?? []).map((entry) => entry.value), questionIndex);
       const randomQuestionType = subject !== "social_studies"
-        ? drawField("q_type", (schemas?.題型 ?? []).map((entry) => entry.value))
+        ? drawField("q_type", (schemas?.題型 ?? []).map((entry) => entry.value), questionIndex)
         : undefined;
       const randomSubjectFilter = subject === "social_studies"
-        ? drawField("subject_filter", (schemas?.科目 ?? []).map((entry) => entry.value))
+        ? drawField("subject_filter", (schemas?.科目 ?? []).map((entry) => entry.value), questionIndex)
         : undefined;
       const randomSubContext = subject === "natural_sciences"
-        ? drawField("sub_context", availableSubContexts.map((entry) => entry.value))
+        ? drawField("sub_context", availableSubContexts.map((entry) => entry.value), questionIndex)
         : undefined;
       const randomScienceCompetency = subject === "natural_sciences"
-        ? drawField("science_competency", (schemas?.科學能力 ?? []).map((entry) => entry.value))
+        ? drawField("science_competency", (schemas?.科學能力 ?? []).map((entry) => entry.value), questionIndex)
         : undefined;
-      const questionLp = autoDrawn
-        ? drawQuestionSubset(lpPoolValues, 1, subject === "math" ? 3 : 2, previousQuestionLp)
-        : finalLp;
-      const questionLc = lcAutoDrawn
-        ? drawQuestionSubset(lcPoolValues, 1, 3, previousQuestionLc)
-        : finalLc;
+      const questionLpAddress = `per_question_params[${questionIndex}].learning_performance`;
+      const questionLcAddress = `per_question_params[${questionIndex}].learning_content`;
+      const redrawQuestionLp = historyPredrawnFields?.has(questionLpAddress) ||
+        (!historyQuestionParams && autoDrawn);
+      const redrawQuestionLc = historyPredrawnFields?.has(questionLcAddress) ||
+        (!historyQuestionParams && lcAutoDrawn);
+      const questionLpPool = learningPerformance.length > 0
+        ? learningPerformance
+        : autoDrawn
+          ? lpPoolValues
+          : (finalLp ?? lpPoolValues);
+      const questionLcPool = learningContent.length > 0
+        ? learningContent
+        : lcAutoDrawn
+          ? lcPoolValues
+          : (finalLc ?? lcPoolValues);
+      const historyQuestionLp = Array.isArray(historyQuestionParams?.learning_performance)
+        ? historyQuestionParams.learning_performance.filter((code): code is string => typeof code === "string")
+        : undefined;
+      const historyQuestionLc = Array.isArray(historyQuestionParams?.learning_content)
+        ? historyQuestionParams.learning_content.filter((code): code is string => typeof code === "string")
+        : undefined;
+      const questionLp = redrawQuestionLp
+        ? drawQuestionSubset(questionLpPool, 1, subject === "math" ? 3 : 2, previousQuestionLp)
+        : (historyQuestionLp ?? finalLp);
+      const questionLc = redrawQuestionLc
+        ? drawQuestionSubset(questionLcPool, 1, 3, previousQuestionLc)
+        : (historyQuestionLc ?? finalLc);
       const questionPredrawnFields: string[] = [
-        ...(configuredSeed === undefined
-          ? [`per_question_params[${questionIndex}].seed`]
+        ...(seedWasPredrawn || (!historyQuestionParams && configuredSeed === undefined)
+          ? [seedAddress]
           : []),
         ...(randomStyle !== undefined
           ? [`per_question_params[${questionIndex}].style`]
@@ -1709,48 +1773,66 @@ export default function ParamForm({
         ...(randomScienceCompetency !== undefined
           ? [`per_question_params[${questionIndex}].science_competency`]
           : []),
-        ...(autoDrawn && questionLp?.length
-          ? [`per_question_params[${questionIndex}].learning_performance`]
+        ...(redrawQuestionLp && questionLp?.length
+          ? [questionLpAddress]
           : []),
-        ...(lcAutoDrawn && questionLc?.length
-          ? [`per_question_params[${questionIndex}].learning_content`]
+        ...(redrawQuestionLc && questionLc?.length
+          ? [questionLcAddress]
           : []),
       ];
+      let hasRedrawnSubquestion = false;
+      const questionSubquestionAutoFields: ResolvedSubQuestionConfig[] = [];
+      const sourceSubquestionConfigs = historyQuestionParams
+        ? parseSubquestionConfigs(historyQuestionParams.subquestion_configs)
+        : subquestionConfigs;
       const questionSubquestionConfigs = shouldDrawPerSubq
-        ? subquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
+        ? sourceSubquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
             const hasExplicitLc = (cfg.learning_content?.length ?? 0) > 0;
             const hasExplicitLp = (cfg.learning_performance?.length ?? 0) > 0;
-            const lcPool = learningContent.length > 0 ? learningContent : (questionLc ?? []);
-            const lpPool = learningPerformance.length > 0 ? learningPerformance : (questionLp ?? []);
-            const resolvedLc = hasExplicitLc
-              ? cfg.learning_content
-              : lcPool.length > 0
+            const lcPool = learningContent.length > 0 ? learningContent : (questionLc ?? perSubqLcPool);
+            const lpPool = learningPerformance.length > 0 ? learningPerformance : (questionLp ?? perSubqLpPool);
+            const lcAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_content`;
+            const lpAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_performance`;
+            const redrawLc = historyPredrawnFields?.has(lcAddress) || (!historyQuestionParams && !hasExplicitLc);
+            const redrawLp = historyPredrawnFields?.has(lpAddress) || (!historyQuestionParams && !hasExplicitLp);
+            const resolvedLc = redrawLc
+              ? lcPool.length > 0
                 ? drawQuestionSubset(
                     lcPool,
                     1,
                     3,
                     previousQuestionSubquestions?.[subquestionIndex]?.learning_content,
                   )
-                : undefined;
-            const resolvedLp = hasExplicitLp
-              ? cfg.learning_performance
-              : lpPool.length > 0
+                : undefined
+              : cfg.learning_content;
+            const resolvedLp = redrawLp
+              ? lpPool.length > 0
                 ? drawQuestionSubset(
                     lpPool,
                     1,
                     2,
                     previousQuestionSubquestions?.[subquestionIndex]?.learning_performance,
                   )
-                : undefined;
-            if (!hasExplicitLc && resolvedLc?.length) {
-              questionPredrawnFields.push(
-                `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_content`,
-              );
+                : undefined
+              : cfg.learning_performance;
+            if (redrawLc && resolvedLc?.length) {
+              hasRedrawnSubquestion = true;
+              questionPredrawnFields.push(lcAddress);
             }
-            if (!hasExplicitLp && resolvedLp?.length) {
-              questionPredrawnFields.push(
-                `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_performance`,
-              );
+            if (redrawLp && resolvedLp?.length) {
+              hasRedrawnSubquestion = true;
+              questionPredrawnFields.push(lpAddress);
+            }
+            questionSubquestionAutoFields.push({
+              _lcWasAutoDrawn: redrawLc && !!resolvedLc?.length,
+              _lpWasAutoDrawn: redrawLp && !!resolvedLp?.length,
+            });
+            if (historyQuestionParams) {
+              return {
+                ...cfg,
+                ...(redrawLc ? { learning_content: resolvedLc } : {}),
+                ...(redrawLp ? { learning_performance: resolvedLp } : {}),
+              };
             }
             return {
               question_type: cfg.question_type || undefined,
@@ -1766,36 +1848,69 @@ export default function ParamForm({
             };
           })
         : [];
-      const result = {
-        ...perQuestionBase,
-        seed: resolvedSeed,
-        style: randomStyle ?? (baseParams.style ? [baseParams.style] : undefined),
-        content_type: randomContentType?.[0] ?? baseParams.content_type,
-        context: randomContext ?? baseParams.context,
-        set_type: randomSetType?.[0] ?? baseParams.set_type,
-        q_type: randomQuestionType ?? baseParams.q_type,
-        subject_filter: randomSubjectFilter ?? (baseParams.subject_filter ? [baseParams.subject_filter] : undefined),
-        sub_context: randomSubContext?.[0] ?? baseParams.sub_context,
-        science_competency: randomScienceCompetency ?? baseParams.science_competency,
-        difficulty: subject !== "natural_sciences" ? (baseParams.difficulty ?? "medium") : undefined,
-        model_plan: baseParams.model_plan ?? models?.defaults.plan,
-        model_execute: baseParams.model_execute ?? models?.defaults.execute,
-        // For verify/correct tiers, defaults.verify / defaults.correct are "" when unset.
-        // Substituting "" would be wrong (it means "no override"). Only apply the default
-        // when the base param is explicitly undefined (user made no selection) AND the
-        // server-configured default is actually a non-empty model id.
-        model_verify: baseParams.model_verify ?? (models?.defaults.verify || undefined),
-        model_correct: baseParams.model_correct ?? (models?.defaults.correct || undefined),
-        // For tier effort levels, "" means "inherit 出題 Effort" — never send it.
-        // Use the server-configured effort default only when it is actually non-empty.
-        effort_verify: baseParams.effort_verify ?? (models?.defaults.effort_verify || undefined),
-        effort_correct: baseParams.effort_correct ?? (models?.defaults.effort_correct || undefined),
-        learning_performance: questionLp,
-        learning_content: questionLc,
-        subquestion_configs: shouldSendSubquestionConfigs
-          ? JSON.stringify(questionSubquestionConfigs)
-          : undefined,
+      builtSubquestionAutoFields.push(questionSubquestionAutoFields);
+      builtPerQuestionAutoFields.push([
+        ...(questionPredrawnFields.includes(seedAddress) ? ["seed"] : []),
+        ...(randomStyle !== undefined ? ["style"] : []),
+        ...(randomContentType !== undefined ? ["content_type"] : []),
+        ...(randomContext !== undefined ? ["context"] : []),
+        ...(randomSetType !== undefined ? ["set_type"] : []),
+        ...(randomQuestionType !== undefined ? ["q_type"] : []),
+        ...(randomSubjectFilter !== undefined ? ["subject_filter"] : []),
+        ...(randomSubContext !== undefined ? ["sub_context"] : []),
+        ...(randomScienceCompetency !== undefined ? ["science_competency"] : []),
+        ...(redrawQuestionLp && questionLp?.length ? ["learning_performance"] : []),
+        ...(redrawQuestionLc && questionLc?.length ? ["learning_content"] : []),
+      ]);
+      const historyQuestionRedraws = {
+        ...(seedWasPredrawn ? { seed: resolvedSeed } : {}),
+        ...(randomStyle !== undefined ? { style: randomStyle } : {}),
+        ...(randomContentType !== undefined ? { content_type: randomContentType[0] } : {}),
+        ...(randomContext !== undefined ? { context: randomContext } : {}),
+        ...(randomSetType !== undefined ? { set_type: randomSetType[0] } : {}),
+        ...(randomQuestionType !== undefined ? { q_type: randomQuestionType } : {}),
+        ...(randomSubjectFilter !== undefined ? { subject_filter: randomSubjectFilter } : {}),
+        ...(randomSubContext !== undefined ? { sub_context: randomSubContext[0] } : {}),
+        ...(randomScienceCompetency !== undefined ? { science_competency: randomScienceCompetency } : {}),
+        ...(redrawQuestionLp && questionLp?.length ? { learning_performance: questionLp } : {}),
+        ...(redrawQuestionLc && questionLc?.length ? { learning_content: questionLc } : {}),
       };
+      const result: Record<string, unknown> = historyQuestionParams
+        ? { ...historyQuestionParams, ...historyQuestionRedraws }
+        : {
+            ...perQuestionBase,
+            seed: resolvedSeed,
+            style: randomStyle ?? (baseParams.style ? [baseParams.style] : undefined),
+            content_type: randomContentType?.[0] ?? baseParams.content_type,
+            context: randomContext ?? baseParams.context,
+            set_type: randomSetType?.[0] ?? baseParams.set_type,
+            q_type: randomQuestionType ?? baseParams.q_type,
+            subject_filter: randomSubjectFilter ?? (baseParams.subject_filter ? [baseParams.subject_filter] : undefined),
+            sub_context: randomSubContext?.[0] ?? baseParams.sub_context,
+            science_competency: randomScienceCompetency ?? baseParams.science_competency,
+            difficulty: subject !== "natural_sciences" ? (baseParams.difficulty ?? "medium") : undefined,
+            model_plan: baseParams.model_plan ?? models?.defaults.plan,
+            model_execute: baseParams.model_execute ?? models?.defaults.execute,
+            // For verify/correct tiers, defaults.verify / defaults.correct are "" when unset.
+            // Substituting "" would be wrong (it means "no override"). Only apply the default
+            // when the base param is explicitly undefined (user made no selection) AND the
+            // server-configured default is actually a non-empty model id.
+            model_verify: baseParams.model_verify ?? (models?.defaults.verify || undefined),
+            model_correct: baseParams.model_correct ?? (models?.defaults.correct || undefined),
+            // For tier effort levels, "" means "inherit 出題 Effort" — never send it.
+            // Use the server-configured effort default only when it is actually non-empty.
+            effort_verify: baseParams.effort_verify ?? (models?.defaults.effort_verify || undefined),
+            effort_correct: baseParams.effort_correct ?? (models?.defaults.effort_correct || undefined),
+            learning_performance: questionLp,
+            learning_content: questionLc,
+          };
+      if (
+        (shouldSendSubquestionConfigs || !!historyQuestionParams) &&
+        questionSubquestionConfigs.length > 0 &&
+        (!historyQuestionParams || Object.keys(historyQuestionRedraws).length > 0 || hasRedrawnSubquestion)
+      ) {
+        result.subquestion_configs = JSON.stringify(questionSubquestionConfigs);
+      }
       previousQuestionLp = questionLp;
       previousQuestionLc = questionLc;
       previousQuestionSubquestions = questionSubquestionConfigs;
@@ -1812,26 +1927,21 @@ export default function ParamForm({
       predrawnFields.push(...questionPredrawnFields);
       return result;
     });
-    const perQuestionParams: Record<string, unknown>[] = hasHistoryPerQuestionParams
+    const perQuestionParams: Record<string, unknown>[] = preserveHistoryPerQuestionParams
       ? historyPerQuestionParams
       : buildPerQuestionParams();
-    const usingHistoryPerQuestionParams = hasHistoryPerQuestionParams;
+    const usingHistoryPerQuestionParams = preserveHistoryPerQuestionParams;
+    setPendingResolvedSubquestionConfigs(
+      usingHistoryPerQuestionParams
+        ? perQuestionParams.map((params) =>
+            parseSubquestionConfigs(params.subquestion_configs).map(() => ({})),
+          )
+        : builtSubquestionAutoFields,
+    );
     setPerQuestionAutoFields(
       usingHistoryPerQuestionParams
         ? perQuestionParams.map(() => [])
-        : perQuestionParams.map(() => [
-            ...(configuredSeed === undefined ? ["seed"] : []),
-            ...(!userChosenFields.current.has("style") && subject === "math" ? ["style"] : []),
-            ...(!userChosenFields.current.has("content_type") ? ["content_type"] : []),
-            ...(!userChosenFields.current.has("context") ? ["context"] : []),
-            ...(!userChosenFields.current.has("set_type") ? ["set_type"] : []),
-            ...(!userChosenFields.current.has("q_type") && subject !== "social_studies" ? ["q_type"] : []),
-            ...(!userChosenFields.current.has("subject_filter") && subject === "social_studies" ? ["subject_filter"] : []),
-            ...(!userChosenFields.current.has("sub_context") && subject === "natural_sciences" ? ["sub_context"] : []),
-            ...(!userChosenFields.current.has("science_competency") && subject === "natural_sciences" ? ["science_competency"] : []),
-            ...(autoDrawn ? ["learning_performance"] : []),
-            ...(lcAutoDrawn ? ["learning_content"] : []),
-          ]),
+        : builtPerQuestionAutoFields,
     );
     setPendingParams({
       ...baseParams,
@@ -1970,8 +2080,8 @@ export default function ParamForm({
               questionParams.subquestion_configs,
             ).map((config, subquestionIndex): ResolvedSubQuestionConfig => ({
               ...config,
-              _lcWasAutoDrawn: pendingResolvedSubquestionConfigs[subquestionIndex]?._lcWasAutoDrawn,
-              _lpWasAutoDrawn: pendingResolvedSubquestionConfigs[subquestionIndex]?._lpWasAutoDrawn,
+              _lcWasAutoDrawn: pendingResolvedSubquestionConfigs[index]?.[subquestionIndex]?._lcWasAutoDrawn,
+              _lpWasAutoDrawn: pendingResolvedSubquestionConfigs[index]?.[subquestionIndex]?._lpWasAutoDrawn,
             }));
             const questionLpHeading = t(
               lpWasAutoDrawn ? "form.confirm_lp_random_pool" : "form.confirm_lp_selected",
