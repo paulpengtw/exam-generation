@@ -193,6 +193,70 @@ def test_failed_history_download_is_not_available(tmp_path) -> None:
         asyncio.run(engine.dispose())
 
 
+def _add_aborted_row(SessionLocal, user_id: uuid.UUID) -> str:
+    record_id = uuid.uuid4()
+
+    async def insert() -> None:
+        async with SessionLocal() as s:
+            s.add(GenerationRecord(
+                id=record_id,
+                user_id=user_id,
+                subject="social_studies",
+                question_id="",
+                params_json={"subject": "social_studies", "topic": "climate"},
+                question_json=None,
+                image_files=[],
+                status="aborted",
+                error=None,
+            ))
+            await s.commit()
+
+    asyncio.run(insert())
+    return str(record_id)
+
+
+def test_aborted_history_payload_has_status_note_params_and_no_download(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+    record_id = _add_aborted_row(SessionLocal, user_a)
+    try:
+        with TestClient(app) as client:
+            list_response = client.get(
+                "/api/history?limit=10",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert list_response.status_code == 200
+            item = next(
+                item for item in list_response.json()["items"]
+                if item["id"] == record_id
+            )
+            assert item["status"] == "aborted"
+            assert item["preview"] == "aborted"
+            assert item["error"] is None
+            assert item["verified"] is False
+
+            detail_response = client.get(
+                f"/api/history/{record_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert detail_response.status_code == 200
+            detail = detail_response.json()
+            assert detail["status"] == "aborted"
+            assert detail["params_json"] == {
+                "subject": "social_studies",
+                "topic": "climate",
+            }
+            assert detail["question_json"] is None
+
+            download_response = client.get(
+                f"/api/history/{record_id}/download",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert download_response.status_code == 404
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
 def test_detail_returns_owned_record_and_embeds_image_when_present(tmp_path) -> None:
     app, config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
     (config.output_dir / "ss_a_0.png").write_bytes(b"png-bytes")

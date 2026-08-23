@@ -99,6 +99,33 @@ async def persist_failed_generation_record(
         logger.warning("failed to persist failed generation_record: %s", exc)
 
 
+async def persist_aborted_generation_record(
+    *,
+    user_id: uuid.UUID,
+    generation_log_id: uuid.UUID | None,
+    subject: str,
+    params: Any,
+    session_factory: Any,
+) -> None:
+    """Insert one user-aborted run tombstone without a question payload."""
+    try:
+        record = GenerationRecord(
+            user_id=user_id,
+            generation_log_id=generation_log_id,
+            subject=subject,
+            question_id="",
+            params_json=params.model_dump(mode="json"),
+            question_json=None,
+            image_files=[],
+            status="aborted",
+        )
+        async with session_factory() as session:
+            session.add(record)
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001 — best-effort persistence
+        logger.warning("failed to persist aborted generation_record: %s", exc)
+
+
 def make_exchange_recorder(
     *,
     generation_log_id: uuid.UUID | None,

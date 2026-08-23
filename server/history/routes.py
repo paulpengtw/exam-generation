@@ -23,9 +23,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["history"])
 
 
-def _preview(question_json: dict | None, error: str | None = None) -> str:
+def _preview(
+    question_json: dict | None,
+    error: str | None = None,
+    status: str = "completed",
+) -> str:
     """One-line preview: 核心問題 if present, otherwise first 題目 line, capped to 120 chars."""
-    if isinstance(error, str) and error.strip():
+    if status == "aborted":
+        return "aborted"
+    if status == "failed" and isinstance(error, str) and error.strip():
         return error.strip()[:120]
     if not isinstance(question_json, dict):
         return ""
@@ -81,7 +87,11 @@ async def list_history(
             "created_at": r.created_at.isoformat(),
             "status": r.status,
             "error": r.error,
-            "preview": _preview(r.question_json, r.error if r.status != "completed" else None),
+            "preview": _preview(
+                r.question_json,
+                r.error if r.status == "failed" else None,
+                r.status,
+            ),
             "verified": _verified(r.question_json or {}) if r.status == "completed" else False,
         }
         for r in rows
