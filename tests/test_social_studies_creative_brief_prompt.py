@@ -66,7 +66,7 @@ def test_user_topic_override_still_wins_over_brief(tmp_path) -> None:
         rng=random.Random(1),
         user_topic="使用者自訂主題",
     )
-    assert "- **情境**：使用者自訂主題（PISA閱讀情境）" in text
+    assert "- **情境**：使用者自訂主題" in text
     assert "創意取材角度" not in text
     # 創意指引 section is still appended so the LLM diversifies within the topic.
     assert "## 創意指引" in text
