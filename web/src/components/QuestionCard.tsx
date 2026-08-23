@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { DraftPhase, ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
@@ -20,8 +20,93 @@ interface VerificationShape {
   passed?: boolean;
 }
 
+interface SelectionSegment {
+  field_path: string;
+  start: number;
+  end: number;
+  quoted_text: string;
+}
+
 function getQuestionId(question: ExamQuestion): string {
   return question.id && question.id.length > 0 ? question.id : "question";
+}
+
+function comparePoints(
+  leftContainer: Node,
+  leftOffset: number,
+  rightContainer: Node,
+  rightOffset: number,
+): number {
+  const left = document.createRange();
+  left.setStart(leftContainer, leftOffset);
+  left.collapse(true);
+  const right = document.createRange();
+  right.setStart(rightContainer, rightOffset);
+  right.collapse(true);
+  return left.compareBoundaryPoints(Range.START_TO_START, right);
+}
+
+function isWithinField(field: HTMLElement, container: Node): boolean {
+  return container === field || field.contains(container);
+}
+
+function offsetWithinField(field: HTMLElement, container: Node, offset: number): number {
+  const prefix = document.createRange();
+  prefix.selectNodeContents(field);
+  prefix.setEnd(container, offset);
+  return prefix.toString().length;
+}
+
+function serializeSelection(root: HTMLElement, range: Range): SelectionSegment[] {
+  if (!root.contains(range.commonAncestorContainer)) return [];
+
+  const fields = Array.from(
+    root.querySelectorAll<HTMLElement>("[data-selection-field]"),
+  );
+  const segments: SelectionSegment[] = [];
+
+  for (const field of fields) {
+    const fieldPath = field.dataset.selectionField;
+    if (!fieldPath) continue;
+
+    const fieldRange = document.createRange();
+    fieldRange.selectNodeContents(field);
+    const startsAfterField = comparePoints(
+      range.startContainer,
+      range.startOffset,
+      fieldRange.endContainer,
+      fieldRange.endOffset,
+    ) >= 0;
+    const endsBeforeField = comparePoints(
+      range.endContainer,
+      range.endOffset,
+      fieldRange.startContainer,
+      fieldRange.startOffset,
+    ) <= 0;
+    if (startsAfterField || endsBeforeField) continue;
+
+    const fieldText = field.textContent ?? "";
+    const start = isWithinField(field, range.startContainer)
+      ? offsetWithinField(field, range.startContainer, range.startOffset)
+      : 0;
+    const end = isWithinField(field, range.endContainer)
+      ? offsetWithinField(field, range.endContainer, range.endOffset)
+      : fieldText.length;
+    if (start >= end) continue;
+
+    segments.push({
+      field_path: fieldPath,
+      start,
+      end,
+      quoted_text: fieldText.slice(start, end),
+    });
+  }
+
+  return segments;
+}
+
+function selectionFieldProps(fieldPath: string, enabled: boolean): { "data-selection-field"?: string } {
+  return enabled ? { "data-selection-field": fieldPath } : {};
 }
 
 function downloadBlob(blob: Blob, filename: string): void {
@@ -90,7 +175,15 @@ const RUBRIC_TONE: Record<string, string> = {
   "0X": "bg-gray-100 text-gray-500",
 };
 
-function DistractorPanel({ analysis }: { analysis: Record<string, string> }) {
+function DistractorPanel({
+  analysis,
+  selectionEnabled = false,
+  fieldPathPrefix = "誘答分析",
+}: {
+  analysis: Record<string, string>;
+  selectionEnabled?: boolean;
+  fieldPathPrefix?: string;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const entries = Object.entries(analysis);
@@ -112,7 +205,12 @@ function DistractorPanel({ analysis }: { analysis: Record<string, string> }) {
               <span className="inline-flex shrink-0 items-center rounded bg-amber-200 px-1.5 py-0.5 text-xs font-bold text-amber-900">
                 {label}
               </span>
-              <span className="whitespace-pre-wrap text-amber-900">{note}</span>
+              <span
+                className="whitespace-pre-wrap text-amber-900"
+                {...selectionFieldProps(`${fieldPathPrefix}.${label}`, selectionEnabled)}
+              >
+                {note}
+              </span>
             </div>
           ))}
         </div>
@@ -121,7 +219,17 @@ function DistractorPanel({ analysis }: { analysis: Record<string, string> }) {
   );
 }
 
-function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuestion; showAnswersByDefault?: boolean }) {
+function SubQuestionBlock({
+  sub,
+  index,
+  showAnswersByDefault = false,
+  selectionEnabled,
+}: {
+  sub: SubQuestion;
+  index: number;
+  showAnswersByDefault?: boolean;
+  selectionEnabled: boolean;
+}) {
   const t = useT();
   const [showAnswer, setShowAnswer] = useState(showAnswersByDefault);
 
@@ -168,7 +276,12 @@ function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuest
         );
       })()}
 
-      <div className="text-sm leading-relaxed whitespace-pre-wrap">{sub.題目}</div>
+      <div
+        className="text-sm leading-relaxed whitespace-pre-wrap"
+        {...selectionFieldProps(`subquestions[${index}].題目`, selectionEnabled)}
+      >
+        {sub.題目}
+      </div>
 
       <div>
         <button
@@ -183,32 +296,54 @@ function SubQuestionBlock({ sub, showAnswersByDefault = false }: { sub: SubQuest
             {sub.答案 && (
               <div>
                 <span className="font-medium text-gray-700">{t("card.answer")}：</span>
-                <span className="whitespace-pre-wrap">{sub.答案}</span>
+                <span
+                  className="whitespace-pre-wrap"
+                  {...selectionFieldProps(`subquestions[${index}].答案`, selectionEnabled)}
+                >
+                  {sub.答案}
+                </span>
               </div>
             )}
             {sub.答案解析 && (
               <div>
                 <span className="font-medium text-gray-700">{t("card.answerExplanation")}：</span>
-                <span className="whitespace-pre-wrap">{sub.答案解析}</span>
+                <span
+                  className="whitespace-pre-wrap"
+                  {...selectionFieldProps(`subquestions[${index}].答案解析`, selectionEnabled)}
+                >
+                  {sub.答案解析}
+                </span>
               </div>
             )}
             {sub.評分規準 && sub.評分規準.length > 0 && (
               <div>
                 <div className="font-medium text-gray-700 mb-1">{t("card.rubric")}</div>
                 <div className="space-y-1">
-                  {sub.評分規準.map((r: RubricEntry) => (
+                  {sub.評分規準.map((r: RubricEntry, rubricIndex) => (
                     <div key={r.code} className="flex gap-2 items-start">
                       <span className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs font-bold ${RUBRIC_TONE[r.code] ?? "bg-gray-100 text-gray-600"}`}>
                         {r.code}
                       </span>
-                      <span className="text-xs leading-relaxed text-gray-700">{r.規準說明}</span>
+                      <span
+                        className="text-xs leading-relaxed text-gray-700"
+                        {...selectionFieldProps(
+                          `subquestions[${index}].評分規準[${rubricIndex}].規準說明`,
+                          selectionEnabled,
+                        )}
+                      >
+                        {r.規準說明}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
             {sub.誘答分析 && Object.keys(sub.誘答分析).length > 0 && (
-              <DistractorPanel analysis={sub.誘答分析} />
+              <DistractorPanel
+                analysis={sub.誘答分析}
+                selectionEnabled={selectionEnabled}
+                fieldPathPrefix={`subquestions[${index}].誘答分析`}
+              />
             )}
           </div>
         )}
@@ -223,6 +358,10 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
 
   const verification = question.verification as VerificationShape | undefined;
   const passed = Boolean(verification?.passed);
+  const selectionEnabled = isFinal && passed;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [selections, setSelections] = useState<SelectionSegment[]>([]);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const questionId = getQuestionId(question);
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
   const phaseLabel = isFinal
@@ -275,8 +414,27 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
     });
   };
 
+  const handleSelectionMouseUp = useCallback(() => {
+    if (!selectionEnabled || !cardRef.current) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+
+    const segments = serializeSelection(cardRef.current, selection.getRangeAt(0));
+    if (segments.length === 0) {
+      setSelectionError(t("card.emptySelection"));
+      return;
+    }
+
+    setSelectionError(null);
+    setSelections((previous) => [...previous, ...segments]);
+  }, [selectionEnabled, t]);
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3">
+    <div
+      ref={cardRef}
+      onMouseUp={handleSelectionMouseUp}
+      className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3"
+    >
       {/* Header chips */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
@@ -351,18 +509,34 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
           {question.核心問題 && (
             <div className="rounded bg-blue-50 border border-blue-100 p-3">
               <div className="text-xs font-semibold text-blue-600 mb-1">{t("card.coreQuestion")}</div>
-              <div className="text-sm leading-relaxed whitespace-pre-wrap">{question.核心問題}</div>
+              <div
+                className="text-sm leading-relaxed whitespace-pre-wrap"
+                {...selectionFieldProps("核心問題", selectionEnabled)}
+              >
+                {question.核心問題}
+              </div>
             </div>
           )}
           {question.文本 && (
             <div className="rounded bg-gray-50 border border-gray-200 p-3">
               <div className="text-xs font-semibold text-gray-500 mb-1">{t("card.passage")}</div>
-              <div className="text-sm leading-relaxed whitespace-pre-wrap">{question.文本}</div>
+              <div
+                className="text-sm leading-relaxed whitespace-pre-wrap"
+                {...selectionFieldProps("文本", selectionEnabled)}
+              >
+                {question.文本}
+              </div>
             </div>
           )}
           <div className="space-y-2">
-            {question.subquestions!.map((sub) => (
-              <SubQuestionBlock key={sub.id} sub={sub} showAnswersByDefault={!isFinal} />
+            {question.subquestions!.map((sub, index) => (
+              <SubQuestionBlock
+                key={sub.id}
+                sub={sub}
+                index={index}
+                showAnswersByDefault={!isFinal}
+                selectionEnabled={selectionEnabled}
+              />
             ))}
           </div>
         </div>
@@ -370,7 +544,11 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
         <>
           <div className="space-y-1 text-sm leading-relaxed">
             {question.題目.map((line, i) => (
-              <p key={i} className="whitespace-pre-wrap">
+              <p
+                key={i}
+                className="whitespace-pre-wrap"
+                {...selectionFieldProps(`題目[${i}]`, selectionEnabled)}
+              >
                 {line}
               </p>
             ))}
@@ -387,17 +565,51 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
             {showSolution && (
               <div className="mt-2 space-y-1 rounded bg-gray-50 p-3 text-sm leading-relaxed">
                 {question.正確解題分析.map((line, i) => (
-                  <p key={i} className="whitespace-pre-wrap">
+                  <p
+                    key={i}
+                    className="whitespace-pre-wrap"
+                    {...selectionFieldProps(`正確解題分析[${i}]`, selectionEnabled)}
+                  >
                     {line}
                   </p>
                 ))}
                 {question.誘答分析 && Object.keys(question.誘答分析).length > 0 && (
-                  <DistractorPanel analysis={question.誘答分析} />
+                  <DistractorPanel
+                    analysis={question.誘答分析}
+                    selectionEnabled={selectionEnabled}
+                    fieldPathPrefix="誘答分析"
+                  />
                 )}
               </div>
             )}
           </div>
         </>
+      )}
+
+      {selectionEnabled && (selections.length > 0 || selectionError) && (
+        <section aria-label={t("card.annotations")} className="space-y-2 border-t border-gray-100 pt-2">
+          {selections.length > 0 && (
+            <ul aria-label={t("card.annotations")} className="flex flex-wrap gap-1.5">
+              {selections.map((segment, index) => (
+                <li
+                  key={`${segment.field_path}-${segment.start}-${segment.end}-${index}`}
+                  data-field-path={segment.field_path}
+                  data-start={segment.start}
+                  data-end={segment.end}
+                  data-quoted-text={segment.quoted_text}
+                  className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800"
+                >
+                  <span>{segment.field_path}</span>
+                  <span>{segment.start}–{segment.end}</span>
+                  <span>「{segment.quoted_text}」</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {selectionError && (
+            <p role="alert" className="text-sm text-red-700">{selectionError}</p>
+          )}
+        </section>
       )}
 
       <div className="flex flex-wrap gap-2 pt-1">
