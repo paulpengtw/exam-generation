@@ -90,6 +90,18 @@ _Avoid_: final modification, confirmation edit, last-minute tweak
 Clearing a resolved value on the confirmation screen, causing an immediate new 預抽 from the 全域池 for that field only. Sibling fields and the seed are untouched.
 _Avoid_: re-roll, re-draw, re-randomise
 
+**圈選**:
+One cursor-drag selection over a question's content — an arbitrary span that may cross 文本/小題 boundaries, serialized as field-addressed segments.
+_Avoid_: selection, highlight, span, 選取
+
+**修改指示**:
+The free-text instruction attached to one 圈選, a constraint the run must preserve; it deliberately echoes 出題指示.
+_Avoid_: note, comment, suggestion, annotation, 修改建議 (建議值 already means honoured-but-not-required)
+
+**人工審題修正**:
+A user-initiated run sending 圈選+修改指示 batches through 修改→驗證→修正, producing a new version linked to its parent; contrast the automatic 修正 stage.
+_Avoid_: 精修, modify, patch, partial regeneration, 局部再生成
+
 **建議值**:
 A submitted setting the generator is asked to honour but is not required to. Contrast 強制值.
 _Avoid_: hint, suggestion, soft constraint
