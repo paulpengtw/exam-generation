@@ -28,6 +28,7 @@ from src.common.curriculum_loader import (
     load_learning_content as load_common_lc,
 )
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
+from src.corrector import correct_question as _math_correct_question
 from src.natural_sciences.cli import (
     build_generation_prompts as _ns_build_prompts_impl,
 )
@@ -37,6 +38,7 @@ from src.natural_sciences.cli import (
 from src.natural_sciences.cli import (
     generate_with_corrections as _ns_generate_with_corrections,
 )
+from src.natural_sciences.corrector import correct_question as _ns_correct_question
 from src.natural_sciences.curriculum_loader import (
     load_learning_content as load_ns_learning_content,
 )
@@ -95,6 +97,7 @@ from src.social_studies.cli import (
 from src.social_studies.cli import (
     generate_with_corrections as _ss_generate_with_corrections,
 )
+from src.social_studies.corrector import correct_question as _ss_correct_question
 from src.social_studies.curriculum_loader import (
     load_learning_content as load_ss_learning_content,
 )
@@ -182,6 +185,8 @@ class SubjectSpec:
                             Returns the schemas dict for /api/schemas.
     validate_params         Optional ``(params) -> None`` request validation
                             hook for subject-specific parameter relationships.
+    correct_question        Shared corrector entry point used by manual
+                            modification runs.
     """
 
     key: str
@@ -202,6 +207,7 @@ class SubjectSpec:
     build_generation_prompts: Callable | None = None
     build_subquestion_prompt_previews: Callable | None = None
     validate_params: Callable | None = None
+    correct_question: Callable | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -961,6 +967,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_core_questions=_ss_plan_core_questions,
         load_planner_stage=_ss_load_planner_stage,
         build_schemas=_ss_build_schemas,
+        correct_question=_ss_correct_question,
     ),
     "natural_sciences": SubjectSpec(
         key="natural_sciences",
@@ -978,6 +985,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         load_planner_stage=_ns_load_planner_stage,
         build_schemas=_ns_build_schemas,
         validate_params=_ns_validate_params,
+        correct_question=_ns_correct_question,
     ),
     "math": SubjectSpec(
         key="math",
@@ -994,5 +1002,6 @@ SUBJECTS: dict[str, SubjectSpec] = {
         load_planner_stage=_math_load_planner_stage,
         build_schemas=_math_build_schemas,
         validate_params=_math_validate_params,
+        correct_question=_math_correct_question,
     ),
 }

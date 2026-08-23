@@ -64,7 +64,13 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
 """
 
-def _ss_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> object | None:
+def _ss_rebuild_subquestion(
+    sq_raw: dict,
+    original: object | None,
+    idx: int,
+    *,
+    editable_paths: set[str] | None = None,
+) -> object | None:
     """Rebuild one SS subquestion from corrected LLM output.
 
     Frozen fields (those that must not change across correction passes):
@@ -79,6 +85,15 @@ def _ss_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> 
 
     try:
         rubric = parse_rubric(sq_raw, RubricEntry)
+        chart_spec = original.chart_spec if original else None
+        chart_path = f"subquestions[{idx}].chart_spec"
+        chart_is_editable = editable_paths is not None and any(
+            path == chart_path or path.startswith(f"{chart_path}.")
+            for path in editable_paths
+        )
+        if chart_is_editable and isinstance(sq_raw.get("chart_spec"), dict):
+            chart_spec = ImageSpec.model_validate(sq_raw["chart_spec"])
+
         sq = SubQuestion(
             id=original.id if original else sq_raw.get("id", ""),
             序號=original.序號 if original else sq_raw.get("序號", idx + 1),
@@ -102,7 +117,7 @@ def _ss_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> 
                 if original else sq_raw.get("image_generation_mode")
             ),
             圖片=original.圖片 if original else sq_raw.get("圖片"),
-            chart_spec=original.chart_spec if original else None,
+            chart_spec=chart_spec,
             誘答分析=(
                 {str(k): str(v) for k, v in sq_raw.get("誘答分析", {}).items()}
                 if isinstance(sq_raw.get("誘答分析"), dict)
@@ -121,6 +136,7 @@ def correct_question(
     chart_image_path: str | None = None,
     curriculum_context: CurriculumContext | None = None,
     annotations: str | None = None,
+    editable_paths: set[str] | None = None,
 ) -> ExamQuestion:
     if curriculum_context is not None:
         curriculum_prefix = build_curriculum_section(curriculum_context)
@@ -131,13 +147,22 @@ def correct_question(
         )
     else:
         system_prompt = _CORRECTION_SYSTEM_PROMPT_CORE
+    def rebuild_subquestion(raw: dict, original: object | None, idx: int) -> object | None:
+        return _ss_rebuild_subquestion(
+            raw,
+            original,
+            idx,
+            editable_paths=editable_paths,
+        )
+
     return correct_question_common(
         client=client,
         question=question,
         verification=verification,
         chart_image_path=chart_image_path,
         system_prompt=system_prompt,
-        rebuild_subquestion_fn=_ss_rebuild_subquestion,
+        rebuild_subquestion_fn=rebuild_subquestion,
         image_spec_cls=ImageSpec,
         annotations=annotations,
+        editable_paths=editable_paths,
     )
