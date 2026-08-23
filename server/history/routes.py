@@ -23,8 +23,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["history"])
 
 
-def _preview(question_json: dict) -> str:
+def _preview(question_json: dict | None, error: str | None = None) -> str:
     """One-line preview: 核心問題 if present, otherwise first 題目 line, capped to 120 chars."""
+    if isinstance(error, str) and error.strip():
+        return error.strip()[:120]
+    if not isinstance(question_json, dict):
+        return ""
     core = question_json.get("核心問題")
     if isinstance(core, str) and core.strip():
         return core.strip()[:120]
@@ -75,8 +79,10 @@ async def list_history(
             "subject": r.subject,
             "question_id": r.question_id,
             "created_at": r.created_at.isoformat(),
-            "preview": _preview(r.question_json or {}),
-            "verified": _verified(r.question_json or {}),
+            "status": r.status,
+            "error": r.error,
+            "preview": _preview(r.question_json, r.error if r.status != "completed" else None),
+            "verified": _verified(r.question_json or {}) if r.status == "completed" else False,
         }
         for r in rows
     ]
@@ -156,8 +162,14 @@ async def get_history_detail(
         "subject": row.subject,
         "question_id": row.question_id,
         "created_at": row.created_at.isoformat(),
+        "status": row.status,
+        "error": row.error,
         "params_json": row.params_json or {},
-        "question_json": await _embed_images(row.question_json or {}, config),
+        "question_json": (
+            await _embed_images(row.question_json or {}, config)
+            if row.status == "completed"
+            else None
+        ),
     }
 
 
@@ -170,6 +182,8 @@ async def download_history(
     session: AsyncSession = Depends(get_async_session),
 ) -> Response:
     row = await _load_owned(record_id, user, session)
+    if row.status != "completed":
+        raise HTTPException(status_code=404, detail="Not found")
     body = json.dumps(row.question_json or {}, ensure_ascii=False, indent=2)
     filename = f"{row.question_id or row.id}.json"
     return Response(

@@ -109,6 +109,82 @@ def test_list_history_filters_by_subject(tmp_path) -> None:
         asyncio.run(engine.dispose())
 
 
+def _add_failed_row(SessionLocal, user_id: uuid.UUID) -> str:
+    record_id = uuid.uuid4()
+
+    async def insert() -> None:
+        async with SessionLocal() as s:
+            s.add(GenerationRecord(
+                id=record_id,
+                user_id=user_id,
+                subject="social_studies",
+                question_id="",
+                params_json={"subject": "social_studies", "topic": "climate"},
+                question_json=None,
+                image_files=[],
+                status="failed",
+                error="Question generation failed (RuntimeError)",
+            ))
+            await s.commit()
+
+    asyncio.run(insert())
+    return str(record_id)
+
+
+def test_list_history_marks_failed_row_and_uses_error_preview(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+    _add_failed_row(SessionLocal, user_a)
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/history?limit=10",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
+        failed = next(item for item in response.json()["items"] if item["status"] == "failed")
+        assert failed["preview"] == "Question generation failed (RuntimeError)"
+        assert failed["error"] == "Question generation failed (RuntimeError)"
+        assert failed["verified"] is False
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_failed_history_detail_returns_params_and_no_question(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+    record_id = _add_failed_row(SessionLocal, user_a)
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                f"/api/history/{record_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "failed"
+        assert body["params_json"] == {"subject": "social_studies", "topic": "climate"}
+        assert body["error"] == "Question generation failed (RuntimeError)"
+        assert body["question_json"] is None
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_failed_history_download_is_not_available(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+    record_id = _add_failed_row(SessionLocal, user_a)
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                f"/api/history/{record_id}/download",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 404
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
 def test_detail_returns_owned_record_and_embeds_image_when_present(tmp_path) -> None:
     app, config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
     (config.output_dir / "ss_a_0.png").write_bytes(b"png-bytes")

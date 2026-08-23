@@ -75,4 +75,35 @@ describe("HistoryPage (list mode)", () => {
       ).toBeInTheDocument(),
     );
   });
+
+  it("renders a failed row with a Failed badge and error preview", async () => {
+    listHistoryMock.mockResolvedValueOnce({
+      total: 1,
+      items: [
+        {
+          id: "failed-id",
+          subject: "social_studies",
+          question_id: "",
+          created_at: "2026-07-16T00:00:00Z",
+          status: "failed",
+          error: "Question generation failed (RuntimeError)",
+          preview: "Question generation failed (RuntimeError)",
+          verified: false,
+        },
+      ],
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history"]}>
+        <Routes>
+          <Route path="/history" element={<HistoryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByText("Failed")).toBeInTheDocument());
+    expect(
+      screen.getByText("Question generation failed (RuntimeError)"),
+    ).toBeInTheDocument();
+  });
 });

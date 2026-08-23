@@ -49,8 +49,12 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
     };
   }, [recordId]);
 
+  const isInterrupted = detail?.status === "failed" || detail?.status === "aborted";
+  const canDownload = detail != null && !isInterrupted;
+  const showDownload = detail == null || canDownload;
+
   const handleDownload = async () => {
-    if (!detail) return;
+    if (!detail || !canDownload) return;
     const blob = await downloadHistoryJson(recordId);
     saveBlob(blob, `${detail.question_id || detail.id}.json`);
   };
@@ -76,14 +80,16 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={!detail}
-              onClick={handleDownload}
-              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {t("history.btn_download_json")}
-            </button>
+            {showDownload && (
+              <button
+                type="button"
+                disabled={!detail}
+                onClick={handleDownload}
+                className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {t("history.btn_download_json")}
+              </button>
+            )}
             <button
               type="button"
               disabled={!detail}
@@ -106,11 +112,35 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
           <div className="text-sm text-gray-500">{t("history.detail_loading")}</div>
         )}
         {detail && (
-          <QuestionCard
-            question={detail.question_json as unknown as ExamQuestion}
-            phase="verified"
-            isFinal
-          />
+          isInterrupted ? (
+            <section className="space-y-4 rounded border bg-white p-4 shadow-sm">
+              <h2 className="text-base font-semibold text-red-700">
+                {t("history.failed_detail_title")}
+              </h2>
+              <div>
+                <h3 className="text-sm font-medium text-gray-700">
+                  {t("history.error_label")}
+                </h3>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-red-700">
+                  {detail.error || t("history.error_unknown")}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-gray-700">
+                  {t("history.params_label")}
+                </h3>
+                <pre className="mt-1 overflow-x-auto rounded bg-gray-50 p-3 text-xs text-gray-800">
+                  {JSON.stringify(detail.params_json, null, 2)}
+                </pre>
+              </div>
+            </section>
+          ) : (
+            <QuestionCard
+              question={detail.question_json as unknown as ExamQuestion}
+              phase="verified"
+              isFinal
+            />
+          )
         )}
       </main>
     </div>

@@ -10,6 +10,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
 GenerationStatus = Enum("started", "completed", "failed", name="generation_status")
+GenerationRecordStatus = Enum(
+    "completed", "failed", "aborted", name="generation_record_status"
+)
 
 
 class Base(DeclarativeBase):
@@ -74,8 +77,12 @@ class GenerationRecord(Base):
     subject: Mapped[str] = mapped_column(String(30), nullable=False)
     question_id: Mapped[str] = mapped_column(String(100), nullable=False)
     params_json: Mapped[dict] = mapped_column(JSON, nullable=False)
-    question_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    question_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     image_files: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(
+        GenerationRecordStatus, nullable=False, default="completed"
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

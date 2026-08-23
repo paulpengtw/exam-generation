@@ -184,11 +184,15 @@ export async function getAvailableModels(): Promise<AvailableModels> {
   return (await res.json()) as AvailableModels;
 }
 
+export type HistoryRecordStatus = "completed" | "failed" | "aborted";
+
 export interface HistoryListItem {
   id: string;
   subject: string;
   question_id: string;
   created_at: string;
+  status: HistoryRecordStatus;
+  error: string | null;
   preview: string;
   verified: boolean;
 }
@@ -203,8 +207,10 @@ export interface HistoryDetail {
   subject: string;
   question_id: string;
   created_at: string;
+  status: HistoryRecordStatus;
+  error: string | null;
   params_json: Record<string, unknown>;
-  question_json: Record<string, unknown>;
+  question_json: Record<string, unknown> | null;
 }
 
 export interface ListHistoryOpts {

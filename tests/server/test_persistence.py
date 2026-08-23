@@ -21,8 +21,12 @@ from typing import Any
 import pytest
 
 from server.generate.models import GenerateParams
-from server.generate.persistence import make_exchange_recorder, persist_generation_record
-from server.models import LLMExchange
+from server.generate.persistence import (
+    make_exchange_recorder,
+    persist_failed_generation_record,
+    persist_generation_record,
+)
+from server.models import GenerationRecord, LLMExchange
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Session-factory helpers
@@ -145,6 +149,31 @@ def test_persist_generation_record_swallows_db_failure(caplog: pytest.LogCapture
         )
 
     assert any("persist" in r.getMessage().lower() for r in caplog.records)
+
+
+def test_persist_failed_generation_record_writes_tombstone_without_question() -> None:
+    rows: list = []
+    params = GenerateParams(subject="social_studies", topic="climate")
+
+    asyncio.run(
+        persist_failed_generation_record(
+            user_id=uuid.uuid4(),
+            generation_log_id=uuid.uuid4(),
+            subject="social_studies",
+            params=params,
+            error="Stream error (RuntimeError)",
+            session_factory=_make_factory(rows),
+        )
+    )
+
+    assert len(rows) == 1
+    record = rows[0]
+    assert isinstance(record, GenerationRecord)
+    assert record.status == "failed"
+    assert record.error == "Stream error (RuntimeError)"
+    assert record.params_json["topic"] == "climate"
+    assert record.question_json is None
+    assert record.image_files == []
 
 
 # ─────────────────────────────────────────────────────────────────────────────

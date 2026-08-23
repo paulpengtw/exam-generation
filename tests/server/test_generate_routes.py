@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import dataclasses
 import logging
 import uuid
 from collections.abc import AsyncGenerator
@@ -11,6 +13,7 @@ from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.app import create_app
@@ -18,7 +21,7 @@ from server.auth.dependencies import get_config, get_current_user
 from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
-from server.models import Base, GenerationLog, User
+from server.models import Base, GenerationLog, GenerationRecord, User
 from server.rate_limit import limiter
 
 
@@ -1125,6 +1128,122 @@ def test_route_outer_error_event_is_structured() -> None:
     assert parsed["code"] == "stream_failed"
     assert "Traceback (most recent call last)" not in parsed["message"]
     assert '  File "' not in parsed["message"]
+
+
+def test_generate_route_persists_one_failed_record_after_prior_success(tmp_path) -> None:
+    """A dead run leaves one tombstone beside each successful result emitted first."""
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
+    from src.social_studies.schemas import ExamQuestion
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(
+        api_key="x", jwt_secret="test-secret", output_dir=tmp_path, data_dir=Path("data")
+    )
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="u@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    calls = 0
+
+    def fake_do_generate(sampled_params, _overrides, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("scripted LLM failure")
+        return ExamQuestion(
+            id=kwargs["question_id"],
+            核心問題="先完成的核心問題",
+            文本="先完成的文本",
+            subquestions=[],
+            情境=[c.value for c in sampled_params.情境],
+            題型種類=sampled_params.題型種類.value,
+            題型=sampled_params.題型[0].value,
+            閱讀歷程=[p.value for p in sampled_params.閱讀歷程],
+            文本形式=sampled_params.文本形式.value,
+            題目=["先完成的題目"],
+            正確解題分析=["解析"],
+        )
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
+
+    async def injected_stream(params, config_arg, app_state, **kwargs):
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        asyncio.get_running_loop().set_default_executor(executor)
+        try:
+            async for event in generate_question_stream(
+                params,
+                config_arg,
+                app_state,
+                subjects={"social_studies": fake_spec},
+                **kwargs,
+            ):
+                yield event
+        finally:
+            executor.shutdown(wait=True)
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    from server.generate import routes as gen_routes
+
+    original = gen_routes.generate_question_stream
+    original_session_factory = gen_routes.AsyncSessionLocal
+    gen_routes.generate_question_stream = injected_stream  # type: ignore[assignment]
+    gen_routes.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "u@example.com", config=config)
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/generate?subject=social_studies&count=2&skip_verify=true",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.AsyncSessionLocal = original_session_factory  # type: ignore[assignment]
+        limiter.reset()
+
+    assert response.status_code == 200
+    assert "generation_failed" in response.text
+
+    async def read_records() -> list[GenerationRecord]:
+        async with SessionLocal() as session:
+            return (
+                (await session.execute(
+                    select(GenerationRecord).order_by(GenerationRecord.created_at.asc())
+                ))
+                .scalars()
+                .all()
+            )
+
+    rows = asyncio.run(read_records())
+    assert len(rows) == 2
+    assert [row.status for row in rows].count("completed") == 1
+    assert [row.status for row in rows].count("failed") == 1
+    failed = next(row for row in rows if row.status == "failed")
+    assert failed.error == "Question generation failed (RuntimeError)"
+    assert failed.params_json["count"] == 2
+    assert failed.question_json is None
+    asyncio.run(engine.dispose())
 
 
 def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
