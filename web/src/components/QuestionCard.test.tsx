@@ -118,7 +118,7 @@ const ssSub: SubQuestion = {
   學習表現: [],
   出題概念: "",
   題型: "選擇題",
-  題目: "Q? (A) x (B) y (C) z (D) w",
+  題目: "Question asks (A) x (B) y (C) z (D) w",
   答案: "B",
   答案解析: "…",
   評分規準: [],
@@ -136,11 +136,117 @@ const ssQuestion: ExamQuestion = {
   題型種類: "題組題",
   題型: "選擇題",
   核心問題: "core?",
-  文本: "passage",
+  文本: "Shared passage",
   subquestions: [ssSub],
   題目: ["passage", ssSub.題目],
   正確解題分析: ["B"],
+  verification: { passed: true },
 };
+
+function getSelectionField(fieldPath: string): HTMLElement {
+  const field = document.querySelector<HTMLElement>(`[data-selection-field="${fieldPath}"]`);
+  if (!field) throw new Error(`Missing selection field ${fieldPath}`);
+  return field;
+}
+
+function getOnlyTextNode(element: HTMLElement): Text {
+  const textNode = element.firstChild;
+  if (!(textNode instanceof Text)) throw new Error("Expected a field to contain one text node");
+  return textNode;
+}
+
+function selectRange(
+  startElement: HTMLElement,
+  startOffset: number,
+  endElement: HTMLElement = startElement,
+  endOffset: number = startOffset,
+): void {
+  const range = document.createRange();
+  range.setStart(getOnlyTextNode(startElement), startOffset);
+  range.setEnd(getOnlyTextNode(endElement), endOffset);
+
+  const selection = window.getSelection();
+  if (!selection) throw new Error("jsdom did not provide a Selection");
+  selection.removeAllRanges();
+  selection.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+  fireEvent.mouseUp(startElement);
+}
+
+describe("QuestionCard 圈選 capture", () => {
+  it("captures a within-field DOM Range as one segment with its field path, offsets, and quote", () => {
+    render(<QuestionCard question={ssQuestion} isFinal />);
+
+    const passage = getSelectionField("文本");
+    selectRange(passage, 7, passage, 14);
+
+    const chip = screen.getByRole("listitem");
+    expect(chip).toHaveAttribute("data-field-path", "文本");
+    expect(chip).toHaveAttribute("data-start", "7");
+    expect(chip).toHaveAttribute("data-end", "14");
+    expect(chip).toHaveAttribute("data-quoted-text", "passage");
+  });
+
+  it("splits a cross-boundary DOM Range into ordered per-field segments", () => {
+    render(<QuestionCard question={ssQuestion} isFinal />);
+
+    selectRange(
+      getSelectionField("文本"),
+      7,
+      getSelectionField("subquestions[0].題目"),
+      8,
+    );
+
+    const chips = screen.getAllByRole("listitem");
+    expect(chips).toHaveLength(2);
+    expect(chips.map((chip) => chip.getAttribute("data-field-path"))).toEqual([
+      "文本",
+      "subquestions[0].題目",
+    ]);
+    expect(chips.map((chip) => [
+      chip.getAttribute("data-start"),
+      chip.getAttribute("data-end"),
+      chip.getAttribute("data-quoted-text"),
+    ])).toEqual([
+      ["7", "14", "passage"],
+      ["0", "8", "Question"],
+    ]);
+  });
+
+  it("rejects a chrome-only selection with user feedback and no empty chip", () => {
+    render(<QuestionCard question={ssQuestion} isFinal />);
+
+    const passageLabel = screen.getByText("Passage", { exact: true });
+    selectRange(passageLabel, 0, passageLabel, "Passage".length);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Select exam content to add a selection.");
+    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+  });
+
+  it("renders each captured 圈選 as a visible annotation chip", () => {
+    render(<QuestionCard question={ssQuestion} isFinal />);
+
+    const passage = getSelectionField("文本");
+    selectRange(passage, 7, passage, 14);
+
+    expect(screen.getByRole("list", { name: "Selections" })).toBeInTheDocument();
+    expect(screen.getByRole("listitem")).toHaveTextContent("passage");
+  });
+
+  it("does not expose capture UI for generating or failed cards", () => {
+    const { unmount } = render(<QuestionCard question={ssQuestion} phase="draft" isFinal={false} />);
+    expect(document.querySelector("[data-selection-field]"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Selections" })).not.toBeInTheDocument();
+    unmount();
+
+    const failedQuestion = { ...ssQuestion, verification: { passed: false } };
+    render(<QuestionCard question={failedQuestion} isFinal />);
+    expect(document.querySelector("[data-selection-field]"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Selections" })).not.toBeInTheDocument();
+  });
+});
 
 describe("QuestionCard distractor panel", () => {
   it("renders 誘答分析 rows inside a subquestion when the dict is non-empty", () => {

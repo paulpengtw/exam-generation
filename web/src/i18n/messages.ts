@@ -316,6 +316,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "card.phase_image": "Image ready",
     "card.phase_verified": "Verified draft",
     "card.phase_corrected": "Corrected draft",
+    "card.annotations": "Selections",
+    "card.emptySelection": "Select exam content to add a selection.",
 
     "error.title": "Something went wrong",
     "error.desc": "An unexpected error occurred. Try reloading the page.",
@@ -655,6 +657,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "card.phase_image": "圖片已產生",
     "card.phase_verified": "已驗證草稿",
     "card.phase_corrected": "已修正草稿",
+    "card.annotations": "圈選",
+    "card.emptySelection": "請圈選題目內容。",
 
     "error.title": "發生錯誤",
     "error.desc": "發生意外錯誤，請重新載入頁面。",
