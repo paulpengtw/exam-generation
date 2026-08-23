@@ -28,6 +28,24 @@ _ENUM_NAMES = {
     "內容領域": "ContentDomain",
 }
 _SCHEMA_METADATA_KEYS = {"學習階段", "grades"}
+_DIGITAL_ONLY_CANDIDATES = frozenset({"拖放題", "滑桿題"})
+
+
+def _derive_digital_only_question_types(
+    schemas: Mapping[str, list[dict]],
+) -> tuple[str, ...]:
+    """Find reserved digital-only question types present in SS schema rows.
+
+    The candidate set is code-owned because the current CSV has no dedicated
+    metadata column. Future rows may carry the ``僅限數位卷面`` marker in
+    instruction/metadata; their values still flow through this same helper.
+    """
+    values: list[str] = []
+    for row in schemas.get("題型", []):
+        value = row.get("value")
+        if value in _DIGITAL_ONLY_CANDIDATES:
+            values.append(value)
+    return tuple(dict.fromkeys(values))
 
 
 def load_schemas(curriculum_dir: Path | None = None) -> dict:
@@ -37,6 +55,20 @@ def load_schemas(curriculum_dir: Path | None = None) -> dict:
         _SPEC.data_dir,
         curriculum_dir,
     )
+
+
+DIGITAL_ONLY_QUESTION_TYPES: tuple[str, ...] = _derive_digital_only_question_types(
+    load_schemas()
+)
+
+
+def digital_only_question_types(
+    schemas: Mapping[str, list[dict]] | None = None,
+) -> list[str]:
+    """Return digital-only types, including values in injected schema rows."""
+    loaded = load_schemas() if schemas is None else schemas
+    discovered = _derive_digital_only_question_types(loaded)
+    return list(dict.fromkeys((*DIGITAL_ONLY_QUESTION_TYPES, *discovered)))
 
 
 def build_enums_by_category(schemas: Mapping[str, list[dict]]) -> Mapping[str, type]:

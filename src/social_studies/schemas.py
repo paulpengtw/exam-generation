@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from src.common.difficulty import DEFAULT_DIFFICULTY, Difficulty
 from src.social_studies.core_competency_loader import (
@@ -127,7 +127,10 @@ class SubQuestionConfig(BaseModel):
     question_word_limit: int | None = None
     option_word_limit: int | None = None
     text_word_limit: int | None = None
-    認知歷程: str | None = None
+    認知歷程: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("認知歷程", "cognitive_process"),
+    )
     learning_content: list[str] = Field(default_factory=list)
     learning_performance: list[str] = Field(default_factory=list)
 
@@ -193,6 +196,7 @@ class QuestionMetadata(BaseModel):
     seed: int | None = None
     difficulty: Difficulty = DEFAULT_DIFFICULTY
     coverage_mode_used: Literal["balanced", "random"] | None = None
+    surface_used: Literal["紙本", "數位"] | None = None
 
 
 class ExamQuestion(BaseModel):
@@ -261,6 +265,7 @@ class SampledParams(BaseModel):
     題目內容類型: str = ""  # top-level 文本素材類型 (renamed in UI for #101)
     科目: QuestionSubject  # type: ignore[valid-type]
     內容領域: ContentDomain | None = None  # type: ignore[valid-type]
+    target_surface: Literal["紙本", "數位"] = "紙本"
     核心素養: list[CoreCompetency] = Field(default_factory=list)  # type: ignore[valid-type]
     學習內容_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-3)
     學習表現_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-2)

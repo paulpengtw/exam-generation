@@ -63,15 +63,21 @@ async def preview_generate_endpoint(
     effective_execute_model = params.model_execute or config.model_execute
     # #375: tier model resolution — request param → env var → effective execute model
     effective_verify_model = params.model_verify or config.model_verify or effective_execute_model
-    effective_correct_model = params.model_correct or config.model_correct or effective_execute_model
+    effective_correct_model = (
+        params.model_correct or config.model_correct or effective_execute_model
+    )
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
     # #377: effective execute effort (with per-request override applied)
     effective_execute_effort = params.effort_execute or config.effort_execute
     _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
     # #377: validate tier efforts against their effective model using the full inherited chain
-    effective_verify_effort = params.effort_verify or config.effort_verify or effective_execute_effort
+    effective_verify_effort = (
+        params.effort_verify or config.effort_verify or effective_execute_effort
+    )
     _check_effort_for_model(effective_verify_effort, effective_verify_model, "effort_verify")
-    effective_correct_effort = params.effort_correct or config.effort_correct or effective_execute_effort
+    effective_correct_effort = (
+        params.effort_correct or config.effort_correct or effective_execute_effort
+    )
     _check_effort_for_model(effective_correct_effort, effective_correct_model, "effort_correct")
     _check_image_api_key(params.image_generation_mode, params.subquestion_configs, config)
     _check_provider_key_for_model(effective_plan_model, config, "model_plan")
@@ -150,7 +156,10 @@ def _check_image_api_key(
     if needs_gpt:
         raise HTTPException(
             status_code=422,
-            detail="image_generation_mode: gpt_image requires IMAGE_API_KEY to be set on the server",
+            detail=(
+                "image_generation_mode: gpt_image requires IMAGE_API_KEY "
+                "to be set on the server"
+            ),
         )
 
 
@@ -195,6 +204,8 @@ async def generate_endpoint(
     core_question_callback: bool = Query(default=True),
     subject_filter: list[NonEmptyQueryValue] | None = Query(default=None),
     content_type: str | None = Query(default=None),
+    content_domain: str | None = Query(default=None),
+    target_surface: Literal["紙本", "數位"] | None = Query(default=None),
     passage: str | None = Query(default=None),
     options: list[str] | None = Query(default=None),
     topic: str | None = Query(default=None),
@@ -276,6 +287,8 @@ async def generate_endpoint(
             core_question_callback=core_question_callback,
             subject_filter=subject_filter,
             content_type=content_type,
+            content_domain=content_domain,
+            target_surface=target_surface,
             passage=passage,
             options=options,
             topic=topic,

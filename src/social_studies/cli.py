@@ -253,8 +253,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="關閉最後小題回扣本題組核心問題的提示",
     )
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
-    gen.add_argument("--max-retries", type=int, default=None,
-                     help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)")
+    gen.add_argument(
+        "--max-retries",
+        type=int,
+        default=None,
+        help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)",
+    )
     gen.add_argument(
         "--image-generation-mode",
         choices=["html", "gpt_image"],
@@ -447,6 +451,7 @@ def _parse_text_shell(
             model=model,
             seed=None,
             difficulty=params.difficulty,
+            surface_used=params.target_surface,
         ),
     )
 
@@ -1251,7 +1256,10 @@ def main(argv: list[str] | None = None) -> None:
             html_renderer.start()
             print("  Playwright browser started.", file=sys.stderr)
         except Exception as e:
-            print(f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.", file=sys.stderr)
+            print(
+                f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.",
+                file=sys.stderr,
+            )
 
     context_override = (
         [_resolve_enum(v, QuestionContext) for v in args.context]
@@ -1260,7 +1268,11 @@ def main(argv: list[str] | None = None) -> None:
     set_type_override = _resolve_enum(args.set_type, QuestionSetType)
     q_type_override = [_resolve_enum(v, QuestionType) for v in args.q_type] if args.q_type else None
     subject_override = [QuestionSubject(v) for v in args.subject] if args.subject else None
-    core_competency_override = [CoreCompetency(v) for v in args.core_competency] if args.core_competency else None
+    core_competency_override = (
+        [CoreCompetency(v) for v in args.core_competency]
+        if args.core_competency
+        else None
+    )
     learning_content_override = args.learning_content if args.learning_content else None
     learning_performance_override = args.learning_performance if args.learning_performance else None
     content_type_override = args.content_type if args.content_type else None
@@ -1305,7 +1317,8 @@ def main(argv: list[str] | None = None) -> None:
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
                   f"科目={params.科目.value}, "
                   f"情境={'、'.join(c.value for c in params.情境)}, "
-                  f"題型={'、'.join(t.value for t in params.題型)}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
+                  f"題型={'、'.join(t.value for t in params.題型)}, "
+                  f"閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
                   f"文本形式={params.文本形式.value}, "
                   f"題目內容類型={params.題目內容類型}, "
                   f"核心素養={'、'.join(c.value for c in params.核心素養)}, "
@@ -1339,10 +1352,14 @@ def main(argv: list[str] | None = None) -> None:
                     grade=params.grade,
                     model="",
                     coverage_mode_used=args.coverage_mode,
+                    surface_used=params.target_surface,
                 )
             else:
                 question.metadata = question.metadata.model_copy(
-                    update={"coverage_mode_used": args.coverage_mode}
+                    update={
+                        "coverage_mode_used": args.coverage_mode,
+                        "surface_used": params.target_surface,
+                    }
                 )
 
             results.append(question)
