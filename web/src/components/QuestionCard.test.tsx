@@ -2,10 +2,13 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 const recordFigureFallbackMock = vi.hoisted(() => vi.fn());
+const fetchMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/figureFallbackMetric", () => ({
   recordFigureFallback: recordFigureFallbackMock,
 }));
+
+vi.stubGlobal("fetch", fetchMock);
 
 import QuestionCard from "./QuestionCard";
 import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
@@ -40,6 +43,7 @@ describe("QuestionCard draft rendering", () => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  fetchMock.mockReset();
 });
 
 describe("QuestionCard + FigureRenderer swap", () => {
@@ -231,6 +235,110 @@ describe("QuestionCard 圈選 capture", () => {
 
     expect(screen.getByRole("list", { name: "Selections" })).toBeInTheDocument();
     expect(screen.getByRole("listitem")).toHaveTextContent("passage");
+  });
+
+  it("gives each captured 圈選 an editable 修改指示 and deletes its chip and note together", () => {
+    render(<QuestionCard question={ssQuestion} recordId="record-422" isFinal />);
+
+    selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
+
+    const instruction = screen.getByRole("textbox", {
+      name: "Modification instruction 1",
+    });
+    expect(instruction).toHaveValue("");
+
+    fireEvent.change(instruction, { target: { value: "Fix the wording" } });
+    expect(instruction).toHaveValue("Fix the wording");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete selection 1" }));
+
+    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Modification instruction 1" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("keeps submit disabled with no selections or any missing 修改指示", () => {
+    render(<QuestionCard question={ssQuestion} recordId="record-422" isFinal />);
+
+    const submit = screen.getByRole("button", { name: "Submit modifications" });
+    expect(submit).toBeDisabled();
+
+    selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+      target: { value: "   " },
+    });
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+      target: { value: "Fix the passage" },
+    });
+    expect(submit).not.toBeDisabled();
+
+    selectRange(
+      getSelectionField("subquestions[0].題目"),
+      0,
+      getSelectionField("subquestions[0].題目"),
+      8,
+    );
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 2" }), {
+      target: { value: "Fix the subquestion" },
+    });
+    expect(submit).not.toBeDisabled();
+  });
+
+  it("posts the exact per-圈選 payload with field-addressed segments and 修改指示", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    render(<QuestionCard question={ssQuestion} recordId="record-422" isFinal />);
+
+    selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+      target: { value: "Fix the passage" },
+    });
+
+    selectRange(
+      getSelectionField("subquestions[0].題目"),
+      0,
+      getSelectionField("subquestions[0].題目"),
+      8,
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 2" }), {
+      target: { value: "Fix the subquestion" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/generation-records/record-422/modifications");
+    expect(options.method).toBe("POST");
+    expect(new Headers(options.headers).get("Content-Type")).toBe("application/json");
+    expect(JSON.parse(String(options.body))).toEqual({
+      annotations: [
+        {
+          segments: [
+            { field_path: "文本", start: 7, end: 14, quoted_text: "passage" },
+          ],
+          修改指示: "Fix the passage",
+        },
+        {
+          segments: [
+            {
+              field_path: "subquestions[0].題目",
+              start: 0,
+              end: 8,
+              quoted_text: "Question",
+            },
+          ],
+          修改指示: "Fix the subquestion",
+        },
+      ],
+    });
   });
 
   it("does not expose capture UI for generating or failed cards", () => {

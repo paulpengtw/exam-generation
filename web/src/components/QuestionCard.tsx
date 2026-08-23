@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
+import { submitModificationBatch } from "../api/client";
 import type { DraftPhase, ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
@@ -12,6 +13,7 @@ import FigureRenderer, {
 
 export interface QuestionCardProps {
   question: ExamQuestion;
+  recordId?: string;
   phase?: DraftPhase;
   isFinal?: boolean;
 }
@@ -25,6 +27,12 @@ interface SelectionSegment {
   start: number;
   end: number;
   quoted_text: string;
+}
+
+interface ModificationAnnotation {
+  id: number;
+  segments: SelectionSegment[];
+  instruction: string;
 }
 
 function getQuestionId(question: ExamQuestion): string {
@@ -352,7 +360,12 @@ function SubQuestionBlock({
   );
 }
 
-export default function QuestionCard({ question, phase = "verified", isFinal = true }: QuestionCardProps) {
+export default function QuestionCard({
+  question,
+  recordId,
+  phase = "verified",
+  isFinal = true,
+}: QuestionCardProps) {
   const t = useT();
   const [showSolution, setShowSolution] = useState(!isFinal);
 
@@ -360,8 +373,12 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
   const passed = Boolean(verification?.passed);
   const selectionEnabled = isFinal && passed;
   const cardRef = useRef<HTMLDivElement>(null);
-  const [selections, setSelections] = useState<SelectionSegment[]>([]);
+  const nextAnnotationId = useRef(0);
+  const [annotations, setAnnotations] = useState<ModificationAnnotation[]>([]);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const questionId = getQuestionId(question);
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
   const phaseLabel = isFinal
@@ -422,12 +439,63 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
     const segments = serializeSelection(cardRef.current, selection.getRangeAt(0));
     if (segments.length === 0) {
       setSelectionError(t("card.emptySelection"));
+      selection.removeAllRanges();
       return;
     }
 
     setSelectionError(null);
-    setSelections((previous) => [...previous, ...segments]);
+    setSubmitError(null);
+    setSubmitted(false);
+    setAnnotations((previous) => [
+      ...previous,
+      {
+        id: nextAnnotationId.current++,
+        segments,
+        instruction: "",
+      },
+    ]);
+    selection.removeAllRanges();
   }, [selectionEnabled, t]);
+
+  const handleInstructionChange = (annotationId: number, instruction: string) => {
+    setAnnotations((previous) => previous.map((annotation) => (
+      annotation.id === annotationId ? { ...annotation, instruction } : annotation
+    )));
+    setSubmitError(null);
+    setSubmitted(false);
+  };
+
+  const handleDeleteAnnotation = (annotationId: number) => {
+    setAnnotations((previous) => previous.filter((annotation) => annotation.id !== annotationId));
+    setSubmitError(null);
+    setSubmitted(false);
+  };
+
+  const canSubmit = Boolean(
+    recordId &&
+    annotations.length > 0 &&
+    annotations.every((annotation) => annotation.instruction.trim().length > 0),
+  );
+
+  const handleSubmit = async () => {
+    if (!recordId || !canSubmit || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await submitModificationBatch(recordId, {
+        annotations: annotations.map((annotation) => ({
+          segments: annotation.segments,
+          修改指示: annotation.instruction,
+        })),
+      });
+      setSubmitted(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : t("card.modificationSubmitError"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div
@@ -586,29 +654,83 @@ export default function QuestionCard({ question, phase = "verified", isFinal = t
         </>
       )}
 
-      {selectionEnabled && (selections.length > 0 || selectionError) && (
+      {selectionEnabled && (
         <section aria-label={t("card.annotations")} className="space-y-2 border-t border-gray-100 pt-2">
-          {selections.length > 0 && (
+          {annotations.length > 0 && (
             <ul aria-label={t("card.annotations")} className="flex flex-wrap gap-1.5">
-              {selections.map((segment, index) => (
-                <li
-                  key={`${segment.field_path}-${segment.start}-${segment.end}-${index}`}
-                  data-field-path={segment.field_path}
-                  data-start={segment.start}
-                  data-end={segment.end}
-                  data-quoted-text={segment.quoted_text}
-                  className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800"
-                >
-                  <span>{segment.field_path}</span>
-                  <span>{segment.start}–{segment.end}</span>
-                  <span>「{segment.quoted_text}」</span>
-                </li>
+              {annotations.flatMap((annotation, annotationIndex) => (
+                annotation.segments.map((segment, segmentIndex) => (
+                  <li
+                    key={`${annotation.id}-${segmentIndex}`}
+                    data-annotation-id={annotation.id}
+                    data-field-path={segment.field_path}
+                    data-start={segment.start}
+                    data-end={segment.end}
+                    data-quoted-text={segment.quoted_text}
+                    className={segmentIndex === 0
+                      ? "inline-flex min-w-64 flex-col items-stretch gap-2 rounded-lg bg-indigo-100 p-2 text-xs font-medium text-indigo-800"
+                      : "inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800"}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>{segment.field_path}</span>
+                      <span>{segment.start}–{segment.end}</span>
+                      <span>「{segment.quoted_text}」</span>
+                      {segmentIndex === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAnnotation(annotation.id)}
+                          aria-label={`${t("card.deleteAnnotation")} ${annotationIndex + 1}`}
+                          className="ml-auto rounded px-1 text-indigo-700 hover:bg-indigo-200"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    {segmentIndex === 0 && (
+                      <div className="space-y-1">
+                        <label
+                          htmlFor={`modification-instruction-${annotation.id}`}
+                          className="block text-xs font-semibold text-indigo-900"
+                        >
+                          {t("card.modificationInstruction")}
+                        </label>
+                        <textarea
+                          id={`modification-instruction-${annotation.id}`}
+                          aria-label={`${t("card.modificationInstruction")} ${annotationIndex + 1}`}
+                          value={annotation.instruction}
+                          onChange={(event) => handleInstructionChange(annotation.id, event.target.value)}
+                          placeholder={t("card.modificationInstructionPlaceholder")}
+                          rows={2}
+                          className="w-full rounded border border-indigo-200 bg-white px-2 py-1 text-sm font-normal text-gray-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </div>
+                    )}
+                  </li>
+                ))
               ))}
             </ul>
           )}
           {selectionError && (
             <p role="alert" className="text-sm text-red-700">{selectionError}</p>
           )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!canSubmit || isSubmitting}
+              className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSubmitting ? t("card.submittingModifications") : t("card.submitModifications")}
+            </button>
+            {submitted && (
+              <p role="status" className="text-sm text-green-700">
+                {t("card.modificationSubmitted")}
+              </p>
+            )}
+            {submitError && (
+              <p role="alert" className="text-sm text-red-700">{submitError}</p>
+            )}
+          </div>
         </section>
       )}
 
