@@ -9,11 +9,19 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.config import (
-    Config,
     EFFORT_LEVELS as _EFFORT_LEVELS,  # noqa: F401  (re-export: server.generate.routes + tests import this name)
+)
+from src.config import (
     FIVE_EFFORT_LEVELS as _FIVE_EFFORT_LEVELS,  # noqa: F401
+)
+from src.config import (
     FOUR_EFFORT_LEVELS as _FOUR_EFFORT_LEVELS,  # noqa: F401
+)
+from src.config import (
     THREE_EFFORT_LEVELS as _THREE_EFFORT_LEVELS,  # noqa: F401
+)
+from src.config import (
+    Config,
 )
 
 # Code-level allowlist shipped with the server.  When LLM_MODELS_ALLOWED is
@@ -92,6 +100,7 @@ class ServerConfig(Config):
             output_dir=Path(os.environ.get("OUTPUT_DIR", "./output")),
             data_dir=Path(os.environ.get("DATA_DIR", "./data")),
             rate_limit_delay=float(os.environ.get("LLM_RATE_LIMIT_DELAY", "0")),
+            max_retries=int(os.environ.get("LLM_MAX_RETRIES", "3")),
             database_url=os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./dev.db"),
             jwt_secret=os.environ.get("JWT_SECRET", ""),
             jwt_expire_days=int(os.environ.get("JWT_EXPIRE_DAYS", "7")),
