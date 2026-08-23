@@ -7,6 +7,45 @@ from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient
 from src.social_studies.schemas import ExamQuestion, ImageSpec, VerificationResult
 
+# Shared with the 人工審題修正 admission route.  Keep these fields here beside
+# the subject corrector's reconstruction contract rather than duplicating them
+# in an API module.
+FROZEN_TOP_LEVEL_FIELDS: frozenset[str] = frozenset(
+    {
+        "id",
+        "核心問題",
+        "情境",
+        "題型種類",
+        "題型",
+        "閱讀歷程",
+        "文本形式",
+        "題目內容類型",
+        "難度",
+        "取材來源",
+        "圖片",
+        "verification",
+        "metadata",
+    }
+)
+FROZEN_SUBQUESTION_FIELDS: frozenset[str] = frozenset(
+    {
+        "id",
+        "序號",
+        "年級",
+        "科目",
+        "核心素養",
+        "學習內容",
+        "學習表現",
+        "出題概念",
+        "出題指示",
+        "題型",
+        "題目內容類型",
+        "image_generation_mode",
+        "圖片",
+        "chart_spec",
+    }
+)
+
 _CORRECTION_SYSTEM_PROMPT_CORE = """\
 你是一位108課綱社會領域素養導向命題教師，剛收到審核老師對一道題組的意見回饋。
 請根據審核意見「最小幅度」修正題目，保留所有正確的部分。
