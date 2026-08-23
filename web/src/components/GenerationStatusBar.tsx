@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
 import type { LlmCallEvent } from "../hooks/useGenerate";
+import type { ModificationStageEvent } from "../hooks/useModificationRun";
 
 function formatDuration(
   durationMs: number,
@@ -208,6 +209,67 @@ function GenerationStepBreadcrumb({
   );
 }
 
+type ModificationStepState = "complete" | "live" | "error";
+
+function visibleModificationSteps(
+  events: readonly ModificationStageEvent[],
+): Array<{ event: ModificationStageEvent; state: ModificationStepState }> {
+  const steps: Array<{
+    event: ModificationStageEvent;
+    state: ModificationStepState;
+  }> = [];
+
+  for (const event of events) {
+    if (event.status === "start") {
+      steps.push({ event, state: "live" });
+      continue;
+    }
+    const openStep = [...steps]
+      .reverse()
+      .find((step) => step.event.stage === event.stage && step.state === "live");
+    if (openStep) openStep.state = event.status === "error" ? "error" : "complete";
+  }
+  return steps;
+}
+
+function ModificationStepBreadcrumb({
+  stageEvents,
+}: {
+  stageEvents: readonly ModificationStageEvent[];
+}) {
+  const t = useT();
+  const steps = visibleModificationSteps(stageEvents);
+  const labels: Record<ModificationStageEvent["stage"], string> = {
+    modification: t("statusbar.step_modify"),
+    verify: t("statusbar.step_verify"),
+    correct: t("statusbar.step_correct"),
+  };
+
+  return (
+    <span data-testid="modification-step-breadcrumb" className="sentry-unmask">
+      {steps.map(({ event, state }, index) => {
+        const stateClass = state === "live"
+          ? "font-semibold text-blue-600"
+          : state === "error"
+            ? "font-semibold text-red-600"
+            : "text-green-600";
+        return (
+          <span key={`${event.stage}-${event.ts}-${index}`}>
+            {index > 0 ? <span className="hidden text-gray-300 sm:inline"> › </span> : null}
+            <span
+              data-testid={`modification-step-${index}`}
+              data-state={state}
+              className={stateClass}
+            >
+              {labels[event.stage]}
+            </span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 const JUMP_BUTTONS: readonly {
   target: JumpTarget;
   labelKey: string;
@@ -229,6 +291,8 @@ export interface GenerationStatusBarProps {
   availableTargets: readonly JumpTarget[];
   onJump: (target: JumpTarget) => void;
   onFeedback: (() => void) | null;
+  mode?: "generation" | "modification";
+  modificationStageEvents?: readonly ModificationStageEvent[];
 }
 
 export default function GenerationStatusBar({
@@ -243,10 +307,13 @@ export default function GenerationStatusBar({
   availableTargets,
   onJump,
   onFeedback,
+  mode = "generation",
+  modificationStageEvents = [],
 }: GenerationStatusBarProps) {
   const t = useT();
   const showGenerationSteps =
-    runState === "running" && requestedTotal === 1;
+    mode === "generation" && runState === "running" && requestedTotal === 1;
+  const showModificationSteps = mode === "modification" && runState === "running";
 
   return (
     <div
@@ -272,7 +339,9 @@ export default function GenerationStatusBar({
               </span>
             ) : null}
             {runState === "running" ? (
-              showGenerationSteps ? (
+              showModificationSteps ? (
+                <ModificationStepBreadcrumb stageEvents={modificationStageEvents} />
+              ) : showGenerationSteps ? (
                 <GenerationStepBreadcrumb
                   subject={subject}
                   stageEvents={stageEvents}

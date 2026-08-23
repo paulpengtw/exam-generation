@@ -348,7 +348,7 @@ async def modification_question_stream(
             "editable_paths": sorted(editable_paths),
             "dependent_paths": sorted(dependent_paths),
         }
-        await persist_generation_record(
+        child_record_id = await persist_generation_record(
             user_id=user_id,
             generation_log_id=generation_log_id,
             subject=subject,
@@ -357,6 +357,9 @@ async def modification_question_stream(
             session_factory=session_factory,
             parent_record_id=record_id,
             annotations_json={"annotations": annotations},
+        )
+        result_payload["record_id"] = (
+            str(child_record_id) if child_record_id is not None else None
         )
         yield {"event": SSEEventName.RESULT, "data": result_payload}
         # Keep the terminal event self-contained for clients that treat `done`

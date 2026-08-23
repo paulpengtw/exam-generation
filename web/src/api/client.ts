@@ -271,11 +271,16 @@ export interface ModificationBatchRequest {
   annotations: ModificationAnnotationRequest[];
 }
 
+export interface ModificationBatchResponse {
+  run_id: string;
+  status: string;
+}
+
 export async function submitModificationBatch(
   recordId: string,
   batch: ModificationBatchRequest,
-): Promise<Response> {
-  return apiFetch(
+): Promise<ModificationBatchResponse> {
+  const res = await apiFetch(
     `/api/generation-records/${encodeURIComponent(recordId)}/modifications`,
     {
       method: "POST",
@@ -283,4 +288,5 @@ export async function submitModificationBatch(
       body: JSON.stringify(batch),
     },
   );
+  return (await res.json()) as ModificationBatchResponse;
 }

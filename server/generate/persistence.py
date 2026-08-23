@@ -32,9 +32,13 @@ async def persist_generation_record(
     session_factory: Any,
     parent_record_id: uuid.UUID | None = None,
     annotations_json: dict[str, Any] | None = None,
-) -> None:
-    """Insert one generation_records row; log-and-swallow on failure so
-    persistence never breaks generation."""
+) -> uuid.UUID | None:
+    """Insert one generation_records row and return its id on success.
+
+    Persistence is best effort so a database failure must never break the
+    generation stream; callers can use the id to continue a persisted record
+    chain when it is available.
+    """
     try:
         record = GenerationRecord(
             user_id=user_id,
@@ -55,8 +59,10 @@ async def persist_generation_record(
         async with session_factory() as session:
             session.add(record)
             await session.commit()
+            return record.id
     except Exception as exc:  # noqa: BLE001 — best-effort persistence
         logger.warning("failed to persist generation_record: %s", exc)
+        return None
 
 
 async def persist_failed_generation_record(

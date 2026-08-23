@@ -136,6 +136,7 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
             </section>
           ) : (
             <QuestionCard
+              key={recordId}
               question={detail.question_json as unknown as ExamQuestion}
               recordId={recordId}
               phase="verified"
