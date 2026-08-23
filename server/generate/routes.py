@@ -393,17 +393,18 @@ async def generate_endpoint(
             yield _serialize_event({"event": "error", "data": error_payload})
             yield {"event": "done", "data": ""}
         finally:
-            async with AsyncSessionLocal() as s:
-                await s.execute(
-                    update(GenerationLog)
-                    .where(GenerationLog.id == log_id)
-                    .values(
-                        status=status,
-                        error=error_msg,
-                        completed_at=datetime.now(timezone.utc),
+            with anyio.CancelScope(shield=True):
+                async with AsyncSessionLocal() as s:
+                    await s.execute(
+                        update(GenerationLog)
+                        .where(GenerationLog.id == log_id)
+                        .values(
+                            status=status,
+                            error=error_msg,
+                            completed_at=datetime.now(timezone.utc),
+                        )
                     )
-                )
-                await s.commit()
+                    await s.commit()
 
     return EventSourceResponse(
         event_generator(),
