@@ -2,8 +2,8 @@
 
 Thin shim over ``src.common.schema_loader``.  All file-reading, malformed-row
 handling, and enum-building utilities live in the common module.  This file
-owns only the SS-specific ``build_enums`` tuple signature and re-exports the
-four public helpers with their original call signatures unchanged.
+owns only the SS-specific category-to-enum names and re-exports the public
+helpers with their original call signatures unchanged.
 
 Directory, env-var, and category data are sourced exclusively from
 ``src.common.subject_spec.SOCIAL_STUDIES`` — no per-subject constants here.
@@ -11,10 +11,21 @@ Directory, env-var, and category data are sourced exclusively from
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from src.common import schema_loader as _base
 from src.common.subject_spec import SOCIAL_STUDIES as _SPEC
+
+_ENUM_NAMES = {
+    "情境": "QuestionContext",
+    "題型種類": "QuestionSetType",
+    "題型": "QuestionType",
+    "閱讀歷程": "ReadingProcess",
+    "文本形式": "TextForm",
+    "科目": "QuestionSubject",
+}
+_SCHEMA_METADATA_KEYS = {"學習階段", "grades"}
 
 
 def load_schemas(curriculum_dir: Path | None = None) -> dict:
@@ -26,27 +37,21 @@ def load_schemas(curriculum_dir: Path | None = None) -> dict:
     )
 
 
-def build_enums(schemas: dict) -> tuple:
-    """Build (QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionSubject)."""
-    QuestionContext = _base.build_str_enum(
-        "QuestionContext", _base.extract_values(schemas["情境"])
+def build_enums_by_category(schemas: Mapping[str, list[dict]]) -> Mapping[str, type]:
+    """Build one string enum for every schema category keyed by its CSV name."""
+    categories = list(_SPEC.schema_categories)
+    categories.extend(
+        category
+        for category in schemas
+        if category not in _SCHEMA_METADATA_KEYS and category not in categories
     )
-    QuestionSetType = _base.build_str_enum(
-        "QuestionSetType", _base.extract_values(schemas["題型種類"])
-    )
-    QuestionType = _base.build_str_enum(
-        "QuestionType", _base.extract_values(schemas["題型"])
-    )
-    ReadingProcess = _base.build_str_enum(
-        "ReadingProcess", _base.extract_values(schemas["閱讀歷程"])
-    )
-    TextForm = _base.build_str_enum(
-        "TextForm", _base.extract_values(schemas["文本形式"])
-    )
-    QuestionSubject = _base.build_str_enum(
-        "QuestionSubject", _base.extract_values(schemas.get("科目", []))
-    )
-    return QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionSubject
+    return {
+        category: _base.build_str_enum(
+            _ENUM_NAMES.get(category, category),
+            _base.extract_values(schemas.get(category, [])),
+        )
+        for category in categories
+    }
 
 
 def load_grades(schemas: dict) -> list[int]:

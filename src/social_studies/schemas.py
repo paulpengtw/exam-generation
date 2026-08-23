@@ -13,12 +13,20 @@ from src.social_studies.core_competency_loader import (
     load_core_competencies,
 )
 from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
-from src.social_studies.schema_loader import build_enums, load_grades, load_schemas
+from src.social_studies.schema_loader import (
+    build_enums_by_category,
+    load_grades,
+    load_schemas,
+)
 
 _schemas = load_schemas()
-QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionSubject = (
-    build_enums(_schemas)
-)
+_enums = build_enums_by_category(_schemas)
+QuestionContext = _enums["情境"]
+QuestionSetType = _enums["題型種類"]
+QuestionType = _enums["題型"]
+ReadingProcess = _enums["閱讀歷程"]
+TextForm = _enums["文本形式"]
+QuestionSubject = _enums["科目"]
 CoreCompetency = build_core_competency_enum(load_core_competencies())
 _GRADES: list[int] = load_grades(_schemas)
 FIGURE_KIND_VOCABULARY: tuple[str, ...] = CANONICAL_FIGURE_KINDS
