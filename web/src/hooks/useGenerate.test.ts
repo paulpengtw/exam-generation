@@ -497,6 +497,11 @@ describe("useGenerate — Sentry capture on fatal stream failure", () => {
     isSentryEnabledMock.mockReturnValue(true);
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
   it("captures a non-abort stream rejection in Sentry tagged as fetchEventSource", async () => {
     const fatalErr = new Error("Stream open failed: HTTP 422");
     fetchEventSourceMock.mockRejectedValueOnce(fatalErr);
@@ -507,8 +512,44 @@ describe("useGenerate — Sentry capture on fatal stream failure", () => {
     });
 
     expect(captureExceptionMock).toHaveBeenCalledOnce();
+    expect(captureExceptionMock).toHaveBeenCalledWith(
+      fatalErr,
+      expect.objectContaining({
+        tags: expect.objectContaining({ source: "fetchEventSource" }),
+      }),
+    );
+  });
+
+  it("captures stream timing, message count, last event type, and online state", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+
+    const fatalErr = new Error("connection lost");
+    fetchEventSourceMock.mockImplementationOnce(async (_input, init) => {
+      init.onmessage?.({ id: "", event: "stage", data: "" });
+      init.onmessage?.({ id: "", event: "llm_content", data: "" });
+      vi.setSystemTime(10_275);
+      throw fatalErr;
+    });
+
+    const { result } = renderHook(() => useGenerate());
+    await act(async () => {
+      result.current.generate({ subject: "math", count: 1 });
+    });
+
     expect(captureExceptionMock).toHaveBeenCalledWith(fatalErr, {
-      tags: { source: "fetchEventSource" },
+      tags: {
+        source: "fetchEventSource",
+        last_event_type: "llm_content",
+        navigator_online: "false",
+      },
+      contexts: {
+        stream: {
+          elapsed_ms: 275,
+          message_count: 2,
+        },
+      },
     });
   });
 
