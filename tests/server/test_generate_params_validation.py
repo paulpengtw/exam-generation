@@ -83,6 +83,21 @@ def test_generate_params_accepts_plain_math_request() -> None:
     assert params.subject == "math"
 
 
+def test_generate_params_accepts_optional_predrawn_fields_json_array() -> None:
+    raw = '["learning_content", "per_question_params[0].learning_content"]'
+
+    params = GenerateParams(subject="math", predrawn_fields=raw)
+
+    assert params.predrawn_fields == raw
+    assert params.model_dump(mode="json")["predrawn_fields"] == raw
+
+
+def test_generate_params_without_predrawn_fields_remains_valid() -> None:
+    params = GenerateParams(subject="math")
+
+    assert params.predrawn_fields is None
+
+
 def test_generate_params_accepts_math_text_word_limit() -> None:
     params = GenerateParams(subject="math", text_word_limit=500)
 

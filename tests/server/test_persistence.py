@@ -64,7 +64,11 @@ async def _failing_factory():
 def test_persist_generation_record_inserts_one_row() -> None:
     rows: list = []
     factory = _make_factory(rows)
-    params = GenerateParams(subject="math", skip_verify=True)
+    params = GenerateParams(
+        subject="math",
+        skip_verify=True,
+        predrawn_fields='["learning_content"]',
+    )
     payload: dict[str, Any] = {"id": "q1", "text": "hello"}
 
     asyncio.run(
@@ -82,6 +86,7 @@ def test_persist_generation_record_inserts_one_row() -> None:
     record = rows[0]
     assert record.question_id == "q1"
     assert record.subject == "math"
+    assert record.params_json["predrawn_fields"] == '["learning_content"]'
 
 
 def test_persist_generation_record_strips_image_base64() -> None:
@@ -153,7 +158,11 @@ def test_persist_generation_record_swallows_db_failure(caplog: pytest.LogCapture
 
 def test_persist_failed_generation_record_writes_tombstone_without_question() -> None:
     rows: list = []
-    params = GenerateParams(subject="social_studies", topic="climate")
+    params = GenerateParams(
+        subject="social_studies",
+        topic="climate",
+        predrawn_fields='["per_question_params[0].learning_content"]',
+    )
 
     asyncio.run(
         persist_failed_generation_record(
@@ -172,6 +181,7 @@ def test_persist_failed_generation_record_writes_tombstone_without_question() ->
     assert record.status == "failed"
     assert record.error == "Stream error (RuntimeError)"
     assert record.params_json["topic"] == "climate"
+    assert record.params_json["predrawn_fields"] == '["per_question_params[0].learning_content"]'
     assert record.question_json is None
     assert record.image_files == []
 

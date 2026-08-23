@@ -79,6 +79,11 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (INAPPLICABLE, "expanded per-worker at service level; each override field classified"),
         _NS: (INAPPLICABLE, "expanded per-worker at service level; each override field classified"),
     },
+    "predrawn_fields": {
+        _MA: (INAPPLICABLE, "client provenance metadata is persisted at request level and ignored by generation"),
+        _SS: (INAPPLICABLE, "client provenance metadata is persisted at request level and ignored by generation"),
+        _NS: (INAPPLICABLE, "client provenance metadata is persisted at request level and ignored by generation"),
+    },
     # ── Model / effort fields — forwarded via client_config for all subjects ──
     "model_plan": {
         _MA: (FORWARDED, ""),
@@ -625,4 +630,4 @@ def test_classification_counts() -> None:
     # Hard-coded expected counts — update when fields are added/reclassified
     assert forwarded    == 99, f"Expected 99 FORWARDED, got {forwarded}"  # +1 NS callback option
     assert rejected     == 4,  f"Expected 4 REJECTED, got {rejected}"
-    assert inapplicable == 23, f"Expected 23 INAPPLICABLE, got {inapplicable}"
+    assert inapplicable == 26, f"Expected 26 INAPPLICABLE, got {inapplicable}"

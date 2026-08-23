@@ -50,6 +50,7 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
         ? params.subquestion_configs
         : undefined,
     per_question_params: params.per_question_params,
+    predrawn_fields: params.predrawn_fields,
     model_plan: params.model_plan,
     model_execute: params.model_execute,
     model_verify: params.model_verify,

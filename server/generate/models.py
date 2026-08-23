@@ -45,6 +45,7 @@ REQUEST_LEVEL_FIELDS: frozenset[str] = frozenset(
         "subject",
         "count",
         "per_question_params",
+        "predrawn_fields",
         "max_retries",
         "allow_duplicate_figure_kinds",
         "core_question_callback",
@@ -70,6 +71,22 @@ def decode_per_question_params(raw: str | None) -> list[dict[str, Any]] | None:
     for index, item in enumerate(decoded):
         if not isinstance(item, dict):
             raise ValueError(f"per_question_params[{index}] must be an object")
+    return decoded
+
+
+def decode_predrawn_fields(raw: str | None) -> list[str] | None:
+    """Decode the optional client-side pre-draw provenance list."""
+    if raw is None:
+        return None
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("predrawn_fields must be valid JSON") from exc
+    if not isinstance(decoded, list):
+        raise ValueError("predrawn_fields must be a JSON array")
+    for index, item in enumerate(decoded):
+        if not isinstance(item, str):
+            raise ValueError(f"predrawn_fields[{index}] must be a string")
     return decoded
 
 
@@ -130,6 +147,8 @@ class GenerateParams(BaseModel):
     # SS-only request-level kill-switch; intentionally not exposed by the web UI.
     allow_duplicate_figure_kinds: bool = False
     per_question_params: str | None = None
+    # #408: client-side pre-draw provenance; inert to sampling and generation.
+    predrawn_fields: str | None = None
     # #105: per-request model overrides (validated against ServerConfig.llm_models_allowed
     # at the route level).
     model_plan: str | None = None
@@ -171,6 +190,12 @@ class GenerateParams(BaseModel):
     @classmethod
     def per_question_params_must_be_well_formed(cls, value: str | None) -> str | None:
         decode_per_question_params(value)
+        return value
+
+    @field_validator("predrawn_fields")
+    @classmethod
+    def predrawn_fields_must_be_well_formed(cls, value: str | None) -> str | None:
+        decode_predrawn_fields(value)
         return value
 
     @field_validator("effort_plan", "effort_execute", "effort_verify", "effort_correct")

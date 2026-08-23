@@ -20,6 +20,16 @@ describe("toGenerateParams", () => {
     expect(params.sub_question_count).toBe(4);
   });
 
+  it("forwards pre-draw provenance metadata unchanged", () => {
+    const raw = '["learning_content", "per_question_params[0].seed"]';
+
+    const params = toGenerateParams("math", {
+      predrawn_fields: raw,
+    } as FormParams);
+
+    expect(params.predrawn_fields).toBe(raw);
+  });
+
   it("forwards the social-studies core-question callback option", () => {
     const params = toGenerateParams("social_studies", {
       core_question_callback: false,
