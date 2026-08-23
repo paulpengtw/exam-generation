@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import random
 import sys
@@ -10,8 +11,6 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-
-import dataclasses
 
 from src.common.batch_dedup import PriorScope, extract_ns_prior_scope
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
@@ -126,6 +125,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--count", type=int, default=1, help="Number of question sets to generate")
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
+    gen.add_argument(
+        "--no-core-question-callback",
+        dest="core_question_callback",
+        action="store_false",
+        default=True,
+        help="關閉最後小題回扣本題組核心問題的提示",
+    )
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
     gen.add_argument(
         "--max-retries",
@@ -309,7 +315,7 @@ def _ns_build_text_user(
     params, few_shot_dir,
     user_passage, user_options, user_topic, user_core_question,
     image_generation_mode, disable_reference_fewshot, prior_scopes,
-    _core_question_callback,
+    core_question_callback,
     balanced_batch: bool = False,
 ):
     return build_text_user_prompt(
@@ -323,6 +329,7 @@ def _ns_build_text_user(
         image_generation_mode=image_generation_mode,
         disable_reference_fewshot=disable_reference_fewshot,
         prior_scopes=prior_scopes,
+        core_question_callback=core_question_callback,
         balanced_batch=balanced_batch,
     )
 
@@ -338,7 +345,7 @@ def _ns_build_subquestion_system(stage_ctx: dict) -> str:
 def _ns_build_subquestion_user(
     text_raw, params, few_shot_dir, sq_plan, slot_cfg,
     image_generation_mode, disable_reference_fewshot,
-    _core_question_callback, _is_last,
+    core_question_callback, is_last,
 ):
     return build_subquestion_user_prompt(
         核心問題=text_raw.get("核心問題", ""),
@@ -350,6 +357,8 @@ def _ns_build_subquestion_user(
         image_generation_mode=image_generation_mode,
         cfg=slot_cfg,
         disable_reference_fewshot=disable_reference_fewshot,
+        core_question_callback=core_question_callback,
+        is_last=is_last,
     )
 
 
@@ -407,6 +416,7 @@ def generate_one(
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
+    core_question_callback: bool = True,
 ) -> ExamQuestion | str:
     """Generate a single PISA Science question set."""
     params = _with_text_word_limit(params, text_word_limit)
@@ -425,6 +435,7 @@ def generate_one(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        core_question_callback=core_question_callback,
         on_question_update=on_question_update,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
@@ -442,6 +453,7 @@ def build_generation_prompts(
 
     params = _with_text_word_limit(params, kwargs.pop("text_word_limit", None))
     spec = _ns_spec_for_batch(kwargs.pop("balanced_batch", False))
+    kwargs.setdefault("core_question_callback", True)
     system, user, images, _stage_ctx = build_text_generation_prompts(
         config, params, spec, **kwargs
     )
@@ -469,6 +481,7 @@ def build_subquestion_prompt_previews(
         user_topic=kwargs.get("user_topic"),
         user_core_question=kwargs.get("user_core_question"),
         prior_scopes=kwargs.get("prior_scopes"),
+        core_question_callback=kwargs.get("core_question_callback", True),
     )
 
 
@@ -493,6 +506,7 @@ def generate_with_corrections(
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
+    core_question_callback: bool = True,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
@@ -518,6 +532,7 @@ def generate_with_corrections(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        core_question_callback=core_question_callback,
         on_question_update=on_question_update,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
@@ -624,6 +639,7 @@ def main(argv: list[str] | None = None) -> None:
                 html_renderer=html_renderer,
                 image_generation_mode=args.image_generation_mode,
                 dry_run=args.dry_run,
+                core_question_callback=args.core_question_callback,
                 prior_scopes=list(prior_scopes),
                 curriculum_context=ns_curriculum_context,
             )

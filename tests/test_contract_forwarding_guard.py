@@ -36,6 +36,7 @@ from server.generate.subjects import (
     _math_coerce_overrides,
     _math_do_sample_params,
     _ns_coerce_overrides,
+    _ns_do_generate,
     _ns_do_sample_params,
     _ss_coerce_overrides,
     _ss_do_sample_params,
@@ -271,11 +272,11 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
-    # ── core_question_callback — SS-only prompt suggestion ──
+    # ── core_question_callback — SS/NS prompt suggestion ──
     "core_question_callback": {
         _MA: (INAPPLICABLE, "SS-only prompt suggestion; math has no callback prompt"),
         _SS: (FORWARDED, ""),
-        _NS: (INAPPLICABLE, "SS-only prompt suggestion; natural sciences ignores it"),
+        _NS: (FORWARDED, ""),
     },
     # ── sub-question / word-limit fields — all subjects forward where supported ──
     "sub_question_count": {
@@ -456,11 +457,12 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     # coverage_mode — SS and NS: forwarded via balanced_batch in _build_run_context
     ("coverage_mode", _SS): (_svc._build_run_context, "params.coverage_mode"),
     ("coverage_mode", _NS): (_svc._build_run_context, "params.coverage_mode"),
-    # core_question_callback — forwarded to the SS generator in _worker_one
+    # core_question_callback — forwarded to the SS/NS generator adapters
     ("core_question_callback", _SS): (
         _svc._worker_one,
         "ctx.params.core_question_callback",
     ),
+    ("core_question_callback", _NS): (_ns_do_generate, "core_question_callback"),
 }
 
 
@@ -621,6 +623,6 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    assert forwarded    == 98, f"Expected 98 FORWARDED, got {forwarded}"  # +1 SS callback option
+    assert forwarded    == 99, f"Expected 99 FORWARDED, got {forwarded}"  # +1 NS callback option
     assert rejected     == 4,  f"Expected 4 REJECTED, got {rejected}"
-    assert inapplicable == 24, f"Expected 24 INAPPLICABLE, got {inapplicable}"
+    assert inapplicable == 23, f"Expected 23 INAPPLICABLE, got {inapplicable}"
