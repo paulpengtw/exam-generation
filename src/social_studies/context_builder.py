@@ -35,6 +35,7 @@ from src.social_studies.curriculum_loader import (
 )
 from src.social_studies.data_loader import load_few_shot_example_groups
 from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
+from src.social_studies.process_exemplar_loader import load_process_exemplars
 from src.social_studies.schema_loader import (
     build_instructions,
     load_grades,
@@ -194,6 +195,55 @@ def _cognitive_process_for_slot(
     return ""
 
 
+def _content_domain_instruction(params: "SampledParams") -> str:
+    """Return the CSV guidance clause relevant to the drawn subject."""
+    domain = getattr(params, "內容領域", None)
+    if domain is None:
+        return ""
+    instruction = _INSTRUCTIONS.get("內容領域", {}).get(domain.value, "")
+    if not instruction:
+        return ""
+    subject = getattr(params.科目, "value", params.科目)
+    marker = "主題鏡頭" if subject in {"歷史", "地理"} else "公-開頭"
+    return next(
+        (clause for clause in instruction.split("；") if marker in clause),
+        instruction,
+    )
+
+
+def _format_process_exemplar(bucket: str, exemplar: dict) -> str:
+    """Render one Channel-2 process exemplar as compact prompt text."""
+    lines = [
+        f"## 認知歷程參考範例（Channel 2：{bucket}）",
+        "以下範例只供理解命題流程；請勿複製其題材、人物或數據。",
+        f"- **題幹**：{exemplar.get('題幹', '')}",
+    ]
+    options = exemplar.get("選項", {})
+    if isinstance(options, dict):
+        lines.append("- **選項**：")
+        lines.extend(f"  - （{label}）{text}" for label, text in options.items())
+    elif options:
+        lines.append(f"- **選項**：{options}")
+    if exemplar.get("答案"):
+        lines.append(f"- **答案**：{exemplar['答案']}")
+    if exemplar.get("rationale"):
+        lines.append(f"- **設計說明**：{exemplar['rationale']}")
+    return "\n".join(lines)
+
+
+def _prompt_reference_without_retired_axes(value: object) -> object:
+    """Remove retired axis fields from Channel-1 examples at render time only."""
+    if isinstance(value, dict):
+        return {
+            key: _prompt_reference_without_retired_axes(item)
+            for key, item in value.items()
+            if key not in {"閱讀歷程", "文本形式"}
+        }
+    if isinstance(value, list):
+        return [_prompt_reference_without_retired_axes(item) for item in value]
+    return value
+
+
 _CREATIVE_BRIEF_SYSTEM_BLOCK = """\
 
 ### 創意指引
@@ -274,10 +324,6 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - **封閉式建構反應題**：唯一正確答案（詞彙、數字或短語）；給分代號 2 / 0
 - **開放式建構反應題**：需學生組織語言說明思考過程；給分代號 2（完整正確）/ 1（部分正確）/ 0（錯誤或不相關）/ 0X（未作答）；**必須附評分規準（rubric）**，每條規準請提供 1–2 個學生作答實例（含正確與典型錯誤示例）
 
-### PISA閱讀歷程（輔助參考）
-試題設計時請參考閱讀歷程分布：
-- 擷取訊息（約25%）、形成廣泛理解（約25%）、發展解釋（約25%）、省思與評鑑（約25%）
-
 ## 課程綱要參考
 
 {curriculum_section}
@@ -291,11 +337,9 @@ SYSTEM_PROMPT_TEMPLATE = """\
   "核心問題": "本題組的跨科核心問題（一句話）",
   "文本": "完整文本素材（包含說明文字、引述文獻、表格描述等）",
   "取材來源": ["來源一", "來源二"],
-  "情境": ["（PISA情境，可多個：個人/公共/職業/教育）"],
+  "情境": ["（可多個：個人/公共/職業/教育）"],
   "題型種類": "題組題",
   "題型": "（所有小題的主要題型，選擇題/封閉式建構反應題/開放式建構反應題）",
-  "閱讀歷程": ["（主要閱讀歷程，1–2個）"],
-  "文本形式": "（連續文本—說明文 等）",
   "題目內容類型": "含圖片",
   "subquestions": [
     {{
@@ -373,12 +417,10 @@ USER_PROMPT_TEMPLATE = """\
 
 - **年級重心**：{grade}年級（{learning_stage}）
 - **科目焦點**：{subject}
-- **情境**：{context}（PISA閱讀情境）
+- **情境**：{context}
 - **題型種類**：{set_type}
 - **題型**：由各小題配置指定；若未列出固定小題，允許題型為 {q_types}
 - **小題數量**：{sub_question_count}
-- **閱讀歷程（PISA）**：{reading_process}
-- **文本形式**：{text_form}
 - **文本素材類型**：{content_type}
 - **內容領域**：{content_domain}
 - **圖片生成模式**：{image_generation_mode}
@@ -460,7 +502,6 @@ def build_user_prompt(
     if rng is None:
         rng = random.Random(params.seed)
 
-    reading_process = "、".join(p.value for p in params.閱讀歷程)
     topic_override = user_topic.strip() if user_topic else ""
     content_type = params.題目內容類型 or "純文字"
 
@@ -470,22 +511,15 @@ def build_user_prompt(
             instr = _INSTRUCTIONS.get("情境", {}).get(c.value)
             if instr:
                 param_instruction_lines.append(f"  - **情境（{c.value}）補充**：{instr}")
-    for category, key in (
-        ("題型種類", params.題型種類.value),
-        ("文本形式", params.文本形式.value),
-        ("科目", params.科目.value),
-    ):
-        instr = _INSTRUCTIONS.get(category, {}).get(key)
-        if instr:
-            param_instruction_lines.append(f"  - **{category}（{key}）補充**：{instr}")
     for qt in params.題型:
         instr = _INSTRUCTIONS.get("題型", {}).get(qt.value)
         if instr:
             param_instruction_lines.append(f"  - **題型（{qt.value}）補充**：{instr}")
-    for p in params.閱讀歷程:
-        instr = _INSTRUCTIONS.get("閱讀歷程", {}).get(p.value)
-        if instr:
-            param_instruction_lines.append(f"  - **閱讀歷程（{p.value}）補充**：{instr}")
+    domain_instruction = _content_domain_instruction(params)
+    if params.內容領域 is not None and domain_instruction:
+        param_instruction_lines.append(
+            f"  - **內容領域（{params.內容領域.value}）設計指引**：{domain_instruction}"
+        )
     for c in params.核心素養:
         instr = _CC_INSTRUCTIONS.get(c.value)
         if instr:
@@ -538,8 +572,15 @@ def build_user_prompt(
                     label = f"圖{j}" + (f"（{caption}）" if caption else "")
                     img_notes += f"\n<!-- {label} 附於此範例後 -->"
                     all_image_paths.append(Path(img["path"]))
+            prompt_question = json.dumps(
+                _prompt_reference_without_retired_axes(q),
+                ensure_ascii=False,
+                indent=2,
+            )
             example_texts.append(
-                f"### 範例 {i}：{ex.get('description', '')}\n```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```{img_notes}"
+                f"### 範例 {i}：{ex.get('description', '')}\n```json\n"
+                f"{prompt_question}\n"
+                f"```{img_notes}"
             )
         few_shot_text = "\n\n".join(example_texts)
     else:
@@ -653,7 +694,7 @@ def build_user_prompt(
     user_materials_parts = []
     if topic_override:
         user_materials_parts.append(
-            "## 指定情境（請直接取代原本的 PISA 情境）\n\n"
+            "## 指定情境\n\n"
             f"主題 / 議題：{topic_override}\n\n"
             "請以此主題 / 議題作為題組的真實情境與文本取材方向。"
         )
@@ -708,8 +749,6 @@ def build_user_prompt(
         set_type=params.題型種類.value,
         q_types=q_types_str,
         sub_question_count=sub_q_count_str,
-        reading_process=reading_process,
-        text_form=params.文本形式.value,
         content_type=content_type,
         content_domain=(params.內容領域.value if params.內容領域 is not None else ""),
         image_generation_mode=image_generation_mode,
@@ -735,7 +774,7 @@ _TEXT_GENERATION_SYSTEM_PROMPT_TEMPLATE = """\
 
 ## 題組結構說明
 每道題組包含一段或多段真實情境素材（文本），是所有小題共用的閱讀素材。
-此階段只要求你輸出文本層的欄位：核心問題、文本、取材來源、情境、題型種類、閱讀歷程、文本形式、題目內容類型，以及視覺素材規格（若適用）。
+此階段只要求你輸出文本層的欄位：核心問題、文本、取材來源、情境、題型種類、題目內容類型，以及視覺素材規格（若適用）。
 
 ## 課程綱要參考
 
@@ -752,8 +791,6 @@ _TEXT_GENERATION_SYSTEM_PROMPT_TEMPLATE = """\
   "取材來源": ["來源一"],
   "情境": ["個人"],
   "題型種類": "題組題",
-  "閱讀歷程": ["擷取訊息"],
-  "文本形式": "連續文本—說明文",
   "題目內容類型": "純文字",
   "chart_spec": null
 }}
@@ -775,8 +812,6 @@ _TEXT_GENERATION_USER_PROMPT_TEMPLATE = """\
 - **科目焦點**：{subject}
 - **情境**：{context}
 - **題型種類**：題組題
-- **閱讀歷程（PISA）**：{reading_process}
-- **文本形式**：{text_form}
 - **文本素材類型**：{content_type}
 - **核心素養（限定本題組使用）**：{core_competencies}
 - **預計小題題型分布**：{slot_type_summary}
@@ -1122,9 +1157,15 @@ def build_subquestion_user_prompt(
                 label = f"圖{j}" + (f"（{caption}）" if caption else "")
                 img_notes += f"\n<!-- {label} 附於此範例後 -->"
                 all_image_paths.append(Path(img["path"]))
+        prompt_question = json.dumps(
+            _prompt_reference_without_retired_axes(q),
+            ensure_ascii=False,
+            indent=2,
+        )
         few_shot_text = (
             f"### 範例 1：{ex.get('description', '')}\n"
-            f"```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```{img_notes}"
+            f"```json\n{prompt_question}\n"
+            f"```{img_notes}"
         )
     else:
         few_shot_text = "（目前暫無範例，請根據指定條件自行設計。）"
@@ -1175,6 +1216,16 @@ def build_subquestion_user_prompt(
     difficulty_section = _difficulty_section(params).lstrip("\n")
     slot_number = int(sq_plan.get("序號", 1))
     cognitive_process = _cognitive_process_for_slot(params, cfg, slot_number)
+    process_instruction = _INSTRUCTIONS.get("認知歷程", {}).get(cognitive_process, "")
+    domain_instruction = _content_domain_instruction(params)
+    process_exemplar_section = ""
+    if not disable_reference_fewshot:
+        process_exemplars = load_process_exemplars().get(cognitive_process, [])
+        if process_exemplars:
+            process_exemplar_section = "\n\n" + _format_process_exemplar(
+                cognitive_process,
+                rng.choice(process_exemplars),
+            )
     config_parts = [f"題型={q_type}"]
     if cfg is not None and cfg.instruction:
         config_parts.append(f"出題指示={cfg.instruction}")
@@ -1266,10 +1317,14 @@ def build_subquestion_user_prompt(
 - **年級重心**：{params.grade}年級（{_LEARNING_STAGE}）
 - **情境**：{"、".join(c.value for c in params.情境)}
 - **科目焦點**：{subject_value}
+- **內容領域**：{params.內容領域.value if params.內容領域 is not None else ""}
 - **認知歷程**：{cognitive_process}
 - **核心素養（限定使用）**：{core_competencies}
+{f"- **內容領域設計指引**：{domain_instruction}" if domain_instruction else ""}
+{f"- **認知歷程設計指引**：{process_instruction}" if process_instruction else ""}
 {lc_pool_lines}{lp_pool_lines}
 {difficulty_section}
+{process_exemplar_section}
 ## 參考範例
 
 {few_shot_text}
