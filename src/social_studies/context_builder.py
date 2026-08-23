@@ -102,6 +102,16 @@ DIFFICULTY_INSTRUCTIONS: dict[str, str] = _INSTRUCTIONS.get("難度", {})
 
 _FIGURE_KIND_VOCABULARY_TEXT = "、".join(CANONICAL_FIGURE_KINDS)
 
+_CORE_QUESTION_CALLBACK_TEXT_INSTRUCTION = (
+    "最後規劃的小題請設計為綜合／統整問題，明確要求學生回應本題組自己的「核心問題」，"
+    "並整合前面各小題取得的資訊與推理；這是建議值，請仍依據共用文本與各小題配置命題。"
+)
+_CORE_QUESTION_CALLBACK_SUBQUESTION_INSTRUCTION = (
+    "本小題是本題組最後一小題，請將它設計為綜合／統整問題，明確要求學生回應本題組自己的「核心問題」，"
+    "並整合前面各小題取得的資訊與推理。這是建議值；本小題配置中的題型、出題指示、指定學習內容"
+    "與指定學習表現仍是明確設定，請同時遵守且不得被本提示取代。"
+)
+
 
 def _figure_kind_guidance(
     params: SampledParams,
@@ -897,6 +907,7 @@ def build_text_user_prompt(
     disable_reference_fewshot: bool = False,
     prior_scopes: Sequence[PriorScope] | None = None,
     balanced_batch: bool = False,
+    core_question_callback: bool = True,
 ) -> tuple[str, list[Path]]:
     text, image_paths = build_user_prompt(
         params=params,
@@ -932,6 +943,14 @@ def build_text_user_prompt(
             "本題與同批次其他題目的 題型 與 取材角度 請盡量平均分散，"
             "並避開「已生成題目（請避免相似範圍）」中已列出的取材範圍，"
             "不要重複相近主題。\n\n"
+            "## 參考範例\n",
+            1,
+        )
+    if core_question_callback:
+        text = text.replace(
+            "\n## 參考範例\n",
+            "\n## 回扣核心問題\n\n"
+            f"- **最後小題命題建議**：{_CORE_QUESTION_CALLBACK_TEXT_INSTRUCTION}\n\n"
             "## 參考範例\n",
             1,
         )
@@ -1039,6 +1058,8 @@ def build_subquestion_user_prompt(
     image_generation_mode: str = "html",
     cfg: "SubQuestionConfig | None" = None,
     disable_reference_fewshot: bool = False,
+    core_question_callback: bool = True,
+    is_last: bool = False,
 ) -> tuple[str, list[Path]]:
     del image_generation_mode
     if rng is None:
@@ -1190,6 +1211,12 @@ def build_subquestion_user_prompt(
         f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts)
         + visual_instruction
     )
+    core_question_callback_section = (
+        "\n\n## 回扣核心問題\n\n"
+        f"- **最後小題命題指示**：{_CORE_QUESTION_CALLBACK_SUBQUESTION_INSTRUCTION}"
+        if core_question_callback and is_last
+        else ""
+    )
     return f"""\
 請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題：
 
@@ -1215,6 +1242,7 @@ def build_subquestion_user_prompt(
 - **出題概念**：{sq_plan.get("出題概念", "")}
 
 {subquestion_config_section}
+{core_question_callback_section}
 
 ## 指定條件
 

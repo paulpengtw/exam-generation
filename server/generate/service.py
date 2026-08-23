@@ -129,6 +129,7 @@ def build_prompt_previews(
             user_core_question=params.core_question,
             prior_scopes=[],
             balanced_batch=balanced_batch,
+            core_question_callback=params.core_question_callback,
         )
         previews.append(
             {"index": i, "system_prompt": system, "user_prompt": user}
@@ -146,6 +147,7 @@ def build_prompt_previews(
                     user_topic=params.topic,
                     user_core_question=params.core_question,
                     prior_scopes=[],
+                    core_question_callback=params.core_question_callback,
                 )
             ):
                 previews.append(
@@ -335,6 +337,7 @@ def _worker_one(
             user_options=ctx.params.options,
             user_topic=ctx.params.topic,
             user_core_question=ctx.params.core_question,
+            core_question_callback=ctx.params.core_question_callback,
             on_question_update=emit_question_update,
             prior_scopes=prior_snapshot,
             balanced_batch=ctx.balanced_batch,

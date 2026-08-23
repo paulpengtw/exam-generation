@@ -235,6 +235,9 @@ export function buildQueryString(params: GenerateParams): string {
     qs.append("effort_correct", params.effort_correct);
   }
   if (params.coverage_mode !== undefined) qs.append("coverage_mode", params.coverage_mode);
+  if (params.core_question_callback !== undefined) {
+    qs.append("core_question_callback", String(params.core_question_callback));
+  }
   return qs.toString();
 }
 

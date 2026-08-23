@@ -309,6 +309,7 @@ def _ns_build_text_user(
     params, few_shot_dir,
     user_passage, user_options, user_topic, user_core_question,
     image_generation_mode, disable_reference_fewshot, prior_scopes,
+    _core_question_callback,
     balanced_batch: bool = False,
 ):
     return build_text_user_prompt(
@@ -337,6 +338,7 @@ def _ns_build_subquestion_system(stage_ctx: dict) -> str:
 def _ns_build_subquestion_user(
     text_raw, params, few_shot_dir, sq_plan, slot_cfg,
     image_generation_mode, disable_reference_fewshot,
+    _core_question_callback, _is_last,
 ):
     return build_subquestion_user_prompt(
         核心問題=text_raw.get("核心問題", ""),

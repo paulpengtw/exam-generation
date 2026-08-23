@@ -20,6 +20,14 @@ describe("toGenerateParams", () => {
     expect(params.sub_question_count).toBe(4);
   });
 
+  it("forwards the social-studies core-question callback option", () => {
+    const params = toGenerateParams("social_studies", {
+      core_question_callback: false,
+    } as FormParams);
+
+    expect(params.core_question_callback).toBe(false);
+  });
+
   it("omits the math limit when the form carries user-authored 文本", () => {
     const params = toGenerateParams("math", {
       passage: "使用者提供的文本",

@@ -1694,6 +1694,7 @@ export default function ParamForm({
       "count",
       "per_question_params",
       "max_retries",
+      "core_question_callback",
     ]);
     const perQuestionBase = Object.fromEntries(
       Object.entries(baseParams).filter(
