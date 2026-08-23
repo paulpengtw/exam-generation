@@ -7,6 +7,7 @@ import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
 import CoreQuestionPicker from "./CoreQuestionPicker";
+import SubQuestionConfigEditor from "./SubQuestionConfigEditor";
 import SubquestionConfigCards, { type ResolvedSubQuestionConfig } from "./SubquestionConfigCards";
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
 import { toGenerateParams } from "../utils/toGenerateParams";
@@ -1532,12 +1533,6 @@ export default function ParamForm({
     ));
   }
 
-  function optionalNumber(raw: string): number | undefined {
-    if (raw.trim() === "") return undefined;
-    const parsed = Number(raw);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-
   function toggleMulti(list: string[], value: string): string[] {
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
   }
@@ -2779,121 +2774,13 @@ export default function ParamForm({
               {subquestionConfigs.map((cfg, i) => (
                 <div key={i} className="rounded border border-gray-100 bg-gray-50 px-3 py-2">
                   <span className="block text-sm font-medium text-gray-700">第{i + 1}小題</span>
-                  <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-6">
-                    <div>
-                      <label className="block text-xs text-gray-500">題型</label>
-                      <select
-                        value={cfg.question_type ?? ""}
-                        onChange={(e) => updateSubquestionConfig(i, { question_type: e.target.value || undefined })}
-                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-                      >
-                        <option value="">（隨機）</option>
-                        {schemas.題型.map((s) => (
-                          <option key={s.value} value={s.value}>{s.value}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500">文本字數限制</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={cfg.text_word_limit ?? ""}
-                        onChange={(e) =>
-                          updateSubquestionConfig(i, {
-                            text_word_limit: optionalNumber(e.target.value),
-                          })
-                        }
-                        placeholder="不限"
-                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500">題目字數限制</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={cfg.question_word_limit ?? ""}
-                        onChange={(e) =>
-                          updateSubquestionConfig(i, {
-                            question_word_limit: optionalNumber(e.target.value),
-                          })
-                        }
-                        placeholder="不限"
-                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500">選項字數限制</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={cfg.option_word_limit ?? ""}
-                        onChange={(e) =>
-                          updateSubquestionConfig(i, {
-                            option_word_limit: optionalNumber(e.target.value),
-                          })
-                        }
-                        placeholder="選擇題適用"
-                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500">題目內容類型</label>
-                      <select
-                        value={cfg.content_type ?? ""}
-                        onChange={(e) => updateSubquestionConfig(i, { content_type: e.target.value || undefined })}
-                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-                      >
-                        <option value="">（沿用文本設定）</option>
-                        {(schemas.題目內容類型 ?? []).map((s) => (
-                          <option key={s.value} value={s.value}>{s.value}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500">圖片生成模式</label>
-                      <select
-                        value={cfg.image_generation_mode ?? ""}
-                        onChange={(e) => updateSubquestionConfig(i, { image_generation_mode: (e.target.value as "html" | "gpt_image") || undefined })}
-                        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-                      >
-                        <option value="">（沿用文本設定）</option>
-                        <option value="html">HTML 渲染</option>
-                        <option value="gpt_image">GPT 生圖</option>
-                      </select>
-                    </div>
-                    {subject === "natural_sciences" && (
-                      <div>
-                        <label className="block text-xs text-gray-500">{t("form.reporting_scale")}</label>
-                        <select
-                          value={cfg.reporting_scale || ""}
-                          onChange={(e) => updateSubquestionConfig(i, { reporting_scale: e.target.value || undefined })}
-                          className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-                        >
-                          <option value="">（隨機）</option>
-                          <option value="1c">等級 1c</option>
-                          <option value="1b">等級 1b</option>
-                          <option value="1a">等級 1a</option>
-                          <option value="2">等級 2</option>
-                          <option value="3">等級 3</option>
-                          <option value="4">等級 4</option>
-                          <option value="5">等級 5</option>
-                          <option value="6">等級 6</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-3">
-                    <label className="block text-xs text-gray-500">出題指示</label>
-                    <textarea
-                      value={cfg.instruction ?? ""}
-                      onChange={(e) => updateSubquestionConfig(i, { instruction: e.target.value || undefined })}
-                      placeholder="例如：請聚焦在資料判讀與因果推論"
-                      rows={2}
-                      className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-                    />
-                  </div>
+                  <SubQuestionConfigEditor
+                    config={cfg}
+                    subject={subject}
+                    questionTypes={schemas.題型}
+                    contentTypes={schemas.題目內容類型 ?? []}
+                    onChange={(patch) => updateSubquestionConfig(i, patch)}
+                  />
                   {(availableLearningPerformance.length > 0 || availableLearningContent.length > 0) && (
                     <div className="mt-3 space-y-2">
                       <p className="text-xs text-gray-500">留空 = 沿用全域設定</p>
