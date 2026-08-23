@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
@@ -54,6 +54,20 @@ const NATURAL_SCIENCES_SCHEMA = {
   ],
   科學能力: [{ value: "能力一", instruction: "" }],
   科目: [],
+};
+
+const CURRICULUM_SOCIAL_SCHEMA = {
+  ...SOCIAL_SCHEMA,
+  科目: [{ value: "歷史", instruction: "" }],
+  學習表現: [
+    { value: "社1a-Ⅳ-1", instruction: "社會共同表現一", 科目: "社" },
+    { value: "社1a-Ⅳ-2", instruction: "社會共同表現二", 科目: "社" },
+    { value: "歷1a-Ⅳ-1", instruction: "歷史表現一", 科目: "歷" },
+  ],
+  學習內容: [
+    { value: "歷Ka-Ⅳ-1", instruction: "歷史內容一", 科目: "歷" },
+    { value: "歷Ka-Ⅳ-2", instruction: "歷史內容二", 科目: "歷" },
+  ],
 };
 
 const CONFIGS = [
@@ -194,4 +208,56 @@ describe("ParamForm 子題設定 rows characterization", () => {
       if (hasReportingScale) expect(selects[3]).toHaveValue("6");
     },
   );
+
+  it("searches the full subject-filtered curriculum pools and submits empty slots via the global fallback while preserving explicit selections", async () => {
+    getSchemasMock.mockResolvedValue(CURRICULUM_SOCIAL_SCHEMA);
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{
+          grade: 8,
+          set_type: "題組題",
+          subject_filter: "歷史",
+          learning_performance: ["社1a-Ⅳ-1"],
+          learning_content: ["歷Ka-Ⅳ-1"],
+          sub_question_count: 3,
+          subquestion_configs: [{}, {}, {}],
+        }}
+      />,
+    );
+
+    await screen.findByText("第1小題");
+    const firstRow = row(1);
+    const lpPicker = firstRow.getByPlaceholderText("搜尋學習表現...");
+    fireEvent.change(lpPicker, { target: { value: "社1a-Ⅳ-2" } });
+    expect(firstRow.getByRole("button", { name: /社1a-Ⅳ-2/ })).toBeInTheDocument();
+    fireEvent.mouseDown(firstRow.getByRole("button", { name: /社1a-Ⅳ-2/ }));
+
+    const lcPicker = firstRow.getByPlaceholderText("搜尋學習內容...");
+    fireEvent.change(lcPicker, { target: { value: "歷Ka-Ⅳ-2" } });
+    expect(firstRow.getByRole("button", { name: /歷Ka-Ⅳ-2/ })).toBeInTheDocument();
+    fireEvent.mouseDown(firstRow.getByRole("button", { name: /歷Ka-Ⅳ-2/ }));
+
+    fireEvent.click(await screen.findByText("form.btn_generate"));
+    fireEvent.click(await screen.findByText("form.btn_confirm_send"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    const payload = onSubmit.mock.calls[0][0] as { subquestion_configs: string };
+    const submittedRows = JSON.parse(payload.subquestion_configs) as Array<{
+      learning_content?: string[];
+      learning_performance?: string[];
+    }>;
+    expect(submittedRows).toHaveLength(3);
+    expect(submittedRows[0]).toEqual(expect.objectContaining({
+      learning_content: ["歷Ka-Ⅳ-2"],
+      learning_performance: ["社1a-Ⅳ-2"],
+    }));
+    for (const submittedRow of submittedRows.slice(1)) {
+      expect(submittedRow.learning_content).toEqual(["歷Ka-Ⅳ-1"]);
+      expect(submittedRow.learning_performance).toEqual(["社1a-Ⅳ-1"]);
+    }
+  });
 });
