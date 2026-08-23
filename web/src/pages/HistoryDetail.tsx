@@ -49,7 +49,9 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
     };
   }, [recordId]);
 
-  const isInterrupted = detail?.status === "failed" || detail?.status === "aborted";
+  const isFailed = detail?.status === "failed";
+  const isAborted = detail?.status === "aborted";
+  const isInterrupted = isFailed || isAborted;
   const canDownload = detail != null && !isInterrupted;
   const showDownload = detail == null || canDownload;
 
@@ -114,17 +116,31 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
         {detail && (
           isInterrupted ? (
             <section className="space-y-4 rounded border bg-white p-4 shadow-sm">
-              <h2 className="text-base font-semibold text-red-700">
-                {t("history.failed_detail_title")}
+              <h2
+                className={`text-base font-semibold ${
+                  isAborted ? "text-amber-800" : "text-red-700"
+                }`}
+              >
+                {t(
+                  isAborted
+                    ? "history.aborted_detail_title"
+                    : "history.failed_detail_title",
+                )}
               </h2>
-              <div>
-                <h3 className="text-sm font-medium text-gray-700">
-                  {t("history.error_label")}
-                </h3>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-red-700">
-                  {detail.error || t("history.error_unknown")}
+              {isAborted ? (
+                <p className="text-sm text-amber-800">
+                  {t("history.aborted_explanation")}
                 </p>
-              </div>
+              ) : (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700">
+                    {t("history.error_label")}
+                  </h3>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-red-700">
+                    {detail.error || t("history.error_unknown")}
+                  </p>
+                </div>
+              )}
               <div>
                 <h3 className="text-sm font-medium text-gray-700">
                   {t("history.params_label")}

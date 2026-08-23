@@ -106,4 +106,46 @@ describe("HistoryPage (list mode)", () => {
       screen.getByText("Question generation failed (RuntimeError)"),
     ).toBeInTheDocument();
   });
+
+  it("renders an aborted row with its own badge and preview note", async () => {
+    listHistoryMock.mockResolvedValueOnce({
+      total: 2,
+      items: [
+        {
+          id: "failed-id",
+          subject: "social_studies",
+          question_id: "",
+          created_at: "2026-07-16T00:00:00Z",
+          status: "failed",
+          error: "Question generation failed (RuntimeError)",
+          preview: "Question generation failed (RuntimeError)",
+          verified: false,
+        },
+        {
+          id: "aborted-id",
+          subject: "social_studies",
+          question_id: "",
+          created_at: "2026-07-16T00:01:00Z",
+          status: "aborted",
+          error: null,
+          preview: "aborted",
+          verified: false,
+        },
+      ],
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history"]}>
+        <Routes>
+          <Route path="/history" element={<HistoryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByText("Aborted")).toBeInTheDocument());
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("Generation aborted by the user.")).toBeInTheDocument();
+    expect(screen.getByText("Aborted")).toHaveClass("bg-amber-100", "text-amber-800");
+    expect(screen.getByText("Failed")).toHaveClass("bg-red-100", "text-red-700");
+  });
 });

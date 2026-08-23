@@ -162,4 +162,42 @@ describe("HistoryDetail", () => {
       screen.queryByRole("button", { name: /Download JSON/i }),
     ).not.toBeInTheDocument();
   });
+
+  it("renders an aborted explanation and params without question content or download", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      id: "aborted-id",
+      subject: "social_studies",
+      question_id: "",
+      created_at: "2026-07-16T00:00:00Z",
+      status: "aborted",
+      error: null,
+      params_json: { subject: "social_studies", topic: "climate" },
+      question_json: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/aborted-id"]}>
+        <Routes>
+          <Route
+            path="/history/:id"
+            element={<HistoryDetail recordId="aborted-id" />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("This generation was ended by the user."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/"topic": "climate"/)).toBeInTheDocument();
+    expect(
+      screen.queryByText("The generation ended without an error message."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("qc")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Download JSON/i }),
+    ).not.toBeInTheDocument();
+  });
 });

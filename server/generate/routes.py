@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 import logging
@@ -10,6 +11,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import Field, ValidationError
 from sqlalchemy import select, update
@@ -28,7 +30,10 @@ from server.generate.models import (
     PlanCoreQuestionsResponse,
     build_sse_error,
 )
-from server.generate.persistence import persist_failed_generation_record
+from server.generate.persistence import (
+    persist_aborted_generation_record,
+    persist_failed_generation_record,
+)
 from server.generate.service import build_prompt_previews, generate_question_stream
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
@@ -326,6 +331,7 @@ async def generate_endpoint(
         status = "completed"
         error_msg: str | None = None
         failed_record_written = False
+        aborted_record_written = False
 
         async def persist_failure_once(message: str) -> None:
             nonlocal failed_record_written
@@ -338,6 +344,19 @@ async def generate_endpoint(
                 subject=params.subject,
                 params=params,
                 error=message,
+                session_factory=AsyncSessionLocal,
+            )
+
+        async def persist_aborted_once() -> None:
+            nonlocal aborted_record_written
+            if aborted_record_written or status == "failed":
+                return
+            aborted_record_written = True
+            await persist_aborted_generation_record(
+                user_id=user.id,
+                generation_log_id=log_id,
+                subject=params.subject,
+                params=params,
                 session_factory=AsyncSessionLocal,
             )
 
@@ -358,6 +377,10 @@ async def generate_endpoint(
                     )
                     await persist_failure_once(error_msg)
                 yield _serialize_event(event)
+        except asyncio.CancelledError:
+            with anyio.CancelScope(shield=True):
+                await persist_aborted_once()
+            raise
         except Exception as exc:
             status = "failed"
             error_payload = build_sse_error(

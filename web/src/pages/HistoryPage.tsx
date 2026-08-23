@@ -135,16 +135,27 @@ function HistoryList() {
                       {t("history.failed_badge")}
                     </span>
                   )}
+                  {item.status === "aborted" && (
+                    <span className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                      {t("history.aborted_badge")}
+                    </span>
+                  )}
                   <span>{new Date(item.created_at).toLocaleString()}</span>
                 </div>
                 <div className="text-sm text-gray-800">
-                  {item.status === "failed" ? item.error || item.preview : item.preview}
+                  {item.status === "failed"
+                    ? item.error || item.preview
+                    : item.status === "aborted"
+                      ? t("history.aborted_preview")
+                      : item.preview}
                 </div>
                 <div className="flex items-center gap-2 text-xs">
-                  {item.status !== "failed" && (
+                  {item.status !== "failed" && item.status !== "aborted" && (
                     <span className="text-gray-500">{item.question_id}</span>
                   )}
-                  {item.status !== "failed" && item.verified && (
+                  {item.status !== "failed" &&
+                    item.status !== "aborted" &&
+                    item.verified && (
                     <span className="rounded bg-green-100 px-1.5 py-0.5 font-medium text-green-700">
                       {t("history.verified_badge")}
                     </span>
