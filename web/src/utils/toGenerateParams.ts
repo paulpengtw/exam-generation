@@ -13,6 +13,8 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
       subject === "social_studies" || subject === "math" || subject === "natural_sciences"
         ? params.content_type
         : undefined,
+    content_domain: subject === "social_studies" ? params.content_domain : undefined,
+    target_surface: subject === "social_studies" ? params.target_surface : undefined,
     context: subject === "math" || subject === "natural_sciences" ? params.context : [],
     set_type: params.set_type,
     q_type: params.q_type,

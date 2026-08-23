@@ -80,9 +80,18 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _NS: (INAPPLICABLE, "expanded per-worker at service level; each override field classified"),
     },
     "predrawn_fields": {
-        _MA: (INAPPLICABLE, "client provenance metadata is persisted at request level and ignored by generation"),
-        _SS: (INAPPLICABLE, "client provenance metadata is persisted at request level and ignored by generation"),
-        _NS: (INAPPLICABLE, "client provenance metadata is persisted at request level and ignored by generation"),
+        _MA: (
+            INAPPLICABLE,
+            "client provenance metadata is persisted at request level and ignored by generation",
+        ),
+        _SS: (
+            INAPPLICABLE,
+            "client provenance metadata is persisted at request level and ignored by generation",
+        ),
+        _NS: (
+            INAPPLICABLE,
+            "client provenance metadata is persisted at request level and ignored by generation",
+        ),
     },
     # ── Model / effort fields — forwarded via client_config for all subjects ──
     "model_plan": {
@@ -191,6 +200,17 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _MA: (FORWARDED, ""),
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
+    },
+    # ── ICCS content-domain and paper/digital-surface pins — SS-only ──
+    "content_domain": {
+        _MA: (REJECTED, ""),
+        _SS: (FORWARDED, ""),
+        _NS: (REJECTED, ""),
+    },
+    "target_surface": {
+        _MA: (REJECTED, ""),
+        _SS: (FORWARDED, ""),
+        _NS: (REJECTED, ""),
     },
     # ── passage — forwarded to every generator as user_passage ──
     "passage": {
@@ -420,6 +440,8 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("content_type", _MA): (_math_do_sample_params, "params.content_type"),
     ("content_type", _SS): (_ss_do_sample_params,   "params.content_type"),
     ("content_type", _NS): (_ns_do_sample_params,   "params.content_type"),
+    ("content_domain", _SS): (_ss_do_sample_params, "content_domain=params.content_domain"),
+    ("target_surface", _SS): (_ss_do_sample_params, "target_surface=params.target_surface"),
     # learning_performance — forwarded directly in each sampler adapter
     ("learning_performance", _MA): (_math_do_sample_params, "params.learning_performance"),
     ("learning_performance", _SS): (_ss_do_sample_params,   "params.learning_performance"),
@@ -628,6 +650,6 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    assert forwarded    == 99, f"Expected 99 FORWARDED, got {forwarded}"  # +1 NS callback option
-    assert rejected     == 4,  f"Expected 4 REJECTED, got {rejected}"
+    assert forwarded    == 101, f"Expected 101 FORWARDED, got {forwarded}"  # +2 ICCS pins
+    assert rejected     == 8,  f"Expected 8 REJECTED, got {rejected}"  # +4 SS-only fields
     assert inapplicable == 26, f"Expected 26 INAPPLICABLE, got {inapplicable}"

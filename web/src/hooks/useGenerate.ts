@@ -200,6 +200,8 @@ export function buildQueryString(params: GenerateParams): string {
   for (const v of params.context ?? []) qs.append("context", v);
   for (const v of params.q_type ?? []) qs.append("q_type", v);
   for (const v of params.subject_filter ?? []) qs.append("subject_filter", v);
+  if (params.content_domain) qs.append("content_domain", params.content_domain);
+  if (params.target_surface) qs.append("target_surface", params.target_surface);
   if (params.passage) qs.append("passage", params.passage);
   for (const v of params.options ?? []) qs.append("options", v);
   if (params.topic) qs.append("topic", params.topic);
