@@ -242,3 +242,33 @@ export async function downloadHistoryJson(id: string): Promise<Blob> {
   const res = await apiFetch(`/api/history/${encodeURIComponent(id)}/download`);
   return await res.blob();
 }
+
+export interface ModificationSegmentRequest {
+  field_path: string;
+  start: number;
+  end: number;
+  quoted_text: string;
+}
+
+export interface ModificationAnnotationRequest {
+  segments: ModificationSegmentRequest[];
+  修改指示: string;
+}
+
+export interface ModificationBatchRequest {
+  annotations: ModificationAnnotationRequest[];
+}
+
+export async function submitModificationBatch(
+  recordId: string,
+  batch: ModificationBatchRequest,
+): Promise<Response> {
+  return apiFetch(
+    `/api/generation-records/${encodeURIComponent(recordId)}/modifications`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(batch),
+    },
+  );
+}
