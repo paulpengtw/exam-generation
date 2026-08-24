@@ -433,6 +433,7 @@ export default function QuestionCard({
   const selectionEnabled = isFinal && (passed || modificationResult !== null);
   const questionId = getQuestionId(question);
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+  const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
   const phaseLabel = isFinal
     ? t("card.final")
     : t(`card.phase_${phase}` as Parameters<typeof t>[0]);
@@ -462,6 +463,21 @@ export default function QuestionCard({
   const ssLpCodes = useMemo(
     () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.學習表現.map((lp) => lp.編碼)) : [],
     [question.subquestions, isSocialStudies]
+  );
+  const eraTags = isIccsEra ? (
+    <>
+      {question.內容領域 && <Chip label={question.內容領域} tone="blue" />}
+      {(question.認知歷程 ?? []).map((process) => (
+        <Chip key={`cognitive-${process}`} label={process} tone="purple" />
+      ))}
+    </>
+  ) : (
+    <>
+      {(question.閱讀歷程 ?? []).map((process) => (
+        <Chip key={`legacy-process-${process}`} label={process} tone="gray" />
+      ))}
+      {question.文本形式 && <Chip label={question.文本形式} tone="gray" />}
+    </>
   );
 
   const handleDownloadJson = () => {
@@ -613,6 +629,7 @@ export default function QuestionCard({
               ))}
             </>
           )}
+          {eraTags}
           {modificationResult && (
             <Chip label={t("card.modified")} tone="green" />
           )}

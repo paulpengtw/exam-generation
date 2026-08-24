@@ -31,8 +31,6 @@ def test_social_studies_corrector_preserves_subquestion_instruction() -> None:
         情境=["公共"],
         題型種類="題組題",
         題型="選擇題",
-        閱讀歷程=["擷取訊息"],
-        文本形式="連續文本—說明文",
         subquestions=[
             SubQuestion(
                 id="ss-test-01",

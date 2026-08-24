@@ -102,8 +102,7 @@ SOCIAL_STUDIES = SubjectLoaderSpec(
     core_competency_subject_prefix="社",
     core_competency_enum_name="CoreCompetency",
     schema_categories=(
-        "情境", "題型種類", "題型", "認知歷程", "內容領域", "閱讀歷程", "文本形式",
-        "科目", "題目內容類型", "難度",
+        "情境", "題型種類", "題型", "認知歷程", "內容領域", "科目", "題目內容類型", "難度",
     ),
 )
 

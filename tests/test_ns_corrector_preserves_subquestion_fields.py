@@ -334,9 +334,6 @@ def test_ss_rebuild_covers_all_subquestion_model_fields() -> None:
         SubQuestion as SSSubQuestion,
     )
     from src.social_studies.schemas import (
-        TextForm,
-    )
-    from src.social_studies.schemas import (
         VerificationResult as SSVerificationResult,
     )
 
@@ -392,8 +389,6 @@ def test_ss_rebuild_covers_all_subquestion_model_fields() -> None:
         情境=["公共"],
         題型種類=next(iter(SSQuestionSetType)),
         題型=ss_q_type,
-        閱讀歷程=["擷取訊息"],
-        文本形式=next(iter(TextForm)),
         subquestions=[original_sq],
     )
     ss_verification = SSVerificationResult(

@@ -46,8 +46,6 @@ def test_exam_question_response_serializes_nested_interaction() -> None:
         情境=["教育"],
         題型種類="題組題",
         題型="拖放題",
-        閱讀歷程=["擷取訊息"],
-        文本形式="連續文本—說明文",
         subquestions=[
             {
                 "題型": "拖放題",

@@ -1,4 +1,4 @@
-"""CLI entry point for social studies (PISA reading literacy) exam question generation."""
+"""CLI entry point for social-studies exam question generation."""
 
 from __future__ import annotations
 
@@ -189,14 +189,14 @@ _SQ_IMAGE_REPAIR_USER_TEMPLATE = """\
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="social-studies-exam-generation",
-        description="Generate PISA-style reading literacy exam questions using LLMs",
+        description="Generate social-studies exam questions using LLMs",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     gen = sub.add_parser("generate", help="Generate exam questions")
     gen.add_argument("--grade", type=int, choices=_GRADES, help="Target grade level")
     gen.add_argument("--context", type=str, nargs="+", help="情境 (e.g. 個人 公共)")
-    gen.add_argument("--set-type", type=str, help="題型種類 (always 題組題 for PISA)")
+    gen.add_argument("--set-type", type=str, help="題型種類 (always 題組題)")
     gen.add_argument(
         "--q-type",
         type=str,
@@ -452,8 +452,6 @@ def _parse_text_shell(
         情境=[c.value for c in params.情境],
         題型種類=params.題型種類.value,
         題型=params.題型[0].value if params.題型 else "選擇題",
-        閱讀歷程=[p.value for p in params.閱讀歷程],
-        文本形式=params.文本形式.value,
         題目內容類型=params.題目內容類型,
         題目=raw.get("題目", []),
         正確解題分析=raw.get("正確解題分析", []),
@@ -1122,7 +1120,7 @@ def generate_one(
     balanced_batch: bool = False,
     core_question_callback: bool = True,
 ) -> ExamQuestion | str:
-    """Generate a single PISA reading question set."""
+    """Generate a single social-studies question set."""
     params = _with_text_word_limit(params, text_word_limit)
     result = generate_one_core(
         config=config,
@@ -1330,8 +1328,6 @@ def main(argv: list[str] | None = None) -> None:
                   f"科目={params.科目.value}, "
                   f"情境={'、'.join(c.value for c in params.情境)}, "
                   f"題型={'、'.join(t.value for t in params.題型)}, "
-                  f"閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
-                  f"文本形式={params.文本形式.value}, "
                   f"題目內容類型={params.題目內容類型}, "
                   f"核心素養={'、'.join(c.value for c in params.核心素養)}, "
                   f"creative_brief={'yes' if params.creative_brief else 'no'}", file=sys.stderr)

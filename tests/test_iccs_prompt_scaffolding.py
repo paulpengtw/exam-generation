@@ -148,6 +148,12 @@ def test_newly_built_social_prompts_do_not_expose_retired_reading_axes(tmp_path:
         Path("data/social_studies/few_shot"),
         rng=random.Random(491),
     )
+    graph_params = sample_params(seed=491, content_type="graphs/charts/tables")
+    graph_text_user_prompt, _ = build_text_user_prompt(
+        graph_params,
+        Path("data/social_studies/few_shot"),
+        rng=random.Random(491),
+    )
     sub_user_prompt, _ = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
@@ -166,12 +172,14 @@ def test_newly_built_social_prompts_do_not_expose_retired_reading_axes(tmp_path:
         build_text_system_prompt(params=params),
         text_user_prompt,
         enabled_text_user_prompt,
+        graph_text_user_prompt,
         build_subquestion_system_prompt("第四學習階段"),
         sub_user_prompt,
     ):
         assert "閱讀歷程" not in prompt
         assert "文本形式" not in prompt
         assert "PISA閱讀" not in prompt
+        assert "PISA" not in prompt
 
 
 def test_text_prompt_uses_subject_specific_content_domain_instruction(tmp_path: Path) -> None:
@@ -239,7 +247,7 @@ def test_subquestion_prompt_injects_assigned_process_design_guidance(tmp_path: P
     assert guidance in prompt
 
 
-def test_text_shell_keeps_sampled_reading_tags_when_model_omits_them(tmp_path: Path) -> None:
+def test_text_shell_does_not_stamp_retired_axes_when_model_omits_them(tmp_path: Path) -> None:
     from src.social_studies.cli import _parse_text_shell
     from src.social_studies.sampler import sample_params
 
@@ -251,8 +259,8 @@ def test_text_shell_keeps_sampled_reading_tags_when_model_omits_them(tmp_path: P
         "test-model",
     )
 
-    assert question.閱讀歷程 == [process.value for process in params.閱讀歷程]
-    assert question.文本形式 == params.文本形式.value
+    assert question.閱讀歷程 == []
+    assert question.文本形式 is None
 
 
 def _build_channel2_subquestion_prompt(params, few_shot_dir: Path, rng) -> str:

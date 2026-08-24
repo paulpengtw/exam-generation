@@ -95,10 +95,10 @@ function buildImageParagraph(name: string, imageRef: string, zIndex: number): st
 
 function buildMetadataItems(question: ExamQuestion): string[] {
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
-  const iccsMetadata = [
-    question.內容領域,
-    ...(question.認知歷程 ?? []),
-  ];
+  const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
+  const eraMetadata = isIccsEra
+    ? [question.內容領域, ...(question.認知歷程 ?? [])]
+    : [...(question.閱讀歷程 ?? []), question.文本形式];
   if (isSocialStudies) {
     const subs = question.subquestions!;
     const unique = <T>(arr: T[]): T[] => [...new Set(arr)];
@@ -108,7 +108,7 @@ function buildMetadataItems(question: ExamQuestion): string[] {
       ...unique(subs.flatMap((s) => s.核心素養)),
       ...unique(subs.flatMap((s) => s.學習內容.map((lc) => lc.編碼))),
       ...unique(subs.flatMap((s) => s.學習表現.map((lp) => lp.編碼))),
-      ...iccsMetadata,
+      ...eraMetadata,
     ].filter((item): item is string => Boolean(item));
   }
   return [
@@ -116,10 +116,8 @@ function buildMetadataItems(question: ExamQuestion): string[] {
     question.題型種類,
     question.題型,
     ...(question.數學思考 ?? []),
-    ...(question.閱讀歷程 ?? []),
-    question.文本形式,
     ...(question.學習內容 ?? []).map((c) => c.編碼).filter(Boolean),
-    ...iccsMetadata,
+    ...eraMetadata,
   ].filter((item): item is string => Boolean(item));
 }
 

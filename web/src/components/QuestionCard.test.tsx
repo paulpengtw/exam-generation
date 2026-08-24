@@ -163,6 +163,54 @@ const ssQuestion: ExamQuestion = {
 };
 
 describe("QuestionCard rubric eras and legacy display", () => {
+  it("renders legacy axis tags for a legacy social-studies record", () => {
+    const legacy: ExamQuestion = {
+      ...ssQuestion,
+      id: "ss-legacy-axes",
+      閱讀歷程: ["legacy process"],
+      文本形式: "legacy text form",
+    };
+
+    render(<QuestionCard question={legacy} isFinal />);
+
+    expect(screen.getByText("legacy process", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("legacy text form", { exact: true })).toBeInTheDocument();
+  });
+
+  it("renders legacy axis tags for a flat legacy record", () => {
+    const legacy: ExamQuestion = {
+      ...ssQuestion,
+      id: "ss-flat-legacy-axes",
+      subquestions: [],
+      閱讀歷程: ["flat legacy process"],
+      文本形式: "flat legacy text form",
+    };
+
+    render(<QuestionCard question={legacy} isFinal />);
+
+    expect(screen.getByText("flat legacy process", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("flat legacy text form", { exact: true })).toBeInTheDocument();
+  });
+
+  it("renders ICCS tags and suppresses stale legacy tags for a new record", () => {
+    const knowing = "Knowing–Defining and Describing";
+    const current: ExamQuestion = {
+      ...ssQuestion,
+      id: "ss-current-axes",
+      內容領域: "Civic Principles",
+      認知歷程: [knowing],
+      閱讀歷程: ["stale legacy process"],
+      文本形式: "stale legacy text form",
+    };
+
+    render(<QuestionCard question={current} isFinal />);
+
+    expect(screen.getByText("Civic Principles", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText(knowing, { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("stale legacy process", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("stale legacy text form", { exact: true })).not.toBeInTheDocument();
+  });
+
   it("renders native 0..N rubric levels and their examples as text", () => {
     const question: ExamQuestion = {
       ...ssQuestion,

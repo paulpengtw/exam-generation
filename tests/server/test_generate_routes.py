@@ -347,8 +347,6 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )
@@ -612,8 +610,6 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["q"],
             正確解題分析=["a"],
         )
@@ -752,8 +748,6 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["q"],
             正確解題分析=["a"],
         )
@@ -864,8 +858,6 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["q"],
             正確解題分析=["a"],
         )
@@ -1179,8 +1171,6 @@ def test_generate_route_persists_one_failed_record_after_prior_success(tmp_path)
             情境=[c.value for c in sampled_params.情境],
             題型種類=sampled_params.題型種類.value,
             題型=sampled_params.題型[0].value,
-            閱讀歷程=[p.value for p in sampled_params.閱讀歷程],
-            文本形式=sampled_params.文本形式.value,
             題目=["先完成的題目"],
             正確解題分析=["解析"],
         )

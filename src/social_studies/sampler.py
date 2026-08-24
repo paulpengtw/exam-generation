@@ -1,4 +1,4 @@
-"""Random parameter selection for social studies (PISA reading) question generation."""
+"""Random parameter selection for social-studies question generation."""
 
 from __future__ import annotations
 
@@ -26,9 +26,7 @@ from src.social_studies.schemas import (
     QuestionSetType,
     QuestionSubject,
     QuestionType,
-    ReadingProcess,
     SampledParams,
-    TextForm,
 )
 
 _schemas = load_schemas()
@@ -269,10 +267,10 @@ def sample_params(
     difficulty: Difficulty | str | None = None,
     allow_duplicate_figure_kinds: bool = False,
 ) -> SampledParams:
-    """Sample random PISA-reading question parameters.
+    """Sample random social-studies question parameters.
 
-    No grade_content needed — reading literacy has no K-12 curriculum code lookup.
-    Sampler cardinality: 情境 1+, 文本形式 1, 閱讀歷程 1-2; 題型種類 forced 題組題.
+    No grade_content needed — the social-studies curriculum pools are loaded by code.
+    題型種類 is forced to the single 題組題 schema value.
 
     """
     rng = random.Random(seed)
@@ -290,7 +288,7 @@ def sample_params(
         context_count = rng.randint(1, len(all_contexts))
         selected_context = rng.sample(all_contexts, context_count)
 
-    # 題型種類 is always 題組題 in PISA; schema has only one value so this is deterministic.
+    # 題型種類 has only one schema value, so this is deterministic.
     selected_set_type = set_type if set_type is not None else rng.choice(list(QuestionSetType))
 
     if sub_question_count is not None and not 3 <= sub_question_count <= 7:
@@ -298,35 +296,11 @@ def sample_params(
 
     q_type_pool = _question_type_draw_pool(q_type, resolved_surface)
 
-    # 閱讀歷程: pick 1-2
-    all_processes = list(ReadingProcess)
-    process_count = rng.randint(1, min(2, len(all_processes)))
-    selected_process = rng.sample(all_processes, process_count)
-
     selected_content_type = (
         content_type.strip()
         if content_type and content_type.strip()
         else rng.choice(_RANDOM_CONTENT_TYPE_VALUES or _CONTENT_TYPE_VALUES or ["純文字"])
     )
-
-    # 文本形式: align built-in content types with compatible text forms.
-    all_text_forms = list(TextForm)
-    if selected_content_type == "純文字":
-        text_form_pool = [f for f in all_text_forms if f.value.startswith("連續文本")]
-    elif selected_content_type == "graphs/charts/tables":
-        text_form_pool = [
-            f for f in all_text_forms
-            if f.value in {"非連續文本—圖表與圖形", "非連續文本—表格"}
-        ]
-    elif selected_content_type == "含圖片":
-        text_form_pool = [
-            f for f in all_text_forms
-            if f.value.startswith("非連續文本")
-            and f.value not in {"非連續文本—圖表與圖形", "非連續文本—表格"}
-        ]
-    else:
-        text_form_pool = all_text_forms
-    selected_text_form = rng.choice(text_form_pool or all_text_forms)
 
     selected_subject = (
         rng.choice(subject)
@@ -455,8 +429,6 @@ def sample_params(
         情境=selected_context,
         題型種類=selected_set_type,
         題型=selected_q_types,
-        閱讀歷程=selected_process,
-        文本形式=selected_text_form,
         題目內容類型=selected_content_type,
         科目=selected_subject,
         內容領域=selected_content_domain,

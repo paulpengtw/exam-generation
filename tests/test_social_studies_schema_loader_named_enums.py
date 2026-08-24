@@ -7,8 +7,6 @@ _PUBLIC_ENUM_NAMES = {
     "情境": "QuestionContext",
     "題型種類": "QuestionSetType",
     "題型": "QuestionType",
-    "閱讀歷程": "ReadingProcess",
-    "文本形式": "TextForm",
     "科目": "QuestionSubject",
 }
 
@@ -71,26 +69,6 @@ def test_social_studies_schema_exports_preserve_current_enum_members() -> None:
         "QuestionContext": ["個人", "公共", "職業", "教育"],
         "QuestionSetType": ["題組題"],
         "QuestionType": ["選擇題", "開放式建構反應題", "拖放題", "滑桿題"],
-        "ReadingProcess": [
-            "擷取訊息",
-            "形成廣泛理解",
-            "發展解釋",
-            "省思與評鑑文本內容",
-            "省思與評鑑文本形式",
-        ],
-        "TextForm": [
-            "連續文本—敘事文",
-            "連續文本—說明文",
-            "連續文本—記敘文",
-            "連續文本—論述文",
-            "連續文本—指南或忠告",
-            "非連續文本—圖表與圖形",
-            "非連續文本—表格",
-            "非連續文本—圖解",
-            "非連續文本—地圖",
-            "非連續文本—表單",
-            "非連續文本—廣告",
-        ],
         "QuestionSubject": ["歷史", "地理", "公民與社會", "跨科"],
     }
 

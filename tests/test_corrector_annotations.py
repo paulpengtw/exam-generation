@@ -22,7 +22,6 @@ from src.social_studies.schemas import ExamQuestion as SsExamQuestion
 from src.social_studies.schemas import QuestionSetType as SsQuestionSetType
 from src.social_studies.schemas import QuestionType as SsQuestionType
 from src.social_studies.schemas import SubQuestion as SsSubQuestion
-from src.social_studies.schemas import TextForm
 from src.social_studies.schemas import VerificationResult as SsVerificationResult
 
 
@@ -63,8 +62,6 @@ def _ss_question() -> SsExamQuestion:
         情境=[],
         題型種類=next(iter(SsQuestionSetType)),
         題型=next(iter(SsQuestionType)),
-        閱讀歷程=[],
-        文本形式=next(iter(TextForm)),
     )
 
 
@@ -174,8 +171,6 @@ def test_social_studies_frozen_fields_survive_correction_with_annotations() -> N
         情境=[],
         題型種類=next(iter(SsQuestionSetType)),
         題型=next(iter(SsQuestionType)),
-        閱讀歷程=[],
-        文本形式=next(iter(TextForm)),
     )
     client = _CaptureCorrectClient(
         {

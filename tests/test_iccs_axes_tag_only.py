@@ -184,8 +184,6 @@ def test_assembly_derives_domain_and_ordered_unique_cognitive_processes() -> Non
         情境=["個人"],
         題型種類="題組題",
         題型="選擇題",
-        閱讀歷程=["擷取訊息"],
-        文本形式="連續文本—說明文",
         subquestions=[
             SubQuestion(題型="選擇題", 題目="一", 認知歷程=first),
             SubQuestion(題型="選擇題", 題目="二", 認知歷程=second),
@@ -223,7 +221,7 @@ def test_legacy_social_studies_record_without_iccs_fields_deserializes() -> None
     )
 
     assert question.內容領域 is None
-    assert question.認知歷程 == []
+    assert question.認知歷程 is None
 
 
 def test_subquestion_cognitive_process_rejects_unknown_values() -> None:
