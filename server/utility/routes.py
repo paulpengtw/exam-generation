@@ -8,6 +8,7 @@ from server.auth.dependencies import get_config
 from server.config import _EFFORT_LEVELS, ServerConfig
 from server.generate.models import ALLOWED_SUBJECTS
 from server.generate.subjects import SUBJECTS
+from src.social_studies.domain_mapping import load_code_to_domains_mapping
 
 router = APIRouter(tags=["utility"])
 
@@ -61,6 +62,10 @@ async def get_schemas(
     try:
         schemas = spec.build_schemas(config, grade)
         schemas.setdefault("digital_only_question_types", [])
+        if subject == "social_studies":
+            schemas["內容領域_mapping"] = load_code_to_domains_mapping(
+                curriculum_dir=config.social_studies_curriculum_dir,
+            )
         return schemas
     except FileNotFoundError as exc:
         raise HTTPException(
