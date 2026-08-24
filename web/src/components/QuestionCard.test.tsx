@@ -112,6 +112,21 @@ describe("QuestionCard + FigureRenderer swap", () => {
   });
 });
 
+describe("QuestionCard figure freshness", () => {
+  it("renders the image out-of-sync warning only when image_stale is set", () => {
+    const staleQuestion = {
+      ...question,
+      image_stale: true,
+    } as unknown as import("../hooks/useGenerate").ExamQuestion;
+    const { rerender } = render(<QuestionCard question={staleQuestion} isFinal />);
+
+    expect(screen.getByText("Image may be out of sync")).toBeInTheDocument();
+
+    rerender(<QuestionCard question={question} isFinal />);
+    expect(screen.queryByText("Image may be out of sync")).not.toBeInTheDocument();
+  });
+});
+
 const ssSub: SubQuestion = {
   id: "sq1",
   序號: 1,

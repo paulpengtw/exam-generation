@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
 import json
 import uuid
@@ -819,13 +820,21 @@ def _parse_sse_events(body: str) -> list[dict]:
     return events
 
 
-def _execute_scripted_modification(app, config, user_id, record_id, fake) -> tuple[str, list[dict]]:
+def _execute_scripted_modification(
+    app,
+    config,
+    user_id,
+    record_id,
+    fake,
+    *,
+    payload: dict | None = None,
+) -> tuple[str, list[dict]]:
 
     token = create_jwt(user_id, "user@example.com", config=config)
     with TestClient(app) as client:
         response = client.post(
             f"/api/generation-records/{record_id}/modifications",
-            json=_modification_payload(),
+            json=payload or _modification_payload(),
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 200, response.text
@@ -978,6 +987,117 @@ def test_modification_stream_allows_chart_spec_edits(app_ctx, monkeypatch) -> No
 
     assert result["chart_spec"]["description"] == "修正圖表說明"
     assert result["chart_spec"]["title"] == base["chart_spec"]["title"]
+    child = _read_modification_records(SessionLocal)[1]
+    assert child.question_json["chart_spec"]["description"] == "修正圖表說明"
+    assert child.question_json["chart_spec"]["title"] == base["chart_spec"]["title"]
+
+
+def test_modification_stream_flags_stale_image_source_and_keeps_png_bytes(
+    app_ctx, monkeypatch
+) -> None:
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    base["subquestions"][0].update(
+        {
+            "圖片": "ss-manual-modification_sq1.png",
+            "image_generation_mode": "gpt_image",
+            "image_base64": "BASE-PNG-BYTES",
+        }
+    )
+    candidate = copy.deepcopy(base)
+    candidate["subquestions"][0]["題目"] = "修正後第一小題題目"
+    candidate["subquestions"][0]["image_base64"] = "REGENERATED-PNG-BYTES"
+    payload = {
+        "annotations": [
+            {
+                "segments": [
+                    {
+                        "field_path": "subquestions[0].題目",
+                        "start": 0,
+                        "end": len(base["subquestions"][0]["題目"]),
+                        "quoted_text": base["subquestions"][0]["題目"],
+                    }
+                ],
+                "修改指示": "請修正小題題幹",
+            }
+        ]
+    }
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _ScriptedModificationLLM(candidate)
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    _run_id, events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake, payload=payload
+    )
+
+    final = next(event for event in events if event["event"] == "result")["data"]
+    final_question = final["question"]
+    assert final_question["image_stale"] is True
+    assert final_question["subquestions"][0]["image_base64"] == "BASE-PNG-BYTES"
+    done_question = next(event for event in events if event["event"] == "done")["data"][
+        "question"
+    ]
+    assert done_question["image_stale"] is True
+    assert done_question["subquestions"][0]["image_base64"] == "BASE-PNG-BYTES"
+
+    records = _read_modification_records(SessionLocal)
+    child = records[1]
+    assert child.question_json["image_stale"] is True
+    assert "image_base64" not in child.question_json["subquestions"][0]
+
+
+def test_modification_stream_does_not_flag_unrelated_edit_on_image_question(
+    app_ctx, monkeypatch, tmp_path
+) -> None:
+    app, SessionLocal, config = app_ctx
+    config.output_dir = tmp_path
+    png_bytes = b"BASE-PNG-BYTES"
+    (tmp_path / "ss-manual-modification_sq1.png").write_bytes(png_bytes)
+    base = _full_social_studies_question()
+    base["subquestions"][0].update(
+        {
+            "圖片": "ss-manual-modification_sq1.png",
+            "image_generation_mode": "gpt_image",
+        }
+    )
+    candidate = copy.deepcopy(base)
+    candidate["subquestions"][0]["答案"] = "修正後第一小題答案"
+    payload = {
+        "annotations": [
+            {
+                "segments": [
+                    {
+                        "field_path": "subquestions[0].答案",
+                        "start": 0,
+                        "end": len(base["subquestions"][0]["答案"]),
+                        "quoted_text": base["subquestions"][0]["答案"],
+                    }
+                ],
+                "修改指示": "請修正答案",
+            }
+        ]
+    }
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _ScriptedModificationLLM(candidate)
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    _run_id, events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake, payload=payload
+    )
+
+    final = next(event for event in events if event["event"] == "result")["data"]
+    final_question = final["question"]
+    assert "image_stale" not in final_question
+    assert final_question["subquestions"][0]["image_base64"] == base64.b64encode(
+        png_bytes
+    ).decode("ascii")
+
+    child = _read_modification_records(SessionLocal)[1]
+    assert "image_stale" not in child.question_json
 
 
 def _read_modification_records(SessionLocal) -> list[GenerationRecord]:
