@@ -388,11 +388,15 @@ async def generate_endpoint(
                     error_msg = (
                         data.get("message", str(data)) if isinstance(data, dict) else str(data)
                     )
-                    await persist_failure_once(error_msg)
                 yield _serialize_event(event)
+            if status == "failed":
+                await persist_failure_once(error_msg or "Generation failed")
         except asyncio.CancelledError:
             with anyio.CancelScope(shield=True):
-                await persist_aborted_once()
+                if status == "failed":
+                    await persist_failure_once(error_msg or "Generation failed")
+                else:
+                    await persist_aborted_once()
             raise
         except Exception as exc:
             status = "failed"

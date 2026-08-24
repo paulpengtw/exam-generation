@@ -216,6 +216,7 @@ class _RunContext:
     prior_scopes_lock: threading.Lock
     emit_pipeline: Any  # Callable[..., None] from make_pipeline_emitter
     generation_log_id: uuid.UUID | None
+    figure_policy_recorder: Any
     retention_days: int
     session_factory: Any
     next_order: Any  # Callable[[], int]
@@ -252,6 +253,11 @@ def _build_run_context(
     order_counter = itertools.count(1)
     order_lock = threading.Lock()
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
+    figure_policy_recorder = make_figure_policy_trail_recorder(
+        generation_log_id=generation_log_id,
+        loop=loop,
+        session_factory=session_factory,
+    )
 
     def _next_order() -> int:
         with order_lock:
@@ -281,6 +287,7 @@ def _build_run_context(
         prior_scopes_lock=threading.Lock(),
         emit_pipeline=make_pipeline_emitter(loop, queue),
         generation_log_id=generation_log_id,
+        figure_policy_recorder=figure_policy_recorder,
         retention_days=config.llm_exchange_retention_days,
         session_factory=session_factory,
         next_order=_next_order,
@@ -303,11 +310,7 @@ def _worker_one(
         session_factory=ctx.session_factory,
         next_order=ctx.next_order,
     )
-    figure_policy_recorder = make_figure_policy_trail_recorder(
-        generation_log_id=ctx.generation_log_id,
-        loop=ctx.loop,
-        session_factory=ctx.session_factory,
-    )
+    figure_policy_recorder = ctx.figure_policy_recorder
     question_client.set_observer(
         make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
     )
@@ -528,6 +531,10 @@ async def generate_question_stream(
             if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):
                 break
     finally:
-        await signal_task
+        try:
+            await signal_task
+        finally:
+            if ctx.figure_policy_recorder is not None:
+                await ctx.figure_policy_recorder.flush()
         if renderer_pool is not None and html_renderer is not None:
             await renderer_pool.put(html_renderer)
