@@ -46,6 +46,22 @@ def test_figure_kind_loader_reads_aliases_from_editable_vocabulary_document(tmp_
     assert figure_kind_loader.load_figure_kinds(source) == ("長條圖",)
 
 
+def test_figure_kind_loader_drops_aliases_that_name_two_canonical_kinds(tmp_path) -> None:
+    source = tmp_path / "figure_kinds.json"
+    source.write_text(
+        json.dumps(
+            {
+                "canonical": ["甲", "乙"],
+                "aliases": {"甲": ["shared"], "乙": ["shared"]},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert figure_kind_loader.load_figure_kind_aliases(source) == {}
+
+
 def test_effective_figure_kind_falls_back_to_chart_type_only_for_chart_specs() -> None:
     chart = _spec(render_mode="chart", chart_type="line_chart")
     html = _spec(render_mode="html", chart_type="line_chart")
