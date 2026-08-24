@@ -55,6 +55,51 @@ export function SubQuestionInstructionField({
   );
 }
 
+export interface SubQuestionQuestionTypeFieldProps {
+  config: SubQuestionConfig;
+  subject: string;
+  questionTypes: SchemaEntry[];
+  onChange: (patch: Partial<SubQuestionConfig>) => void;
+  badge?: {
+    label: string;
+    className: string;
+  };
+}
+
+export function SubQuestionQuestionTypeField({
+  config,
+  subject,
+  questionTypes,
+  onChange,
+  badge,
+}: SubQuestionQuestionTypeFieldProps) {
+  const questionTypeId = useId();
+  const t = useT();
+  const availableQuestionTypes = questionTypeOptions(subject, questionTypes);
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={questionTypeId} className="block text-xs text-gray-500">
+          {t("form.confirm_subq_q_type_input")}
+        </label>
+        {badge && <span className={badge.className}>{badge.label}</span>}
+      </div>
+      <select
+        id={questionTypeId}
+        value={config.question_type ?? ""}
+        onChange={(e) => onChange({ question_type: e.target.value || undefined })}
+        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+      >
+        <option value="">{t("form.confirm_random")}</option>
+        {availableQuestionTypes.map((entry) => (
+          <option key={entry.value} value={entry.value}>{entry.value}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function optionalNumber(raw: string): number | undefined {
   if (raw.trim() === "") return undefined;
   const parsed = Number(raw);
@@ -81,24 +126,16 @@ export default function SubQuestionConfigEditor({
   onChange,
 }: SubQuestionConfigEditorProps) {
   const t = useT();
-  const availableQuestionTypes = questionTypeOptions(subject, questionTypes);
 
   return (
     <>
       <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-6">
-        <div>
-          <label className="block text-xs text-gray-500">題型</label>
-          <select
-            value={config.question_type ?? ""}
-            onChange={(e) => onChange({ question_type: e.target.value || undefined })}
-            className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-          >
-            <option value="">（隨機）</option>
-            {availableQuestionTypes.map((entry) => (
-              <option key={entry.value} value={entry.value}>{entry.value}</option>
-            ))}
-          </select>
-        </div>
+        <SubQuestionQuestionTypeField
+          config={config}
+          subject={subject}
+          questionTypes={questionTypes}
+          onChange={onChange}
+        />
         {subject === "social_studies" && cognitiveProcesses.length > 0 && (
           <div>
             <label className="block text-xs text-gray-500">{t("form.cognitive_process")}</label>

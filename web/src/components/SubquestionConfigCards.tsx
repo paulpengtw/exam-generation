@@ -1,7 +1,10 @@
 import type { SchemaEntry } from "../api/client";
 import type { SubQuestionConfig } from "../components/ParamForm";
 import { useT } from "../i18n/useT";
-import { SubQuestionInstructionField } from "./SubQuestionConfigEditor";
+import {
+  SubQuestionInstructionField,
+  SubQuestionQuestionTypeField,
+} from "./SubQuestionConfigEditor";
 
 export type ResolvedSubQuestionConfig = SubQuestionConfig & {
   _lcWasAutoDrawn?: boolean;
@@ -11,15 +14,19 @@ export type ResolvedSubQuestionConfig = SubQuestionConfig & {
 export default function SubquestionConfigCards({
   configs,
   subject,
+  questionTypes,
   lcEntryByCode,
   lpEntryByCode,
   onInstructionChange,
+  onQuestionTypeChange,
 }: {
   configs: ResolvedSubQuestionConfig[];
   subject: string;
+  questionTypes: SchemaEntry[];
   lcEntryByCode: Map<string, SchemaEntry>;
   lpEntryByCode: Map<string, SchemaEntry>;
   onInstructionChange?: (subquestionIndex: number, instruction: string) => void;
+  onQuestionTypeChange?: (subquestionIndex: number, questionType: string) => void;
 }) {
   const t = useT();
 
@@ -30,7 +37,20 @@ export default function SubquestionConfigCards({
           <h5 className="mb-2 text-xs font-semibold text-gray-600">
             {t("form.confirm_subquestion_row_title").replace("{n}", String(subquestionIndex + 1))}
           </h5>
-          <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type ?? t("form.confirm_random")}</div>
+          {onQuestionTypeChange ? (
+            <SubQuestionQuestionTypeField
+              config={row}
+              subject={subject}
+              questionTypes={questionTypes}
+              badge={{
+                label: t(row.question_type?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_random"),
+                className: `text-xs font-medium ${row.question_type?.trim() ? "text-green-700" : "text-amber-700"}`,
+              }}
+              onChange={(patch) => onQuestionTypeChange(subquestionIndex, patch.question_type ?? "")}
+            />
+          ) : (
+            <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type ?? t("form.confirm_random")}</div>
+          )}
           {subject === "social_studies" && <div className="text-sm text-gray-700">{t("form.confirm_subq_cognitive_process")} {row.cognitive_process ?? t("form.confirm_random")}</div>}
           {onInstructionChange ? (
             <SubQuestionInstructionField

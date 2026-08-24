@@ -671,6 +671,7 @@ function DraftSummary({
                       <SubquestionConfigCards
                         configs={fields.subquestionConfigs}
                         subject={subject}
+                        questionTypes={schemas?.題型 ?? []}
                         lcEntryByCode={lcEntryByCode}
                         lpEntryByCode={lpEntryByCode}
                       />
@@ -2252,10 +2253,10 @@ export default function ParamForm({
     onSubmit(submittedParams);
   }
 
-  function updatePendingSubquestionInstruction(
+  function updatePendingSubquestionConfig(
     questionIndex: number,
     subquestionIndex: number,
-    instruction: string,
+    patch: Partial<SubQuestionConfig>,
   ) {
     setPendingPerQuestionParams((current) => {
       const perQuestionParams = current ?? parsePerQuestionParams(pendingParams?.per_question_params);
@@ -2263,10 +2264,9 @@ export default function ParamForm({
       if (!questionParams) return current;
       const configs = parseSubquestionConfigs(questionParams.subquestion_configs);
       if (!configs[subquestionIndex]) return current;
-      const normalizedInstruction = instruction.trim() || undefined;
       const nextConfigs = configs.map((config, index) =>
         index === subquestionIndex
-          ? serialisableSubquestionConfig({ ...config, instruction: normalizedInstruction })
+          ? serialisableSubquestionConfig({ ...config, ...patch })
           : config,
       );
       const nextPerQuestionParams = perQuestionParams.map((params, index) =>
@@ -2275,6 +2275,26 @@ export default function ParamForm({
           : params,
       );
       return nextPerQuestionParams;
+    });
+  }
+
+  function updatePendingSubquestionInstruction(
+    questionIndex: number,
+    subquestionIndex: number,
+    instruction: string,
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      instruction: instruction.trim() || undefined,
+    });
+  }
+
+  function updatePendingSubquestionQuestionType(
+    questionIndex: number,
+    subquestionIndex: number,
+    questionType: string,
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      question_type: questionType || undefined,
     });
   }
 
@@ -2496,10 +2516,14 @@ export default function ParamForm({
                     <SubquestionConfigCards
                       configs={questionSubquestionConfigs}
                       subject={subject}
+                      questionTypes={availableQuestionTypes}
                       lcEntryByCode={lcEntryByCode}
                       lpEntryByCode={lpEntryByCode}
                       onInstructionChange={(subquestionIndex, instruction) =>
                         updatePendingSubquestionInstruction(index, subquestionIndex, instruction)
+                      }
+                      onQuestionTypeChange={(subquestionIndex, questionType) =>
+                        updatePendingSubquestionQuestionType(index, subquestionIndex, questionType)
                       }
                     />
                   </section>
