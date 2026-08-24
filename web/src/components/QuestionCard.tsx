@@ -605,6 +605,15 @@ export default function QuestionCard({
         <VerificationBadge passed={passed} verifiedLabel={t("card.verified")} unverifiedLabel={t("card.unverified")} />
       </div>
 
+      {question.image_stale && (
+        <div
+          role="status"
+          className="rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900"
+        >
+          {t("card.imageStale")}
+        </div>
+      )}
+
       {(() => {
         const figure = pickFigure(question.chart_spec, question.image_base64, "Question diagram");
         if (!figure) return null;

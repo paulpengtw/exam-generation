@@ -22,6 +22,7 @@ from typing import Any
 from server.config import ServerConfig
 from server.generate.marshalling import (
     SSEEventName,
+    embed_image_base64,
     make_combined_observer,
     make_queue_observer,
 )
@@ -193,6 +194,49 @@ def _verification_payload(verification: Any) -> dict[str, Any]:
     return copy.deepcopy(vars(verification))
 
 
+def _payload_has_image(payload: Mapping[str, Any]) -> bool:
+    return bool(payload.get("圖片") or payload.get("image_base64"))
+
+
+def _image_source_was_edited(
+    base_question: Mapping[str, Any], annotations: list[dict[str, Any]]
+) -> bool:
+    """Return whether an existing image's text input was selected for editing."""
+    top_level_image = _payload_has_image(base_question)
+    subquestions = base_question.get("subquestions")
+    subquestion_images = {
+        index
+        for index, subquestion in enumerate(subquestions or [])
+        if isinstance(subquestion, Mapping) and _payload_has_image(subquestion)
+    }
+    if not top_level_image and not subquestion_images:
+        return False
+
+    for annotation in annotations:
+        segments = annotation.get("segments") or annotation.get("圈選") or []
+        for segment in segments:
+            field_path = segment.get("field_path")
+            if not isinstance(field_path, str):
+                continue
+            try:
+                tokens = _path_tokens(field_path)
+            except KeyError:
+                continue
+            if tokens and tokens[0] == "文本":
+                return True
+            if top_level_image and tokens and tokens[0] == "題目":
+                return True
+            if (
+                len(tokens) >= 3
+                and tokens[0] == "subquestions"
+                and isinstance(tokens[1], int)
+                and tokens[1] in subquestion_images
+                and tokens[2] == "題目"
+            ):
+                return True
+    return False
+
+
 def _chart_image_path(payload: Mapping[str, Any], config: ServerConfig) -> str | None:
     image_name = payload.get("圖片")
     if not image_name:
@@ -232,6 +276,7 @@ async def modification_question_stream(
         raise RuntimeError(f"Subject {subject!r} has no shared verifier")
 
     current_payload = copy.deepcopy(base_question)
+    image_source_was_edited = _image_source_was_edited(base_question, annotations)
     question = spec.exam_question_cls.model_validate(current_payload)
     annotation_text = format_modification_annotations(annotations)
     modification_context = SimpleNamespace(
@@ -325,7 +370,9 @@ async def modification_question_stream(
             yield _pipeline_event("end", stage="correction")
 
         verification_data = _verification_payload(verification)
-        final_question = copy.deepcopy(current_payload)
+        final_question = embed_image_base64(copy.deepcopy(current_payload), config)
+        if image_source_was_edited:
+            final_question["image_stale"] = True
         final_question["verification"] = verification_data
         ripple_report = sorted(
             field_path

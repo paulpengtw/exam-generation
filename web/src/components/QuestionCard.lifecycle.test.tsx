@@ -157,6 +157,7 @@ function mockAdmission(runId = "run-424") {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
   fetchMock.mockReset();
   fetchEventSourceMock.mockReset();
@@ -214,6 +215,28 @@ describe("QuestionCard 人工審題修正 run lifecycle", () => {
     expect(screen.getByRole("region", { name: "Ripple report" })).toHaveTextContent(
       "subquestions[0].答案",
     );
+  });
+
+  it("renders the updated chart_spec from the modification result", async () => {
+    vi.stubEnv("VITE_ENABLE_FRONTEND_TS_RENDERER", "1");
+    const updatedQuestion: ExamQuestion = {
+      ...modifiedQuestion,
+      chart_spec: {
+        render_mode: "html",
+        description: "修正後圖表",
+        data: { columns: ["時段"], rows: [["10:00"]] },
+      },
+    };
+    mockAdmission();
+    fetchEventSourceMock.mockImplementationOnce(async (_url: string, init: { onmessage?: (event: { id: string; event: string; data: string }) => void }) => {
+      emit(init, "done", donePayload(updatedQuestion));
+    });
+
+    render(<QuestionCard question={baseQuestion} recordId="record-424" isFinal />);
+    await submitFirstSelection();
+
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.getByText("10:00")).toBeInTheDocument();
   });
 
   it("shows failure details beside the returned irreconcilable last attempt", async () => {

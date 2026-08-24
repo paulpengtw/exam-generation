@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import json
 import time
 from collections.abc import Callable
@@ -143,6 +144,31 @@ def strip_image_base64(payload: dict[str, Any]) -> dict[str, Any]:
             for sub in subs
         ]
     return cleaned
+
+
+def embed_image_base64(payload: dict[str, Any], config: ServerConfig) -> dict[str, Any]:
+    """Copy *payload* and embed existing PNG files without rendering them."""
+    embedded = copy.deepcopy(payload)
+
+    def embed(container: dict[str, Any]) -> None:
+        if container.get("image_base64"):
+            return
+        image_name = container.get("圖片")
+        if not isinstance(image_name, str) or not image_name:
+            return
+        image_path = config.output_dir / image_name
+        if image_path.exists():
+            container["image_base64"] = base64.b64encode(
+                image_path.read_bytes()
+            ).decode("ascii")
+
+    embed(embedded)
+    subquestions = embedded.get("subquestions")
+    if isinstance(subquestions, list):
+        for subquestion in subquestions:
+            if isinstance(subquestion, dict):
+                embed(subquestion)
+    return embedded
 
 
 # ---------------------------------------------------------------------------

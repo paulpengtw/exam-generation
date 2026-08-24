@@ -90,6 +90,7 @@ export interface ExamQuestion {
   chart_spec?: unknown;
   verification?: unknown;
   metadata?: unknown;
+  image_stale?: boolean;
   image_base64?: string;
 }
 

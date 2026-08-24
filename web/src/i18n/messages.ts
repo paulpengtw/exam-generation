@@ -353,6 +353,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "card.modificationError.not_latest": "This is not the latest question version. Submit from the newest version.",
     "card.modificationError.not_latest_version": "This is not the latest question version. Submit from the newest version.",
     "card.modificationError.run_in_progress": "A modification run is already in progress. Wait for it to finish.",
+    "card.imageStale": "Image may be out of sync",
 
     "error.title": "Something went wrong",
     "error.desc": "An unexpected error occurred. Try reloading the page.",
@@ -729,6 +730,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "card.modificationError.not_latest": "這不是最新版本的題目，請從最新版本提交。",
     "card.modificationError.not_latest_version": "這不是最新版本的題目，請從最新版本提交。",
     "card.modificationError.run_in_progress": "修改作業正在進行中，請等待完成。",
+    "card.imageStale": "圖片可能已不同步",
 
     "error.title": "發生錯誤",
     "error.desc": "發生意外錯誤，請重新載入頁面。",
