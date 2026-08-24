@@ -63,6 +63,7 @@ def load_figure_kind_aliases(path: Path | None = None) -> dict[str, str]:
         return {}
 
     aliases: dict[str, str] = {}
+    ambiguous_aliases: set[str] = set()
     for raw_canonical, raw_aliases in aliases_by_canonical.items():
         if not isinstance(raw_canonical, str):
             continue
@@ -88,6 +89,8 @@ def load_figure_kind_aliases(path: Path | None = None) -> dict[str, str]:
             alias = raw_alias.strip().casefold()
             if alias == canonical_label.casefold():
                 continue
+            if alias in ambiguous_aliases:
+                continue
             previous = aliases.get(alias)
             if previous is not None and previous != canonical_label:
                 logger.warning(
@@ -95,6 +98,8 @@ def load_figure_kind_aliases(path: Path | None = None) -> dict[str, str]:
                     raw_alias,
                     source,
                 )
+                aliases.pop(alias, None)
+                ambiguous_aliases.add(alias)
                 continue
             aliases[alias] = canonical_label
     return aliases
