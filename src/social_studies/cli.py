@@ -277,6 +277,19 @@ def _resolve_enum(value: str | None, enum_cls: type) -> object | None:
     raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
 
 
+def _derive_iccs_axes(question: ExamQuestion, params: SampledParams) -> None:
+    """Stamp sampled ICCS tags after parsed 小題 have been assembled."""
+    if params.內容領域 is not None:
+        question.內容領域 = params.內容領域.value
+
+    cognitive_processes: list[str] = []
+    for subquestion in question.subquestions:
+        process = subquestion.認知歷程
+        if process and process not in cognitive_processes:
+            cognitive_processes.append(process)
+    question.認知歷程 = cognitive_processes
+
+
 def _parse_subquestion(
     sq_raw: dict,
     question_id: str,
@@ -311,6 +324,15 @@ def _parse_subquestion(
                 LearningContentRef(編碼=code, 說明=LP_INSTRUCTIONS.get(code, ""))
                 for code in cfg.learning_performance
             ]
+        cognitive_process = (
+            cfg.認知歷程
+            if cfg is not None and cfg.認知歷程 is not None
+            else (
+                params.認知歷程_pool[i - 1]
+                if i - 1 < len(params.認知歷程_pool)
+                else sq_raw.get("認知歷程")
+            )
+        )
         rubric = [
             RubricEntry(
                 code=str(r.get("code", "")),
@@ -344,6 +366,7 @@ def _parse_subquestion(
             出題指示=(
                 cfg.instruction if cfg and cfg.instruction else sq_raw.get("出題指示")
             ),
+            認知歷程=cognitive_process,
             題型=sq_raw.get("題型", params.題型[0].value if params.題型 else "選擇題"),
             題目=sq_raw.get("題目", ""),
             答案=sq_raw.get("答案", ""),
@@ -743,6 +766,7 @@ def _ss_make_fallback_sq_plans(params: SampledParams, n: int) -> list[dict]:
 def _ss_ensure_visual_spec(
     question: ExamQuestion, params: SampledParams, client: Any,
 ) -> None:
+    _derive_iccs_axes(question, params)
     known_kinds = [
         cfg.figure_kind
         for cfg in params.subquestion_configs
@@ -1083,7 +1107,7 @@ def generate_one(
 ) -> ExamQuestion | str:
     """Generate a single PISA reading question set."""
     params = _with_text_word_limit(params, text_word_limit)
-    return generate_one_core(
+    result = generate_one_core(
         config=config,
         client=client,
         params=params,
@@ -1104,6 +1128,9 @@ def generate_one(
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )
+    if isinstance(result, ExamQuestion):
+        _derive_iccs_axes(result, params)
+    return result
 
 
 def build_generation_prompts(
@@ -1171,7 +1198,7 @@ def generate_with_corrections(
     core_question_callback: bool = True,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
-    return generate_with_corrections_core(
+    result = generate_with_corrections_core(
         config=config,
         client=client,
         params=params,
@@ -1193,6 +1220,9 @@ def generate_with_corrections(
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )
+    if isinstance(result, ExamQuestion):
+        _derive_iccs_axes(result, params)
+    return result
 
 
 def main(argv: list[str] | None = None) -> None:

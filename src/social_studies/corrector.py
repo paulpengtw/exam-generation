@@ -20,6 +20,8 @@ FROZEN_TOP_LEVEL_FIELDS: frozenset[str] = frozenset(
         "閱讀歷程",
         "文本形式",
         "題目內容類型",
+        "內容領域",
+        "認知歷程",
         "難度",
         "取材來源",
         "圖片",
@@ -38,6 +40,7 @@ FROZEN_SUBQUESTION_FIELDS: frozenset[str] = frozenset(
         "學習表現",
         "出題概念",
         "出題指示",
+        "認知歷程",
         "題型",
         "題目內容類型",
         "image_generation_mode",
@@ -75,7 +78,7 @@ def _ss_rebuild_subquestion(
 
     Frozen fields (those that must not change across correction passes):
     ``id``, ``序號``, ``年級``, ``科目``, ``核心素養``, ``學習內容``,
-    ``學習表現``, ``出題概念``, ``出題指示``, ``題型``, ``題目內容類型``,
+    ``學習表現``, ``出題概念``, ``出題指示``, ``認知歷程``, ``題型``, ``題目內容類型``,
     ``image_generation_mode``, ``圖片``, ``chart_spec``.
 
     The rubric is read tolerantly via :func:`parse_rubric`, accepting both
@@ -104,6 +107,7 @@ def _ss_rebuild_subquestion(
             學習表現=original.學習表現 if original else [],
             出題概念=original.出題概念 if original else sq_raw.get("出題概念", ""),
             出題指示=original.出題指示 if original else sq_raw.get("出題指示"),
+            認知歷程=original.認知歷程 if original else sq_raw.get("認知歷程"),
             題型=original.題型 if original else sq_raw.get("題型", ""),
             題目=sq_raw.get("題目", original.題目 if original else ""),
             答案=sq_raw.get("答案", original.答案 if original else ""),

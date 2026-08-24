@@ -17,6 +17,8 @@ from src.social_studies.curriculum_loader import (
 )
 from src.social_studies.schema_loader import load_grades, load_learning_stage, load_schemas
 from src.social_studies.schemas import (
+    CognitiveProcess,
+    ContentDomain,
     CoreCompetency,
     QuestionContext,
     QuestionSetType,
@@ -37,6 +39,7 @@ _CONTENT_TYPE_VALUES: list[str] = [
 _RANDOM_CONTENT_TYPE_VALUES: list[str] = [
     v for v in _CONTENT_TYPE_VALUES if v != "customized"
 ]
+_MAX_SUBQUESTION_SLOTS = 7
 _CC_DATA: dict = load_core_competencies()
 _ALLOWED_COMPETENCY_VALUES: list[str] = allowed_competencies(_CC_DATA, _LEARNING_STAGE)
 _ALLOWED_COMPETENCIES: list[CoreCompetency] = [CoreCompetency(v) for v in _ALLOWED_COMPETENCY_VALUES]  # type: ignore[misc]
@@ -182,6 +185,17 @@ def sample_params(
         type_count = rng.randint(1, min(3, len(q_type_pool)))
         selected_q_types = rng.sample(q_type_pool, type_count)
 
+    selected_content_domain = rng.choice(list(ContentDomain))
+    slot_count = sub_question_count or len(resolved_configs) or _MAX_SUBQUESTION_SLOTS
+    selected_cognitive_processes = [
+        rng.choice(list(CognitiveProcess)).value for _ in range(slot_count)
+    ]
+    if resolved_configs:
+        resolved_configs = [
+            cfg.model_copy(update={"認知歷程": selected_cognitive_processes[i]})
+            for i, cfg in enumerate(resolved_configs)
+        ]
+
     return SampledParams(
         grade=selected_grade,
         seed=seed,
@@ -192,9 +206,11 @@ def sample_params(
         文本形式=selected_text_form,
         題目內容類型=selected_content_type,
         科目=selected_subject,
+        內容領域=selected_content_domain,
         核心素養=selected_competency,
         學習內容_pool=selected_lc_pool,
         學習表現_pool=selected_lp_pool,
+        認知歷程_pool=selected_cognitive_processes,
         sub_question_count=sub_question_count,
         question_word_limit=question_word_limit,
         option_word_limit=option_word_limit,

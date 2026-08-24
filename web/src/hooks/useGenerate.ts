@@ -30,6 +30,7 @@ export interface SubQuestion {
   核心素養: string[];
   學習內容: LearningContentItem[];
   學習表現: LearningContentItem[];
+  認知歷程?: string;
   出題概念: string;
   題型: string;
   題目: string;
@@ -53,6 +54,8 @@ export interface ExamQuestion {
   學習內容?: LearningContentItem[];
   閱讀歷程?: string[];
   文本形式?: string;
+  內容領域?: string;
+  認知歷程?: string[];
   題目內容類型?: string;
   情境子類別?: string;
   科學能力?: string[];

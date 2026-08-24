@@ -27,9 +27,29 @@ QuestionType = _enums["題型"]
 ReadingProcess = _enums["閱讀歷程"]
 TextForm = _enums["文本形式"]
 QuestionSubject = _enums["科目"]
+CognitiveProcess = _enums["認知歷程"]
+ContentDomain = _enums["內容領域"]
 CoreCompetency = build_core_competency_enum(load_core_competencies())
 _GRADES: list[int] = load_grades(_schemas)
 FIGURE_KIND_VOCABULARY: tuple[str, ...] = CANONICAL_FIGURE_KINDS
+_COGNITIVE_PROCESS_VALUES = frozenset(member.value for member in CognitiveProcess)
+_CONTENT_DOMAIN_VALUES = frozenset(member.value for member in ContentDomain)
+
+
+def _validate_cognitive_process(value: str | None) -> str | None:
+    if value is not None and value not in _COGNITIVE_PROCESS_VALUES:
+        raise ValueError(
+            f"認知歷程 must be one of {sorted(_COGNITIVE_PROCESS_VALUES)}, got {value!r}"
+        )
+    return value
+
+
+def _validate_content_domain(value: str | None) -> str | None:
+    if value is not None and value not in _CONTENT_DOMAIN_VALUES:
+        raise ValueError(
+            f"內容領域 must be one of {sorted(_CONTENT_DOMAIN_VALUES)}, got {value!r}"
+        )
+    return value
 
 
 class ImageSpec(BaseModel):
@@ -107,8 +127,14 @@ class SubQuestionConfig(BaseModel):
     question_word_limit: int | None = None
     option_word_limit: int | None = None
     text_word_limit: int | None = None
+    認知歷程: str | None = None
     learning_content: list[str] = Field(default_factory=list)
     learning_performance: list[str] = Field(default_factory=list)
+
+    @field_validator("認知歷程")
+    @classmethod
+    def cognitive_process_must_be_known(cls, value: str | None) -> str | None:
+        return _validate_cognitive_process(value)
 
 
 class CreativeBrief(BaseModel):
@@ -137,6 +163,7 @@ class SubQuestion(BaseModel):
     學習表現: list[LearningContentRef] = Field(default_factory=list)
     出題概念: str = ""
     出題指示: str | None = None
+    認知歷程: str | None = None
     題型: QuestionType  # type: ignore[valid-type]
     題目: str
     答案: str = ""
@@ -147,6 +174,11 @@ class SubQuestion(BaseModel):
     image_generation_mode: Literal["html", "gpt_image"] | None = None
     圖片: str | None = None
     chart_spec: ChartSpec | None = None
+
+    @field_validator("認知歷程")
+    @classmethod
+    def cognitive_process_must_be_known(cls, value: str | None) -> str | None:
+        return _validate_cognitive_process(value)
 
     # 建構這一小題時所用的 各小題配置 索引（PLAN 索引，1 起算，不進 JSON）。
     # `序號` 是模型自報的，可能錯位或重複；要沿用同一格 各小題配置 的下游
@@ -181,6 +213,8 @@ class ExamQuestion(BaseModel):
     閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
     文本形式: TextForm  # type: ignore[valid-type]
     題目內容類型: str | None = None
+    內容領域: str | None = None
+    認知歷程: list[str] = Field(default_factory=list)
 
     # Legacy flat arrays retained for backward compatibility with verifier / corrector
     題目: list[str] = Field(default_factory=list)
@@ -190,6 +224,18 @@ class ExamQuestion(BaseModel):
     chart_spec: ChartSpec | None = None
     verification: VerificationResult | None = None
     metadata: QuestionMetadata | None = None
+
+    @field_validator("內容領域")
+    @classmethod
+    def content_domain_must_be_known(cls, value: str | None) -> str | None:
+        return _validate_content_domain(value)
+
+    @field_validator("認知歷程")
+    @classmethod
+    def cognitive_processes_must_be_known(cls, value: list[str]) -> list[str]:
+        for process in value:
+            _validate_cognitive_process(process)
+        return value
 
 
 class SampledParams(BaseModel):
@@ -214,9 +260,11 @@ class SampledParams(BaseModel):
     文本形式: TextForm  # type: ignore[valid-type]
     題目內容類型: str = ""  # top-level 文本素材類型 (renamed in UI for #101)
     科目: QuestionSubject  # type: ignore[valid-type]
+    內容領域: ContentDomain | None = None  # type: ignore[valid-type]
     核心素養: list[CoreCompetency] = Field(default_factory=list)  # type: ignore[valid-type]
     學習內容_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-3)
     學習表現_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-2)
+    認知歷程_pool: list[str] = Field(default_factory=list)
     # #100: 子題 count and word limits
     sub_question_count: int | None = None
     question_word_limit: int | None = None
@@ -230,3 +278,10 @@ class SampledParams(BaseModel):
     difficulty: Difficulty = DEFAULT_DIFFICULTY
     # #114: per-batch Opus 創意 brief; None when planning is disabled or unavailable
     creative_brief: CreativeBrief | None = None
+
+    @field_validator("認知歷程_pool")
+    @classmethod
+    def cognitive_process_pool_must_be_known(cls, value: list[str]) -> list[str]:
+        for process in value:
+            _validate_cognitive_process(process)
+        return value
