@@ -278,6 +278,19 @@ def _ns_validate_params(params: Any) -> None:
 
 def _ss_validate_params(params: Any) -> None:
     from src.social_studies.schemas import ContentDomain  # noqa: PLC0415
+    from src.social_studies.schema_loader import load_schemas  # noqa: PLC0415
+
+    question_type_values = {
+        row["value"]
+        for row in load_schemas().get("題型", [])
+        if isinstance(row, dict) and isinstance(row.get("value"), str)
+    }
+    invalid_q_types = sorted(set(params.q_type or []) - question_type_values)
+    if invalid_q_types:
+        raise ValueError(
+            "q_type contains retired or unknown social-studies question type(s): "
+            + ", ".join(invalid_q_types)
+        )
 
     if params.content_domain is not None and params.content_domain not in {
         member.value for member in ContentDomain
@@ -286,11 +299,24 @@ def _ss_validate_params(params: Any) -> None:
             f"content_domain {params.content_domain!r} is not a valid social-studies domain"
         )
 
+    try:
+        decoded = json.loads(params.subquestion_configs) if params.subquestion_configs else []
+    except (TypeError, json.JSONDecodeError):
+        decoded = []
+    if isinstance(decoded, list):
+        retired_pins = {
+            question_type
+            for item in decoded
+            if isinstance(item, dict)
+            for question_type in [item.get("question_type")]
+            if question_type == "封閉式建構反應題"
+        }
+        if retired_pins:
+            raise ValueError(
+                "封閉式建構反應題已退役（retired），新的生成請求不得釘選此題型"
+            )
+
     if params.target_surface in {None, "紙本"}:
-        try:
-            decoded = json.loads(params.subquestion_configs) if params.subquestion_configs else []
-        except (TypeError, json.JSONDecodeError):
-            decoded = []
         if isinstance(decoded, list):
             digital_only = set(ss_digital_only_question_types())
             pinned_types = {

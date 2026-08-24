@@ -30,6 +30,8 @@ VERIFICATION_SYSTEM_PROMPT = f"""\
 3. 採取「寬鬆通過、只攔重大問題」的標準：
    - 如果提供的答案或解題分析能被文本合理支持，即使你的答案措辭不同，也應視為通過。
    - 開放式題目可有多種合理回答；只要評分規準（rubric）清楚、公平、能涵蓋合理答案，就應視為通過。
+   - 選擇題採 0/1 計分（答對 1 分、答錯 0 分），並應以認知偏誤角度說明誘答分析。
+   - 開放式建構反應題採每題專屬評分指引，分數使用 0..N 並允許部分給分；每一分數級距應有 1-2 個學生作答實例，包含正確與錯誤示例。
    - 小幅措辭、格式、詳略、誘答力不足但不影響作答的問題，請在 details 提醒，但不要因此判定 failed。
    - 只有在答案明顯無文本支持、與文本矛盾、選項正解不存在、題目嚴重歧義、
      評分規準缺失或不公平時，才判定 failed。
@@ -234,6 +236,26 @@ def _ss_content_domain_code_check_hook(
     return result
 
 
+def _ss_rubric_scale_check_hook(
+    question: ExamQuestion,
+    result: VerificationResult,
+    client: LLMClient,
+) -> VerificationResult:
+    """Reject the unambiguous legacy 0X code on new ICCS-tagged records."""
+    del client
+    issues = [
+        f"第{subquestion.序號}題使用舊版評分代號 0X；有認知歷程的新紀錄必須使用每題專屬 0..N 評分指引"
+        for subquestion in question.subquestions
+        if subquestion.認知歷程
+        and any(entry.code == "0X" for entry in subquestion.評分規準)
+    ]
+    if issues:
+        result.details = result.details.rstrip()
+        result.details += "\n\n[評分規準檢核] " + "；".join(issues)
+        result.passed = False
+    return result
+
+
 _ICCS_THEME_ADVISORY_MARKER = "[內容領域主題檢視（僅供參考）]"
 
 
@@ -296,6 +318,7 @@ def _ss_fact_check_hook(
 
 # Declared on the subject spec: hooks run in this order after the LLM verdict.
 _SS_POST_VERIFY_HOOKS: list[PostVerifyHook] = [
+    _ss_rubric_scale_check_hook,
     _ss_content_domain_code_check_hook,
     _ss_content_domain_theme_advisory_hook,
     _ss_fact_check_hook,

@@ -124,7 +124,6 @@ const SOCIAL_SCHEMA = {
   題型種類: [{ value: "題組題", instruction: "" }],
   題型: [
     { value: "選擇題", instruction: "" },
-    { value: "封閉式建構反應題", instruction: "" },
     { value: "開放式建構反應題", instruction: "" },
   ],
   科目: [
@@ -154,7 +153,7 @@ const SOCIAL_ROWS_ONE = [
     learning_performance: ["社1a-Ⅳ-1"],
   },
   {
-    question_type: "封閉式建構反應題",
+    question_type: "開放式建構反應題",
     instruction: "第二小題指示",
     content_type: "純文字",
     image_generation_mode: "gpt_image",
@@ -179,7 +178,7 @@ const SOCIAL_ROWS_ONE = [
 
 const SOCIAL_ROWS_TWO = [
   {
-    question_type: "封閉式建構反應題",
+    question_type: "開放式建構反應題",
     instruction: "第二題第一小題",
     content_type: "純文字",
     image_generation_mode: "html",

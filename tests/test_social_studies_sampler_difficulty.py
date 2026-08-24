@@ -50,12 +50,12 @@ def test_subquestion_config_pin_wins_sampler_draw() -> None:
     # blank slots are filled from the full QuestionType pool.
     from src.social_studies.schemas import SubQuestionConfig
 
-    cfg = SubQuestionConfig(question_type=QuestionType("封閉式建構反應題"))
+    cfg = SubQuestionConfig(question_type=QuestionType("開放式建構反應題"))
     p = sample_params(
         seed=1,
         sub_question_count=3,
         subquestion_configs=[cfg, {}, {}],
     )
-    assert p.subquestion_configs[0].question_type.value == "封閉式建構反應題"
+    assert p.subquestion_configs[0].question_type.value == "開放式建構反應題"
     fill_types = {c.question_type.value for c in p.subquestion_configs[1:]}
     assert fill_types <= {t.value for t in QuestionType}

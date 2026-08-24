@@ -168,6 +168,7 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
       question.subquestions!.forEach((sub) => {
         const subMeta = [
           `${sub.年級}年級`,
+          sub.題型,
           ...sub.科目,
           ...sub.核心素養,
           ...sub.學習內容.map((lc) => lc.編碼),

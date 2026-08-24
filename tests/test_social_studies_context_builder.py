@@ -88,7 +88,7 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
                 "instruction": "請聚焦在資料判讀與因果推論",
             },
             {
-                "question_type": "封閉式建構反應題",
+                "question_type": "開放式建構反應題",
                 "content_type": "純文字",
                 "question_word_limit": 120,
             },
@@ -106,7 +106,7 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
     assert "文本素材類型=含圖片，圖片生成模式=gpt_image" in prompt
     assert "題目字數上限=80，選項字數上限=30" in prompt
     assert (
-        "第2小題：題型=封閉式建構反應題，文本素材類型=純文字，"
+        "第2小題：題型=開放式建構反應題，文本素材類型=純文字，"
         "圖片生成模式=html，題目字數上限=120"
     ) in prompt
     assert "第3小題：題型=" in prompt

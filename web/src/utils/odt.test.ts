@@ -44,8 +44,35 @@ describe("buildExamOdt ICCS metadata", () => {
     expect(metadataLines.some((line) =>
       line.includes("Civic Principles") && line.includes(knowing) && line.includes(reasoning),
     )).toBe(true);
-    expect(metadataLines).toContain(`8年級 ｜ 地理 ｜ ${knowing}`);
-    expect(metadataLines).toContain(`9年級 ｜ 公民 ｜ ${reasoning}`);
+    expect(metadataLines).toContain(`8年級 ｜ 選擇題 ｜ 地理 ｜ ${knowing}`);
+    expect(metadataLines).toContain(`9年級 ｜ 選擇題 ｜ 公民 ｜ ${reasoning}`);
+  });
+
+  it("renders native and legacy rubric codes plus a retired legacy type as text", async () => {
+    const sub: SubQuestion = {
+      id: "legacy-rubric-sq1", 序號: 1, 年級: 8, 科目: ["地理"], 核心素養: [], 學習內容: [], 學習表現: [],
+      出題概念: "", 題型: "封閉式建構反應題", 題目: "Q?", 答案: "B", 答案解析: "explain",
+      評分規準: [
+        { code: "0", 規準說明: "No credit" },
+        { code: "1", 規準說明: "Partial credit" },
+        { code: "2", 規準說明: "Legacy full credit" },
+        { code: "3", 規準說明: "Native advanced" },
+        { code: "0X", 規準說明: "Legacy unanswered" },
+      ],
+    };
+    const question: ExamQuestion = {
+      id: "legacy-rubric-ss1", 情境: ["公共"], 題型種類: "題組題", 題型: "選擇題",
+      核心問題: "c", 文本: "p", subquestions: [sub], 題目: ["p", "Q?"], 正確解題分析: ["B"],
+    };
+
+    const xml = await readContentXml(await buildExamOdt("t", [question]));
+
+    for (const text of [
+      "封閉式建構反應題", "[0] No credit", "[1] Partial credit", "[2] Legacy full credit",
+      "[3] Native advanced", "[0X] Legacy unanswered",
+    ]) {
+      expect(xml).toContain(text);
+    }
   });
 
   it("keeps legacy social-studies ODT metadata byte-identical without ICCS fields", async () => {
@@ -77,7 +104,7 @@ describe("buildExamOdt ICCS metadata", () => {
       <text:p text:style-name="Heading2">文本</text:p>
       <text:p text:style-name="Standard">p</text:p>
       <text:p text:style-name="Heading2">第1題</text:p>
-      <text:p text:style-name="MetaLine">8年級 ｜ 地理</text:p>
+      <text:p text:style-name="MetaLine">8年級 ｜ 選擇題 ｜ 地理</text:p>
       <text:p text:style-name="Standard">Q?</text:p>
       <text:p text:style-name="MetaLine">答案：B</text:p>
       <text:p text:style-name="MetaLine">解析：explain</text:p>
