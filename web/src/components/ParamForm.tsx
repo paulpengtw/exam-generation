@@ -890,6 +890,12 @@ export default function ParamForm({
   const previewRequestedRef = useRef(false);
   const previewRefetchSeqRef = useRef(0);
   const [previewRefetchLoading, setPreviewRefetchLoading] = useState(false);
+  // #446: per-題組 stale-preview tracking. Keyed by 題組 index.
+  const [stalePreviewIndices, setStalePreviewIndices] = useState<Set<number>>(new Set());
+  // Accumulates which 題組 indices were edited since the last refetch effect captured them.
+  const pendingEditedIndicesRef = useRef<Set<number>>(new Set());
+  // Params from the last failed refetch; used by the retry handler.
+  const [previewRetryParams, setPreviewRetryParams] = useState<Parameters<typeof previewGenerate>[0] | null>(null);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
@@ -1198,19 +1204,26 @@ export default function ParamForm({
   // Debounced re-fetch triggered by 確認頁修改 (#445).
   // Gates on hasPendingConfirmationEdits so that opening the confirmation screen
   // (which sets pendingPerQuestionParams) does not schedule a spurious second fetch.
+  // #446: captures which 題組 indices were edited so failures can be scoped per-題組.
   useEffect(() => {
     if (!pendingParams || !pendingPerQuestionParams || !hasPendingConfirmationEdits) return;
+
+    // Snapshot the edited indices accumulated since the last effect run, then
+    // reset the accumulator so the next edit cycle starts fresh.
+    const capturedEditedIndices = new Set(pendingEditedIndicesRef.current);
+    pendingEditedIndicesRef.current = new Set();
 
     const seq = ++previewRefetchSeqRef.current;
 
     const timeoutId = window.setTimeout(() => {
       if (seq !== previewRefetchSeqRef.current) return; // superseded before timeout fired
       setPreviewRefetchLoading(true);
-      const params: typeof pendingParams = {
+      const formParams: typeof pendingParams = {
         ...pendingParams,
         per_question_params: JSON.stringify(pendingPerQuestionParams),
       };
-      void previewGenerate(toGenerateParams(subject, params))
+      const fetchParams = toGenerateParams(subject, formParams);
+      void previewGenerate(fetchParams)
         .then(({ prompts }) => {
           if (seq !== previewRefetchSeqRef.current) return; // superseded
           if (
@@ -1232,10 +1245,16 @@ export default function ParamForm({
             setPromptPreviews(prompts);
           }
           setPreviewRefetchLoading(false);
+          // #446: clear stale state on success
+          setStalePreviewIndices(new Set());
+          setPreviewRetryParams(null);
         })
         .catch(() => {
           if (seq !== previewRefetchSeqRef.current) return;
           setPreviewRefetchLoading(false);
+          // #446: mark only the edited 題組 as stale; store params for retry
+          setStalePreviewIndices((prev) => new Set([...prev, ...capturedEditedIndices]));
+          setPreviewRetryParams(fetchParams);
         });
     }, 500);
 
@@ -2268,6 +2287,10 @@ export default function ParamForm({
     const usingHistoryPerQuestionParams = preserveHistoryPerQuestionParams;
     setPendingPerQuestionParams(perQuestionParams);
     setHasPendingConfirmationEdits(false);
+    // #446: reset stale state when the confirmation screen is (re-)opened
+    setStalePreviewIndices(new Set());
+    setPreviewRetryParams(null);
+    pendingEditedIndicesRef.current = new Set();
     setPendingResolvedSubquestionConfigs(
       usingHistoryPerQuestionParams
         ? perQuestionParams.map((params) =>
@@ -2305,6 +2328,9 @@ export default function ParamForm({
     setPendingParams(null);
     setPendingPerQuestionParams(null);
     setHasPendingConfirmationEdits(false);
+    // #446: clear stale state on submit
+    setStalePreviewIndices(new Set());
+    setPreviewRetryParams(null);
     onSubmit(submittedParams);
   }
 
@@ -2313,6 +2339,8 @@ export default function ParamForm({
     subquestionIndex: number,
     patch: Partial<SubQuestionConfig>,
   ) {
+    // #446: record which 題組 index was edited for per-題組 stale scoping
+    pendingEditedIndicesRef.current.add(questionIndex);
     setHasPendingConfirmationEdits(true);
     setPendingPerQuestionParams((current) => {
       const perQuestionParams = current ?? parsePerQuestionParams(pendingParams?.per_question_params);
@@ -2437,6 +2465,45 @@ export default function ParamForm({
       }
       return next;
     });
+  }
+
+  // #446: retry handler — re-runs the last failed refetch using stored params.
+  // On success, clears stale state. On failure, keeps the stale badge and
+  // allows the user to retry again.
+  function retryPreviewFetch() {
+    if (!previewRetryParams || previewRefetchLoading) return;
+    const seq = ++previewRefetchSeqRef.current;
+    setPreviewRefetchLoading(true);
+    void previewGenerate(previewRetryParams)
+      .then(({ prompts }) => {
+        if (seq !== previewRefetchSeqRef.current) return;
+        if (
+          Array.isArray(prompts) &&
+          prompts.every((prompt) => (
+            Number.isInteger(prompt?.index) &&
+            prompt.index >= 0 &&
+            (
+              prompt.subquestion_index === undefined ||
+              (
+                Number.isInteger(prompt.subquestion_index) &&
+                prompt.subquestion_index >= 0
+              )
+            ) &&
+            typeof prompt?.system_prompt === "string" &&
+            typeof prompt?.user_prompt === "string"
+          ))
+        ) {
+          setPromptPreviews(prompts);
+        }
+        setPreviewRefetchLoading(false);
+        setStalePreviewIndices(new Set());
+        setPreviewRetryParams(null);
+      })
+      .catch(() => {
+        if (seq !== previewRefetchSeqRef.current) return;
+        setPreviewRefetchLoading(false);
+        // Leave stale badge and retry params so the user can retry again
+      });
   }
 
   if (pendingParams) {
@@ -2577,6 +2644,9 @@ export default function ParamForm({
                 (preview) => preview.index === index && preview.subquestion_index !== undefined,
               )
               .sort((a, b) => a.subquestion_index! - b.subquestion_index!);
+            // #446: stale badge — true when this 題組's preview is out of date
+            // due to a failed re-fetch triggered by a 確認頁修改 on this 題組.
+            const isStale = stalePreviewIndices.has(index);
             return (
               <section
                 key={index}
@@ -2585,6 +2655,21 @@ export default function ParamForm({
                 className="rounded-lg border border-gray-200 bg-white p-4"
               >
                 <h3 className="mb-3 font-semibold text-gray-800">{heading}</h3>
+                {isStale && (
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-amber-700">
+                      {t("form.confirm_preview_stale_badge")}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={retryPreviewFetch}
+                      disabled={previewRefetchLoading}
+                      className="rounded border border-amber-400 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {t("form.confirm_preview_retry")}
+                    </button>
+                  </div>
+                )}
                 <dl className="space-y-2">
                   {perQuestionRows.map(({ key, label }) => {
                       const value = questionParams[key];
@@ -2769,6 +2854,9 @@ export default function ParamForm({
                 setPendingPerQuestionParams(null);
                 setHasPendingConfirmationEdits(false);
                 setConfirmInvalidFields(new Map());
+                // #446: clear stale state when navigating back to the form
+                setStalePreviewIndices(new Set());
+                setPreviewRetryParams(null);
               }}
               className="rounded border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 hover:bg-gray-50"
             >
