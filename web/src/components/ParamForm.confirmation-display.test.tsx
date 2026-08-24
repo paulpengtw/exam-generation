@@ -1448,7 +1448,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
       "題目字數限制: 不限",
       "選項字數限制: 不限",
       "文本字數限制: 不限",
-      "Reporting Scale: （隨機）",
       "學習內容: （沿用全域設定）",
       "學習表現: （沿用全域設定）",
     ];
@@ -1467,7 +1466,130 @@ describe("ParamForm 發送前確認 display semantics", () => {
       expect(within(questionType.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
       expect(card.getByText("出題指示", { selector: "label" })).toBeInTheDocument();
       expect(card.getByPlaceholderText("例如：請聚焦在資料判讀與因果推論")).toHaveValue("");
+      // Reporting Scale is now an editable select on confirmation cards
+      const reportingScaleSelect = card.getByLabelText("Reporting Scale");
+      expect(reportingScaleSelect).toHaveValue("");
+      expect(within(reportingScaleSelect.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
     }
+  });
+
+  it("renders an editable Reporting Scale select with exactly eight PISA levels in 自然科學 確認卡", async () => {
+    // Criterion 1: 自然科學 cards render an editable Reporting Scale select with exactly the eight PISA levels
+    getSchemasMock.mockResolvedValue(SCIENCE_SCHEMA);
+    await openConfirmation("natural_sciences", { sub_question_count: 3, subquestion_configs: [{}, {}, {}] });
+    const question = within(screen.getByRole("region", { name: "第1題" }));
+    const cards = question.getAllByRole("listitem");
+    expect(cards).toHaveLength(3);
+    for (const card of cards) {
+      const reportingScaleSelect = within(card).getByLabelText("Reporting Scale");
+      expect(reportingScaleSelect).toBeInTheDocument();
+      expect(
+        Array.from(reportingScaleSelect.querySelectorAll("option"), (o) => (o as HTMLOptionElement).value),
+      ).toEqual(["", "1c", "1b", "1a", "2", "3", "4", "5", "6"]);
+    }
+  });
+
+  it("does not render editable Reporting Scale select in 數學 確認卡", async () => {
+    // Criterion 2 (negative): 數學 cards never render the control
+    await openConfirmation("math");
+    expect(screen.queryByLabelText("Reporting Scale")).not.toBeInTheDocument();
+  });
+
+  it("does not render editable Reporting Scale select in 社會領域 確認卡", async () => {
+    // Criterion 2 (negative): 社會領域 cards never render the control
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    await openConfirmation("social_studies", {
+      sub_question_count: 3,
+      subquestion_configs: [{}, {}, {}],
+      core_question: "已提供的核心問題",
+    });
+    const question = within(screen.getByRole("region", { name: "第1題" }));
+    const cards = question.getAllByRole("listitem");
+    expect(cards).toHaveLength(3);
+    for (const card of cards) {
+      expect(within(card).queryByLabelText("Reporting Scale")).not.toBeInTheDocument();
+    }
+  });
+
+  it("editing Reporting Scale flips badge amber→green and lands in the correct subquestion_configs row on 確認送出", async () => {
+    // Criterion 3: Editing flips the badge and sends correct per-題組 subquestion_configs
+    getSchemasMock.mockResolvedValue(SCIENCE_SCHEMA);
+    const onSubmit = vi.fn();
+    await openConfirmation("natural_sciences", {
+      count: 2,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    }, onSubmit);
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    const secondQuestion = within(screen.getByRole("region", { name: "第2題" }));
+    const firstCards = firstQuestion.getAllByRole("listitem");
+    const secondCards = secondQuestion.getAllByRole("listitem");
+    const firstCardFirstScale = within(firstCards[0]).getByLabelText("Reporting Scale");
+    const firstCardSecondScale = within(firstCards[1]).getByLabelText("Reporting Scale");
+    const secondCardFirstScale = within(secondCards[0]).getByLabelText("Reporting Scale");
+
+    expect(firstCardFirstScale).toHaveValue("");
+    expect(within(firstCardFirstScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+
+    fireEvent.change(firstCardFirstScale, { target: { value: "3" } });
+
+    expect(firstCardFirstScale).toHaveValue("3");
+    expect(within(firstCardFirstScale.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(within(firstCardSecondScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(within(secondCardFirstScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    const submittedPerQuestion = JSON.parse(
+      onSubmit.mock.calls[0][0].per_question_params,
+    ) as Array<{ subquestion_configs: string }>;
+    const firstQConfigs = JSON.parse(submittedPerQuestion[0].subquestion_configs) as Array<Record<string, unknown>>;
+    const secondQConfigs = JSON.parse(submittedPerQuestion[1].subquestion_configs) as Array<Record<string, unknown>>;
+
+    expect(firstQConfigs[0]).toMatchObject({ reporting_scale: "3" });
+    expect(firstQConfigs[1]).not.toHaveProperty("reporting_scale");
+    expect(firstQConfigs[2]).not.toHaveProperty("reporting_scale");
+    expect(secondQConfigs[0]).not.toHaveProperty("reporting_scale");
+  });
+
+  it("keeps untouched Reporting Scale values and badges unchanged after a 確認頁修改", async () => {
+    // Criterion 4: Untouched 小題 unchanged
+    getSchemasMock.mockResolvedValue(SCIENCE_SCHEMA);
+    await openConfirmation("natural_sciences", {
+      count: 1,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [
+        { reporting_scale: "4" },
+        {},
+        {},
+      ],
+    });
+
+    const question = within(screen.getByRole("region", { name: "第1題" }));
+    const cards = question.getAllByRole("listitem");
+    const firstScale = within(cards[0]).getByLabelText("Reporting Scale");
+    const secondScale = within(cards[1]).getByLabelText("Reporting Scale");
+    const thirdScale = within(cards[2]).getByLabelText("Reporting Scale");
+
+    expect(firstScale).toHaveValue("4");
+    expect(within(firstScale.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(secondScale).toHaveValue("");
+    expect(within(secondScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(thirdScale).toHaveValue("");
+    expect(within(thirdScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+
+    // Editing the second card should not affect the first or third
+    fireEvent.change(secondScale, { target: { value: "2" } });
+    expect(firstScale).toHaveValue("4");
+    expect(within(firstScale.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(secondScale).toHaveValue("2");
+    expect(within(secondScale.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(thirdScale).toHaveValue("");
+    expect(within(thirdScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
   });
 
   it("renders blank-everything confirmation for 數學 without （無）", async () => {

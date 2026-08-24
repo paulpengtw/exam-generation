@@ -55,6 +55,51 @@ export function SubQuestionInstructionField({
   );
 }
 
+export interface SubQuestionReportingScaleFieldProps {
+  config: SubQuestionConfig;
+  onChange: (patch: Partial<SubQuestionConfig>) => void;
+  badge?: {
+    label: string;
+    className: string;
+  };
+}
+
+export function SubQuestionReportingScaleField({
+  config,
+  onChange,
+  badge,
+}: SubQuestionReportingScaleFieldProps) {
+  const reportingScaleId = useId();
+  const t = useT();
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={reportingScaleId} className="block text-xs text-gray-500">
+          {t("form.reporting_scale")}
+        </label>
+        {badge && <span className={badge.className}>{badge.label}</span>}
+      </div>
+      <select
+        id={reportingScaleId}
+        value={config.reporting_scale ?? ""}
+        onChange={(e) => onChange({ reporting_scale: e.target.value || undefined })}
+        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+      >
+        <option value="">（隨機）</option>
+        <option value="1c">等級 1c</option>
+        <option value="1b">等級 1b</option>
+        <option value="1a">等級 1a</option>
+        <option value="2">等級 2</option>
+        <option value="3">等級 3</option>
+        <option value="4">等級 4</option>
+        <option value="5">等級 5</option>
+        <option value="6">等級 6</option>
+      </select>
+    </div>
+  );
+}
+
 export interface SubQuestionQuestionTypeFieldProps {
   config: SubQuestionConfig;
   subject: string;
@@ -275,24 +320,7 @@ export default function SubQuestionConfigEditor({
         />
         <SubQuestionImageGenerationModeField config={config} onChange={onChange} />
         {subject === "natural_sciences" && (
-          <div>
-            <label className="block text-xs text-gray-500">{t("form.reporting_scale")}</label>
-            <select
-              value={config.reporting_scale || ""}
-              onChange={(e) => onChange({ reporting_scale: e.target.value || undefined })}
-              className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-            >
-              <option value="">（隨機）</option>
-              <option value="1c">等級 1c</option>
-              <option value="1b">等級 1b</option>
-              <option value="1a">等級 1a</option>
-              <option value="2">等級 2</option>
-              <option value="3">等級 3</option>
-              <option value="4">等級 4</option>
-              <option value="5">等級 5</option>
-              <option value="6">等級 6</option>
-            </select>
-          </div>
+          <SubQuestionReportingScaleField config={config} onChange={onChange} />
         )}
       </div>
       <SubQuestionInstructionField config={config} onChange={onChange} />

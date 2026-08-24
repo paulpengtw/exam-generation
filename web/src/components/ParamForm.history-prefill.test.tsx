@@ -855,7 +855,9 @@ describe("ParamForm history prefill", () => {
     );
 
     expect(await screen.findByDisplayValue("第一自然小題")).toBeInTheDocument();
-    expect(screen.getByLabelText("form.reporting_scale")).toHaveValue("3");
+    // The form-level Reporting Scale select has id="reporting_scale" (static);
+    // subquestion editor selects use useId() so multiple labels share the same text.
+    expect(screen.getAllByLabelText("form.reporting_scale")[0]).toHaveValue("3");
 
     fireEvent.click(screen.getByText("form.btn_generate"));
     fireEvent.click(await screen.findByText("form.btn_confirm_send"));
