@@ -40,6 +40,7 @@ class FigurePolicyTrailRecorder:
         self._loop = loop
         self._session_factory = session_factory
         self._lock = threading.Lock()
+        self._write_lock = asyncio.Lock()
         self._trail: list[dict[str, Any]] = []
 
     def __call__(self, entry: Any) -> None:
@@ -54,30 +55,32 @@ class FigurePolicyTrailRecorder:
             return list(self._trail)
 
     def _stage_snapshot(self, trail: list[dict[str, Any]]) -> None:
-        for attempt in range(self._MAX_STAGE_ATTEMPTS):
-            future = asyncio.run_coroutine_threadsafe(
-                self._persist(trail),
-                self._loop,
-            )
-            try:
-                future.result(timeout=10)
-                return
-            except Exception as exc:  # noqa: BLE001 — policy persistence is best effort
-                if attempt == self._MAX_STAGE_ATTEMPTS - 1:
-                    logger.warning("figure policy trail staging failed: %s", exc)
+        future = asyncio.run_coroutine_threadsafe(
+            self._persist_with_retries(trail),
+            self._loop,
+        )
+        try:
+            future.result(timeout=10)
+        except Exception as exc:  # noqa: BLE001 — policy persistence is best effort
+            logger.warning("figure policy trail staging deferred: %s", exc)
 
     async def flush(self) -> None:
         """Retry the latest prefix after all workers have stopped emitting."""
         snapshot = self.snapshot()
         if not snapshot:
             return
-        for attempt in range(self._MAX_STAGE_ATTEMPTS):
-            try:
-                await self._persist(snapshot)
-                return
-            except Exception as exc:  # noqa: BLE001 — policy persistence is best effort
-                if attempt == self._MAX_STAGE_ATTEMPTS - 1:
-                    logger.warning("figure policy trail final staging failed: %s", exc)
+        await self._persist_with_retries(snapshot)
+
+    async def _persist_with_retries(self, trail: list[dict[str, Any]]) -> None:
+        """Replace the staging prefix in callback order, retrying transient failures."""
+        async with self._write_lock:
+            for attempt in range(self._MAX_STAGE_ATTEMPTS):
+                try:
+                    await self._persist(trail)
+                    return
+                except Exception as exc:  # noqa: BLE001 — policy persistence is best effort
+                    if attempt == self._MAX_STAGE_ATTEMPTS - 1:
+                        logger.warning("figure policy trail staging failed: %s", exc)
 
     async def _persist(self, trail: list[dict[str, Any]]) -> None:
         async with self._session_factory() as session:

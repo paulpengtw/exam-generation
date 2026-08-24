@@ -373,15 +373,16 @@ async def generate_endpoint(
                 session_factory=AsyncSessionLocal,
             )
 
+        stream = generate_question_stream(
+            params,
+            config,
+            app_state,
+            user_id=user.id,
+            generation_log_id=log_id,
+            session_factory=AsyncSessionLocal,
+        )
         try:
-            async for event in generate_question_stream(
-                params,
-                config,
-                app_state,
-                user_id=user.id,
-                generation_log_id=log_id,
-                session_factory=AsyncSessionLocal,
-            ):
+            async for event in stream:
                 if event["event"] == "error":
                     status = "failed"
                     data = event.get("data", "")
@@ -393,10 +394,13 @@ async def generate_endpoint(
                 await persist_failure_once(error_msg or "Generation failed")
         except asyncio.CancelledError:
             with anyio.CancelScope(shield=True):
-                if status == "failed":
-                    await persist_failure_once(error_msg or "Generation failed")
-                else:
-                    await persist_aborted_once()
+                try:
+                    await stream.aclose()
+                finally:
+                    if status == "failed":
+                        await persist_failure_once(error_msg or "Generation failed")
+                    else:
+                        await persist_aborted_once()
             raise
         except Exception as exc:
             status = "failed"
