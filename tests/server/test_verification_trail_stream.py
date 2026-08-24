@@ -13,11 +13,15 @@ from server.config import ServerConfig
 from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SUBJECTS
-from src.common.verification_trail import VerificationTrailEntry
+from src.common.verification_trail import (
+    VerificationTrailCorrectionEntry,
+    VerificationTrailEntry,
+    VerificationTrailInitialEntry,
+)
 from src.social_studies.schemas import ExamQuestion
 
 
-@pytest.mark.parametrize(("skip_verify", "expected_trail_count"), [(False, 1), (True, 0)])
+@pytest.mark.parametrize(("skip_verify", "expected_trail_count"), [(False, 4), (True, 0)])
 def test_generate_stream_emits_each_trail_entry_with_its_exact_payload(
     tmp_path,
     skip_verify: bool,
@@ -27,18 +31,43 @@ def test_generate_stream_emits_each_trail_entry_with_its_exact_payload(
     params = GenerateParams(subject="social_studies", count=1, skip_verify=skip_verify)
     entry = VerificationTrailEntry(
         question_id="ss-trail-question",
-        passed=True,
-        details="通過。",
+        passed=False,
+        details="需要修正。",
         my_answer="A",
-        provided_answer="A",
-        answer_match=True,
+        provided_answer="B",
+        answer_match=False,
         model="verify-model",
         timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
+    entries = [
+        VerificationTrailInitialEntry(
+            question_id="ss-trail-question",
+            timestamp=datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
+            snapshot={"id": "ss-trail-question", "圖片": "question.png"},
+        ),
+        entry,
+        VerificationTrailCorrectionEntry(
+            question_id="ss-trail-question",
+            retry_index=1,
+            model="correct-model",
+            timestamp=datetime(2026, 1, 1, 0, 0, 2, tzinfo=timezone.utc),
+            snapshot={"id": "ss-trail-question", "圖片": "question.png", "答案": "fixed"},
+        ),
+        entry.model_copy(
+            update={
+                "passed": True,
+                "details": "通過。",
+                "provided_answer": "A",
+                "answer_match": True,
+                "timestamp": datetime(2026, 1, 1, 0, 0, 3, tzinfo=timezone.utc),
+            }
+        ),
+    ]
 
     def fake_do_generate(rng_params, _overrides, **kwargs):
         if kwargs["on_trail_entry"] is not None:
-            kwargs["on_trail_entry"](entry)
+            for emitted in entries:
+                kwargs["on_trail_entry"](emitted)
         sampled = rng_params
         return ExamQuestion(
             id="ss-trail-question",
@@ -47,8 +76,6 @@ def test_generate_stream_emits_each_trail_entry_with_its_exact_payload(
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )
@@ -71,4 +98,6 @@ def test_generate_stream_emits_each_trail_entry_with_its_exact_payload(
 
     assert len(trail_events) == expected_trail_count
     if expected_trail_count:
-        assert trail_events[0]["data"] == entry.model_dump(mode="json")
+        assert [event["data"] for event in trail_events] == [
+            item.model_dump(mode="json") for item in entries
+        ]

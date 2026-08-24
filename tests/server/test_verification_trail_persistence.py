@@ -19,7 +19,11 @@ from server.generate.persistence import (
 )
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SUBJECTS
-from src.common.verification_trail import VerificationTrailEntry
+from src.common.verification_trail import (
+    VerificationTrailCorrectionEntry,
+    VerificationTrailEntry,
+    VerificationTrailInitialEntry,
+)
 from src.social_studies.schemas import ExamQuestion
 
 
@@ -126,17 +130,42 @@ def test_completed_stream_persists_the_trail_emitted_by_its_worker(tmp_path) -> 
     rows: list[Any] = []
     entry = VerificationTrailEntry(
         question_id="ss-trail-question",
-        passed=True,
-        details="The answer is consistent.",
+        passed=False,
+        details="The answer needs a correction.",
         my_answer="A",
-        provided_answer="A",
-        answer_match=True,
+        provided_answer="B",
+        answer_match=False,
         model="verify-model",
         timestamp=datetime(2026, 8, 24, tzinfo=timezone.utc),
     )
+    entries = [
+        VerificationTrailInitialEntry(
+            question_id="ss-trail-question",
+            timestamp=datetime(2026, 8, 24, 0, 0, 1, tzinfo=timezone.utc),
+            snapshot={"id": "ss-trail-question", "圖片": "question.png"},
+        ),
+        entry,
+        VerificationTrailCorrectionEntry(
+            question_id="ss-trail-question",
+            retry_index=1,
+            model="correct-model",
+            timestamp=datetime(2026, 8, 24, 0, 0, 2, tzinfo=timezone.utc),
+            snapshot={"id": "ss-trail-question", "圖片": "question.png", "答案": "fixed"},
+        ),
+        entry.model_copy(
+            update={
+                "passed": True,
+                "details": "The corrected answer is consistent.",
+                "provided_answer": "A",
+                "answer_match": True,
+                "timestamp": datetime(2026, 8, 24, 0, 0, 3, tzinfo=timezone.utc),
+            }
+        ),
+    ]
 
     def fake_do_generate(rng_params, _overrides, **kwargs):
-        kwargs["on_trail_entry"](entry)
+        for emitted in entries:
+            kwargs["on_trail_entry"](emitted)
         return ExamQuestion(
             id="ss-trail-question",
             核心問題="核心問題",
@@ -144,8 +173,6 @@ def test_completed_stream_persists_the_trail_emitted_by_its_worker(tmp_path) -> 
             情境=[c.value for c in rng_params.情境],
             題型種類=rng_params.題型種類.value,
             題型=rng_params.題型[0].value,
-            閱讀歷程=[p.value for p in rng_params.閱讀歷程],
-            文本形式=rng_params.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )
@@ -175,7 +202,9 @@ def test_completed_stream_persists_the_trail_emitted_by_its_worker(tmp_path) -> 
 
     asyncio.run(collect_events())
 
-    assert rows[0].verification_trail_json == [entry.model_dump(mode="json")]
+    assert rows[0].verification_trail_json == [
+        item.model_dump(mode="json") for item in entries
+    ]
 
 
 def test_skip_verify_stream_persists_a_null_trail(tmp_path) -> None:
@@ -190,8 +219,6 @@ def test_skip_verify_stream_persists_a_null_trail(tmp_path) -> None:
             情境=[c.value for c in rng_params.情境],
             題型種類=rng_params.題型種類.value,
             題型=rng_params.題型[0].value,
-            閱讀歷程=[p.value for p in rng_params.閱讀歷程],
-            文本形式=rng_params.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )

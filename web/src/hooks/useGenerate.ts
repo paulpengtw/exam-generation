@@ -100,7 +100,7 @@ export interface ChartVerificationTrail {
   chart_details: string;
 }
 
-export interface VerificationTrailEntry {
+export interface VerificationTrailVerificationEntry {
   code: "verification_trail";
   kind: "verification";
   question_id: string;
@@ -113,6 +113,29 @@ export interface VerificationTrailEntry {
   model: string;
   timestamp: string;
 }
+
+export interface VerificationTrailInitialEntry {
+  code: "verification_trail";
+  kind: "initial";
+  question_id: string;
+  timestamp: string;
+  snapshot: Record<string, unknown>;
+}
+
+export interface VerificationTrailCorrectionEntry {
+  code: "verification_trail";
+  kind: "correction";
+  question_id: string;
+  retry_index: number;
+  model: string;
+  timestamp: string;
+  snapshot: Record<string, unknown>;
+}
+
+export type VerificationTrailEntry =
+  | VerificationTrailVerificationEntry
+  | VerificationTrailInitialEntry
+  | VerificationTrailCorrectionEntry;
 
 export type DraftPhase = "draft" | "image" | "verified" | "corrected";
 
