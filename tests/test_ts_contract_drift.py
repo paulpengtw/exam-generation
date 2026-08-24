@@ -12,7 +12,7 @@ from pathlib import Path
 
 from scripts.generate_ts_contract import generate_contract
 import pytest
-pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+pytest.importorskip("fastapi", reason="requires [web] extras: uv sync --extra web")
 
 from server.generate.models import SERVER_ONLY_GENERATE_FIELDS, GenerateParams
 from server.generate.routes import generate_endpoint

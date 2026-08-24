@@ -17,11 +17,11 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 # ── Slice 1: Config defaults and env vars ─────────────────────────────────────
 
 from src.config import Config
-pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.config import ServerConfig
 
