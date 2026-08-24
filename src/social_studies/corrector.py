@@ -46,6 +46,7 @@ FROZEN_SUBQUESTION_FIELDS: frozenset[str] = frozenset(
         "image_generation_mode",
         "圖片",
         "chart_spec",
+        "interaction",
     }
 )
 
@@ -61,7 +62,8 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 - 若 chart_verification 指出非連續文本素材錯誤 → 只修正 chart_spec 的 data/labels/description，
   保留 render_mode、chart_type 不變。
 - 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、難度、id、metadata、
-  各小題的 學習內容/學習表現/核心素養/出題概念/出題指示/科目/年級。
+  各小題的 學習內容/學習表現/核心素養/出題概念/出題指示/科目/年級，以及
+  `interaction`（含所有互動規格子欄位）；互動規格是原始題目的權威資料。
 - 若某小題的答案或選項有改動，該小題的 `誘答分析` 必須同步反映新的正解與誘答陷阱：
   正解鍵改為「正確答案：…」，其他鍵改為新的誤解描述。選項標籤必須與新題目一致；
   若題目沒有 (A)-(D) 標籤，可留空 `{}`。
@@ -81,7 +83,7 @@ def _ss_rebuild_subquestion(
     Frozen fields (those that must not change across correction passes):
     ``id``, ``序號``, ``年級``, ``科目``, ``核心素養``, ``學習內容``,
     ``學習表現``, ``出題概念``, ``出題指示``, ``認知歷程``, ``題型``, ``題目內容類型``,
-    ``image_generation_mode``, ``圖片``, ``chart_spec``.
+    ``image_generation_mode``, ``圖片``, ``chart_spec``, ``interaction``.
 
     A model-added subquestion has no original ICCS assignment, so any
     LLM-supplied ``認知歷程`` is discarded rather than creating a new tag.
@@ -127,6 +129,9 @@ def _ss_rebuild_subquestion(
             ),
             圖片=original.圖片 if original else sq_raw.get("圖片"),
             chart_spec=chart_spec,
+            interaction=(
+                original.interaction if original else sq_raw.get("interaction")
+            ),
             誘答分析=(
                 {str(k): str(v) for k, v in sq_raw.get("誘答分析", {}).items()}
                 if isinstance(sq_raw.get("誘答分析"), dict)

@@ -32,6 +32,7 @@ from src.llm_client import LLMClient
 logger = logging.getLogger(__name__)
 
 _PATH_TOKEN = re.compile(r"(?:^|\.)([^.\[\]]+)|\[(\d+)\]")
+_INTERACTION_PATH = re.compile(r"^subquestions\[\d+\]\.interaction(?:\.|$)")
 _MISSING = object()
 
 
@@ -93,6 +94,8 @@ def _merge_scoped(
     """Copy only explicitly editable paths from a whole-question candidate."""
     merged = copy.deepcopy(base)
     for field_path in sorted(editable_paths):
+        if _INTERACTION_PATH.fullmatch(field_path) or _INTERACTION_PATH.match(field_path):
+            continue
         value = _read_path(candidate, field_path)
         if value is not _MISSING:
             _write_path(merged, field_path, value)
