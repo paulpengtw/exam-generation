@@ -4,8 +4,6 @@ Two seams:
 - data/social_studies/few_shot/範例_few_shot_examples.csv  — header must equal live header
 - data/social_studies/curriculum/範例_schema_parameters.csv — 類別 set must equal live 類別 set
 
-The few_shot guard reads only the header row (not data rows), so it stays green
-after issue #542 reduces the live file to header-only.
 The schema_parameters guard reads the set of 類別 values, which is stable regardless
 of which representative values are present.
 """
