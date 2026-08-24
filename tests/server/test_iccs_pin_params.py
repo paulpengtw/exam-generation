@@ -181,7 +181,7 @@ def test_target_surface_reaches_direct_social_cli_metadata() -> None:
     assert question.metadata.surface_used == "數位"
 
 
-def test_social_schemas_report_no_digital_only_question_types_today() -> None:
+def test_social_schemas_report_approved_digital_only_question_types() -> None:
     from fastapi.testclient import TestClient
 
     from server.app import create_app
@@ -190,7 +190,19 @@ def test_social_schemas_report_no_digital_only_question_types_today() -> None:
         response = client.get("/api/schemas?subject=social_studies")
 
     assert response.status_code == 200
-    assert response.json()["digital_only_question_types"] == []
+    assert response.json()["digital_only_question_types"] == ["拖放題", "滑桿題"]
+
+
+@pytest.mark.parametrize("question_type", ["拖放題", "滑桿題"])
+def test_paper_surface_rejects_approved_digital_only_question_type(
+    question_type: str,
+) -> None:
+    with pytest.raises(ValidationError, match="target_surface"):
+        GenerateParams(
+            subject="social_studies",
+            target_surface="紙本",
+            subquestion_configs=json.dumps([{"question_type": question_type}]),
+        )
 
 
 def test_social_schemas_report_injected_digital_only_question_type(
@@ -212,4 +224,4 @@ def test_social_schemas_report_injected_digital_only_question_type(
         response = client.get("/api/schemas?subject=social_studies")
 
     assert response.status_code == 200
-    assert response.json()["digital_only_question_types"] == ["拖放題"]
+    assert response.json()["digital_only_question_types"] == ["拖放題", "滑桿題"]

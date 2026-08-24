@@ -209,6 +209,47 @@ def test_frozen_field_is_rejected_with_an_actionable_message(app_ctx) -> None:
     assert _run_count(SessionLocal) == 0
 
 
+def test_interaction_field_is_rejected_as_frozen(app_ctx) -> None:
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    base["subquestions"][0]["題型"] = "拖放題"
+    base["subquestions"][0]["interaction"] = {
+        "draggables": [{"id": "d1", "label": "甲"}],
+        "targets": [{"id": "t1", "label": "目標", "capacity": 1}],
+        "correct_mapping": {"d1": "t1"},
+        "exact_match": False,
+        "shuffle_draggables": True,
+    }
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+
+    response = _post_modification(
+        app,
+        config,
+        user_id,
+        record_id,
+        {
+            "annotations": [
+                {
+                    "segments": [
+                        {
+                            "field_path": "subquestions[0].interaction.correct_mapping.d1",
+                            "start": 0,
+                            "end": 2,
+                            "quoted_text": "t1",
+                        }
+                    ],
+                    "修改指示": "請改變互動正解",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "frozen_field"
+    assert "interaction" in response.json()["message"]
+    assert _run_count(SessionLocal) == 0
+
+
 @pytest.mark.parametrize(
     "segments",
     [

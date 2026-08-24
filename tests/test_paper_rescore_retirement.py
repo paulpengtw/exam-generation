@@ -21,15 +21,14 @@ from src.social_studies.context_builder import (
     build_system_prompt,
     build_user_prompt,
 )
+from src.social_studies.sampler import sample_params
 from src.social_studies.schemas import (
     ExamQuestion,
     QuestionType,
     RubricEntry,
     SubQuestion,
 )
-from src.social_studies.sampler import sample_params
 from src.social_studies.verifier import verify_question
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RETIRED_TYPE = "封閉式建構反應題"
@@ -58,7 +57,7 @@ def test_social_question_type_enum_and_csv_retire_closed_format() -> None:
         rows = list(csv.DictReader(handle))
 
     type_rows = {row["value"]: row["instruction"] for row in rows if row["類別"] == "題型"}
-    assert list(QuestionType) == ["選擇題", "開放式建構反應題"]
+    assert list(QuestionType) == ["選擇題", "開放式建構反應題", "拖放題", "滑桿題"]
     assert RETIRED_TYPE not in type_rows
     assert type_rows["選擇題"] == (
         "四選一單選題，計分 0/1：答對得 1 分、答錯 0 分。"
@@ -69,6 +68,20 @@ def test_social_question_type_enum_and_csv_retire_closed_format() -> None:
         "學生需自行組織文字作答並說明思考過程。計分採每題專屬評分指引（scoring guide），"
         "分數 0..N 可部分給分。評分規準表必須隨題產出，每一分數級距附 1-2 個學生作答實例"
         "（含正確與錯誤示例）。"
+    )
+    assert type_rows["拖放題"] == (
+        "互動題型，僅限數位卷面（target surface = 數位）。學生將棋子（draggables）拖放至目標區（"
+        "targets）完成配對、分類或排序。必須輸出 interaction 規格：draggables、targets、"
+        "correct_mapping、exact_match、shuffle_draggables。預設 partial credit：每格放對得 1 分；"
+        "各放置位置相互扣連時可設 "
+        "exact_match=true 改為全對計分。"
+        "誘答分析以「棋子→錯誤目標」配對為鍵，說明常見錯置的概念混淆。"
+    )
+    assert type_rows["滑桿題"] == (
+        "互動題型，僅限數位卷面。學生拖曳滑桿在數值範圍中標定答案，適用於自資料判讀或推估數值的題目。"
+        "必須輸出 interaction 規格：min、max、step、unit、correct_value、tolerance。"
+        "計分 0/1：作答值落在 correct_value ± tolerance 內得 1 分。"
+        "誘答分析以命名的錯誤區間為鍵（如 below_range：誤讀舊年份資料）。"
     )
 
 
