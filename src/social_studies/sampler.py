@@ -60,6 +60,13 @@ _REASONING_RELATE = "Reasoning and Applying–Relate or Integrate"
 _REASONING_PROCESSES = (_REASONING_INTERPRET, _REASONING_RELATE)
 _COGNITIVE_PROCESS_VALUES = frozenset(member.value for member in CognitiveProcess)
 _QUESTION_TYPE_VALUES = frozenset(member.value for member in QuestionType)
+_INTERACTIVE_QUESTION_TYPE_VALUES = frozenset({"拖放題", "滑桿題"})
+_QUESTION_TYPE_WEIGHTS: dict[str, int] = {
+    "選擇題": 85,
+    "開放式建構反應題": 10,
+    "拖放題": 3,
+    "滑桿題": 2,
+}
 
 
 def _is_public_code(value: str) -> bool:
@@ -209,6 +216,39 @@ def _coerce_subquestion_config(raw: dict, config_cls: type) -> object:
     return config_cls(**data)
 
 
+def _question_type_value(question_type: QuestionType | str) -> str:
+    return getattr(question_type, "value", question_type)
+
+
+def _question_type_draw_pool(
+    q_type: list[QuestionType] | None,
+    target_surface: str,
+) -> list[QuestionType]:
+    """Return the live per-slot pool, excluding digital types on paper."""
+    source = list(q_type) if q_type else list(QuestionType)
+    pool = [
+        question_type
+        for question_type in source
+        if target_surface == "數位"
+        or _question_type_value(question_type) not in _INTERACTIVE_QUESTION_TYPE_VALUES
+    ]
+    if not pool:
+        raise ValueError("no drawable question types remain for target_surface")
+    return pool
+
+
+def _draw_question_types(
+    rng: random.Random,
+    pool: list[QuestionType],
+    count: int,
+) -> list[QuestionType]:
+    weights = [
+        _QUESTION_TYPE_WEIGHTS.get(_question_type_value(question_type), 1)
+        for question_type in pool
+    ]
+    return [rng.choices(pool, weights=weights, k=1)[0] for _ in range(count)]
+
+
 def sample_params(
     grade: int | None = None,
     context: list[QuestionContext] | None = None,
@@ -256,10 +296,7 @@ def sample_params(
     if sub_question_count is not None and not 3 <= sub_question_count <= 7:
         raise ValueError("sub_question_count must be between 3 and 7")
 
-    if q_type:
-        q_type_pool = q_type
-    else:
-        q_type_pool = list(QuestionType)
+    q_type_pool = _question_type_draw_pool(q_type, resolved_surface)
 
     # 閱讀歷程: pick 1-2
     all_processes = list(ReadingProcess)
@@ -360,6 +397,19 @@ def sample_params(
             elif isinstance(cfg, SubQuestionConfig):
                 resolved_configs.append(cfg)
 
+    if resolved_surface != "數位":
+        pinned_interactive = [
+            cfg.question_type.value
+            for cfg in resolved_configs
+            if cfg.question_type is not None
+            and cfg.question_type.value in _INTERACTIVE_QUESTION_TYPE_VALUES
+        ]
+        if pinned_interactive:
+            raise ValueError(
+                "target_surface must be 數位 for digital-only question type(s): "
+                + ", ".join(dict.fromkeys(pinned_interactive))
+            )
+
     # 題型 is owned by each 小題 when the count is known. Missing row types are
     # sampled deterministically from the request pool or the full schema.
     if sub_question_count is not None:
@@ -367,14 +417,12 @@ def sample_params(
             resolved_configs[i] if i < len(resolved_configs) else SubQuestionConfig()
             for i in range(sub_question_count)
         ]
-        # Fill blank slots from a shuffled cycle so no 題型 repeats before exhausting
-        # the pool. Pinned slots are untouched; only blank slots consume from fill_iter.
+        # Draw unpinned slots with ICCS composition weights. Pinned slots are
+        # untouched; only blank slots consume from the weighted draw stream.
         blank_count = sum(1 for cfg in resolved_configs if not cfg.question_type)
         pinned_types = {cfg.question_type for cfg in resolved_configs if cfg.question_type}
         fill_pool = [q for q in q_type_pool if q not in pinned_types] or q_type_pool[:]
-        shuffled = fill_pool[:]
-        rng.shuffle(shuffled)
-        fill_iter = iter(shuffled[i % len(shuffled)] for i in range(blank_count))
+        fill_iter = iter(_draw_question_types(rng, fill_pool, blank_count))
         resolved_configs = [
             cfg.model_copy(update={"question_type": cfg.question_type or next(fill_iter)})
             for cfg in resolved_configs

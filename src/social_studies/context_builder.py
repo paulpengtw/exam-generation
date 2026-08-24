@@ -116,6 +116,60 @@ _CORE_QUESTION_CALLBACK_SUBQUESTION_INSTRUCTION = (
     "與指定學習表現仍是明確設定，請同時遵守且不得被本提示取代。"
 )
 
+_INTERACTION_PROMPT_BY_TYPE: dict[str, str] = {
+    "拖放題": """\
+## 互動規格（拖放題；僅限數位卷面）
+
+本小題必須輸出 `interaction`，而且只能使用下列欄位；`interaction` 是
+權威答案資料，`答案` 仍要用人類可讀文字描述正確配對，不得以 `答案` 取代
+`interaction.correct_mapping`：
+
+```json
+"interaction": {
+  "draggables": [{"id": "d1", "label": "棋子文字"}],
+  "targets": [{"id": "t1", "label": "目標區文字", "capacity": 1}],
+  "correct_mapping": {"d1": "t1"},
+  "exact_match": false,
+  "shuffle_draggables": true
+}
+```
+
+- `draggables` 每筆必須有唯一 `id` 與人類可讀 `label`；`targets` 每筆必須有唯一
+  `id`、`label` 與整數 `capacity`（未特別需要分類容量時填 1）。
+- `correct_mapping` 是 `draggable_id -> target_id` 的唯一權威正解；所有 id 都必須
+  在上述陣列中出現。預設 partial credit：每個放對的棋子得 1 分，
+  `max_score` 等於 mapping 筆數；`exact_match=true` 時全對得 `max_score`，否則 0 分。
+- `誘答分析` 的鍵請使用放置配對，例如 `d1->t2`，說明學生把棋子放入錯誤目標
+  所反映的概念混淆；不要把 `correct_mapping` 的 id 改成選項標籤。
+""",
+    "滑桿題": """\
+## 互動規格（滑桿題；僅限數位卷面）
+
+本小題必須輸出 `interaction`，而且只能使用下列欄位；`interaction` 是
+權威答案資料，`答案` 仍要用人類可讀文字描述正確數值與單位，不得以 `答案`
+取代 `interaction.correct_value`：
+
+```json
+"interaction": {
+  "min": 0,
+  "max": 100,
+  "step": 1,
+  "unit": "%",
+  "correct_value": 50,
+  "tolerance": 1,
+  "show_ticks": true
+}
+```
+
+- `min`、`max`、`step`、`correct_value`、`tolerance` 必須是數字；`unit` 沒有單位
+  時填空字串，`show_ticks` 控制是否顯示刻度。
+- 作答值與 `correct_value` 的差距小於或等於 `tolerance` 得 1 分，否則 0 分；
+  `max_score` 固定為 1。`interaction.correct_value` 與 `tolerance` 是唯一權威計分依據。
+- `誘答分析` 請使用命名的錯誤區間作為鍵，例如 `below_range`、`above_range`、
+  `far_off`，說明誤讀資料或估值概念；不要使用選項 A/B/C/D 取代錯誤區間。
+""",
+}
+
 
 def _figure_kind_guidance(
     params: SampledParams,
@@ -1013,6 +1067,7 @@ def build_subquestion_system_prompt(
     p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
     curriculum_section = _build_curriculum_section(c_text, p_text, _PERFORMANCE_INTRO)
     sc = stage_code_for(_CC_DATA, learning_stage)
+    interaction_contract = "\n\n".join(_INTERACTION_PROMPT_BY_TYPE.values())
     return f"""\
 你是一位108課綱社會領域子題命題教師。你會收到一份共用閱讀素材，以及一道小題的出題規劃；請只根據該素材與規劃撰寫 exactly one SubQuestion JSON。
 
@@ -1078,6 +1133,8 @@ def build_subquestion_system_prompt(
 ## 評分規準
 - 選擇題：四選一；答案為 A/B/C/D；計分 0/1（答對 1 分、答錯 0 分），評分規準為空陣列；各誘答項請以認知偏誤角度填寫誘答分析。
 - 開放式建構反應題：必須附每題專屬 `評分規準`，使用 0..N 並允許部分給分；每一分數級距請提供 1-2 個學生作答實例（含正確與錯誤示例）。
+
+{interaction_contract}
 
 ## 課程綱要參考
 
@@ -1275,6 +1332,7 @@ def build_subquestion_user_prompt(
         f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts)
         + visual_instruction
     )
+    interaction_instruction = _INTERACTION_PROMPT_BY_TYPE.get(q_type, "")
     core_question_callback_section = (
         "\n\n## 回扣核心問題\n\n"
         f"- **最後小題命題指示**：{_CORE_QUESTION_CALLBACK_SUBQUESTION_INSTRUCTION}"
@@ -1306,6 +1364,7 @@ def build_subquestion_user_prompt(
 - **出題概念**：{sq_plan.get("出題概念", "")}
 
 {subquestion_config_section}
+{interaction_instruction}
 {core_question_callback_section}
 
 ## 指定條件

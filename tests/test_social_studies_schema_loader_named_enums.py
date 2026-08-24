@@ -70,7 +70,7 @@ def test_social_studies_schema_exports_preserve_current_enum_members() -> None:
     expected_values = {
         "QuestionContext": ["個人", "公共", "職業", "教育"],
         "QuestionSetType": ["題組題"],
-        "QuestionType": ["選擇題", "開放式建構反應題"],
+        "QuestionType": ["選擇題", "開放式建構反應題", "拖放題", "滑桿題"],
         "ReadingProcess": [
             "擷取訊息",
             "形成廣泛理解",

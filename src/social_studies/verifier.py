@@ -13,8 +13,10 @@ from src.social_studies.fact_check import fact_check_question, is_current_events
 from src.social_studies.schema_loader import build_instructions, load_schemas
 from src.social_studies.schemas import (
     ChartVerificationResult,
+    DragDropSpec,
     ExamQuestion,
     FactCheckResult,
+    SliderSpec,
     VerificationResult,
 )
 
@@ -31,7 +33,8 @@ VERIFICATION_SYSTEM_PROMPT = f"""\
    - 如果提供的答案或解題分析能被文本合理支持，即使你的答案措辭不同，也應視為通過。
    - 開放式題目可有多種合理回答；只要評分規準（rubric）清楚、公平、能涵蓋合理答案，就應視為通過。
    - 選擇題採 0/1 計分（答對 1 分、答錯 0 分），並應以認知偏誤角度說明誘答分析。
-   - 開放式建構反應題採每題專屬評分指引，分數使用 0..N 並允許部分給分；每一分數級距應有 1-2 個學生作答實例，包含正確與錯誤示例。
+   - 開放式建構反應題採每題專屬評分指引，分數使用 0..N 並允許部分給分；
+   - 每一分數級距應有 1-2 個學生作答實例，包含正確與錯誤示例。
    - 小幅措辭、格式、詳略、誘答力不足但不影響作答的問題，請在 details 提醒，但不要因此判定 failed。
    - 只有在答案明顯無文本支持、與文本矛盾、選項正解不存在、題目嚴重歧義、
      評分規準缺失或不公平時，才判定 failed。
@@ -244,7 +247,8 @@ def _ss_rubric_scale_check_hook(
     """Reject the unambiguous legacy 0X code on new ICCS-tagged records."""
     del client
     issues = [
-        f"第{subquestion.序號}題使用舊版評分代號 0X；有認知歷程的新紀錄必須使用每題專屬 0..N 評分指引"
+        f"第{subquestion.序號}題使用舊版評分代號 0X；有認知歷程的新紀錄必須使用每題專屬 "
+        "0..N 評分指引"
         for subquestion in question.subquestions
         if subquestion.認知歷程
         and any(entry.code == "0X" for entry in subquestion.評分規準)
@@ -252,6 +256,93 @@ def _ss_rubric_scale_check_hook(
     if issues:
         result.details = result.details.rstrip()
         result.details += "\n\n[評分規準檢核] " + "；".join(issues)
+        result.passed = False
+    return result
+
+
+def _ss_interaction_spec_check_hook(
+    question: ExamQuestion,
+    result: VerificationResult,
+    client: LLMClient,
+) -> VerificationResult:
+    """Deterministically validate authoritative digital interaction specs."""
+    del client
+    issues: list[str] = []
+    for subquestion in question.subquestions:
+        interaction = subquestion.interaction
+        if isinstance(interaction, DragDropSpec):
+            draggable_ids = {item.id for item in interaction.draggables}
+            target_ids = {target.id for target in interaction.targets}
+            mapping = interaction.correct_mapping
+            missing_draggables = sorted(draggable_ids - mapping.keys())
+            if missing_draggables:
+                issues.append(
+                    f"第{subquestion.序號}題 draggable id 未出現在 correct_mapping："
+                    + ", ".join(missing_draggables)
+                )
+            unknown_mapping_draggables = sorted(mapping.keys() - draggable_ids)
+            if unknown_mapping_draggables:
+                issues.append(
+                    f"第{subquestion.序號}題 correct_mapping 含不存在的 draggable id："
+                    + ", ".join(unknown_mapping_draggables)
+                )
+            unknown_targets = sorted(set(mapping.values()) - target_ids)
+            if unknown_targets:
+                issues.append(
+                    f"第{subquestion.序號}題 correct_mapping 含不存在的 target id："
+                    + ", ".join(unknown_targets)
+                )
+
+            total_capacity = sum(target.capacity for target in interaction.targets)
+            mapped_count = len(mapping)
+            if total_capacity < mapped_count:
+                issues.append(
+                    f"第{subquestion.序號}題 targets capacity 總和 {total_capacity} "
+                    f"小於 correct_mapping 筆數 {mapped_count}"
+                )
+
+            mapped_per_target: dict[str, int] = {}
+            for target_id in mapping.values():
+                mapped_per_target[target_id] = mapped_per_target.get(target_id, 0) + 1
+            capacities = {target.id: target.capacity for target in interaction.targets}
+            for target_id, count in sorted(mapped_per_target.items()):
+                capacity = capacities.get(target_id)
+                if capacity is not None and count > capacity:
+                    issues.append(
+                        f"第{subquestion.序號}題 target id {target_id!r} mapped {count} "
+                        f"筆，超過 capacity {capacity}"
+                    )
+
+        elif isinstance(interaction, SliderSpec):
+            span = interaction.max - interaction.min
+            if not interaction.min < interaction.max:
+                issues.append(
+                    f"第{subquestion.序號}題 slider min {interaction.min} 必須小於 max "
+                    f"{interaction.max}"
+                )
+            if not interaction.step > 0:
+                issues.append(
+                    f"第{subquestion.序號}題 slider step {interaction.step} 必須大於 0"
+                )
+            if not interaction.min <= interaction.correct_value <= interaction.max:
+                issues.append(
+                    f"第{subquestion.序號}題 slider correct_value "
+                    f"{interaction.correct_value} 不在 [{interaction.min}, {interaction.max}]"
+                )
+            if not interaction.tolerance >= 0:
+                issues.append(
+                    f"第{subquestion.序號}題 slider tolerance {interaction.tolerance} "
+                    "不能小於 0"
+                )
+            if not interaction.tolerance < span:
+                issues.append(
+                    f"第{subquestion.序號}題 slider tolerance {interaction.tolerance} "
+                    f"必須小於 max-min {span}"
+                )
+
+    if issues:
+        result.details = result.details.rstrip()
+        result.details += "\n\n[互動規格檢核] " + "；".join(issues)
         result.passed = False
     return result
 
@@ -318,6 +409,7 @@ def _ss_fact_check_hook(
 
 # Declared on the subject spec: hooks run in this order after the LLM verdict.
 _SS_POST_VERIFY_HOOKS: list[PostVerifyHook] = [
+    _ss_interaction_spec_check_hook,
     _ss_rubric_scale_check_hook,
     _ss_content_domain_code_check_hook,
     _ss_content_domain_theme_advisory_hook,

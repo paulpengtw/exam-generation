@@ -392,6 +392,7 @@ def _parse_subquestion(
             image_generation_mode=sq_raw.get("image_generation_mode"),
             圖片=sq_raw.get("圖片"),
             chart_spec=sq_chart_spec,
+            interaction=sq_raw.get("interaction"),
         )
         result.科目 = [params.科目.value]
         # 記錄建構這一小題時所用的 PLAN 索引，供後續圖片修補沿用同一格 各小題配置。

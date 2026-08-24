@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from src.social_studies.schemas import (
+    DragDropSpec,
+    DragItem,
+    DropTarget,
     ExamQuestion,
     LearningContentRef,
+    SliderSpec,
     SubQuestion,
     VerificationResult,
 )
@@ -260,3 +266,134 @@ def test_corrector_freezes_iccs_axes_on_existing_and_added_subquestions() -> Non
     assert corrected.認知歷程 == [first_process]
     assert corrected.subquestions[0].認知歷程 == first_process
     assert corrected.subquestions[1].認知歷程 is None
+
+
+def _interaction_question(
+    interaction: DragDropSpec | SliderSpec, question_type: str
+) -> ExamQuestion:
+    return ExamQuestion(
+        id="interaction-verifier-check",
+        核心問題="互動題組核心問題",
+        文本="互動題組素材",
+        subquestions=[
+            SubQuestion(
+                序號=1,
+                科目=["地理"],
+                題型=question_type,
+                題目="請操作互動元件。",
+                答案="人類可讀答案",
+                interaction=interaction,
+            )
+        ],
+        情境=["教育"],
+        題型種類="題組題",
+        題型=question_type,
+        閱讀歷程=["擷取訊息"],
+        文本形式="連續文本—說明文",
+    )
+
+
+def test_interaction_verifier_rejects_unmapped_draggable_id() -> None:
+    spec = DragDropSpec(
+        draggables=[DragItem(id="d1", label="甲"), DragItem(id="d2", label="乙")],
+        targets=[DropTarget(id="t1", label="目標")],
+        correct_mapping={"d1": "t1"},
+    )
+
+    result = verify_question(
+        _FakeVerifierClient(_passed_payload()),
+        _interaction_question(spec, "拖放題"),
+    )
+
+    assert result.passed is False
+    assert "[互動規格檢核]" in result.details
+    assert "d2" in result.details
+
+
+def test_interaction_verifier_rejects_unknown_target_and_total_capacity() -> None:
+    spec = DragDropSpec(
+        draggables=[DragItem(id="d1", label="甲"), DragItem(id="d2", label="乙")],
+        targets=[DropTarget(id="t1", label="目標", capacity=1)],
+        correct_mapping={"d1": "missing", "d2": "t1"},
+    )
+
+    result = verify_question(
+        _FakeVerifierClient(_passed_payload()),
+        _interaction_question(spec, "拖放題"),
+    )
+
+    assert result.passed is False
+    assert "missing" in result.details
+    assert "capacity" in result.details
+
+
+def test_interaction_verifier_rejects_target_over_capacity() -> None:
+    spec = DragDropSpec(
+        draggables=[
+            DragItem(id="d1", label="甲"),
+            DragItem(id="d2", label="乙"),
+            DragItem(id="d3", label="丙"),
+        ],
+        targets=[
+            DropTarget(id="t1", label="小容量目標", capacity=1),
+            DropTarget(id="t2", label="大容量目標", capacity=2),
+        ],
+        correct_mapping={"d1": "t1", "d2": "t1", "d3": "t2"},
+    )
+
+    result = verify_question(
+        _FakeVerifierClient(_passed_payload()),
+        _interaction_question(spec, "拖放題"),
+    )
+
+    assert result.passed is False
+    assert "t1" in result.details
+    assert "capacity" in result.details
+
+
+def test_valid_drag_drop_interaction_does_not_change_llm_pass() -> None:
+    spec = DragDropSpec(
+        draggables=[DragItem(id="d1", label="甲"), DragItem(id="d2", label="乙")],
+        targets=[DropTarget(id="t1", label="左"), DropTarget(id="t2", label="右")],
+        correct_mapping={"d1": "t1", "d2": "t2"},
+    )
+
+    result = verify_question(
+        _FakeVerifierClient(_passed_payload()),
+        _interaction_question(spec, "拖放題"),
+    )
+
+    assert result.passed is True
+    assert "[互動規格檢核]" not in result.details
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("min", 10),
+        ("max", 0),
+        ("step", 0),
+        ("correct_value", 11),
+        ("tolerance", -1),
+        ("tolerance", 10),
+    ],
+)
+def test_interaction_verifier_rejects_invalid_slider_spec(field: str, value: float) -> None:
+    values = {
+        "min": 0,
+        "max": 10,
+        "step": 1,
+        "correct_value": 5,
+        "tolerance": 1,
+    }
+    values[field] = value
+    spec = SliderSpec(**values)
+
+    result = verify_question(
+        _FakeVerifierClient(_passed_payload()),
+        _interaction_question(spec, "滑桿題"),
+    )
+
+    assert result.passed is False
+    assert "[互動規格檢核]" in result.details
+    assert field in result.details
