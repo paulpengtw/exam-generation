@@ -54,9 +54,36 @@ from src.natural_sciences.verifier import verify_question
 from src.renderer import render_image
 
 _GRADES: list[int] = load_grades(load_schemas())
+_VISUAL_CONTENT_TYPES = {"含圖片", "graphs/charts/tables"}
 
 QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
 VerificationTrailCallback = Callable[[VerificationTrailEntry], None]
+
+_NS_SUBQUESTION_IMAGE_REPAIR_SYSTEM_PROMPT = """\
+你是一位108課綱自然科學素養導向題組的視覺素材設計教師。
+請只根據既有小題內容，補上一個該小題專用的視覺素材圖片規格。
+
+規則：
+- 只輸出合法 JSON 物件，不要輸出其他文字。
+- JSON 必須包含 `chart_spec` 欄位。
+- `chart_spec` 必須是此小題專用的視覺素材，不是整個題組共用圖片。
+- 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
+- 若是圖片式素材、表格、流程圖或圖解，使用 `render_mode: "html"`。
+- 不要加入答案提示。
+"""
+
+_NS_SUBQUESTION_IMAGE_REPAIR_USER_TEMPLATE = """\
+以下小題的題目內容類型是「{content_type}」，但缺少小題 chart_spec。
+請為此小題補上 `chart_spec`。
+
+題組文本：
+{text}
+
+小題：
+```json
+{sq_json}
+```
+"""
 
 
 def _emit_question_update(
@@ -384,6 +411,104 @@ def _ns_make_fallback_sq_plans(params: SampledParams, n: int) -> list[dict]:
     ]
 
 
+def _parse_subquestion_image_spec(raw_spec: object) -> ImageSpec | None:
+    if not isinstance(raw_spec, dict):
+        return None
+    try:
+        return ImageSpec(**raw_spec)
+    except Exception:
+        if raw_spec.get("chart_type"):
+            try:
+                return ImageSpec(
+                    render_mode="chart",
+                    chart_type=raw_spec.get("chart_type"),
+                    data=raw_spec.get("data", {}),
+                    labels=raw_spec.get("labels", {}),
+                    title=raw_spec.get("title", ""),
+                    description=raw_spec.get("description", ""),
+                )
+            except Exception:
+                return None
+        try:
+            return ImageSpec(
+                render_mode="html",
+                description=raw_spec.get("description", raw_spec.get("title", "")),
+                title=raw_spec.get("title", ""),
+                data=raw_spec.get("data", {}),
+            )
+        except Exception:
+            return None
+
+
+def _ns_subquestion_config_for(
+    params: SampledParams,
+    sub: SubQuestion,
+) -> SubQuestionConfig | None:
+    plan_index = sub._plan_index if sub._plan_index is not None else sub.序號
+    if plan_index < 1 or plan_index > len(params.subquestion_configs):
+        return None
+    return params.subquestion_configs[plan_index - 1]
+
+
+def _ns_ensure_subquestion_visual_spec(
+    sub: SubQuestion,
+    question: ExamQuestion,
+    content_type: str,
+    client: Any,
+) -> None:
+    """Repair a missing chart_spec for one NS 小題 configured as visual."""
+    if sub.chart_spec or content_type not in _VISUAL_CONTENT_TYPES or client is None:
+        return
+
+    sq_json = sub.model_dump_json(
+        exclude_none=True,
+        exclude={"圖片", "答案", "答案解析", "評分規準", "誘答分析"},
+    )
+    user_prompt = _NS_SUBQUESTION_IMAGE_REPAIR_USER_TEMPLATE.format(
+        content_type=content_type,
+        text=question.文本,
+        sq_json=sq_json,
+    )
+
+    try:
+        repaired = client.generate_json(
+            _NS_SUBQUESTION_IMAGE_REPAIR_SYSTEM_PROMPT,
+            user_prompt,
+            purpose="generate",
+        )
+    except Exception as exc:
+        print(
+            f"  Warning: NS subquestion image spec repair failed for 小題 {sub.序號}: {exc}",
+            file=sys.stderr,
+        )
+        return
+
+    if not isinstance(repaired, dict):
+        return
+    raw_spec = repaired.get("image_spec") or repaired.get("chart_spec")
+    image_spec = _parse_subquestion_image_spec(raw_spec)
+    if image_spec:
+        sub.chart_spec = image_spec
+
+
+def _ns_ensure_visual_spec(
+    question: ExamQuestion,
+    params: SampledParams,
+    client: Any,
+) -> None:
+    """Repair missing NS 小題 visual specs before the rendering stage."""
+    for sub in question.subquestions:
+        cfg = _ns_subquestion_config_for(params, sub)
+        if cfg is None or cfg.content_type not in _VISUAL_CONTENT_TYPES:
+            continue
+        _ns_ensure_subquestion_visual_spec(
+            sub,
+            question,
+            cfg.content_type,
+            client,
+        )
+
+
 def _ns_render_subquestion_images(
     question: ExamQuestion,
     config: Config,
@@ -439,7 +564,7 @@ _NS_SPEC = SubjectGenerationSpec(
     parse_text_shell_fn=_parse_text_shell,
     parse_subquestion_fn=_parse_subquestion,
     make_fallback_sq_plans_fn=_ns_make_fallback_sq_plans,
-    ensure_visual_spec_fn=None,
+    ensure_visual_spec_fn=_ns_ensure_visual_spec,
     render_subquestion_images_fn=_ns_render_subquestion_images,
     image_question_text_fn=lambda q: "\n".join(q.題目),
     verify_fn=verify_question,
