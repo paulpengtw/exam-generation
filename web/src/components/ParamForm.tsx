@@ -741,6 +741,26 @@ function drawQuestionSubset<T>(
   return drawn.length > 1 ? [drawn[0]] : drawn;
 }
 
+/**
+ * Shared 預抽/重抽 draw path for per-小題 學習內容.
+ * Both the confirmation build (預抽) and the 重抽 handler call this function so
+ * that future ICCS domain filters (#490/#492) applied to the pool flow through
+ * automatically — no second sampling path to maintain.
+ * Range: 1–3, matching the 預抽 block.
+ */
+function drawSubqLcFromPool(pool: readonly string[]): string[] {
+  return drawRandomSubset(pool, 1, 3);
+}
+
+/**
+ * Shared 預抽/重抽 draw path for per-小題 學習表現.
+ * See drawSubqLcFromPool for the ICCS-compatibility rationale.
+ * Range: 1–2, matching the 預抽 block.
+ */
+function drawSubqLpFromPool(pool: readonly string[]): string[] {
+  return drawRandomSubset(pool, 1, 2);
+}
+
 const TEXT_HINT = "500 字";
 const OPTION_HINT = "50 字";
 const DEFAULT_CONTENT_TYPE = "含圖片";
@@ -927,6 +947,12 @@ export default function ParamForm({
   const [stalePreviewIndices, setStalePreviewIndices] = useState<Set<number>>(new Set());
   // Accumulates which 題組 indices were edited since the last refetch effect captured them.
   const pendingEditedIndicesRef = useRef<Set<number>>(new Set());
+  // #444 重抽: stores the pools computed during handleSubmit so that
+  // updatePendingSubquestionLc/Lp can redraw from the same pool when the user
+  // clears a picker on the confirmation screen. Kept in refs (not state) because
+  // a pool change never needs to trigger a re-render on its own.
+  const perSubqLcPoolRef = useRef<string[]>([]);
+  const perSubqLpPoolRef = useRef<string[]>([]);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
@@ -1886,6 +1912,9 @@ export default function ParamForm({
     setLcWasAutoDrawn(lcAutoDrawn);
     const perSubqLpPool = learningPerformance.length > 0 ? learningPerformance : (finalLp ?? []);
     const perSubqLcPool = learningContent.length > 0 ? learningContent : (finalLc ?? []);
+    // #444: persist pools so the 重抽 handler can draw from the same source.
+    perSubqLcPoolRef.current = perSubqLcPool;
+    perSubqLpPoolRef.current = perSubqLpPool;
     const shouldDrawPerSubq =
       (subject === "social_studies" || subject === "natural_sciences") &&
       subQuestionCount !== "";
@@ -1903,12 +1932,12 @@ export default function ParamForm({
             const resolvedLc = hasExplicitLc
               ? cfg.learning_content
               : perSubqLcPool.length > 0
-                ? drawRandomSubset(perSubqLcPool, 1, 3)
+                ? drawSubqLcFromPool(perSubqLcPool)
                 : undefined;
             const resolvedLp = hasExplicitLp
               ? cfg.learning_performance
               : perSubqLpPool.length > 0
-                ? drawRandomSubset(perSubqLpPool, 1, 2)
+                ? drawSubqLpFromPool(perSubqLpPool)
                 : undefined;
             return {
               question_type: cfg.question_type || undefined,
@@ -2469,21 +2498,48 @@ export default function ParamForm({
     subquestionIndex: number,
     lc: string[],
   ) {
-    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
-      learning_content: lc.length > 0 ? lc : undefined,
-    });
-    // Explicit user selection clears the auto-drawn flag for this field/小題 only.
-    setPendingResolvedSubquestionConfigs((current) => {
-      if (!current[questionIndex]?.[subquestionIndex]) return current;
-      const nextQuestion = [...current[questionIndex]];
-      nextQuestion[subquestionIndex] = {
-        ...nextQuestion[subquestionIndex],
-        _lcWasAutoDrawn: false,
-      };
-      const next = [...current];
-      next[questionIndex] = nextQuestion;
-      return next;
-    });
+    if (lc.length === 0) {
+      // #444 重抽: clearing the picker triggers a fresh draw from the same 全域池
+      // (perSubqLcPoolRef) used by 預抽, via the shared drawSubqLcFromPool helper.
+      // This keeps the ICCS domain filter (#490/#492) flowing through automatically
+      // rather than sampling independently with a second code path.
+      // If the pool is genuinely empty, drawSubqLcFromPool returns [] and we leave
+      // the field undefined — the backend's "or global pool" fallback still applies.
+      const pool = perSubqLcPoolRef.current;
+      const drawn = pool.length > 0 ? drawSubqLcFromPool(pool) : [];
+      updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+        learning_content: drawn.length > 0 ? drawn : undefined,
+      });
+      // Set the auto-drawn flag back to true for this field/小題 only — the amber
+      // 隨機 badge depends on it, and #443's explicit-selection path clears it.
+      setPendingResolvedSubquestionConfigs((current) => {
+        if (!current[questionIndex]?.[subquestionIndex]) return current;
+        const nextQuestion = [...current[questionIndex]];
+        nextQuestion[subquestionIndex] = {
+          ...nextQuestion[subquestionIndex],
+          _lcWasAutoDrawn: drawn.length > 0,
+        };
+        const next = [...current];
+        next[questionIndex] = nextQuestion;
+        return next;
+      });
+    } else {
+      // Explicit user selection: store the codes and clear the auto-drawn flag.
+      updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+        learning_content: lc,
+      });
+      setPendingResolvedSubquestionConfigs((current) => {
+        if (!current[questionIndex]?.[subquestionIndex]) return current;
+        const nextQuestion = [...current[questionIndex]];
+        nextQuestion[subquestionIndex] = {
+          ...nextQuestion[subquestionIndex],
+          _lcWasAutoDrawn: false,
+        };
+        const next = [...current];
+        next[questionIndex] = nextQuestion;
+        return next;
+      });
+    }
   }
 
   // #446: retry handler — re-fetches using the CURRENT live configuration, not
@@ -2521,21 +2577,44 @@ export default function ParamForm({
     subquestionIndex: number,
     lp: string[],
   ) {
-    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
-      learning_performance: lp.length > 0 ? lp : undefined,
-    });
-    // Explicit user selection clears the auto-drawn flag for this field/小題 only.
-    setPendingResolvedSubquestionConfigs((current) => {
-      if (!current[questionIndex]?.[subquestionIndex]) return current;
-      const nextQuestion = [...current[questionIndex]];
-      nextQuestion[subquestionIndex] = {
-        ...nextQuestion[subquestionIndex],
-        _lpWasAutoDrawn: false,
-      };
-      const next = [...current];
-      next[questionIndex] = nextQuestion;
-      return next;
-    });
+    if (lp.length === 0) {
+      // #444 重抽: clearing the picker triggers a fresh draw from the same 全域池
+      // (perSubqLpPoolRef) used by 預抽, via the shared drawSubqLpFromPool helper.
+      // If the pool is genuinely empty, drawSubqLpFromPool returns [] and the field
+      // is left undefined — the backend's "or global pool" fallback still applies.
+      const pool = perSubqLpPoolRef.current;
+      const drawn = pool.length > 0 ? drawSubqLpFromPool(pool) : [];
+      updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+        learning_performance: drawn.length > 0 ? drawn : undefined,
+      });
+      setPendingResolvedSubquestionConfigs((current) => {
+        if (!current[questionIndex]?.[subquestionIndex]) return current;
+        const nextQuestion = [...current[questionIndex]];
+        nextQuestion[subquestionIndex] = {
+          ...nextQuestion[subquestionIndex],
+          _lpWasAutoDrawn: drawn.length > 0,
+        };
+        const next = [...current];
+        next[questionIndex] = nextQuestion;
+        return next;
+      });
+    } else {
+      // Explicit user selection: store the codes and clear the auto-drawn flag.
+      updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+        learning_performance: lp,
+      });
+      setPendingResolvedSubquestionConfigs((current) => {
+        if (!current[questionIndex]?.[subquestionIndex]) return current;
+        const nextQuestion = [...current[questionIndex]];
+        nextQuestion[subquestionIndex] = {
+          ...nextQuestion[subquestionIndex],
+          _lpWasAutoDrawn: false,
+        };
+        const next = [...current];
+        next[questionIndex] = nextQuestion;
+        return next;
+      });
+    }
   }
 
   if (pendingParams) {
