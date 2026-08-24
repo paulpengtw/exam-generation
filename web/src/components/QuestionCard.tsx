@@ -274,6 +274,7 @@ function SubQuestionBlock({
           {t("card.subquestion")}{sub.序號}題
         </span>
         <Chip label={`${sub.年級}年級`} tone="blue" />
+        <Chip label={sub.題型} tone="purple" />
         {sub.科目.map((s) => (
           <Chip key={`subj-${s}`} label={s} tone="purple" />
         ))}

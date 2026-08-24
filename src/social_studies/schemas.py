@@ -106,12 +106,26 @@ class LearningContentRef(BaseModel):
 class RubricEntry(BaseModel):
     """One row of a 評分規準 table (scoring rubric).
 
-    Codes follow ODT convention: 2=滿分, 1=部分得分, 0=零分, 0X=未作答.
+    ``code`` remains an opaque string for compatibility: new open-response
+    records use integer-like 0..N levels, while legacy records may retain
+    codes such as 2/1/0/0X.
     """
 
     code: str  # "2" | "1" | "0" | "0X"
     規準說明: str
     學生作答實例: list[str] = Field(default_factory=list)
+
+
+def _coerce_known_question_type(value: object) -> object:
+    """Keep current enum ergonomics while allowing legacy stored values."""
+    if isinstance(value, QuestionType):
+        return value
+    if isinstance(value, str):
+        try:
+            return QuestionType(value)
+        except ValueError:
+            return value
+    return value
 
 
 class SubQuestionConfig(BaseModel):
@@ -167,7 +181,7 @@ class SubQuestion(BaseModel):
     出題概念: str = ""
     出題指示: str | None = None
     認知歷程: str | None = None
-    題型: QuestionType  # type: ignore[valid-type]
+    題型: QuestionType | str  # type: ignore[valid-type]
     題目: str
     答案: str = ""
     答案解析: str = ""
@@ -182,6 +196,11 @@ class SubQuestion(BaseModel):
     @classmethod
     def cognitive_process_must_be_known(cls, value: str | None) -> str | None:
         return _validate_cognitive_process(value)
+
+    @field_validator("題型", mode="before")
+    @classmethod
+    def question_type_may_be_legacy(cls, value: object) -> object:
+        return _coerce_known_question_type(value)
 
     # 建構這一小題時所用的 各小題配置 索引（PLAN 索引，1 起算，不進 JSON）。
     # `序號` 是模型自報的，可能錯位或重複；要沿用同一格 各小題配置 的下游
@@ -213,7 +232,7 @@ class ExamQuestion(BaseModel):
     # PISA framing tags (kept for compatibility and question diversity)
     情境: list[QuestionContext]  # type: ignore[valid-type]
     題型種類: QuestionSetType  # type: ignore[valid-type]
-    題型: QuestionType  # type: ignore[valid-type]
+    題型: QuestionType | str  # type: ignore[valid-type]
     閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
     文本形式: TextForm  # type: ignore[valid-type]
     題目內容類型: str | None = None
@@ -233,6 +252,11 @@ class ExamQuestion(BaseModel):
     @classmethod
     def content_domain_must_be_known(cls, value: str | None) -> str | None:
         return _validate_content_domain(value)
+
+    @field_validator("題型", mode="before")
+    @classmethod
+    def question_type_may_be_legacy(cls, value: object) -> object:
+        return _coerce_known_question_type(value)
 
     @field_validator("認知歷程")
     @classmethod

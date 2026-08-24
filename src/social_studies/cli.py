@@ -197,7 +197,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--grade", type=int, choices=_GRADES, help="Target grade level")
     gen.add_argument("--context", type=str, nargs="+", help="情境 (e.g. 個人 公共)")
     gen.add_argument("--set-type", type=str, help="題型種類 (always 題組題 for PISA)")
-    gen.add_argument("--q-type", type=str, nargs="+", help="題型 (one or more values)")
+    gen.add_argument(
+        "--q-type",
+        type=str,
+        nargs="+",
+        choices=[q.value for q in QuestionType],
+        help="題型 (one or more values)",
+    )
     gen.add_argument(
         "--subject",
         type=str,
@@ -358,6 +364,11 @@ def _parse_subquestion(
             distractor = {str(k): str(v) for k, v in raw_distractor.items()}
         else:
             distractor = {}
+        raw_question_type = sq_raw.get(
+            "題型", params.題型[0].value if params.題型 else "選擇題"
+        )
+        if raw_question_type not in {member.value for member in QuestionType}:
+            return None
         result = SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
@@ -371,7 +382,7 @@ def _parse_subquestion(
                 cfg.instruction if cfg and cfg.instruction else sq_raw.get("出題指示")
             ),
             認知歷程=cognitive_process,
-            題型=sq_raw.get("題型", params.題型[0].value if params.題型 else "選擇題"),
+            題型=raw_question_type,
             題目=sq_raw.get("題目", ""),
             答案=sq_raw.get("答案", ""),
             答案解析=sq_raw.get("答案解析", ""),
