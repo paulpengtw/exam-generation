@@ -7,8 +7,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 import sentry_sdk
 from pydantic import BaseModel
+
 
 from server.config import ServerConfig
 from server.generate.models import GenerateParams

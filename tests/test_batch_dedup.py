@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import pytest
 
 from src.common.batch_dedup import (
     _PRIOR_SCOPES_CAP,
@@ -482,6 +483,7 @@ def test_server_generate_stream_accumulates_prior_scopes_across_math_workers(tmp
     forces strictly sequential execution of `worker_one` for the two
     dispatched questions.
     """
+    pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
     import asyncio
     import concurrent.futures
     import dataclasses

@@ -7,6 +7,9 @@ import dataclasses
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream

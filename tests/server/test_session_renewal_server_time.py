@@ -5,6 +5,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 

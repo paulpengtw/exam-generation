@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import pytest
 import random
 from pathlib import Path
 from types import SimpleNamespace
@@ -327,12 +328,14 @@ def test_generate_params_defaults_callback_on_and_accepts_explicit_off() -> None
 
 
 def test_generate_route_declares_callback_query_parameter() -> None:
+    pytest.importorskip("fastapi", reason="requires [web] extras: uv sync --extra web")
     from server.generate.routes import generate_endpoint
 
     assert "core_question_callback" in inspect.signature(generate_endpoint).parameters
 
 
 def test_natural_sciences_prompt_preview_reflects_requested_callback_state() -> None:
+    pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
     from server.config import ServerConfig
     from server.generate.models import GenerateParams
     from server.generate.service import build_prompt_previews
@@ -401,6 +404,7 @@ def test_natural_sciences_server_generation_forwards_callback(monkeypatch) -> No
 
 
 def test_callback_toggle_does_not_change_seeded_natural_sciences_sampling() -> None:
+    pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
     from server.generate.models import GenerateParams
     from server.generate.service import _sample_worker_params
     from server.generate.subjects import SUBJECTS

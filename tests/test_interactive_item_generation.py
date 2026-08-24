@@ -310,6 +310,7 @@ def test_corrector_restores_original_interaction_spec_verbatim() -> None:
 
 
 def test_scoped_modification_merge_ignores_interaction_paths() -> None:
+    pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
     from server.generate.modification_service import _merge_scoped
 
     base = {"subquestions": [{"題目": "舊題目", "interaction": _drag_spec()}]}

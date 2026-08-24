@@ -7,6 +7,9 @@ import os
 from pathlib import Path
 from unittest import mock
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from fastapi.testclient import TestClient
 
 from server.app import create_app

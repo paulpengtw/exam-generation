@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from server.generate.models import GenerateParams, SubQuestionConfig
 from server.generate.service import _decode_subquestion_configs
 from server.generate.subjects import _ss_coerce_overrides, _ss_do_sample_params

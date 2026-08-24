@@ -8,6 +8,9 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

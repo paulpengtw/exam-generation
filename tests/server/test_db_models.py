@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from server.config import ServerConfig
 from server.models import (
     Base,

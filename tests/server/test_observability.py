@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+pytest.importorskip("sentry_sdk", reason="requires [web] extras: uv sync --extra web")
+
 
 def test_init_sentry_does_not_initialize_without_dsn(monkeypatch) -> None:
     from server import observability

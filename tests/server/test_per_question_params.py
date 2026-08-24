@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from server.config import ServerConfig
 from server.generate.models import (
     PER_QUESTION_FIELDS,

@@ -10,6 +10,9 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
 from server.generate.persistence import (

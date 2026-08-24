@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from server.config import ServerConfig
 from server.auth.dependencies import get_current_user
 from server.generate.routes import router
