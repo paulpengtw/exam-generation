@@ -7,6 +7,7 @@ import json
 from src.common.figure_policy import (
     effective_figure_kind,
     find_figure_kind_collisions,
+    normalize_figure_kind,
 )
 from src.social_studies import figure_kind_loader
 from src.social_studies.schemas import ImageSpec
@@ -73,6 +74,10 @@ def test_find_collisions_folds_two_alias_spellings_to_one_canonical_kind() -> No
     assert find_figure_kind_collisions(specs, pinned=set(), allow_duplicates=False) == [
         (0, 1, "長條圖")
     ]
+
+
+def test_normalize_figure_kind_returns_canonical_label_for_alias() -> None:
+    assert normalize_figure_kind("  BAR-CHART  ") == "長條圖"
 
 
 def test_find_collisions_folds_canonical_and_alias_spellings() -> None:
