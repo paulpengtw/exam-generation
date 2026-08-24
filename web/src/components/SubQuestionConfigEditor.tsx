@@ -12,6 +12,7 @@ export interface SubQuestionConfigEditorProps {
   config: SubQuestionConfig;
   subject: string;
   questionTypes: SchemaEntry[];
+  cognitiveProcesses?: SchemaEntry[];
   contentTypes: SchemaEntry[];
   onChange: (patch: Partial<SubQuestionConfig>) => void;
 }
@@ -37,6 +38,7 @@ export default function SubQuestionConfigEditor({
   config,
   subject,
   questionTypes,
+  cognitiveProcesses = [],
   contentTypes,
   onChange,
 }: SubQuestionConfigEditorProps) {
@@ -59,6 +61,24 @@ export default function SubQuestionConfigEditor({
             ))}
           </select>
         </div>
+        {subject === "social_studies" && cognitiveProcesses.length > 0 && (
+          <div>
+            <label className="block text-xs text-gray-500">{t("form.cognitive_process")}</label>
+            <select
+              aria-label={t("form.cognitive_process")}
+              value={config.cognitive_process ?? ""}
+              onChange={(e) => onChange({ cognitive_process: e.target.value || undefined })}
+              className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+            >
+              <option value="">{t("form.confirm_random")}</option>
+              {cognitiveProcesses.map((entry) => (
+                <option key={entry.value} value={entry.value}>
+                  {entry.value}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-xs text-gray-500">文本字數限制</label>
           <input

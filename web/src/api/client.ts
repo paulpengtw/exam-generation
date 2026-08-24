@@ -33,6 +33,8 @@ export interface Schemas {
   情境子類別?: SchemaEntry[];
   題型種類: SchemaEntry[];
   題型: SchemaEntry[];
+  認知歷程?: SchemaEntry[];
+  內容領域?: SchemaEntry[];
   數學思考: SchemaEntry[];
   科學能力?: SchemaEntry[];
   question_style?: SchemaEntry[];
@@ -40,6 +42,7 @@ export interface Schemas {
   科目?: SchemaEntry[];
   學習表現?: LearningPerformanceEntry[];
   學習內容?: LearningPerformanceEntry[];
+  digital_only_question_types?: string[];
   [key: string]: unknown;
 }
 
