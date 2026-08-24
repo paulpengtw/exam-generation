@@ -872,6 +872,7 @@ export default function ParamForm({
   const [surfaceQuestionTypeNotice, setSurfaceQuestionTypeNotice] = useState<string[]>([]);
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
   const [pendingPerQuestionParams, setPendingPerQuestionParams] = useState<Record<string, unknown>[] | null>(null);
+  const [hasPendingConfirmationEdits, setHasPendingConfirmationEdits] = useState(false);
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
@@ -2214,6 +2215,7 @@ export default function ParamForm({
       : buildPerQuestionParams();
     const usingHistoryPerQuestionParams = preserveHistoryPerQuestionParams;
     setPendingPerQuestionParams(perQuestionParams);
+    setHasPendingConfirmationEdits(false);
     setPendingResolvedSubquestionConfigs(
       usingHistoryPerQuestionParams
         ? perQuestionParams.map((params) =>
@@ -2250,6 +2252,7 @@ export default function ParamForm({
     if (userId) clearDraft(userId);
     setPendingParams(null);
     setPendingPerQuestionParams(null);
+    setHasPendingConfirmationEdits(false);
     onSubmit(submittedParams);
   }
 
@@ -2258,6 +2261,7 @@ export default function ParamForm({
     subquestionIndex: number,
     patch: Partial<SubQuestionConfig>,
   ) {
+    setHasPendingConfirmationEdits(true);
     setPendingPerQuestionParams((current) => {
       const perQuestionParams = current ?? parsePerQuestionParams(pendingParams?.per_question_params);
       const questionParams = perQuestionParams[questionIndex];
@@ -2595,16 +2599,25 @@ export default function ParamForm({
           >
             {t("form.btn_confirm_send")}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setPendingParams(null);
-              setPendingPerQuestionParams(null);
-            }}
-            className="rounded border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 hover:bg-gray-50"
-          >
-            {t("form.btn_back_edit")}
-          </button>
+          <div className="flex flex-col items-start">
+            <button
+              type="button"
+              onClick={() => {
+                setPendingParams(null);
+                setPendingPerQuestionParams(null);
+                setHasPendingConfirmationEdits(false);
+              }}
+              className="rounded border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 hover:bg-gray-50"
+            >
+              {t("form.btn_back_edit")}
+            </button>
+            {hasPendingConfirmationEdits && (
+              // 確認頁修改不會寫回共用的各小題配置，因此返回表單會捨棄這些修改。
+              <p className="mt-1 max-w-64 text-xs text-amber-800">
+                {t("form.confirm_edit_discard_warning")}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     );
