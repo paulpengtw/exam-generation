@@ -849,8 +849,9 @@ describe("ParamForm 發送前確認 display semantics", () => {
     const firstContentType = firstCard.getByLabelText("題目內容類型");
     const firstImageMode = firstCard.getByLabelText("圖片生成模式");
 
-    expect(within(firstContentType.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
-    expect(within(firstImageMode.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(within(firstContentType.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
+    expect(within(firstImageMode.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
+    expect(within(firstImageMode.parentElement!).queryByText("隨機抽取")).toBeNull();
     expect(within(firstQuestion.getAllByRole("listitem")[1]).getByLabelText("題目內容類型")).toHaveValue("純文字");
     expect(within(secondQuestion.getAllByRole("listitem")[0]).getByLabelText("題目內容類型")).toHaveValue("");
 
@@ -1457,10 +1458,10 @@ describe("ParamForm 發送前確認 display semantics", () => {
       expectedRows.forEach((text) => expect(card.getByText(text)).toBeInTheDocument());
       const contentType = card.getByLabelText("題目內容類型");
       expect(contentType).toHaveValue("");
-      expect(within(contentType.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+      expect(within(contentType.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
       const imageMode = card.getByLabelText("圖片生成模式");
       expect(imageMode).toHaveValue("");
-      expect(within(imageMode.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+      expect(within(imageMode.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
       const questionType = card.getByLabelText("題型");
       expect(questionType).toHaveValue("");
       expect(within(questionType.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");

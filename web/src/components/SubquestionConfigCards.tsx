@@ -77,8 +77,8 @@ export default function SubquestionConfigCards({
               config={row}
               contentTypes={contentTypes}
               badge={{
-                label: t(row.content_type?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_random"),
-                className: `text-xs font-medium ${row.content_type?.trim() ? "text-green-700" : "text-amber-700"}`,
+                label: t(row.content_type?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_inherit"),
+                className: `text-xs font-medium ${row.content_type?.trim() ? "text-green-700" : "text-gray-600"}`,
               }}
               onChange={(patch) => onContentTypeChange(subquestionIndex, patch.content_type ?? "")}
             />
@@ -89,8 +89,8 @@ export default function SubquestionConfigCards({
             <SubQuestionImageGenerationModeField
               config={row}
               badge={{
-                label: t(row.image_generation_mode?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_random"),
-                className: `text-xs font-medium ${row.image_generation_mode?.trim() ? "text-green-700" : "text-amber-700"}`,
+                label: t(row.image_generation_mode?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_inherit"),
+                className: `text-xs font-medium ${row.image_generation_mode?.trim() ? "text-green-700" : "text-gray-600"}`,
               }}
               onChange={(patch) => onImageModeChange(subquestionIndex, patch.image_generation_mode ?? "")}
             />
