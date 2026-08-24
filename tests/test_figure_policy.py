@@ -67,6 +67,28 @@ def test_find_collisions_normalizes_strip_and_casefold() -> None:
     ]
 
 
+def test_find_collisions_folds_two_alias_spellings_to_one_canonical_kind() -> None:
+    specs = [_spec(figure_kind="直條圖"), _spec(figure_kind="bar_chart")]
+
+    assert find_figure_kind_collisions(specs, pinned=set(), allow_duplicates=False) == [
+        (0, 1, "長條圖")
+    ]
+
+
+def test_find_collisions_folds_canonical_and_alias_spellings() -> None:
+    specs = [_spec(figure_kind="長條圖"), _spec(figure_kind="直條圖")]
+
+    assert find_figure_kind_collisions(specs, pinned=set(), allow_duplicates=False) == [
+        (0, 1, "長條圖")
+    ]
+
+
+def test_find_collisions_does_not_fold_unknown_kind_into_canonical_kind() -> None:
+    specs = [_spec(figure_kind="長條圖風格示意圖"), _spec(figure_kind="長條圖")]
+
+    assert find_figure_kind_collisions(specs, pinned=set(), allow_duplicates=False) == []
+
+
 def test_empty_figure_kinds_never_collide() -> None:
     specs = [_spec(), _spec(), _spec(render_mode="chart")]
 
