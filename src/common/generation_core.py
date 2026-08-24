@@ -16,7 +16,8 @@ from __future__ import annotations
 import concurrent.futures
 import sys
 from collections.abc import Callable, Sequence
-from typing import Any
+from enum import Enum
+from typing import Any, get_args
 
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
@@ -289,6 +290,18 @@ def generate_one_core(
                 if configured_type is not None:
                     field = type(result).model_fields.get("題型")
                     enum_type = field.annotation if field is not None else None
+                    enum_candidates = (
+                        get_args(enum_type) if enum_type is not None else ()
+                    )
+                    enum_type = next(
+                        (
+                            candidate
+                            for candidate in enum_candidates
+                            if isinstance(candidate, type)
+                            and issubclass(candidate, Enum)
+                        ),
+                        enum_type,
+                    )
                     try:
                         coerced_type = (
                             enum_type(configured_type)
