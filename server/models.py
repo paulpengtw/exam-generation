@@ -60,6 +60,7 @@ class GenerationLog(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    figure_policy_trail_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     user: Mapped[User] = relationship(back_populates="generation_logs")
 

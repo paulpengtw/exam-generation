@@ -101,7 +101,7 @@ def test_incremental_figure_policy_recorder_persists_each_prefix(tmp_path: Path)
                 effective_figure_kind="地圖",
                 timestamp=datetime(2026, 8, 25, tzinfo=timezone.utc),
             )
-            recorder(entry)
+            await asyncio.to_thread(recorder, entry)
 
             async with session_factory() as session:
                 log = await session.get(GenerationLog, log_id)

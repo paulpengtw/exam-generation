@@ -35,7 +35,11 @@ from server.generate.models import (
     build_sse_error,
     decode_per_question_params,
 )
-from server.generate.persistence import make_exchange_recorder, persist_generation_record
+from server.generate.persistence import (
+    make_exchange_recorder,
+    make_figure_policy_trail_recorder,
+    persist_generation_record,
+)
 from server.generate.subjects import SUBJECTS, SubjectSpec
 from server.observability import record_generation_outcome
 from src.llm_client import LLMClient
@@ -299,6 +303,11 @@ def _worker_one(
         session_factory=ctx.session_factory,
         next_order=ctx.next_order,
     )
+    figure_policy_recorder = make_figure_policy_trail_recorder(
+        generation_log_id=ctx.generation_log_id,
+        loop=ctx.loop,
+        session_factory=ctx.session_factory,
+    )
     question_client.set_observer(
         make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
     )
@@ -323,6 +332,8 @@ def _worker_one(
             else entry
         )
         figure_policy_trail.append(payload)
+        if figure_policy_recorder is not None:
+            figure_policy_recorder(entry)
 
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:

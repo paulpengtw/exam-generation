@@ -12,14 +12,90 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import uuid
 from typing import Any
 
+from sqlalchemy import select, update
+
 from server.generate.exchange_recorder import ExchangeRecorder
 from server.generate.marshalling import extract_image_files, strip_image_base64
-from server.models import GenerationRecord, LLMExchange
+from server.models import GenerationLog, GenerationRecord, LLMExchange
 
 logger = logging.getLogger(__name__)
+
+
+class FigurePolicyTrailRecorder:
+    """Serialize each policy callback and update its live generation log."""
+
+    def __init__(
+        self,
+        generation_log_id: uuid.UUID,
+        loop: asyncio.AbstractEventLoop,
+        session_factory: Any,
+    ) -> None:
+        self._generation_log_id = generation_log_id
+        self._loop = loop
+        self._session_factory = session_factory
+        self._lock = threading.Lock()
+        self._trail: list[dict[str, Any]] = []
+
+    def __call__(self, entry: Any) -> None:
+        payload = entry.model_dump(mode="json") if hasattr(entry, "model_dump") else entry
+        with self._lock:
+            self._trail.append(payload)
+            snapshot = list(self._trail)
+            future = asyncio.run_coroutine_threadsafe(
+                self._persist(snapshot),
+                self._loop,
+            )
+            try:
+                future.result(timeout=10)
+            except Exception as exc:  # noqa: BLE001 — policy persistence is best effort
+                logger.warning("figure policy trail staging failed: %s", exc)
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self._trail)
+
+    async def _persist(self, trail: list[dict[str, Any]]) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == self._generation_log_id)
+                .values(figure_policy_trail_json=trail)
+            )
+            await session.commit()
+
+
+def make_figure_policy_trail_recorder(
+    *,
+    generation_log_id: uuid.UUID | None,
+    loop: asyncio.AbstractEventLoop,
+    session_factory: Any,
+) -> FigurePolicyTrailRecorder | None:
+    """Create the incremental recorder, or disable it for log-less runs."""
+    if generation_log_id is None:
+        return None
+    return FigurePolicyTrailRecorder(generation_log_id, loop, session_factory)
+
+
+async def _staged_figure_policy_trail(
+    generation_log_id: uuid.UUID | None,
+    session_factory: Any,
+) -> list[dict[str, Any]] | None:
+    if generation_log_id is None:
+        return None
+    try:
+        async with session_factory() as session:
+            result = await session.execute(
+                select(GenerationLog).where(GenerationLog.id == generation_log_id)
+            )
+            row = result.scalar_one_or_none()
+            return row.figure_policy_trail_json if row is not None else None
+    except Exception as exc:  # noqa: BLE001 — tombstone persistence is best effort
+        logger.warning("failed to read staged figure policy trail: %s", exc)
+        return None
 
 
 async def persist_generation_record(
@@ -85,6 +161,10 @@ async def persist_failed_generation_record(
     its server-side error to the caller.
     """
     try:
+        figure_policy_trail_json = await _staged_figure_policy_trail(
+            generation_log_id,
+            session_factory,
+        )
         record = GenerationRecord(
             user_id=user_id,
             generation_log_id=generation_log_id,
@@ -93,6 +173,7 @@ async def persist_failed_generation_record(
             params_json=params.model_dump(mode="json"),
             question_json=None,
             verification_trail_json=None,
+            figure_policy_trail_json=figure_policy_trail_json,
             image_files=[],
             status="failed",
             error=error,
@@ -114,6 +195,10 @@ async def persist_aborted_generation_record(
 ) -> None:
     """Insert one user-aborted run tombstone without a question payload."""
     try:
+        figure_policy_trail_json = await _staged_figure_policy_trail(
+            generation_log_id,
+            session_factory,
+        )
         record = GenerationRecord(
             user_id=user_id,
             generation_log_id=generation_log_id,
@@ -122,6 +207,7 @@ async def persist_aborted_generation_record(
             params_json=params.model_dump(mode="json"),
             question_json=None,
             verification_trail_json=None,
+            figure_policy_trail_json=figure_policy_trail_json,
             image_files=[],
             status="aborted",
         )
