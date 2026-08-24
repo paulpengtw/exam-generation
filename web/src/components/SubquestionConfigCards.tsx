@@ -26,6 +26,8 @@ export default function SubquestionConfigCards({
   lpEntryByCode,
   availableLc,
   availableLp,
+  filteredLcPool,
+  filteredLpPool,
   onInstructionChange,
   onQuestionTypeChange,
   onContentTypeChange,
@@ -48,6 +50,10 @@ export default function SubquestionConfigCards({
   availableLc?: SearchPickerEntry[];
   /** Full subject-filtered LP pool for the SearchPicker. Required when onLpChange is provided. */
   availableLp?: SearchPickerEntry[];
+  /** Optional ICCS domain-filtered LC codes for 公民/跨科 confirmation pickers. */
+  filteredLcPool?: string[];
+  /** Optional ICCS domain-filtered LP codes for 公民/跨科 confirmation pickers. */
+  filteredLpPool?: string[];
   onInstructionChange?: (subquestionIndex: number, instruction: string) => void;
   onQuestionTypeChange?: (subquestionIndex: number, questionType: string) => void;
   onContentTypeChange?: (subquestionIndex: number, contentType: string) => void;
@@ -67,12 +73,24 @@ export default function SubquestionConfigCards({
   // Base ID for associating labels with SearchPicker inputs — forward-compat hook
   // for #506 which will add a domain-scoped pool filter on top of this picker.
   const baseId = useId();
+  const visibleAvailableLc = filteredLcPool === undefined
+    ? availableLc ?? []
+    : (availableLc ?? []).filter((entry) => filteredLcPool.includes(entry.value));
+  const visibleAvailableLp = filteredLpPool === undefined
+    ? availableLp ?? []
+    : (availableLp ?? []).filter((entry) => filteredLpPool.includes(entry.value));
 
   return (
     <ol className="space-y-3">
       {configs.map((row, subquestionIndex) => {
         const lcPickerId = `${baseId}-${subquestionIndex}-lc`;
         const lpPickerId = `${baseId}-${subquestionIndex}-lp`;
+        const visibleLearningContent = filteredLcPool === undefined
+          ? row.learning_content ?? []
+          : (row.learning_content ?? []).filter((code) => filteredLcPool.includes(code));
+        const visibleLearningPerformance = filteredLpPool === undefined
+          ? row.learning_performance ?? []
+          : (row.learning_performance ?? []).filter((code) => filteredLpPool.includes(code));
 
         return (
           <li key={subquestionIndex} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -228,25 +246,25 @@ export default function SubquestionConfigCards({
                   </div>
                   <SearchPicker
                     id={lcPickerId}
-                    available={availableLc ?? []}
-                    selected={row.learning_content ?? []}
+                    available={visibleAvailableLc}
+                    selected={visibleLearningContent}
                     onChange={(values) => onLcChange(subquestionIndex, values)}
                     placeholder={t("form.confirm_subq_lc_picker_placeholder")}
                   />
                 </div>
               ) : (
                 <>
-                  {row.learning_content && row.learning_content.length > 0 ? (
+                  {visibleLearningContent.length > 0 ? (
                     <>
                       <div className="mt-2 text-xs font-medium text-gray-600">
                         {t(
                           row._lcWasAutoDrawn
                             ? "form.confirm_subq_lc_random_pool"
                             : "form.confirm_subq_lc_selected",
-                        ).replace("{n}", String(row.learning_content.length))}
+                        ).replace("{n}", String(visibleLearningContent.length))}
                       </div>
                       <ul className="space-y-1">
-                        {row.learning_content.map((code) => {
+                        {visibleLearningContent.map((code) => {
                           const entry = lcEntryByCode.get(code);
                           return (
                             <li key={code} className="flex gap-2 text-sm">
@@ -289,25 +307,25 @@ export default function SubquestionConfigCards({
                   </div>
                   <SearchPicker
                     id={lpPickerId}
-                    available={availableLp ?? []}
-                    selected={row.learning_performance ?? []}
+                    available={visibleAvailableLp}
+                    selected={visibleLearningPerformance}
                     onChange={(values) => onLpChange(subquestionIndex, values)}
                     placeholder={t("form.confirm_subq_lp_picker_placeholder")}
                   />
                 </div>
               ) : (
                 <>
-                  {row.learning_performance && row.learning_performance.length > 0 ? (
+                  {visibleLearningPerformance.length > 0 ? (
                     <>
                       <div className="mt-2 text-xs font-medium text-gray-600">
                         {t(
                           row._lpWasAutoDrawn
                             ? "form.confirm_subq_lp_random_pool"
                             : "form.confirm_subq_lp_selected",
-                        ).replace("{n}", String(row.learning_performance.length))}
+                        ).replace("{n}", String(visibleLearningPerformance.length))}
                       </div>
                       <ul className="space-y-1">
-                        {row.learning_performance.map((code) => {
+                        {visibleLearningPerformance.map((code) => {
                           const entry = lpEntryByCode.get(code);
                           return (
                             <li key={code} className="flex gap-2 text-sm">
