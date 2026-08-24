@@ -1834,7 +1834,7 @@ export default function ParamForm({
     e.preventDefault();
     previewRequestedRef.current = false;
     setPromptPreviews([]);
-    if (grade === "") return;
+    if (grade === "") { return; }
     if (!setType.trim()) {
       setValidationError(t("form.error_set_type_required"));
       return;
@@ -1847,7 +1847,7 @@ export default function ParamForm({
       isCurriculumSubject
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
-    if (isCurriculumSubject && !effectiveContentType) return;
+    if (isCurriculumSubject && !effectiveContentType) { return; }
     const lpPoolValues = availableLearningPerformance.map((e) => e.value);
     const lcPoolValues = availableLearningContent.map((e) => e.value);
     const hasHistoryPerQuestionParams = historyPerQuestionParams.length === count;
@@ -2464,6 +2464,28 @@ export default function ParamForm({
     });
   }
 
+  function updatePendingSubquestionLc(
+    questionIndex: number,
+    subquestionIndex: number,
+    lc: string[],
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      learning_content: lc.length > 0 ? lc : undefined,
+    });
+    // Explicit user selection clears the auto-drawn flag for this field/小題 only.
+    setPendingResolvedSubquestionConfigs((current) => {
+      if (!current[questionIndex]?.[subquestionIndex]) return current;
+      const nextQuestion = [...current[questionIndex]];
+      nextQuestion[subquestionIndex] = {
+        ...nextQuestion[subquestionIndex],
+        _lcWasAutoDrawn: false,
+      };
+      const next = [...current];
+      next[questionIndex] = nextQuestion;
+      return next;
+    });
+  }
+
   // #446: retry handler — re-fetches using the CURRENT live configuration, not
   // a stale snapshot.  Building params here the same way the debounced effect
   // does means the race is harmless: whichever request lands last carries live
@@ -2492,6 +2514,28 @@ export default function ParamForm({
         setPreviewRefetchLoading(false);
         // Leave stale badge in place so the user can retry again
       });
+  }
+
+  function updatePendingSubquestionLp(
+    questionIndex: number,
+    subquestionIndex: number,
+    lp: string[],
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      learning_performance: lp.length > 0 ? lp : undefined,
+    });
+    // Explicit user selection clears the auto-drawn flag for this field/小題 only.
+    setPendingResolvedSubquestionConfigs((current) => {
+      if (!current[questionIndex]?.[subquestionIndex]) return current;
+      const nextQuestion = [...current[questionIndex]];
+      nextQuestion[subquestionIndex] = {
+        ...nextQuestion[subquestionIndex],
+        _lpWasAutoDrawn: false,
+      };
+      const next = [...current];
+      next[questionIndex] = nextQuestion;
+      return next;
+    });
   }
 
   if (pendingParams) {
@@ -2737,6 +2781,8 @@ export default function ParamForm({
                       contentTypes={schemas?.題目內容類型 ?? []}
                       lcEntryByCode={lcEntryByCode}
                       lpEntryByCode={lpEntryByCode}
+                      availableLc={allLcEntries}
+                      availableLp={allLpEntries}
                       onInstructionChange={(subquestionIndex, instruction) =>
                         updatePendingSubquestionInstruction(index, subquestionIndex, instruction)
                       }
@@ -2763,6 +2809,12 @@ export default function ParamForm({
                       }
                       onFieldValidityChange={(subquestionIndex, fieldKey, isValid) =>
                         setConfirmFieldValidity(index, subquestionIndex, fieldKey, isValid)
+                      }
+                      onLcChange={(subquestionIndex, lc) =>
+                        updatePendingSubquestionLc(index, subquestionIndex, lc)
+                      }
+                      onLpChange={(subquestionIndex, lp) =>
+                        updatePendingSubquestionLp(index, subquestionIndex, lp)
                       }
                     />
                   </section>
