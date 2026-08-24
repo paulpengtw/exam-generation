@@ -6,6 +6,7 @@ import {
   SubQuestionImageGenerationModeField,
   SubQuestionInstructionField,
   SubQuestionQuestionTypeField,
+  SubQuestionReportingScaleField,
 } from "./SubQuestionConfigEditor";
 
 export type ResolvedSubQuestionConfig = SubQuestionConfig & {
@@ -24,6 +25,7 @@ export default function SubquestionConfigCards({
   onQuestionTypeChange,
   onContentTypeChange,
   onImageModeChange,
+  onReportingScaleChange,
 }: {
   configs: ResolvedSubQuestionConfig[];
   subject: string;
@@ -35,6 +37,7 @@ export default function SubquestionConfigCards({
   onQuestionTypeChange?: (subquestionIndex: number, questionType: string) => void;
   onContentTypeChange?: (subquestionIndex: number, contentType: string) => void;
   onImageModeChange?: (subquestionIndex: number, imageMode: string) => void;
+  onReportingScaleChange?: (subquestionIndex: number, reportingScale: string) => void;
 }) {
   const t = useT();
 
@@ -100,7 +103,20 @@ export default function SubquestionConfigCards({
           <div className="text-sm text-gray-700">{t("form.confirm_subq_q_word_limit")} {row.question_word_limit ?? t("form.confirm_unlimited")}</div>
           <div className="text-sm text-gray-700">{t("form.confirm_subq_o_word_limit")} {row.option_word_limit ?? t("form.confirm_unlimited")}</div>
           <div className="text-sm text-gray-700">{t("form.confirm_subq_text_word_limit")} {row.text_word_limit ?? t("form.confirm_unlimited")}</div>
-          {subject === "natural_sciences" && <div className="text-sm text-gray-700">{t("form.confirm_subq_reporting_scale")} {row.reporting_scale ?? t("form.confirm_random")}</div>}
+          {subject === "natural_sciences" && (
+            onReportingScaleChange ? (
+              <SubQuestionReportingScaleField
+                config={row}
+                badge={{
+                  label: t(row.reporting_scale?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_random"),
+                  className: `text-xs font-medium ${row.reporting_scale?.trim() ? "text-green-700" : "text-amber-700"}`,
+                }}
+                onChange={(patch) => onReportingScaleChange(subquestionIndex, patch.reporting_scale ?? "")}
+              />
+            ) : (
+              <div className="text-sm text-gray-700">{t("form.confirm_subq_reporting_scale")} {row.reporting_scale ?? t("form.confirm_random")}</div>
+            )
+          )}
           <div>
             {row.learning_content && row.learning_content.length > 0 ? (
               <>

@@ -2325,6 +2325,16 @@ export default function ParamForm({
     });
   }
 
+  function updatePendingSubquestionReportingScale(
+    questionIndex: number,
+    subquestionIndex: number,
+    reportingScale: string,
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      reporting_scale: reportingScale || undefined,
+    });
+  }
+
   if (pendingParams) {
     const p = pendingParams;
     const resolvedPerQuestionParams = pendingPerQuestionParams ?? (p.per_question_params
@@ -2558,6 +2568,9 @@ export default function ParamForm({
                       }
                       onImageModeChange={(subquestionIndex, imageMode) =>
                         updatePendingSubquestionImageMode(index, subquestionIndex, imageMode)
+                      }
+                      onReportingScaleChange={(subquestionIndex, reportingScale) =>
+                        updatePendingSubquestionReportingScale(index, subquestionIndex, reportingScale)
                       }
                     />
                   </section>
