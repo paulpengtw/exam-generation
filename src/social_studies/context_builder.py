@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from src.common.batch_dedup import PriorScope, format_prior_scopes_block
-from src.common.figure_policy import effective_figure_kind
+from src.common.figure_policy import effective_figure_kind, normalize_figure_kind
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.social_studies.core_competency_loader import (
     competency_instructions,
@@ -192,7 +192,11 @@ def _figure_kind_guidance(
             "  - **圖像種類多樣性**：每張圖（含題幹與所有小題）的圖像種類不得重複；"
             "同一具體圖像類型即使使用不同 render_mode 仍視為重複。"
         )
-    normalized_known = [kind.strip() for kind in known_kinds if isinstance(kind, str) and kind.strip()]
+    normalized_known = [
+        normalize_figure_kind(kind)
+        for kind in known_kinds
+        if isinstance(kind, str) and kind.strip()
+    ]
     if normalized_known:
         lines.append(
             "  - **已使用圖像種類**："
