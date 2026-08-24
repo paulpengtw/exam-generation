@@ -148,6 +148,20 @@ def test_math_learning_content_is_filtered_to_the_resolved_learning_stage(
     assert returned_values == expected_values
 
 
+def test_social_studies_schemas_expose_the_iccs_code_to_domain_mapping() -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.get("/api/schemas?subject=social_studies")
+
+    assert response.status_code == 200
+    mapping = response.json()["內容領域_mapping"]
+    assert mapping["公Aa-Ⅳ-1"] == ["Civic Roles and Identities"]
+    assert set(mapping["公Ab-Ⅳ-1"]) == {
+        "Civic Institutions and Systems",
+        "Civic Principles",
+    }
+
+
 def test_natural_sciences_schemas_include_pisa_science_dimensions() -> None:
     app = create_app()
     with TestClient(app) as client:
