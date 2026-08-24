@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import random
 
 from src.common.difficulty import Difficulty, resolve_difficulty
@@ -15,9 +16,9 @@ from src.social_studies.curriculum_loader import (
     load_learning_content,
     load_learning_performance,
 )
+from src.social_studies.domain_mapping import DomainMapping, load_domain_mapping
 from src.social_studies.schema_loader import load_grades, load_learning_stage, load_schemas
 from src.social_studies.schemas import (
-    CognitiveProcess,
     ContentDomain,
     CoreCompetency,
     QuestionContext,
@@ -42,10 +43,116 @@ _RANDOM_CONTENT_TYPE_VALUES: list[str] = [
 _MAX_SUBQUESTION_SLOTS = 7
 _CC_DATA: dict = load_core_competencies()
 _ALLOWED_COMPETENCY_VALUES: list[str] = allowed_competencies(_CC_DATA, _LEARNING_STAGE)
-_ALLOWED_COMPETENCIES: list[CoreCompetency] = [CoreCompetency(v) for v in _ALLOWED_COMPETENCY_VALUES]  # type: ignore[misc]
+_ALLOWED_COMPETENCIES: list[CoreCompetency] = [
+    CoreCompetency(v) for v in _ALLOWED_COMPETENCY_VALUES
+]  # type: ignore[misc]
 
 _LC_DATA: dict = load_learning_content()
 _LP_DATA: dict = load_learning_performance()
+_DOMAIN_MAPPING: DomainMapping = load_domain_mapping()
+_DOMAIN_FILTER_SUBJECTS = {"公民與社會", "跨科"}
+logger = logging.getLogger(__name__)
+_KNOWING_DEFINING = "Knowing–Defining and Describing"
+_KNOWING_ILLUSTRATING = "Knowing–Illustrating with examples"
+_REASONING_INTERPRET = "Reasoning and Applying–Interpret information"
+_REASONING_RELATE = "Reasoning and Applying–Relate or Integrate"
+_REASONING_PROCESSES = (_REASONING_INTERPRET, _REASONING_RELATE)
+
+
+def _is_public_code(value: str) -> bool:
+    return value.startswith("公")
+
+
+def _filter_entries_for_domain(
+    entries: list[dict],
+    domain: ContentDomain,
+    subject: QuestionSubject,
+) -> list[dict]:
+    """Keep public codes mapped to *domain*; leave all other buckets untouched."""
+    if subject.value not in _DOMAIN_FILTER_SUBJECTS:
+        return entries
+
+    mapped_codes = _DOMAIN_MAPPING.domain_to_codes.get(domain.value, set())
+    return [
+        entry
+        for entry in entries
+        if not _is_public_code(entry.get("value", ""))
+        or entry["value"] in mapped_codes
+    ]
+
+
+def _resolve_domain_and_pools(
+    rng: random.Random,
+    selected_domain: ContentDomain,
+    subject: QuestionSubject,
+    lc_entries: list[dict] | None,
+    lp_entries: list[dict] | None,
+) -> tuple[ContentDomain, list[dict] | None, list[dict] | None]:
+    """Draw a usable domain, retrying at most once for each ICCS domain."""
+    if subject.value not in _DOMAIN_FILTER_SUBJECTS:
+        return selected_domain, lc_entries, lp_entries
+
+    domains = list(ContentDomain)
+    remaining = [domain for domain in domains if domain != selected_domain]
+    for attempt in range(len(domains)):
+        filtered_lc = (
+            _filter_entries_for_domain(lc_entries, selected_domain, subject)
+            if lc_entries is not None
+            else None
+        )
+        filtered_lp = (
+            _filter_entries_for_domain(lp_entries, selected_domain, subject)
+            if lp_entries is not None
+            else None
+        )
+        lc_empty = lc_entries is not None and bool(lc_entries) and not filtered_lc
+        lp_empty = lp_entries is not None and bool(lp_entries) and not filtered_lp
+        if not lc_empty and not lp_empty:
+            return selected_domain, filtered_lc, filtered_lp
+
+        if attempt < len(domains) - 1:
+            selected_domain = rng.choice(remaining)
+            remaining.remove(selected_domain)
+
+    logger.warning(
+        "ICCS domain filter has no usable pool for subject=%s; "
+        "using the unfiltered learning pools",
+        subject.value,
+    )
+    return selected_domain, lc_entries, lp_entries
+
+
+def _assign_cognitive_processes(
+    rng: random.Random,
+    slot_count: int,
+    subject: QuestionSubject,
+) -> list[str]:
+    """Assign ICCS processes with a one-third Knowing / two-thirds RA tier weight."""
+    if slot_count <= 0:
+        return []
+
+    tiers = ["Knowing" if rng.random() < (1 / 3) else "Reasoning" for _ in range(slot_count)]
+    knowing_indices = [index for index, tier in enumerate(tiers) if tier == "Knowing"]
+    defining_index = rng.choice(knowing_indices) if knowing_indices else None
+    assignments = [
+        (
+            _KNOWING_DEFINING
+            if index == defining_index
+            else _KNOWING_ILLUSTRATING
+            if tier == "Knowing"
+            else rng.choice(_REASONING_PROCESSES)
+        )
+        for index, tier in enumerate(tiers)
+    ]
+
+    if subject.value == "跨科" and _REASONING_RELATE not in assignments:
+        reasoning_index = next(
+            (index for index, process in enumerate(assignments) if process in _REASONING_PROCESSES),
+            slot_count - 1,
+        )
+        assignments[reasoning_index] = _REASONING_RELATE
+
+    return assignments
 
 
 def sample_params(
@@ -118,13 +225,20 @@ def sample_params(
     elif selected_content_type == "含圖片":
         text_form_pool = [
             f for f in all_text_forms
-            if f.value.startswith("非連續文本") and f.value not in {"非連續文本—圖表與圖形", "非連續文本—表格"}
+            if f.value.startswith("非連續文本")
+            and f.value not in {"非連續文本—圖表與圖形", "非連續文本—表格"}
         ]
     else:
         text_form_pool = all_text_forms
     selected_text_form = rng.choice(text_form_pool or all_text_forms)
 
-    selected_subject = rng.choice(subject) if subject is not None else rng.choice(list(QuestionSubject))
+    selected_subject = (
+        rng.choice(subject)
+        if subject is not None
+        else rng.choice(list(QuestionSubject))
+    )
+    # Draw the ICCS domain before any learning-content/performance pool is drawn.
+    selected_content_domain = rng.choice(list(ContentDomain))
 
     if core_competency is not None:
         selected_competency = core_competency
@@ -134,19 +248,43 @@ def sample_params(
         selected_competency = rng.sample(pool, competency_count)
 
     subj_key = selected_subject.value
+    lc_entries = (
+        None
+        if learning_content is not None
+        else allowed_learning_content(_LC_DATA, _LEARNING_STAGE, subj_key)
+    )
+    lp_entries = (
+        None
+        if learning_performance is not None
+        else allowed_learning_performance(_LP_DATA, _LEARNING_STAGE, subj_key)
+    )
+    selected_content_domain, lc_entries, lp_entries = _resolve_domain_and_pools(
+        rng,
+        selected_content_domain,
+        selected_subject,
+        lc_entries,
+        lp_entries,
+    )
+
     if learning_content is not None:
         selected_lc_pool = learning_content
     else:
-        lc_entries = allowed_learning_content(_LC_DATA, _LEARNING_STAGE, subj_key)
-        lc_count = rng.randint(1, min(3, max(1, len(lc_entries))))
-        selected_lc_pool = [e["value"] for e in rng.sample(lc_entries, lc_count)] if lc_entries else []
+        lc_count = rng.randint(1, min(3, max(1, len(lc_entries or []))))
+        selected_lc_pool = (
+            [e["value"] for e in rng.sample(lc_entries or [], lc_count)]
+            if lc_entries
+            else []
+        )
 
     if learning_performance is not None:
         selected_lp_pool = learning_performance
     else:
-        lp_entries = allowed_learning_performance(_LP_DATA, _LEARNING_STAGE, subj_key)
-        lp_count = rng.randint(1, min(2, max(1, len(lp_entries))))
-        selected_lp_pool = [e["value"] for e in rng.sample(lp_entries, lp_count)] if lp_entries else []
+        lp_count = rng.randint(1, min(2, max(1, len(lp_entries or []))))
+        selected_lp_pool = (
+            [e["value"] for e in rng.sample(lp_entries or [], lp_count)]
+            if lp_entries
+            else []
+        )
 
     from src.social_studies.schemas import SubQuestionConfig
     resolved_configs: list[SubQuestionConfig] = []
@@ -185,11 +323,12 @@ def sample_params(
         type_count = rng.randint(1, min(3, len(q_type_pool)))
         selected_q_types = rng.sample(q_type_pool, type_count)
 
-    selected_content_domain = rng.choice(list(ContentDomain))
     slot_count = sub_question_count or len(resolved_configs) or _MAX_SUBQUESTION_SLOTS
-    selected_cognitive_processes = [
-        rng.choice(list(CognitiveProcess)).value for _ in range(slot_count)
-    ]
+    selected_cognitive_processes = _assign_cognitive_processes(
+        rng,
+        slot_count,
+        selected_subject,
+    )
     if resolved_configs:
         resolved_configs = [
             cfg.model_copy(update={"認知歷程": selected_cognitive_processes[i]})
