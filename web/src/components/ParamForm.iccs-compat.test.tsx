@@ -121,4 +121,49 @@ describe("#506 confirmation ICCS compatibility", () => {
 
     expect(readChipCodes(lcPickerRoot)).toEqual([ALLOWED_LC]);
   });
+
+  it("歷史與地理 keep their LC/LP pickers unfiltered by an ICCS domain", async () => {
+    const cases = [
+      {
+        subjectFilter: "歷史",
+        prefix: "歷",
+        lc: "歷Aa-Ⅳ-1",
+        lp: "歷1a-Ⅳ-1",
+      },
+      {
+        subjectFilter: "地理",
+        prefix: "地",
+        lc: "地Aa-Ⅳ-1",
+        lp: "地1a-Ⅳ-1",
+      },
+    ];
+
+    for (const current of cases) {
+      getSchemasMock.mockResolvedValue({
+        ...SOCIAL_SCHEMA,
+        科目: [{ value: current.subjectFilter, instruction: "" }],
+        學習表現: [{ value: current.lp, instruction: "非公民學習表現", 科目: current.prefix }],
+        學習內容: [{ value: current.lc, instruction: "非公民學習內容", 科目: current.prefix }],
+      });
+      const view = render(
+        <ParamForm
+          subject="social_studies"
+          onSubmit={vi.fn()}
+          disabled={false}
+          initialParams={{
+            subject_filter: current.subjectFilter,
+            content_domain: DOMAIN,
+            sub_question_count: 3,
+            subquestion_configs: [{ learning_content: [current.lc], learning_performance: [current.lp] }, {}, {}],
+          }}
+        />,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+      const card = getFirstSubquestionCard();
+      expect(card.getByText(current.lc)).toBeInTheDocument();
+      expect(card.getByText(current.lp)).toBeInTheDocument();
+      view.unmount();
+    }
+  });
 });
