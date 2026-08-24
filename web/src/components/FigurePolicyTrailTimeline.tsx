@@ -2,26 +2,14 @@ import type { FigurePolicyTrailEntry } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 
 export interface FigurePolicyTrailTimelineProps {
-  entries: FigurePolicyTrailEntry[] | null;
+  entries?: FigurePolicyTrailEntry[] | null;
 }
 
 export default function FigurePolicyTrailTimeline({
   entries,
 }: FigurePolicyTrailTimelineProps) {
   const t = useT();
-  if (entries === null) {
-    return (
-      <section
-        aria-label={t("card.figurePolicyTrail")}
-        className="rounded border border-gray-200 bg-gray-50 p-3"
-      >
-        <h3 className="font-semibold text-gray-800">{t("card.figurePolicyTrail")}</h3>
-        <p className="mt-2 text-sm text-gray-600">{t("card.noFigurePolicyTrail")}</p>
-      </section>
-    );
-  }
-
-  if (entries.length === 0) return null;
+  if (!entries || entries.length === 0) return null;
 
   return (
     <section
