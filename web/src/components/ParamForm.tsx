@@ -1196,9 +1196,10 @@ export default function ParamForm({
   }, [coreQuestionResolution, pendingParams, subject]);
 
   // Debounced re-fetch triggered by 確認頁修改 (#445).
-  // Fires only when the user has made at least one edit (pendingPerQuestionParams !== null).
+  // Gates on hasPendingConfirmationEdits so that opening the confirmation screen
+  // (which sets pendingPerQuestionParams) does not schedule a spurious second fetch.
   useEffect(() => {
-    if (!pendingParams || !pendingPerQuestionParams) return;
+    if (!pendingParams || !pendingPerQuestionParams || !hasPendingConfirmationEdits) return;
 
     const seq = ++previewRefetchSeqRef.current;
 
@@ -1239,7 +1240,7 @@ export default function ParamForm({
     }, 500);
 
     return () => { window.clearTimeout(timeoutId); };
-  }, [pendingPerQuestionParams, pendingParams, subject]);
+  }, [hasPendingConfirmationEdits, pendingPerQuestionParams, pendingParams, subject]);
 
   useEffect(() => {
     if (!pendingParams || coreQuestionResolution !== "loading") return;

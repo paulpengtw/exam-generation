@@ -90,6 +90,21 @@ describe("ParamForm 確認頁修改 preview re-fetch (#445)", () => {
     vi.useRealTimers();
   });
 
+  // ── Regression: no spurious re-fetch on confirmation open (#445) ──────────
+  // Opening the confirmation screen must not trigger a second previewGenerate
+  // call even after the debounce window elapses.
+  it("regression — opening confirmation with zero 確認頁修改 issues exactly one preview request", async () => {
+    await openConfirmationWithSubquestions();
+
+    // Advance well past the 500 ms debounce; if the debounce was gated only on
+    // pendingPerQuestionParams (set on confirmation open) this would fire a second call.
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    // Flush any pending microtasks / promise resolutions.
+    await act(async () => { await Promise.resolve(); });
+
+    expect(previewGenerateMock).toHaveBeenCalledTimes(1);
+  });
+
   // ── Slice 1 ────────────────────────────────────────────────────────────────
   // Criterion: an edit on a 題組's card re-fetches that 題組's previews with
   // the edited values.
@@ -120,7 +135,9 @@ describe("ParamForm 確認頁修改 preview re-fetch (#445)", () => {
   // single request (count assertion, not a timing vibe).
   it("slice 2 — rapid 確認頁修改 within the debounce window produce exactly one re-fetch", async () => {
     await openConfirmationWithSubquestions();
-    const callsAfterInitial = previewGenerateMock.mock.calls.length; // = 1
+    // After the initial fetch the call count must be exactly 1 (regression guard:
+    // no spurious re-fetch on confirmation open).
+    expect(previewGenerateMock).toHaveBeenCalledTimes(1);
 
     const [firstInstructionTextarea] = screen.getAllByLabelText("出題指示");
 
@@ -135,14 +152,14 @@ describe("ParamForm 確認頁修改 preview re-fetch (#445)", () => {
     await act(async () => { vi.advanceTimersByTime(200); });
 
     // Debounce has not fired yet — no additional call.
-    expect(previewGenerateMock).toHaveBeenCalledTimes(callsAfterInitial);
+    expect(previewGenerateMock).toHaveBeenCalledTimes(1);
 
     // Advance the remaining time so the debounce fires (500 ms from last edit; 300 ms remain).
     await act(async () => { vi.advanceTimersByTime(300); });
-    await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(callsAfterInitial + 1));
+    await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(2));
 
     // Exactly one extra call — the three edits were coalesced into one request.
-    expect(previewGenerateMock).toHaveBeenCalledTimes(callsAfterInitial + 1);
+    expect(previewGenerateMock).toHaveBeenCalledTimes(2);
   });
 
   // ── Slice 3 ────────────────────────────────────────────────────────────────
