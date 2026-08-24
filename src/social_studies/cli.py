@@ -18,6 +18,7 @@ from src.common.figure_policy import effective_figure_kind, find_figure_kind_col
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
 from src.common.subquestion_forcing import force_grade
+from src.common.verification_trail import VerificationTrailEntry
 from src.config import Config
 from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.html_renderer import PlaywrightRenderer
@@ -61,6 +62,7 @@ _GRADES: list[int] = load_grades(load_schemas())
 _VISUAL_CONTENT_TYPES = {"含圖片", "graphs/charts/tables"}
 
 QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
+VerificationTrailCallback = Callable[[VerificationTrailEntry], None]
 
 
 def _emit_question_update(
@@ -1075,6 +1077,7 @@ def generate_one(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
+    on_trail_entry: VerificationTrailCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -1100,6 +1103,7 @@ def generate_one(
         user_topic=user_topic,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        on_trail_entry=on_trail_entry,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
@@ -1165,6 +1169,7 @@ def generate_with_corrections(
     user_topic: str | None = None,
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
+    on_trail_entry: VerificationTrailCallback | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
@@ -1190,6 +1195,7 @@ def generate_with_corrections(
         user_topic=user_topic,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        on_trail_entry=on_trail_entry,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )

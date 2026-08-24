@@ -53,6 +53,66 @@ function renderStartedRun() {
   return hook;
 }
 
+describe("useGenerate — verification trail lanes", () => {
+  beforeEach(() => {
+    fetchEventSourceMock.mockClear();
+  });
+
+  it("accumulates trail entries on the matching question lane", () => {
+    const { result } = renderStartedRun();
+    const question = (id: string) => ({
+      id,
+      情境: [],
+      題型種類: "single",
+      題型: "multiple_choice",
+      題目: [id],
+      正確解題分析: ["analysis"],
+    });
+    const passed = {
+      code: "verification_trail",
+      kind: "verification",
+      question_id: "q-1",
+      passed: true,
+      details: "通過",
+      my_answer: "A",
+      provided_answer: "A",
+      answer_match: true,
+      chart_verification: null,
+      model: "verify-model",
+      timestamp: "2026-01-01T00:00:00+00:00",
+    };
+    const failed = { ...passed, question_id: "q-2", passed: false, details: "需修正" };
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "question_update",
+        data: JSON.stringify({ index: 0, phase: "draft", question: question("q-1") }),
+      });
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "question_update",
+        data: JSON.stringify({ index: 1, phase: "draft", question: question("q-2") }),
+      });
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "trail",
+        data: JSON.stringify(failed),
+      });
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "trail",
+        data: JSON.stringify(passed),
+      });
+    });
+
+    expect(result.current.displayResults.map((item) => item.trail)).toEqual([
+      [passed],
+      [failed],
+    ]);
+  });
+});
+
 describe("useGenerate — run timestamps", () => {
   beforeEach(() => {
     vi.useFakeTimers();

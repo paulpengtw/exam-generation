@@ -1,7 +1,7 @@
 """Unit tests for server.generate.marshalling — no threads, no database.
 
 Covers:
-  - SSEEventName vocabulary completeness (all 13 event names present)
+  - SSEEventName vocabulary completeness (all 14 event names present)
   - question_to_event: PNG embedding, missing-file skip, subquestion embedding
   - extract_image_files / strip_image_base64
   - make_queue_observer: mapped events enqueued, unknown events dropped
@@ -97,8 +97,8 @@ def test_sse_event_name_declared_vocabulary_matches_canonical_sets() -> None:
     )
 
 
-def test_sse_event_name_has_exactly_thirteen_members() -> None:
-    assert len(SSEEventName) == 13
+def test_sse_event_name_has_exactly_fourteen_members() -> None:
+    assert len(SSEEventName) == 14
 
 
 def test_sse_event_name_values_are_strings() -> None:

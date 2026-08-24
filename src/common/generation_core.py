@@ -19,6 +19,10 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from src.common.subject_spec import SubjectGenerationSpec
+from src.common.verification_trail import (
+    VerificationTrailEntry,
+    make_verification_trail_entry,
+)
 from src.config import Config
 from src.curriculum_context import CurriculumContext
 from src.html_renderer import PlaywrightRenderer
@@ -29,6 +33,16 @@ from src.renderer import render_image
 def _emit_update(callback: Callable | None, question: Any, phase: str) -> None:
     if callback is not None:
         callback(question, phase)
+
+
+def _emit_trail(
+    callback: Callable[[VerificationTrailEntry], None] | None,
+    question_id: str,
+    verification: Any,
+    model: str,
+) -> None:
+    if callback is not None:
+        callback(make_verification_trail_entry(question_id, verification, model))
 
 
 def build_text_generation_prompts(
@@ -143,6 +157,7 @@ def generate_one_core(
     user_core_question: str | None = None,
     core_question_callback: bool = False,
     on_question_update: Callable | None = None,
+    on_trail_entry: Callable[[VerificationTrailEntry], None] | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -358,6 +373,12 @@ def generate_one_core(
         )
         emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
+        _emit_trail(
+            on_trail_entry,
+            question_id,
+            result,
+            config.model_verify or config.model_execute,
+        )
         _emit_update(on_question_update, question, "verified")
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
@@ -385,6 +406,7 @@ def generate_with_corrections_core(
     user_core_question: str | None = None,
     core_question_callback: bool = False,
     on_question_update: Callable | None = None,
+    on_trail_entry: Callable[[VerificationTrailEntry], None] | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -408,6 +430,7 @@ def generate_with_corrections_core(
         user_core_question=user_core_question,
         core_question_callback=core_question_callback,
         on_question_update=on_question_update,
+        on_trail_entry=on_trail_entry,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
@@ -479,6 +502,12 @@ def generate_with_corrections_core(
             )
             emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
+            _emit_trail(
+                on_trail_entry,
+                question_id,
+                result,
+                config.model_verify or config.model_execute,
+            )
             _emit_update(on_question_update, question, "verified")
             status = "PASSED" if result.passed else "FAILED"
             print(f"  Re-verification {status}: {result.details[:100]}", file=sys.stderr)

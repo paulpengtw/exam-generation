@@ -15,6 +15,10 @@ from typing import Any
 from src.common.batch_dedup import PriorScope, extract_math_prior_scope
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SubjectGenerationSpec
+from src.common.verification_trail import (
+    VerificationTrailEntry,
+    make_verification_trail_entry,
+)
 from src.config import Config
 from src.corrector import correct_question
 from src.curriculum_context import CurriculumContext, load_curriculum_context
@@ -57,6 +61,7 @@ from src.schemas import (
 from src.verifier import verify_question
 
 QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
+VerificationTrailCallback = Callable[[VerificationTrailEntry], None]
 
 
 def _emit_question_update(
@@ -67,6 +72,22 @@ def _emit_question_update(
     if callback is None:
         return
     callback(question, phase)
+
+
+def _emit_verification_trail(
+    callback: VerificationTrailCallback | None,
+    question_id: str,
+    verification: Any,
+    config: Config,
+) -> None:
+    if callback is not None:
+        callback(
+            make_verification_trail_entry(
+                question_id,
+                verification,
+                config.model_verify or config.model_execute,
+            )
+        )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -353,6 +374,7 @@ def generate_one(
     user_options: list[str] | None = None,
     user_core_question: str = "",
     on_question_update: QuestionUpdateCallback | None = None,
+    on_trail_entry: VerificationTrailCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -385,6 +407,7 @@ def generate_one(
             user_topic=user_topic or None,
             user_core_question=user_core_question or None,
             on_question_update=on_question_update,
+            on_trail_entry=on_trail_entry,
             sub_client_factory=sub_client_factory,
             prior_scopes=prior_scopes,
             curriculum_context=curriculum_context,
@@ -461,6 +484,7 @@ def generate_one(
         )
         emit_stage(obs, "verifier", "verify", "end")
         question.verification = result
+        _emit_verification_trail(on_trail_entry, question_id, result, config)
         _emit_question_update(on_question_update, question, "verified")
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
@@ -534,6 +558,7 @@ def generate_with_corrections(
     user_options: list[str] | None = None,
     user_core_question: str = "",
     on_question_update: QuestionUpdateCallback | None = None,
+    on_trail_entry: VerificationTrailCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -569,6 +594,7 @@ def generate_with_corrections(
             user_topic=user_topic or None,
             user_core_question=user_core_question or None,
             on_question_update=on_question_update,
+            on_trail_entry=on_trail_entry,
             sub_client_factory=sub_client_factory,
             prior_scopes=prior_scopes,
             curriculum_context=curriculum_context,
@@ -594,6 +620,7 @@ def generate_with_corrections(
         user_options=user_options,
         user_core_question=user_core_question,
         on_question_update=on_question_update,
+        on_trail_entry=on_trail_entry,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
@@ -667,6 +694,7 @@ def generate_with_corrections(
             )
             emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
             question.verification = result
+            _emit_verification_trail(on_trail_entry, question_id, result, config)
             _emit_question_update(on_question_update, question, "verified")
             status = "PASSED" if result.passed else "FAILED"
             print(
