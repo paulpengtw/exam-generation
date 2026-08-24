@@ -60,10 +60,10 @@ def test_image_spec_preserves_free_text_figure_kind() -> None:
 
 
 def test_find_collisions_normalizes_strip_and_casefold() -> None:
-    specs = [_spec(figure_kind="  Pie Chart "), _spec(figure_kind="pie chart")]
+    specs = [_spec(figure_kind="  Custom Figure "), _spec(figure_kind="custom figure")]
 
     assert find_figure_kind_collisions(specs, pinned=set(), allow_duplicates=False) == [
-        (0, 1, "pie chart")
+        (0, 1, "custom figure")
     ]
 
 
