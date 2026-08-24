@@ -662,6 +662,54 @@ describe("ParamForm 發送前確認 display semantics", () => {
     }
   });
 
+  it("renders shared content type and image mode selects in every confirmation card", async () => {
+    getSchemasMock.mockResolvedValue({
+      ...SOCIAL_SCHEMA,
+      題目內容類型: [
+        { value: "純文字", instruction: "" },
+        { value: "含圖片", instruction: "" },
+        { value: "schema追加內容", instruction: "" },
+      ],
+    });
+
+    await openConfirmation("social_studies", {
+      count: 2,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    });
+
+    const expectedContentTypeOptions = ["", "純文字", "含圖片", "schema追加內容"];
+    const expectedImageModeOptions = ["", "html", "gpt_image"];
+    for (const questionNumber of [1, 2]) {
+      const question = within(screen.getByRole("region", { name: `第${questionNumber}題` }));
+      const cards = question.getAllByRole("listitem");
+      expect(cards).toHaveLength(3);
+      cards.forEach((card) => {
+        expect(Array.from(
+          within(card).getByLabelText("題目內容類型").querySelectorAll("option"),
+          (option) => option.value,
+        )).toEqual(expectedContentTypeOptions);
+        expect(Array.from(
+          within(card).getByLabelText("圖片生成模式").querySelectorAll("option"),
+          (option) => option.value,
+        )).toEqual(expectedImageModeOptions);
+      });
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+    expect(screen.getAllByLabelText("題目內容類型")).toHaveLength(3);
+    expect(screen.getAllByLabelText("圖片生成模式")).toHaveLength(3);
+    expect(Array.from(
+      screen.getAllByLabelText("題目內容類型")[0].querySelectorAll("option"),
+      (option) => option.value,
+    )).toEqual(expectedContentTypeOptions);
+    expect(Array.from(
+      screen.getAllByLabelText("圖片生成模式")[0].querySelectorAll("option"),
+      (option) => option.value,
+    )).toEqual(expectedImageModeOptions);
+  });
+
   it("updates only the edited 題型 of one 題組 and flips its badge", async () => {
     getSchemasMock.mockResolvedValue({
       ...SOCIAL_SCHEMA,
@@ -740,6 +788,143 @@ describe("ParamForm 發送前確認 display semantics", () => {
       { question_type: "選擇題", instruction: "固定指示三", question_word_limit: 33 },
     ]);
     expect(submittedPerQuestion[0]).not.toHaveProperty("confirmation_edit");
+  });
+
+  it("keeps blank image modes inheriting the request-level mode until a 小題 is pinned", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const onSubmit = vi.fn();
+
+    await openConfirmation("social_studies", {
+      count: 1,
+      image_generation_mode: "gpt_image",
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    }, onSubmit);
+
+    const question = within(screen.getByRole("region", { name: "第1題" }));
+    const cards = question.getAllByRole("listitem");
+    fireEvent.change(within(cards[0]).getByLabelText("圖片生成模式"), {
+      target: { value: "html" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const submittedPerQuestion = JSON.parse(
+      onSubmit.mock.calls[0][0].per_question_params,
+    ) as Array<{ image_generation_mode: string; subquestion_configs: string }>;
+    expect(submittedPerQuestion[0].image_generation_mode).toBe("gpt_image");
+    expect(JSON.parse(submittedPerQuestion[0].subquestion_configs)).toEqual([
+      { image_generation_mode: "html" },
+      {},
+      {},
+    ]);
+  });
+
+  it("pins content and image edits in the matching 題組 row and flips only those badges", async () => {
+    getSchemasMock.mockResolvedValue({
+      ...SOCIAL_SCHEMA,
+      題目內容類型: [
+        { value: "純文字", instruction: "" },
+        { value: "含圖片", instruction: "" },
+      ],
+    });
+    const onSubmit = vi.fn();
+
+    await openConfirmation("social_studies", {
+      count: 2,
+      image_generation_mode: "gpt_image",
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [
+        { instruction: "固定指示一", question_word_limit: 11 },
+        { content_type: "純文字", image_generation_mode: "html", option_word_limit: 22 },
+        { content_type: "含圖片", image_generation_mode: "gpt_image", text_word_limit: 33 },
+      ],
+    }, onSubmit);
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    const secondQuestion = within(screen.getByRole("region", { name: "第2題" }));
+    const firstCard = within(firstQuestion.getAllByRole("listitem")[0]);
+    const firstContentType = firstCard.getByLabelText("題目內容類型");
+    const firstImageMode = firstCard.getByLabelText("圖片生成模式");
+
+    expect(within(firstContentType.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
+    expect(within(firstImageMode.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
+    expect(within(firstImageMode.parentElement!).queryByText("隨機抽取")).toBeNull();
+    expect(within(firstQuestion.getAllByRole("listitem")[1]).getByLabelText("題目內容類型")).toHaveValue("純文字");
+    expect(within(secondQuestion.getAllByRole("listitem")[0]).getByLabelText("題目內容類型")).toHaveValue("");
+
+    fireEvent.change(firstContentType, { target: { value: "含圖片" } });
+    fireEvent.change(firstImageMode, { target: { value: "html" } });
+
+    expect(within(firstContentType.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(within(firstImageMode.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(within(firstQuestion.getAllByRole("listitem")[1]).getByLabelText("圖片生成模式")).toHaveValue("html");
+    expect(within(secondQuestion.getAllByRole("listitem")[0]).getByLabelText("圖片生成模式")).toHaveValue("");
+
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    const submittedPerQuestion = JSON.parse(
+      onSubmit.mock.calls[0][0].per_question_params,
+    ) as Array<{ subquestion_configs: string }>;
+    expect(JSON.parse(submittedPerQuestion[0].subquestion_configs)).toEqual([
+      { instruction: "固定指示一", question_word_limit: 11, content_type: "含圖片", image_generation_mode: "html" },
+      { content_type: "純文字", image_generation_mode: "html", option_word_limit: 22 },
+      { content_type: "含圖片", image_generation_mode: "gpt_image", text_word_limit: 33 },
+    ]);
+    expect(JSON.parse(submittedPerQuestion[1].subquestion_configs)).toEqual([
+      { instruction: "固定指示一", question_word_limit: 11 },
+      { content_type: "純文字", image_generation_mode: "html", option_word_limit: 22 },
+      { content_type: "含圖片", image_generation_mode: "gpt_image", text_word_limit: 33 },
+    ]);
+  });
+
+  it("keeps untouched 小題 configurations unchanged after a 確認頁修改", async () => {
+    getSchemasMock.mockResolvedValue({
+      ...SOCIAL_SCHEMA,
+      題目內容類型: [
+        { value: "純文字", instruction: "" },
+        { value: "含圖片", instruction: "" },
+      ],
+    });
+    const onSubmit = vi.fn();
+
+    await openConfirmation("social_studies", {
+      count: 2,
+      image_generation_mode: "html",
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [
+        { instruction: "小題一", content_type: "純文字", image_generation_mode: "html", question_word_limit: 11 },
+        { instruction: "小題二", content_type: "含圖片", image_generation_mode: "gpt_image", option_word_limit: 22 },
+        { instruction: "小題三", content_type: "純文字", image_generation_mode: "html", text_word_limit: 33 },
+      ],
+    }, onSubmit);
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    fireEvent.change(
+      within(firstQuestion.getAllByRole("listitem")[0]).getByLabelText("題目內容類型"),
+      { target: { value: "含圖片" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const submittedPerQuestion = JSON.parse(
+      onSubmit.mock.calls[0][0].per_question_params,
+    ) as Array<{ subquestion_configs: string }>;
+    const untouchedRows = [
+      { instruction: "小題二", content_type: "含圖片", image_generation_mode: "gpt_image", option_word_limit: 22 },
+      { instruction: "小題三", content_type: "純文字", image_generation_mode: "html", text_word_limit: 33 },
+    ];
+    expect(JSON.parse(submittedPerQuestion[0].subquestion_configs)).toEqual([
+      { instruction: "小題一", content_type: "含圖片", image_generation_mode: "html", question_word_limit: 11 },
+      ...untouchedRows,
+    ]);
+    expect(JSON.parse(submittedPerQuestion[1].subquestion_configs)).toEqual([
+      { instruction: "小題一", content_type: "純文字", image_generation_mode: "html", question_word_limit: 11 },
+      ...untouchedRows,
+    ]);
   });
 
   it("keeps untouched 題型 values and badges after a 確認頁修改", async () => {
@@ -1260,8 +1445,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(screen.queryByText("[{},{},{}]")).not.toBeInTheDocument();
 
     const expectedRows = [
-      "題目內容類型: （沿用文本設定）",
-      "圖片生成模式: （沿用文本設定）",
       "題目字數限制: 不限",
       "選項字數限制: 不限",
       "文本字數限制: 不限",
@@ -1273,6 +1456,12 @@ describe("ParamForm 發送前確認 display semantics", () => {
       const title = question.getByText(`第 ${index} 小題`);
       const card = within(title.closest("li")!);
       expectedRows.forEach((text) => expect(card.getByText(text)).toBeInTheDocument());
+      const contentType = card.getByLabelText("題目內容類型");
+      expect(contentType).toHaveValue("");
+      expect(within(contentType.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
+      const imageMode = card.getByLabelText("圖片生成模式");
+      expect(imageMode).toHaveValue("");
+      expect(within(imageMode.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
       const questionType = card.getByLabelText("題型");
       expect(questionType).toHaveValue("");
       expect(within(questionType.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");

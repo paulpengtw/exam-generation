@@ -672,6 +672,7 @@ function DraftSummary({
                         configs={fields.subquestionConfigs}
                         subject={subject}
                         questionTypes={schemas?.題型 ?? []}
+                        contentTypes={schemas?.題目內容類型 ?? []}
                         lcEntryByCode={lcEntryByCode}
                         lpEntryByCode={lpEntryByCode}
                       />
@@ -2302,6 +2303,28 @@ export default function ParamForm({
     });
   }
 
+  function updatePendingSubquestionContentType(
+    questionIndex: number,
+    subquestionIndex: number,
+    contentType: string,
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      content_type: contentType || undefined,
+    });
+  }
+
+  function updatePendingSubquestionImageMode(
+    questionIndex: number,
+    subquestionIndex: number,
+    imageMode: string,
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      image_generation_mode: imageMode === "html" || imageMode === "gpt_image"
+        ? imageMode
+        : undefined,
+    });
+  }
+
   if (pendingParams) {
     const p = pendingParams;
     const resolvedPerQuestionParams = pendingPerQuestionParams ?? (p.per_question_params
@@ -2521,6 +2544,7 @@ export default function ParamForm({
                       configs={questionSubquestionConfigs}
                       subject={subject}
                       questionTypes={availableQuestionTypes}
+                      contentTypes={schemas?.題目內容類型 ?? []}
                       lcEntryByCode={lcEntryByCode}
                       lpEntryByCode={lpEntryByCode}
                       onInstructionChange={(subquestionIndex, instruction) =>
@@ -2528,6 +2552,12 @@ export default function ParamForm({
                       }
                       onQuestionTypeChange={(subquestionIndex, questionType) =>
                         updatePendingSubquestionQuestionType(index, subquestionIndex, questionType)
+                      }
+                      onContentTypeChange={(subquestionIndex, contentType) =>
+                        updatePendingSubquestionContentType(index, subquestionIndex, contentType)
+                      }
+                      onImageModeChange={(subquestionIndex, imageMode) =>
+                        updatePendingSubquestionImageMode(index, subquestionIndex, imageMode)
                       }
                     />
                   </section>

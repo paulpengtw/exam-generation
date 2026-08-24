@@ -100,6 +100,87 @@ export function SubQuestionQuestionTypeField({
   );
 }
 
+export interface SubQuestionContentTypeFieldProps {
+  config: SubQuestionConfig;
+  contentTypes: SchemaEntry[];
+  onChange: (patch: Partial<SubQuestionConfig>) => void;
+  badge?: {
+    label: string;
+    className: string;
+  };
+}
+
+export function SubQuestionContentTypeField({
+  config,
+  contentTypes,
+  onChange,
+  badge,
+}: SubQuestionContentTypeFieldProps) {
+  const contentTypeId = useId();
+  const t = useT();
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={contentTypeId} className="block text-xs text-gray-500">
+          {t("form.confirm_subq_content_type_input")}
+        </label>
+        {badge && <span className={badge.className}>{badge.label}</span>}
+      </div>
+      <select
+        id={contentTypeId}
+        value={config.content_type ?? ""}
+        onChange={(e) => onChange({ content_type: e.target.value || undefined })}
+        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+      >
+        <option value="">{t("form.confirm_inherit_text")}</option>
+        {contentTypes.map((entry) => (
+          <option key={entry.value} value={entry.value}>{entry.value}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export interface SubQuestionImageGenerationModeFieldProps {
+  config: SubQuestionConfig;
+  onChange: (patch: Partial<SubQuestionConfig>) => void;
+  badge?: {
+    label: string;
+    className: string;
+  };
+}
+
+export function SubQuestionImageGenerationModeField({
+  config,
+  onChange,
+  badge,
+}: SubQuestionImageGenerationModeFieldProps) {
+  const imageGenerationModeId = useId();
+  const t = useT();
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={imageGenerationModeId} className="block text-xs text-gray-500">
+          {t("form.confirm_subq_image_mode_input")}
+        </label>
+        {badge && <span className={badge.className}>{badge.label}</span>}
+      </div>
+      <select
+        id={imageGenerationModeId}
+        value={config.image_generation_mode ?? ""}
+        onChange={(e) => onChange({ image_generation_mode: (e.target.value as "html" | "gpt_image") || undefined })}
+        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+      >
+        <option value="">{t("form.confirm_inherit_text")}</option>
+        <option value="html">HTML 渲染</option>
+        <option value="gpt_image">GPT 生圖</option>
+      </select>
+    </div>
+  );
+}
+
 function optionalNumber(raw: string): number | undefined {
   if (raw.trim() === "") return undefined;
   const parsed = Number(raw);
@@ -187,31 +268,12 @@ export default function SubQuestionConfigEditor({
             className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
           />
         </div>
-        <div>
-          <label className="block text-xs text-gray-500">題目內容類型</label>
-          <select
-            value={config.content_type ?? ""}
-            onChange={(e) => onChange({ content_type: e.target.value || undefined })}
-            className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-          >
-            <option value="">（沿用文本設定）</option>
-            {contentTypes.map((entry) => (
-              <option key={entry.value} value={entry.value}>{entry.value}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500">圖片生成模式</label>
-          <select
-            value={config.image_generation_mode ?? ""}
-            onChange={(e) => onChange({ image_generation_mode: (e.target.value as "html" | "gpt_image") || undefined })}
-            className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-          >
-            <option value="">（沿用文本設定）</option>
-            <option value="html">HTML 渲染</option>
-            <option value="gpt_image">GPT 生圖</option>
-          </select>
-        </div>
+        <SubQuestionContentTypeField
+          config={config}
+          contentTypes={contentTypes}
+          onChange={onChange}
+        />
+        <SubQuestionImageGenerationModeField config={config} onChange={onChange} />
         {subject === "natural_sciences" && (
           <div>
             <label className="block text-xs text-gray-500">{t("form.reporting_scale")}</label>

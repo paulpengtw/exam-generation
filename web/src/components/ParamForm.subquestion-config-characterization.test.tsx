@@ -15,6 +15,8 @@ vi.mock("../i18n/useT", () => ({
   useT: () => (key: string) => {
     if (key === "form.reporting_scale") return "Reporting Scale";
     if (key === "form.confirm_subq_q_type_input") return "題型";
+    if (key === "form.confirm_subq_content_type_input") return "題目內容類型";
+    if (key === "form.confirm_subq_image_mode_input") return "圖片生成模式";
     if (key === "form.confirm_subq_instruction_input") return "出題指示";
     if (key === "form.confirm_subq_instruction_placeholder") return "例如：請聚焦在資料判讀與因果推論";
     return key;
