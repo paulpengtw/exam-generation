@@ -613,7 +613,9 @@ describe("ParamForm history prefill", () => {
       await screen.findByText("form.confirm_title");
 
       const questionRegions = screen.getAllByRole("region", { name: "form.confirm_question_block" });
-      expect(within(questionRegions[0]).getByText("form.confirm_subq_lc_random_pool")).toBeInTheDocument();
+      // In editable-confirmation mode (#443), predrawn LC slots show "form.confirm_badge_random"
+      // (amber badge) instead of the old read-only "form.confirm_subq_lc_random_pool" text.
+      expect(within(questionRegions[0]).getAllByText("form.confirm_badge_random").length).toBeGreaterThan(0);
 
       fireEvent.click(screen.getByText("form.btn_confirm_send"));
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
@@ -657,7 +659,9 @@ describe("ParamForm history prefill", () => {
       await screen.findByText("form.confirm_title");
 
       const questionRegions = screen.getAllByRole("region", { name: "form.confirm_question_block" });
-      expect(within(questionRegions[0]).getByText("form.confirm_subq_lc_random_pool")).toBeInTheDocument();
+      // In editable-confirmation mode (#443), predrawn LC slots show "form.confirm_badge_random"
+      // (amber badge) instead of the old read-only "form.confirm_subq_lc_random_pool" text.
+      expect(within(questionRegions[0]).getAllByText("form.confirm_badge_random").length).toBeGreaterThan(0);
 
       fireEvent.click(screen.getByText("form.btn_confirm_send"));
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));

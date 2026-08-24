@@ -599,7 +599,9 @@ describe("ParamForm 發送前確認 display semantics", () => {
 
     expect(firstInstruction).toHaveValue("第一題組修改後");
     expect(secondInstruction).toHaveValue("原始小題指示一");
-    expect(firstQuestion.getAllByRole("textbox")[1]).toHaveValue("原始小題指示二");
+    // Each card now has 3 textboxes: instruction(0), LC picker(1), LP picker(2).
+    // Card 1's instruction is at index 3 (= 0 + 3 cards-worth).
+    expect(firstQuestion.getAllByRole("textbox")[3]).toHaveValue("原始小題指示二");
 
     fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
 
@@ -1444,14 +1446,9 @@ describe("ParamForm 發送前確認 display semantics", () => {
     const question = within(screen.getByRole("region", { name: "第1題" }));
     expect(screen.queryByText("[{},{},{}]")).not.toBeInTheDocument();
 
-    const expectedStaticRows = [
-      "學習內容: （沿用全域設定）",
-      "學習表現: （沿用全域設定）",
-    ];
     for (const index of [1, 2, 3]) {
       const title = question.getByText(`第 ${index} 小題`);
       const card = within(title.closest("li")!);
-      expectedStaticRows.forEach((text) => expect(card.getByText(text)).toBeInTheDocument());
       // Word-limit fields are now editable inputs (not static text)
       expect(card.getByLabelText("題目字數限制")).toBeInTheDocument();
       expect(card.getByLabelText("選項字數限制")).toBeInTheDocument();
@@ -1471,6 +1468,9 @@ describe("ParamForm 發送前確認 display semantics", () => {
       const reportingScaleSelect = card.getByLabelText("Reporting Scale");
       expect(reportingScaleSelect).toHaveValue("");
       expect(within(reportingScaleSelect.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+      // LC and LP are now editable SearchPickers in the confirmation view.
+      expect(card.getByLabelText("學習內容")).toBeInTheDocument();
+      expect(card.getByLabelText("學習表現")).toBeInTheDocument();
     }
   });
 

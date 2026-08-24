@@ -11,11 +11,13 @@ export function SearchPicker({
   selected,
   onChange,
   placeholder,
+  id,
 }: {
   available: SearchPickerEntry[];
   selected: string[];
   onChange: (values: string[]) => void;
   placeholder?: string;
+  id?: string;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -46,6 +48,7 @@ export function SearchPicker({
   return (
     <div className="relative">
       <input
+        id={id}
         type="text"
         value={query}
         autoComplete="off"
