@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { SchemaEntry } from "../api/client";
 import { useT } from "../i18n/useT";
 import type { SubQuestionConfig } from "./ParamForm";
@@ -15,6 +16,43 @@ export interface SubQuestionConfigEditorProps {
   cognitiveProcesses?: SchemaEntry[];
   contentTypes: SchemaEntry[];
   onChange: (patch: Partial<SubQuestionConfig>) => void;
+}
+
+export interface SubQuestionInstructionFieldProps {
+  config: SubQuestionConfig;
+  onChange: (patch: Partial<SubQuestionConfig>) => void;
+  badge?: {
+    label: string;
+    className: string;
+  };
+}
+
+export function SubQuestionInstructionField({
+  config,
+  onChange,
+  badge,
+}: SubQuestionInstructionFieldProps) {
+  const instructionId = useId();
+  const t = useT();
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-2">
+        <label htmlFor={instructionId} className="block text-xs text-gray-500">
+          {t("form.confirm_subq_instruction_input")}
+        </label>
+        {badge && <span className={badge.className}>{badge.label}</span>}
+      </div>
+      <textarea
+        id={instructionId}
+        value={config.instruction ?? ""}
+        onChange={(e) => onChange({ instruction: e.target.value || undefined })}
+        placeholder={t("form.confirm_subq_instruction_placeholder")}
+        rows={2}
+        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+      />
+    </div>
+  );
 }
 
 function optionalNumber(raw: string): number | undefined {
@@ -158,16 +196,7 @@ export default function SubQuestionConfigEditor({
           </div>
         )}
       </div>
-      <div className="mt-3">
-        <label className="block text-xs text-gray-500">出題指示</label>
-        <textarea
-          value={config.instruction ?? ""}
-          onChange={(e) => onChange({ instruction: e.target.value || undefined })}
-          placeholder="例如：請聚焦在資料判讀與因果推論"
-          rows={2}
-          className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-        />
-      </div>
+      <SubQuestionInstructionField config={config} onChange={onChange} />
     </>
   );
 }

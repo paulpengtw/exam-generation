@@ -870,6 +870,7 @@ export default function ParamForm({
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
   const [surfaceQuestionTypeNotice, setSurfaceQuestionTypeNotice] = useState<string[]>([]);
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
+  const [pendingPerQuestionParams, setPendingPerQuestionParams] = useState<Record<string, unknown>[] | null>(null);
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
@@ -1202,6 +1203,9 @@ export default function ParamForm({
         return;
       }
       const selected = candidates[Math.floor(Math.random() * candidates.length)];
+      setPendingPerQuestionParams((current) =>
+        current?.map((item) => ({ ...item, core_question: selected })) ?? current,
+      );
       setPendingParams((current) => {
         if (!current) return current;
         const perQuestion = current.per_question_params
@@ -2208,6 +2212,7 @@ export default function ParamForm({
       ? historyPerQuestionParams
       : buildPerQuestionParams();
     const usingHistoryPerQuestionParams = preserveHistoryPerQuestionParams;
+    setPendingPerQuestionParams(perQuestionParams);
     setPendingResolvedSubquestionConfigs(
       usingHistoryPerQuestionParams
         ? perQuestionParams.map((params) =>
@@ -2229,6 +2234,9 @@ export default function ParamForm({
 
   function handleConfirmSend() {
     if (!pendingParams) return;
+    const submittedParams = pendingPerQuestionParams
+      ? { ...pendingParams, per_question_params: JSON.stringify(pendingPerQuestionParams) }
+      : pendingParams;
     // Renew the session concurrently — fire-and-forget, errors swallowed.
     // This covers the case where the form sat open long enough for the session
     // to drift toward expiry since the mount-time check ran.
@@ -2240,14 +2248,41 @@ export default function ParamForm({
     }
     if (userId) clearDraft(userId);
     setPendingParams(null);
-    onSubmit(pendingParams);
+    setPendingPerQuestionParams(null);
+    onSubmit(submittedParams);
+  }
+
+  function updatePendingSubquestionInstruction(
+    questionIndex: number,
+    subquestionIndex: number,
+    instruction: string,
+  ) {
+    setPendingPerQuestionParams((current) => {
+      const perQuestionParams = current ?? parsePerQuestionParams(pendingParams?.per_question_params);
+      const questionParams = perQuestionParams[questionIndex];
+      if (!questionParams) return current;
+      const configs = parseSubquestionConfigs(questionParams.subquestion_configs);
+      if (!configs[subquestionIndex]) return current;
+      const normalizedInstruction = instruction.trim() || undefined;
+      const nextConfigs = configs.map((config, index) =>
+        index === subquestionIndex
+          ? serialisableSubquestionConfig({ ...config, instruction: normalizedInstruction })
+          : config,
+      );
+      const nextPerQuestionParams = perQuestionParams.map((params, index) =>
+        index === questionIndex
+          ? { ...params, subquestion_configs: JSON.stringify(nextConfigs) }
+          : params,
+      );
+      return nextPerQuestionParams;
+    });
   }
 
   if (pendingParams) {
     const p = pendingParams;
-    const resolvedPerQuestionParams = p.per_question_params
+    const resolvedPerQuestionParams = pendingPerQuestionParams ?? (p.per_question_params
       ? JSON.parse(p.per_question_params) as Record<string, unknown>[]
-      : [];
+      : []);
     const allLpEntries = schemas?.學習表現 ?? [];
     const allLcEntries = schemas?.學習內容 ?? [];
     const lcEntryByCode = new Map(allLcEntries.map((e) => [e.value, e]));
@@ -2458,7 +2493,15 @@ export default function ParamForm({
                 {questionSubquestionConfigs.length > 0 && (
                   <section className="mt-4 space-y-3 border-t pt-4">
                     <h4 className="text-sm font-semibold text-gray-700">{t("form.confirm_subquestion_heading")}</h4>
-                    <SubquestionConfigCards configs={questionSubquestionConfigs} subject={subject} lcEntryByCode={lcEntryByCode} lpEntryByCode={lpEntryByCode} />
+                    <SubquestionConfigCards
+                      configs={questionSubquestionConfigs}
+                      subject={subject}
+                      lcEntryByCode={lcEntryByCode}
+                      lpEntryByCode={lpEntryByCode}
+                      onInstructionChange={(subquestionIndex, instruction) =>
+                        updatePendingSubquestionInstruction(index, subquestionIndex, instruction)
+                      }
+                    />
                   </section>
                 )}
                 {textGeneratorPreview && (
@@ -2530,7 +2573,10 @@ export default function ParamForm({
           </button>
           <button
             type="button"
-            onClick={() => setPendingParams(null)}
+            onClick={() => {
+              setPendingParams(null);
+              setPendingPerQuestionParams(null);
+            }}
             className="rounded border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 hover:bg-gray-50"
           >
             {t("form.btn_back_edit")}

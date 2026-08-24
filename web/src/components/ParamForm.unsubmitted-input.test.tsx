@@ -53,7 +53,10 @@ vi.mock("../api/client", () => ({
 }));
 
 vi.mock("../i18n/useT", () => ({
-  useT: () => (key: string) => key,
+  useT: () => (key: string) =>
+    key === "form.confirm_subq_instruction_placeholder"
+      ? "例如：請聚焦在資料判讀與因果推論"
+      : key,
 }));
 
 import ParamForm from "./ParamForm";
