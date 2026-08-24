@@ -21,12 +21,14 @@ vi.mock("../components/QuestionCard", () => ({
     phase,
     isFinal,
     trail,
+    figurePolicyTrail,
   }: {
     question: { id?: string };
     recordId?: string;
     phase?: string;
     isFinal?: boolean;
     trail?: unknown;
+    figurePolicyTrail?: unknown;
   }) => (
     <div
       data-testid="qc"
@@ -34,6 +36,9 @@ vi.mock("../components/QuestionCard", () => ({
       data-phase={phase}
       data-final={String(isFinal)}
       data-trail={trail === undefined ? "undefined" : JSON.stringify(trail)}
+      data-figure-policy-trail={
+        figurePolicyTrail === undefined ? "undefined" : JSON.stringify(figurePolicyTrail)
+      }
     >
       {question?.id ?? ""}
     </div>
@@ -257,6 +262,46 @@ describe("HistoryDetail", () => {
 
     await waitFor(() =>
       expect(screen.getByTestId("qc")).toHaveAttribute("data-trail", "null"),
+    );
+  });
+
+  it("passes the persisted figure-policy trail to the History card", async () => {
+    const trail = [
+      {
+        code: "figure_policy",
+        kind: "spec",
+        question_id: "ss-policy",
+        label: "題幹",
+        effective_figure_kind: "地圖",
+        timestamp: "2026-08-25T00:00:00Z",
+      },
+    ];
+    getDetailMock.mockResolvedValueOnce({
+      id: "policy-id",
+      subject: "social_studies",
+      question_id: "ss-policy",
+      created_at: "2026-07-16T00:00:00Z",
+      status: "completed",
+      error: null,
+      params_json: { subject: "social_studies" },
+      question_json: { id: "ss-policy" },
+      verification_trail: null,
+      figure_policy_trail: trail,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/policy-id"]}>
+        <Routes>
+          <Route path="/history/:id" element={<HistoryDetail recordId="policy-id" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("qc")).toHaveAttribute(
+        "data-figure-policy-trail",
+        JSON.stringify(trail),
+      ),
     );
   });
 
