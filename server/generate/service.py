@@ -27,6 +27,7 @@ from server.generate.marshalling import (
     make_pipeline_emitter,
     make_question_update_emitter,
     make_queue_observer,
+    make_trail_emitter,
     question_to_event,
 )
 from server.generate.models import (
@@ -302,6 +303,7 @@ def _worker_one(
         make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
     )
     emit_question_update = make_question_update_emitter(i, ctx.loop, ctx.queue, ctx.config)
+    emit_trail_entry = make_trail_emitter(ctx.loop, ctx.queue)
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
@@ -342,6 +344,7 @@ def _worker_one(
             user_core_question=ctx.params.core_question,
             core_question_callback=ctx.params.core_question_callback,
             on_question_update=emit_question_update,
+            on_trail_entry=None if ctx.params.skip_verify else emit_trail_entry,
             prior_scopes=prior_snapshot,
             balanced_batch=ctx.balanced_batch,
         )

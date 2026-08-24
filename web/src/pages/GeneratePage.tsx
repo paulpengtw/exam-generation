@@ -357,6 +357,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                   question={item.question}
                   phase={item.phase}
                   isFinal={item.isFinal}
+                  trail={item.trail}
                 />
               ))}
             </div>

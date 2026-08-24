@@ -57,6 +57,7 @@ class SSEEventName(str, Enum):
     LLM_RESPONSE = "llm_response"
     STAGE = "stage"
     PLAN = "plan"
+    TRAIL = "trail"
 
 
 # Canonical set of event names the server actually emits at runtime.
@@ -76,6 +77,7 @@ EMITTED_EVENT_NAMES: frozenset[str] = frozenset({
     "llm_response",
     "stage",
     "plan",
+    "trail",
 })
 
 
@@ -261,3 +263,22 @@ def make_question_update_emitter(
             {"event": SSEEventName.QUESTION_UPDATE, "data": payload},
         )
     return emit_question_update
+
+
+def make_trail_emitter(
+    loop: asyncio.AbstractEventLoop,
+    queue: asyncio.Queue,
+) -> Callable[[Any], None]:
+    """Return a thread-safe emitter for one typed verification-trail entry."""
+    def emit_trail(entry: Any) -> None:
+        payload = (
+            entry.model_dump(mode="json")
+            if hasattr(entry, "model_dump")
+            else entry
+        )
+        loop.call_soon_threadsafe(
+            queue.put_nowait,
+            {"event": SSEEventName.TRAIL, "data": payload},
+        )
+
+    return emit_trail

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client";
-import type { DraftPhase, ExamQuestion, SubQuestion, RubricEntry } from "../hooks/useGenerate";
+import type {
+  DraftPhase,
+  ExamQuestion,
+  SubQuestion,
+  RubricEntry,
+  VerificationTrailEntry,
+} from "../hooks/useGenerate";
 import { useModificationRun } from "../hooks/useModificationRun";
 import { useT } from "../i18n/useT";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
@@ -12,6 +18,7 @@ import FigureRenderer, {
   type ChartSpecInput,
 } from "./FigureRenderer";
 import GenerationStatusBar from "./GenerationStatusBar";
+import VerificationTrailTimeline from "./VerificationTrailTimeline";
 import InteractiveItemViewer, { type InteractionSubmission } from "./InteractiveItemViewer";
 
 export interface QuestionCardProps {
@@ -19,6 +26,7 @@ export interface QuestionCardProps {
   recordId?: string;
   phase?: DraftPhase;
   isFinal?: boolean;
+  trail?: VerificationTrailEntry[];
   onInteractionSubmit?: (submission: InteractionSubmission) => void;
 }
 
@@ -406,6 +414,7 @@ export default function QuestionCard({
   recordId,
   phase = "verified",
   isFinal = true,
+  trail = [],
   onInteractionSubmit,
 }: QuestionCardProps) {
   const t = useT();
@@ -748,6 +757,8 @@ export default function QuestionCard({
           </div>
         </>
       )}
+
+      <VerificationTrailTimeline entries={trail} />
 
       {modificationResult && (
         <>

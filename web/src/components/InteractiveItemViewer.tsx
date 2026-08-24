@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import type { DragEvent, KeyboardEvent } from "react";
+import type { DragEvent, JSX, KeyboardEvent } from "react";
 
 import type { DragDropSpec, SliderSpec } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";

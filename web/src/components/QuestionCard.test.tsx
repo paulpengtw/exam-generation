@@ -11,7 +11,11 @@ vi.mock("../utils/figureFallbackMetric", () => ({
 vi.stubGlobal("fetch", fetchMock);
 
 import QuestionCard from "./QuestionCard";
-import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
+import type {
+  ExamQuestion,
+  SubQuestion,
+  VerificationTrailEntry,
+} from "../hooks/useGenerate";
 
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (s: { lang: string }) => unknown) =>
@@ -37,6 +41,53 @@ describe("QuestionCard draft rendering", () => {
     expect(screen.getByText("2 + 2 = 4.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download JSON" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Download ODT" })).toBeDisabled();
+  });
+});
+
+describe("QuestionCard Agent 自主驗證修正歷程", () => {
+  const trail: VerificationTrailEntry[] = [
+    {
+      code: "verification_trail",
+      kind: "verification",
+      question_id: "q_test",
+      passed: true,
+      details: "The answer and explanation agree.",
+      my_answer: "A",
+      provided_answer: "A",
+      answer_match: true,
+      chart_verification: null,
+      model: "verify-model",
+      timestamp: "2026-01-01T00:00:00+00:00",
+    },
+    {
+      code: "verification_trail",
+      kind: "verification",
+      question_id: "q_test",
+      passed: false,
+      details: "The supplied answer conflicts with the question.",
+      my_answer: "B",
+      provided_answer: "A",
+      answer_match: false,
+      chart_verification: null,
+      model: "verify-model",
+      timestamp: "2026-01-01T00:01:00+00:00",
+    },
+  ];
+
+  it("is collapsed by default and expands to show passed and failed verdicts", () => {
+    render(<QuestionCard question={question} trail={trail} isFinal />);
+
+    const toggle = screen.getByRole("button", {
+      name: "Show Agent autonomous verification and correction history",
+    });
+    expect(screen.queryByText("The answer and explanation agree.")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByText("Passed")).toBeInTheDocument();
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("The answer and explanation agree.")).toBeInTheDocument();
+    expect(screen.getByText("The supplied answer conflicts with the question.")).toBeInTheDocument();
   });
 });
 

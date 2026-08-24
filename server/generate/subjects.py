@@ -561,6 +561,7 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         user_core_question=kwargs["user_core_question"],
         core_question_callback=kwargs.get("core_question_callback", True),
         on_question_update=kwargs["on_question_update"],
+        on_trail_entry=kwargs.get("on_trail_entry"),
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ss_curriculum_context"],
         balanced_batch=kwargs["balanced_batch"],
@@ -760,6 +761,7 @@ def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         user_core_question=kwargs["user_core_question"],
         core_question_callback=kwargs.get("core_question_callback", True),
         on_question_update=kwargs["on_question_update"],
+        on_trail_entry=kwargs.get("on_trail_entry"),
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ns_curriculum_context"],
         balanced_batch=kwargs["balanced_batch"],
@@ -976,6 +978,7 @@ def _math_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         user_options=kwargs["user_options"],
         user_core_question=kwargs["user_core_question"] or "",
         on_question_update=kwargs["on_question_update"],
+        on_trail_entry=kwargs.get("on_trail_entry"),
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["math_curriculum_context"],
     )

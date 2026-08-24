@@ -94,6 +94,26 @@ export interface ExamQuestion {
   image_base64?: string;
 }
 
+export interface ChartVerificationTrail {
+  chart_data_match: boolean;
+  chart_labels_correct: boolean;
+  chart_details: string;
+}
+
+export interface VerificationTrailEntry {
+  code: "verification_trail";
+  kind: "verification";
+  question_id: string;
+  passed: boolean;
+  details: string;
+  my_answer: string;
+  provided_answer: string;
+  answer_match: boolean;
+  chart_verification: ChartVerificationTrail | null;
+  model: string;
+  timestamp: string;
+}
+
 export type DraftPhase = "draft" | "image" | "verified" | "corrected";
 
 export interface GeneratedQuestion {
@@ -101,6 +121,7 @@ export interface GeneratedQuestion {
   question: ExamQuestion;
   phase: DraftPhase;
   isFinal: boolean;
+  trail?: VerificationTrailEntry[];
 }
 
 export type LlmCallEvent =
@@ -355,6 +376,7 @@ export function useGenerate(): UseGenerateReturn {
   const [subQuestionTotal, setSubQuestionTotal] = useState<number | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const nextFinalIndexRef = useRef(0);
+  const trailByQuestionRef = useRef(new Map<string, VerificationTrailEntry[]>());
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
@@ -377,6 +399,7 @@ export function useGenerate(): UseGenerateReturn {
     setFinishedAt(null);
     setSubQuestionTotal(null);
     nextFinalIndexRef.current = 0;
+    trailByQuestionRef.current.clear();
     setStatus("idle");
   }, []);
 
@@ -405,6 +428,7 @@ export function useGenerate(): UseGenerateReturn {
     setFinishedAt(null);
     setSubQuestionTotal(null);
     nextFinalIndexRef.current = 0;
+    trailByQuestionRef.current.clear();
 
     fetchEventSource(url, {
       signal: controller.signal,
@@ -514,13 +538,30 @@ export function useGenerate(): UseGenerateReturn {
           case "question_update": {
             try {
               const parsed = JSON.parse(ev.data) as { index: number; phase: DraftPhase; question: ExamQuestion };
+              const laneKey = questionKey(parsed.question, parsed.index);
               setDisplayResults((prev) => upsertDisplayResult(prev, {
                 index: parsed.index,
                 question: parsed.question,
                 phase: parsed.phase,
                 isFinal: false,
+                trail: trailByQuestionRef.current.get(laneKey) ?? [],
               }));
             } catch { /* ignore malformed draft updates */ }
+            break;
+          }
+          case "trail": {
+            try {
+              const parsed = JSON.parse(ev.data) as VerificationTrailEntry;
+              if (parsed.code !== "verification_trail" || !parsed.question_id) break;
+              const previous = trailByQuestionRef.current.get(parsed.question_id) ?? [];
+              const trail = [...previous, parsed];
+              trailByQuestionRef.current.set(parsed.question_id, trail);
+              setDisplayResults((prev) => prev.map((item) => (
+                questionKey(item.question, item.index) === parsed.question_id
+                  ? { ...item, trail }
+                  : item
+              )));
+            } catch { /* ignore malformed trail events */ }
             break;
           }
           case "result":
@@ -529,11 +570,13 @@ export function useGenerate(): UseGenerateReturn {
               const index = nextFinalIndexRef.current;
               nextFinalIndexRef.current += 1;
               setResults((prev) => [...prev, parsed]);
+              const laneKey = questionKey(parsed, index);
               setDisplayResults((prev) => upsertDisplayResult(prev, {
                 index,
                 question: parsed,
                 phase: "verified",
                 isFinal: true,
+                trail: trailByQuestionRef.current.get(laneKey) ?? [],
               }));
             } catch {
               setStatus("error");

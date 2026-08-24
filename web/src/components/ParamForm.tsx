@@ -1648,7 +1648,7 @@ export default function ParamForm({
     // it before submit so the backend never receives a known 422 combination.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setField("subquestionConfigs", (prev) => prev.map((config) =>
-      invalidDigitalOnlyPins.includes(config.question_type)
+      config.question_type !== undefined && invalidDigitalOnlyPins.includes(config.question_type)
         ? { ...config, question_type: undefined }
         : config,
     ));
