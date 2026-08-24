@@ -47,6 +47,10 @@ FROZEN_SUBQUESTION_FIELDS: frozenset[str] = frozenset(
         "Reporting Scale",
         "reporting_scale",
         "題型",
+        "題目內容類型",
+        "image_generation_mode",
+        "圖片",
+        "chart_spec",
     }
 )
 
@@ -83,7 +87,8 @@ def _ns_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> 
 
     Frozen fields (those that must not change across correction passes):
     ``id``, ``序號``, ``年級``, ``科目``, ``科學能力``, ``核心素養``,
-    ``學習內容``, ``學習表現``, ``出題概念``, ``題型``.
+    ``學習內容``, ``學習表現``, ``出題概念``, ``題型``, ``題目內容類型``,
+    ``image_generation_mode``, ``圖片`` and ``chart_spec``.
 
     For LLM-added rows (``original is None``): ``學習內容`` and
     ``學習表現`` codes are canonicalized via ``repair_lc/lp_refs``
@@ -98,6 +103,14 @@ def _ns_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> 
 
     try:
         rubric = parse_rubric(sq_raw, RubricEntry)
+        chart_spec = original.chart_spec if original else None
+        if original is None:
+            raw_chart_spec = sq_raw.get("image_spec") or sq_raw.get("chart_spec")
+            if isinstance(raw_chart_spec, dict):
+                try:
+                    chart_spec = ImageSpec(**raw_chart_spec)
+                except Exception:
+                    chart_spec = None
         sq = SubQuestion(
             id=original.id if original else sq_raw.get("id", ""),
             序號=original.序號 if original else sq_raw.get("序號", idx + 1),
@@ -138,6 +151,15 @@ def _ns_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> 
                 if isinstance(sq_raw.get("誘答分析"), dict)
                 else (original.誘答分析 if original else {})
             ),
+            題目內容類型=(
+                original.題目內容類型 if original else sq_raw.get("題目內容類型")
+            ),
+            image_generation_mode=(
+                original.image_generation_mode
+                if original else sq_raw.get("image_generation_mode")
+            ),
+            圖片=original.圖片 if original else sq_raw.get("圖片"),
+            chart_spec=chart_spec,
         )
         return sq
     except Exception:

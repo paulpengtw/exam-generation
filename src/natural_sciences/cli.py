@@ -20,7 +20,7 @@ from src.common.verification_trail import VerificationTrailEntry
 from src.config import Config
 from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.html_renderer import PlaywrightRenderer
-from src.llm_client import LLMClient, make_stderr_observer
+from src.llm_client import LLMClient, emit_stage, make_render_error_sink, make_stderr_observer
 from src.natural_sciences.context_builder import (
     LC_INSTRUCTIONS,
     LP_INSTRUCTIONS,
@@ -51,6 +51,7 @@ from src.natural_sciences.schemas import (
     SubQuestionConfig,
 )
 from src.natural_sciences.verifier import verify_question
+from src.renderer import render_image
 
 _GRADES: list[int] = load_grades(load_schemas())
 
@@ -215,6 +216,13 @@ def _parse_subquestion(
             distractor = {str(k): str(v) for k, v in raw_distractor.items()}
         else:
             distractor = {}
+        sq_chart_spec = None
+        raw_sq_spec = sq_raw.get("image_spec") or sq_raw.get("chart_spec")
+        if isinstance(raw_sq_spec, dict):
+            try:
+                sq_chart_spec = ImageSpec(**raw_sq_spec)
+            except Exception:
+                sq_chart_spec = None
         result = SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
@@ -232,6 +240,10 @@ def _parse_subquestion(
             答案解析=sq_raw.get("答案解析", ""),
             評分規準=rubric,
             誘答分析=distractor,
+            題目內容類型=sq_raw.get("題目內容類型"),
+            image_generation_mode=sq_raw.get("image_generation_mode"),
+            圖片=sq_raw.get("圖片"),
+            chart_spec=sq_chart_spec,
         )
         result.科目 = ["自然科學"]
         # Issue #286: force 年級 from sampled params, never trust the LLM value.
@@ -240,6 +252,7 @@ def _parse_subquestion(
         # above; 年級 gets the same treatment via the shared helper so that
         # 社會領域 (issue #290) can reuse it later.
         force_grade(result, params.grade)
+        result._plan_index = i
         return result
     except Exception:
         return None
@@ -371,6 +384,52 @@ def _ns_make_fallback_sq_plans(params: SampledParams, n: int) -> list[dict]:
     ]
 
 
+def _ns_render_subquestion_images(
+    question: ExamQuestion,
+    config: Config,
+    client: Any,
+    html_renderer: Any,
+    image_generation_mode: str,
+    obs: Any,
+    params: SampledParams,
+) -> list[str]:
+    """Render non-null NS 小題 chart specs and attach their PNG filenames."""
+    rendered_paths: list[str] = []
+    subquestion_image_modes = {
+        i: cfg.image_generation_mode
+        for i, cfg in enumerate(params.subquestion_configs, start=1)
+        if cfg.image_generation_mode
+    }
+    for sub in question.subquestions:
+        if not sub.chart_spec:
+            continue
+        plan_index = sub._plan_index if sub._plan_index is not None else sub.序號
+        img_path = config.output_dir / f"{question.id}_sq{plan_index}.png"
+        mode = subquestion_image_modes.get(plan_index, image_generation_mode)
+        sub.image_generation_mode = mode
+        question_text = "\n\n".join(
+            part for part in (question.文本, sub.題目) if part
+        )
+        print(f"  Rendering subquestion image: {img_path}", file=sys.stderr)
+        on_render_error, render_failed = make_render_error_sink(obs)
+        emit_stage(obs, "image_agent", "render_image", "start")
+        rendered = render_image(
+            sub.chart_spec.model_dump(),
+            img_path,
+            question_text=question_text,
+            html_renderer=html_renderer,
+            llm_client=client,
+            image_generation_mode=mode,
+            on_error=on_render_error,
+        )
+        if not render_failed:
+            emit_stage(obs, "image_agent", "render_image", "end")
+        if rendered:
+            sub.圖片 = img_path.name
+            rendered_paths.append(rendered)
+    return rendered_paths
+
+
 _NS_SPEC = SubjectGenerationSpec(
     few_shot_subdir="natural_sciences",
     build_text_system_fn=_ns_build_text_system,
@@ -381,7 +440,7 @@ _NS_SPEC = SubjectGenerationSpec(
     parse_subquestion_fn=_parse_subquestion,
     make_fallback_sq_plans_fn=_ns_make_fallback_sq_plans,
     ensure_visual_spec_fn=None,
-    render_subquestion_images_fn=None,
+    render_subquestion_images_fn=_ns_render_subquestion_images,
     image_question_text_fn=lambda q: "\n".join(q.題目),
     verify_fn=verify_question,
     correct_fn=correct_question,

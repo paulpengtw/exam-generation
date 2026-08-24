@@ -186,10 +186,10 @@ class SubjectGenerationSpec:
     # None → no-op (NS uses None)
     ensure_visual_spec_fn: Callable | None
 
-    # SS-only: render per-subquestion image specs to PNGs.
+    # Render per-subquestion image specs to PNGs.
     # Signature: (question, config, client, html_renderer, image_generation_mode,
     #              obs, params) -> list[str]
-    # None → no-op (NS uses None)
+    # None → no-op
     render_subquestion_images_fn: Callable | None
 
     # Extract the question-text string for image rendering / re-rendering.

@@ -13,6 +13,7 @@ from __future__ import annotations
 from src.natural_sciences.corrector import correct_question
 from src.natural_sciences.schemas import (
     ExamQuestion,
+    ImageSpec,
     LearningContentRef,
     QuestionSetType,
     QuestionSubContext,
@@ -266,6 +267,14 @@ def test_ns_rebuild_covers_all_subquestion_model_fields() -> None:
         "答案解析": "SENTINEL-答案解析",
         "評分規準": [RubricEntry(code="2", 規準說明="SENTINEL", 學生作答實例=[])],
         "誘答分析": {"A": "SENTINEL"},
+        "題目內容類型": "SENTINEL-content-type",
+        "image_generation_mode": "html",
+        "圖片": "sentinel.png",
+        "chart_spec": ImageSpec(
+            render_mode="html",
+            title="SENTINEL-chart",
+            description="SENTINEL-description",
+        ),
     }
 
     original_sq = SubQuestion(**sentinels)
@@ -289,6 +298,10 @@ def test_ns_rebuild_covers_all_subquestion_model_fields() -> None:
         "答案解析": sentinels["答案解析"],
         "評分規準": [{"code": "2", "規準說明": "SENTINEL", "學生作答實例": []}],
         "誘答分析": sentinels["誘答分析"],
+        "題目內容類型": sentinels["題目內容類型"],
+        "image_generation_mode": sentinels["image_generation_mode"],
+        "圖片": sentinels["圖片"],
+        "chart_spec": sentinels["chart_spec"].model_dump(),
     }
 
     question = _make_question([original_sq])

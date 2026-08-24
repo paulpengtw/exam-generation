@@ -406,16 +406,17 @@ def test_validator_names_nonconforming_social_studies_subquestion() -> None:
     assert any("小題 2" in violation for violation in violations)
 
 
-def test_natural_sciences_subquestion_has_no_figure_fields() -> None:
-    """Natural-sciences subquestions carry no per-subquestion figure fields."""
+def test_natural_sciences_subquestion_carries_figure_fields() -> None:
+    """Natural-sciences subquestions carry the per-subquestion image contract."""
     from src.natural_sciences.schemas import SubQuestion
 
-    assert "題目內容類型" not in SubQuestion.model_fields
-    assert "chart_spec" not in SubQuestion.model_fields
+    assert "題目內容類型" in SubQuestion.model_fields
+    assert "image_generation_mode" in SubQuestion.model_fields
+    assert "chart_spec" in SubQuestion.model_fields
 
 
 def test_validator_accepts_conforming_natural_sciences_question_and_subquestion() -> None:
-    """NS 小題 carry no per-小題 figure, so they contribute no violations."""
+    """An NS question with no subquestion visual spec contributes no violations."""
     from src.common.figure_policy import validate_question_figure_routing
     from src.natural_sciences.schemas import ExamQuestion, ImageSpec, SubQuestion
 
