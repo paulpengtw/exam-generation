@@ -999,7 +999,7 @@ def _enforce_figure_kind_diversity(
                     client,
                     forbidden_kinds=forbidden,
                     force_repair=True,
-                    )
+                )
                 if question.chart_spec != before_spec:
                     _rerender_top_level_image(
                         question,
