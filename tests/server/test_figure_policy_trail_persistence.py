@@ -5,10 +5,21 @@ from __future__ import annotations
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from server.models import Base, GenerationLog, GenerationRecord, User
 from server.generate.models import GenerateParams
-from server.generate.persistence import persist_generation_record
+from server.generate.persistence import (
+    make_figure_policy_trail_recorder,
+    persist_aborted_generation_record,
+    persist_generation_record,
+)
+from src.common.figure_policy_trail import FigurePolicySpecEntry
 
 
 def _make_factory(rows: list[Any]) -> Any:
@@ -52,3 +63,111 @@ def test_completed_social_generation_persists_the_figure_policy_trail() -> None:
     )
 
     assert rows[0].figure_policy_trail_json == expected_trail
+
+
+def test_incremental_figure_policy_recorder_persists_each_prefix(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'policy.db'}")
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            session_factory = async_sessionmaker(
+                engine,
+                expire_on_commit=False,
+                class_=AsyncSession,
+            )
+            user_id = uuid.uuid4()
+            log_id = uuid.uuid4()
+            async with session_factory() as session:
+                session.add(User(id=user_id, email="policy@example.com"))
+                session.add(
+                    GenerationLog(
+                        id=log_id,
+                        user_id=user_id,
+                        params_json={"subject": "social_studies"},
+                        status="started",
+                    )
+                )
+                await session.commit()
+
+            recorder = make_figure_policy_trail_recorder(
+                generation_log_id=log_id,
+                loop=asyncio.get_running_loop(),
+                session_factory=session_factory,
+            )
+            entry = FigurePolicySpecEntry(
+                question_id="ss-policy",
+                label="題幹",
+                effective_figure_kind="地圖",
+                timestamp=datetime(2026, 8, 25, tzinfo=timezone.utc),
+            )
+            recorder(entry)
+
+            async with session_factory() as session:
+                log = await session.get(GenerationLog, log_id)
+                assert log is not None
+                assert log.figure_policy_trail_json == [entry.model_dump(mode="json")]
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_aborted_generation_copies_the_incrementally_staged_policy_prefix(
+    tmp_path: Path,
+) -> None:
+    async def exercise() -> None:
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'abort.db'}")
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            session_factory = async_sessionmaker(
+                engine,
+                expire_on_commit=False,
+                class_=AsyncSession,
+            )
+            user_id = uuid.uuid4()
+            log_id = uuid.uuid4()
+            entry = {
+                "code": "figure_policy",
+                "kind": "spec",
+                "question_id": "ss-interrupted",
+                "label": "題幹",
+                "effective_figure_kind": "地圖",
+                "timestamp": "2026-08-25T00:00:00Z",
+            }
+            async with session_factory() as session:
+                session.add(User(id=user_id, email="aborted-policy@example.com"))
+                session.add(
+                    GenerationLog(
+                        id=log_id,
+                        user_id=user_id,
+                        params_json={"subject": "social_studies"},
+                        status="started",
+                        figure_policy_trail_json=[entry],
+                    )
+                )
+                await session.commit()
+
+            await persist_aborted_generation_record(
+                user_id=user_id,
+                generation_log_id=log_id,
+                subject="social_studies",
+                params=GenerateParams(subject="social_studies"),
+                session_factory=session_factory,
+            )
+
+            async with session_factory() as session:
+                record = (
+                    await session.execute(
+                        select(GenerationRecord).where(
+                            GenerationRecord.generation_log_id == log_id
+                        )
+                    )
+                ).scalar_one()
+                assert record.status == "aborted"
+                assert record.figure_policy_trail_json == [entry]
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())
