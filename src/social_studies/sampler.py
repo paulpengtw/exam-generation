@@ -19,6 +19,7 @@ from src.social_studies.curriculum_loader import (
 from src.social_studies.domain_mapping import DomainMapping, load_domain_mapping
 from src.social_studies.schema_loader import load_grades, load_learning_stage, load_schemas
 from src.social_studies.schemas import (
+    CognitiveProcess,
     ContentDomain,
     CoreCompetency,
     QuestionContext,
@@ -57,6 +58,8 @@ _KNOWING_ILLUSTRATING = "Knowing–Illustrating with examples"
 _REASONING_INTERPRET = "Reasoning and Applying–Interpret information"
 _REASONING_RELATE = "Reasoning and Applying–Relate or Integrate"
 _REASONING_PROCESSES = (_REASONING_INTERPRET, _REASONING_RELATE)
+_COGNITIVE_PROCESS_VALUES = frozenset(member.value for member in CognitiveProcess)
+_QUESTION_TYPE_VALUES = frozenset(member.value for member in QuestionType)
 
 
 def _is_public_code(value: str) -> bool:
@@ -87,6 +90,8 @@ def _resolve_domain_and_pools(
     subject: QuestionSubject,
     lc_entries: list[dict] | None,
     lp_entries: list[dict] | None,
+    *,
+    domain_pinned: bool = False,
 ) -> tuple[ContentDomain, list[dict] | None, list[dict] | None]:
     """Draw a usable domain, retrying at most once for each ICCS domain."""
     if subject.value not in _DOMAIN_FILTER_SUBJECTS:
@@ -110,6 +115,9 @@ def _resolve_domain_and_pools(
         if not lc_empty and not lp_empty:
             return selected_domain, filtered_lc, filtered_lp
 
+        if domain_pinned:
+            return selected_domain, filtered_lc, filtered_lp
+
         if attempt < len(domains) - 1:
             selected_domain = rng.choice(remaining)
             remaining.remove(selected_domain)
@@ -126,33 +134,79 @@ def _assign_cognitive_processes(
     rng: random.Random,
     slot_count: int,
     subject: QuestionSubject,
+    pinned_assignments: list[str | None] | None = None,
 ) -> list[str]:
-    """Assign ICCS processes with a one-third Knowing / two-thirds RA tier weight."""
+    """Assign ICCS processes while preserving valid per-slot pins."""
     if slot_count <= 0:
         return []
 
-    tiers = ["Knowing" if rng.random() < (1 / 3) else "Reasoning" for _ in range(slot_count)]
-    knowing_indices = [index for index, tier in enumerate(tiers) if tier == "Knowing"]
-    defining_index = rng.choice(knowing_indices) if knowing_indices else None
-    assignments = [
-        (
+    pins = list(pinned_assignments or [])[:slot_count]
+    pins.extend([None] * (slot_count - len(pins)))
+    assignments: list[str | None] = [
+        value if value in _COGNITIVE_PROCESS_VALUES else None for value in pins
+    ]
+    unpinned_indices = [index for index, value in enumerate(assignments) if value is None]
+    tiers = [
+        "Knowing" if rng.random() < (1 / 3) else "Reasoning"
+        for _ in unpinned_indices
+    ]
+    knowing_indices = [
+        index for index, tier in zip(unpinned_indices, tiers) if tier == "Knowing"
+    ]
+    has_pinned_defining = _KNOWING_DEFINING in assignments
+    defining_index = (
+        rng.choice(knowing_indices) if knowing_indices and not has_pinned_defining else None
+    )
+    for index, tier in zip(unpinned_indices, tiers):
+        assignments[index] = (
             _KNOWING_DEFINING
             if index == defining_index
             else _KNOWING_ILLUSTRATING
             if tier == "Knowing"
             else rng.choice(_REASONING_PROCESSES)
         )
-        for index, tier in enumerate(tiers)
-    ]
 
-    if subject.value == "跨科" and _REASONING_RELATE not in assignments:
+    if (
+        subject.value == "跨科"
+        and _REASONING_RELATE not in assignments
+        and unpinned_indices
+    ):
         reasoning_index = next(
-            (index for index, process in enumerate(assignments) if process in _REASONING_PROCESSES),
-            slot_count - 1,
+            (
+                index
+                for index in unpinned_indices
+                if assignments[index] in _REASONING_PROCESSES
+            ),
+            unpinned_indices[-1],
         )
         assignments[reasoning_index] = _REASONING_RELATE
 
-    return assignments
+    return [value for value in assignments if value is not None]
+
+
+def _coerce_subquestion_config(raw: dict, config_cls: type) -> object:
+    """Keep invalid tolerant-channel enum pins as blank slots."""
+    data = dict(raw)
+    cognitive_value = data.get("cognitive_process", data.get("認知歷程"))
+    if (
+        cognitive_value is not None
+        and (
+            not isinstance(cognitive_value, str)
+            or cognitive_value not in _COGNITIVE_PROCESS_VALUES
+        )
+    ):
+        data.pop("cognitive_process", None)
+        data.pop("認知歷程", None)
+    question_type = data.get("question_type")
+    if (
+        question_type is not None
+        and (
+            not isinstance(question_type, str)
+            or question_type not in _QUESTION_TYPE_VALUES
+        )
+    ):
+        data.pop("question_type", None)
+    return config_cls(**data)
 
 
 def sample_params(
@@ -165,6 +219,8 @@ def sample_params(
     learning_content: list[str] | None = None,
     learning_performance: list[str] | None = None,
     content_type: str | None = None,
+    content_domain: str | ContentDomain | None = None,
+    target_surface: str | None = None,
     seed: int | None = None,
     sub_question_count: int | None = None,
     question_word_limit: int | None = None,
@@ -181,6 +237,9 @@ def sample_params(
     """
     rng = random.Random(seed)
     resolved_difficulty: Difficulty = resolve_difficulty(difficulty)
+    resolved_surface = "紙本" if target_surface is None else target_surface
+    if resolved_surface not in {"紙本", "數位"}:
+        raise ValueError("target_surface must be one of ['紙本', '數位']")
 
     selected_grade = grade if grade is not None else rng.choice(_GRADES)
 
@@ -238,7 +297,12 @@ def sample_params(
         else rng.choice(list(QuestionSubject))
     )
     # Draw the ICCS domain before any learning-content/performance pool is drawn.
-    selected_content_domain = rng.choice(list(ContentDomain))
+    domain_pinned = content_domain is not None
+    selected_content_domain = (
+        ContentDomain(content_domain)
+        if content_domain is not None
+        else rng.choice(list(ContentDomain))
+    )
 
     if core_competency is not None:
         selected_competency = core_competency
@@ -264,6 +328,7 @@ def sample_params(
         selected_subject,
         lc_entries,
         lp_entries,
+        domain_pinned=domain_pinned,
     )
 
     if learning_content is not None:
@@ -291,7 +356,7 @@ def sample_params(
     if subquestion_configs:
         for cfg in subquestion_configs:
             if isinstance(cfg, dict):
-                resolved_configs.append(SubQuestionConfig(**cfg))
+                resolved_configs.append(_coerce_subquestion_config(cfg, SubQuestionConfig))
             elif isinstance(cfg, SubQuestionConfig):
                 resolved_configs.append(cfg)
 
@@ -328,6 +393,7 @@ def sample_params(
         rng,
         slot_count,
         selected_subject,
+        [cfg.認知歷程 for cfg in resolved_configs],
     )
     if resolved_configs:
         resolved_configs = [
@@ -346,6 +412,7 @@ def sample_params(
         題目內容類型=selected_content_type,
         科目=selected_subject,
         內容領域=selected_content_domain,
+        target_surface=resolved_surface,
         核心素養=selected_competency,
         學習內容_pool=selected_lc_pool,
         學習表現_pool=selected_lp_pool,

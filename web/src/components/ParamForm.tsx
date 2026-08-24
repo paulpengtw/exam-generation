@@ -6,6 +6,10 @@ import { renewSessionIfNeeded } from "../lib/sessionRenewal";
 import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
 import { drawRandomSubset } from "../utils/drawRandomSubset";
+import {
+  findSocialStudiesPinRuleViolations,
+  type SocialStudiesPinRuleViolation,
+} from "../utils/socialStudiesPinRules";
 import CoreQuestionPicker from "./CoreQuestionPicker";
 import SubQuestionConfigEditor from "./SubQuestionConfigEditor";
 import SubQuestionCurriculumPickers, { SearchPicker } from "./SubQuestionCurriculumPickers";
@@ -15,6 +19,7 @@ import { toGenerateParams } from "../utils/toGenerateParams";
 
 export interface SubQuestionConfig {
   question_type?: string;
+  cognitive_process?: string;
   instruction?: string;
   content_type?: string;
   image_generation_mode?: "html" | "gpt_image";
@@ -183,6 +188,9 @@ export interface FormFields {
   effortExecute: string;
   effortVerify: string;
   effortCorrect: string;
+  // Optional for backwards compatibility with drafts saved before #493.
+  contentDomain?: string;
+  targetSurface?: "紙本" | "數位";
 }
 
 type FormFieldUpdate<K extends keyof FormFields> =
@@ -638,6 +646,8 @@ function defaultFormFields(
     effortExecute,
     effortVerify,
     effortCorrect,
+    contentDomain: "",
+    targetSurface: "紙本",
   };
 }
 
@@ -663,6 +673,11 @@ const SS_SUBJECT_FILTER_TO_CONTENT_CODE: Record<string, string | null> = {
   "跨科": null,
 };
 
+const PIN_RULE_MESSAGE_KEYS: Record<SocialStudiesPinRuleViolation, string> = {
+  knowing_defining_limit: "form.pin_rule.knowing_defining_limit",
+  cross_subject_relate: "form.pin_rule.cross_subject_relate",
+};
+
 export default function ParamForm({
   subject = "math",
   onSubmit,
@@ -683,6 +698,7 @@ export default function ParamForm({
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
+  const [surfaceQuestionTypeNotice, setSurfaceQuestionTypeNotice] = useState<string[]>([]);
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
@@ -772,6 +788,8 @@ export default function ParamForm({
       : fromInit<string[]>("learning_content", []),
     subQuestionCount: fromInit<number | "">("sub_question_count", ""),
     subquestionConfigs: subquestionConfigsFromInit(),
+    contentDomain: stringFromInit("content_domain", ""),
+    targetSurface: ip.target_surface === "數位" ? "數位" : "紙本",
     modelPlan: stringFromInit("model_plan", window.localStorage.getItem("model_plan") ?? ""),
     modelExecute: stringFromInit("model_execute", window.localStorage.getItem("model_execute") ?? ""),
     modelVerify: stringFromInit("model_verify", window.localStorage.getItem("model_verify") ?? ""),
@@ -834,9 +852,17 @@ export default function ParamForm({
     effortExecute,
     effortVerify,
     effortCorrect,
+    contentDomain,
+    targetSurface,
   } = formSnapshot;
   const configuredSeed = fromInit<number | undefined>("seed", undefined);
   const historyPerQuestionParams = parsePerQuestionParams(ip.per_question_params);
+  const pinRuleViolations = useMemo(
+    () => subject === "social_studies"
+      ? findSocialStudiesPinRuleViolations(subquestionConfigs, subjectFilter)
+      : [],
+    [subject, subjectFilter, subquestionConfigs],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -921,7 +947,11 @@ export default function ParamForm({
       setPrefillNotice(null);
     }
     setDraftToRestore(null);
-    restoreFormSnapshot(fields);
+    restoreFormSnapshot({
+      ...fields,
+      contentDomain: fields.contentDomain ?? "",
+      targetSurface: fields.targetSurface ?? "紙本",
+    });
   }
 
   function handleUseHistoryParams() {
@@ -1056,6 +1086,8 @@ export default function ParamForm({
         : fromInit<string[]>("learning_content", []),
       subQuestionCount: fromInit<number | "">("sub_question_count", ""),
       subquestionConfigs: subquestionConfigsFromInit(),
+      contentDomain: stringFromInit("content_domain", ""),
+      targetSurface: ip.target_surface === "數位" ? "數位" : "紙本",
       topic: fromInit<string>("topic", ""),
       coreQuestion: fromInit<string | null>("core_question", null),
       coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
@@ -1347,6 +1379,10 @@ export default function ParamForm({
       arr("subject_filter"),
       schemas.科目?.map((s) => s.value),
     );
+    const domain = single("content_domain");
+    if (domain !== undefined) {
+      check("內容領域", [domain], schemas.內容領域?.map((s) => s.value));
+    }
     if (missing.length > 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciling initialParams against freshly-loaded schemas, matches existing HistoryPage/VerifyPage pattern
       setPrefillNotice(t("history.prefill_notice"));
@@ -1357,6 +1393,8 @@ export default function ParamForm({
       setField("qType", (prev) => prev.filter((v) => allowedQT.has(v)));
       const allowedST = new Set(schemas.題型種類?.map((s) => s.value));
       setField("setType", (prev) => (allowedST.has(prev) ? prev : ""));
+      const allowedDomains = new Set(schemas.內容領域?.map((s) => s.value));
+      setField("contentDomain", (prev) => (prev && allowedDomains.has(prev) ? prev : ""));
     } else {
       setPrefillNotice(null);
     }
@@ -1389,6 +1427,38 @@ export default function ParamForm({
     const selectedContext = context[0] ?? "";
     return entries.filter((entry) => !entry.parent || entry.parent === selectedContext);
   }, [schemas, context]);
+
+  const availableQuestionTypes = useMemo(() => {
+    const entries = schemas?.題型 ?? [];
+    if (subject !== "social_studies" || (targetSurface ?? "紙本") !== "紙本") {
+      return entries;
+    }
+    const digitalOnly = new Set(schemas?.digital_only_question_types ?? []);
+    return entries.filter((entry) => !digitalOnly.has(entry.value));
+  }, [schemas, subject, targetSurface]);
+
+  const invalidDigitalOnlyPins = useMemo(() => {
+    if (subject !== "social_studies" || (targetSurface ?? "紙本") !== "紙本") return [];
+    const digitalOnly = new Set(schemas?.digital_only_question_types ?? []);
+    return [...new Set(
+      subquestionConfigs
+        .map((config) => config.question_type)
+        .filter((value): value is string => value !== undefined && digitalOnly.has(value)),
+    )];
+  }, [schemas, subject, subquestionConfigs, targetSurface]);
+
+  useEffect(() => {
+    if (invalidDigitalOnlyPins.length === 0) return;
+    // A schema update or a surface flip can expose a stale history pin. Clear
+    // it before submit so the backend never receives a known 422 combination.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setField("subquestionConfigs", (prev) => prev.map((config) =>
+      invalidDigitalOnlyPins.includes(config.question_type)
+        ? { ...config, question_type: undefined }
+        : config,
+    ));
+    setSurfaceQuestionTypeNotice(invalidDigitalOnlyPins);
+  }, [invalidDigitalOnlyPins, setField]);
 
   const availableLearningContent = useMemo(() => {
     const entries = schemas?.學習內容 ?? [];
@@ -1567,6 +1637,7 @@ export default function ParamForm({
                 : undefined;
             return {
               question_type: cfg.question_type || undefined,
+              cognitive_process: subject === "social_studies" ? cfg.cognitive_process || undefined : undefined,
               instruction: cfg.instruction?.trim() || undefined,
               content_type: cfg.content_type || undefined,
               image_generation_mode: cfg.image_generation_mode || undefined,
@@ -1588,7 +1659,7 @@ export default function ParamForm({
     );
 
     const hasSubquestionConfig = effectiveSubquestionConfigs.some(
-      (c) => c.question_type || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.reporting_scale || c.learning_content?.length || c.learning_performance?.length,
+      (c) => c.question_type || c.cognitive_process || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.reporting_scale || c.learning_content?.length || c.learning_performance?.length,
     );
     const shouldSendSubquestionConfigs =
       (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== "" && (
@@ -1626,6 +1697,12 @@ export default function ParamForm({
           ? cleanTopic
           : undefined,
       core_question: coreQuestion || undefined,
+      ...(subject === "social_studies" && contentDomain
+        ? { content_domain: contentDomain }
+        : {}),
+      ...(subject === "social_studies" && targetSurface === "數位"
+        ? { target_surface: "數位" as const }
+        : {}),
       learning_performance: finalLp,
       sub_context: subject === "natural_sciences" ? subContext : undefined,
       science_competency:
@@ -1836,6 +1913,7 @@ export default function ParamForm({
             }
             return {
               question_type: cfg.question_type || undefined,
+              cognitive_process: subject === "social_studies" ? cfg.cognitive_process || undefined : undefined,
               instruction: cfg.instruction?.trim() || undefined,
               content_type: cfg.content_type || undefined,
               image_generation_mode: cfg.image_generation_mode || undefined,
@@ -1991,6 +2069,8 @@ export default function ParamForm({
       { label: t("form.confirm_difficulty"), value: p.difficulty, subjects: ["math", "social_studies"], kind: "defaulted", defaultValue: "medium" },
       { label: t("form.confirm_reporting_scale"), value: p.reporting_scale, subjects: ["natural_sciences"], kind: "defaulted", defaultValue: t("form.confirm_random") },
       { label: t("form.confirm_subject_filter"), value: p.subject_filter, subjects: ["math", "social_studies"], kind: subject === "social_studies" ? "sampled" : "absent" },
+      { label: t("form.confirm_content_domain"), value: p.content_domain, subjects: ["social_studies"], kind: "sampled" },
+      { label: t("form.confirm_target_surface"), value: p.target_surface ?? "紙本", subjects: ["social_studies"] },
       { label: t("form.confirm_count"), value: String(p.count), subjects: allSubjects },
       {
         label: t("form.confirm_coverage_mode"),
@@ -2380,6 +2460,21 @@ export default function ParamForm({
           {validationError}
         </div>
       )}
+      {pinRuleViolations.length > 0 && (
+        <div role="status" className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+          <p>⚠ {t("form.pin_rule_warning_title")}</p>
+          <ul className="mt-1 list-disc pl-5">
+            {pinRuleViolations.map((violation) => (
+              <li key={violation}>{t(PIN_RULE_MESSAGE_KEYS[violation])}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {surfaceQuestionTypeNotice.length > 0 && (
+        <div role="status" className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+          {t("form.digital_only_pin_cleared").replace("{types}", surfaceQuestionTypeNotice.join("、"))}
+        </div>
+      )}
       {isCurriculumSubject && (
         <div className="space-y-2">
           <label className="block text-sm font-medium">{t("form.topic_label")}</label>
@@ -2494,6 +2589,51 @@ export default function ParamForm({
               {t("form.subject_filter_natural_sciences_help")}
             </p>
           )}
+        </div>
+      )}
+
+      {subject === "social_studies" && (schemas.內容領域 ?? []).length > 0 && (
+        <div>
+          <label htmlFor="content-domain-select" className="block text-sm font-medium">
+            {t("form.content_domain")}
+          </label>
+          <select
+            id="content-domain-select"
+            value={contentDomain ?? ""}
+            onChange={(e) => {
+              markUserChosen("content_domain");
+              setField("contentDomain", e.target.value);
+            }}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            <option value="">{t("form.content_domain_random")}</option>
+            {(schemas.內容領域 ?? []).map((entry) => (
+              <option key={entry.value} value={entry.value}>
+                {entry.value}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {subject === "social_studies" && (
+        <div>
+          <label htmlFor="target-surface-select" className="block text-sm font-medium">
+            {t("form.target_surface")}
+          </label>
+          <select
+            id="target-surface-select"
+            value={targetSurface ?? "紙本"}
+            onChange={(e) => {
+              const nextSurface = e.target.value as "紙本" | "數位";
+              setField("targetSurface", nextSurface);
+              if (nextSurface === "數位") setSurfaceQuestionTypeNotice([]);
+            }}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          >
+            <option value="紙本">紙本</option>
+            <option value="數位">數位</option>
+          </select>
         </div>
       )}
 
@@ -2877,7 +3017,8 @@ export default function ParamForm({
                   <SubQuestionConfigEditor
                     config={cfg}
                     subject={subject}
-                    questionTypes={schemas.題型}
+                    questionTypes={availableQuestionTypes}
+                    cognitiveProcesses={subject === "social_studies" ? schemas.認知歷程 ?? [] : []}
                     contentTypes={schemas.題目內容類型 ?? []}
                     onChange={(patch) => updateSubquestionConfig(i, patch)}
                   />

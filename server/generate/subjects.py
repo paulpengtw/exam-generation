@@ -107,6 +107,9 @@ from src.social_studies.curriculum_loader import (
 )
 from src.social_studies.sampler import sample_params as _ss_sample_params_direct
 from src.social_studies.schema_loader import (
+    digital_only_question_types as ss_digital_only_question_types,
+)
+from src.social_studies.schema_loader import (
     load_learning_stage as ss_load_learning_stage,
 )
 from src.social_studies.schema_loader import (
@@ -230,6 +233,17 @@ def _resolve_stage(schemas: dict, grade: int | None) -> str:
 
 
 def _ns_validate_params(params: Any) -> None:
+    unsupported_surface_fields = [
+        field
+        for field in ("content_domain", "target_surface")
+        if getattr(params, field, None) is not None
+    ]
+    if unsupported_surface_fields:
+        raise ValueError(
+            "The following parameters are not supported for natural sciences: "
+            + ", ".join(unsupported_surface_fields)
+        )
+
     if params.core_competency:
         raise ValueError(
             "core_competency is not supported for natural sciences; "
@@ -262,6 +276,39 @@ def _ns_validate_params(params: Any) -> None:
         )
 
 
+def _ss_validate_params(params: Any) -> None:
+    from src.social_studies.schemas import ContentDomain  # noqa: PLC0415
+
+    if params.content_domain is not None and params.content_domain not in {
+        member.value for member in ContentDomain
+    }:
+        raise ValueError(
+            f"content_domain {params.content_domain!r} is not a valid social-studies domain"
+        )
+
+    if params.target_surface in {None, "紙本"}:
+        try:
+            decoded = json.loads(params.subquestion_configs) if params.subquestion_configs else []
+        except (TypeError, json.JSONDecodeError):
+            decoded = []
+        if isinstance(decoded, list):
+            digital_only = set(ss_digital_only_question_types())
+            pinned_types = {
+                question_type
+                for item in decoded
+                if isinstance(item, dict)
+                for question_type in [item.get("question_type")]
+                if isinstance(question_type, str)
+            }
+            pinned_types.update(params.q_type or [])
+            blocked = sorted(pinned_types & digital_only)
+            if blocked:
+                raise ValueError(
+                    "target_surface must be 數位 for digital-only question type(s): "
+                    + ", ".join(blocked)
+                )
+
+
 def _math_validate_params(params: Any) -> None:
     if params.sub_question_count is not None and params.set_type == "單一題":
         raise ValueError(
@@ -281,6 +328,8 @@ def _math_validate_params(params: Any) -> None:
             "question_word_limit",
             "option_word_limit",
             "subquestion_configs",
+            "content_domain",
+            "target_surface",
         )
         if getattr(params, field) is not None
     ]
@@ -424,6 +473,8 @@ def _ss_plan_all_batch_briefs(
                 q_type=q_type_override,
                 subject=subject_override,
                 content_type=params.content_type,
+                content_domain=params.content_domain,
+                target_surface=params.target_surface,
                 learning_performance=params.learning_performance,
                 seed=seed,
                 sub_question_count=params.sub_question_count,
@@ -452,6 +503,8 @@ def _ss_do_sample_params(
         subject=overrides["subject_override"],
         core_competency=overrides["core_competency_override"],
         content_type=params.content_type,
+        content_domain=params.content_domain,
+        target_surface=params.target_surface,
         learning_content=params.learning_content,
         learning_performance=params.learning_performance,
         seed=seed,
@@ -524,12 +577,17 @@ def _ss_build_subquestion_prompt_previews(
     )
 
 
-def _ss_patch_metadata(question: Any, coverage_mode: str) -> Any:
+def _ss_patch_metadata(
+    question: Any,
+    coverage_mode: str,
+    target_surface: str | None = None,
+) -> Any:
     from src.social_studies.schemas import ExamQuestion as _SSExamQuestion  # noqa: PLC0415
     from src.social_studies.schemas import QuestionMetadata as _QM  # noqa: PLC0415
 
     if not isinstance(question, _SSExamQuestion):
         return question
+    surface = "紙本" if target_surface is None else target_surface
     if question.metadata is None:
         # Fall back to a minimal metadata object; model attribute may not be
         # available on all config types, so use "unknown" as sentinel.
@@ -537,10 +595,11 @@ def _ss_patch_metadata(question: Any, coverage_mode: str) -> Any:
             grade=question.subquestions[0].年級 if question.subquestions else 0,
             model="unknown",
             coverage_mode_used=coverage_mode,
+            surface_used=surface,
         )
     else:
         question.metadata = question.metadata.model_copy(
-            update={"coverage_mode_used": coverage_mode}
+            update={"coverage_mode_used": coverage_mode, "surface_used": surface}
         )
     return question
 
@@ -562,6 +621,7 @@ def _ss_build_schemas(config_server: Any, grade: int | None) -> dict:
         config_server.social_studies_curriculum_dir / "learning_performance.json"
     )
     learning_stage = _resolve_stage(schemas, grade)
+    schemas["digital_only_question_types"] = ss_digital_only_question_types(schemas)
     schemas["學習表現"] = [
         {
             "value": entry["value"],
@@ -716,7 +776,11 @@ def _ns_build_subquestion_prompt_previews(
     )
 
 
-def _ns_patch_metadata(question: Any, coverage_mode: str) -> Any:
+def _ns_patch_metadata(
+    question: Any,
+    coverage_mode: str,
+    _target_surface: str | None = None,
+) -> Any:
     from src.natural_sciences.schemas import ExamQuestion as _NSExamQuestion  # noqa: PLC0415
     from src.natural_sciences.schemas import QuestionMetadata as _NSQM  # noqa: PLC0415
 
@@ -973,6 +1037,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         plan_core_questions=_ss_plan_core_questions,
         load_planner_stage=_ss_load_planner_stage,
         build_schemas=_ss_build_schemas,
+        validate_params=_ss_validate_params,
         correct_question=_ss_correct_question,
         verify_question=_ss_verify_question,
     ),
