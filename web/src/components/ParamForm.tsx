@@ -671,6 +671,7 @@ function DraftSummary({
                       <SubquestionConfigCards
                         configs={fields.subquestionConfigs}
                         subject={subject}
+                        contentDomain={fields.contentDomain}
                         questionTypes={schemas?.題型 ?? []}
                         contentTypes={schemas?.題目內容類型 ?? []}
                         lcEntryByCode={lcEntryByCode}
@@ -2916,6 +2917,7 @@ export default function ParamForm({
                     <SubquestionConfigCards
                       configs={questionSubquestionConfigs}
                       subject={subject}
+                      contentDomain={typeof p.content_domain === "string" ? p.content_domain : undefined}
                       questionTypes={availableQuestionTypes}
                       contentTypes={schemas?.題目內容類型 ?? []}
                       lcEntryByCode={lcEntryByCode}

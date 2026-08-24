@@ -20,6 +20,7 @@ export type ResolvedSubQuestionConfig = SubQuestionConfig & {
 export default function SubquestionConfigCards({
   configs,
   subject,
+  contentDomain,
   questionTypes,
   contentTypes,
   lcEntryByCode,
@@ -42,6 +43,8 @@ export default function SubquestionConfigCards({
 }: {
   configs: ResolvedSubQuestionConfig[];
   subject: string;
+  /** Topic-set ICCS content domain shown alongside the per-subquestion axes. */
+  contentDomain?: string;
   questionTypes: SchemaEntry[];
   contentTypes: SchemaEntry[];
   lcEntryByCode: Map<string, SchemaEntry>;
@@ -81,8 +84,14 @@ export default function SubquestionConfigCards({
     : (availableLp ?? []).filter((entry) => filteredLpPool.includes(entry.value));
 
   return (
-    <ol className="space-y-3">
-      {configs.map((row, subquestionIndex) => {
+    <>
+      {subject === "social_studies" && (
+        <div className="mb-3 text-sm font-medium text-gray-700">
+          {t("form.confirm_content_domain")}: {contentDomain ?? t("form.confirm_backend_sampled")}
+        </div>
+      )}
+      <ol className="space-y-3">
+        {configs.map((row, subquestionIndex) => {
         const lcPickerId = `${baseId}-${subquestionIndex}-lc`;
         const lpPickerId = `${baseId}-${subquestionIndex}-lp`;
         const visibleLearningContent = filteredLcPool === undefined
@@ -344,7 +353,8 @@ export default function SubquestionConfigCards({
             </div>
           </li>
         );
-      })}
-    </ol>
+        })}
+      </ol>
+    </>
   );
 }
