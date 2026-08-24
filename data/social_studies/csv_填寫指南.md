@@ -446,18 +446,18 @@ ODT 題本中的圖片（如地圖、統計圖、照片）已可自動注入 LLM
 uv run python scripts/extract_few_shot_images.py
 ```
 
-此腳本將 `data/social_studies/example_exams/` 內的 6 個 ODT 依文件順序提取圖片，
-輸出至 `data/social_studies/few_shot/images/<範例編號>/figure{N}.{ext}`，
-並產生 `manifest.json` 記錄每張圖的對應說明文字。
+此腳本可從 ODT 題本提取圖片至 `data/social_studies/few_shot/images/<範例編號>/`。
 
-| ODT 檔名 | 範例編號 | 圖片數量 |
-|---|---|---|
-| 1918年流感_20240319.docx.odt | ex001 | 3 |
-| 電子垃圾_20240319.docx.odt | ex002 | 5 |
-| 大城市病_20240319.docx.odt | ex003 | 2 |
-| 移工_20240319.docx.odt | ex004 | 10 |
-| 中華奧會魔法展_20240319.docx.odt | ex005 | 13 |
-| 漠南咖啡豆_20240319.docx.odt | ex006 | 7 |
+> **歷史紀錄（#542 已退役）**：ex001–ex006 的舊閱讀評量時代 ODT 題本已於 #542 移除，下表僅供歷史參考。
+
+| ODT 檔名 | 範例編號 | 圖片數量 | 狀態 |
+|---|---|---|---|
+| 1918年流感_20240319.docx.odt | ex001 | 3 | 已退役（#542） |
+| 電子垃圾_20240319.docx.odt | ex002 | 5 | 已退役（#542） |
+| 大城市病_20240319.docx.odt | ex003 | 2 | 已退役（#542） |
+| 移工_20240319.docx.odt | ex004 | 10 | 已退役（#542） |
+| 中華奧會魔法展_20240319.docx.odt | ex005 | 13 | 已退役（#542） |
+| 漠南咖啡豆_20240319.docx.odt | ex006 | 7 | 已退役（#542） |
 
 ### 新增 ODT 題本
 
@@ -467,4 +467,4 @@ uv run python scripts/extract_few_shot_images.py
 4. 重新執行 `uv run python scripts/extract_few_shot_images.py`
 
 > 圖片會在每次 LLM 呼叫時以 base64 形式注入提示詞，並無數量上限。
-> 範例圖片較多的題組（如 ex005 有 13 張）在被 random 選中時會提高 token 用量。
+> 如未來加入圖片較多的題組，注意每次 LLM 呼叫時 base64 注入的 token 用量。
