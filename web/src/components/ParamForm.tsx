@@ -84,6 +84,176 @@ function serialisableSubquestionConfig(config: SubQuestionConfig): SubQuestionCo
   ) as SubQuestionConfig;
 }
 
+const RETIRED_SOCIAL_PREFILL_KEYS = ["閱讀歷程", "文本形式", "question_style"] as const;
+const RETIRED_SOCIAL_QUESTION_TYPE = "封閉式建構反應題";
+
+type HistoryPrefillNoticeCollector = {
+  items: string[];
+  seen: Set<string>;
+};
+
+type NormalisedHistoryPrefill = {
+  params: Record<string, unknown>;
+  retiredItems: string[];
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function historyPrefillValueText(value: unknown): string {
+  if (Array.isArray(value)) {
+    const values = value.map(historyPrefillValueText).filter(Boolean);
+    return values.length > 0 ? values.join("、") : "（空）";
+  }
+  if (value === null) return "null";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function addHistoryPrefillNotice(
+  collector: HistoryPrefillNoticeCollector,
+  field: string,
+  value: unknown,
+  location?: string,
+): void {
+  const valueText = historyPrefillValueText(value);
+  // Repeated copies of the same retired field/value do not add useful noise;
+  // question-type pins retain their location so each cleared slot is named.
+  const dedupeKey = field === "題型"
+    ? `${field}|${valueText}|${location ?? ""}`
+    : `${field}|${valueText}`;
+  if (collector.seen.has(dedupeKey)) return;
+  collector.seen.add(dedupeKey);
+  const locationText = location ? `，${location}` : "";
+  collector.items.push(`${field}（${valueText}${locationText}）`);
+}
+
+function parseHistoryArray(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function normaliseRetiredQuestionType(
+  value: unknown,
+  collector: HistoryPrefillNoticeCollector,
+  location?: string,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.filter((entry) => {
+      if (entry !== RETIRED_SOCIAL_QUESTION_TYPE) return true;
+      addHistoryPrefillNotice(collector, "題型", entry, location);
+      return false;
+    });
+  }
+  if (value === RETIRED_SOCIAL_QUESTION_TYPE) {
+    addHistoryPrefillNotice(collector, "題型", value, location);
+    return undefined;
+  }
+  return value;
+}
+
+function normaliseHistorySubquestionConfigs(
+  value: unknown,
+  collector: HistoryPrefillNoticeCollector,
+  questionIndex?: number,
+): unknown {
+  const rows = parseHistoryArray(value);
+  if (!rows) return value;
+  const normalisedRows = rows.map((row, subquestionIndex) => {
+    if (!isRecord(row)) return row;
+    const location = questionIndex === undefined
+      ? `第${subquestionIndex + 1}小題`
+      : `第${questionIndex + 1}題第${subquestionIndex + 1}小題`;
+    return normaliseHistoryRecord(row, collector, location, questionIndex);
+  });
+  return typeof value === "string" ? JSON.stringify(normalisedRows) : normalisedRows;
+}
+
+function normaliseHistoryRecord(
+  record: Record<string, unknown>,
+  collector: HistoryPrefillNoticeCollector,
+  subquestionLocation?: string,
+  questionIndex?: number,
+): Record<string, unknown> {
+  const normalised: Record<string, unknown> = { ...record };
+
+  for (const key of RETIRED_SOCIAL_PREFILL_KEYS) {
+    if (!Object.hasOwn(record, key)) continue;
+    addHistoryPrefillNotice(collector, key, record[key]);
+    delete normalised[key];
+  }
+
+  if (Object.hasOwn(normalised, "q_type")) {
+    const questionType = normaliseRetiredQuestionType(
+      normalised.q_type,
+      collector,
+      questionIndex === undefined ? undefined : `第${questionIndex + 1}題`,
+    );
+    if (questionType === undefined) delete normalised.q_type;
+    else normalised.q_type = questionType;
+  }
+
+  if (Object.hasOwn(normalised, "question_type")) {
+    const questionType = normalised.question_type;
+    if (questionType === RETIRED_SOCIAL_QUESTION_TYPE) {
+      addHistoryPrefillNotice(collector, "題型", questionType, subquestionLocation);
+      delete normalised.question_type;
+    }
+  }
+
+  if (Object.hasOwn(normalised, "subquestion_configs")) {
+    normalised.subquestion_configs = normaliseHistorySubquestionConfigs(
+      normalised.subquestion_configs,
+      collector,
+      questionIndex,
+    );
+  }
+
+  if (Object.hasOwn(normalised, "per_question_params")) {
+    const rows = parseHistoryArray(normalised.per_question_params);
+    if (rows) {
+      const normalisedRows = rows.map((row, index) =>
+        isRecord(row)
+          ? normaliseHistoryRecord(row, collector, undefined, index)
+          : row,
+      );
+      normalised.per_question_params = typeof normalised.per_question_params === "string"
+        ? JSON.stringify(normalisedRows)
+        : normalisedRows;
+    }
+  }
+
+  return normalised;
+}
+
+function normaliseHistoryPrefill(
+  subject: string,
+  initialParams: Record<string, unknown> | undefined,
+): NormalisedHistoryPrefill {
+  const params = initialParams ? { ...initialParams } : {};
+  if (subject !== "social_studies") return { params, retiredItems: [] };
+
+  const collector: HistoryPrefillNoticeCollector = { items: [], seen: new Set() };
+  return {
+    params: normaliseHistoryRecord(params, collector),
+    retiredItems: collector.items,
+  };
+}
+
 /**
  * Form-specific param shape — collected from ParamForm and passed to
  * GeneratePage.handleSubmit, which bridges it to the wire GenerateParams.
@@ -722,7 +892,11 @@ export default function ParamForm({
     "draft" | "history" | "defaults" | null
   >(null);
 
-  const ip = initialParams ?? {};
+  const normalisedHistoryPrefill = useMemo(
+    () => normaliseHistoryPrefill(subject, initialParams),
+    [initialParams, subject],
+  );
+  const ip = normalisedHistoryPrefill.params;
   const historyPredrawnFields = parsePredrawnFields(ip.predrawn_fields);
   const userChosenFields = useRef(
     new Set(Object.keys(ip).filter((key) => !historyPredrawnFields?.has(key))),
@@ -878,6 +1052,7 @@ export default function ParamForm({
       defaultsSnapshotRef.current = formSnapshot;
     }
     if (modelsResolved && !defaultsReady) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- defaultsReady gates the draft restore UI after async model discovery
       setDefaultsReady(true);
     }
   }, [defaultsReady, formSnapshot, modelsResolved, schemas]);
@@ -928,6 +1103,7 @@ export default function ParamForm({
     userId,
   ]);
 
+  /* eslint-disable react-hooks/refs -- draft restore prompts intentionally compare non-render state captured by refs */
   const showDraftPrompt =
     draftToRestore !== null &&
     defaultsReady &&
@@ -935,6 +1111,7 @@ export default function ParamForm({
     !hasUserEditedRef.current &&
     defaultsSnapshotRef.current !== null &&
     jsonDeepEqual(formSnapshot, defaultsSnapshotRef.current);
+  /* eslint-enable react-hooks/refs */
   const showDraftHistoryChoice =
     hasDraftHistoryConflict &&
     defaultsReady;
@@ -1055,6 +1232,7 @@ export default function ParamForm({
 
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- schema reload resets the form while switching subject
     setSchemas(null);
     setError(null);
     restoreFormSnapshot((current) => ({
@@ -1322,7 +1500,7 @@ export default function ParamForm({
     return () => {
       cancelled = true;
     };
-  }, [setField]);
+  }, [restoreFormSnapshot, setField]);
 
   useEffect(() => {
     window.localStorage.setItem("model_plan", modelPlan);
@@ -1353,11 +1531,13 @@ export default function ParamForm({
     if (!schemas || !initialParams) return;
     const missing: string[] = [];
     const arr = (key: string): string[] => {
-      const raw = (initialParams as Record<string, unknown>)[key];
-      return Array.isArray(raw) ? (raw as string[]) : [];
+      const raw = ip[key];
+      return Array.isArray(raw)
+        ? raw.filter((value): value is string => typeof value === "string")
+        : [];
     };
     const single = (key: string): string | undefined => {
-      const raw = (initialParams as Record<string, unknown>)[key];
+      const raw = ip[key];
       return typeof raw === "string" ? raw : undefined;
     };
     const check = (
@@ -1385,7 +1565,15 @@ export default function ParamForm({
     }
     if (missing.length > 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciling initialParams against freshly-loaded schemas, matches existing HistoryPage/VerifyPage pattern
-      setPrefillNotice(t("history.prefill_notice"));
+      setPrefillNotice([
+        normalisedHistoryPrefill.retiredItems.length > 0
+          ? t("form.history_prefill_retired_notice").replace(
+              "{items}",
+              normalisedHistoryPrefill.retiredItems.join("、"),
+            )
+          : null,
+        t("history.prefill_notice"),
+      ].filter((message): message is string => message !== null).join(" "));
       // Drop the missing entries so the form submits a clean payload.
       const allowedCtx = new Set(schemas.情境?.map((s) => s.value));
       setField("context", (prev) => prev.filter((v) => allowedCtx.has(v)));
@@ -1396,9 +1584,16 @@ export default function ParamForm({
       const allowedDomains = new Set(schemas.內容領域?.map((s) => s.value));
       setField("contentDomain", (prev) => (prev && allowedDomains.has(prev) ? prev : ""));
     } else {
-      setPrefillNotice(null);
+      setPrefillNotice(
+        normalisedHistoryPrefill.retiredItems.length > 0
+          ? t("form.history_prefill_retired_notice").replace(
+              "{items}",
+              normalisedHistoryPrefill.retiredItems.join("、"),
+            )
+          : null,
+      );
     }
-  }, [schemas, initialParams, t, setField]);
+  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField]);
 
   // Re-fetch grade-dependent fields when grade changes so the correct learning stage is used.
   useEffect(() => {
@@ -1511,13 +1706,15 @@ export default function ParamForm({
     if (subject !== "natural_sciences" || !schemas || availableSubContexts.length === 0) return;
     const allowed = new Set(availableSubContexts.map((entry) => entry.value));
     if (!subContext || !allowed.has(subContext)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fill the first valid dependent sub-context after schema load
       setField("subContext", availableSubContexts[0]?.value ?? "");
     }
-  }, [availableSubContexts, subContext, subject, setField]);
+  }, [availableSubContexts, schemas, subContext, subject, setField]);
 
   useEffect(() => {
     if (!schemas) return;
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     setField("learningPerformance", (prev) => prev.filter((value) => allowed.has(value)));
     setField("subquestionConfigs", (prev) =>
       prev.map((cfg) =>
@@ -1531,12 +1728,14 @@ export default function ParamForm({
   useEffect(() => {
     if (!schemas) return;
     const allowed = new Set(availableLearningContent.map((entry) => entry.value));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     setField("learningContent", (prev) => prev.filter((value) => allowed.has(value)));
   }, [availableLearningContent, schemas, setField]);
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
     const n = typeof subQuestionCount === "number" ? subQuestionCount : 0;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the editor row count synchronized with the selected count
     setField("subquestionConfigs", (prev) => {
       if (n <= 0) return [];
       if (prev.length === n) return prev;
