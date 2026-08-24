@@ -20,17 +20,20 @@ vi.mock("../components/QuestionCard", () => ({
     recordId,
     phase,
     isFinal,
+    trail,
   }: {
     question: { id?: string };
     recordId?: string;
     phase?: string;
     isFinal?: boolean;
+    trail?: unknown;
   }) => (
     <div
       data-testid="qc"
       data-record-id={recordId}
       data-phase={phase}
       data-final={String(isFinal)}
+      data-trail={trail === undefined ? "undefined" : JSON.stringify(trail)}
     >
       {question?.id ?? ""}
     </div>
@@ -162,6 +165,147 @@ describe("HistoryDetail", () => {
       expect(screen.getByTestId("qc")).toHaveAttribute("data-record-id", "latest-id");
     });
     expect(screen.getByTestId("qc")).toHaveAttribute("data-final", "true");
+  });
+
+  it("passes a persisted verification trail to the history card", async () => {
+    const trail = [
+      {
+        code: "verification_trail",
+        kind: "verification",
+        question_id: "ss-child",
+        passed: true,
+        details: "The answer is consistent.",
+        my_answer: "A",
+        provided_answer: "A",
+        answer_match: true,
+        chart_verification: null,
+        model: "verify-model",
+        timestamp: "2026-08-24T00:00:00Z",
+      },
+    ];
+    getDetailMock.mockResolvedValueOnce({
+      id: "trail-id",
+      subject: "social_studies",
+      question_id: "ss-child",
+      created_at: "2026-07-16T00:00:00Z",
+      status: "completed",
+      error: null,
+      params_json: { subject: "social_studies" },
+      question_json: { id: "ss-child" },
+      verification_trail: trail,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/trail-id"]}>
+        <Routes>
+          <Route path="/history/:id" element={<HistoryDetail recordId="trail-id" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("qc")).toHaveAttribute(
+        "data-trail",
+        JSON.stringify(trail),
+      ),
+    );
+  });
+
+  it("passes a legacy null verification trail to the history card", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      id: "legacy-id",
+      subject: "social_studies",
+      question_id: "ss-legacy",
+      created_at: "2026-07-16T00:00:00Z",
+      status: "completed",
+      error: null,
+      params_json: { subject: "social_studies" },
+      question_json: { id: "ss-legacy" },
+      verification_trail: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/legacy-id"]}>
+        <Routes>
+          <Route path="/history/:id" element={<HistoryDetail recordId="legacy-id" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("qc")).toHaveAttribute("data-trail", "null"),
+    );
+  });
+
+  it("keeps the downloaded question JSON free of verification trail fields", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      id: "download-id",
+      subject: "social_studies",
+      question_id: "ss-download",
+      created_at: "2026-07-16T00:00:00Z",
+      status: "completed",
+      error: null,
+      params_json: { subject: "social_studies" },
+      question_json: { id: "ss-download" },
+      verification_trail: [
+        {
+          code: "verification_trail",
+          kind: "verification",
+          question_id: "ss-download",
+          passed: true,
+          details: "The answer is consistent.",
+          my_answer: "A",
+          provided_answer: "A",
+          answer_match: true,
+          chart_verification: null,
+          model: "verify-model",
+          timestamp: "2026-08-24T00:00:00Z",
+        },
+      ],
+    });
+    const downloadedQuestion = {
+      id: "ss-download",
+      題目: ["Question"],
+      params_json: { subject: "social_studies" },
+    };
+    downloadMock.mockResolvedValueOnce(
+      new Blob([JSON.stringify(downloadedQuestion)], { type: "application/json" }),
+    );
+    const blobs: Blob[] = [];
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockImplementation((blob: Blob) => {
+        blobs.push(blob);
+        return "blob:history-download";
+      });
+    const revokeObjectURL = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+
+    try {
+      render(
+        <MemoryRouter initialEntries={["/history/download-id"]}>
+          <Routes>
+            <Route
+              path="/history/:id"
+              element={<HistoryDetail recordId="download-id" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => expect(screen.getByTestId("qc")).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("button", { name: /Download JSON/i }));
+
+      await waitFor(() => expect(blobs).toHaveLength(1));
+      const body = JSON.parse(await blobs[0].text()) as Record<string, unknown>;
+      expect(body).not.toHaveProperty("verification_trail");
+      expect(body).not.toHaveProperty("verification_trail_json");
+      expect(body).not.toHaveProperty("correction_trail");
+    } finally {
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
   });
 
   it("renders failed detail params and error without question content or download", async () => {

@@ -117,6 +117,90 @@ def test_list_history_filters_by_subject(tmp_path) -> None:
         asyncio.run(engine.dispose())
 
 
+def test_detail_returns_the_persisted_verification_trail_without_listing_it(
+    tmp_path,
+) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+    expected_trail = [
+        {
+            "code": "verification_trail",
+            "kind": "verification",
+            "question_id": "ss_a_0",
+            "passed": False,
+            "details": "The answer needs correction.",
+            "my_answer": "B",
+            "provided_answer": "A",
+            "answer_match": False,
+            "chart_verification": None,
+            "model": "verify-model",
+            "timestamp": "2026-08-24T00:00:00Z",
+        }
+    ]
+
+    async def stamp_trail() -> str:
+        async with SessionLocal() as session:
+            row = (
+                await session.execute(
+                    __import__("sqlalchemy").select(GenerationRecord).where(
+                        GenerationRecord.user_id == user_a,
+                        GenerationRecord.question_id == "ss_a_0",
+                    )
+                )
+            ).scalar_one()
+            row.verification_trail_json = expected_trail
+            await session.commit()
+            return str(row.id)
+
+    record_id = asyncio.run(stamp_trail())
+    try:
+        with TestClient(app) as client:
+            list_response = client.get(
+                "/api/history",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            detail_response = client.get(
+                f"/api/history/{record_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        listed = next(item for item in list_response.json()["items"] if item["id"] == record_id)
+        assert "verification_trail" not in listed
+        assert detail_response.status_code == 200
+        assert detail_response.json()["verification_trail"] == expected_trail
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_detail_returns_null_verification_trail_for_a_legacy_record(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+
+    async def get_legacy_record_id() -> str:
+        async with SessionLocal() as session:
+            row = (
+                await session.execute(
+                    __import__("sqlalchemy").select(GenerationRecord).where(
+                        GenerationRecord.user_id == user_a,
+                        GenerationRecord.question_id == "ss_a_1",
+                    )
+                )
+            ).scalar_one()
+            return str(row.id)
+
+    record_id = asyncio.run(get_legacy_record_id())
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                f"/api/history/{record_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
+        assert response.json()["verification_trail"] is None
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
 def _add_failed_row(SessionLocal, user_id: uuid.UUID) -> str:
     record_id = uuid.uuid4()
 
@@ -173,6 +257,7 @@ def test_failed_history_detail_returns_params_and_no_question(tmp_path) -> None:
         assert body["params_json"] == {"subject": "social_studies", "topic": "climate"}
         assert body["error"] == "Question generation failed (RuntimeError)"
         assert body["question_json"] is None
+        assert body["verification_trail"] is None
     finally:
         limiter.reset()
         asyncio.run(engine.dispose())
@@ -246,6 +331,7 @@ def test_aborted_history_payload_has_status_note_params_and_no_download(tmp_path
                 "topic": "climate",
             }
             assert detail["question_json"] is None
+            assert detail["verification_trail"] is None
 
             download_response = client.get(
                 f"/api/history/{record_id}/download",
@@ -536,6 +622,57 @@ def test_download_includes_saved_request_params_with_predraw_provenance(tmp_path
         body = response.json()
         assert body["params_json"]["predrawn_fields"] == '["learning_content"]'
         assert body["id"] == "ss_a_0"
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_download_excludes_the_persisted_verification_trail(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+    expected_trail = [
+        {
+            "code": "verification_trail",
+            "kind": "verification",
+            "question_id": "ss_a_0",
+            "passed": True,
+            "details": "Passed.",
+            "my_answer": "A",
+            "provided_answer": "A",
+            "answer_match": True,
+            "chart_verification": None,
+            "model": "verify-model",
+            "timestamp": "2026-08-24T00:00:00Z",
+        }
+    ]
+
+    async def stamp_trail() -> str:
+        async with SessionLocal() as session:
+            row = (
+                await session.execute(
+                    __import__("sqlalchemy").select(GenerationRecord).where(
+                        GenerationRecord.user_id == user_a,
+                        GenerationRecord.question_id == "ss_a_0",
+                    )
+                )
+            ).scalar_one()
+            row.verification_trail_json = expected_trail
+            await session.commit()
+            return str(row.id)
+
+    record_id = asyncio.run(stamp_trail())
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                f"/api/history/{record_id}/download",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        body = response.json()
+        assert response.status_code == 200
+        assert body["id"] == "ss_a_0"
+        assert "verification_trail" not in body
+        assert "verification_trail_json" not in body
+        assert "correction_trail" not in body
     finally:
         limiter.reset()
         asyncio.run(engine.dispose())

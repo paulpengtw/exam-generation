@@ -4,7 +4,7 @@ import type { VerificationTrailEntry } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 
 export interface VerificationTrailTimelineProps {
-  entries: VerificationTrailEntry[];
+  entries: VerificationTrailEntry[] | null;
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -23,9 +23,24 @@ export default function VerificationTrailTimeline({
   const [open, setOpen] = useState(false);
   const generatedId = useId();
 
+  const sectionLabel = t("card.verificationTrail");
+
+  if (entries === null) {
+    return (
+      <section
+        aria-label={sectionLabel}
+        className="rounded border border-gray-200 bg-gray-50 p-3"
+      >
+        <h3 className="font-semibold text-gray-800">{sectionLabel}</h3>
+        <p className="mt-2 text-sm text-gray-600">
+          {t("card.noVerificationTrail")}
+        </p>
+      </section>
+    );
+  }
+
   if (entries.length === 0) return null;
 
-  const sectionLabel = t("card.verificationTrail");
   const contentId = `verification-trail-timeline-${generatedId}`;
 
   return (
