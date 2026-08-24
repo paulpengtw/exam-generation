@@ -49,8 +49,9 @@ def _subquestion_response(index: int, figure_kind: str) -> dict:
 
 
 class _MainClient:
-    def __init__(self, repair_kind: str) -> None:
+    def __init__(self, repair_kind: str, top_kind: str = "表格") -> None:
         self.repair_kind = repair_kind
+        self.top_kind = top_kind
         self.calls = 0
         self.repair_calls: list[tuple[str, str]] = []
         self.rendered_paths: list[Path] = []
@@ -61,7 +62,10 @@ class _MainClient:
     def generate_json(self, system, user, **kwargs):
         self.calls += 1
         if self.calls == 1:
-            return _TEXT_SHELL_WITH_TOP_IMAGE
+            response = dict(_TEXT_SHELL_WITH_TOP_IMAGE)
+            response["chart_spec"] = dict(response["chart_spec"])
+            response["chart_spec"]["figure_kind"] = self.top_kind
+            return response
         self.repair_calls.append((system, user))
         return {
             "chart_spec": {
@@ -125,6 +129,33 @@ def test_collision_gets_one_repair_and_still_duplicate_ships_with_warning(
     assert (tmp_path / "collision_test.png").exists()
     assert (tmp_path / "collision_test_sq1.png").exists()
     assert "圖像種類" in capsys.readouterr().err
+
+
+def test_repair_prompt_lists_forbidden_figure_kinds_in_canonical_form(tmp_path: Path) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[{"content_type": "含圖片"}, {}, {}],
+    )
+    client = _MainClient(repair_kind="地圖", top_kind="直條圖")
+
+    generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=client,
+        params=params,
+        question_id="canonical_forbidden_test",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _SubClient("長條圖"),
+    )
+
+    assert len(client.repair_calls) == 1
+    forbidden_line = next(
+        line for line in client.repair_calls[0][1].splitlines() if "圖像種類不得為" in line
+    )
+    assert forbidden_line == "- **圖像種類不得為：**長條圖"
 
 
 def test_pinned_subquestion_repairs_top_level_and_rerenders_existing_png(tmp_path: Path) -> None:
