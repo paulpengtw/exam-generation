@@ -12,12 +12,14 @@ import FigureRenderer, {
   type ChartSpecInput,
 } from "./FigureRenderer";
 import GenerationStatusBar from "./GenerationStatusBar";
+import InteractiveItemViewer, { type InteractionSubmission } from "./InteractiveItemViewer";
 
 export interface QuestionCardProps {
   question: ExamQuestion;
   recordId?: string;
   phase?: DraftPhase;
   isFinal?: boolean;
+  onInteractionSubmit?: (submission: InteractionSubmission) => void;
 }
 
 interface VerificationShape {
@@ -258,11 +260,13 @@ function SubQuestionBlock({
   index,
   showAnswersByDefault = false,
   selectionEnabled,
+  onInteractionSubmit,
 }: {
   sub: SubQuestion;
   index: number;
   showAnswersByDefault?: boolean;
   selectionEnabled: boolean;
+  onInteractionSubmit?: (submission: InteractionSubmission) => void;
 }) {
   const t = useT();
   const [showAnswer, setShowAnswer] = useState(showAnswersByDefault);
@@ -317,6 +321,16 @@ function SubQuestionBlock({
       >
         {sub.題目}
       </div>
+
+      {sub.interaction && (
+        <InteractiveItemViewer
+          itemId={sub.id || `subquestion-${index + 1}`}
+          題型={sub.題型}
+          interaction={sub.interaction}
+          distractorAnalysis={sub.誘答分析}
+          onSubmit={onInteractionSubmit}
+        />
+      )}
 
       <div>
         <button
@@ -392,6 +406,7 @@ export default function QuestionCard({
   recordId,
   phase = "verified",
   isFinal = true,
+  onInteractionSubmit,
 }: QuestionCardProps) {
   const t = useT();
   const [showSolution, setShowSolution] = useState(!isFinal);
@@ -657,6 +672,7 @@ export default function QuestionCard({
                 index={index}
                 showAnswersByDefault={!isFinal}
                 selectionEnabled={selectionEnabled}
+                onInteractionSubmit={onInteractionSubmit}
               />
             ))}
           </div>
