@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import {
   afterEach,
   beforeEach,
@@ -34,6 +34,11 @@ const MATH_SCHEMA = {
   科目: [{ value: "數與量", instruction: "" }],
   學習表現: [],
   學習內容: [],
+};
+const SOCIAL_SCHEMA = {
+  ...MATH_SCHEMA,
+  題型種類: [{ value: "題組題", instruction: "" }],
+  科目: [{ value: "歷史", instruction: "" }],
 };
 
 const DRAFT_KEY = "exam_form_draft_teacher-1";
@@ -185,5 +190,59 @@ describe("ParamForm draft persistence", () => {
       fields: { topic: string };
     };
     expect(stored.fields.topic).toBe("等待模型時輸入");
+  });
+
+  it("never persists 確認頁修改 in the saved draft", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const originalConfigs = [
+      { instruction: "原始第一小題指示" },
+      { instruction: "原始第二小題指示" },
+      { instruction: "原始第三小題指示" },
+    ];
+
+    render(
+      <ParamForm
+        subject="social_studies"
+        initialParams={{
+          grade: 7,
+          set_type: "題組題",
+          count: 1,
+          sub_question_count: 3,
+          core_question: "已提供的核心問題",
+          subquestion_configs: originalConfigs,
+        }}
+        onSubmit={() => {}}
+        disabled={false}
+      />,
+    );
+    await screen.findByRole("button", { name: "產生" });
+
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByPlaceholderText("例如：氣候變遷與都市規劃"), {
+      target: { value: "草稿中的主題" },
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+    });
+
+    const savedBeforeConfirmation = JSON.parse(
+      localStorage.getItem(DRAFT_KEY) ?? "null",
+    ) as { fields: { topic: string; subquestionConfigs: typeof originalConfigs } };
+    expect(savedBeforeConfirmation.fields.topic).toBe("草稿中的主題");
+    expect(savedBeforeConfirmation.fields.subquestionConfigs).toEqual(originalConfigs);
+
+    vi.useRealTimers();
+    fireEvent.click(screen.getByRole("button", { name: "產生" }));
+    await screen.findByRole("heading", { name: "發送前確認設定" });
+    const firstQuestion = screen.getByRole("region", { name: "第1題" });
+    fireEvent.change(within(firstQuestion).getAllByLabelText("出題指示")[0], {
+      target: { value: "確認頁修改後的出題指示" },
+    });
+
+    const savedAfterConfirmationEdit = JSON.parse(
+      localStorage.getItem(DRAFT_KEY) ?? "null",
+    ) as { fields: { subquestionConfigs: typeof originalConfigs } };
+    expect(savedAfterConfirmationEdit.fields.subquestionConfigs).toEqual(originalConfigs);
+    expect(JSON.stringify(savedAfterConfirmationEdit)).not.toContain("確認頁修改後的出題指示");
   });
 });

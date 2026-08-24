@@ -475,6 +475,80 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(screen.getByRole("region", { name: "第3題" })).toBeInTheDocument();
   });
 
+  it("shows no warning and returns to the form when there is no 確認頁修改", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+
+    await openConfirmation("social_studies", {
+      count: 1,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [
+        { instruction: "原始小題指示" },
+        {},
+        {},
+      ],
+    });
+
+    expect(
+      screen.queryByText("返回表單會捨棄您在確認頁所做的修改。"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+
+    expect(screen.getByRole("button", { name: "產生" })).toBeInTheDocument();
+  });
+
+  it("shows an inline informational warning after a 確認頁修改 without blocking 返回修改", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+
+    await openConfirmation("social_studies", {
+      count: 1,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    });
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    fireEvent.change(firstQuestion.getAllByLabelText("出題指示")[0], {
+      target: { value: "確認頁修改後的出題指示" },
+    });
+
+    const backButton = screen.getByRole("button", { name: "返回修改" });
+    const warning = screen.getByText("返回表單會捨棄您在確認頁所做的修改。");
+    expect(backButton.parentElement).toContainElement(warning);
+    expect(backButton).toBeEnabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("discards 確認頁修改 and restores the original shared 各小題配置 on 返回修改", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const originalConfigs = [
+      { instruction: "原始第一小題指示" },
+      { instruction: "原始第二小題指示" },
+      { instruction: "原始第三小題指示" },
+    ];
+
+    await openConfirmation("social_studies", {
+      count: 1,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: originalConfigs,
+    });
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    const firstInstruction = firstQuestion.getAllByLabelText("出題指示")[0];
+    fireEvent.change(firstInstruction, {
+      target: { value: "捨棄的確認頁修改" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+
+    expect(screen.getByRole("button", { name: "產生" })).toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText("例如：請聚焦在資料判讀與因果推論")[0])
+      .toHaveValue(originalConfigs[0].instruction);
+    expect(screen.getAllByPlaceholderText("例如：請聚焦在資料判讀與因果推論")[0])
+      .not.toHaveValue("捨棄的確認頁修改");
+  });
+
   it("keeps confirmation instruction edits isolated per 題組 and leaves the form unchanged on 返回修改", async () => {
     getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
     const originalConfigs = [
