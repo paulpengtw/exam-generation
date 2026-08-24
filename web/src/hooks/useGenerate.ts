@@ -16,9 +16,28 @@ export interface LearningContentItem {
 }
 
 export interface RubricEntry {
-  code: "2" | "1" | "0" | "0X";
+  /** Opaque scoring-level text: new 0..N levels and legacy 2/1/0/0X both render. */
+  code: string;
   規準說明: string;
   學生作答實例?: string[];
+}
+
+export interface DragDropSpec {
+  draggables: Array<{ id: string; label: string }>;
+  targets: Array<{ id: string; label: string; capacity: number }>;
+  correct_mapping: Record<string, string>;
+  exact_match: boolean;
+  shuffle_draggables: boolean;
+}
+
+export interface SliderSpec {
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  correct_value: number;
+  tolerance: number;
+  show_ticks: boolean;
 }
 
 export interface SubQuestion {
@@ -30,11 +49,13 @@ export interface SubQuestion {
   核心素養: string[];
   學習內容: LearningContentItem[];
   學習表現: LearningContentItem[];
+  認知歷程?: string;
   出題概念: string;
   題型: string;
   題目: string;
   答案: string;
   答案解析: string;
+  interaction?: DragDropSpec | SliderSpec;
   評分規準?: RubricEntry[];
   誘答分析?: Record<string, string>;
   題目內容類型?: string;
@@ -53,6 +74,8 @@ export interface ExamQuestion {
   學習內容?: LearningContentItem[];
   閱讀歷程?: string[];
   文本形式?: string;
+  內容領域?: string;
+  認知歷程?: string[];
   題目內容類型?: string;
   情境子類別?: string;
   科學能力?: string[];
@@ -67,6 +90,7 @@ export interface ExamQuestion {
   chart_spec?: unknown;
   verification?: unknown;
   metadata?: unknown;
+  image_stale?: boolean;
   image_base64?: string;
 }
 
@@ -218,6 +242,8 @@ export function buildQueryString(params: GenerateParams): string {
   for (const v of params.context ?? []) qs.append("context", v);
   for (const v of params.q_type ?? []) qs.append("q_type", v);
   for (const v of params.subject_filter ?? []) qs.append("subject_filter", v);
+  if (params.content_domain) qs.append("content_domain", params.content_domain);
+  if (params.target_surface) qs.append("target_surface", params.target_surface);
   if (params.passage) qs.append("passage", params.passage);
   for (const v of params.options ?? []) qs.append("options", v);
   if (params.topic) qs.append("topic", params.topic);

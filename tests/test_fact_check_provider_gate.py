@@ -50,8 +50,6 @@ def _question() -> ExamQuestion:
         情境=["公共"],
         題型種類="題組題",
         題型="選擇題",
-        閱讀歷程=["擷取訊息"],
-        文本形式="連續文本—說明文",
         題目=["測試題目"],
         正確解題分析=["A"],
         metadata=QuestionMetadata(grade=8, model="fake-model"),

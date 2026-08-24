@@ -35,6 +35,7 @@ from src.social_studies.curriculum_loader import (
 )
 from src.social_studies.data_loader import load_few_shot_example_groups
 from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
+from src.social_studies.process_exemplar_loader import load_process_exemplars
 from src.social_studies.schema_loader import (
     build_instructions,
     load_grades,
@@ -42,6 +43,9 @@ from src.social_studies.schema_loader import (
     load_schemas,
 )
 from src.social_studies.schemas import CreativeBrief, SampledParams, SubQuestionConfig
+
+# Existing prompt prose intentionally contains long lines; keep lint focused on code.
+# ruff: noqa: E501
 
 _schemas = load_schemas()
 _INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
@@ -112,6 +116,60 @@ _CORE_QUESTION_CALLBACK_SUBQUESTION_INSTRUCTION = (
     "與指定學習表現仍是明確設定，請同時遵守且不得被本提示取代。"
 )
 
+_INTERACTION_PROMPT_BY_TYPE: dict[str, str] = {
+    "拖放題": """\
+## 互動規格（拖放題；僅限數位卷面）
+
+本小題必須輸出 `interaction`，而且只能使用下列欄位；`interaction` 是
+權威答案資料，`答案` 仍要用人類可讀文字描述正確配對，不得以 `答案` 取代
+`interaction.correct_mapping`：
+
+```json
+"interaction": {
+  "draggables": [{"id": "d1", "label": "棋子文字"}],
+  "targets": [{"id": "t1", "label": "目標區文字", "capacity": 1}],
+  "correct_mapping": {"d1": "t1"},
+  "exact_match": false,
+  "shuffle_draggables": true
+}
+```
+
+- `draggables` 每筆必須有唯一 `id` 與人類可讀 `label`；`targets` 每筆必須有唯一
+  `id`、`label` 與整數 `capacity`（未特別需要分類容量時填 1）。
+- `correct_mapping` 是 `draggable_id -> target_id` 的唯一權威正解；所有 id 都必須
+  在上述陣列中出現。預設 partial credit：每個放對的棋子得 1 分，
+  `max_score` 等於 mapping 筆數；`exact_match=true` 時全對得 `max_score`，否則 0 分。
+- `誘答分析` 的鍵請使用放置配對，例如 `d1->t2`，說明學生把棋子放入錯誤目標
+  所反映的概念混淆；不要把 `correct_mapping` 的 id 改成選項標籤。
+""",
+    "滑桿題": """\
+## 互動規格（滑桿題；僅限數位卷面）
+
+本小題必須輸出 `interaction`，而且只能使用下列欄位；`interaction` 是
+權威答案資料，`答案` 仍要用人類可讀文字描述正確數值與單位，不得以 `答案`
+取代 `interaction.correct_value`：
+
+```json
+"interaction": {
+  "min": 0,
+  "max": 100,
+  "step": 1,
+  "unit": "%",
+  "correct_value": 50,
+  "tolerance": 1,
+  "show_ticks": true
+}
+```
+
+- `min`、`max`、`step`、`correct_value`、`tolerance` 必須是數字；`unit` 沒有單位
+  時填空字串，`show_ticks` 控制是否顯示刻度。
+- 作答值與 `correct_value` 的差距小於或等於 `tolerance` 得 1 分，否則 0 分；
+  `max_score` 固定為 1。`interaction.correct_value` 與 `tolerance` 是唯一權威計分依據。
+- `誘答分析` 請使用命名的錯誤區間作為鍵，例如 `below_range`、`above_range`、
+  `far_off`，說明誤讀資料或估值概念；不要使用選項 A/B/C/D 取代錯誤區間。
+""",
+}
+
 
 def _figure_kind_guidance(
     params: SampledParams,
@@ -178,6 +236,56 @@ def _difficulty_section(params: "SampledParams") -> str:
         f"- **難度等級**：{value}\n"
         f"- **命題指示**：{instr}\n"
     )
+
+
+def _cognitive_process_for_slot(
+    params: "SampledParams",
+    cfg: "SubQuestionConfig | None",
+    slot_number: int,
+) -> str:
+    if cfg is not None and cfg.認知歷程:
+        return cfg.認知歷程
+    pool = getattr(params, "認知歷程_pool", [])
+    index = slot_number - 1
+    if 0 <= index < len(pool):
+        return pool[index]
+    return ""
+
+
+def _content_domain_instruction(params: "SampledParams") -> str:
+    """Return the CSV guidance clause relevant to the drawn subject."""
+    domain = getattr(params, "內容領域", None)
+    if domain is None:
+        return ""
+    instruction = _INSTRUCTIONS.get("內容領域", {}).get(domain.value, "")
+    if not instruction:
+        return ""
+    subject = getattr(params.科目, "value", params.科目)
+    marker = "主題鏡頭" if subject in {"歷史", "地理"} else "公-開頭"
+    return next(
+        (clause for clause in instruction.split("；") if marker in clause),
+        instruction,
+    )
+
+
+def _format_process_exemplar(bucket: str, exemplar: dict) -> str:
+    """Render one Channel-2 process exemplar as compact prompt text."""
+    lines = [
+        f"## 認知歷程參考範例（Channel 2：{bucket}）",
+        "以下範例只供理解命題流程；請勿複製其題材、人物或數據。",
+        f"- **題幹**：{exemplar.get('題幹', '')}",
+    ]
+    options = exemplar.get("選項", {})
+    if isinstance(options, dict):
+        lines.append("- **選項**：")
+        lines.extend(f"  - （{label}）{text}" for label, text in options.items())
+    elif options:
+        lines.append(f"- **選項**：{options}")
+    if exemplar.get("答案"):
+        lines.append(f"- **答案**：{exemplar['答案']}")
+    if exemplar.get("rationale"):
+        lines.append(f"- **設計說明**：{exemplar['rationale']}")
+    return "\n".join(lines)
 
 
 _CREATIVE_BRIEF_SYSTEM_BLOCK = """\
@@ -256,13 +364,8 @@ SYSTEM_PROMPT_TEMPLATE = """\
   與對應小題的 `subquestions[*].chart_spec`。
 
 ### 題型說明
-- **選擇題**：四選一；給分代號 2（正確）/ 0（錯誤）
-- **封閉式建構反應題**：唯一正確答案（詞彙、數字或短語）；給分代號 2 / 0
-- **開放式建構反應題**：需學生組織語言說明思考過程；給分代號 2（完整正確）/ 1（部分正確）/ 0（錯誤或不相關）/ 0X（未作答）；**必須附評分規準（rubric）**，每條規準請提供 1–2 個學生作答實例（含正確與典型錯誤示例）
-
-### PISA閱讀歷程（輔助參考）
-試題設計時請參考閱讀歷程分布：
-- 擷取訊息（約25%）、形成廣泛理解（約25%）、發展解釋（約25%）、省思與評鑑（約25%）
+- **選擇題**：四選一單選題，計分 0/1：答對得 1 分、答錯 0 分。選項設計應包含具誘答力的錯誤選項，並於誘答分析欄以認知偏誤角度說明各誘答項為何吸引人。ICCS 2022 約 85% 試題為此形式，應為題組的主要題型
+- **開放式建構反應題**：學生需自行組織文字作答並說明思考過程；計分採每題專屬評分指引（scoring guide），分數 0..N 可部分給分；**必須附評分規準（rubric）**，每一分數級距附 1-2 個學生作答實例（含正確與錯誤示例）
 
 ## 課程綱要參考
 
@@ -277,11 +380,9 @@ SYSTEM_PROMPT_TEMPLATE = """\
   "核心問題": "本題組的跨科核心問題（一句話）",
   "文本": "完整文本素材（包含說明文字、引述文獻、表格描述等）",
   "取材來源": ["來源一", "來源二"],
-  "情境": ["（PISA情境，可多個：個人/公共/職業/教育）"],
+  "情境": ["（可多個：個人/公共/職業/教育）"],
   "題型種類": "題組題",
-  "題型": "（所有小題的主要題型，選擇題/封閉式建構反應題/開放式建構反應題）",
-  "閱讀歷程": ["（主要閱讀歷程，1–2個）"],
-  "文本形式": "（連續文本—說明文 等）",
+  "題型": "（所有小題的主要題型，選擇題/開放式建構反應題）",
   "題目內容類型": "含圖片",
   "subquestions": [
     {{
@@ -359,13 +460,12 @@ USER_PROMPT_TEMPLATE = """\
 
 - **年級重心**：{grade}年級（{learning_stage}）
 - **科目焦點**：{subject}
-- **情境**：{context}（PISA閱讀情境）
+- **情境**：{context}
 - **題型種類**：{set_type}
 - **題型**：由各小題配置指定；若未列出固定小題，允許題型為 {q_types}
 - **小題數量**：{sub_question_count}
-- **閱讀歷程（PISA）**：{reading_process}
-- **文本形式**：{text_form}
 - **文本素材類型**：{content_type}
+- **內容領域**：{content_domain}
 - **圖片生成模式**：{image_generation_mode}
 - **核心素養（限定使用）**：{core_competencies}
 {lc_pool_lines}{lp_pool_lines}{subquestion_config_lines}{param_instructions}{difficulty_section}{user_materials}
@@ -379,12 +479,13 @@ USER_PROMPT_TEMPLATE = """\
 2. 文本素材應貼近真實情境，語言自然，非教科書式；可使用新聞、報告、圖表、訪談摘要等真實素材形式。
 3. 每道小題須填入正確的 學習內容 編碼（參考系統提供的課程綱要）。各小題的 `學習內容` / `學習表現` 應優先使用上述指定代號；如題組設計需引入其他課綱代號，仍以 `## 課程綱要參考` 中列出者為限。
 4. 各小題的 `核心素養` 欄位**必須只從指定條件中的核心素養代號選擇**，整個題組應盡量讓每個指定代號至少出現一次。
-5. 開放式建構反應題必須附完整的評分規準（rubric），每條含 1–2 個學生作答實例。
-6. 評分代號請使用：2（滿分）/ 1（部分得分，限開放式）/ 0（零分）/ 0X（未作答）。
+5. 開放式建構反應題必須附每題專屬的評分指引（scoring guide），分數使用 0..N 並允許部分給分；評分規準表每一分數級距附 1-2 個學生作答實例（含正確與錯誤示例）。
+6. 選擇題計分使用 0/1（答對 1 分、答錯 0 分）；開放式建構反應題依每題專屬評分指引使用 0..N。
 7. `題目` 陣列（舊版格式）：第一個元素放文本素材，其後每個元素放一道小題完整文字。
 8. `正確解題分析` 陣列（舊版格式）：每個元素對應一道小題的答案與說明。
 9. 只輸出 JSON 格式的結果。
 10. 若題組含圖片（`chart_spec` 非 null），必須確認：至少一道小題的答案無法在沒有圖片的情況下得出；且 `chart_spec` 中承載的關鍵數據/資訊不得在 `文本` 欄位中重複說明。
+11. 參考範例僅供題材與格式參考；評分尺度以本提示的評分指引為準，不以範例中的舊版代號為準。
 """
 
 _CURRICULUM_EMPTY_NOTICE = "（課程綱要資料待研究人員補充至 data/social_studies/curriculum/）"
@@ -445,7 +546,6 @@ def build_user_prompt(
     if rng is None:
         rng = random.Random(params.seed)
 
-    reading_process = "、".join(p.value for p in params.閱讀歷程)
     topic_override = user_topic.strip() if user_topic else ""
     content_type = params.題目內容類型 or "純文字"
 
@@ -455,22 +555,15 @@ def build_user_prompt(
             instr = _INSTRUCTIONS.get("情境", {}).get(c.value)
             if instr:
                 param_instruction_lines.append(f"  - **情境（{c.value}）補充**：{instr}")
-    for category, key in (
-        ("題型種類", params.題型種類.value),
-        ("文本形式", params.文本形式.value),
-        ("科目", params.科目.value),
-    ):
-        instr = _INSTRUCTIONS.get(category, {}).get(key)
-        if instr:
-            param_instruction_lines.append(f"  - **{category}（{key}）補充**：{instr}")
     for qt in params.題型:
         instr = _INSTRUCTIONS.get("題型", {}).get(qt.value)
         if instr:
             param_instruction_lines.append(f"  - **題型（{qt.value}）補充**：{instr}")
-    for p in params.閱讀歷程:
-        instr = _INSTRUCTIONS.get("閱讀歷程", {}).get(p.value)
-        if instr:
-            param_instruction_lines.append(f"  - **閱讀歷程（{p.value}）補充**：{instr}")
+    domain_instruction = _content_domain_instruction(params)
+    if params.內容領域 is not None and domain_instruction:
+        param_instruction_lines.append(
+            f"  - **內容領域（{params.內容領域.value}）設計指引**：{domain_instruction}"
+        )
     for c in params.核心素養:
         instr = _CC_INSTRUCTIONS.get(c.value)
         if instr:
@@ -505,7 +598,9 @@ def build_user_prompt(
     difficulty_section = _difficulty_section(params)
 
     example_groups = (
-        [] if disable_reference_fewshot else load_few_shot_example_groups(few_shot_dir)
+        []
+        if disable_reference_fewshot
+        else load_few_shot_example_groups(few_shot_dir, content_type)
     )
     all_image_paths: list[Path] = []
     if example_groups:
@@ -523,8 +618,15 @@ def build_user_prompt(
                     label = f"圖{j}" + (f"（{caption}）" if caption else "")
                     img_notes += f"\n<!-- {label} 附於此範例後 -->"
                     all_image_paths.append(Path(img["path"]))
+            prompt_question = json.dumps(
+                q,
+                ensure_ascii=False,
+                indent=2,
+            )
             example_texts.append(
-                f"### 範例 {i}：{ex.get('description', '')}\n```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```{img_notes}"
+                f"### 範例 {i}：{ex.get('description', '')}\n```json\n"
+                f"{prompt_question}\n"
+                f"```{img_notes}"
             )
         few_shot_text = "\n\n".join(example_texts)
     else:
@@ -566,7 +668,6 @@ def build_user_prompt(
             cfg.learning_content,
             cfg.learning_performance,
         ))
-        has_config = has_structural_config or bool(cfg.text_word_limit)
         if cfg.question_type:
             cfg_parts.append(f"題型={cfg.question_type.value}")
         if cfg.instruction:
@@ -638,7 +739,7 @@ def build_user_prompt(
     user_materials_parts = []
     if topic_override:
         user_materials_parts.append(
-            "## 指定情境（請直接取代原本的 PISA 情境）\n\n"
+            "## 指定情境\n\n"
             f"主題 / 議題：{topic_override}\n\n"
             "請以此主題 / 議題作為題組的真實情境與文本取材方向。"
         )
@@ -693,9 +794,8 @@ def build_user_prompt(
         set_type=params.題型種類.value,
         q_types=q_types_str,
         sub_question_count=sub_q_count_str,
-        reading_process=reading_process,
-        text_form=params.文本形式.value,
         content_type=content_type,
+        content_domain=(params.內容領域.value if params.內容領域 is not None else ""),
         image_generation_mode=image_generation_mode,
         core_competencies=core_competencies,
         lc_pool_lines=lc_pool_lines,
@@ -719,7 +819,7 @@ _TEXT_GENERATION_SYSTEM_PROMPT_TEMPLATE = """\
 
 ## 題組結構說明
 每道題組包含一段或多段真實情境素材（文本），是所有小題共用的閱讀素材。
-此階段只要求你輸出文本層的欄位：核心問題、文本、取材來源、情境、題型種類、閱讀歷程、文本形式、題目內容類型，以及視覺素材規格（若適用）。
+此階段只要求你輸出文本層的欄位：核心問題、文本、取材來源、情境、題型種類、題目內容類型，以及視覺素材規格（若適用）。
 
 ## 課程綱要參考
 
@@ -736,8 +836,6 @@ _TEXT_GENERATION_SYSTEM_PROMPT_TEMPLATE = """\
   "取材來源": ["來源一"],
   "情境": ["個人"],
   "題型種類": "題組題",
-  "閱讀歷程": ["擷取訊息"],
-  "文本形式": "連續文本—說明文",
   "題目內容類型": "純文字",
   "chart_spec": null
 }}
@@ -759,8 +857,6 @@ _TEXT_GENERATION_USER_PROMPT_TEMPLATE = """\
 - **科目焦點**：{subject}
 - **情境**：{context}
 - **題型種類**：題組題
-- **閱讀歷程（PISA）**：{reading_process}
-- **文本形式**：{text_form}
 - **文本素材類型**：{content_type}
 - **核心素養（限定本題組使用）**：{core_competencies}
 - **預計小題題型分布**：{slot_type_summary}
@@ -790,9 +886,8 @@ _SUBQUESTION_SYSTEM_PROMPT_TEMPLATE = """\
 - `題型`：**必須是 {slot_type}**
 
 ## 題型說明
-- **選擇題**：四選一；答案為 A/B/C/D；評分規準為空陣列
-- **封閉式建構反應題**：唯一正確答案（詞彙、數字或短語）；評分規準為空陣列
-- **開放式建構反應題**：需學生組織語言；**必須附評分規準**，給分代號 2/1/0/0X，每條規準附 1–2 個學生作答實例
+- **選擇題**：四選一單選題；答案為 A/B/C/D；計分 0/1（答對 1 分、答錯 0 分），並以認知偏誤角度填寫各誘答項的誘答分析；評分規準為空陣列
+- **開放式建構反應題**：學生需組織語言說明思考過程；計分採每題專屬評分指引，分數 0..N 可部分給分；**必須附評分規準**，每一分數級距附 1-2 個學生作答實例（含正確與錯誤示例）
 
 ## 同組其他小題資訊（僅供參考，避免與其他小題重複考點）
 {sibling_slots_summary}
@@ -845,7 +940,7 @@ _SUBQUESTION_USER_PROMPT_TEMPLATE = """\
 1. 題目必須根據上方文本作答，不得引入文本未提及的外部知識作為答題必要條件。
 2. 題型必須嚴格遵守：本小題題型為**{slot_type}**，不得更改。
 3. 答案不得與其他小題答案直接關聯或互相揭露（各小題獨立作答）。
-4. 若為開放式建構反應題，必須附完整評分規準（rubric）。
+4. 若為開放式建構反應題，必須附每題專屬的評分指引（scoring guide），分數使用 0..N 並附完整評分規準（rubric）；每一分數級距附 1-2 個學生作答實例（含正確與錯誤示例）。
 5. 只輸出 JSON 物件，不要輸出其他文字。
 """
 
@@ -926,7 +1021,7 @@ def build_text_user_prompt(
         text += _render_brief_guidance_section(brief)
     text = text.replace(
         """\
-6. 評分代號請使用：2（滿分）/ 1（部分得分，限開放式）/ 0（零分）/ 0X（未作答）。
+6. 選擇題計分使用 0/1（答對 1 分、答錯 0 分）；開放式建構反應題依每題專屬評分指引使用 0..N。
 7. `題目` 陣列（舊版格式）：第一個元素放文本素材，其後每個元素放一道小題完整文字。
 8. `正確解題分析` 陣列（舊版格式）：每個元素對應一道小題的答案與說明。
 9. 只輸出 JSON 格式的結果。
@@ -972,6 +1067,7 @@ def build_subquestion_system_prompt(
     p_text = performance_text if performance_text is not None else _PERFORMANCE_TEXT
     curriculum_section = _build_curriculum_section(c_text, p_text, _PERFORMANCE_INTRO)
     sc = stage_code_for(_CC_DATA, learning_stage)
+    interaction_contract = "\n\n".join(_INTERACTION_PROMPT_BY_TYPE.values())
     return f"""\
 你是一位108課綱社會領域子題命題教師。你會收到一份共用閱讀素材，以及一道小題的出題規劃；請只根據該素材與規劃撰寫 exactly one SubQuestion JSON。
 
@@ -1021,7 +1117,7 @@ def build_subquestion_system_prompt(
 `誘答分析` 是一個以「選項標籤」為鍵、對應誘答描述為值的 JSON dict：
 
 - **選擇題**：鍵為 `"A"` / `"B"` / `"C"` / `"D"`。錯誤選項描述其針對的認知陷阱（誤讀題意 / 概念混淆 / 部分正確誘騙 / 過度推論 …），正確選項的值為一句 「正確答案：…」。
-- **封閉式 / 開放式建構反應題**：可留空 `{{}}`，或提供 `{{"常見錯誤": "…"}}` 描述一項最常見的錯誤。
+- **開放式建構反應題**：可留空 `{{}}`，或提供 `{{"常見錯誤": "…"}}` 描述一項最常見的錯誤；若有評分規準，請依每題專屬 0..N 評分指引填寫。
 
 範例：
 
@@ -1035,9 +1131,10 @@ def build_subquestion_system_prompt(
 ```
 
 ## 評分規準
-- 選擇題：四選一；答案為 A/B/C/D；正確代號 2，錯誤代號 0，評分規準為空陣列。
-- 封閉式建構反應題：唯一正確答案（詞彙、數字或短語）；正確代號 2，錯誤代號 0，評分規準為空陣列。
-- 開放式建構反應題：必須附 `評分規準`，使用 2 / 1 / 0 / 0X。2 代表完整正確，1 代表部分正確，0 代表錯誤或不相關，0X 代表未作答；每條規準請提供 1–2 個學生作答實例。
+- 選擇題：四選一；答案為 A/B/C/D；計分 0/1（答對 1 分、答錯 0 分），評分規準為空陣列；各誘答項請以認知偏誤角度填寫誘答分析。
+- 開放式建構反應題：必須附每題專屬 `評分規準`，使用 0..N 並允許部分給分；每一分數級距請提供 1-2 個學生作答實例（含正確與錯誤示例）。
+
+{interaction_contract}
 
 ## 課程綱要參考
 
@@ -1070,8 +1167,15 @@ def build_subquestion_user_prompt(
         if cfg is not None and cfg.question_type is not None
         else sq_plan.get("題型", "")
     )
+    content_type = (
+        cfg.content_type
+        if cfg is not None and cfg.content_type
+        else params.題目內容類型 or "純文字"
+    )
     example_groups = (
-        [] if disable_reference_fewshot else load_few_shot_example_groups(few_shot_dir)
+        []
+        if disable_reference_fewshot
+        else load_few_shot_example_groups(few_shot_dir, content_type)
     )
     all_image_paths: list[Path] = []
     matching_examples: list[dict] = []
@@ -1106,9 +1210,15 @@ def build_subquestion_user_prompt(
                 label = f"圖{j}" + (f"（{caption}）" if caption else "")
                 img_notes += f"\n<!-- {label} 附於此範例後 -->"
                 all_image_paths.append(Path(img["path"]))
+        prompt_question = json.dumps(
+            q,
+            ensure_ascii=False,
+            indent=2,
+        )
         few_shot_text = (
             f"### 範例 1：{ex.get('description', '')}\n"
-            f"```json\n{json.dumps(q, ensure_ascii=False, indent=2)}\n```{img_notes}"
+            f"```json\n{prompt_question}\n"
+            f"```{img_notes}"
         )
     else:
         few_shot_text = "（目前暫無範例，請根據指定條件自行設計。）"
@@ -1157,6 +1267,18 @@ def build_subquestion_user_prompt(
     source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
     display_text = 文本.get("文本", "") if isinstance(文本, dict) else 文本
     difficulty_section = _difficulty_section(params).lstrip("\n")
+    slot_number = int(sq_plan.get("序號", 1))
+    cognitive_process = _cognitive_process_for_slot(params, cfg, slot_number)
+    process_instruction = _INSTRUCTIONS.get("認知歷程", {}).get(cognitive_process, "")
+    domain_instruction = _content_domain_instruction(params)
+    process_exemplar_section = ""
+    if not disable_reference_fewshot:
+        process_exemplars = load_process_exemplars().get(cognitive_process, [])
+        if process_exemplars:
+            process_exemplar_section = "\n\n" + _format_process_exemplar(
+                cognitive_process,
+                rng.choice(process_exemplars),
+            )
     config_parts = [f"題型={q_type}"]
     if cfg is not None and cfg.instruction:
         config_parts.append(f"出題指示={cfg.instruction}")
@@ -1187,7 +1309,6 @@ def build_subquestion_user_prompt(
     # Append chart_spec instruction when this slot requires a visual
     slot_content_type = cfg.content_type if cfg is not None else None
     visual_instruction = ""
-    slot_number = int(sq_plan.get("序號", 1))
     known_figure_kinds = _known_figure_kinds_for_subquestion(text=文本, params=params, slot_number=slot_number)
     if slot_content_type in {"含圖片", "graphs/charts/tables"}:
         visual_instruction = (
@@ -1211,6 +1332,7 @@ def build_subquestion_user_prompt(
         f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts)
         + visual_instruction
     )
+    interaction_instruction = _INTERACTION_PROMPT_BY_TYPE.get(q_type, "")
     core_question_callback_section = (
         "\n\n## 回扣核心問題\n\n"
         f"- **最後小題命題指示**：{_CORE_QUESTION_CALLBACK_SUBQUESTION_INSTRUCTION}"
@@ -1242,6 +1364,7 @@ def build_subquestion_user_prompt(
 - **出題概念**：{sq_plan.get("出題概念", "")}
 
 {subquestion_config_section}
+{interaction_instruction}
 {core_question_callback_section}
 
 ## 指定條件
@@ -1249,9 +1372,14 @@ def build_subquestion_user_prompt(
 - **年級重心**：{params.grade}年級（{_LEARNING_STAGE}）
 - **情境**：{"、".join(c.value for c in params.情境)}
 - **科目焦點**：{subject_value}
+- **內容領域**：{params.內容領域.value if params.內容領域 is not None else ""}
+- **認知歷程**：{cognitive_process}
 - **核心素養（限定使用）**：{core_competencies}
+{f"- **內容領域設計指引**：{domain_instruction}" if domain_instruction else ""}
+{f"- **認知歷程設計指引**：{process_instruction}" if process_instruction else ""}
 {lc_pool_lines}{lp_pool_lines}
 {difficulty_section}
+{process_exemplar_section}
 ## 參考範例
 
 {few_shot_text}
@@ -1262,6 +1390,7 @@ def build_subquestion_user_prompt(
 2. 小題必須能依據共用文本作答，不要引入無法由文本支持的新情境。
 3. `學習內容` / `學習表現` 應優先使用上述指定代號；如需引入其他代號，仍以系統提供的課綱資料為限。
 4. 題型必須符合本小題規劃中的 `題型`，出題概念需回應規劃中的能力提示。
-5. **誘答分析**：本小題若為 `選擇題`，`誘答分析` **必須**同時涵蓋題目所有選項標籤（A/B/C/D）；正確選項填「正確答案：…」，其餘選項描述其針對的錯誤概念。若為 `封閉式建構反應題` 或 `開放式建構反應題`，可留空 `{{}}` 或使用 `{{"常見錯誤": "..."}}` 描述一項最常見錯誤。
-6. 請只輸出一道小題的 JSON，不要輸出其他文字。
+5. **誘答分析**：本小題若為 `選擇題`，`誘答分析` **必須**同時涵蓋題目所有選項標籤（A/B/C/D）；正確選項填「正確答案：…」，其餘選項以認知偏誤角度描述其針對的錯誤概念。若為 `開放式建構反應題`，可留空 `{{}}` 或使用 `{{"常見錯誤": "..."}}` 描述一項最常見錯誤。
+6. 若提供參考範例，範例僅供題材與格式參考；評分尺度以本提示的評分指引為準，不以範例中的舊版代號為準。
+7. 請只輸出一道小題的 JSON，不要輸出其他文字。
 """, all_image_paths

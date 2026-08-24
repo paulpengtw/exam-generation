@@ -62,8 +62,6 @@ def test_model_execute_override_is_baked_into_llmclient_config(tmp_path: Path) -
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )
@@ -110,8 +108,6 @@ def test_model_override_absent_preserves_config_defaults(tmp_path: Path) -> None
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )
@@ -170,8 +166,6 @@ def test_model_execute_override_reaches_ss_generate_config(tmp_path: Path) -> No
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )

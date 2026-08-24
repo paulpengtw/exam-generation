@@ -1,11 +1,9 @@
-"""Data loading for social studies — few-shot examples and CSV-driven curriculum.
+"""Data loading for social-studies Channel-1 few-shot examples.
 
-Few-shot examples live under ``data/social_studies/few_shot/``: each root
-JSON file is one sampling group, and ``few_shot_examples.csv`` groups rows
-by ``範例編號``. ``範例_``-prefixed files are never loaded. To add a new
-sample, see ``docs/ADDING_SAMPLES.md`` (zh-TW) — it covers the JSON vs CSV
-tradeoff, required fields per 題型, silent-drop behaviors (malformed
-``chart_spec``, CSV encoding), and the one-liner verification command.
+Examples live in ``data/social_studies/few_shot/<題目內容類型>/``. Each JSON
+file is one equal-odds sampling group; rows in the root CSV are grouped by
+``範例編號`` after filtering on ``題目內容類型``. The loader intentionally
+understands only this ICCS-tagged shape.
 """
 
 from __future__ import annotations
@@ -15,13 +13,6 @@ import json
 import re
 from collections import defaultdict
 from pathlib import Path
-
-_LEGACY_STYLES = {
-    "text_only",
-    "with_non_continuous_text",
-    "mixed_text",
-    "digital_reading",
-}
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -50,7 +41,12 @@ def _parse_lc_field(raw: str) -> list[dict]:
 def _clean_caption(raw: str) -> str:
     """Strip Windows/Unix file paths from captions, keeping the human-readable part."""
     # Remove leading path (e.g. "C:\Users\...\foo.jpg" or "D:\繪圖\...\bar.png")
-    cleaned = re.sub(r"^[A-Za-z]:\\[^\n]*?(?:\\|\.(?:jpg|jpeg|png|gif))\s*", "", raw, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"^[A-Za-z]:\\[^\n]*?(?:\\|\.(?:jpg|jpeg|png|gif))\s*",
+        "",
+        raw,
+        flags=re.IGNORECASE,
+    )
     cleaned = cleaned.strip()
     return cleaned or raw.strip()
 
@@ -90,27 +86,23 @@ def _parse_rubric_field(raw: str) -> list[dict]:
 
 def _parse_few_shot_csv(
     rows: list[dict[str, str]],
-    style: str | None = None,
+    content_type: str | None = None,
     images_dir: Path | None = None,
 ) -> list[dict]:
-    """Convert CSV rows into {style, description, question} dicts.
+    """Convert content-type-filtered CSV rows into Channel-1 examples.
 
-    Supports both legacy columns and new 108課綱 per-subquestion columns:
-    核心問題, 文本, 取材來源 (first row), and
+    The root CSV carries 核心問題, 文本, 取材來源 (first row), and
     小題序號, 小題年級, 小題科目, 核心素養, 學習內容, 學習表現, 出題概念,
-    小題題型, 答案, 答案解析, 評分規準 (per subquestion row).
+    認知歷程, 小題題型, 答案, 答案解析, 評分規準 (per subquestion row).
     """
-    style_rows = [
-        r for r in rows
-        if style is None or r.get("style", "").strip() == style
-    ]
-    if not style_rows:
+    if not content_type:
         return []
 
-    # Group rows by 範例編號, preserving order.
+    # Group rows by 範例編號 before filtering: later rows may leave first-row
+    # metadata blank, as documented by csv_填寫指南.md.
     groups: dict[str, list[dict[str, str]]] = defaultdict(list)
     order: list[str] = []
-    for row in style_rows:
+    for row in rows:
         key = row.get("範例編號", "").strip()
         if key not in groups:
             order.append(key)
@@ -120,17 +112,36 @@ def _parse_few_shot_csv(
     for key in order:
         group = groups[key]
         first = group[0]
+        group_content_type = next(
+            (
+                row.get("題目內容類型", "").strip()
+                for row in group
+                if row.get("題目內容類型", "").strip()
+            ),
+            "",
+        )
+        if group_content_type != content_type:
+            continue
         情境_raw = first.get("情境", "").strip()
-        閱讀歷程_raw = first.get("閱讀歷程", "").strip()
+        認知歷程_values: list[str] = []
+        for row in group:
+            process = row.get("認知歷程", "").strip()
+            if process and process not in 認知歷程_values:
+                認知歷程_values.append(process)
 
         question: dict = {
             "情境": [c.strip() for c in 情境_raw.split(";") if c.strip()],
             "題型種類": first.get("題型種類", "").strip(),
             "題型": first.get("題型", "").strip(),
-            "閱讀歷程": [p.strip() for p in 閱讀歷程_raw.split(";") if p.strip()],
-            "文本形式": first.get("文本形式", "").strip(),
+            "題目內容類型": group_content_type,
+            "內容領域": first.get("內容領域", "").strip(),
+            "認知歷程": 認知歷程_values,
             "題目": [r["題目"].strip() for r in group if r.get("題目", "").strip()],
-            "正確解題分析": [r["正確解題分析"].strip() for r in group if r.get("正確解題分析", "").strip()],
+            "正確解題分析": [
+                r["正確解題分析"].strip()
+                for r in group
+                if r.get("正確解題分析", "").strip()
+            ],
         }
 
         # 108課綱 extensions
@@ -151,6 +162,9 @@ def _parse_few_shot_csv(
                 continue
             seq_raw = row.get("小題序號", "").strip()
             grade_raw = row.get("小題年級", "").strip()
+            sq_type = row.get("小題題型", "").strip()
+            if not seq_raw and not sq_type:
+                continue
             sq: dict = {
                 "序號": int(seq_raw) if seq_raw else i,
                 "年級": int(grade_raw) if grade_raw else 0,
@@ -159,7 +173,8 @@ def _parse_few_shot_csv(
                 "學習內容": _parse_lc_field(row.get("學習內容", "")),
                 "學習表現": _parse_lc_field(row.get("學習表現", "")),
                 "出題概念": row.get("出題概念", "").strip(),
-                "題型": row.get("小題題型", row.get("題型", "")).strip() or first.get("題型", "").strip(),
+                "認知歷程": row.get("認知歷程", "").strip(),
+                "題型": sq_type or first.get("題型", "").strip(),
                 "題目": sq_text,
                 "答案": row.get("答案", "").strip(),
                 "答案解析": row.get("答案解析", "").strip(),
@@ -177,7 +192,7 @@ def _parse_few_shot_csv(
                 pass
 
         example: dict = {
-            "style": first.get("style", "").strip(),
+            "題目內容類型": group_content_type,
             "description": first.get("description", "").strip(),
             "question": question,
         }
@@ -189,21 +204,49 @@ def _parse_few_shot_csv(
     return examples
 
 
-def load_few_shot_example_groups(few_shot_dir: Path, style: str | None = None) -> list[list[dict]]:
+def _safe_content_type_dir(few_shot_dir: Path, content_type: str | None) -> Path | None:
+    """Resolve a Channel-1 key without allowing traversal or Channel-2 access."""
+    if not content_type:
+        return None
+    relative = Path(content_type)
+    if (
+        relative.is_absolute()
+        or not relative.parts
+        or any(
+            part in {".", "..", "images", "process_exemplars"}
+            for part in relative.parts
+        )
+    ):
+        return None
+    try:
+        root = few_shot_dir.resolve()
+        candidate = (root / relative).resolve()
+        candidate.relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return candidate
+
+
+def load_few_shot_example_groups(
+    few_shot_dir: Path,
+    content_type: str | None = None,
+) -> list[list[dict]]:
     """Load few-shot examples as equal-odds sampling groups.
 
-    Each root-level JSON file is one group. Each CSV 範例編號 is one group.
-    The optional style filter is retained for compatibility with older callers.
+    Each JSON file under the requested content-type directory is one group.
+    Each CSV 範例編號 matching the requested content type is one group.
+    Empty and unpopulated keys are valid and return no examples.
     """
+    content_type_dir = _safe_content_type_dir(few_shot_dir, content_type)
+    if content_type_dir is None:
+        return []
+
     groups: list[list[dict]] = []
-    for f in sorted(few_shot_dir.glob("*.json")):
+    for f in sorted(content_type_dir.glob("*.json")):
         with open(f, encoding="utf-8") as fh:
             loaded = json.load(fh)
         loaded_examples = loaded if isinstance(loaded, list) else [loaded]
         group = [
-            ex for ex in loaded_examples
-            if isinstance(ex, dict) and ex.get("style", "").strip() == style
-        ] if style is not None else [
             ex for ex in loaded_examples if isinstance(ex, dict)
         ]
         if group:
@@ -212,23 +255,18 @@ def load_few_shot_example_groups(few_shot_dir: Path, style: str | None = None) -
     images_dir = few_shot_dir / "images"
     csv_rows = _read_csv(few_shot_dir / "few_shot_examples.csv")
     image_root = images_dir if images_dir.exists() else None
-    if style is None:
-        legacy_styles = []
-        for row in csv_rows:
-            row_style = row.get("style", "").strip()
-            if row_style in _LEGACY_STYLES and row_style not in legacy_styles:
-                legacy_styles.append(row_style)
-        csv_examples = [
-            ex
-            for legacy_style in legacy_styles
-            for ex in _parse_few_shot_csv(csv_rows, legacy_style, images_dir=image_root)
-        ]
-    else:
-        csv_examples = _parse_few_shot_csv(csv_rows, style, images_dir=image_root)
+    csv_examples = _parse_few_shot_csv(csv_rows, content_type, images_dir=image_root)
     groups.extend([ex] for ex in csv_examples)
     return groups
 
 
-def load_few_shot_examples(few_shot_dir: Path, style: str | None = None) -> list[dict]:
-    """Load few-shot examples as a flat list for compatibility."""
-    return [ex for group in load_few_shot_example_groups(few_shot_dir, style) for ex in group]
+def load_few_shot_examples(
+    few_shot_dir: Path,
+    content_type: str | None = None,
+) -> list[dict]:
+    """Load the selected content type as a flat list."""
+    return [
+        ex
+        for group in load_few_shot_example_groups(few_shot_dir, content_type)
+        for ex in group
+    ]

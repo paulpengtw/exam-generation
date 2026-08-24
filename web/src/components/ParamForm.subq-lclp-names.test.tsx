@@ -63,10 +63,8 @@ const SS_SCHEMA_WITH_NAMES = {
   題型種類: [{ value: "題組題", instruction: "" }],
   題型: [
     { value: "選擇題", instruction: "" },
-    { value: "封閉式建構反應題", instruction: "" },
+    { value: "開放式建構反應題", instruction: "" },
   ],
-  閱讀歷程: [{ value: "擷取訊息", instruction: "" }],
-  文本形式: [{ value: "連續文本", instruction: "" }],
   題目內容類型: [{ value: "純文字", instruction: "" }],
   科目: [{ value: "歷史", instruction: "" }],
   核心素養: [{ value: "社-J-A2", instruction: "" }],

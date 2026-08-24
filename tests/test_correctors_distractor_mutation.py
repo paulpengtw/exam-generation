@@ -67,7 +67,6 @@ def test_ss_corrector_updates_subquestion_distractor() -> None:
     from src.social_studies.schemas import ExamQuestion, SubQuestion, VerificationResult
     q = ExamQuestion(
         情境=["公共"], 題型種類="題組題", 題型="選擇題",
-        閱讀歷程=["擷取訊息"], 文本形式="連續文本—敘事文",
         subquestions=[
             SubQuestion(
                 id="sq1", 序號=1, 題型="選擇題",

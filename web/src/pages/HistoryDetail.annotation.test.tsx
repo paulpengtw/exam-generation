@@ -27,6 +27,8 @@ const verifiedHistoryQuestion = {
   情境: ["公共"],
   題型種類: "題組題",
   題型: "選擇題",
+  閱讀歷程: ["Legacy reading process"],
+  文本形式: "Legacy text form",
   核心問題: "A verified core question",
   文本: "A passage that can be selected",
   subquestions: [
@@ -119,6 +121,8 @@ describe("HistoryDetail 人工審題修正 integration", () => {
 
     renderHistoryDetail();
     await waitFor(() => expect(screen.getByText("A passage that can be selected")).toBeInTheDocument());
+    expect(screen.getByText("Legacy reading process", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("Legacy text form", { exact: true })).toBeInTheDocument();
 
     selectPassage();
     const instruction = screen.getByRole("textbox", { name: "Modification instruction 1" });

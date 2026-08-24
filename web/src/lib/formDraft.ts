@@ -31,6 +31,7 @@ function isSubQuestionConfig(value: unknown): value is SubQuestionConfig {
   if (!isRecord(value)) return false;
   return (
     isOptionalString(value.question_type) &&
+    isOptionalString(value.cognitive_process) &&
     isOptionalString(value.instruction) &&
     isOptionalString(value.content_type) &&
     (
@@ -81,6 +82,12 @@ function isFormFields(value: unknown): value is FormFields {
       value.difficulty === "hard"
     ) &&
     (value.reportingScale === undefined || typeof value.reportingScale === "string") &&
+    (value.contentDomain === undefined || typeof value.contentDomain === "string") &&
+    (
+      value.targetSurface === undefined ||
+      value.targetSurface === "紙本" ||
+      value.targetSurface === "數位"
+    ) &&
     typeof value.subjectFilter === "string" &&
     typeof value.passage === "string" &&
     (
@@ -121,11 +128,14 @@ function isFormFields(value: unknown): value is FormFields {
 
 export function saveDraft(userId: string, fields: FormFields): void {
   try {
+    const persistedFields = { ...fields };
+    if (persistedFields.contentDomain === "") delete persistedFields.contentDomain;
+    if (persistedFields.targetSurface === "紙本") delete persistedFields.targetSurface;
     localStorage.setItem(
       draftKey(userId),
       JSON.stringify({
         savedAt: new Date().toISOString(),
-        fields,
+        fields: persistedFields,
       } satisfies FormDraft),
     );
   } catch {

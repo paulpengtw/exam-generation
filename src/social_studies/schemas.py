@@ -5,7 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 from src.common.difficulty import DEFAULT_DIFFICULTY, Difficulty
 from src.social_studies.core_competency_loader import (
@@ -13,15 +21,42 @@ from src.social_studies.core_competency_loader import (
     load_core_competencies,
 )
 from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
-from src.social_studies.schema_loader import build_enums, load_grades, load_schemas
+from src.social_studies.schema_loader import (
+    build_enums_by_category,
+    load_grades,
+    load_schemas,
+)
 
 _schemas = load_schemas()
-QuestionContext, QuestionSetType, QuestionType, ReadingProcess, TextForm, QuestionSubject = (
-    build_enums(_schemas)
-)
+_enums = build_enums_by_category(_schemas)
+QuestionContext = _enums["情境"]
+QuestionSetType = _enums["題型種類"]
+QuestionType = _enums["題型"]
+QuestionSubject = _enums["科目"]
+CognitiveProcess = _enums["認知歷程"]
+ContentDomain = _enums["內容領域"]
 CoreCompetency = build_core_competency_enum(load_core_competencies())
 _GRADES: list[int] = load_grades(_schemas)
 FIGURE_KIND_VOCABULARY: tuple[str, ...] = CANONICAL_FIGURE_KINDS
+_COGNITIVE_PROCESS_VALUES = frozenset(member.value for member in CognitiveProcess)
+_CONTENT_DOMAIN_VALUES = frozenset(member.value for member in ContentDomain)
+_INTERACTIVE_QUESTION_TYPES = frozenset({"拖放題", "滑桿題"})
+
+
+def _validate_cognitive_process(value: str | None) -> str | None:
+    if value is not None and value not in _COGNITIVE_PROCESS_VALUES:
+        raise ValueError(
+            f"認知歷程 must be one of {sorted(_COGNITIVE_PROCESS_VALUES)}, got {value!r}"
+        )
+    return value
+
+
+def _validate_content_domain(value: str | None) -> str | None:
+    if value is not None and value not in _CONTENT_DOMAIN_VALUES:
+        raise ValueError(
+            f"內容領域 must be one of {sorted(_CONTENT_DOMAIN_VALUES)}, got {value!r}"
+        )
+    return value
 
 
 class ImageSpec(BaseModel):
@@ -78,12 +113,26 @@ class LearningContentRef(BaseModel):
 class RubricEntry(BaseModel):
     """One row of a 評分規準 table (scoring rubric).
 
-    Codes follow ODT convention: 2=滿分, 1=部分得分, 0=零分, 0X=未作答.
+    ``code`` remains an opaque string for compatibility: new open-response
+    records use integer-like 0..N levels, while legacy records may retain
+    codes such as 2/1/0/0X.
     """
 
     code: str  # "2" | "1" | "0" | "0X"
     規準說明: str
     學生作答實例: list[str] = Field(default_factory=list)
+
+
+def _coerce_known_question_type(value: object) -> object:
+    """Keep current enum ergonomics while allowing legacy stored values."""
+    if isinstance(value, QuestionType):
+        return value
+    if isinstance(value, str):
+        try:
+            return QuestionType(value)
+        except ValueError:
+            return value
+    return value
 
 
 class SubQuestionConfig(BaseModel):
@@ -99,8 +148,17 @@ class SubQuestionConfig(BaseModel):
     question_word_limit: int | None = None
     option_word_limit: int | None = None
     text_word_limit: int | None = None
+    認知歷程: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("認知歷程", "cognitive_process"),
+    )
     learning_content: list[str] = Field(default_factory=list)
     learning_performance: list[str] = Field(default_factory=list)
+
+    @field_validator("認知歷程")
+    @classmethod
+    def cognitive_process_must_be_known(cls, value: str | None) -> str | None:
+        return _validate_cognitive_process(value)
 
 
 class CreativeBrief(BaseModel):
@@ -117,6 +175,39 @@ class CreativeBrief(BaseModel):
     framing_hooks: list[str] = Field(default_factory=list)
 
 
+class DragItem(BaseModel):
+    id: str
+    label: str
+
+
+class DropTarget(BaseModel):
+    id: str
+    label: str
+    capacity: int = 1
+
+
+class DragDropSpec(BaseModel):
+    """Authoritative drag-and-drop interaction data for a 數位題."""
+
+    draggables: list[DragItem]
+    targets: list[DropTarget]
+    correct_mapping: dict[str, str]
+    exact_match: bool = False
+    shuffle_draggables: bool = True
+
+
+class SliderSpec(BaseModel):
+    """Authoritative slider interaction data for a 數位題."""
+
+    min: float
+    max: float
+    step: float
+    unit: str = ""
+    correct_value: float
+    tolerance: float
+    show_ticks: bool = True
+
+
 class SubQuestion(BaseModel):
     """One subquestion within a 題組, tagged with 108課綱 curriculum metadata."""
 
@@ -129,7 +220,8 @@ class SubQuestion(BaseModel):
     學習表現: list[LearningContentRef] = Field(default_factory=list)
     出題概念: str = ""
     出題指示: str | None = None
-    題型: QuestionType  # type: ignore[valid-type]
+    認知歷程: str | None = None
+    題型: QuestionType | str  # type: ignore[valid-type]
     題目: str
     答案: str = ""
     答案解析: str = ""
@@ -139,6 +231,30 @@ class SubQuestion(BaseModel):
     image_generation_mode: Literal["html", "gpt_image"] | None = None
     圖片: str | None = None
     chart_spec: ChartSpec | None = None
+    interaction: DragDropSpec | SliderSpec | None = None
+
+    @field_validator("認知歷程")
+    @classmethod
+    def cognitive_process_must_be_known(cls, value: str | None) -> str | None:
+        return _validate_cognitive_process(value)
+
+    @field_validator("題型", mode="before")
+    @classmethod
+    def question_type_may_be_legacy(cls, value: object) -> object:
+        return _coerce_known_question_type(value)
+
+    @model_validator(mode="after")
+    def interaction_must_match_question_type(self) -> "SubQuestion":
+        question_type = getattr(self.題型, "value", self.題型)
+        if question_type == "拖放題":
+            if not isinstance(self.interaction, DragDropSpec):
+                raise ValueError("interaction must be DragDropSpec for 拖放題")
+        elif question_type == "滑桿題":
+            if not isinstance(self.interaction, SliderSpec):
+                raise ValueError("interaction must be SliderSpec for 滑桿題")
+        elif question_type not in _INTERACTIVE_QUESTION_TYPES and self.interaction is not None:
+            raise ValueError("interaction is only allowed for 拖放題 or 滑桿題")
+        return self
 
     # 建構這一小題時所用的 各小題配置 索引（PLAN 索引，1 起算，不進 JSON）。
     # `序號` 是模型自報的，可能錯位或重複；要沿用同一格 各小題配置 的下游
@@ -153,6 +269,7 @@ class QuestionMetadata(BaseModel):
     seed: int | None = None
     difficulty: Difficulty = DEFAULT_DIFFICULTY
     coverage_mode_used: Literal["balanced", "random"] | None = None
+    surface_used: Literal["紙本", "數位"] | None = None
 
 
 class ExamQuestion(BaseModel):
@@ -166,13 +283,16 @@ class ExamQuestion(BaseModel):
     取材來源: list[str] = Field(default_factory=list)
     subquestions: list[SubQuestion] = Field(default_factory=list)
 
-    # PISA framing tags (kept for compatibility and question diversity)
+    # Retired legacy tags: only populated when deserializing old records.
     情境: list[QuestionContext]  # type: ignore[valid-type]
     題型種類: QuestionSetType  # type: ignore[valid-type]
-    題型: QuestionType  # type: ignore[valid-type]
-    閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
-    文本形式: TextForm  # type: ignore[valid-type]
+    題型: QuestionType | str  # type: ignore[valid-type]
+    閱讀歷程: list[str] = Field(default_factory=list)
+    文本形式: str | None = None
     題目內容類型: str | None = None
+    內容領域: str | None = None
+    # The field's presence discriminates ICCS records from legacy records.
+    認知歷程: list[str] | None = None
 
     # Legacy flat arrays retained for backward compatibility with verifier / corrector
     題目: list[str] = Field(default_factory=list)
@@ -182,6 +302,27 @@ class ExamQuestion(BaseModel):
     chart_spec: ChartSpec | None = None
     verification: VerificationResult | None = None
     metadata: QuestionMetadata | None = None
+
+    @field_validator("內容領域")
+    @classmethod
+    def content_domain_must_be_known(cls, value: str | None) -> str | None:
+        return _validate_content_domain(value)
+
+    @field_validator("題型", mode="before")
+    @classmethod
+    def question_type_may_be_legacy(cls, value: object) -> object:
+        return _coerce_known_question_type(value)
+
+    @field_validator("認知歷程")
+    @classmethod
+    def cognitive_processes_must_be_known(
+        cls, value: list[str] | None
+    ) -> list[str] | None:
+        if value is None:
+            return None
+        for process in value:
+            _validate_cognitive_process(process)
+        return value
 
 
 class SampledParams(BaseModel):
@@ -202,13 +343,14 @@ class SampledParams(BaseModel):
     題型: list[
         QuestionType
     ]  # allowed pool of types; each 子題 picks its own  # type: ignore[valid-type]
-    閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
-    文本形式: TextForm  # type: ignore[valid-type]
     題目內容類型: str = ""  # top-level 文本素材類型 (renamed in UI for #101)
     科目: QuestionSubject  # type: ignore[valid-type]
+    內容領域: ContentDomain | None = None  # type: ignore[valid-type]
+    target_surface: Literal["紙本", "數位"] = "紙本"
     核心素養: list[CoreCompetency] = Field(default_factory=list)  # type: ignore[valid-type]
     學習內容_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-3)
     學習表現_pool: list[str] = Field(default_factory=list)  # sampler-picked 編碼 codes (1-2)
+    認知歷程_pool: list[str] = Field(default_factory=list)
     # #100: 子題 count and word limits
     sub_question_count: int | None = None
     question_word_limit: int | None = None
@@ -222,3 +364,10 @@ class SampledParams(BaseModel):
     difficulty: Difficulty = DEFAULT_DIFFICULTY
     # #114: per-batch Opus 創意 brief; None when planning is disabled or unavailable
     creative_brief: CreativeBrief | None = None
+
+    @field_validator("認知歷程_pool")
+    @classmethod
+    def cognitive_process_pool_must_be_known(cls, value: list[str]) -> list[str]:
+        for process in value:
+            _validate_cognitive_process(process)
+        return value

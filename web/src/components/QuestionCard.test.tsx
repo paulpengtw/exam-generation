@@ -163,6 +163,21 @@ describe("QuestionCard + FigureRenderer swap", () => {
   });
 });
 
+describe("QuestionCard figure freshness", () => {
+  it("renders the image out-of-sync warning only when image_stale is set", () => {
+    const staleQuestion = {
+      ...question,
+      image_stale: true,
+    } as unknown as import("../hooks/useGenerate").ExamQuestion;
+    const { rerender } = render(<QuestionCard question={staleQuestion} isFinal />);
+
+    expect(screen.getByText("Image may be out of sync")).toBeInTheDocument();
+
+    rerender(<QuestionCard question={question} isFinal />);
+    expect(screen.queryByText("Image may be out of sync")).not.toBeInTheDocument();
+  });
+});
+
 const ssSub: SubQuestion = {
   id: "sq1",
   序號: 1,
@@ -197,6 +212,109 @@ const ssQuestion: ExamQuestion = {
   正確解題分析: ["B"],
   verification: { passed: true },
 };
+
+describe("QuestionCard rubric eras and legacy display", () => {
+  it("renders legacy axis tags for a legacy social-studies record", () => {
+    const legacy: ExamQuestion = {
+      ...ssQuestion,
+      id: "ss-legacy-axes",
+      閱讀歷程: ["legacy process"],
+      文本形式: "legacy text form",
+    };
+
+    render(<QuestionCard question={legacy} isFinal />);
+
+    expect(screen.getByText("legacy process", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("legacy text form", { exact: true })).toBeInTheDocument();
+  });
+
+  it("renders legacy axis tags for a flat legacy record", () => {
+    const legacy: ExamQuestion = {
+      ...ssQuestion,
+      id: "ss-flat-legacy-axes",
+      subquestions: [],
+      閱讀歷程: ["flat legacy process"],
+      文本形式: "flat legacy text form",
+    };
+
+    render(<QuestionCard question={legacy} isFinal />);
+
+    expect(screen.getByText("flat legacy process", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("flat legacy text form", { exact: true })).toBeInTheDocument();
+  });
+
+  it("renders ICCS tags and suppresses stale legacy tags for a new record", () => {
+    const knowing = "Knowing–Defining and Describing";
+    const current: ExamQuestion = {
+      ...ssQuestion,
+      id: "ss-current-axes",
+      內容領域: "Civic Principles",
+      認知歷程: [knowing],
+      閱讀歷程: ["stale legacy process"],
+      文本形式: "stale legacy text form",
+    };
+
+    render(<QuestionCard question={current} isFinal />);
+
+    expect(screen.getByText("Civic Principles", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText(knowing, { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("stale legacy process", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("stale legacy text form", { exact: true })).not.toBeInTheDocument();
+  });
+
+  it("renders native 0..N rubric levels and their examples as text", () => {
+    const question: ExamQuestion = {
+      ...ssQuestion,
+      id: "ss-native-rubric",
+      subquestions: [{
+        ...ssSub,
+        評分規準: [
+          { code: "0", 規準說明: "No credit", 學生作答實例: ["Blank"] },
+          { code: "1", 規準說明: "Partial credit", 學生作答實例: ["Partly correct"] },
+          { code: "2", 規準說明: "Full credit", 學生作答實例: ["Correct"] },
+          { code: "3", 規準說明: "Advanced", 學生作答實例: ["Thorough"] },
+        ],
+      }],
+    };
+
+    render(<QuestionCard question={question} isFinal />);
+    fireEvent.click(screen.getByRole("button", { name: "Show Answer" }));
+
+    for (const text of [
+      "0", "No credit", "1", "Partial credit", "2", "Full credit", "3", "Advanced",
+    ]) {
+      expect(screen.getByText(text, { exact: true })).toBeInTheDocument();
+    }
+  });
+
+  it("renders legacy rubric codes and a retired legacy question type read-only", () => {
+    const question: ExamQuestion = {
+      ...ssQuestion,
+      id: "ss-legacy-rubric",
+      subquestions: [{
+        ...ssSub,
+        題型: "封閉式建構反應題",
+        評分規準: [
+          { code: "2", 規準說明: "Legacy full credit" },
+          { code: "1", 規準說明: "Legacy partial credit" },
+          { code: "0", 規準說明: "Legacy no credit" },
+          { code: "0X", 規準說明: "Legacy unanswered" },
+        ],
+      }],
+    };
+
+    render(<QuestionCard question={question} isFinal />);
+    expect(screen.getByText("封閉式建構反應題", { exact: true })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show Answer" }));
+
+    for (const text of [
+      "2", "Legacy full credit", "1", "Legacy partial credit",
+      "0", "Legacy no credit", "0X", "Legacy unanswered",
+    ]) {
+      expect(screen.getByText(text, { exact: true })).toBeInTheDocument();
+    }
+  });
+});
 
 function getSelectionField(fieldPath: string): HTMLElement {
   const field = document.querySelector<HTMLElement>(`[data-selection-field="${fieldPath}"]`);

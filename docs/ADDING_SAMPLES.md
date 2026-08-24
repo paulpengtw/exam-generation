@@ -74,25 +74,31 @@ data/few_shot/
 
 ```
 data/social_studies/few_shot/
-├── *.json                       # 每檔為一個等機率抽樣 group
-├── few_shot_examples.csv        # 選用：長格式 CSV，一列一子題，以 範例編號 分組
+├── 純文字/                      # Channel-1：題目內容類型 key
+├── 含圖片/
+├── graphs/charts/tables/        # value 含斜線，因此是巢狀目錄
+├── customized/
+├── 混合/
+├── 數位閱讀/
+├── few_shot_examples.csv        # Channel-1：長格式 CSV，一列一小題
 ├── 範例_few_shot_examples.csv   # 研究人員參考範例，系統永遠不會載入
-└── images/<範例編號>/manifest.json
+├── images/<範例編號>/manifest.json
+└── process_exemplars/           # Channel-2：認知歷程 bucket 範例
 ```
 
-- 根目錄 JSON 適合**單一精選題組**：一檔一題組，寫成陣列或物件皆可。
-- CSV 適合**大量、多小題**題組；每列一小題，依 `範例編號` 分組。欄位逐欄說明見 `data/social_studies/csv_填寫指南.md`。
+- Channel-1 的 JSON 放在對應的 `few_shot/<題目內容類型>/` 子目錄；每個 JSON 檔是一個等機率抽樣 group，寫成單一物件或物件陣列皆可。六個合法 key 是 `純文字`、`含圖片`、`graphs/charts/tables`、`customized`、`混合`、`數位閱讀`。
+- Channel-1 的 CSV 固定放在 `few_shot/` 根目錄；每個 `範例編號` 是一個 group，每列一個小題。第一列填題組層級的 `題目內容類型`、`情境`、`題型種類`、`題型`、`內容領域`、`核心問題`、`文本`、`取材來源`，每個小題列填 `認知歷程`、`小題題型`、課綱欄位、答案與計分資料。欄位逐欄說明見 `data/social_studies/csv_填寫指南.md`。
+- 題組的四個 `認知歷程` bucket 是 `Knowing–Defining and Describing`、`Knowing–Illustrating with examples`、`Reasoning and Applying–Interpret information`、`Reasoning and Applying–Relate or Integrate`；四個 `內容領域` 值以 `data/social_studies/curriculum/schema_parameters.csv` 為準，代碼對照以 `內容領域_mapping.csv` 為準。
 - **`範例_` 前綴的檔案永遠不會被載入**（`data/social_studies/curriculum/範例_*.csv` 與 `data/social_studies/few_shot/範例_few_shot_examples.csv` 皆然）。此規則實作於研究人員參考用途，勿依賴之。
-- Loader 將**每個 JSON 檔**與**每個 CSV `範例編號`**各視為一個 sampling group（等機率抽樣）。
+- Loader 將**每個 Channel-1 JSON 檔**與**每個 CSV `範例編號`**各視為一個 sampling group（等機率抽樣）；Channel-2 由小題的（內容領域，認知歷程）配對注入，不加入此抽樣池。
 
 ### 最小可執行範例
 
-新增到 `data/social_studies/few_shot/my_first_group.json`：
+新增到 `data/social_studies/few_shot/純文字/my_first_group.json`：
 
 ```json
 [
   {
-    "style": "text_only",
     "description": "跨區傳染病與公共衛生題組",
     "question": {
       "核心問題": "傳染病在全球化下如何跨區擴散？",
@@ -101,8 +107,9 @@ data/social_studies/few_shot/
       "情境": ["公共"],
       "題型種類": "題組題",
       "題型": "選擇題",
-      "閱讀歷程": ["擷取訊息"],
-      "文本形式": "連續文本",
+      "認知歷程": ["Reasoning and Applying–Interpret information"],
+      "內容領域": "Civic Institutions and Systems",
+      "題目內容類型": "純文字",
       "subquestions": [
         {
           "序號": 1,
@@ -124,7 +131,31 @@ data/social_studies/few_shot/
 ]
 ```
 
-**CSV 替代路徑**：若你要新增一組多小題（3–7 小題）題組，改為在 `few_shot_examples.csv` 追加對應列數，同 `範例編號`。逐欄語意見 `data/social_studies/csv_填寫指南.md`。
+**CSV 替代路徑**：若你要新增一組多小題（3–7 小題）題組，改為在 `few_shot_examples.csv` 追加對應列數，同 `範例編號`。每個小題在 `認知歷程` 填一個 bucket、在 `小題題型` 填四種 live 題型之一；逐欄語意見 `data/social_studies/csv_填寫指南.md`。
+
+### Channel-2：認知歷程過程範例
+
+Channel-2 的檔案放在 `data/social_studies/few_shot/process_exemplars/`，不放進六個 Channel-1 題目內容類型目錄。命題 prompt 會先指定題組的 `內容領域`，再依小題的 `認知歷程` bucket 取一筆；新增範例時請以 **（內容領域，認知歷程）** 為設計 key，避免只提供泛用題幹。
+
+每個 JSON 檔可用 `{"bucket": "...", "exemplars": [...]}` 格式。每筆 exemplar 至少需要非空的 `題幹`、`選項`、`答案`、`rationale`；可附 `內容領域` 與 `科目` 供人工檢查：
+
+```json
+{
+  "bucket": "Knowing–Illustrating with examples",
+  "exemplars": [
+    {
+      "內容領域": "Civic Principles",
+      "科目": "公民與社會",
+      "題幹": "題幹必須要求學生把已知概念辨認到新的具體例子。",
+      "選項": {"A": "例子甲", "B": "例子乙", "C": "例子丙", "D": "例子丁"},
+      "答案": "B",
+      "rationale": "說明正答如何示範指定的認知歷程與內容領域。"
+    }
+  ]
+}
+```
+
+選擇題採 0/1；開放式建構反應題必須提供每題專屬 0..N `評分規準`。拖放題與滑桿題只能用於數位卷面，並分別提供 `interaction.correct_mapping` 或 `interaction.correct_value`／`tolerance`；不要新增已退役的封閉式建構反應題。
 
 ---
 

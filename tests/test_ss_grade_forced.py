@@ -91,19 +91,13 @@ def test_parse_subquestion_forces_grade_when_omitted():
             [],
         ),
         (
-            "封閉式建構反應題",
-            "請逐項判斷是非：(1)…… (2)……",
-            "(1)是 (2)非",
-            [],
-        ),
-        (
             "開放式建構反應題",
             "請說明該歷史事件的影響。",
             "該事件造成社會結構改變……",
             [{"code": "2", "規準說明": "完整說明因果", "學生作答實例": ["…"]}],
         ),
     ],
-    ids=["選擇題", "封閉式建構反應題", "開放式建構反應題"],
+    ids=["選擇題", "開放式建構反應題"],
 )
 def test_parse_subquestion_grade_forced_for_all_ss_types(
     q_type: str,

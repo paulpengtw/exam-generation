@@ -68,8 +68,28 @@ def test_social_studies_schemas_include_content_types() -> None:
         r = client.get("/api/schemas?subject=social_studies")
     assert r.status_code == 200
     body = r.json()
+    live_categories = {
+        "情境",
+        "題型種類",
+        "題型",
+        "認知歷程",
+        "內容領域",
+        "科目",
+        "題目內容類型",
+        "難度",
+    }
+    assert live_categories <= body.keys()
+    assert "閱讀歷程" not in body
+    assert "文本形式" not in body
     values = [entry["value"] for entry in body["題目內容類型"]]
-    assert values == ["純文字", "含圖片", "graphs/charts/tables", "customized"]
+    assert values == [
+        "純文字",
+        "含圖片",
+        "graphs/charts/tables",
+        "customized",
+        "混合",
+        "數位閱讀",
+    ]
 
     learning_performance = body["學習表現"]
     assert learning_performance
@@ -136,6 +156,8 @@ def test_natural_sciences_schemas_include_pisa_science_dimensions() -> None:
     body = r.json()
 
     assert body["grades"] == [7, 8, 9, 10, 11, 12]
+    assert "閱讀歷程" not in body
+    assert "文本形式" not in body
     assert [entry["value"] for entry in body["情境"]] == [
         "Personal",
         "Local and national",

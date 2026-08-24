@@ -263,7 +263,10 @@ def _build_run_context(
         max_retries=params.max_retries,
         timestamp=datetime.now().strftime("%Y%m%d_%H%M%S"),
         html_renderer=html_renderer,
-        decoded_subquestion_configs=_decode_subquestion_configs(params.subquestion_configs, on_error=on_error),
+        decoded_subquestion_configs=_decode_subquestion_configs(
+            params.subquestion_configs,
+            on_error=on_error,
+        ),
         decoded_per_question_params=decode_per_question_params(
             params.per_question_params
         ),
@@ -359,7 +362,11 @@ def _worker_one(
 
         # Site 4: metadata patching (SS only; other specs have patch_metadata=None)
         if ctx.spec.patch_metadata is not None:
-            question = ctx.spec.patch_metadata(question, ctx.params.coverage_mode)
+            question = ctx.spec.patch_metadata(
+                question,
+                ctx.params.coverage_mode,
+                getattr(rng_params, "target_surface", None),
+            )
 
         assert isinstance(question, ctx.spec.exam_question_cls)
 

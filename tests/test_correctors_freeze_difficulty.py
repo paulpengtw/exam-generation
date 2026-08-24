@@ -53,7 +53,6 @@ def test_social_studies_corrector_freezes_difficulty():
         QuestionMetadata,
         QuestionSetType,
         QuestionType,
-        TextForm,
         VerificationResult,
     )
 
@@ -63,8 +62,6 @@ def test_social_studies_corrector_freezes_difficulty():
         情境=[],
         題型種類=next(iter(QuestionSetType)),
         題型=next(iter(QuestionType)),
-        閱讀歷程=[],
-        文本形式=next(iter(TextForm)),
         metadata=QuestionMetadata(grade=8, model="m", difficulty=Difficulty.easy),
     )
     verification = VerificationResult(passed=False, answer_match=False, details="wrong")

@@ -31,6 +31,8 @@ export interface GenerateParams {
   core_question_callback?: boolean;
   subject_filter?: string[];
   content_type?: string;
+  content_domain?: string;
+  target_surface?: "紙本" | "數位";
   passage?: string;
   options?: string[];
   topic?: string;

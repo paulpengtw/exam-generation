@@ -334,9 +334,6 @@ def test_ss_rebuild_covers_all_subquestion_model_fields() -> None:
         SubQuestion as SSSubQuestion,
     )
     from src.social_studies.schemas import (
-        TextForm,
-    )
-    from src.social_studies.schemas import (
         VerificationResult as SSVerificationResult,
     )
 
@@ -352,6 +349,7 @@ def test_ss_rebuild_covers_all_subquestion_model_fields() -> None:
         "學習表現": [SSLearningContentRef(編碼="社1b-IV-1", 說明="哨兵")],
         "出題概念": "SENTINEL-SS-出題概念",
         "出題指示": "SENTINEL-SS-出題指示",
+        "認知歷程": "Knowing–Defining and Describing",
         "題型": ss_q_type,
         "題目": "SENTINEL-SS-題目",
         "答案": "SENTINEL-SS-答案",
@@ -366,8 +364,8 @@ def test_ss_rebuild_covers_all_subquestion_model_fields() -> None:
 
     original_sq = SSSubQuestion(**sentinels)
 
-    # sq_raw for SS mutable fields; frozen fields (出題指示, 圖片, chart_spec,
-    # image_generation_mode, 題目內容類型) must come from original, not sq_raw.
+    # sq_raw for SS mutable fields; frozen fields (出題指示, 認知歷程, 圖片,
+    # chart_spec, image_generation_mode, 題目內容類型) must come from original, not sq_raw.
     sq_raw: dict = {
         "id": sentinels["id"],
         "序號": sentinels["序號"],
@@ -391,8 +389,6 @@ def test_ss_rebuild_covers_all_subquestion_model_fields() -> None:
         情境=["公共"],
         題型種類=next(iter(SSQuestionSetType)),
         題型=ss_q_type,
-        閱讀歷程=["擷取訊息"],
-        文本形式=next(iter(TextForm)),
         subquestions=[original_sq],
     )
     ss_verification = SSVerificationResult(
