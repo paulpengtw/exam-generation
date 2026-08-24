@@ -23,7 +23,7 @@
   ],
   "aliases": {
     "直方圖": ["histogram", "histogram chart"],
-    "長條圖": ["直條圖", "bar_chart", "bar chart", "bar_graph", "bar graph"],
+    "長條圖": ["直條圖", "bar_chart", "bar-chart", "bar chart", "bar_graph", "bar graph"],
     "盒鬚圖": ["boxplot", "box_plot", "box plot", "box-and-whisker plot"],
     "折線圖": ["line_chart", "line_graph", "line chart", "line graph"],
     "圓餅圖": ["圓形圖", "pie_chart", "pie chart"]
