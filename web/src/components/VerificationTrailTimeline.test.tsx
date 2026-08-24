@@ -91,4 +91,74 @@ describe("VerificationTrailTimeline", () => {
     expect(items[3]).toHaveAttribute("data-verdict", "failed");
     expect(items[3]).toHaveClass("bg-red-50");
   });
+
+  it("shows only changed fields in a correction by default", () => {
+    const initial: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "initial",
+      question_id: "q-432",
+      timestamp: "2026-08-24T00:00:00Z",
+      snapshot: { id: "q-432", 答案: "B", 題目: ["unchanged question"] },
+    };
+    const correction: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "correction",
+      question_id: "q-432",
+      retry_index: 1,
+      model: "correct-model",
+      timestamp: "2026-08-24T00:00:02Z",
+      snapshot: { id: "q-432", 答案: "A", 題目: ["unchanged question"] },
+    };
+
+    render(<VerificationTrailTimeline entries={[initial, correction]} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Agent autonomous verification and correction history",
+      }),
+    );
+
+    expect(screen.getByText("Changed fields")).toBeInTheDocument();
+    expect(screen.getByText("答案", { selector: "dt" })).toBeInTheDocument();
+    expect(screen.getByText("B → A")).toBeInTheDocument();
+    expect(screen.queryByText("題目", { selector: "dt" })).not.toBeInTheDocument();
+
+    const snapshotButtons = screen.getAllByRole("button", { name: "Show snapshot" });
+    expect(snapshotButtons).toHaveLength(2);
+    fireEvent.click(snapshotButtons[1]);
+
+    expect(screen.getByText(/"答案": "A"/)).toBeInTheDocument();
+  });
+
+  it("shows an explicit no-changes state for an identical correction snapshot", () => {
+    const snapshot = { id: "q-432-noop", 答案: "B", 題目: ["unchanged question"] };
+    const initial: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "initial",
+      question_id: "q-432-noop",
+      timestamp: "2026-08-24T00:00:00Z",
+      snapshot,
+    };
+    const correction: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "correction",
+      question_id: "q-432-noop",
+      retry_index: 1,
+      model: "correct-model",
+      timestamp: "2026-08-24T00:00:02Z",
+      snapshot: { id: "q-432-noop", 答案: "B", 題目: ["unchanged question"] },
+    };
+
+    render(<VerificationTrailTimeline entries={[initial, correction]} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Agent autonomous verification and correction history",
+      }),
+    );
+
+    expect(
+      screen.getByText("No fields changed in this correction."),
+    ).toBeInTheDocument();
+  });
 });
