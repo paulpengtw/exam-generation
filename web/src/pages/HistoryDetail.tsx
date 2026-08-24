@@ -157,6 +157,7 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
               recordId={detail.id}
               phase="verified"
               isFinal
+              trail={detail.verification_trail}
             />
           )
         )}

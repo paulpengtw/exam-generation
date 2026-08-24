@@ -25,7 +25,7 @@ export interface QuestionCardProps {
   recordId?: string;
   phase?: DraftPhase;
   isFinal?: boolean;
-  trail?: VerificationTrailEntry[];
+  trail?: VerificationTrailEntry[] | null;
 }
 
 interface VerificationShape {

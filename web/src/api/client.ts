@@ -1,5 +1,9 @@
 import { useAuthStore } from "../store/authStore";
-import { buildQueryString, type GenerateParams } from "../hooks/useGenerate";
+import {
+  buildQueryString,
+  type GenerateParams,
+  type VerificationTrailEntry,
+} from "../hooks/useGenerate";
 
 export interface MagicLinkResponse {
   message: string;
@@ -223,6 +227,7 @@ export interface HistoryDetail {
   error: string | null;
   params_json: Record<string, unknown>;
   question_json: Record<string, unknown> | null;
+  verification_trail: VerificationTrailEntry[] | null;
 }
 
 export interface ListHistoryOpts {

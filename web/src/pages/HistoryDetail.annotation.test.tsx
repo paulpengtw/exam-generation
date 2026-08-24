@@ -97,6 +97,23 @@ afterEach(() => {
 });
 
 describe("HistoryDetail 人工審題修正 integration", () => {
+  it("shows the no-trail state for a legacy history record", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      ...historyPayload(),
+      verification_trail: null,
+    });
+
+    renderHistoryDetail();
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "No Agent autonomous verification and correction history was recorded.",
+        ),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it("shows functional annotation affordances for a verified history record", async () => {
     getDetailMock.mockResolvedValueOnce(historyPayload());
 

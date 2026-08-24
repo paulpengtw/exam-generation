@@ -224,6 +224,7 @@ async def get_history_detail(
             if row.status == "completed"
             else None
         ),
+        "verification_trail": row.verification_trail_json,
     }
 
 
