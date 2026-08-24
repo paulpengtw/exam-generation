@@ -55,8 +55,8 @@ const SCIENCE_SCHEMA_WITH_CURRICULUM = {
   學習內容: MATH_SCHEMA_WITH_CURRICULUM.學習內容,
 };
 
-async function openConfirmation(subject = "math", initialParams = {}) {
-  render(<ParamForm subject={subject} onSubmit={vi.fn()} disabled={false} initialParams={initialParams} />);
+async function openConfirmation(subject = "math", initialParams = {}, onSubmit = vi.fn()) {
+  render(<ParamForm subject={subject} onSubmit={onSubmit} disabled={false} initialParams={initialParams} />);
   fireEvent.click(await screen.findByRole("button", { name: "產生" }));
   return screen.findByRole("heading", { name: "發送前確認設定" });
 }
@@ -475,6 +475,273 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(screen.getByRole("region", { name: "第3題" })).toBeInTheDocument();
   });
 
+  it("keeps confirmation instruction edits isolated per 題組 and leaves the form unchanged on 返回修改", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const originalConfigs = [
+      {
+        question_type: "選擇題",
+        instruction: "原始小題指示一",
+        text_word_limit: 11,
+        question_word_limit: 22,
+        option_word_limit: 33,
+        content_type: "純文字",
+        image_generation_mode: "html" as const,
+      },
+      {
+        question_type: "選擇題",
+        instruction: "原始小題指示二",
+        text_word_limit: 44,
+        question_word_limit: 55,
+        option_word_limit: 66,
+        content_type: "純文字",
+        image_generation_mode: "gpt_image" as const,
+      },
+      {
+        question_type: "選擇題",
+        instruction: "原始小題指示三",
+        text_word_limit: 77,
+        question_word_limit: 88,
+        option_word_limit: 99,
+        content_type: "純文字",
+        image_generation_mode: "html" as const,
+      },
+    ];
+
+    await openConfirmation("social_studies", {
+      count: 2,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: originalConfigs,
+    });
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    const secondQuestion = within(screen.getByRole("region", { name: "第2題" }));
+    const firstInstruction = firstQuestion.getAllByRole("textbox")[0];
+    const secondInstruction = secondQuestion.getAllByRole("textbox")[0];
+
+    expect(firstInstruction).toHaveValue("原始小題指示一");
+    expect(secondInstruction).toHaveValue("原始小題指示一");
+    fireEvent.change(firstInstruction, { target: { value: "第一題組修改後" } });
+
+    expect(firstInstruction).toHaveValue("第一題組修改後");
+    expect(secondInstruction).toHaveValue("原始小題指示一");
+    expect(firstQuestion.getAllByRole("textbox")[1]).toHaveValue("原始小題指示二");
+
+    fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+
+    expect(screen.getByRole("button", { name: "產生" })).toBeInTheDocument();
+    expect(screen.getAllByPlaceholderText("例如：請聚焦在資料判讀與因果推論")[0])
+      .toHaveValue("原始小題指示一");
+  });
+
+  it("renders one inline labelled instruction textarea in every confirmation card without an edit toggle", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+
+    await openConfirmation("social_studies", {
+      count: 2,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    });
+
+    for (const questionNumber of [1, 2]) {
+      const question = within(screen.getByRole("region", { name: `第${questionNumber}題` }));
+      const cards = question.getAllByRole("listitem");
+      expect(cards).toHaveLength(3);
+      cards.forEach((card) => {
+        expect(within(card).getByLabelText("出題指示")).toBeInTheDocument();
+      });
+      expect(question.queryByRole("button", { name: /編輯|edit/i })).not.toBeInTheDocument();
+    }
+  });
+
+  it("submits the edited instruction while preserving untouched nested rows and 題組 values", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const onSubmit = vi.fn();
+
+    await openConfirmation("social_studies", {
+      count: 2,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [
+        {
+          question_type: "選擇題",
+          instruction: "原始小題指示一",
+          text_word_limit: 11,
+          question_word_limit: 22,
+          option_word_limit: 33,
+          content_type: "純文字",
+          image_generation_mode: "html",
+        },
+        {
+          question_type: "選擇題",
+          instruction: "原始小題指示二",
+          text_word_limit: 44,
+          question_word_limit: 55,
+          option_word_limit: 66,
+          content_type: "純文字",
+          image_generation_mode: "gpt_image",
+        },
+        {
+          question_type: "選擇題",
+          instruction: "原始小題指示三",
+          text_word_limit: 77,
+          question_word_limit: 88,
+          option_word_limit: 99,
+          content_type: "純文字",
+          image_generation_mode: "html",
+        },
+      ],
+    }, onSubmit);
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    fireEvent.change(firstQuestion.getAllByLabelText("出題指示")[0], {
+      target: { value: "第一題組修改後" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const submittedPerQuestion = JSON.parse(
+      onSubmit.mock.calls[0][0].per_question_params,
+    ) as Array<{ subquestion_configs: string }>;
+    expect(JSON.parse(submittedPerQuestion[0].subquestion_configs)).toEqual([
+      {
+        question_type: "選擇題",
+        instruction: "第一題組修改後",
+        text_word_limit: 11,
+        question_word_limit: 22,
+        option_word_limit: 33,
+        content_type: "純文字",
+        image_generation_mode: "html",
+      },
+      {
+        question_type: "選擇題",
+        instruction: "原始小題指示二",
+        text_word_limit: 44,
+        question_word_limit: 55,
+        option_word_limit: 66,
+        content_type: "純文字",
+        image_generation_mode: "gpt_image",
+      },
+      {
+        question_type: "選擇題",
+        instruction: "原始小題指示三",
+        text_word_limit: 77,
+        question_word_limit: 88,
+        option_word_limit: 99,
+        content_type: "純文字",
+        image_generation_mode: "html",
+      },
+    ]);
+    expect(JSON.parse(submittedPerQuestion[1].subquestion_configs)).toEqual([
+      {
+        question_type: "選擇題",
+        instruction: "原始小題指示一",
+        text_word_limit: 11,
+        question_word_limit: 22,
+        option_word_limit: 33,
+        content_type: "純文字",
+        image_generation_mode: "html",
+      },
+      {
+        question_type: "選擇題",
+        instruction: "原始小題指示二",
+        text_word_limit: 44,
+        question_word_limit: 55,
+        option_word_limit: 66,
+        content_type: "純文字",
+        image_generation_mode: "gpt_image",
+      },
+      {
+        question_type: "選擇題",
+        instruction: "原始小題指示三",
+        text_word_limit: 77,
+        question_word_limit: 88,
+        option_word_limit: 99,
+        content_type: "純文字",
+        image_generation_mode: "html",
+      },
+    ]);
+  });
+
+  it("flips only the edited instruction badge to user-supplied", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+
+    await openConfirmation("social_studies", {
+      count: 2,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    });
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    const secondQuestion = within(screen.getByRole("region", { name: "第2題" }));
+    const firstCard = within(firstQuestion.getAllByRole("listitem")[0]);
+    const secondCard = within(secondQuestion.getAllByRole("listitem")[0]);
+
+    expect(firstCard.getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(secondCard.getByText("隨機抽取")).toHaveClass("text-amber-700");
+    fireEvent.change(firstCard.getByLabelText("出題指示"), {
+      target: { value: "第一題組修改後" },
+    });
+
+    expect(firstCard.getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(firstCard.queryByText("隨機抽取")).not.toBeInTheDocument();
+    expect(secondCard.getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(secondCard.queryByText("使用者選擇")).not.toBeInTheDocument();
+  });
+
+  it("keeps blank history instructions on the random badge", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+
+    await openConfirmation("social_studies", {
+      count: 2,
+      core_question: "已提供的核心問題",
+      per_question_params: JSON.stringify([
+        { subquestion_configs: JSON.stringify([{ instruction: "" }]) },
+        { subquestion_configs: JSON.stringify([{ instruction: "使用者原始指示" }]) },
+      ]),
+    });
+
+    const firstCard = within(
+      within(screen.getByRole("region", { name: "第1題" })).getAllByRole("listitem")[0],
+    );
+    const secondCard = within(
+      within(screen.getByRole("region", { name: "第2題" })).getAllByRole("listitem")[0],
+    );
+
+    expect(firstCard.getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(firstCard.queryByText("使用者選擇")).not.toBeInTheDocument();
+    expect(secondCard.getByText("使用者選擇")).toHaveClass("text-green-700");
+  });
+
+  it("applies normal form instruction semantics without adding confirmation metadata", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const onSubmit = vi.fn();
+
+    await openConfirmation("social_studies", {
+      count: 1,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    }, onSubmit);
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    fireEvent.change(firstQuestion.getAllByLabelText("出題指示")[0], {
+      target: { value: "  使用者指示  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const submittedPerQuestion = JSON.parse(
+      onSubmit.mock.calls[0][0].per_question_params,
+    ) as Array<Record<string, unknown>>;
+    expect(JSON.parse(submittedPerQuestion[0].subquestion_configs as string)).toEqual([
+      { instruction: "使用者指示" },
+      {},
+      {},
+    ]);
+    expect(submittedPerQuestion[0]).not.toHaveProperty("confirmation_edit");
+  });
+
   it("renders shared 年級 once and renders 種子 only in each per-question block", async () => {
     await openConfirmation("math", { count: 2, seed: 700 });
 
@@ -762,7 +1029,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
 
     const expectedRows = [
       "題型: （隨機）",
-      "出題指示: 未填寫",
       "題目內容類型: （沿用文本設定）",
       "圖片生成模式: （沿用文本設定）",
       "題目字數限制: 不限",
@@ -776,6 +1042,8 @@ describe("ParamForm 發送前確認 display semantics", () => {
       const title = question.getByText(`第 ${index} 小題`);
       const card = within(title.closest("li")!);
       expectedRows.forEach((text) => expect(card.getByText(text)).toBeInTheDocument());
+      expect(card.getByText("出題指示", { selector: "label" })).toBeInTheDocument();
+      expect(card.getByPlaceholderText("例如：請聚焦在資料判讀與因果推論")).toHaveValue("");
     }
   });
 

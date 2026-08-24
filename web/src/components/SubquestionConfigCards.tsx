@@ -1,6 +1,7 @@
 import type { SchemaEntry } from "../api/client";
 import type { SubQuestionConfig } from "../components/ParamForm";
 import { useT } from "../i18n/useT";
+import { SubQuestionInstructionField } from "./SubQuestionConfigEditor";
 
 export type ResolvedSubQuestionConfig = SubQuestionConfig & {
   _lcWasAutoDrawn?: boolean;
@@ -12,11 +13,13 @@ export default function SubquestionConfigCards({
   subject,
   lcEntryByCode,
   lpEntryByCode,
+  onInstructionChange,
 }: {
   configs: ResolvedSubQuestionConfig[];
   subject: string;
   lcEntryByCode: Map<string, SchemaEntry>;
   lpEntryByCode: Map<string, SchemaEntry>;
+  onInstructionChange?: (subquestionIndex: number, instruction: string) => void;
 }) {
   const t = useT();
 
@@ -29,7 +32,18 @@ export default function SubquestionConfigCards({
           </h5>
           <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type ?? t("form.confirm_random")}</div>
           {subject === "social_studies" && <div className="text-sm text-gray-700">{t("form.confirm_subq_cognitive_process")} {row.cognitive_process ?? t("form.confirm_random")}</div>}
-          <div className="text-sm text-gray-700">{t("form.confirm_subq_instruction")} {row.instruction ?? t("form.confirm_not_filled")}</div>
+          {onInstructionChange ? (
+            <SubQuestionInstructionField
+              config={row}
+              badge={{
+                label: t(row.instruction?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_random"),
+                className: `text-xs font-medium ${row.instruction?.trim() ? "text-green-700" : "text-amber-700"}`,
+              }}
+              onChange={(patch) => onInstructionChange(subquestionIndex, patch.instruction ?? "")}
+            />
+          ) : (
+            <div className="text-sm text-gray-700">{t("form.confirm_subq_instruction")} {row.instruction ?? t("form.confirm_not_filled")}</div>
+          )}
           <div className="text-sm text-gray-700">{t("form.confirm_subq_content_type")} {row.content_type ?? t("form.confirm_inherit_text")}</div>
           <div className="text-sm text-gray-700">{t("form.confirm_subq_image_mode")} {row.image_generation_mode ?? t("form.confirm_inherit_text")}</div>
           <div className="text-sm text-gray-700">{t("form.confirm_subq_q_word_limit")} {row.question_word_limit ?? t("form.confirm_unlimited")}</div>
