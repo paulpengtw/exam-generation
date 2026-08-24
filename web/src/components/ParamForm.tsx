@@ -888,6 +888,8 @@ export default function ParamForm({
   const [modelsResolved, setModelsResolved] = useState(false);
   const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(true);
   const previewRequestedRef = useRef(false);
+  const previewRefetchSeqRef = useRef(0);
+  const [previewRefetchLoading, setPreviewRefetchLoading] = useState(false);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
@@ -1192,6 +1194,53 @@ export default function ParamForm({
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [coreQuestionResolution, pendingParams, subject]);
+
+  // Debounced re-fetch triggered by 確認頁修改 (#445).
+  // Gates on hasPendingConfirmationEdits so that opening the confirmation screen
+  // (which sets pendingPerQuestionParams) does not schedule a spurious second fetch.
+  useEffect(() => {
+    if (!pendingParams || !pendingPerQuestionParams || !hasPendingConfirmationEdits) return;
+
+    const seq = ++previewRefetchSeqRef.current;
+
+    const timeoutId = window.setTimeout(() => {
+      if (seq !== previewRefetchSeqRef.current) return; // superseded before timeout fired
+      setPreviewRefetchLoading(true);
+      const params: typeof pendingParams = {
+        ...pendingParams,
+        per_question_params: JSON.stringify(pendingPerQuestionParams),
+      };
+      void previewGenerate(toGenerateParams(subject, params))
+        .then(({ prompts }) => {
+          if (seq !== previewRefetchSeqRef.current) return; // superseded
+          if (
+            Array.isArray(prompts) &&
+            prompts.every((prompt) => (
+              Number.isInteger(prompt?.index) &&
+              prompt.index >= 0 &&
+              (
+                prompt.subquestion_index === undefined ||
+                (
+                  Number.isInteger(prompt.subquestion_index) &&
+                  prompt.subquestion_index >= 0
+                )
+              ) &&
+              typeof prompt?.system_prompt === "string" &&
+              typeof prompt?.user_prompt === "string"
+            ))
+          ) {
+            setPromptPreviews(prompts);
+          }
+          setPreviewRefetchLoading(false);
+        })
+        .catch(() => {
+          if (seq !== previewRefetchSeqRef.current) return;
+          setPreviewRefetchLoading(false);
+        });
+    }, 500);
+
+    return () => { window.clearTimeout(timeoutId); };
+  }, [hasPendingConfirmationEdits, pendingPerQuestionParams, pendingParams, subject]);
 
   useEffect(() => {
     if (!pendingParams || coreQuestionResolution !== "loading") return;
@@ -2491,6 +2540,9 @@ export default function ParamForm({
             ))}
           </dl>
         </section>
+        {previewRefetchLoading && (
+          <p className="text-sm text-amber-700">{t("form.confirm_preview_loading")}</p>
+        )}
         <div className="space-y-4">
           {resolvedPerQuestionParams.map((questionParams, index) => {
             const heading = t("form.confirm_question_block").replace("{n}", String(index + 1));

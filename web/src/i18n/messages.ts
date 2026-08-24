@@ -260,6 +260,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_subquestion_generator_prompt_preview": "Sub-question Generator (sub-question {n}) prompts to be sent",
     "form.confirm_system_prompt": "System prompt",
     "form.confirm_user_prompt": "User prompt",
+    "form.confirm_preview_loading": "Loading previews…",
 
     "statusbar.aria": "Generation status bar",
     "statusbar.not_started": "Not generated yet",
@@ -691,6 +692,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_subquestion_generator_prompt_preview": "子題產生器（第{n}小題）將送出的提示詞",
     "form.confirm_system_prompt": "系統提示詞",
     "form.confirm_user_prompt": "使用者提示詞",
+    "form.confirm_preview_loading": "提示詞預覽載入中…",
 
     "statusbar.aria": "生成進度列",
     "statusbar.not_started": "尚未生成",
