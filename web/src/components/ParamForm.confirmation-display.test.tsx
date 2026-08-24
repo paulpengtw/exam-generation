@@ -1444,17 +1444,18 @@ describe("ParamForm 發送前確認 display semantics", () => {
     const question = within(screen.getByRole("region", { name: "第1題" }));
     expect(screen.queryByText("[{},{},{}]")).not.toBeInTheDocument();
 
-    const expectedRows = [
-      "題目字數限制: 不限",
-      "選項字數限制: 不限",
-      "文本字數限制: 不限",
+    const expectedStaticRows = [
       "學習內容: （沿用全域設定）",
       "學習表現: （沿用全域設定）",
     ];
     for (const index of [1, 2, 3]) {
       const title = question.getByText(`第 ${index} 小題`);
       const card = within(title.closest("li")!);
-      expectedRows.forEach((text) => expect(card.getByText(text)).toBeInTheDocument());
+      expectedStaticRows.forEach((text) => expect(card.getByText(text)).toBeInTheDocument());
+      // Word-limit fields are now editable inputs (not static text)
+      expect(card.getByLabelText("題目字數限制")).toBeInTheDocument();
+      expect(card.getByLabelText("選項字數限制")).toBeInTheDocument();
+      expect(card.getByLabelText("文本字數限制")).toBeInTheDocument();
       const contentType = card.getByLabelText("題目內容類型");
       expect(contentType).toHaveValue("");
       expect(within(contentType.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
@@ -1626,6 +1627,97 @@ describe("ParamForm 發送前確認 display semantics", () => {
     getSchemasMock.mockResolvedValue(SCIENCE_SCHEMA);
     await openConfirmation("natural_sciences");
     expect(screen.queryByText("（無）")).not.toBeInTheDocument();
+  });
+
+  // ──── #442 Word-limit editable fields ────────────────────────────────────────
+
+  it("#442 renders editable 題目字數限制 inputs in each card and shows 確定發送 enabled when blank", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    await openConfirmation("social_studies", {
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    });
+
+    const question = within(screen.getByRole("region", { name: "第1題" }));
+    const cards = question.getAllByRole("listitem");
+    expect(within(cards[0]).getByLabelText("題目字數限制")).toBeInTheDocument();
+    expect(within(cards[1]).getByLabelText("題目字數限制")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "確定發送" })).toBeEnabled();
+  });
+
+  it("#442 shows inline error and disables 確認送出 when word limit is invalid, re-enables after correction", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    await openConfirmation("social_studies", {
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    });
+
+    const question = within(screen.getByRole("region", { name: "第1題" }));
+    const card = within(question.getAllByRole("listitem")[0]);
+    const input = card.getByLabelText("題目字數限制");
+    const confirmBtn = screen.getByRole("button", { name: "確定發送" });
+
+    // invalid: zero
+    fireEvent.change(input, { target: { value: "0" } });
+    expect(confirmBtn).toBeDisabled();
+
+    // corrected: valid positive integer
+    fireEvent.change(input, { target: { value: "50" } });
+    expect(confirmBtn).toBeEnabled();
+  });
+
+  it("#442 word-limit edit lands in the correct subquestion_configs row on 確認送出", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const onSubmit = vi.fn();
+
+    await openConfirmation("social_studies", {
+      count: 2,
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [
+        { question_word_limit: 10 },
+        { option_word_limit: 20 },
+        {},
+      ],
+    }, onSubmit);
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    const firstCard = within(firstQuestion.getAllByRole("listitem")[0]);
+    fireEvent.change(firstCard.getByLabelText("題目字數限制"), { target: { value: "99" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const submittedPerQuestion = JSON.parse(
+      onSubmit.mock.calls[0][0].per_question_params,
+    ) as Array<{ subquestion_configs: string }>;
+    const firstQuestionConfigs = JSON.parse(submittedPerQuestion[0].subquestion_configs);
+    expect(firstQuestionConfigs[0]).toMatchObject({ question_word_limit: 99 });
+    // second 題組 is independent
+    const secondQuestionConfigs = JSON.parse(submittedPerQuestion[1].subquestion_configs);
+    expect(secondQuestionConfigs[0]).toMatchObject({ question_word_limit: 10 });
+  });
+
+  it("#442 unset word-limit badge shows neutral 不限 style, set badge shows 使用者選擇", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    await openConfirmation("social_studies", {
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+      subquestion_configs: [{}, {}, {}],
+    });
+
+    const question = within(screen.getByRole("region", { name: "第1題" }));
+    const card = within(question.getAllByRole("listitem")[0]);
+    const input = card.getByLabelText("題目字數限制");
+
+    // unset → neutral gray badge
+    const unsetBadge = within(input.parentElement!).getByText("不限");
+    expect(unsetBadge).toHaveClass("text-gray-600");
+
+    // set a value → user-chosen green badge
+    fireEvent.change(input, { target: { value: "30" } });
+    expect(within(input.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
   });
 
   it("does not render a 科目 row for 自然科學", async () => {
