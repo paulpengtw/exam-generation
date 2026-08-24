@@ -850,6 +850,38 @@ const PIN_RULE_MESSAGE_KEYS: Record<SocialStudiesPinRuleViolation, string> = {
   cross_subject_relate: "form.pin_rule.cross_subject_relate",
 };
 
+/**
+ * Returns true when the server response contains a well-formed array of
+ * prompt previews.  Extracted at module level so the debounced-refetch effect
+ * and the retry handler share one copy (#446 — prevents predicate drift).
+ */
+function isValidPromptPreviewResponse(
+  prompts: unknown,
+): prompts is Array<{
+  index: number;
+  subquestion_index: number | undefined;
+  system_prompt: string;
+  user_prompt: string;
+}> {
+  return (
+    Array.isArray(prompts) &&
+    prompts.every(
+      (prompt) =>
+        Number.isInteger(prompt?.index) &&
+        prompt.index >= 0 &&
+        (
+          prompt.subquestion_index === undefined ||
+          (
+            Number.isInteger(prompt.subquestion_index) &&
+            prompt.subquestion_index >= 0
+          )
+        ) &&
+        typeof prompt?.system_prompt === "string" &&
+        typeof prompt?.user_prompt === "string",
+    )
+  );
+}
+
 export default function ParamForm({
   subject = "math",
   onSubmit,
@@ -891,11 +923,10 @@ export default function ParamForm({
   const previewRefetchSeqRef = useRef(0);
   const [previewRefetchLoading, setPreviewRefetchLoading] = useState(false);
   // #446: per-題組 stale-preview tracking. Keyed by 題組 index.
+  // When non-empty a retry control appears on each stale 題組.
   const [stalePreviewIndices, setStalePreviewIndices] = useState<Set<number>>(new Set());
   // Accumulates which 題組 indices were edited since the last refetch effect captured them.
   const pendingEditedIndicesRef = useRef<Set<number>>(new Set());
-  // Params from the last failed refetch; used by the retry handler.
-  const [previewRetryParams, setPreviewRetryParams] = useState<Parameters<typeof previewGenerate>[0] | null>(null);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
@@ -1178,22 +1209,7 @@ export default function ParamForm({
     void previewGenerate(toGenerateParams(subject, pendingParams))
       .then(({ prompts }) => {
         if (cancelled) return;
-        if (
-          Array.isArray(prompts) &&
-          prompts.every((prompt) => (
-            Number.isInteger(prompt?.index) &&
-            prompt.index >= 0 &&
-            (
-              prompt.subquestion_index === undefined ||
-              (
-                Number.isInteger(prompt.subquestion_index) &&
-                prompt.subquestion_index >= 0
-              )
-            ) &&
-            typeof prompt?.system_prompt === "string" &&
-            typeof prompt?.user_prompt === "string"
-          ))
-        ) {
+        if (isValidPromptPreviewResponse(prompts)) {
           setPromptPreviews(prompts);
         }
       })
@@ -1226,35 +1242,18 @@ export default function ParamForm({
       void previewGenerate(fetchParams)
         .then(({ prompts }) => {
           if (seq !== previewRefetchSeqRef.current) return; // superseded
-          if (
-            Array.isArray(prompts) &&
-            prompts.every((prompt) => (
-              Number.isInteger(prompt?.index) &&
-              prompt.index >= 0 &&
-              (
-                prompt.subquestion_index === undefined ||
-                (
-                  Number.isInteger(prompt.subquestion_index) &&
-                  prompt.subquestion_index >= 0
-                )
-              ) &&
-              typeof prompt?.system_prompt === "string" &&
-              typeof prompt?.user_prompt === "string"
-            ))
-          ) {
+          if (isValidPromptPreviewResponse(prompts)) {
             setPromptPreviews(prompts);
           }
           setPreviewRefetchLoading(false);
           // #446: clear stale state on success
           setStalePreviewIndices(new Set());
-          setPreviewRetryParams(null);
         })
         .catch(() => {
           if (seq !== previewRefetchSeqRef.current) return;
           setPreviewRefetchLoading(false);
-          // #446: mark only the edited 題組 as stale; store params for retry
+          // #446: mark only the edited 題組 as stale
           setStalePreviewIndices((prev) => new Set([...prev, ...capturedEditedIndices]));
-          setPreviewRetryParams(fetchParams);
         });
     }, 500);
 
@@ -2289,7 +2288,6 @@ export default function ParamForm({
     setHasPendingConfirmationEdits(false);
     // #446: reset stale state when the confirmation screen is (re-)opened
     setStalePreviewIndices(new Set());
-    setPreviewRetryParams(null);
     pendingEditedIndicesRef.current = new Set();
     setPendingResolvedSubquestionConfigs(
       usingHistoryPerQuestionParams
@@ -2330,7 +2328,6 @@ export default function ParamForm({
     setHasPendingConfirmationEdits(false);
     // #446: clear stale state on submit
     setStalePreviewIndices(new Set());
-    setPreviewRetryParams(null);
     onSubmit(submittedParams);
   }
 
@@ -2467,42 +2464,33 @@ export default function ParamForm({
     });
   }
 
-  // #446: retry handler — re-runs the last failed refetch using stored params.
-  // On success, clears stale state. On failure, keeps the stale badge and
-  // allows the user to retry again.
+  // #446: retry handler — re-fetches using the CURRENT live configuration, not
+  // a stale snapshot.  Building params here the same way the debounced effect
+  // does means the race is harmless: whichever request lands last carries live
+  // config either way.  On success the stale badge clears; on failure it stays
+  // so the user can retry again.
   function retryPreviewFetch() {
-    if (!previewRetryParams || previewRefetchLoading) return;
+    if (!pendingParams || !pendingPerQuestionParams || stalePreviewIndices.size === 0 || previewRefetchLoading) return;
     const seq = ++previewRefetchSeqRef.current;
     setPreviewRefetchLoading(true);
-    void previewGenerate(previewRetryParams)
+    const formParams = {
+      ...pendingParams,
+      per_question_params: JSON.stringify(pendingPerQuestionParams),
+    };
+    const fetchParams = toGenerateParams(subject, formParams);
+    void previewGenerate(fetchParams)
       .then(({ prompts }) => {
         if (seq !== previewRefetchSeqRef.current) return;
-        if (
-          Array.isArray(prompts) &&
-          prompts.every((prompt) => (
-            Number.isInteger(prompt?.index) &&
-            prompt.index >= 0 &&
-            (
-              prompt.subquestion_index === undefined ||
-              (
-                Number.isInteger(prompt.subquestion_index) &&
-                prompt.subquestion_index >= 0
-              )
-            ) &&
-            typeof prompt?.system_prompt === "string" &&
-            typeof prompt?.user_prompt === "string"
-          ))
-        ) {
+        if (isValidPromptPreviewResponse(prompts)) {
           setPromptPreviews(prompts);
         }
         setPreviewRefetchLoading(false);
         setStalePreviewIndices(new Set());
-        setPreviewRetryParams(null);
       })
       .catch(() => {
         if (seq !== previewRefetchSeqRef.current) return;
         setPreviewRefetchLoading(false);
-        // Leave stale badge and retry params so the user can retry again
+        // Leave stale badge in place so the user can retry again
       });
   }
 
@@ -2856,7 +2844,6 @@ export default function ParamForm({
                 setConfirmInvalidFields(new Map());
                 // #446: clear stale state when navigating back to the form
                 setStalePreviewIndices(new Set());
-                setPreviewRetryParams(null);
               }}
               className="rounded border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 hover:bg-gray-50"
             >
