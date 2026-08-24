@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import type { SchemaEntry } from "../api/client";
 import { useT } from "../i18n/useT";
 import type { SubQuestionConfig } from "./ParamForm";
@@ -232,6 +232,77 @@ function optionalNumber(raw: string): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function isValidWordLimit(raw: string): boolean {
+  if (raw.trim() === "") return true;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1;
+}
+
+export interface SubQuestionWordLimitFieldProps {
+  config: SubQuestionConfig;
+  field: "question_word_limit" | "option_word_limit" | "text_word_limit";
+  labelKey: string;
+  placeholder?: string;
+  onChange: (patch: Partial<SubQuestionConfig>) => void;
+  /** When provided, enables validation mode: invalid inputs show an error and are not saved to config. */
+  onValidityChange?: (isValid: boolean) => void;
+  badge?: { label: string; className: string };
+}
+
+export function SubQuestionWordLimitField({
+  config,
+  field,
+  labelKey,
+  placeholder,
+  onChange,
+  onValidityChange,
+  badge,
+}: SubQuestionWordLimitFieldProps) {
+  const id = useId();
+  const t = useT();
+  // Use local state so an invalid input (e.g. "0") stays visible without updating config.
+  // The initializer reads config[field] once; subsequent updates go through handleChange.
+  const [rawValue, setRawValue] = useState<string>(() => config[field]?.toString() ?? "");
+
+  const hasError = onValidityChange != null && rawValue !== "" && !isValidWordLimit(rawValue);
+
+  function handleChange(raw: string) {
+    setRawValue(raw);
+    const valid = isValidWordLimit(raw);
+    if (onValidityChange) {
+      // Validation mode (confirmation card): only update config when valid.
+      onValidityChange(valid);
+      if (valid) {
+        onChange({ [field]: optionalNumber(raw) } as Partial<SubQuestionConfig>);
+      }
+    } else {
+      // No-validation mode (form editor): always update config, matching prior behaviour.
+      onChange({ [field]: optionalNumber(raw) } as Partial<SubQuestionConfig>);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={id} className="block text-xs text-gray-500">
+          {t(labelKey as Parameters<typeof t>[0])}
+        </label>
+        {badge && <span className={badge.className}>{badge.label}</span>}
+      </div>
+      <input
+        id={id}
+        type="number"
+        min={1}
+        value={rawValue}
+        onChange={(e) => handleChange(e.target.value)}
+        placeholder={placeholder ?? t("form.confirm_unlimited")}
+        className={`mt-0.5 block w-full border rounded px-1.5 py-1 text-sm${hasError ? " border-red-500" : ""}`}
+      />
+      {hasError && <p className="mt-0.5 text-xs text-red-600">{t("form.confirm_word_limit_error")}</p>}
+    </div>
+  );
+}
+
 function questionTypeOptions(
   subject: string,
   questionTypes: SchemaEntry[],
@@ -280,39 +351,27 @@ export default function SubQuestionConfigEditor({
             </select>
           </div>
         )}
-        <div>
-          <label className="block text-xs text-gray-500">文本字數限制</label>
-          <input
-            type="number"
-            min={1}
-            value={config.text_word_limit ?? ""}
-            onChange={(e) => onChange({ text_word_limit: optionalNumber(e.target.value) })}
-            placeholder="不限"
-            className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500">題目字數限制</label>
-          <input
-            type="number"
-            min={1}
-            value={config.question_word_limit ?? ""}
-            onChange={(e) => onChange({ question_word_limit: optionalNumber(e.target.value) })}
-            placeholder="不限"
-            className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500">選項字數限制</label>
-          <input
-            type="number"
-            min={1}
-            value={config.option_word_limit ?? ""}
-            onChange={(e) => onChange({ option_word_limit: optionalNumber(e.target.value) })}
-            placeholder="選擇題適用"
-            className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
-          />
-        </div>
+        <SubQuestionWordLimitField
+          config={config}
+          field="text_word_limit"
+          labelKey="form.confirm_subq_text_word_limit_input"
+          placeholder="不限"
+          onChange={onChange}
+        />
+        <SubQuestionWordLimitField
+          config={config}
+          field="question_word_limit"
+          labelKey="form.confirm_subq_q_word_limit_input"
+          placeholder="不限"
+          onChange={onChange}
+        />
+        <SubQuestionWordLimitField
+          config={config}
+          field="option_word_limit"
+          labelKey="form.confirm_subq_o_word_limit_input"
+          placeholder="選擇題適用"
+          onChange={onChange}
+        />
         <SubQuestionContentTypeField
           config={config}
           contentTypes={contentTypes}

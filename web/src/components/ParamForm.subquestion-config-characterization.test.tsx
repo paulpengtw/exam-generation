@@ -19,6 +19,9 @@ vi.mock("../i18n/useT", () => ({
     if (key === "form.confirm_subq_image_mode_input") return "圖片生成模式";
     if (key === "form.confirm_subq_instruction_input") return "出題指示";
     if (key === "form.confirm_subq_instruction_placeholder") return "例如：請聚焦在資料判讀與因果推論";
+    if (key === "form.confirm_subq_text_word_limit_input") return "文本字數限制";
+    if (key === "form.confirm_subq_q_word_limit_input") return "題目字數限制";
+    if (key === "form.confirm_subq_o_word_limit_input") return "選項字數限制";
     return key;
   },
 }));

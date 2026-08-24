@@ -874,6 +874,8 @@ export default function ParamForm({
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
   const [pendingPerQuestionParams, setPendingPerQuestionParams] = useState<Record<string, unknown>[] | null>(null);
   const [hasPendingConfirmationEdits, setHasPendingConfirmationEdits] = useState(false);
+  // Generic gate: keyed by "${questionIndex}-${subquestionIndex}-${field}". Any truthy entry disables 確認送出.
+  const [confirmInvalidFields, setConfirmInvalidFields] = useState<Map<string, true>>(new Map());
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
   const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
   const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
@@ -2335,6 +2337,59 @@ export default function ParamForm({
     });
   }
 
+  function updatePendingSubquestionQuestionWordLimit(
+    questionIndex: number,
+    subquestionIndex: number,
+    value: number | undefined,
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      question_word_limit: value,
+    });
+  }
+
+  function updatePendingSubquestionOptionWordLimit(
+    questionIndex: number,
+    subquestionIndex: number,
+    value: number | undefined,
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      option_word_limit: value,
+    });
+  }
+
+  function updatePendingSubquestionTextWordLimit(
+    questionIndex: number,
+    subquestionIndex: number,
+    value: number | undefined,
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      text_word_limit: value,
+    });
+  }
+
+  /**
+   * Generic gate: registers/clears a field's validity.
+   * Any registered invalid field disables 確認送出.
+   * This is field-agnostic — future editable fields call this the same way.
+   */
+  function setConfirmFieldValidity(
+    questionIndex: number,
+    subquestionIndex: number,
+    fieldKey: string,
+    isValid: boolean,
+  ) {
+    const key = `${questionIndex}-${subquestionIndex}-${fieldKey}`;
+    setConfirmInvalidFields((prev) => {
+      const next = new Map(prev);
+      if (!isValid) {
+        next.set(key, true);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  }
+
   if (pendingParams) {
     const p = pendingParams;
     const resolvedPerQuestionParams = pendingPerQuestionParams ?? (p.per_question_params
@@ -2572,6 +2627,18 @@ export default function ParamForm({
                       onReportingScaleChange={(subquestionIndex, reportingScale) =>
                         updatePendingSubquestionReportingScale(index, subquestionIndex, reportingScale)
                       }
+                      onQuestionWordLimitChange={(subquestionIndex, value) =>
+                        updatePendingSubquestionQuestionWordLimit(index, subquestionIndex, value)
+                      }
+                      onOptionWordLimitChange={(subquestionIndex, value) =>
+                        updatePendingSubquestionOptionWordLimit(index, subquestionIndex, value)
+                      }
+                      onTextWordLimitChange={(subquestionIndex, value) =>
+                        updatePendingSubquestionTextWordLimit(index, subquestionIndex, value)
+                      }
+                      onFieldValidityChange={(subquestionIndex, fieldKey, isValid) =>
+                        setConfirmFieldValidity(index, subquestionIndex, fieldKey, isValid)
+                      }
                     />
                   </section>
                 )}
@@ -2637,7 +2704,7 @@ export default function ParamForm({
           <button
             type="button"
             onClick={handleConfirmSend}
-            disabled={disabled}
+            disabled={disabled || confirmInvalidFields.size > 0}
             className="inline-flex items-center gap-2 rounded bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("form.btn_confirm_send")}
@@ -2649,6 +2716,7 @@ export default function ParamForm({
                 setPendingParams(null);
                 setPendingPerQuestionParams(null);
                 setHasPendingConfirmationEdits(false);
+                setConfirmInvalidFields(new Map());
               }}
               className="rounded border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 hover:bg-gray-50"
             >
