@@ -83,6 +83,7 @@ class GenerationRecord(Base):
     annotations_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     question_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     verification_trail_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    figure_policy_trail_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     image_files: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     status: Mapped[str] = mapped_column(
         GenerationRecordStatus, nullable=False, default="completed"

@@ -7,6 +7,7 @@ import type {
   SubQuestion,
   RubricEntry,
   VerificationTrailEntry,
+  FigurePolicyTrailEntry,
 } from "../hooks/useGenerate";
 import { useModificationRun } from "../hooks/useModificationRun";
 import { useT } from "../i18n/useT";
@@ -19,6 +20,7 @@ import FigureRenderer, {
 } from "./FigureRenderer";
 import GenerationStatusBar from "./GenerationStatusBar";
 import VerificationTrailTimeline from "./VerificationTrailTimeline";
+import FigurePolicyTrailTimeline from "./FigurePolicyTrailTimeline";
 import InteractiveItemViewer, { type InteractionSubmission } from "./InteractiveItemViewer";
 
 export interface QuestionCardProps {
@@ -27,6 +29,7 @@ export interface QuestionCardProps {
   phase?: DraftPhase;
   isFinal?: boolean;
   trail?: VerificationTrailEntry[] | null;
+  figurePolicyTrail?: FigurePolicyTrailEntry[] | null;
   onInteractionSubmit?: (submission: InteractionSubmission) => void;
 }
 
@@ -415,6 +418,7 @@ export default function QuestionCard({
   phase = "verified",
   isFinal = true,
   trail = [],
+  figurePolicyTrail = [],
   onInteractionSubmit,
 }: QuestionCardProps) {
   const t = useT();
@@ -759,6 +763,7 @@ export default function QuestionCard({
       )}
 
       <VerificationTrailTimeline entries={trail} />
+      <FigurePolicyTrailTimeline entries={figurePolicyTrail} />
 
       {modificationResult && (
         <>

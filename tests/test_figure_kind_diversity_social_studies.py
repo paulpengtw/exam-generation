@@ -213,7 +213,7 @@ def test_clean_visual_run_emits_figure_policy_entries_for_the_題幹_and_visual_
         disable_reference_fewshot=True,
         image_generation_mode="gpt_image",
         sub_client_factory=lambda: _SubClient("地圖"),
-        on_figure_policy_entry=events.append,
+        on_figure_policy_entry=lambda entry: events.append(entry.model_dump(mode="json")),
     )
 
     assert [entry["kind"] for entry in events] == ["spec", "spec"]
@@ -241,7 +241,7 @@ def test_collision_repair_is_recorded_in_the_figure_policy_trail(tmp_path: Path)
         disable_reference_fewshot=True,
         image_generation_mode="gpt_image",
         sub_client_factory=lambda: _SubClient("表格"),
-        on_figure_policy_entry=events.append,
+        on_figure_policy_entry=lambda entry: events.append(entry.model_dump(mode="json")),
     )
 
     collisions = [entry for entry in events if entry["kind"] == "collision"]

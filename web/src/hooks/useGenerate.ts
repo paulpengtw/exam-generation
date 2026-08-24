@@ -137,6 +137,56 @@ export type VerificationTrailEntry =
   | VerificationTrailInitialEntry
   | VerificationTrailCorrectionEntry;
 
+export interface FigurePolicySpecEntry {
+  code: "figure_policy";
+  kind: "spec";
+  question_id: string;
+  label: string;
+  effective_figure_kind: string;
+  timestamp: string;
+}
+
+export interface FigurePolicyCollisionEntry {
+  code: "figure_policy";
+  kind: "collision";
+  question_id: string;
+  left: string;
+  right: string;
+  effective_figure_kind: string;
+  timestamp: string;
+}
+
+export interface FigurePolicyRepairEntry {
+  code: "figure_policy";
+  kind: "repair";
+  question_id: string;
+  target: string;
+  before_effective_figure_kind: string;
+  after_effective_figure_kind: string;
+  forbidden_kinds: string[];
+  succeeded: boolean;
+  error?: string | null;
+  timestamp: string;
+}
+
+export interface FigurePolicyWarningEntry {
+  code: "figure_policy";
+  kind: "warning";
+  question_id: string;
+  message: string;
+  duplicate_image_shipped: boolean;
+  left?: string | null;
+  right?: string | null;
+  effective_figure_kind?: string | null;
+  timestamp: string;
+}
+
+export type FigurePolicyTrailEntry =
+  | FigurePolicySpecEntry
+  | FigurePolicyCollisionEntry
+  | FigurePolicyRepairEntry
+  | FigurePolicyWarningEntry;
+
 export type DraftPhase = "draft" | "image" | "verified" | "corrected";
 
 export interface GeneratedQuestion {

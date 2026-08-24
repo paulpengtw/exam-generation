@@ -188,7 +188,7 @@ class SubjectGenerationSpec:
 
     # Render per-subquestion image specs to PNGs.
     # Signature: (question, config, client, html_renderer, image_generation_mode,
-    #              obs, params) -> list[str]
+    #              obs, params, on_figure_policy_entry=...) -> list[str]
     # None → no-op
     render_subquestion_images_fn: Callable | None
 

@@ -19,6 +19,7 @@ from collections.abc import Callable, Sequence
 from enum import Enum
 from typing import Any, get_args
 
+from src.common.figure_policy_trail import FigurePolicyTrailEvent
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
     VerificationTrailEvent,
@@ -181,6 +182,7 @@ def generate_one_core(
     core_question_callback: bool = False,
     on_question_update: Callable | None = None,
     on_trail_entry: Callable[[VerificationTrailEvent], None] | None = None,
+    on_figure_policy_entry: Callable[[FigurePolicyTrailEvent], None] | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -390,7 +392,14 @@ def generate_one_core(
     # ── Subquestion image rendering ────────────────────────────────────────
     if spec.render_subquestion_images_fn is not None:
         subquestion_image_paths = spec.render_subquestion_images_fn(
-            question, config, client, html_renderer, image_generation_mode, obs, params,
+            question,
+            config,
+            client,
+            html_renderer,
+            image_generation_mode,
+            obs,
+            params,
+            on_figure_policy_entry=on_figure_policy_entry,
         )
         if chart_image_path is None and subquestion_image_paths:
             chart_image_path = subquestion_image_paths[0]
@@ -443,6 +452,7 @@ def generate_with_corrections_core(
     core_question_callback: bool = False,
     on_question_update: Callable | None = None,
     on_trail_entry: Callable[[VerificationTrailEvent], None] | None = None,
+    on_figure_policy_entry: Callable[[FigurePolicyTrailEvent], None] | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -467,6 +477,7 @@ def generate_with_corrections_core(
         core_question_callback=core_question_callback,
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,
+        on_figure_policy_entry=on_figure_policy_entry,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,

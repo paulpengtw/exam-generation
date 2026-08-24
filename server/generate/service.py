@@ -305,6 +305,7 @@ def _worker_one(
     emit_question_update = make_question_update_emitter(i, ctx.loop, ctx.queue, ctx.config)
     emit_trail_entry = make_trail_emitter(ctx.loop, ctx.queue)
     verification_trail: list[dict[str, Any]] = []
+    figure_policy_trail: list[dict[str, Any]] = []
 
     def capture_trail_entry(entry: Any) -> None:
         payload = (
@@ -314,6 +315,14 @@ def _worker_one(
         )
         verification_trail.append(payload)
         emit_trail_entry(entry)
+
+    def capture_figure_policy_entry(entry: Any) -> None:
+        payload = (
+            entry.model_dump(mode="json")
+            if hasattr(entry, "model_dump")
+            else entry
+        )
+        figure_policy_trail.append(payload)
 
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:
@@ -356,6 +365,7 @@ def _worker_one(
             core_question_callback=ctx.params.core_question_callback,
             on_question_update=emit_question_update,
             on_trail_entry=None if ctx.params.skip_verify else capture_trail_entry,
+            on_figure_policy_entry=capture_figure_policy_entry,
             prior_scopes=prior_snapshot,
             balanced_batch=ctx.balanced_batch,
         )
@@ -383,6 +393,8 @@ def _worker_one(
         }
         if verification_trail:
             result_event["verification_trail"] = verification_trail
+        if figure_policy_trail:
+            result_event["figure_policy_trail"] = figure_policy_trail
         ctx.loop.call_soon_threadsafe(
             ctx.queue.put_nowait,
             result_event,
@@ -499,6 +511,7 @@ async def generate_question_stream(
                     payload=event["data"],
                     session_factory=_session_factory,
                     verification_trail_json=event.get("verification_trail"),
+                    figure_policy_trail_json=event.get("figure_policy_trail"),
                 )
             yield event
             if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):

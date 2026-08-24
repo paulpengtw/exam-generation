@@ -1,6 +1,7 @@
 import { useAuthStore } from "../store/authStore";
 import {
   buildQueryString,
+  type FigurePolicyTrailEntry,
   type GenerateParams,
   type VerificationTrailEntry,
 } from "../hooks/useGenerate";
@@ -232,6 +233,7 @@ export interface HistoryDetail {
   params_json: Record<string, unknown>;
   question_json: Record<string, unknown> | null;
   verification_trail: VerificationTrailEntry[] | null;
+  figure_policy_trail: FigurePolicyTrailEntry[] | null;
 }
 
 export interface ListHistoryOpts {

@@ -33,6 +33,7 @@ async def persist_generation_record(
     parent_record_id: uuid.UUID | None = None,
     annotations_json: dict[str, Any] | None = None,
     verification_trail_json: list[dict[str, Any]] | None = None,
+    figure_policy_trail_json: list[dict[str, Any]] | None = None,
 ) -> uuid.UUID | None:
     """Insert one generation_records row and return its id on success.
 
@@ -55,6 +56,7 @@ async def persist_generation_record(
             annotations_json=annotations_json,
             question_json=strip_image_base64(payload),
             verification_trail_json=verification_trail_json,
+            figure_policy_trail_json=figure_policy_trail_json,
             image_files=extract_image_files(payload),
             status="completed",
         )

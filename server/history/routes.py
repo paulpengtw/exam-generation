@@ -225,6 +225,7 @@ async def get_history_detail(
             else None
         ),
         "verification_trail": row.verification_trail_json,
+        "figure_policy_trail": row.figure_policy_trail_json,
     }
 
 
