@@ -40,7 +40,7 @@ Questions can include images, described by an `ImageSpec` on the generated quest
 | `"chart"` | `src/renderer.py` `render_chart()` | Deterministic matplotlib — `histogram`, `boxplot`, `line_chart`, `pie_chart` |
 | `"html"` | `src/html_renderer.py` `PlaywrightRenderer` | Sonnet writes HTML/CSS/SVG → Playwright screenshots to PNG |
 
-The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. Math and curriculum-subject generation accept an `image_generation_mode` parameter — set it to `gpt_image` to send the image spec to `IMAGE_MODEL` (default `gpt-image2`) and write the returned PNG directly, bypassing the Playwright and matplotlib paths. Social studies supports both shared 題組 images (`question.chart_spec`) and per-小題 images (`subquestions[*].chart_spec`). The web UI exposes a main `圖片生成模式`; per-小題 rows can override it, or leave it blank to inherit the main mode. Generated `subquestions[*].image_generation_mode` is output metadata only and does not override the submitted renderer choice. The API/CLI default mode is `html`; the web form UI defaults to `gpt_image` (GPT 生圖). The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()`.
+The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. Math and curriculum-subject generation accept an `image_generation_mode` parameter — set it to `gpt_image` to send the image spec to `IMAGE_MODEL` (default `gpt-image2`) and write the returned PNG directly, bypassing the Playwright and matplotlib paths. Social studies and natural sciences support both shared 題組 images (`question.chart_spec`) and per-小題 images (`subquestions[*].chart_spec`). The web UI exposes a main `圖片生成模式`; per-小題 rows can override it, or leave it blank to inherit the main mode. Generated `subquestions[*].image_generation_mode` is output metadata only and does not override the submitted renderer choice. The API/CLI default mode is `html`; the web form UI defaults to `gpt_image` (GPT 生圖). The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()`.
 
 ### Key Principles
 
@@ -228,7 +228,7 @@ Environment variables (set in `.env` or export directly):
 | `LLM_BASE_URL` | CLI + server | Base URL for the Anthropic endpoint | `https://api.anthropic.com/v1` |
 | `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-sonnet-4-6` |
 | `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `claude-sonnet-4-6` |
-| `IMAGE_API_KEY` | CLI + server | API key for optional GPT image generation (used by both math and social studies when `image_generation_mode=gpt_image`) | — |
+| `IMAGE_API_KEY` | CLI + server | API key for optional GPT image generation (used by math, social studies, and natural sciences when `image_generation_mode=gpt_image`) | — |
 | `IMAGE_BASE_URL` | CLI + server | Base URL for the image generation endpoint | `https://api.openai.com/v1` |
 | `IMAGE_MODEL` | CLI + server | Image generation model used when GPT image mode is selected | `gpt-image2` |
 | `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
@@ -504,9 +504,9 @@ Each generated question produces a JSON file following this schema:
 }
 ```
 
-For image-based questions, a corresponding PNG file is generated in the same output directory. Social-studies per-小題 images use filenames like `{question_id}_sq{序號}.png`; SSE result payloads embed these as `subquestions[*].image_base64`, and the web UI / ODT export render them inline with the matching 小題. `chart_verification` is only present when a chart image was rendered and sent to the verifier; it is omitted (`null`) for text-only questions.
+For image-based questions, a corresponding PNG file is generated in the same output directory. Social-studies and natural-sciences per-小題 images use filenames like `{question_id}_sq{序號}.png`; SSE result payloads embed these as `subquestions[*].image_base64`, and the web UI / ODT export render them inline with the matching 小題. `chart_verification` is only present when a chart image was rendered and sent to the verifier; it is omitted (`null`) for text-only questions.
 
-Social studies and natural sciences use a 題組 shape with `subquestions[]`. For social studies, the parent item is locked as 題組題 and the top-level `題型` is a legacy/primary value, while each `subquestions[*].題型` may vary independently. The web UI sets social-studies 題型 on each 小題 row; blank rows are sampled randomly by the backend. Per-小題 free-text instructions are persisted as `subquestions[*].出題指示`. Social-studies subquestions can also include per-小題 `題目內容類型`, `image_generation_mode`, `chart_spec`, `圖片`, and `image_base64` when the prompt or web/API row config asks for visual material. For social studies and natural sciences, `subquestions[]` is populated by N parallel 子題產生器 LLM calls (one per 子題); the assembled question then proceeds through image rendering, verification, and correction as usual.
+Social studies and natural sciences use a 題組 shape with `subquestions[]`. For social studies, the parent item is locked as 題組題 and the top-level `題型` is a legacy/primary value, while each `subquestions[*].題型` may vary independently. The web UI sets social-studies 題型 on each 小題 row; blank rows are sampled randomly by the backend. Per-小題 free-text instructions are persisted as `subquestions[*].出題指示`. Social-studies and natural-sciences subquestions can include per-小題 `題目內容類型`, `image_generation_mode`, `chart_spec`, `圖片`, and `image_base64` when the prompt or web/API row config asks for visual material. For social studies and natural sciences, `subquestions[]` is populated by N parallel 子題產生器 LLM calls (one per 子題); the assembled question then proceeds through image rendering, verification, and correction as usual.
 
 ### Image Rendering
 
@@ -823,7 +823,7 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 | `html` + `render_mode="chart"` | `render_chart()` → `_render_histogram/boxplot/line_chart/pie_chart()` | 50-71 |
 | `html` + `render_mode="html"` | `_generate_html_via_llm()` (LLM call #2) → `html_renderer.render()` | 271-308 |
 
-25. On render success: `question.圖片 = "{question_id}.png"`, `chart_image_path` = absolute PNG path. Social-studies `subquestions[*].chart_spec` entries are rendered by `src/social_studies/cli.py` to `{question_id}_sq{序號}.png`; the subquestion stores `圖片`, and `server/generate/service.py` embeds the PNG as `subquestions[*].image_base64` for the React card and ODT export.
+25. On render success: `question.圖片 = "{question_id}.png"`, `chart_image_path` = absolute PNG path. Social-studies and natural-sciences `subquestions[*].chart_spec` entries are rendered by their subject CLI to `{question_id}_sq{序號}.png`; the subquestion stores `圖片`, and `server/generate/service.py` embeds the PNG as `subquestions[*].image_base64` for the React card and ODT export.
 
 **File: `src/cli.py` inside `generate_one()`, `src/verifier.py`**
 
