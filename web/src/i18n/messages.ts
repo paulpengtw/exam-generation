@@ -261,6 +261,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_system_prompt": "System prompt",
     "form.confirm_user_prompt": "User prompt",
     "form.confirm_preview_loading": "Loading previews…",
+    "form.confirm_preview_stale_badge": "Preview stale",
+    "form.confirm_preview_retry": "Retry preview",
 
     "statusbar.aria": "Generation status bar",
     "statusbar.not_started": "Not generated yet",
@@ -693,6 +695,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_system_prompt": "系統提示詞",
     "form.confirm_user_prompt": "使用者提示詞",
     "form.confirm_preview_loading": "提示詞預覽載入中…",
+    "form.confirm_preview_stale_badge": "預覽已過期",
+    "form.confirm_preview_retry": "重新載入預覽",
 
     "statusbar.aria": "生成進度列",
     "statusbar.not_started": "尚未生成",
