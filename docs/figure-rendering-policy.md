@@ -112,8 +112,9 @@ prepare the evidence but must not self-declare GO.
 The three prompt assemblers already encode this rule in their
 `CONTENT_TYPE_INSTRUCTIONS` tables (`src/context_builder.py`,
 `src/social_studies/context_builder.py`,
-`src/natural_sciences/context_builder.py`). Concretely, given
-`題目內容類型` (or `文本素材類型` for 社會領域 全域):
+`src/natural_sciences/context_builder.py`). The table applies at the level
+where the content type is configured: `題目內容類型` (or `文本素材類型` for
+社會領域 全域), including a per-小題 configuration for 題組 subjects.
 
 | 題目內容類型 | Instruction MUST direct the model to |
 | --- | --- |
@@ -122,9 +123,21 @@ The three prompt assemblers already encode this rule in their
 | `graphs/charts/tables` | Emit `chart_spec` with `render_mode: "chart"` for statistical charts; `render_mode: "html"` for tables and semantic-overlay charts. |
 | `customized` | Follow the user-supplied instruction verbatim; no default. |
 
+For 社會領域 and 自然科學, a per-小題 `含圖片` or
+`graphs/charts/tables` configuration therefore requires the 小題's own
+`SubQuestion.chart_spec` to be non-null. 自然科學 now follows the same
+per-小題 image contract as 社會領域: its schema carries both `chart_spec`
+and `image_generation_mode`, and its 子題 prompt echoes the configured
+content type and image mode while requiring the visual spec. The NS
+`_NS_SPEC` wires one repair attempt per missing required 小題 spec before
+rendering; an unusable or failed repair leaves that 小題 without an image and
+does not abort the 題組. `image_generation_mode` selects the rendering
+backend only—by itself it never requires an image, and a `純文字` 小題 does
+not trigger the repair.
+
 ## Enforcement
 
-- Figure-kind diversity across SS 題幹 and 小題 images is specified in [ADR 0015](adr/0015-figure-kind-diversity-is-a-layered-guarantee.md).
+- Figure-kind diversity across SS 題幹 and 小題 images is specified in [ADR 0015](adr/0015-figure-kind-diversity-is-a-layered-guarantee.md); it does not currently extend to NS (see [ADR 0017](adr/0017-ns-subquestion-image-support-mirrors-social-studies.md)).
 
 - `tests/test_figure_rendering_policy.py::test_plain_text_bans_chart_spec`,
   `::test_illustrative_content_routes_to_gpt_image_or_html`, and

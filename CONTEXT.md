@@ -11,7 +11,7 @@ A parent item consisting of a shared 文本 plus several 小題. The unit that �
 _Avoid_: question set, question group
 
 **圖像種類**:
-The concrete visual genre of a 題組 image — 直方圖, 圓餅圖, 表格, 地圖, 實驗裝置 and similar — independent of which renderer produces it. By default every image in a 題組 has a distinct 圖像種類.
+The concrete visual genre of a 題組 image — 直方圖, 圓餅圖, 表格, 地圖, 實驗裝置 and similar — independent of which renderer produces it. The ADR 0015 distinct-kind guarantee is currently 社會領域-only; 自然科學 supports 題幹 and 小題 images but is outside that guarantee.
 _Avoid_: image kind / figure type / chart kind
 
 **小題**:
@@ -47,7 +47,7 @@ _Avoid_: global pool, request-level codes, parent codes
 ### 設定 (Configuration)
 
 **各小題配置**:
-The per-小題 settings a user supplies before generation — 題型, 出題指示, 字數限制, and explicit 學習內容/學習表現.
+The per-小題 settings a user supplies before generation — 題型, 出題指示, 題目內容類型, 圖片生成模式, 字數限制, and explicit 學習內容/學習表現.
 _Avoid_: subquestion config, per-item settings
 
 **出題指示**:
