@@ -280,8 +280,8 @@ def _ns_validate_params(params: Any) -> None:
 
 
 def _ss_validate_params(params: Any) -> None:
-    from src.social_studies.schemas import ContentDomain  # noqa: PLC0415
     from src.social_studies.schema_loader import load_schemas  # noqa: PLC0415
+    from src.social_studies.schemas import ContentDomain  # noqa: PLC0415
 
     question_type_values = {
         row["value"]
