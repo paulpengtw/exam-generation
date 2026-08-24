@@ -130,6 +130,179 @@ describe("VerificationTrailTimeline", () => {
     expect(screen.getByText(/"答案": "A"/)).toBeInTheDocument();
   });
 
+  it("switches a correction from the changed-fields diff to labeled full snapshots", () => {
+    const initial: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "initial",
+      question_id: "q-427",
+      timestamp: "2026-08-24T00:00:00Z",
+      snapshot: {
+        id: "q-427",
+        題目: "before full question",
+        答案: "B",
+      },
+    };
+    const correction: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "correction",
+      question_id: "q-427",
+      retry_index: 1,
+      model: "correct-model",
+      timestamp: "2026-08-24T00:00:02Z",
+      snapshot: {
+        id: "q-427",
+        題目: "after full question",
+        答案: "A",
+      },
+    };
+
+    render(<VerificationTrailTimeline entries={[initial, correction]} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Agent autonomous verification and correction history",
+      }),
+    );
+
+    const sideBySideButton = screen.getByRole("button", {
+      name: "Show before and after snapshots",
+    });
+    expect(sideBySideButton).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(sideBySideButton);
+
+    expect(
+      screen.getByRole("button", { name: "Hide before and after snapshots" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("Changed fields")).not.toBeInTheDocument();
+    expect(screen.getByText("Before correction")).toBeInTheDocument();
+    expect(screen.getByText("After correction")).toBeInTheDocument();
+    expect(screen.getByText(/"題目": "before full question"/)).toBeInTheDocument();
+    expect(screen.getByText(/"答案": "B"/)).toBeInTheDocument();
+    expect(screen.getByText(/"題目": "after full question"/)).toBeInTheDocument();
+    expect(screen.getByText(/"答案": "A"/)).toBeInTheDocument();
+  });
+
+  it("keeps the first correction in diff view when the second correction is toggled", () => {
+    const initial: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "initial",
+      question_id: "q-427-two-corrections",
+      timestamp: "2026-08-24T00:00:00Z",
+      snapshot: { id: "q-427-two-corrections", 答案: "B" },
+    };
+    const firstCorrection: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "correction",
+      question_id: "q-427-two-corrections",
+      retry_index: 1,
+      model: "correct-model-1",
+      timestamp: "2026-08-24T00:00:01Z",
+      snapshot: { id: "q-427-two-corrections", 答案: "A" },
+    };
+    const secondCorrection: VerificationTrailEntry = {
+      ...firstCorrection,
+      retry_index: 2,
+      model: "correct-model-2",
+      timestamp: "2026-08-24T00:00:02Z",
+      snapshot: { id: "q-427-two-corrections", 答案: "C" },
+    };
+
+    render(
+      <VerificationTrailTimeline
+        entries={[initial, firstCorrection, secondCorrection]}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Agent autonomous verification and correction history",
+      }),
+    );
+
+    const sideBySideButtons = screen.getAllByRole("button", {
+      name: "Show before and after snapshots",
+    });
+    expect(sideBySideButtons).toHaveLength(2);
+
+    fireEvent.click(sideBySideButtons[1]);
+
+    expect(
+      screen.getAllByRole("button", { name: "Show before and after snapshots" }),
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByRole("button", { name: "Hide before and after snapshots" }),
+    ).toHaveLength(1);
+    expect(screen.getByText("B → A")).toBeInTheDocument();
+    expect(screen.queryByText("A → C")).not.toBeInTheDocument();
+  });
+
+  it("returns a correction to its changed-fields diff when toggled back", () => {
+    const initial: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "initial",
+      question_id: "q-427-toggle-back",
+      timestamp: "2026-08-24T00:00:00Z",
+      snapshot: { id: "q-427-toggle-back", 答案: "B" },
+    };
+    const correction: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "correction",
+      question_id: "q-427-toggle-back",
+      retry_index: 1,
+      model: "correct-model",
+      timestamp: "2026-08-24T00:00:02Z",
+      snapshot: { id: "q-427-toggle-back", 答案: "A" },
+    };
+
+    render(<VerificationTrailTimeline entries={[initial, correction]} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Agent autonomous verification and correction history",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show before and after snapshots" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Hide before and after snapshots" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Show before and after snapshots" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Changed fields")).toBeInTheDocument();
+    expect(screen.getByText("B → A")).toBeInTheDocument();
+    expect(screen.queryByText("Before correction")).not.toBeInTheDocument();
+    expect(screen.queryByText("After correction")).not.toBeInTheDocument();
+  });
+
+  it("does not offer the side-by-side toggle for an initial entry", () => {
+    const initial: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "initial",
+      question_id: "q-427-initial",
+      timestamp: "2026-08-24T00:00:00Z",
+      snapshot: { id: "q-427-initial", 題目: "initial question" },
+    };
+
+    render(<VerificationTrailTimeline entries={[initial]} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Agent autonomous verification and correction history",
+      }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Show before and after snapshots" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Hide before and after snapshots" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows an explicit no-changes state for an identical correction snapshot", () => {
     const snapshot = { id: "q-432-noop", 答案: "B", 題目: ["unchanged question"] };
     const initial: VerificationTrailEntry = {
