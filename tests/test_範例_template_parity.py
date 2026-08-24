@@ -54,3 +54,17 @@ def test_範例_schema_params_categories_match_live() -> None:
         f"Missing:  {sorted(live_categories - template_categories)}\n"
         f"Extra:    {sorted(template_categories - live_categories)}"
     )
+
+
+def test_範例_few_shot_body_iccs_coverage() -> None:
+    """AC1 row-level: exactly 3 demo groups; 認知歷程 covers all 4 ICCS buckets; 內容領域 from schema.
+
+    Guards that a template with a correct header but fabricated row values (wrong group
+    count, made-up 認知歷程, or 內容領域 absent from the live schema) cannot slip past
+    the gate undetected.
+    """
+    # Row-level body assertions not yet implemented — placeholder forces red.
+    raise NotImplementedError(
+        "row-level AC1 body coverage not yet implemented; "
+        "replace this placeholder with real assertions"
+    )
