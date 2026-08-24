@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 
-import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
+import type { DragDropSpec, ExamQuestion, SliderSpec, SubQuestion } from "../hooks/useGenerate";
 import { buildExamOdt } from "./odt";
 
 async function readContentXml(blob: Blob): Promise<string> {
@@ -114,6 +114,74 @@ describe("buildExamOdt ICCS metadata", () => {
     expect(xml).not.toContain("內容領域");
     expect(xml).not.toContain("認知歷程");
     expect(xml).not.toContain("undefined");
+    expect(xml).not.toContain("以下互動題目未列入紙本輸出");
+  });
+});
+
+describe("buildExamOdt interactive subquestions", () => {
+  it("omits interactive items and appends a web-viewer manifest", async () => {
+    const makeSubQuestion = (
+      sequence: number,
+      type: string,
+      text: string,
+      interaction?: DragDropSpec | SliderSpec,
+    ): SubQuestion => ({
+      id: `interactive-sq${sequence}`,
+      序號: sequence,
+      年級: 8,
+      科目: ["地理"],
+      核心素養: [],
+      學習內容: [],
+      學習表現: [],
+      出題概念: "",
+      題型: type,
+      題目: text,
+      答案: "答案",
+      答案解析: "解析",
+      ...(interaction ? { interaction } : {}),
+    });
+    const question: ExamQuestion = {
+      id: "interactive-ss1",
+      情境: ["公共"],
+      題型種類: "題組題",
+      題型: "選擇題",
+      核心問題: "核心問題",
+      文本: "文本",
+      subquestions: [
+        makeSubQuestion(1, "選擇題", "紙本小題一"),
+        makeSubQuestion(2, "拖放題", "拖放互動題目不應出現在 ODT", {
+          draggables: [{ id: "d1", label: "拖曳項目" }],
+          targets: [{ id: "t1", label: "放置目標", capacity: 1 }],
+          correct_mapping: { d1: "t1" },
+          exact_match: true,
+          shuffle_draggables: false,
+        }),
+        makeSubQuestion(3, "選擇題", "紙本小題三"),
+        makeSubQuestion(4, "滑桿題", "滑桿互動題目不應出現在 ODT", {
+          min: 0,
+          max: 100,
+          step: 1,
+          unit: "%",
+          correct_value: 75,
+          tolerance: 5,
+          show_ticks: true,
+        }),
+        makeSubQuestion(5, "選擇題", "紙本小題五"),
+      ],
+      題目: ["文本", "紙本小題一", "拖放互動題目不應出現在 ODT", "紙本小題三", "滑桿互動題目不應出現在 ODT", "紙本小題五"],
+      正確解題分析: ["答案"],
+    };
+
+    const xml = await readContentXml(await buildExamOdt("t", [question]));
+    const manifest = "以下互動題目未列入紙本輸出，請於網頁檢視器作答：第2小題（拖放題）、第4小題（滑桿題）";
+
+    expect(xml).toContain("紙本小題一");
+    expect(xml).toContain("紙本小題三");
+    expect(xml).toContain("紙本小題五");
+    expect(xml).not.toContain("拖放互動題目不應出現在 ODT");
+    expect(xml).not.toContain("滑桿互動題目不應出現在 ODT");
+    expect(xml).toContain(manifest);
+    expect(xml.indexOf("紙本小題五")).toBeLessThan(xml.indexOf(manifest));
   });
 });
 
