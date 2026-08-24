@@ -1446,12 +1446,9 @@ describe("ParamForm 發送前確認 display semantics", () => {
     const question = within(screen.getByRole("region", { name: "第1題" }));
     expect(screen.queryByText("[{},{},{}]")).not.toBeInTheDocument();
 
-    const expectedStaticRows: string[] = [
-    ];
     for (const index of [1, 2, 3]) {
       const title = question.getByText(`第 ${index} 小題`);
       const card = within(title.closest("li")!);
-      expectedStaticRows.forEach((text) => expect(card.getByText(text)).toBeInTheDocument());
       // Word-limit fields are now editable inputs (not static text)
       expect(card.getByLabelText("題目字數限制")).toBeInTheDocument();
       expect(card.getByLabelText("選項字數限制")).toBeInTheDocument();
