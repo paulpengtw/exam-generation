@@ -21,14 +21,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE_DIR = REPO_ROOT / "data" / "social_studies" / "example_exams"
 OUTPUT_DIR = REPO_ROOT / "data" / "social_studies" / "few_shot" / "images"
 
-ODT_TO_EXAMPLE: dict[str, str] = {
-    "1918年流感_20240319.docx.odt": "ex001",
-    "電子垃圾_20240319.docx.odt": "ex002",
-    "大城市病_20240319.docx.odt": "ex003",
-    "移工_20240319.docx.odt": "ex004",
-    "中華奧會魔法展_20240319.docx.odt": "ex005",
-    "漠南咖啡豆_20240319.docx.odt": "ex006",
-}
+# Mapping retired in #542 (PISA-reading corpus removal).
+# ex001–ex006 entries are intentionally removed so re-running this script
+# cannot silently regenerate the deleted corpus images.
+# When #544 adds ICCS-native ODTs, add their entries here.
+ODT_TO_EXAMPLE: dict[str, str] = {}
 
 _NS = {
     "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",

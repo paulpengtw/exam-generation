@@ -92,9 +92,13 @@ def test_public_loader_api_is_keyed_by_content_type() -> None:
 
 @pytest.mark.parametrize("content_type", CONTENT_TYPES)
 def test_checked_in_corpus_is_loaded_from_the_content_type_home(content_type: str) -> None:
-    examples = load_few_shot_examples(Path("data/social_studies/few_shot"), content_type)
+    """Smoke test: loading the corpus does not raise even when Channel-1 is empty (#542).
 
-    assert examples
+    After #542 the Channel-1 corpus is empty; the non-emptiness assertion is removed.
+    This test will re-validate corpus shape when #544 refills Channel-1.
+    """
+    examples = load_few_shot_examples(Path("data/social_studies/few_shot"), content_type)
+    # No assertion on non-emptiness — corpus is intentionally empty until #544
     for example in examples:
         question = example["question"]
         assert question["題目內容類型"] == content_type
@@ -107,18 +111,18 @@ def test_checked_in_corpus_is_loaded_from_the_content_type_home(content_type: st
             assert subquestion["認知歷程"] in COGNITIVE_PROCESSES
 
 
-def test_retired_constructed_response_items_are_not_in_the_corpus() -> None:
-    examples = load_few_shot_examples(Path("data/social_studies/few_shot"), "純文字")
+def test_channel1_corpus_is_empty_post_removal() -> None:
+    """After #542 the Channel-1 corpus (純文字, 混合, graphs/charts/tables) is empty.
 
-    assert {example["description"] for example in examples} >= {
-        "1918年流感疫情與公共衛生題組（2小題示範）",
-        "社區防災公聽會題組（2種小題題型示範）",
-    }
-    assert all(
-        subquestion["題型"] != "封閉式建構反應題"
-        for example in examples
-        for subquestion in example["question"].get("subquestions", [])
-    )
+    The 1918年流感 and other PISA-era rows were retired by #542. This test pins the
+    post-removal state; it will be replaced/updated when #544 refills the corpus.
+    """
+    for content_type in CONTENT_TYPES:
+        examples = load_few_shot_examples(Path("data/social_studies/few_shot"), content_type)
+        assert examples == [], (
+            f"Expected empty Channel-1 corpus for {content_type!r} after #542 removal, "
+            f"got {len(examples)} examples"
+        )
 
 
 def test_empty_or_unpopulated_content_type_returns_no_examples(tmp_path: Path) -> None:

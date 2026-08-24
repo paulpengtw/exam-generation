@@ -120,6 +120,21 @@ def test_math_few_shot_has_at_least_two_distractor_examples() -> None:
 
 
 def test_ss_few_shot_has_at_least_two_distractor_examples() -> None:
+    """Skip when Channel-1 SS corpus is empty (#542); re-arms when #544 refills it."""
+    import pytest
+
+    # Channel-1 lives outside process_exemplars/; skip when no Channel-1 JSONs exist
+    channel1_root = Path("data/social_studies/few_shot")
+    channel1_jsons = [
+        f for f in channel1_root.rglob("*.json")
+        if "process_exemplars" not in str(f)
+    ]
+    if not channel1_jsons:
+        pytest.skip(
+            "Channel-1 SS corpus is empty after #542 (PISA-reading corpus retired); "
+            "this test re-arms automatically when #544 refills the corpus with "
+            "ICCS-native examples"
+        )
     # 誘答分析 must live on subquestions[*] for SS (not top-level question dict)
     assert _count_ss_subquestion_distractor(_iter_ss_questions()) >= 2
 
