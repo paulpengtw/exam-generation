@@ -60,6 +60,7 @@ function SnapshotTrailItem({
   t: (key: string) => string;
 }) {
   const isCorrection = entry.kind === "correction";
+  const [sideBySideOpen, setSideBySideOpen] = useState(false);
   const changes = isCorrection
     ? diffSnapshots(beforeSnapshot ?? {}, entry.snapshot)
     : [];
@@ -89,25 +90,62 @@ function SnapshotTrailItem({
           />
         </dl>
       )}
-      {isCorrection && (
-        <div className="mt-2 rounded border border-blue-100 bg-white p-2">
-          <div className="font-medium text-gray-700">
-            {t("card.trailChangedFields")}
-          </div>
-          {changes.length > 0 ? (
-            <dl className="mt-1 space-y-1">
-              {changes.map((change) => (
-                <DetailRow
-                  key={change.path}
-                  label={change.path}
-                  value={`${formatSnapshotValue(change.before)} → ${formatSnapshotValue(change.after)}`}
-                />
-              ))}
-            </dl>
-          ) : (
-            <p className="mt-1 text-gray-600">{t("card.trailNoChanges")}</p>
-          )}
+      {isCorrection && beforeSnapshot !== undefined && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            aria-pressed={sideBySideOpen}
+            onClick={() => setSideBySideOpen((previous) => !previous)}
+            className="text-sm font-medium text-blue-700 hover:text-blue-800"
+          >
+            {t(
+              sideBySideOpen
+                ? "card.trailHideSideBySide"
+                : "card.trailShowSideBySide",
+            )}
+          </button>
         </div>
+      )}
+      {isCorrection && sideBySideOpen && beforeSnapshot !== undefined ? (
+        <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+          <div className="min-w-0 rounded border border-blue-100 bg-white p-2">
+            <div className="font-medium text-gray-700">
+              {t("card.trailBeforeCorrection")}
+            </div>
+            <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-gray-800">
+              {JSON.stringify(beforeSnapshot, null, 2)}
+            </pre>
+          </div>
+          <div className="min-w-0 rounded border border-blue-100 bg-white p-2">
+            <div className="font-medium text-gray-700">
+              {t("card.trailAfterCorrection")}
+            </div>
+            <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-gray-800">
+              {JSON.stringify(entry.snapshot, null, 2)}
+            </pre>
+          </div>
+        </div>
+      ) : (
+        isCorrection && (
+          <div className="mt-2 rounded border border-blue-100 bg-white p-2">
+            <div className="font-medium text-gray-700">
+              {t("card.trailChangedFields")}
+            </div>
+            {changes.length > 0 ? (
+              <dl className="mt-1 space-y-1">
+                {changes.map((change) => (
+                  <DetailRow
+                    key={change.path}
+                    label={change.path}
+                    value={`${formatSnapshotValue(change.before)} → ${formatSnapshotValue(change.after)}`}
+                  />
+                ))}
+              </dl>
+            ) : (
+              <p className="mt-1 text-gray-600">{t("card.trailNoChanges")}</p>
+            )}
+          </div>
+        )
       )}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium text-gray-700">{t("card.trailSnapshot")}</span>
