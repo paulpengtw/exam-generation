@@ -32,8 +32,6 @@ _enums = build_enums_by_category(_schemas)
 QuestionContext = _enums["情境"]
 QuestionSetType = _enums["題型種類"]
 QuestionType = _enums["題型"]
-ReadingProcess = _enums["閱讀歷程"]
-TextForm = _enums["文本形式"]
 QuestionSubject = _enums["科目"]
 CognitiveProcess = _enums["認知歷程"]
 ContentDomain = _enums["內容領域"]
@@ -285,15 +283,16 @@ class ExamQuestion(BaseModel):
     取材來源: list[str] = Field(default_factory=list)
     subquestions: list[SubQuestion] = Field(default_factory=list)
 
-    # PISA framing tags (kept for compatibility and question diversity)
+    # Retired legacy tags: only populated when deserializing old records.
     情境: list[QuestionContext]  # type: ignore[valid-type]
     題型種類: QuestionSetType  # type: ignore[valid-type]
     題型: QuestionType | str  # type: ignore[valid-type]
-    閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
-    文本形式: TextForm  # type: ignore[valid-type]
+    閱讀歷程: list[str] = Field(default_factory=list)
+    文本形式: str | None = None
     題目內容類型: str | None = None
     內容領域: str | None = None
-    認知歷程: list[str] = Field(default_factory=list)
+    # The field's presence discriminates ICCS records from legacy records.
+    認知歷程: list[str] | None = None
 
     # Legacy flat arrays retained for backward compatibility with verifier / corrector
     題目: list[str] = Field(default_factory=list)
@@ -316,7 +315,11 @@ class ExamQuestion(BaseModel):
 
     @field_validator("認知歷程")
     @classmethod
-    def cognitive_processes_must_be_known(cls, value: list[str]) -> list[str]:
+    def cognitive_processes_must_be_known(
+        cls, value: list[str] | None
+    ) -> list[str] | None:
+        if value is None:
+            return None
         for process in value:
             _validate_cognitive_process(process)
         return value
@@ -340,8 +343,6 @@ class SampledParams(BaseModel):
     題型: list[
         QuestionType
     ]  # allowed pool of types; each 子題 picks its own  # type: ignore[valid-type]
-    閱讀歷程: list[ReadingProcess]  # type: ignore[valid-type]
-    文本形式: TextForm  # type: ignore[valid-type]
     題目內容類型: str = ""  # top-level 文本素材類型 (renamed in UI for #101)
     科目: QuestionSubject  # type: ignore[valid-type]
     內容領域: ContentDomain | None = None  # type: ignore[valid-type]

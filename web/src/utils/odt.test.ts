@@ -48,6 +48,30 @@ describe("buildExamOdt ICCS metadata", () => {
     expect(metadataLines).toContain(`9年級 ｜ 選擇題 ｜ 公民 ｜ ${reasoning}`);
   });
 
+  it("emits retired tags for legacy social-studies records", async () => {
+    const question: ExamQuestion = {
+      id: "legacy-axes-ss1",
+      情境: ["公共"],
+      題型種類: "題組題",
+      題型: "選擇題",
+      閱讀歷程: ["legacy process"],
+      文本形式: "legacy text form",
+      核心問題: "核心問題",
+      文本: "文本",
+      subquestions: [firstLegacySubquestion()],
+      題目: ["文本", "小題"],
+      正確解題分析: ["A"],
+    };
+
+    const metadataLines = readMetadataLines(
+      await readContentXml(await buildExamOdt("t", [question])),
+    );
+
+    expect(metadataLines.some((line) =>
+      line.includes("legacy process") && line.includes("legacy text form"),
+    )).toBe(true);
+  });
+
   it("renders native and legacy rubric codes plus a retired legacy type as text", async () => {
     const sub: SubQuestion = {
       id: "legacy-rubric-sq1", 序號: 1, 年級: 8, 科目: ["地理"], 核心素養: [], 學習內容: [], 學習表現: [],
@@ -117,6 +141,23 @@ describe("buildExamOdt ICCS metadata", () => {
     expect(xml).not.toContain("以下互動題目未列入紙本輸出");
   });
 });
+
+function firstLegacySubquestion(): SubQuestion {
+  return {
+    id: "legacy-axes-sq1",
+    序號: 1,
+    年級: 8,
+    科目: ["地理"],
+    核心素養: [],
+    學習內容: [],
+    學習表現: [],
+    出題概念: "",
+    題型: "選擇題",
+    題目: "小題",
+    答案: "A",
+    答案解析: "解析",
+  };
+}
 
 describe("buildExamOdt interactive subquestions", () => {
   it("omits interactive items and appends a web-viewer manifest", async () => {

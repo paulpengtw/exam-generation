@@ -21,8 +21,6 @@ _ENUM_NAMES = {
     "情境": "QuestionContext",
     "題型種類": "QuestionSetType",
     "題型": "QuestionType",
-    "閱讀歷程": "ReadingProcess",
-    "文本形式": "TextForm",
     "科目": "QuestionSubject",
     "認知歷程": "CognitiveProcess",
     "內容領域": "ContentDomain",
