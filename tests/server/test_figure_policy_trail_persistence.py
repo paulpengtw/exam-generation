@@ -12,13 +12,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from server.models import Base, GenerationLog, GenerationRecord, User
 from server.generate.models import GenerateParams
 from server.generate.persistence import (
     make_figure_policy_trail_recorder,
     persist_aborted_generation_record,
     persist_generation_record,
 )
+from server.models import Base, GenerationLog, GenerationRecord, User
 from src.common.figure_policy_trail import FigurePolicySpecEntry
 
 
