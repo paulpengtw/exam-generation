@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
 from src.common.figure_policy import (
     effective_figure_kind,
     find_figure_kind_collisions,
 )
+from src.social_studies import figure_kind_loader
 from src.social_studies.schemas import ImageSpec
 
 
@@ -20,6 +23,26 @@ def _spec(
         figure_kind=figure_kind,
         chart_type=chart_type,
     )
+
+
+def test_figure_kind_loader_reads_aliases_from_editable_vocabulary_document(tmp_path) -> None:
+    source = tmp_path / "figure_kinds.json"
+    source.write_text(
+        json.dumps(
+            {
+                "canonical": ["長條圖"],
+                "aliases": {"長條圖": ["直條圖", "bar_chart"]},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    alias_loader = getattr(figure_kind_loader, "load_figure_kind_aliases", None)
+    aliases = alias_loader(source) if alias_loader else {}
+
+    assert aliases == {"直條圖": "長條圖", "bar_chart": "長條圖"}
+    assert figure_kind_loader.load_figure_kinds(source) == ("長條圖",)
 
 
 def test_effective_figure_kind_falls_back_to_chart_type_only_for_chart_specs() -> None:
