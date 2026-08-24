@@ -85,8 +85,6 @@ def _fake_ss_spec(captured: dict):
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )
@@ -306,8 +304,6 @@ def test_effective_verify_model_chains_off_overridden_execute_model(tmp_path: Pa
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )
@@ -581,8 +577,6 @@ def test_diverged_tier_models_persisted_in_llm_exchange_model_used(tmp_path: Pat
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["test question"],
             正確解題分析=["test answer"],
         )

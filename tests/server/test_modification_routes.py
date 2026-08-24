@@ -622,10 +622,8 @@ def _full_social_studies_question() -> dict:
         QuestionContext,
         QuestionSetType,
         QuestionType,
-        ReadingProcess,
         RubricEntry,
         SubQuestion,
-        TextForm,
     )
 
     question = ExamQuestion(
@@ -636,8 +634,6 @@ def _full_social_studies_question() -> dict:
         情境=[next(iter(QuestionContext))],
         題型種類=next(iter(QuestionSetType)),
         題型=next(iter(QuestionType)),
-        閱讀歷程=[next(iter(ReadingProcess))],
-        文本形式=next(iter(TextForm)),
         subquestions=[
             SubQuestion(
                 id="sq-1",

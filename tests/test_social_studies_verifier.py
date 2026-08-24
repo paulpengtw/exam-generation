@@ -36,8 +36,6 @@ def _question() -> ExamQuestion:
         情境=["公共"],
         題型種類="題組題",
         題型="選擇題",
-        閱讀歷程=["擷取訊息"],
-        文本形式="連續文本—說明文",
         題目=["閱讀文本後回答：作者支持哪一項政策？"],
         正確解題分析=["作者在第二段明確支持擴大公共運輸。"],
         metadata=QuestionMetadata(
@@ -141,8 +139,6 @@ def _question_with_公民_subquestion() -> "ExamQuestion":  # noqa: F821 — re-
         情境=["公共"],
         題型種類="題組題",
         題型="選擇題",
-        閱讀歷程=["擷取訊息"],
-        文本形式="連續文本—說明文",
         題目=["文本", "題幹"],
         正確解題分析=["A"],
         metadata=QuestionMetadata(grade=9, model="fake-model"),

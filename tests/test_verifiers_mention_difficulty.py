@@ -57,7 +57,6 @@ def test_social_studies_verifier_mentions_difficulty(monkeypatch):
         QuestionMetadata,
         QuestionSetType,
         QuestionType,
-        TextForm,
     )
     client, captured = _capture_prompt(monkeypatch, mod)
     q = ExamQuestion(
@@ -66,8 +65,6 @@ def test_social_studies_verifier_mentions_difficulty(monkeypatch):
         情境=[],
         題型種類=next(iter(QuestionSetType)),
         題型=next(iter(QuestionType)),
-        閱讀歷程=[],
-        文本形式=next(iter(TextForm)),
         metadata=QuestionMetadata(grade=8, model="m", difficulty=Difficulty.easy),
     )
     mod.verify_question(client, q)

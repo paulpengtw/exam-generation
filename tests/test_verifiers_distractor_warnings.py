@@ -48,7 +48,6 @@ def test_ss_verifier_appends_distractor_warning() -> None:
 
     q = SSExamQuestion(
         情境=["公共"], 題型種類="題組題", 題型="選擇題",
-        閱讀歷程=["擷取訊息"], 文本形式="連續文本—敘事文",
         subquestions=[
             SubQuestion(
                 序號=1, 題型="選擇題",
@@ -137,7 +136,6 @@ def test_verifier_leaves_details_unchanged_when_no_warnings(subject: str) -> Non
         from src.social_studies.verifier import verify_question
         q = SSQ(
             情境=["公共"], 題型種類="題組題", 題型="選擇題",
-            閱讀歷程=["擷取訊息"], 文本形式="連續文本—敘事文",
             subquestions=[SubQuestion(序號=1, 題型="選擇題", 題目="Q?", 答案="A")],
         )
     else:

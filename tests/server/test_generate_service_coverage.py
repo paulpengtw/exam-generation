@@ -26,8 +26,6 @@ def _fake_generate_with_corrections(**kwargs):
         情境=[c for c in params.情境],
         題型種類=params.題型種類,
         題型=params.題型[0] if params.題型 else QuestionType("選擇題"),
-        閱讀歷程=params.閱讀歷程,
-        文本形式=params.文本形式,
         題目內容類型=params.題目內容類型,
         # Surface the sampler's resolved 學習內容_pool via 取材來源 (list[str])
         # so tests can assert on it through the normal SSE result payload.

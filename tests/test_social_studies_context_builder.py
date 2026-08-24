@@ -51,7 +51,6 @@ def test_graph_chart_table_content_type_requires_visual_spec(tmp_path) -> None:
     assert "- **文本素材類型**：graphs/charts/tables" in prompt
     assert "本題組必須包含圖表或表格素材" in prompt
     assert "題組頂層輸出非 null 的 `chart_spec`" in prompt
-    assert params.文本形式.value in {"非連續文本—圖表與圖形", "非連續文本—表格"}
 
 
 def test_global_image_content_type_requires_top_level_visual_spec(tmp_path) -> None:
@@ -111,7 +110,7 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
     ) in prompt
     assert "第3小題：題型=" in prompt
     assert (
-        "第3小題：題型=開放式建構反應題，"
+        "第3小題：題型=選擇題，"
         "文本素材類型=graphs/charts/tables，圖片生成模式=html"
     ) in prompt
     assert (

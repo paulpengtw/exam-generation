@@ -49,8 +49,6 @@ def test_generate_stream_writes_generation_record(tmp_path, monkeypatch) -> None
             情境=[c.value for c in sampled.情境],
             題型種類=sampled.題型種類.value,
             題型=sampled.題型[0].value,
-            閱讀歷程=[p.value for p in sampled.閱讀歷程],
-            文本形式=sampled.文本形式.value,
             題目=["題目"],
             正確解題分析=["解析"],
         )

@@ -203,8 +203,6 @@ def _question_with_rubric(*, cognitive_process: str | None, code: str) -> ExamQu
         情境=["公共"],
         題型種類="題組題",
         題型="開放式建構反應題",
-        閱讀歷程=["擷取訊息"],
-        文本形式="連續文本—說明文",
         核心問題="如何解釋文本中的現象？",
         文本="文本素材",
         subquestions=[
