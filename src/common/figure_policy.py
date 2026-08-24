@@ -64,12 +64,20 @@ def effective_figure_kind(spec: object | None) -> str:
     if spec is None:
         return ""
     try:
-        figure_kind = spec.get("figure_kind") if isinstance(spec, dict) else getattr(spec, "figure_kind", "")
+        figure_kind = (
+            spec.get("figure_kind")
+            if isinstance(spec, dict)
+            else getattr(spec, "figure_kind", "")
+        )
         if isinstance(figure_kind, str) and figure_kind.strip():
             return figure_kind.strip()
 
         render_mode = _get_render_mode(spec)
-        chart_type = spec.get("chart_type") if isinstance(spec, dict) else getattr(spec, "chart_type", None)
+        chart_type = (
+            spec.get("chart_type")
+            if isinstance(spec, dict)
+            else getattr(spec, "chart_type", None)
+        )
         if render_mode == "chart" and isinstance(chart_type, str):
             return chart_type.strip()
     except Exception:
