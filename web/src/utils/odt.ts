@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 
-import type { ExamQuestion } from "../hooks/useGenerate";
+import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
 
 export function formatTimestamp(): string {
   const now = new Date();
@@ -123,6 +123,10 @@ function buildMetadataItems(question: ExamQuestion): string[] {
   ].filter((item): item is string => Boolean(item));
 }
 
+function isInteractiveSubQuestion(sub: SubQuestion): boolean {
+  return sub.題型 === "拖放題" || sub.題型 === "滑桿題" || Boolean(sub.interaction);
+}
+
 function buildContentXml(title: string, sections: Section[], isMultiple: boolean): string {
   const paras: string[] = [];
 
@@ -165,7 +169,10 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
         paras.push(`<text:p text:style-name="Standard">${xmlEscape(question.文本)}</text:p>`);
       }
       // Subquestions
+      const omittedInteractiveSubquestions = question.subquestions!.filter(isInteractiveSubQuestion);
       question.subquestions!.forEach((sub) => {
+        if (isInteractiveSubQuestion(sub)) return;
+
         const subMeta = [
           `${sub.年級}年級`,
           sub.題型,
@@ -203,6 +210,16 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
           });
         }
       });
+      if (omittedInteractiveSubquestions.length > 0) {
+        const omittedItems = omittedInteractiveSubquestions
+          .map((sub) => `第${sub.序號}小題（${sub.題型}）`)
+          .join("、");
+        paras.push(
+          `<text:p text:style-name="MetaLine">${xmlEscape(
+            `以下互動題目未列入紙本輸出，請於網頁檢視器作答：${omittedItems}`,
+          )}</text:p>`,
+        );
+      }
     } else {
       // Math: flat question + solution
       paras.push(`<text:p text:style-name="Heading2">${xmlEscape("題目")}</text:p>`);

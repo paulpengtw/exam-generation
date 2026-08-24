@@ -22,6 +22,24 @@ export interface RubricEntry {
   學生作答實例?: string[];
 }
 
+export interface DragDropSpec {
+  draggables: Array<{ id: string; label: string }>;
+  targets: Array<{ id: string; label: string; capacity: number }>;
+  correct_mapping: Record<string, string>;
+  exact_match: boolean;
+  shuffle_draggables: boolean;
+}
+
+export interface SliderSpec {
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  correct_value: number;
+  tolerance: number;
+  show_ticks: boolean;
+}
+
 export interface SubQuestion {
   id: string;
   序號: number;
@@ -37,6 +55,7 @@ export interface SubQuestion {
   題目: string;
   答案: string;
   答案解析: string;
+  interaction?: DragDropSpec | SliderSpec;
   評分規準?: RubricEntry[];
   誘答分析?: Record<string, string>;
   題目內容類型?: string;
