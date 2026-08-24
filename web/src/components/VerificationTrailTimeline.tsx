@@ -6,6 +6,7 @@ import type {
   VerificationTrailInitialEntry,
 } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
+import { diffSnapshots } from "../lib/snapshotDiff";
 
 export interface VerificationTrailTimelineProps {
   entries: VerificationTrailEntry[] | null;
@@ -20,20 +21,48 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function formatSnapshotValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === undefined) return "—";
+  return JSON.stringify(value) ?? String(value);
+}
+
+function previousSnapshotFor(
+  entries: VerificationTrailEntry[],
+  currentIndex: number,
+  questionId: string,
+): Record<string, unknown> | undefined {
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (
+      entry.question_id === questionId &&
+      (entry.kind === "initial" || entry.kind === "correction")
+    ) {
+      return entry.snapshot;
+    }
+  }
+  return undefined;
+}
+
 function SnapshotTrailItem({
   entry,
+  beforeSnapshot,
   snapshotOpen,
   snapshotId,
   onToggle,
   t,
 }: {
   entry: VerificationTrailInitialEntry | VerificationTrailCorrectionEntry;
+  beforeSnapshot?: Record<string, unknown>;
   snapshotOpen: boolean;
   snapshotId: string;
   onToggle: () => void;
   t: (key: string) => string;
 }) {
   const isCorrection = entry.kind === "correction";
+  const changes = isCorrection
+    ? diffSnapshots(beforeSnapshot ?? {}, entry.snapshot)
+    : [];
 
   return (
     <li
@@ -59,6 +88,26 @@ function SnapshotTrailItem({
             value={entry.model}
           />
         </dl>
+      )}
+      {isCorrection && (
+        <div className="mt-2 rounded border border-blue-100 bg-white p-2">
+          <div className="font-medium text-gray-700">
+            {t("card.trailChangedFields")}
+          </div>
+          {changes.length > 0 ? (
+            <dl className="mt-1 space-y-1">
+              {changes.map((change) => (
+                <DetailRow
+                  key={change.path}
+                  label={change.path}
+                  value={`${formatSnapshotValue(change.before)} → ${formatSnapshotValue(change.after)}`}
+                />
+              ))}
+            </dl>
+          ) : (
+            <p className="mt-1 text-gray-600">{t("card.trailNoChanges")}</p>
+          )}
+        </div>
       )}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium text-gray-700">{t("card.trailSnapshot")}</span>
@@ -139,6 +188,11 @@ export default function VerificationTrailTimeline({
                 <SnapshotTrailItem
                   key={`${entry.timestamp}-${index}`}
                   entry={entry}
+                  beforeSnapshot={
+                    entry.kind === "correction"
+                      ? previousSnapshotFor(entries, index, entry.question_id)
+                      : undefined
+                  }
                   snapshotOpen={openSnapshots[index] ?? false}
                   snapshotId={snapshotId}
                   onToggle={() => setOpenSnapshots((previous) => ({
