@@ -44,6 +44,9 @@ from src.social_studies.schema_loader import (
 )
 from src.social_studies.schemas import CreativeBrief, SampledParams, SubQuestionConfig
 
+# Existing prompt prose intentionally contains long lines; keep lint focused on code.
+# ruff: noqa: E501
+
 _schemas = load_schemas()
 _INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
 _GRADES: list[int] = load_grades(_schemas)
@@ -229,19 +232,6 @@ def _format_process_exemplar(bucket: str, exemplar: dict) -> str:
     if exemplar.get("rationale"):
         lines.append(f"- **設計說明**：{exemplar['rationale']}")
     return "\n".join(lines)
-
-
-def _prompt_reference_without_retired_axes(value: object) -> object:
-    """Remove retired axis fields from Channel-1 examples at render time only."""
-    if isinstance(value, dict):
-        return {
-            key: _prompt_reference_without_retired_axes(item)
-            for key, item in value.items()
-            if key not in {"閱讀歷程", "文本形式"}
-        }
-    if isinstance(value, list):
-        return [_prompt_reference_without_retired_axes(item) for item in value]
-    return value
 
 
 _CREATIVE_BRIEF_SYSTEM_BLOCK = """\
@@ -554,7 +544,9 @@ def build_user_prompt(
     difficulty_section = _difficulty_section(params)
 
     example_groups = (
-        [] if disable_reference_fewshot else load_few_shot_example_groups(few_shot_dir)
+        []
+        if disable_reference_fewshot
+        else load_few_shot_example_groups(few_shot_dir, content_type)
     )
     all_image_paths: list[Path] = []
     if example_groups:
@@ -573,7 +565,7 @@ def build_user_prompt(
                     img_notes += f"\n<!-- {label} 附於此範例後 -->"
                     all_image_paths.append(Path(img["path"]))
             prompt_question = json.dumps(
-                _prompt_reference_without_retired_axes(q),
+                q,
                 ensure_ascii=False,
                 indent=2,
             )
@@ -622,7 +614,6 @@ def build_user_prompt(
             cfg.learning_content,
             cfg.learning_performance,
         ))
-        has_config = has_structural_config or bool(cfg.text_word_limit)
         if cfg.question_type:
             cfg_parts.append(f"題型={cfg.question_type.value}")
         if cfg.instruction:
@@ -1119,8 +1110,15 @@ def build_subquestion_user_prompt(
         if cfg is not None and cfg.question_type is not None
         else sq_plan.get("題型", "")
     )
+    content_type = (
+        cfg.content_type
+        if cfg is not None and cfg.content_type
+        else params.題目內容類型 or "純文字"
+    )
     example_groups = (
-        [] if disable_reference_fewshot else load_few_shot_example_groups(few_shot_dir)
+        []
+        if disable_reference_fewshot
+        else load_few_shot_example_groups(few_shot_dir, content_type)
     )
     all_image_paths: list[Path] = []
     matching_examples: list[dict] = []
@@ -1156,7 +1154,7 @@ def build_subquestion_user_prompt(
                 img_notes += f"\n<!-- {label} 附於此範例後 -->"
                 all_image_paths.append(Path(img["path"]))
         prompt_question = json.dumps(
-            _prompt_reference_without_retired_axes(q),
+            q,
             ensure_ascii=False,
             indent=2,
         )
