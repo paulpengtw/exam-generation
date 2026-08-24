@@ -746,13 +746,26 @@ def build_subquestion_system_prompt(
   "出題概念": "評量學生能否……",
   "reporting_scale": "3",
   "題型": "Simple multiple-choice",
+  "題目內容類型": "純文字",
+  "image_generation_mode": "html",
   "題目": "完整題目文字（含選項）",
   "答案": "A",
   "答案解析": "說明正答依據",
   "評分規準": [],
-  "誘答分析": {{"A": "...", "B": "正確答案：...", "C": "...", "D": "..."}}
+  "誘答分析": {{"A": "...", "B": "正確答案：...", "C": "...", "D": "..."}},
+  "chart_spec": null
 }}
 ```
+
+## 小題圖片規則（chart_spec）
+
+- 若「各小題配置」指定本小題的 `題目內容類型` 為 `含圖片` 或 `graphs/charts/tables`，
+  本小題必須輸出非 null 的 `chart_spec`，作為本小題獨有的視覺素材。
+- `image_generation_mode` 只指定渲染方式（`html` 或 `gpt_image`），不代表需要圖片；
+  若本小題為純文字，不要只因 `image_generation_mode` 而輸出圖片。
+- 無圖片需求時，`chart_spec` 可省略或輸出 `null`。
+- `chart_spec` 的 `render_mode` 應依素材類型選擇：統計圖表使用 `chart`，結構化或語意標註素材使用 `html`，
+  需要寫實或實體示意的素材使用 `gpt_image`；請在 `description` 與 `data` 中完整描述作答所需元素。
 
 ## 誘答分析的設計
 
@@ -799,7 +812,6 @@ def build_subquestion_user_prompt(
     core_question_callback: bool = True,
     is_last: bool = False,
 ) -> tuple[str, list[Path]]:
-    del image_generation_mode
     if rng is None:
         rng = random.Random(params.seed)
 
@@ -895,6 +907,12 @@ def build_subquestion_user_prompt(
         config_parts.append(f"學習內容={','.join(cfg.learning_content)}")
     if cfg is not None and cfg.learning_performance:
         config_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
+    if cfg is not None and cfg.content_type:
+        config_parts.append(f"題目內容類型={cfg.content_type}")
+    if cfg is not None and (cfg.content_type or cfg.image_generation_mode):
+        config_parts.append(
+            f"圖片生成模式={cfg.image_generation_mode or image_generation_mode}"
+        )
     question_limit = (
         cfg.question_word_limit
         if cfg is not None and cfg.question_word_limit
@@ -913,6 +931,16 @@ def build_subquestion_user_prompt(
         "## 各小題配置\n\n"
         f"  - 第{sq_plan.get('序號', 1)}小題：" + "，".join(config_parts)
     )
+    slot_content_type = cfg.content_type if cfg is not None else None
+    visual_instruction = ""
+    if slot_content_type in {"含圖片", "graphs/charts/tables"}:
+        visual_instruction = (
+            "\n\n本小題的 `題目內容類型` 為 `含圖片` 或 `graphs/charts/tables`，"
+            "必須在本小題 JSON 中輸出非 null 的 `chart_spec`。"
+            "`image_generation_mode` 只指定渲染方式，不能單獨視為需要圖片。"
+        )
+    if visual_instruction:
+        subquestion_config_section += visual_instruction
     core_question_callback_section = (
         "\n\n## 回扣核心問題\n\n"
         f"- **最後小題命題指示**：{_CORE_QUESTION_CALLBACK_SUBQUESTION_INSTRUCTION}"

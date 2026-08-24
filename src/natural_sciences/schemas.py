@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from src.natural_sciences.schema_loader import build_enums, load_grades, load_schemas
 
@@ -98,6 +98,14 @@ class SubQuestion(BaseModel):
     答案解析: str = ""
     評分規準: list[RubricEntry] = Field(default_factory=list)
     誘答分析: dict[str, str] = Field(default_factory=dict)
+    題目內容類型: str | None = None
+    image_generation_mode: Literal["html", "gpt_image"] | None = None
+    圖片: str | None = None
+    chart_spec: ChartSpec | None = None
+
+    # 建構這一小題時所用的 各小題配置 索引（PLAN 索引，1 起算，不進 JSON）。
+    # `序號` 是模型自報的，可能錯位或重複；下游圖片渲染必須沿用同一格配置。
+    _plan_index: int | None = PrivateAttr(default=None)
 
 
 class QuestionMetadata(BaseModel):

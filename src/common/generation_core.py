@@ -387,7 +387,7 @@ def generate_one_core(
             chart_image_path = rendered
             _emit_update(on_question_update, question, "image")
 
-    # ── Subquestion image rendering (SS only) ─────────────────────────────
+    # ── Subquestion image rendering ────────────────────────────────────────
     if spec.render_subquestion_images_fn is not None:
         subquestion_image_paths = spec.render_subquestion_images_fn(
             question, config, client, html_renderer, image_generation_mode, obs, params,
