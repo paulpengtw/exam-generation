@@ -16,11 +16,14 @@ from __future__ import annotations
 import concurrent.futures
 import sys
 from collections.abc import Callable, Sequence
-from typing import Any
+from enum import Enum
+from typing import Any, get_args
 
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
-    VerificationTrailEntry,
+    VerificationTrailEvent,
+    make_correction_trail_entry,
+    make_initial_trail_entry,
     make_verification_trail_entry,
 )
 from src.config import Config
@@ -36,13 +39,33 @@ def _emit_update(callback: Callable | None, question: Any, phase: str) -> None:
 
 
 def _emit_trail(
-    callback: Callable[[VerificationTrailEntry], None] | None,
+    callback: Callable[[VerificationTrailEvent], None] | None,
     question_id: str,
     verification: Any,
     model: str,
 ) -> None:
     if callback is not None:
         callback(make_verification_trail_entry(question_id, verification, model))
+
+
+def _emit_initial_trail(
+    callback: Callable[[VerificationTrailEvent], None] | None,
+    question_id: str,
+    question: Any,
+) -> None:
+    if callback is not None:
+        callback(make_initial_trail_entry(question_id, question))
+
+
+def _emit_correction_trail(
+    callback: Callable[[VerificationTrailEvent], None] | None,
+    question_id: str,
+    question: Any,
+    retry_index: int,
+    model: str,
+) -> None:
+    if callback is not None:
+        callback(make_correction_trail_entry(question_id, question, retry_index, model))
 
 
 def build_text_generation_prompts(
@@ -157,7 +180,7 @@ def generate_one_core(
     user_core_question: str | None = None,
     core_question_callback: bool = False,
     on_question_update: Callable | None = None,
-    on_trail_entry: Callable[[VerificationTrailEntry], None] | None = None,
+    on_trail_entry: Callable[[VerificationTrailEvent], None] | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -267,6 +290,18 @@ def generate_one_core(
                 if configured_type is not None:
                     field = type(result).model_fields.get("題型")
                     enum_type = field.annotation if field is not None else None
+                    enum_candidates = (
+                        get_args(enum_type) if enum_type is not None else ()
+                    )
+                    enum_type = next(
+                        (
+                            candidate
+                            for candidate in enum_candidates
+                            if isinstance(candidate, type)
+                            and issubclass(candidate, Enum)
+                        ),
+                        enum_type,
+                    )
                     try:
                         coerced_type = (
                             enum_type(configured_type)
@@ -364,6 +399,7 @@ def generate_one_core(
 
     # ── Verification ──────────────────────────────────────────────────────
     if not skip_verify:
+        _emit_initial_trail(on_trail_entry, question_id, question)
         print(f"  Verifying question {question_id}...", file=sys.stderr)
         emit_stage(obs, "verifier", "verify", "start")
         result = spec.verify_fn(
@@ -406,7 +442,7 @@ def generate_with_corrections_core(
     user_core_question: str | None = None,
     core_question_callback: bool = False,
     on_question_update: Callable | None = None,
-    on_trail_entry: Callable[[VerificationTrailEntry], None] | None = None,
+    on_trail_entry: Callable[[VerificationTrailEvent], None] | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -492,6 +528,14 @@ def generate_with_corrections_core(
         elif question.圖片:
             p = config.output_dir / question.圖片
             new_chart_image_path = str(p) if p.exists() else None
+
+        _emit_correction_trail(
+            on_trail_entry,
+            question_id,
+            question,
+            attempt + 1,
+            config.model_correct or config.model_execute,
+        )
 
         if not skip_verify:
             emit_stage(obs, "verifier", "verify", "start", retry=attempt + 1)

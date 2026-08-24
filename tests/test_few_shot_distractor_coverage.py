@@ -37,7 +37,7 @@ def _iter_math_questions() -> list[dict]:
 def _iter_ss_questions() -> list[dict]:
     root = Path("data/social_studies/few_shot")
     out: list[dict] = []
-    for f in root.glob("*.json"):
+    for f in root.rglob("*.json"):
         with open(f, encoding="utf-8") as fh:
             loaded = json.load(fh)
         pool = loaded if isinstance(loaded, list) else [loaded]

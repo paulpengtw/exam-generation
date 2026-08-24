@@ -360,6 +360,7 @@ def test_ss_rebuild_covers_all_subquestion_model_fields() -> None:
         "image_generation_mode": "html",
         "圖片": "sentinel.png",
         "chart_spec": None,
+        "interaction": None,
     }
 
     original_sq = SSSubQuestion(**sentinels)

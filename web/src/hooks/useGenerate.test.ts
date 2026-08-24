@@ -35,6 +35,7 @@ import {
   buildQueryString,
   parseErrorEventData,
   useGenerate,
+  type VerificationTrailEntry,
 } from "./useGenerate";
 
 function latestStreamOptions(): FetchEventSourceInit {
@@ -68,7 +69,14 @@ describe("useGenerate — verification trail lanes", () => {
       題目: [id],
       正確解題分析: ["analysis"],
     });
-    const passed = {
+    const initial: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "initial",
+      question_id: "q-1",
+      timestamp: "2026-01-01T00:00:00+00:00",
+      snapshot: { id: "q-1", 題目: ["before"] },
+    };
+    const passed: VerificationTrailEntry = {
       code: "verification_trail",
       kind: "verification",
       question_id: "q-1",
@@ -79,9 +87,24 @@ describe("useGenerate — verification trail lanes", () => {
       answer_match: true,
       chart_verification: null,
       model: "verify-model",
-      timestamp: "2026-01-01T00:00:00+00:00",
+      timestamp: "2026-01-01T00:00:03+00:00",
     };
-    const failed = { ...passed, question_id: "q-2", passed: false, details: "需修正" };
+    const correction: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "correction",
+      question_id: "q-1",
+      retry_index: 1,
+      model: "correct-model",
+      timestamp: "2026-01-01T00:00:02+00:00",
+      snapshot: { id: "q-1", 題目: ["after"] },
+    };
+    const failed: VerificationTrailEntry = {
+      ...passed,
+      question_id: "q-2",
+      passed: false,
+      details: "需修正",
+      timestamp: "2026-01-01T00:00:01+00:00",
+    };
 
     act(() => {
       latestStreamOptions().onmessage?.({
@@ -97,7 +120,17 @@ describe("useGenerate — verification trail lanes", () => {
       latestStreamOptions().onmessage?.({
         id: "",
         event: "trail",
+        data: JSON.stringify(initial),
+      });
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "trail",
         data: JSON.stringify(failed),
+      });
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "trail",
+        data: JSON.stringify(correction),
       });
       latestStreamOptions().onmessage?.({
         id: "",
@@ -107,7 +140,7 @@ describe("useGenerate — verification trail lanes", () => {
     });
 
     expect(result.current.displayResults.map((item) => item.trail)).toEqual([
-      [passed],
+      [initial, correction, passed],
       [failed],
     ]);
   });

@@ -17,6 +17,8 @@ from src.common.generation_core import generate_one_core, generate_with_correcti
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
     VerificationTrailEntry,
+    make_correction_trail_entry,
+    make_initial_trail_entry,
     make_verification_trail_entry,
 )
 from src.config import Config
@@ -474,6 +476,8 @@ def generate_one(
 
     # Verify if requested
     if not skip_verify:
+        if on_trail_entry is not None:
+            on_trail_entry(make_initial_trail_entry(question_id, question))
         print(f"  Verifying question {question_id}...", file=sys.stderr)
         emit_stage(obs, "verifier", "verify", "start")
         result = verify_question(
@@ -684,6 +688,16 @@ def generate_with_corrections(
         elif question.圖片:
             p = config.output_dir / question.圖片
             new_chart_image_path = str(p) if p.exists() else None
+
+        if on_trail_entry is not None:
+            on_trail_entry(
+                make_correction_trail_entry(
+                    question_id,
+                    question,
+                    attempt + 1,
+                    config.model_correct or config.model_execute,
+                )
+            )
 
         if not skip_verify:
             emit_stage(obs, "verifier", "verify", "start", retry=attempt + 1)

@@ -1,6 +1,10 @@
 import { useId, useState } from "react";
 
-import type { VerificationTrailEntry } from "../hooks/useGenerate";
+import type {
+  VerificationTrailCorrectionEntry,
+  VerificationTrailEntry,
+  VerificationTrailInitialEntry,
+} from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 
 export interface VerificationTrailTimelineProps {
@@ -16,11 +20,76 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SnapshotTrailItem({
+  entry,
+  snapshotOpen,
+  snapshotId,
+  onToggle,
+  t,
+}: {
+  entry: VerificationTrailInitialEntry | VerificationTrailCorrectionEntry;
+  snapshotOpen: boolean;
+  snapshotId: string;
+  onToggle: () => void;
+  t: (key: string) => string;
+}) {
+  const isCorrection = entry.kind === "correction";
+
+  return (
+    <li
+      data-trail-kind={entry.kind}
+      className="rounded border border-blue-200 bg-blue-50 p-3 text-sm"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold">
+          {t(isCorrection ? "card.trailCorrection" : "card.trailInitialVersion")}
+        </span>
+        <time dateTime={entry.timestamp} className="text-xs text-gray-500">
+          {entry.timestamp}
+        </time>
+      </div>
+      {isCorrection && (
+        <dl className="mt-2 space-y-1">
+          <DetailRow
+            label={t("card.trailRetryIndex")}
+            value={String(entry.retry_index)}
+          />
+          <DetailRow
+            label={t("card.trailCorrectorModel")}
+            value={entry.model}
+          />
+        </dl>
+      )}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium text-gray-700">{t("card.trailSnapshot")}</span>
+        <button
+          type="button"
+          aria-controls={snapshotId}
+          aria-expanded={snapshotOpen}
+          onClick={onToggle}
+          className="text-sm font-medium text-blue-700 hover:text-blue-800"
+        >
+          {t(snapshotOpen ? "card.trailHideSnapshot" : "card.trailShowSnapshot")}
+        </button>
+      </div>
+      {snapshotOpen && (
+        <pre
+          id={snapshotId}
+          className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-gray-800"
+        >
+          {JSON.stringify(entry.snapshot, null, 2)}
+        </pre>
+      )}
+    </li>
+  );
+}
+
 export default function VerificationTrailTimeline({
   entries,
 }: VerificationTrailTimelineProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [openSnapshots, setOpenSnapshots] = useState<Record<number, boolean>>({});
   const generatedId = useId();
 
   const sectionLabel = t("card.verificationTrail");
@@ -64,6 +133,23 @@ export default function VerificationTrailTimeline({
       {open && (
         <ol id={contentId} className="mt-3 space-y-2">
           {entries.map((entry, index) => {
+            if (entry.kind !== "verification") {
+              const snapshotId = `${contentId}-snapshot-${index}`;
+              return (
+                <SnapshotTrailItem
+                  key={`${entry.timestamp}-${index}`}
+                  entry={entry}
+                  snapshotOpen={openSnapshots[index] ?? false}
+                  snapshotId={snapshotId}
+                  onToggle={() => setOpenSnapshots((previous) => ({
+                    ...previous,
+                    [index]: !(previous[index] ?? false),
+                  }))}
+                  t={t}
+                />
+              );
+            }
+
             const passedClass = entry.passed
               ? "border-green-200 bg-green-50"
               : "border-red-200 bg-red-50";
@@ -74,6 +160,7 @@ export default function VerificationTrailTimeline({
               <li
                 key={`${entry.timestamp}-${index}`}
                 data-verdict={entry.passed ? "passed" : "failed"}
+                data-trail-kind={entry.kind}
                 className={`rounded border p-3 text-sm ${passedClass}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">

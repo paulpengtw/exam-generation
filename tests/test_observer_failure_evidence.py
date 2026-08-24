@@ -3,8 +3,16 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
+import src.llm_client as llm_client
 from src.config import Config
 from src.llm_client import LLMClient, emit_stage
+
+
+@pytest.fixture(autouse=True)
+def _reset_emit_stage_warning_registry(monkeypatch) -> None:
+    monkeypatch.setattr(llm_client, "_warned_emit_stage_observers", set())
 
 
 def _raising_observer(event: dict) -> None:
