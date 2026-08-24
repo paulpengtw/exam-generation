@@ -4,8 +4,12 @@ records each of the 8 staging failures (issue #545) individually with a
 per-test root-cause analysis.
 
 A bulk claim does not satisfy the record requirement: each function must
-appear by name with its own classification entry.
+appear by name with its own classification entry, carrying an explicit
+classification label.
 """
+from __future__ import annotations
+
+import re
 from pathlib import Path
 
 import pytest
@@ -14,6 +18,7 @@ _REPO_ROOT = Path(__file__).parents[1]
 _CLASSIFICATION_DOC = (
     _REPO_ROOT / "docs" / "research" / "2026-08-24-545-staging-failures-classification.md"
 )
+_CLASSIFICATION_LABELS = frozenset({"ENVIRONMENT-ONLY", "REGRESSION"})
 
 
 def _read_classification() -> str:
@@ -24,6 +29,21 @@ def _read_classification() -> str:
             "with one section per failing test (issue #545)."
         )
     return _CLASSIFICATION_DOC.read_text()
+
+
+def _parse_sections(text: str) -> list[str]:
+    """Split into per-failure sections (each starts with ### Failure N —)."""
+    return re.split(r"\n(?=### Failure \d+)", text)
+
+
+def _find_section(sections: list[str], *, file_name: str, func_name: str) -> str | None:
+    """Return the section whose body names both file_name and func_name, or None."""
+    matches = [s for s in sections if file_name in s and func_name in s]
+    return matches[0] if matches else None
+
+
+def _has_classification(section: str) -> bool:
+    return any(label in section for label in _CLASSIFICATION_LABELS)
 
 
 # ---------------------------------------------------------------------------
@@ -55,13 +75,21 @@ def test_classification_records_modification_merge_ignores_interaction_paths() -
 # ---------------------------------------------------------------------------
 
 def test_classification_records_ns_generate_route_declares_callback_parameter() -> None:
-    """NS: test_generate_route_declares_callback_query_parameter (fastapi dep) must be named."""
-    text = _read_classification()
-    assert "test_natural_sciences_core_question_callback" in text, (
-        "Classification doc must reference the NS callback file"
+    """NS: test_generate_route_declares_callback_query_parameter must have its own section."""
+    sections = _parse_sections(_read_classification())
+    section = _find_section(
+        sections,
+        file_name="test_natural_sciences_core_question_callback.py",
+        func_name="test_generate_route_declares_callback_query_parameter",
     )
-    assert "test_generate_route_declares_callback_query_parameter" in text, (
-        "Classification doc must name the NS route-parameter test individually"
+    assert section is not None, (
+        "Classification doc must contain a section for "
+        "test_natural_sciences_core_question_callback.py / "
+        "test_generate_route_declares_callback_query_parameter"
+    )
+    assert _has_classification(section), (
+        "NS failure-3 section must carry an explicit classification label "
+        "(ENVIRONMENT-ONLY or REGRESSION)"
     )
 
 
@@ -86,15 +114,21 @@ def test_classification_records_ns_callback_toggle_does_not_change_sampling() ->
 # ---------------------------------------------------------------------------
 
 def test_classification_records_ss_generate_route_declares_callback_parameter() -> None:
-    """SS: test_generate_route_declares_callback_query_parameter (fastapi dep) must be named."""
-    text = _read_classification()
-    assert "test_social_studies_core_question_callback" in text, (
-        "Classification doc must reference the SS callback file"
+    """SS: test_generate_route_declares_callback_query_parameter must have its own section."""
+    sections = _parse_sections(_read_classification())
+    section = _find_section(
+        sections,
+        file_name="test_social_studies_core_question_callback.py",
+        func_name="test_generate_route_declares_callback_query_parameter",
     )
-    # The function name is shared with the NS variant; the file-name assertion
-    # above distinguishes the two entries.
-    assert "test_generate_route_declares_callback_query_parameter" in text, (
-        "Classification doc must name the SS route-parameter test individually"
+    assert section is not None, (
+        "Classification doc must contain a section for "
+        "test_social_studies_core_question_callback.py / "
+        "test_generate_route_declares_callback_query_parameter"
+    )
+    assert _has_classification(section), (
+        "SS failure-6 section must carry an explicit classification label "
+        "(ENVIRONMENT-ONLY or REGRESSION)"
     )
 
 
