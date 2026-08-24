@@ -33,7 +33,7 @@ def test_topic_replaces_context_in_social_studies_prompt(tmp_path) -> None:
     assert "主題 / 議題：氣候變遷與都市規劃" in prompt
 
 
-def test_text_only_content_type_forbids_chart_spec(tmp_path) -> None:
+def test_plain_text_content_type_forbids_chart_spec(tmp_path) -> None:
     params = sample_params(seed=1, content_type="純文字")
 
     prompt, images = build_user_prompt(params, tmp_path, rng=random.Random(1))
@@ -193,7 +193,7 @@ def test_build_subquestion_user_prompt_explicit_lc_lp_uses_cfg():
     from src.social_studies.schemas import SubQuestionConfig
 
     rng = random.Random(42)
-    params = ss_sample_params(rng=rng)
+    params = ss_sample_params(rng=rng, content_type="純文字")
     cfg = SubQuestionConfig(learning_content=["歷Ka-Ⅳ-1"], learning_performance=["社1b-Ⅳ-1"])
     sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "測試"}
     import pathlib
@@ -223,7 +223,7 @@ def test_build_subquestion_user_prompt_empty_cfg_uses_global_pool():
     from src.social_studies.schemas import SubQuestionConfig
 
     rng = random.Random(42)
-    params = ss_sample_params(rng=rng)
+    params = ss_sample_params(rng=rng, content_type="純文字")
     cfg = SubQuestionConfig()  # empty
     sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "測試"}
     few_shot_dir = pathlib.Path("data/social_studies/few_shot")
@@ -245,7 +245,7 @@ def test_subquestion_prompt_replays_few_shot_selection_from_sampled_seed() -> No
 
     from src.social_studies.context_builder import build_subquestion_user_prompt
 
-    params = sample_params(seed=185, q_type=["選擇題"])
+    params = sample_params(seed=185, q_type=["選擇題"], content_type="純文字")
     kwargs = {
         "核心問題": "測試核心問題",
         "文本": "測試文本",
@@ -322,7 +322,7 @@ def test_visual_prompts_drop_hard_diversity_wording_when_kill_switch_is_on(tmp_p
     assert "圖像種類不得重複" not in build_text_system_prompt(params=params)
 
 
-def test_ss_content_type_instructions_omit_disclaimer_for_text_only() -> None:
+def test_ss_content_type_instructions_omit_disclaimer_for_plain_text() -> None:
     assert IMAGE_DISCLAIMER not in SS_CONTENT_TYPE_INSTRUCTIONS["純文字"]
 
 
@@ -338,7 +338,7 @@ def test_ss_user_prompt_carries_disclaimer_for_image_content_type(tmp_path) -> N
     assert IMAGE_DISCLAIMER in prompt
 
 
-def test_ss_user_prompt_omits_disclaimer_for_text_only(tmp_path) -> None:
+def test_ss_user_prompt_omits_disclaimer_for_plain_text(tmp_path) -> None:
     params = sample_params(seed=1, content_type="純文字")
     prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER not in prompt

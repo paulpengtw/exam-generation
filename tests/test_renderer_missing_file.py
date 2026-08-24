@@ -199,7 +199,7 @@ def _ss_question():
     )
 
 
-def test_ss_verifier_nonexistent_chart_path_falls_back_to_text_only(tmp_path: Path) -> None:
+def test_ss_verifier_nonexistent_chart_path_falls_back_to_plain_text(tmp_path: Path) -> None:
     """Social-studies verify_question must not raise when chart_image_path points
     to a non-existent file; it must fall back to text-only."""
     from src.social_studies.verifier import verify_question
