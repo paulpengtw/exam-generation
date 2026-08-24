@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 
-import type { ExamQuestion } from "../hooks/useGenerate";
+import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
 
 export function formatTimestamp(): string {
   const now = new Date();
@@ -95,6 +95,10 @@ function buildImageParagraph(name: string, imageRef: string, zIndex: number): st
 
 function buildMetadataItems(question: ExamQuestion): string[] {
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+  const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
+  const eraMetadata = isIccsEra
+    ? [question.內容領域, ...(question.認知歷程 ?? [])]
+    : [...(question.閱讀歷程 ?? []), question.文本形式];
   if (isSocialStudies) {
     const subs = question.subquestions!;
     const unique = <T>(arr: T[]): T[] => [...new Set(arr)];
@@ -104,17 +108,21 @@ function buildMetadataItems(question: ExamQuestion): string[] {
       ...unique(subs.flatMap((s) => s.核心素養)),
       ...unique(subs.flatMap((s) => s.學習內容.map((lc) => lc.編碼))),
       ...unique(subs.flatMap((s) => s.學習表現.map((lp) => lp.編碼))),
-    ].filter(Boolean);
+      ...eraMetadata,
+    ].filter((item): item is string => Boolean(item));
   }
   return [
     ...(question.情境 ?? []),
     question.題型種類,
     question.題型,
     ...(question.數學思考 ?? []),
-    ...(question.閱讀歷程 ?? []),
-    question.文本形式,
     ...(question.學習內容 ?? []).map((c) => c.編碼).filter(Boolean),
+    ...eraMetadata,
   ].filter((item): item is string => Boolean(item));
+}
+
+function isInteractiveSubQuestion(sub: SubQuestion): boolean {
+  return sub.題型 === "拖放題" || sub.題型 === "滑桿題" || Boolean(sub.interaction);
 }
 
 function buildContentXml(title: string, sections: Section[], isMultiple: boolean): string {
@@ -159,14 +167,19 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
         paras.push(`<text:p text:style-name="Standard">${xmlEscape(question.文本)}</text:p>`);
       }
       // Subquestions
+      const omittedInteractiveSubquestions = question.subquestions!.filter(isInteractiveSubQuestion);
       question.subquestions!.forEach((sub) => {
+        if (isInteractiveSubQuestion(sub)) return;
+
         const subMeta = [
           `${sub.年級}年級`,
+          sub.題型,
           ...sub.科目,
           ...sub.核心素養,
           ...sub.學習內容.map((lc) => lc.編碼),
           ...sub.學習表現.map((lp) => lp.編碼),
-        ].filter(Boolean).map(xmlEscape).join(" ｜ ");
+          sub.認知歷程,
+        ].filter((item): item is string => Boolean(item)).map(xmlEscape).join(" ｜ ");
         paras.push(`<text:p text:style-name="Heading2">${xmlEscape(`第${sub.序號}題`)}</text:p>`);
         if (subMeta) {
           paras.push(`<text:p text:style-name="MetaLine">${subMeta}</text:p>`);
@@ -195,6 +208,16 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
           });
         }
       });
+      if (omittedInteractiveSubquestions.length > 0) {
+        const omittedItems = omittedInteractiveSubquestions
+          .map((sub) => `第${sub.序號}小題（${sub.題型}）`)
+          .join("、");
+        paras.push(
+          `<text:p text:style-name="MetaLine">${xmlEscape(
+            `以下互動題目未列入紙本輸出，請於網頁檢視器作答：${omittedItems}`,
+          )}</text:p>`,
+        );
+      }
     } else {
       // Math: flat question + solution
       paras.push(`<text:p text:style-name="Heading2">${xmlEscape("題目")}</text:p>`);

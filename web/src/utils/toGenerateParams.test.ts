@@ -38,6 +38,26 @@ describe("toGenerateParams", () => {
     expect(params.core_question_callback).toBe(false);
   });
 
+  it("forwards the social-studies content domain and target surface pins", () => {
+    const params = toGenerateParams("social_studies", {
+      content_domain: "Civic Principles",
+      target_surface: "數位",
+    } as FormParams);
+
+    expect(params.content_domain).toBe("Civic Principles");
+    expect(params.target_surface).toBe("數位");
+  });
+
+  it("omits social-studies-only pins for non-social subjects", () => {
+    const params = toGenerateParams("math", {
+      content_domain: "Civic Principles",
+      target_surface: "數位",
+    } as FormParams);
+
+    expect(params.content_domain).toBeUndefined();
+    expect(params.target_surface).toBeUndefined();
+  });
+
   it("forwards the natural-sciences core-question callback option", () => {
     const params = toGenerateParams("natural_sciences", {
       core_question_callback: false,

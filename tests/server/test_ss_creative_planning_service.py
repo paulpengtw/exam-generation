@@ -60,8 +60,6 @@ def test_ss_batch_calls_plan_context_angles_once(monkeypatch, tmp_path) -> None:
             情境=[c.value for c in kwargs["params"].情境],
             題型種類=kwargs["params"].題型種類.value,
             題型="選擇題",
-            閱讀歷程=[p.value for p in kwargs["params"].閱讀歷程],
-            文本形式=kwargs["params"].文本形式.value,
         )
         return eq
 
@@ -91,8 +89,6 @@ def test_ss_batch_skips_planning_when_flag_disabled(monkeypatch, tmp_path) -> No
             情境=[c.value for c in kwargs["params"].情境],
             題型種類=kwargs["params"].題型種類.value,
             題型="選擇題",
-            閱讀歷程=[p.value for p in kwargs["params"].閱讀歷程],
-            文本形式=kwargs["params"].文本形式.value,
         )
 
     cfg = ServerConfig(api_key="x", output_dir=tmp_path, creative_planning=False)

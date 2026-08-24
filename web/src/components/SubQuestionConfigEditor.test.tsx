@@ -16,7 +16,6 @@ const PISA_SCIENCE_TYPES = [
 
 const SOCIAL_STUDIES_TYPES = [
   { value: "選擇題", instruction: "" },
-  { value: "封閉式建構反應題", instruction: "" },
   { value: "開放式建構反應題", instruction: "" },
 ];
 
@@ -74,8 +73,21 @@ describe("SubQuestionConfigEditor subject gating", () => {
     expect(optionValues(screen.getAllByRole("combobox")[0])).toEqual([
       "",
       "選擇題",
-      "封閉式建構反應題",
       "開放式建構反應題",
     ]);
+  });
+
+  it("reflects the surviving question types returned by the schemas API", () => {
+    renderEditor("social_studies", [
+      { value: "選擇題", instruction: "" },
+      { value: "開放式建構反應題", instruction: "" },
+    ]);
+
+    expect(optionValues(screen.getAllByRole("combobox")[0])).toEqual([
+      "",
+      "選擇題",
+      "開放式建構反應題",
+    ]);
+    expect(screen.queryByRole("option", { name: "封閉式建構反應題" })).not.toBeInTheDocument();
   });
 });

@@ -19,6 +19,7 @@ import FigureRenderer, {
 } from "./FigureRenderer";
 import GenerationStatusBar from "./GenerationStatusBar";
 import VerificationTrailTimeline from "./VerificationTrailTimeline";
+import InteractiveItemViewer, { type InteractionSubmission } from "./InteractiveItemViewer";
 
 export interface QuestionCardProps {
   question: ExamQuestion;
@@ -26,6 +27,7 @@ export interface QuestionCardProps {
   phase?: DraftPhase;
   isFinal?: boolean;
   trail?: VerificationTrailEntry[];
+  onInteractionSubmit?: (submission: InteractionSubmission) => void;
 }
 
 interface VerificationShape {
@@ -266,11 +268,13 @@ function SubQuestionBlock({
   index,
   showAnswersByDefault = false,
   selectionEnabled,
+  onInteractionSubmit,
 }: {
   sub: SubQuestion;
   index: number;
   showAnswersByDefault?: boolean;
   selectionEnabled: boolean;
+  onInteractionSubmit?: (submission: InteractionSubmission) => void;
 }) {
   const t = useT();
   const [showAnswer, setShowAnswer] = useState(showAnswersByDefault);
@@ -282,6 +286,7 @@ function SubQuestionBlock({
           {t("card.subquestion")}{sub.序號}題
         </span>
         <Chip label={`${sub.年級}年級`} tone="blue" />
+        <Chip label={sub.題型} tone="purple" />
         {sub.科目.map((s) => (
           <Chip key={`subj-${s}`} label={s} tone="purple" />
         ))}
@@ -324,6 +329,16 @@ function SubQuestionBlock({
       >
         {sub.題目}
       </div>
+
+      {sub.interaction && (
+        <InteractiveItemViewer
+          itemId={sub.id || `subquestion-${index + 1}`}
+          題型={sub.題型}
+          interaction={sub.interaction}
+          distractorAnalysis={sub.誘答分析}
+          onSubmit={onInteractionSubmit}
+        />
+      )}
 
       <div>
         <button
@@ -400,6 +415,7 @@ export default function QuestionCard({
   phase = "verified",
   isFinal = true,
   trail = [],
+  onInteractionSubmit,
 }: QuestionCardProps) {
   const t = useT();
   const [showSolution, setShowSolution] = useState(!isFinal);
@@ -426,6 +442,7 @@ export default function QuestionCard({
   const selectionEnabled = isFinal && (passed || modificationResult !== null);
   const questionId = getQuestionId(question);
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+  const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
   const phaseLabel = isFinal
     ? t("card.final")
     : t(`card.phase_${phase}` as Parameters<typeof t>[0]);
@@ -455,6 +472,21 @@ export default function QuestionCard({
   const ssLpCodes = useMemo(
     () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.學習表現.map((lp) => lp.編碼)) : [],
     [question.subquestions, isSocialStudies]
+  );
+  const eraTags = isIccsEra ? (
+    <>
+      {question.內容領域 && <Chip label={question.內容領域} tone="blue" />}
+      {(question.認知歷程 ?? []).map((process) => (
+        <Chip key={`cognitive-${process}`} label={process} tone="purple" />
+      ))}
+    </>
+  ) : (
+    <>
+      {(question.閱讀歷程 ?? []).map((process) => (
+        <Chip key={`legacy-process-${process}`} label={process} tone="gray" />
+      ))}
+      {question.文本形式 && <Chip label={question.文本形式} tone="gray" />}
+    </>
   );
 
   const handleDownloadJson = () => {
@@ -606,12 +638,22 @@ export default function QuestionCard({
               ))}
             </>
           )}
+          {eraTags}
           {modificationResult && (
             <Chip label={t("card.modified")} tone="green" />
           )}
         </div>
         <VerificationBadge passed={passed} verifiedLabel={t("card.verified")} unverifiedLabel={t("card.unverified")} />
       </div>
+
+      {question.image_stale && (
+        <div
+          role="status"
+          className="rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900"
+        >
+          {t("card.imageStale")}
+        </div>
+      )}
 
       {(() => {
         const figure = pickFigure(question.chart_spec, question.image_base64, "Question diagram");
@@ -665,6 +707,7 @@ export default function QuestionCard({
                 index={index}
                 showAnswersByDefault={!isFinal}
                 selectionEnabled={selectionEnabled}
+                onInteractionSubmit={onInteractionSubmit}
               />
             ))}
           </div>

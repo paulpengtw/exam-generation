@@ -1,4 +1,4 @@
-"""CLI entry point for social studies (PISA reading literacy) exam question generation."""
+"""CLI entry point for social-studies exam question generation."""
 
 from __future__ import annotations
 
@@ -191,15 +191,21 @@ _SQ_IMAGE_REPAIR_USER_TEMPLATE = """\
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="social-studies-exam-generation",
-        description="Generate PISA-style reading literacy exam questions using LLMs",
+        description="Generate social-studies exam questions using LLMs",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     gen = sub.add_parser("generate", help="Generate exam questions")
     gen.add_argument("--grade", type=int, choices=_GRADES, help="Target grade level")
     gen.add_argument("--context", type=str, nargs="+", help="情境 (e.g. 個人 公共)")
-    gen.add_argument("--set-type", type=str, help="題型種類 (always 題組題 for PISA)")
-    gen.add_argument("--q-type", type=str, nargs="+", help="題型 (one or more values)")
+    gen.add_argument("--set-type", type=str, help="題型種類 (always 題組題)")
+    gen.add_argument(
+        "--q-type",
+        type=str,
+        nargs="+",
+        choices=[q.value for q in QuestionType],
+        help="題型 (one or more values)",
+    )
     gen.add_argument(
         "--subject",
         type=str,
@@ -255,8 +261,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="關閉最後小題回扣本題組核心問題的提示",
     )
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
-    gen.add_argument("--max-retries", type=int, default=None,
-                     help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)")
+    gen.add_argument(
+        "--max-retries",
+        type=int,
+        default=None,
+        help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)",
+    )
     gen.add_argument(
         "--image-generation-mode",
         choices=["html", "gpt_image"],
@@ -277,6 +287,19 @@ def _resolve_enum(value: str | None, enum_cls: type) -> object | None:
         if member.value == value:
             return member
     raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
+
+
+def _derive_iccs_axes(question: ExamQuestion, params: SampledParams) -> None:
+    """Stamp sampled ICCS tags after parsed 小題 have been assembled."""
+    if params.內容領域 is not None:
+        question.內容領域 = params.內容領域.value
+
+    cognitive_processes: list[str] = []
+    for subquestion in question.subquestions:
+        process = subquestion.認知歷程
+        if process and process not in cognitive_processes:
+            cognitive_processes.append(process)
+    question.認知歷程 = cognitive_processes
 
 
 def _parse_subquestion(
@@ -313,6 +336,15 @@ def _parse_subquestion(
                 LearningContentRef(編碼=code, 說明=LP_INSTRUCTIONS.get(code, ""))
                 for code in cfg.learning_performance
             ]
+        cognitive_process = (
+            cfg.認知歷程
+            if cfg is not None and cfg.認知歷程 is not None
+            else (
+                params.認知歷程_pool[i - 1]
+                if i - 1 < len(params.認知歷程_pool)
+                else sq_raw.get("認知歷程")
+            )
+        )
         rubric = [
             RubricEntry(
                 code=str(r.get("code", "")),
@@ -334,6 +366,11 @@ def _parse_subquestion(
             distractor = {str(k): str(v) for k, v in raw_distractor.items()}
         else:
             distractor = {}
+        raw_question_type = sq_raw.get(
+            "題型", params.題型[0].value if params.題型 else "選擇題"
+        )
+        if raw_question_type not in {member.value for member in QuestionType}:
+            return None
         result = SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
@@ -346,7 +383,8 @@ def _parse_subquestion(
             出題指示=(
                 cfg.instruction if cfg and cfg.instruction else sq_raw.get("出題指示")
             ),
-            題型=sq_raw.get("題型", params.題型[0].value if params.題型 else "選擇題"),
+            認知歷程=cognitive_process,
+            題型=raw_question_type,
             題目=sq_raw.get("題目", ""),
             答案=sq_raw.get("答案", ""),
             答案解析=sq_raw.get("答案解析", ""),
@@ -356,6 +394,7 @@ def _parse_subquestion(
             image_generation_mode=sq_raw.get("image_generation_mode"),
             圖片=sq_raw.get("圖片"),
             chart_spec=sq_chart_spec,
+            interaction=sq_raw.get("interaction"),
         )
         result.科目 = [params.科目.value]
         # 記錄建構這一小題時所用的 PLAN 索引，供後續圖片修補沿用同一格 各小題配置。
@@ -415,8 +454,6 @@ def _parse_text_shell(
         情境=[c.value for c in params.情境],
         題型種類=params.題型種類.value,
         題型=params.題型[0].value if params.題型 else "選擇題",
-        閱讀歷程=[p.value for p in params.閱讀歷程],
-        文本形式=params.文本形式.value,
         題目內容類型=params.題目內容類型,
         題目=raw.get("題目", []),
         正確解題分析=raw.get("正確解題分析", []),
@@ -426,6 +463,7 @@ def _parse_text_shell(
             model=model,
             seed=None,
             difficulty=params.difficulty,
+            surface_used=params.target_surface,
         ),
     )
 
@@ -745,6 +783,7 @@ def _ss_make_fallback_sq_plans(params: SampledParams, n: int) -> list[dict]:
 def _ss_ensure_visual_spec(
     question: ExamQuestion, params: SampledParams, client: Any,
 ) -> None:
+    _derive_iccs_axes(question, params)
     known_kinds = [
         cfg.figure_kind
         for cfg in params.subquestion_configs
@@ -1084,9 +1123,9 @@ def generate_one(
     balanced_batch: bool = False,
     core_question_callback: bool = True,
 ) -> ExamQuestion | str:
-    """Generate a single PISA reading question set."""
+    """Generate a single social-studies question set."""
     params = _with_text_word_limit(params, text_word_limit)
-    return generate_one_core(
+    result = generate_one_core(
         config=config,
         client=client,
         params=params,
@@ -1108,6 +1147,9 @@ def generate_one(
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )
+    if isinstance(result, ExamQuestion):
+        _derive_iccs_axes(result, params)
+    return result
 
 
 def build_generation_prompts(
@@ -1176,7 +1218,7 @@ def generate_with_corrections(
     core_question_callback: bool = True,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
-    return generate_with_corrections_core(
+    result = generate_with_corrections_core(
         config=config,
         client=client,
         params=params,
@@ -1199,6 +1241,9 @@ def generate_with_corrections(
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )
+    if isinstance(result, ExamQuestion):
+        _derive_iccs_axes(result, params)
+    return result
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -1227,7 +1272,10 @@ def main(argv: list[str] | None = None) -> None:
             html_renderer.start()
             print("  Playwright browser started.", file=sys.stderr)
         except Exception as e:
-            print(f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.", file=sys.stderr)
+            print(
+                f"  Warning: Playwright unavailable ({e}). HTML images will be skipped.",
+                file=sys.stderr,
+            )
 
     context_override = (
         [_resolve_enum(v, QuestionContext) for v in args.context]
@@ -1236,7 +1284,11 @@ def main(argv: list[str] | None = None) -> None:
     set_type_override = _resolve_enum(args.set_type, QuestionSetType)
     q_type_override = [_resolve_enum(v, QuestionType) for v in args.q_type] if args.q_type else None
     subject_override = [QuestionSubject(v) for v in args.subject] if args.subject else None
-    core_competency_override = [CoreCompetency(v) for v in args.core_competency] if args.core_competency else None
+    core_competency_override = (
+        [CoreCompetency(v) for v in args.core_competency]
+        if args.core_competency
+        else None
+    )
     learning_content_override = args.learning_content if args.learning_content else None
     learning_performance_override = args.learning_performance if args.learning_performance else None
     content_type_override = args.content_type if args.content_type else None
@@ -1281,8 +1333,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
                   f"科目={params.科目.value}, "
                   f"情境={'、'.join(c.value for c in params.情境)}, "
-                  f"題型={'、'.join(t.value for t in params.題型)}, 閱讀歷程={'、'.join(p.value for p in params.閱讀歷程)}, "
-                  f"文本形式={params.文本形式.value}, "
+                  f"題型={'、'.join(t.value for t in params.題型)}, "
                   f"題目內容類型={params.題目內容類型}, "
                   f"核心素養={'、'.join(c.value for c in params.核心素養)}, "
                   f"creative_brief={'yes' if params.creative_brief else 'no'}", file=sys.stderr)
@@ -1315,10 +1366,14 @@ def main(argv: list[str] | None = None) -> None:
                     grade=params.grade,
                     model="",
                     coverage_mode_used=args.coverage_mode,
+                    surface_used=params.target_surface,
                 )
             else:
                 question.metadata = question.metadata.model_copy(
-                    update={"coverage_mode_used": args.coverage_mode}
+                    update={
+                        "coverage_mode_used": args.coverage_mode,
+                        "surface_used": params.target_surface,
+                    }
                 )
 
             results.append(question)

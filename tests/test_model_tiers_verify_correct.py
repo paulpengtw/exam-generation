@@ -51,8 +51,6 @@ from src.social_studies.schemas import (
     QuestionContext as SSCtx,
     QuestionSetType as SSSetType,
     QuestionType as SSQType,
-    ReadingProcess,
-    TextForm,
     VerificationResult as SSVerifResult,
     ChartVerificationResult as SSChartVerif,
 )
@@ -154,8 +152,6 @@ def _make_ss_question() -> SSExamQuestion:
         情境=[next(iter(SSCtx))],
         題型種類=next(iter(SSSetType)),
         題型=next(iter(SSQType)),
-        閱讀歷程=[next(iter(ReadingProcess))],
-        文本形式=next(iter(TextForm)),
         subquestions=[sq],
     )
 

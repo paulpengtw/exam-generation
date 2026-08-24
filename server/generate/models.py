@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 ImageGenerationMode = Literal["html", "gpt_image"]
 CoverageMode = Literal["balanced", "random"]
+TargetSurface = Literal["紙本", "數位"]
 
 
 def build_sse_error(code: str, message: str) -> dict[str, Any]:
@@ -128,6 +129,8 @@ class GenerateParams(BaseModel):
     core_question_callback: bool = True
     subject_filter: list[str] | None = None
     content_type: str | None = None
+    content_domain: str | None = None
+    target_surface: TargetSurface | None = None
     passage: str | None = None
     options: list[str] | None = None
     topic: str | None = None
@@ -175,6 +178,7 @@ class GenerateParams(BaseModel):
         "q_type",
         "context",
         "subject_filter",
+        "content_domain",
         "science_competency",
         "reporting_scale",
         mode="before",
@@ -261,6 +265,8 @@ PER_QUESTION_FIELDS: frozenset[str] = frozenset(
         "coverage_mode",
         "subject_filter",
         "content_type",
+        "content_domain",
+        "target_surface",
         "passage",
         "options",
         "topic",

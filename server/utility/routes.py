@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from server.auth.dependencies import get_config
-from server.config import ServerConfig, _EFFORT_LEVELS
+from server.config import _EFFORT_LEVELS, ServerConfig
 from server.generate.models import ALLOWED_SUBJECTS
 from server.generate.subjects import SUBJECTS
 
@@ -33,7 +33,7 @@ async def get_models(
         "defaults": {
             "plan": config.model_plan,
             "execute": config.model_execute,
-            "verify": config.model_verify,    # #375: "" when unset (signals "follows execute" to frontend #376)
+            "verify": config.model_verify,    # #375: "" when unset (follows execute)
             "correct": config.model_correct,  # #375: "" when unset
             "effort_plan": config.effort_plan,
             "effort_execute": config.effort_execute,
@@ -59,7 +59,9 @@ async def get_schemas(
     # Site 7: schemas dispatch via registry (replaces if/elif per-subject branches)
     spec = SUBJECTS[subject]
     try:
-        return spec.build_schemas(config, grade)
+        schemas = spec.build_schemas(config, grade)
+        schemas.setdefault("digital_only_question_types", [])
+        return schemas
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -133,8 +133,6 @@ def test_extract_ss_uses_核心問題_and_aggregated_subquestion_codes() -> None
         情境=[],
         題型種類="題組題",
         題型="選擇題",
-        閱讀歷程=[],
-        文本形式="連續文本",
     )
     scope = extract_ss_prior_scope(question)
     assert scope is not None
