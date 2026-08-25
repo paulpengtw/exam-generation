@@ -269,7 +269,7 @@ def make_trail_emitter(
     loop: asyncio.AbstractEventLoop,
     queue: asyncio.Queue,
 ) -> Callable[[Any], None]:
-    """Return a thread-safe emitter for one typed verification-trail entry."""
+    """Return a thread-safe emitter for one typed trail entry."""
     def emit_trail(entry: Any) -> None:
         payload = (
             entry.model_dump(mode="json")

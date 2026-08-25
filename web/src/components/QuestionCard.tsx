@@ -447,6 +447,12 @@ export default function QuestionCard({
   const questionId = getQuestionId(question);
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
   const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
+  const figurePolicyWarnings = (figurePolicyTrail ?? []).filter(
+    (
+      entry,
+    ): entry is Extract<FigurePolicyTrailEntry, { kind: "warning" }> =>
+      entry.kind === "warning" && entry.duplicate_image_shipped,
+  );
   const phaseLabel = isFinal
     ? t("card.final")
     : t(`card.phase_${phase}` as Parameters<typeof t>[0]);
@@ -595,6 +601,30 @@ export default function QuestionCard({
           mode="modification"
           modificationStageEvents={modificationRun.stageEvents}
         />
+      )}
+
+      {figurePolicyWarnings.length > 0 && (
+        <div
+          role="alert"
+          aria-label={t("card.figurePolicyWarningBanner")}
+          className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          <p className="font-semibold">{t("card.figurePolicyWarningBanner")}</p>
+          <ul className="mt-1 space-y-1">
+            {figurePolicyWarnings.map((warning, index) => (
+              <li key={`${warning.timestamp}-${index}`}>
+                {warning.left && warning.right && warning.effective_figure_kind ? (
+                  <>
+                    {t("card.figurePolicyCollisionPair")}：{warning.left} × {warning.right}；
+                    {t("card.figurePolicyEffectiveKind")}：{warning.effective_figure_kind}
+                  </>
+                ) : (
+                  warning.message
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* Header chips */}

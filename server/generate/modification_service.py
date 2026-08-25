@@ -262,6 +262,7 @@ async def modification_question_stream(
     config: ServerConfig,
     user_id: uuid.UUID,
     session_factory: Any,
+    figure_policy_trail_json: list[dict[str, Any]] | None = None,
     client_factory: Callable[..., Any] | None = None,
     subjects: Mapping[str, Any] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
@@ -407,6 +408,7 @@ async def modification_question_stream(
             session_factory=session_factory,
             parent_record_id=record_id,
             annotations_json={"annotations": annotations},
+            figure_policy_trail_json=figure_policy_trail_json,
         )
         result_payload["record_id"] = (
             str(child_record_id) if child_record_id is not None else None

@@ -448,4 +448,42 @@ describe("HistoryDetail", () => {
       screen.queryByRole("button", { name: /Download JSON/i }),
     ).not.toBeInTheDocument();
   });
+
+  it("marks a persisted figure-policy degradation on the history detail", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      id: "degraded-id",
+      subject: "social_studies",
+      question_id: "ss-child",
+      created_at: "2026-07-16T00:00:00Z",
+      status: "completed",
+      error: null,
+      params_json: { subject: "social_studies" },
+      question_json: { id: "ss-child" },
+      figure_policy_trail: [
+        {
+          code: "figure_policy",
+          kind: "warning",
+          question_id: "ss-child",
+          message: "duplicate shipped",
+          duplicate_image_shipped: true,
+          left: "題幹",
+          right: "小題 1",
+          effective_figure_kind: "地圖",
+          timestamp: "2026-08-24T00:00:00Z",
+        },
+      ],
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/degraded-id"]}>
+        <Routes>
+          <Route path="/history/:id" element={<HistoryDetail recordId="degraded-id" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Figure-kind diversity degraded")).toBeInTheDocument(),
+    );
+  });
 });
