@@ -98,9 +98,16 @@ class _SubClient:
 
 
 class _UndeclaredVisualMainClient:
-    def __init__(self, repaired_kinds: list[str], events: list[str]) -> None:
+    def __init__(
+        self,
+        repaired_kinds: list[str],
+        events: list[str],
+        *,
+        include_top_spec: bool = False,
+    ) -> None:
         self.repaired_kinds = iter(repaired_kinds)
         self.events = events
+        self.include_top_spec = include_top_spec
         self.calls = 0
         self.repair_calls: list[tuple[str, str]] = []
 
@@ -111,7 +118,7 @@ class _UndeclaredVisualMainClient:
         self.calls += 1
         if self.calls == 1:
             self.events.append("text")
-            return {
+            response = {
                 "核心問題": "測試核心問題",
                 "文本": "測試文本素材",
                 "取材來源": ["測試來源"],
@@ -121,6 +128,13 @@ class _UndeclaredVisualMainClient:
                     {"序號": 3, "題型": "選擇題", "出題概念": "概念三"},
                 ],
             }
+            if self.include_top_spec:
+                response["chart_spec"] = {
+                    "render_mode": "gpt_image",
+                    "figure_kind": "",
+                    "description": "題幹圖片",
+                }
+            return response
         kind = next(self.repaired_kinds)
         self.repair_calls.append(("repair", user))
         self.events.append("declaration_repair")
@@ -140,8 +154,9 @@ class _UndeclaredVisualMainClient:
 
 
 class _UndeclaredVisualSubClient:
-    def __init__(self, events: list[str]) -> None:
+    def __init__(self, events: list[str], visual_indices: set[int] | None = None) -> None:
         self.events = events
+        self.visual_indices = visual_indices or {1, 2}
 
     def set_observer(self, _obs) -> None:
         pass
@@ -149,7 +164,7 @@ class _UndeclaredVisualSubClient:
     def generate_json(self, _system, _user, agent_override=None, **_kwargs):
         index = int(agent_override.split("#")[1])
         response = _subquestion_response(index, "")
-        if index == 3:
+        if index not in self.visual_indices:
             response.pop("chart_spec")
         return response
 
@@ -277,6 +292,65 @@ def test_unresolved_figure_kind_declaration_ships_and_records_warning(
     ]
     assert len(warnings) == 1
     assert warnings[0]["duplicate_image_shipped"] is False
+
+
+def test_all_undeclared_visual_specs_reach_collision_check_after_declaration_repairs(
+    tmp_path: Path,
+) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[
+            {"content_type": "含圖片"},
+            {},
+            {},
+        ],
+    )
+    events: list[str] = []
+    policy_events: list[dict] = []
+    # The first two repair answers are aliases for the same canonical kind;
+    # the third answer is the existing collision repair budget.
+    client = _UndeclaredVisualMainClient(
+        ["直條圖", "bar_chart", "地圖"],
+        events,
+        include_top_spec=True,
+    )
+
+    question = generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=client,
+        params=params,
+        question_id="declared_collision_test",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _UndeclaredVisualSubClient(events, {1}),
+        on_figure_policy_entry=lambda entry: policy_events.append(
+            entry.model_dump(mode="json")
+        ),
+    )
+
+    assert isinstance(question, ExamQuestion)
+    assert question.chart_spec is not None
+    assert question.chart_spec.figure_kind == "長條圖"
+    assert question.subquestions[0].chart_spec is not None
+    assert question.subquestions[0].chart_spec.figure_kind == "地圖"
+    repairs = [entry for entry in policy_events if entry["kind"] == "repair"]
+    assert [entry["after_effective_figure_kind"] for entry in repairs[:2]] == [
+        "長條圖",
+        "長條圖",
+    ]
+    collisions = [entry for entry in policy_events if entry["kind"] == "collision"]
+    assert len(collisions) == 1
+    assert collisions[0]["effective_figure_kind"] == "長條圖"
+    assert policy_events.index(collisions[0]) > policy_events.index(repairs[1])
+    first_render = next(i for i, event in enumerate(events) if event.startswith("render:"))
+    assert all(
+        i < first_render
+        for i, event in enumerate(events)
+        if event == "declaration_repair"
+    )
 
 
 def test_repair_prompt_lists_forbidden_figure_kinds_in_canonical_form(tmp_path: Path) -> None:
