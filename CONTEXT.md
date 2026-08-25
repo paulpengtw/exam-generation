@@ -71,8 +71,16 @@ The request option asking that a 題組's last 小題 be a synthesis question ex
 _Avoid_: callback, echo, 總結小題, 呼應核心問題
 
 **預抽**:
-Resolving a value that would otherwise be chosen randomly during generation, before the user confirms, so the confirmation screen can show it.
+Resolving a value that would otherwise be chosen randomly during generation, before the user confirms, so 發送前確認 can show it. Covers every such value except the 參考範例 draw — see 全量預抽.
 _Avoid_: pre-draw, pre-roll, client-side sampling
+
+**全量預抽**:
+The promise that every value generation would otherwise draw is resolved by 預抽 and 釘選 before 發送前確認, so nothing shown to a supervisor can change after they send. The 參考範例 draw is the single deliberate exception. Drawing during generation survives only for callers that have no 發送前確認 to fill, and that path is being retired.
+_Avoid_: full pre-draw, exhaustive sampling, no-backend-randomness
+
+**從屬參數**:
+A setting whose legal values are fixed by another setting's resolved value — 情境子類別 by 情境, and 學習內容 / 學習表現 by 科目. 預抽 resolves the parent first and draws the child only from that parent's range. A pair drawn from unrelated ranges is invalid and is rejected, never silently corrected.
+_Avoid_: dependent field, child parameter, cascading select, parented value
 
 **未送出的輸入**:
 Form input the user has entered but not yet sent for generation. It exists from the user's first edit onward; values supplied programmatically by 預抽 or prefilled by Regenerate do not create it without the user's own edit.
@@ -111,7 +119,7 @@ A submitted setting enforced after generation regardless of what the model retur
 _Avoid_: enforced value, hard constraint, override
 
 **Reporting Scale**:
-The PISA Science proficiency level (1c, 1b, 1a, 2, 3, 4, 5, 6) that a 自然科學 小題 targets. 自然科學-only: 數學 and 社會領域 use 難度 instead. The headword is deliberately English in this Chinese-language glossary because the interface shows the literal English term untranslated in both zh-TW and en locales — no established Chinese equivalent exists. 每小題可各自指定，未指定者承襲題組層級的值，題組層級亦未設定時則每個空位各自隨機抽取。
+The PISA Science proficiency level (1c, 1b, 1a, 2, 3, 4, 5, 6) that a 自然科學 小題 targets. 自然科學-only: 數學 and 社會領域 use 難度 instead. The headword is deliberately English in this Chinese-language glossary because the interface shows the literal English term untranslated in both zh-TW and en locales — no established Chinese equivalent exists. 每小題可各自指定，未指定者承襲題組層級的值；題組層級亦未設定時，每個空位的值由 預抽 解析並 釘選。
 _Avoid_: 難度 (wrong term for 自然科學), 報告等級
 
 **難度**:
@@ -147,6 +155,10 @@ _Avoid_: confirmation dialog, review screen, preview
 **破壞性操作確認**:
 A modal that interrupts an action which would irreversibly discard the user's work or end their session, requiring explicit assent before it proceeds; it appears on the way to that destructive or irreversible action, not on the way to sending a form. Contrast 發送前確認.
 _Avoid_: destructive-action modal, are-you-sure dialog, warning modal
+
+**參考範例**:
+The stored worked 題組 injected into a prompt to show the model the target form. Which ones appear is fixed by the request's seed, so one payload always yields the same 參考範例; the choice is not 預抽 and is not shown on 發送前確認.
+_Avoid_: few-shot examples, exemplars, reference samples
 
 **提示詞預覽**:
 The literal system and user prompt text displayed on 發送前確認, assembled without calling any model.
