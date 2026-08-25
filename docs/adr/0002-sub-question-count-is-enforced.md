@@ -4,4 +4,4 @@
 
 ## Consequences
 
-A padded 小題 is produced without the 文本生成器's planning pass, so it may cover ground close to a sibling 小題. Requests that omit 小題數量 keep the previous model-decided behaviour.
+A padded 小題 is produced without the 文本生成器's planning pass, so it may cover ground close to a sibling 小題. Requests that omit 小題數量 no longer keep the model-decided behaviour: the count is 預抽'd 3–7 from the request seed and 釘選 before 發送前確認 (ADR 0018).

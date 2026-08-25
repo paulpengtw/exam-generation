@@ -9,3 +9,5 @@ Labelling blank fields as "the backend will decide" was simpler and needed no wi
 ## Consequences
 
 Randomness for these parameters now originates in the frontend, and the backend sampler is bypassed whenever a value is supplied. Reproducibility rests on a seed resolved at confirmation time and sent with the request, so any future randomness added to prompt assembly must derive from that seed or it will silently break the guarantee that what is shown is what is sent.
+
+**Amended by ADR 0018.** Randomness now originates in the server-side resolver, not the frontend; the browser draw is retired and `/generate` rejects an incomplete request. The decision above — 發送前確認 shows the resolved payload — is unchanged.
