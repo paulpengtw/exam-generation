@@ -158,9 +158,15 @@ class _UndeclaredVisualMainClient:
 
 
 class _UndeclaredVisualSubClient:
-    def __init__(self, events: list[str], visual_indices: set[int] | None = None) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        visual_indices: set[int] | None = None,
+        reported_sequences: dict[int, int] | None = None,
+    ) -> None:
         self.events = events
         self.visual_indices = visual_indices or {1, 2}
+        self.reported_sequences = reported_sequences or {}
 
     def set_observer(self, _obs) -> None:
         pass
@@ -168,6 +174,8 @@ class _UndeclaredVisualSubClient:
     def generate_json(self, _system, _user, agent_override=None, **_kwargs):
         index = int(agent_override.split("#")[1])
         response = _subquestion_response(index, "")
+        if index in self.reported_sequences:
+            response["序號"] = self.reported_sequences[index]
         if index not in self.visual_indices:
             response.pop("chart_spec")
         return response
@@ -244,6 +252,50 @@ def test_undeclared_visual_specs_are_repaired_once_before_subquestion_rendering(
     assert all(i < first_render for i, event in enumerate(events) if event == "declaration_repair")
 
 
+def test_each_visual_spec_gets_a_repair_budget_when_model_repeats_sequence_number(
+    tmp_path: Path,
+) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[
+            {"content_type": "含圖片"},
+            {"content_type": "含圖片"},
+            {},
+        ],
+    )
+    events: list[str] = []
+    policy_events: list[dict] = []
+    client = _UndeclaredVisualMainClient(["地圖", "表格"], events)
+
+    question = generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=client,
+        params=params,
+        question_id="duplicate_sequence_declaration_test",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _UndeclaredVisualSubClient(
+            events,
+            {1, 2},
+            {1: 1, 2: 1},
+        ),
+        on_figure_policy_entry=lambda entry: policy_events.append(
+            entry.model_dump(mode="json")
+        ),
+    )
+
+    assert isinstance(question, ExamQuestion)
+    repairs = [entry for entry in policy_events if entry["kind"] == "repair"]
+    assert len(repairs) == 2
+    assert [sub.chart_spec.figure_kind for sub in question.subquestions[:2]] == [
+        "地圖",
+        "表格",
+    ]
+
+
 def test_unresolved_figure_kind_declaration_ships_and_records_warning(
     tmp_path: Path,
 ) -> None:
@@ -296,6 +348,32 @@ def test_unresolved_figure_kind_declaration_ships_and_records_warning(
     ]
     assert len(warnings) == 1
     assert warnings[0]["duplicate_image_shipped"] is False
+
+
+def test_unresolved_figure_kind_warns_without_a_trail_callback(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[{"content_type": "含圖片"}, {}, {}],
+    )
+
+    question = generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=_UndeclaredVisualMainClient([""], []),
+        params=params,
+        question_id="unresolved_without_callback_test",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _UndeclaredVisualSubClient([], {1}),
+    )
+
+    assert isinstance(question, ExamQuestion)
+    assert "未宣告圖像種類" in capsys.readouterr().err
 
 
 def test_all_undeclared_visual_specs_reach_collision_check_after_declaration_repairs(
