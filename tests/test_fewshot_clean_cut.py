@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import inspect
 import json
+import random
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,8 @@ from src.social_studies.data_loader import (
     load_few_shot_example_groups,
     load_few_shot_examples,
 )
+from src.social_studies.context_builder import build_text_user_prompt
+from src.social_studies.sampler import sample_params
 
 CONTENT_TYPES = ("純文字", "混合", "graphs/charts/tables")
 COGNITIVE_PROCESSES = {
@@ -92,13 +95,9 @@ def test_public_loader_api_is_keyed_by_content_type() -> None:
 
 @pytest.mark.parametrize("content_type", CONTENT_TYPES)
 def test_checked_in_corpus_is_loaded_from_the_content_type_home(content_type: str) -> None:
-    """Smoke test: loading the corpus does not raise even when Channel-1 is empty (#542).
-
-    After #542 the Channel-1 corpus is empty; the non-emptiness assertion is removed.
-    This test will re-validate corpus shape when #544 refills Channel-1.
-    """
+    """Smoke test: checked-in ICCS groups load from their content-type home."""
     examples = load_few_shot_examples(Path("data/social_studies/few_shot"), content_type)
-    # No assertion on non-emptiness — corpus is intentionally empty until #544
+    assert examples
     for example in examples:
         question = example["question"]
         assert question["題目內容類型"] == content_type
@@ -111,18 +110,77 @@ def test_checked_in_corpus_is_loaded_from_the_content_type_home(content_type: st
             assert subquestion["認知歷程"] in COGNITIVE_PROCESSES
 
 
-def test_channel1_corpus_is_empty_post_removal() -> None:
-    """After #542 the Channel-1 corpus (純文字, 混合, graphs/charts/tables) is empty.
-
-    The 1918年流感 and other PISA-era rows were retired by #542. This test pins the
-    post-removal state; it will be replaced/updated when #544 refills the corpus.
-    """
+def test_channel1_corpus_is_refilled_for_required_iccs_content_types() -> None:
+    """#544 keeps the three required Channel-1 keys populated with ICCS groups."""
     for content_type in CONTENT_TYPES:
         examples = load_few_shot_examples(Path("data/social_studies/few_shot"), content_type)
-        assert examples == [], (
-            f"Expected empty Channel-1 corpus for {content_type!r} after #542 removal, "
-            f"got {len(examples)} examples"
-        )
+        assert examples, f"Expected ICCS Channel-1 groups for {content_type!r}"
+
+
+_EXPECTED_ICCS_MARKERS = {
+    "純文字": (
+        "ICCS 題組：全球移動與公共生活",
+        "ICCS 題組：制度、責任與權力",
+        "ICCS 題組：經濟選擇與交易",
+        "ICCS 題組：家庭關係與社會變遷",
+    ),
+    "混合": (
+        "ICCS 題組：外籍移工資料與性別分工",
+        "ICCS 題組：公共建設與政府權力",
+    ),
+    "graphs/charts/tables": (
+        "ICCS 題組：女性未就業原因資料表",
+        "ICCS 題組：媒體報導比例資料表",
+        "ICCS 題組：地方選舉資格資料表",
+        "ICCS 題組：新生兒姓氏比例資料表",
+        "ICCS 題組：已婚女性勞動參與率圖",
+        "ICCS 題組：國小校數變化圖",
+    ),
+}
+
+
+@pytest.mark.parametrize("content_type", tuple(_EXPECTED_ICCS_MARKERS))
+def test_populated_content_type_injects_iccs_example_at_prompt_seam(
+    content_type: str,
+) -> None:
+    """A seeded text-stage prompt carries a real Channel-1 example for each key."""
+    seed = 544 + list(_EXPECTED_ICCS_MARKERS).index(content_type)
+    params = sample_params(
+        seed=seed,
+        content_type=content_type,
+        target_surface="紙本",
+        sub_question_count=3,
+    )
+
+    prompt, images = build_text_user_prompt(
+        params,
+        Path("data/social_studies/few_shot"),
+        rng=random.Random(seed),
+    )
+
+    assert "## 參考範例" in prompt
+    assert any(marker in prompt for marker in _EXPECTED_ICCS_MARKERS[content_type])
+    if content_type == "graphs/charts/tables":
+        assert images
+    else:
+        assert images == []
+
+
+@pytest.mark.parametrize("content_type", ("含圖片", "customized", "數位閱讀"))
+def test_unpopulated_content_type_keeps_instruction_only_fallback(content_type: str) -> None:
+    """An unpopulated live key still builds cleanly with the designed fallback."""
+    seed = 554 + ("含圖片", "customized", "數位閱讀").index(content_type)
+    params = sample_params(seed=seed, content_type=content_type, sub_question_count=3)
+
+    prompt, images = build_text_user_prompt(
+        params,
+        Path("data/social_studies/few_shot"),
+        rng=random.Random(seed),
+    )
+
+    assert f"題目內容類型（{content_type}）" in prompt
+    assert "（目前暫無範例，請根據指定條件自行設計。）" in prompt
+    assert images == []
 
 
 def test_empty_or_unpopulated_content_type_returns_no_examples(tmp_path: Path) -> None:
