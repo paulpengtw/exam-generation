@@ -206,3 +206,9 @@ class SubjectGenerationSpec:
     # Signature: (client, question, verification, *, chart_image_path,
     #              curriculum_context) -> question
     correct_fn: Callable
+
+    # Optional pre-render subject policy hook.  The social-studies pipeline
+    # uses this to repair existing visual declarations before the shared
+    # top-level image renderer runs; NS deliberately leaves it unset.
+    # Signature: (question, params, client, on_figure_policy_entry=...) -> None
+    prepare_visual_policy_fn: Callable | None = None

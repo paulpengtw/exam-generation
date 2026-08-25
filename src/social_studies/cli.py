@@ -121,7 +121,8 @@ def _figure_kind_repair_instruction(
     """Return the figure-kind constraints for a targeted image-spec repair."""
     vocabulary = "、".join(CANONICAL_FIGURE_KINDS)
     lines = [
-        "- **圖像種類宣告**：每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告 `figure_kind`；"
+        "- **圖像種類宣告**：每個視覺素材規格（每個非 null 的 `chart_spec`）"
+        "都必須宣告 `figure_kind`；"
         "它是自由文字欄位，未知類型仍可使用具體名稱。",
         "- `figure_kind` 必須描述具體圖像種類；適用時請從 canonical vocabulary 選擇："
         f"{vocabulary}。未知類型仍可使用具體自由文字。"
@@ -161,7 +162,8 @@ _TOP_LEVEL_IMAGE_REPAIR_SYSTEM_PROMPT = """\
 - `chart_spec` 必須是整個題組共用的視覺素材，不是單一小題專用圖片。
 - 若是圖片式素材、地圖、海報、表單、網頁畫面、流程圖或圖解，使用 `render_mode: "html"`。
 - 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
-- 每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告具體的 `figure_kind`；它是自由文字欄位，適用時從 canonical vocabulary 選擇。
+- 每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告具體的 `figure_kind`；
+  它是自由文字欄位，適用時從 canonical vocabulary 選擇。
 - 不要加入答案提示。
 """
 
@@ -186,7 +188,8 @@ _SQ_IMAGE_REPAIR_SYSTEM_PROMPT = """\
 - `chart_spec` 必須是此小題專用的視覺素材，不是整個題組共用圖片。
 - 若是圖片式素材、地圖、海報、表單、網頁畫面、流程圖或圖解，使用 `render_mode: "html"`。
 - 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
-- 每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告具體的 `figure_kind`；它是自由文字欄位，適用時從 canonical vocabulary 選擇。
+- 每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告具體的 `figure_kind`；
+  它是自由文字欄位，適用時從 canonical vocabulary 選擇。
 - 不要加入答案提示。
 """
 
@@ -202,6 +205,29 @@ _SQ_IMAGE_REPAIR_USER_TEMPLATE = """\
 小題：
 ```json
 {sq_json}
+```
+"""
+
+_FIGURE_KIND_DECLARATION_REPAIR_SYSTEM_PROMPT = """\
+你是一位108課綱社會領域素養導向題組的視覺素材修補教師。
+請只補上既有視覺素材規格缺少的圖像種類宣告，不要改變素材內容或渲染方式。
+
+規則：
+- 只輸出合法 JSON 物件，不要輸出其他文字。
+- JSON 必須包含 `chart_spec`；保留原有的 render_mode、chart_type、data、labels、
+  title、description 與 html。
+- 每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告 `figure_kind`。
+- `figure_kind` 是自由文字欄位；適用時從 canonical vocabulary 選擇，未知類型仍可使用具體名稱。
+"""
+
+_FIGURE_KIND_DECLARATION_REPAIR_USER_TEMPLATE = """\
+以下是{label}目前的視覺素材規格；它尚未宣告 `figure_kind`。
+請只在 `chart_spec` 中補上具體的圖像種類宣告，並保留其他欄位。
+
+{figure_kind_instruction}
+
+```json
+{spec_json}
 ```
 """
 
@@ -518,6 +544,82 @@ def _parse_image_spec(raw_spec: object) -> ImageSpec | None:
             return None
 
 
+def _declared_figure_kind(spec: ImageSpec | None) -> str:
+    if spec is None:
+        return ""
+    value = spec.figure_kind
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _canonicalize_repaired_figure_kind(value: str) -> str:
+    stripped = value.strip()
+    normalized = normalize_figure_kind(stripped)
+    return normalized if normalized in CANONICAL_FIGURE_KINDS else stripped
+
+
+def _repair_figure_kind_declaration(
+    *,
+    question: ExamQuestion,
+    label: str,
+    spec: ImageSpec,
+    params: SampledParams,
+    client: Any,
+    set_spec: Callable[[ImageSpec], None],
+    on_figure_policy_entry: FigurePolicyTrailCallback | None,
+    forbidden_kinds: list[str] | None = None,
+) -> None:
+    """Spend one call to declare a missing visual spec kind."""
+    before_kind = effective_figure_kind(spec)
+    after_kind = before_kind
+    succeeded = False
+    repair_error: str | None = None
+    try:
+        response = client.generate_json(
+            _FIGURE_KIND_DECLARATION_REPAIR_SYSTEM_PROMPT,
+            _FIGURE_KIND_DECLARATION_REPAIR_USER_TEMPLATE.format(
+                label=label,
+                figure_kind_instruction=_figure_kind_repair_instruction(
+                    params,
+                    forbidden_kinds=forbidden_kinds,
+                ),
+                spec_json=spec.model_dump_json(exclude_none=True),
+            ),
+            purpose="generate",
+        )
+        raw_spec = response.get("chart_spec") or response.get("image_spec")
+        raw_kind = (
+            raw_spec.get("figure_kind")
+            if isinstance(raw_spec, dict)
+            else response.get("figure_kind")
+        )
+        if isinstance(raw_kind, str) and raw_kind.strip():
+            repaired_spec = spec.model_copy(
+                update={"figure_kind": _canonicalize_repaired_figure_kind(raw_kind)}
+            )
+            set_spec(repaired_spec)
+            after_kind = effective_figure_kind(repaired_spec)
+            succeeded = bool(_declared_figure_kind(repaired_spec))
+    except Exception as exc:
+        repair_error = str(exc)
+
+    if on_figure_policy_entry is not None:
+        on_figure_policy_entry(
+            make_repair_entry(
+                question.id,
+                label,
+                before_kind,
+                after_kind,
+                [
+                    normalize_figure_kind(kind)
+                    for kind in (forbidden_kinds or [])
+                    if isinstance(kind, str) and kind.strip()
+                ],
+                succeeded,
+                repair_error,
+            )
+        )
+
+
 def _force_subquestion_figure_kind(sub: SubQuestion, figure_kind: str | None) -> None:
     """Apply an explicit per-slot figure-kind pin after model parsing."""
     if not sub.chart_spec or not isinstance(figure_kind, str) or not figure_kind.strip():
@@ -822,6 +924,28 @@ def _ss_ensure_visual_spec(
     )
 
 
+def _ss_prepare_visual_policy(
+    question: ExamQuestion,
+    params: SampledParams,
+    client: Any,
+    *,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+) -> None:
+    """Declare an existing 題幹 visual spec before the shared renderer runs."""
+    if question.chart_spec is None or _declared_figure_kind(question.chart_spec) or client is None:
+        return
+
+    _repair_figure_kind_declaration(
+        question=question,
+        label="題幹",
+        spec=question.chart_spec,
+        params=params,
+        client=client,
+        set_spec=lambda repaired: setattr(question, "chart_spec", repaired),
+        on_figure_policy_entry=on_figure_policy_entry,
+    )
+
+
 def _subquestion_config_for(params: SampledParams, sub: SubQuestion) -> SubQuestionConfig | None:
     """Resolve a subquestion's config by PLAN index, never by model 序號."""
     plan_index = sub._plan_index if sub._plan_index is not None else sub.序號
@@ -1116,6 +1240,22 @@ def _ss_render_subquestion_images(
                     allow_duplicates=params.allow_duplicate_figure_kinds,
                 )
 
+    for sub in question.subquestions:
+        if sub.chart_spec is None or _declared_figure_kind(sub.chart_spec) or client is None:
+            continue
+        _repair_figure_kind_declaration(
+            question=question,
+            label=f"小題 {sub.序號}",
+            spec=sub.chart_spec,
+            params=params,
+            client=client,
+            set_spec=lambda repaired, sub=sub: setattr(sub, "chart_spec", repaired),
+            on_figure_policy_entry=on_figure_policy_entry,
+            forbidden_kinds=_known_figure_kinds_for_subquestion_repair(
+                question, params, sub,
+            ),
+        )
+
     _enforce_figure_kind_diversity(
         question,
         config,
@@ -1153,6 +1293,7 @@ _SS_SPEC = SubjectGenerationSpec(
     make_fallback_sq_plans_fn=_ss_make_fallback_sq_plans,
     ensure_visual_spec_fn=_ss_ensure_visual_spec,
     render_subquestion_images_fn=_ss_render_subquestion_images,
+    prepare_visual_policy_fn=_ss_prepare_visual_policy,
     image_question_text_fn=lambda q: "\n".join(q.題目) or q.文本,
     verify_fn=verify_question,
     correct_fn=correct_question,
