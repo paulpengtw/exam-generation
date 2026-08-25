@@ -59,7 +59,7 @@ same directory, replacing the deleted `social_studies_schemas.json`.
 
 - `learning_content.json` — grew from 25 → **472 entries** spanning 學習階段 二/三/四/五 (55 mapped at 第四學習階段); `對應學習表現` cross-links populated
 - `learning_performance.json` — grew from 14 → **26 codes** (歷/地/公/社 prefixes); `對應學習內容` cross-links populated
-- `few_shot/few_shot_examples.csv` — seeded with the 1918年流感 3-subquestion 題組 (complete with `評分規準`)
+- `few_shot/few_shot_examples.csv` — header-only as of #542 (PISA-era seeded data retired; the 1918年流感 題組 rows removed by this ticket)
 
 Re-run `scripts/connect_curriculum_from_odt.py` if NAER publishes an updated 呼應表.
 

@@ -183,7 +183,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `data/natural_sciences/curriculum/learning_content.json` | Natural sciences 學習內容 JSON (757 entries) plus top-level `跨科概念` taxonomy (48 entries), generated from the canonical converted workbook. |
 | `data/natural_sciences/curriculum/learning_performance.json` | Natural sciences 學習表現 JSON (99 entries; stages 二/三/四/五). |
 | `scripts/build_natural_sciences_curriculum.py` | Rebuilds natural-sciences `learning_content.json`, `learning_performance.json`, and `core_competencies.json` from `converted/課綱各項指標列表.xlsx`. |
-| `data/social_studies/few_shot/few_shot_examples.csv` | Social studies few-shot examples (long format grouped by 範例編號; one row per subquestion with all 108課綱 metadata columns; checked-in examples demonstrate mixed per-小題 題型) |
+| `data/social_studies/few_shot/few_shot_examples.csv` | Social studies few-shot examples (long format grouped by 範例編號; one row per subquestion with all 108課綱 metadata columns; header-only as of #542; awaiting ICCS-native content from #544) |
 | `data/social_studies/csv_填寫指南.md` | zh-TW filler guide: field-by-field explanation of JSON + CSV files |
 | `src/social_studies/schema_loader.py` | Builds social-studies schema dict from `schema_meta.csv` + `schema_parameters.csv` |
 | `src/social_studies/curriculum_loader.py` | Thin shim over `src.common.curriculum_loader`. Owns `_SUBJECT_TO_PREFIXES` (歷史/地理/公民與社會/跨科, all include `"社"` and `""`) and the `data/social_studies/curriculum/` default path. Adds `*_instructions` / `load_performance_intro` helpers on top of the shared loader. |
