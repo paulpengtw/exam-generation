@@ -366,6 +366,14 @@ def generate_one_core(
         if question.chart_spec != prior_chart_spec:
             _emit_update(on_question_update, question, "corrected")
 
+    if spec.prepare_visual_policy_fn is not None:
+        spec.prepare_visual_policy_fn(
+            question,
+            params,
+            client,
+            on_figure_policy_entry=on_figure_policy_entry,
+        )
+
     # ── Top-level image rendering ─────────────────────────────────────────
     chart_image_path: str | None = None
     if question.chart_spec:
