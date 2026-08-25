@@ -225,6 +225,60 @@ def test_undeclared_visual_specs_are_repaired_once_before_subquestion_rendering(
     assert all(i < first_render for i, event in enumerate(events) if event == "declaration_repair")
 
 
+def test_unresolved_figure_kind_declaration_ships_and_records_warning(
+    tmp_path: Path,
+) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[
+            {"content_type": "含圖片"},
+            {"content_type": "含圖片"},
+            {},
+        ],
+    )
+    events: list[str] = []
+    policy_events: list[dict] = []
+    client = _UndeclaredVisualMainClient(["", "地圖"], events)
+
+    question = generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=client,
+        params=params,
+        question_id="unresolved_declaration_test",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _UndeclaredVisualSubClient(events),
+        on_figure_policy_entry=lambda entry: policy_events.append(
+            entry.model_dump(mode="json")
+        ),
+    )
+
+    assert isinstance(question, ExamQuestion)
+    assert question.subquestions[0].chart_spec is not None
+    assert question.subquestions[0].chart_spec.figure_kind == ""
+    assert (tmp_path / "unresolved_declaration_test_sq1.png").exists()
+
+    failed_repairs = [
+        entry
+        for entry in policy_events
+        if entry["kind"] == "repair" and entry["target"] == "小題 1"
+    ]
+    assert len(failed_repairs) == 1
+    assert failed_repairs[0]["succeeded"] is False
+    assert failed_repairs[0]["after_effective_figure_kind"] == ""
+
+    warnings = [
+        entry
+        for entry in policy_events
+        if entry["kind"] == "warning" and entry["right"] == "小題 1"
+    ]
+    assert len(warnings) == 1
+    assert warnings[0]["duplicate_image_shipped"] is False
+
+
 def test_repair_prompt_lists_forbidden_figure_kinds_in_canonical_form(tmp_path: Path) -> None:
     params = sample_params(
         seed=1,
