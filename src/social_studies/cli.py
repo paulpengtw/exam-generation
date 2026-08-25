@@ -1200,6 +1200,36 @@ def _enforce_figure_kind_diversity(
             )
 
 
+def _warn_about_undeclared_figure_kinds(
+    question: ExamQuestion,
+    params: SampledParams,
+    obs: Any,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None,
+) -> None:
+    """Record unresolved declaration omissions without blocking image output."""
+    if on_figure_policy_entry is None:
+        return
+    for entry in _figure_spec_entries(question, params):
+        if _declared_figure_kind(entry["spec"]):
+            continue
+        effective_kind = effective_figure_kind(entry["spec"])
+        message = (
+            f"Warning: {entry['label']} 未宣告圖像種類；"
+            "視覺素材仍繼續渲染"
+        )
+        print(f"  {message}", file=sys.stderr)
+        emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+        on_figure_policy_entry(
+            make_warning_entry(
+                question.id,
+                message,
+                duplicate_image_shipped=False,
+                right=entry["label"],
+                effective_kind=effective_kind or None,
+            )
+        )
+
+
 def _ss_render_subquestion_images(
     question: ExamQuestion,
     config: Config,
@@ -1264,6 +1294,12 @@ def _ss_render_subquestion_images(
         image_generation_mode,
         obs,
         params,
+        on_figure_policy_entry,
+    )
+    _warn_about_undeclared_figure_kinds(
+        question,
+        params,
+        obs,
         on_figure_policy_entry,
     )
 

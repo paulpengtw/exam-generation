@@ -124,6 +124,7 @@ def make_warning_entry(
     question_id: str,
     message: str,
     *,
+    duplicate_image_shipped: bool = True,
     left: str | None = None,
     right: str | None = None,
     effective_kind: str | None = None,
@@ -131,6 +132,7 @@ def make_warning_entry(
     return FigurePolicyWarningEntry(
         question_id=question_id,
         message=message,
+        duplicate_image_shipped=duplicate_image_shipped,
         left=left,
         right=right,
         effective_figure_kind=effective_kind,
