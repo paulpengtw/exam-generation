@@ -425,7 +425,7 @@ describe("ParamForm history prefill", () => {
     );
   });
 
-  it("restores a provenance-marked request-level slot to random before re-submitting", async () => {
+  it("keeps a provenance-marked request-level slot pinned before re-submitting", async () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       const onSubmit = vi.fn();
@@ -440,6 +440,7 @@ describe("ParamForm history prefill", () => {
             set_type: "單一題",
             q_type: ["選擇題"],
             count: 1,
+            seed: 909,
             learning_performance: ["n-IV-1"],
             learning_content: ["N-7-1"],
             predrawn_fields: JSON.stringify(["learning_content"]),
@@ -449,30 +450,31 @@ describe("ParamForm history prefill", () => {
         />,
       );
 
+      expect(await screen.findByText("N-7-1")).toBeInTheDocument();
       fireEvent.click(await screen.findByText("form.btn_generate"));
       await screen.findByText("form.confirm_title");
 
       const learningContentRow = screen
         .getByText("form.confirm_learning_content", { selector: "dt" })
         .parentElement!;
-      expect(learningContentRow).toHaveTextContent("form.confirm_lc_random_pool");
-      expect(learningContentRow).toHaveTextContent("A-7-2");
+      expect(learningContentRow).toHaveTextContent("form.confirm_lc_selected");
+      expect(learningContentRow).toHaveTextContent("N-7-1");
+      expect(learningContentRow).not.toHaveTextContent("form.confirm_lc_random_pool");
 
       fireEvent.click(screen.getByText("form.btn_confirm_send"));
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
       const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
-      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
 
-      expect(submitted.learning_content).toEqual(["A-7-2"]);
+      expect(submitted.learning_content).toEqual(["N-7-1"]);
       expect(submitted.learning_performance).toEqual(["n-IV-1"]);
-      expect(predrawnFields).toContain("learning_content");
-      expect(predrawnFields).not.toContain("learning_performance");
+      expect(submitted.predrawn_fields).toBe("[]");
+      expect(random).not.toHaveBeenCalled();
     } finally {
       random.mockRestore();
     }
   });
 
-  it("restores a provenance-marked per-question slot while preserving its siblings", async () => {
+  it("keeps a provenance-marked per-question slot pinned while preserving its siblings", async () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       const onSubmit = vi.fn();
@@ -492,26 +494,26 @@ describe("ParamForm history prefill", () => {
       await screen.findByText("form.confirm_title");
 
       const styleRows = screen.getAllByText("form.confirm_style", { selector: "dt" });
-      expect(styleRows[0].parentElement).toHaveTextContent("form.confirm_badge_random");
+      expect(styleRows[0].parentElement).toHaveTextContent("form.confirm_badge_user");
       expect(styleRows[1].parentElement).toHaveTextContent("form.confirm_badge_user");
+      expect(styleRows[0].parentElement).not.toHaveTextContent("form.confirm_badge_random");
 
       fireEvent.click(screen.getByText("form.btn_confirm_send"));
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
       const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
       const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
-      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
 
-      expect(perQuestion[0].style).toEqual(["素養"]);
+      expect(perQuestion[0]).toEqual(MATH_PER_QUESTION_PARAMS[0]);
       expect(perQuestion[0].seed).toBe(101);
       expect(perQuestion[1]).toEqual(MATH_PER_QUESTION_PARAMS[1]);
-      expect(predrawnFields).toContain("per_question_params[0].style");
-      expect(predrawnFields).not.toContain("per_question_params[1].style");
+      expect(submitted.predrawn_fields).toBe("[]");
+      expect(random).not.toHaveBeenCalled();
     } finally {
       random.mockRestore();
     }
   });
 
-  it("restores a provenance-marked social-studies per-question slot", async () => {
+  it("keeps a provenance-marked social-studies per-question slot pinned", async () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
@@ -535,25 +537,25 @@ describe("ParamForm history prefill", () => {
       const subjectFilterRows = questionRegions.map((region) =>
         within(region).getByText("form.confirm_subject_filter", { selector: "dt" }),
       );
-      expect(subjectFilterRows[0].parentElement).toHaveTextContent("form.confirm_badge_random");
+      expect(subjectFilterRows[0].parentElement).toHaveTextContent("form.confirm_badge_user");
       expect(subjectFilterRows[1].parentElement).toHaveTextContent("form.confirm_badge_user");
+      expect(subjectFilterRows[0].parentElement).not.toHaveTextContent("form.confirm_badge_random");
 
       fireEvent.click(screen.getByText("form.btn_confirm_send"));
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
       const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
       const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
-      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
 
-      expect(perQuestion[0].subject_filter).toEqual(["地理"]);
+      expect(perQuestion[0]).toEqual(SOCIAL_PER_QUESTION_PARAMS[0]);
       expect(perQuestion[1]).toEqual(SOCIAL_PER_QUESTION_PARAMS[1]);
-      expect(predrawnFields).toContain("per_question_params[0].subject_filter");
-      expect(predrawnFields).not.toContain("per_question_params[1].subject_filter");
+      expect(submitted.predrawn_fields).toBe("[]");
+      expect(random).not.toHaveBeenCalled();
     } finally {
       random.mockRestore();
     }
   });
 
-  it("restores a provenance-marked natural-sciences per-question slot", async () => {
+  it("keeps a provenance-marked natural-sciences per-question slot pinned", async () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       getSchemasMock.mockResolvedValue(NATURAL_SCHEMA);
@@ -574,22 +576,23 @@ describe("ParamForm history prefill", () => {
       await screen.findByText("form.confirm_title");
 
       const questionTypeRows = screen.getAllByText("form.confirm_q_type", { selector: "dt" });
-      expect(questionTypeRows[0].parentElement).toHaveTextContent("form.confirm_badge_random");
+      expect(questionTypeRows[0].parentElement).toHaveTextContent("form.confirm_badge_user");
+      expect(questionTypeRows[0].parentElement).not.toHaveTextContent("form.confirm_badge_random");
 
       fireEvent.click(screen.getByText("form.btn_confirm_send"));
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
       const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
       const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
-      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
 
-      expect(perQuestion[0].q_type).toEqual(["自然開放題"]);
-      expect(predrawnFields).toContain("per_question_params[0].q_type");
+      expect(perQuestion[0]).toEqual(NATURAL_PER_QUESTION_PARAMS[0]);
+      expect(submitted.predrawn_fields).toBe("[]");
+      expect(random).not.toHaveBeenCalled();
     } finally {
       random.mockRestore();
     }
   });
 
-  it("restores a provenance-marked social-studies per-小題 slot", async () => {
+  it("keeps a provenance-marked social-studies per-小題 slot pinned", async () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
@@ -613,9 +616,12 @@ describe("ParamForm history prefill", () => {
       await screen.findByText("form.confirm_title");
 
       const questionRegions = screen.getAllByRole("region", { name: "form.confirm_question_block" });
-      // In editable-confirmation mode (#443), predrawn LC slots show "form.confirm_badge_random"
-      // (amber badge) instead of the old read-only "form.confirm_subq_lc_random_pool" text.
-      expect(within(questionRegions[0]).getAllByText("form.confirm_badge_random").length).toBeGreaterThan(0);
+      const subquestionSection = within(questionRegions[0]).getByText("form.confirm_subquestion_heading").parentElement!;
+      const firstSubquestion = within(subquestionSection).getAllByRole("listitem")[0];
+      const firstLearningContentCode = within(firstSubquestion).getByText("歷Ka-Ⅳ-1", { exact: true });
+      const firstLearningContentSection = firstLearningContentCode.closest(".mt-2") as HTMLElement;
+      expect(within(firstLearningContentSection).getByText("form.confirm_badge_user")).toBeInTheDocument();
+      expect(within(questionRegions[0]).queryByText("form.confirm_badge_random")).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByText("form.btn_confirm_send"));
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
@@ -623,20 +629,17 @@ describe("ParamForm history prefill", () => {
       const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
       const firstQuestionRows = JSON.parse(perQuestion[0].subquestion_configs as string) as Record<string, unknown>[];
       const secondQuestionRows = JSON.parse(perQuestion[1].subquestion_configs as string) as Record<string, unknown>[];
-      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
 
-      expect(firstQuestionRows[0].learning_content).toEqual(["歷Ka-Ⅳ-2"]);
-      expect(firstQuestionRows[1]).toEqual(SOCIAL_ROWS_ONE[1]);
+      expect(firstQuestionRows).toEqual(SOCIAL_ROWS_ONE);
       expect(secondQuestionRows).toEqual(SOCIAL_ROWS_TWO);
-      expect(predrawnFields).toContain(
-        "per_question_params[0].subquestion_configs[0].learning_content",
-      );
+      expect(submitted.predrawn_fields).toBe("[]");
+      expect(random).not.toHaveBeenCalled();
     } finally {
       random.mockRestore();
     }
   });
 
-  it("restores a provenance-marked natural-sciences per-小題 slot", async () => {
+  it("keeps a provenance-marked natural-sciences per-小題 slot pinned", async () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       getSchemasMock.mockResolvedValue(NATURAL_SCHEMA);
@@ -659,23 +662,22 @@ describe("ParamForm history prefill", () => {
       await screen.findByText("form.confirm_title");
 
       const questionRegions = screen.getAllByRole("region", { name: "form.confirm_question_block" });
-      // In editable-confirmation mode (#443), predrawn LC slots show "form.confirm_badge_random"
-      // (amber badge) instead of the old read-only "form.confirm_subq_lc_random_pool" text.
-      expect(within(questionRegions[0]).getAllByText("form.confirm_badge_random").length).toBeGreaterThan(0);
+      const subquestionSection = within(questionRegions[0]).getByText("form.confirm_subquestion_heading").parentElement!;
+      const firstSubquestion = within(subquestionSection).getAllByRole("listitem")[0];
+      const firstLearningContentCode = within(firstSubquestion).getByText("INc-IV-1", { exact: true });
+      const firstLearningContentSection = firstLearningContentCode.closest(".mt-2") as HTMLElement;
+      expect(within(firstLearningContentSection).getByText("form.confirm_badge_user")).toBeInTheDocument();
+      expect(within(questionRegions[0]).queryByText("form.confirm_badge_random")).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByText("form.btn_confirm_send"));
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
       const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
       const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
       const rows = JSON.parse(perQuestion[0].subquestion_configs as string) as Record<string, unknown>[];
-      const predrawnFields = JSON.parse(submitted.predrawn_fields as string) as string[];
 
-      expect(rows[0].learning_content).toEqual(["INc-IV-2"]);
-      expect(rows[1]).toEqual(NATURAL_SUBQUESTION_ROWS[1]);
-      expect(rows[2]).toEqual(NATURAL_SUBQUESTION_ROWS[2]);
-      expect(predrawnFields).toContain(
-        "per_question_params[0].subquestion_configs[0].learning_content",
-      );
+      expect(rows).toEqual(NATURAL_SUBQUESTION_ROWS);
+      expect(submitted.predrawn_fields).toBe("[]");
+      expect(random).not.toHaveBeenCalled();
     } finally {
       random.mockRestore();
     }

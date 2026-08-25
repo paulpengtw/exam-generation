@@ -65,19 +65,6 @@ function parsePerQuestionParams(value: unknown): Record<string, unknown>[] {
   return parsed as Record<string, unknown>[];
 }
 
-function parsePredrawnFields(value: unknown): Set<string> | null {
-  if (typeof value !== "string") return null;
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed) || parsed.some((field) => typeof field !== "string")) {
-      return null;
-    }
-    return new Set(parsed);
-  } catch {
-    return null;
-  }
-}
-
 function serialisableSubquestionConfig(config: SubQuestionConfig): SubQuestionConfig {
   return Object.fromEntries(
     Object.entries(config).filter(([, value]) => value !== undefined),
@@ -974,10 +961,7 @@ export default function ParamForm({
     [initialParams, subject],
   );
   const ip = normalisedHistoryPrefill.params;
-  const historyPredrawnFields = parsePredrawnFields(ip.predrawn_fields);
-  const userChosenFields = useRef(
-    new Set(Object.keys(ip).filter((key) => !historyPredrawnFields?.has(key))),
-  );
+  const userChosenFields = useRef(new Set(Object.keys(ip)));
   function fromInit<T>(key: string, fallback: T): T {
     return (ip[key] as T | undefined) ?? fallback;
   }
@@ -1031,12 +1015,8 @@ export default function ParamForm({
     coreQuestion: fromInit<string | null>("core_question", null),
     subContext: fromInit<string>("sub_context", ""),
     scienceCompetency: fromInit<string[]>("science_competency", []),
-    learningPerformance: historyPredrawnFields?.has("learning_performance")
-      ? []
-      : fromInit<string[]>("learning_performance", []),
-    learningContent: historyPredrawnFields?.has("learning_content")
-      ? []
-      : fromInit<string[]>("learning_content", []),
+    learningPerformance: fromInit<string[]>("learning_performance", []),
+    learningContent: fromInit<string[]>("learning_content", []),
     subQuestionCount: fromInit<number | "">("sub_question_count", ""),
     subquestionConfigs: subquestionConfigsFromInit(),
     contentDomain: stringFromInit("content_domain", ""),
@@ -1364,12 +1344,8 @@ export default function ParamForm({
       })(),
       subContext: fromInit<string>("sub_context", ""),
       scienceCompetency: fromInit<string[]>("science_competency", []),
-      learningPerformance: historyPredrawnFields?.has("learning_performance")
-        ? []
-        : fromInit<string[]>("learning_performance", []),
-      learningContent: historyPredrawnFields?.has("learning_content")
-        ? []
-        : fromInit<string[]>("learning_content", []),
+      learningPerformance: fromInit<string[]>("learning_performance", []),
+      learningContent: fromInit<string[]>("learning_content", []),
       subQuestionCount: fromInit<number | "">("sub_question_count", ""),
       subquestionConfigs: subquestionConfigsFromInit(),
       contentDomain: stringFromInit("content_domain", ""),
@@ -1928,13 +1904,11 @@ export default function ParamForm({
     const lpPoolValues = filteredLpPool ?? availableLearningPerformance.map((e) => e.value);
     const lcPoolValues = filteredLcPool ?? availableLearningContent.map((e) => e.value);
     const hasHistoryPerQuestionParams = historyPerQuestionParams.length === count;
-    const preserveHistoryPerQuestionParams =
-      hasHistoryPerQuestionParams && historyPredrawnFields === null;
 
     // If no learning_performance selected, pre-draw randomly to match backend sampling
     let finalLp: string[] | undefined;
     let autoDrawn = false;
-    if (!preserveHistoryPerQuestionParams && isCurriculumSubject && selectedLearningPerformance.length === 0 && lpPoolValues.length > 0) {
+    if (!hasHistoryPerQuestionParams && isCurriculumSubject && selectedLearningPerformance.length === 0 && lpPoolValues.length > 0) {
       const maxDraw = subject === "math" ? 3 : 2;
       finalLp = drawRandomSubset(lpPoolValues, 1, maxDraw);
       autoDrawn = true;
@@ -1946,7 +1920,7 @@ export default function ParamForm({
     let finalLc: string[] | undefined;
     let lcAutoDrawn = false;
     if (
-      !preserveHistoryPerQuestionParams &&
+      !hasHistoryPerQuestionParams &&
       (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
       selectedLearningContent.length === 0 &&
       lcPoolValues.length > 0
@@ -2107,14 +2081,7 @@ export default function ParamForm({
       ...(autoDrawn ? ["learning_performance"] : []),
       ...(lcAutoDrawn ? ["learning_content"] : []),
     ];
-    const drawField = (key: string, pool: string[], questionIndex: number, max = 1): string[] | undefined => {
-      const fieldAddress = `per_question_params[${questionIndex}].${key}`;
-      if (historyPredrawnFields?.has(fieldAddress)) {
-        return pool.length > 0
-          ? drawQuestionSubset(pool, 1, max, previousRandomValues[key])
-          : undefined;
-      }
-      if (hasHistoryPerQuestionParams && historyPredrawnFields !== null) return undefined;
+    const drawField = (key: string, pool: string[], max = 1): string[] | undefined => {
       if (userChosenFields.current.has(key) || pool.length === 0) return undefined;
       return drawQuestionSubset(pool, 1, max, previousRandomValues[key]);
     };
@@ -2123,40 +2090,36 @@ export default function ParamForm({
         ? historyPerQuestionParams[questionIndex]
         : undefined;
       const seedAddress = `per_question_params[${questionIndex}].seed`;
-      const seedWasPredrawn = historyPredrawnFields?.has(seedAddress) ?? false;
-      const resolvedSeed = historyQuestionParams?.seed !== undefined && !seedWasPredrawn
+      const resolvedSeed = historyQuestionParams?.seed !== undefined
         ? historyQuestionParams.seed
         : configuredSeed !== undefined
           ? configuredSeed + questionIndex
           : Math.floor(Math.random() * 2_147_483_648);
       const randomStyle = subject === "math"
-        ? drawField("style", (schemas?.question_style ?? []).map((entry) => entry.value), questionIndex)
+        ? drawField("style", (schemas?.question_style ?? []).map((entry) => entry.value))
         : undefined;
       const randomContentType = drawField(
         "content_type",
         (schemas?.題目內容類型 ?? []).filter((entry) => entry.value !== "customized").map((entry) => entry.value),
-        questionIndex,
       );
-      const randomContext = drawField("context", (schemas?.情境 ?? []).map((entry) => entry.value), questionIndex);
-      const randomSetType = drawField("set_type", (schemas?.題型種類 ?? []).map((entry) => entry.value), questionIndex);
+      const randomContext = drawField("context", (schemas?.情境 ?? []).map((entry) => entry.value));
+      const randomSetType = drawField("set_type", (schemas?.題型種類 ?? []).map((entry) => entry.value));
       const randomQuestionType = subject !== "social_studies"
-        ? drawField("q_type", (schemas?.題型 ?? []).map((entry) => entry.value), questionIndex)
+        ? drawField("q_type", (schemas?.題型 ?? []).map((entry) => entry.value))
         : undefined;
       const randomSubjectFilter = subject === "social_studies"
-        ? drawField("subject_filter", (schemas?.科目 ?? []).map((entry) => entry.value), questionIndex)
+        ? drawField("subject_filter", (schemas?.科目 ?? []).map((entry) => entry.value))
         : undefined;
       const randomSubContext = subject === "natural_sciences"
-        ? drawField("sub_context", availableSubContexts.map((entry) => entry.value), questionIndex)
+        ? drawField("sub_context", availableSubContexts.map((entry) => entry.value))
         : undefined;
       const randomScienceCompetency = subject === "natural_sciences"
-        ? drawField("science_competency", (schemas?.科學能力 ?? []).map((entry) => entry.value), questionIndex)
+        ? drawField("science_competency", (schemas?.科學能力 ?? []).map((entry) => entry.value))
         : undefined;
       const questionLpAddress = `per_question_params[${questionIndex}].learning_performance`;
       const questionLcAddress = `per_question_params[${questionIndex}].learning_content`;
-      const redrawQuestionLp = historyPredrawnFields?.has(questionLpAddress) ||
-        (!historyQuestionParams && autoDrawn);
-      const redrawQuestionLc = historyPredrawnFields?.has(questionLcAddress) ||
-        (!historyQuestionParams && lcAutoDrawn);
+      const redrawQuestionLp = !historyQuestionParams && autoDrawn;
+      const redrawQuestionLc = !historyQuestionParams && lcAutoDrawn;
       const questionLpPool = selectedLearningPerformance.length > 0
         ? selectedLearningPerformance
         : autoDrawn
@@ -2188,7 +2151,7 @@ export default function ParamForm({
         ? drawQuestionSubset(questionLcPool, 1, 3, previousQuestionLc)
         : (historyQuestionLc ?? finalLc);
       const questionPredrawnFields: string[] = [
-        ...(seedWasPredrawn || (!historyQuestionParams && configuredSeed === undefined)
+        ...(!historyQuestionParams && configuredSeed === undefined
           ? [seedAddress]
           : []),
         ...(randomStyle !== undefined
@@ -2241,8 +2204,8 @@ export default function ParamForm({
               : (questionLp ?? perSubqLpPool);
             const lcAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_content`;
             const lpAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_performance`;
-            const redrawLc = historyPredrawnFields?.has(lcAddress) || (!historyQuestionParams && !hasExplicitLc);
-            const redrawLp = historyPredrawnFields?.has(lpAddress) || (!historyQuestionParams && !hasExplicitLp);
+            const redrawLc = !historyQuestionParams && !hasExplicitLc;
+            const redrawLp = !historyQuestionParams && !hasExplicitLp;
             const resolvedLc = redrawLc
               ? lcPool.length > 0
                 ? drawQuestionSubset(
@@ -2312,7 +2275,6 @@ export default function ParamForm({
         ...(redrawQuestionLc && questionLc?.length ? ["learning_content"] : []),
       ]);
       const historyQuestionRedraws = {
-        ...(seedWasPredrawn ? { seed: resolvedSeed } : {}),
         ...(randomStyle !== undefined ? { style: randomStyle } : {}),
         ...(randomContentType !== undefined ? { content_type: randomContentType[0] } : {}),
         ...(randomContext !== undefined ? { context: randomContext } : {}),
@@ -2376,10 +2338,10 @@ export default function ParamForm({
       predrawnFields.push(...questionPredrawnFields);
       return result;
     });
-    const perQuestionParams: Record<string, unknown>[] = preserveHistoryPerQuestionParams
+    const perQuestionParams: Record<string, unknown>[] = hasHistoryPerQuestionParams
       ? historyPerQuestionParams
       : buildPerQuestionParams();
-    const usingHistoryPerQuestionParams = preserveHistoryPerQuestionParams;
+    const usingHistoryPerQuestionParams = hasHistoryPerQuestionParams;
     setPendingPerQuestionParams(perQuestionParams);
     setHasPendingConfirmationEdits(false);
     // #446: reset stale state when the confirmation screen is (re-)opened
