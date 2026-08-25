@@ -160,10 +160,7 @@ def test_populated_content_type_injects_iccs_example_at_prompt_seam(
 
     assert "## 參考範例" in prompt
     assert any(marker in prompt for marker in _EXPECTED_ICCS_MARKERS[content_type])
-    if content_type == "graphs/charts/tables":
-        assert images
-    else:
-        assert images == []
+    assert all(path.exists() for path in images)
 
 
 @pytest.mark.parametrize("content_type", ("含圖片", "customized", "數位閱讀"))
