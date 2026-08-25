@@ -50,7 +50,7 @@ describe("#506 confirmation ICCS axes", () => {
     previewGenerateMock.mockResolvedValue({ prompts: [] });
   });
 
-  it("shows 認知歷程 per 小題 and 内容領域 on the question confirmation card", async () => {
+  it("shows 認知歷程 per 小題 and 內容領域 on the question confirmation card", async () => {
     render(
       <ParamForm
         subject="social_studies"
