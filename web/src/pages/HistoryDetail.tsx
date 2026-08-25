@@ -53,6 +53,9 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
   const isFailed = detail?.status === "failed";
   const isAborted = detail?.status === "aborted";
   const isInterrupted = isFailed || isAborted;
+  const hasFigurePolicyDegradation = detail?.figure_policy_trail?.some(
+    (entry) => entry.kind === "warning" && entry.duplicate_image_shipped,
+  ) ?? false;
   const canDownload = detail != null && !isInterrupted;
   const showDownload = detail == null || canDownload;
 
@@ -81,6 +84,11 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
             >
               ← {t("history.btn_back_list")}
             </button>
+            {hasFigurePolicyDegradation && (
+              <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                {t("history.figure_policy_degraded_badge")}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {showDownload && (
