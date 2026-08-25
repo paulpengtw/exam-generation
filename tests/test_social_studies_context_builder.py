@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.social_studies.cli import _figure_kind_repair_instruction
 from src.social_studies.context_builder import (
     CONTENT_TYPE_INSTRUCTIONS as SS_CONTENT_TYPE_INSTRUCTIONS,
 )
@@ -62,6 +63,27 @@ def test_global_image_content_type_requires_top_level_visual_spec(tmp_path) -> N
     assert "全域 `文本素材類型` 是 `含圖片` 或 `graphs/charts/tables`" in prompt
     assert "必須在題組 JSON 頂層輸出非 null 的 `chart_spec`" in prompt
     assert "不能取代全域 `文本素材類型` 要求的題組頂層 `chart_spec`" in prompt
+
+
+def test_social_visual_drafting_and_repair_prompts_require_declared_figure_kind(
+    tmp_path,
+) -> None:
+    params = sample_params(seed=1, content_type="含圖片")
+
+    drafting_user, _images = build_user_prompt(
+        params,
+        tmp_path,
+        rng=random.Random(1),
+    )
+    drafting_system = build_text_system_prompt(params=params)
+    subquestion_system = build_subquestion_system_prompt("第四")
+    repair_guidance = _figure_kind_repair_instruction(params)
+
+    for prompt in (drafting_user, drafting_system, subquestion_system, repair_guidance):
+        assert "每個視覺素材規格" in prompt
+        assert "圖像種類" in prompt
+        assert "直方圖" in prompt
+        assert "自由文字" in prompt
 
 
 def test_custom_content_type_is_used_as_effective_type(tmp_path) -> None:
