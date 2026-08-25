@@ -35,7 +35,11 @@ from server.generate.models import (
     build_sse_error,
     decode_per_question_params,
 )
-from server.generate.persistence import make_exchange_recorder, persist_generation_record
+from server.generate.persistence import (
+    make_exchange_recorder,
+    make_figure_policy_trail_recorder,
+    persist_generation_record,
+)
 from server.generate.subjects import SUBJECTS, SubjectSpec
 from server.observability import record_generation_outcome
 from src.llm_client import LLMClient
@@ -212,6 +216,7 @@ class _RunContext:
     prior_scopes_lock: threading.Lock
     emit_pipeline: Any  # Callable[..., None] from make_pipeline_emitter
     generation_log_id: uuid.UUID | None
+    figure_policy_recorder: Any
     retention_days: int
     session_factory: Any
     next_order: Any  # Callable[[], int]
@@ -248,6 +253,11 @@ def _build_run_context(
     order_counter = itertools.count(1)
     order_lock = threading.Lock()
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
+    figure_policy_recorder = make_figure_policy_trail_recorder(
+        generation_log_id=generation_log_id,
+        loop=loop,
+        session_factory=session_factory,
+    )
 
     def _next_order() -> int:
         with order_lock:
@@ -277,6 +287,7 @@ def _build_run_context(
         prior_scopes_lock=threading.Lock(),
         emit_pipeline=make_pipeline_emitter(loop, queue),
         generation_log_id=generation_log_id,
+        figure_policy_recorder=figure_policy_recorder,
         retention_days=config.llm_exchange_retention_days,
         session_factory=session_factory,
         next_order=_next_order,
@@ -299,12 +310,14 @@ def _worker_one(
         session_factory=ctx.session_factory,
         next_order=ctx.next_order,
     )
+    figure_policy_recorder = ctx.figure_policy_recorder
     question_client.set_observer(
         make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
     )
     emit_question_update = make_question_update_emitter(i, ctx.loop, ctx.queue, ctx.config)
     emit_trail_entry = make_trail_emitter(ctx.loop, ctx.queue)
     verification_trail: list[dict[str, Any]] = []
+    figure_policy_trail: list[dict[str, Any]] = []
 
     def capture_trail_entry(entry: Any) -> None:
         payload = (
@@ -314,6 +327,16 @@ def _worker_one(
         )
         verification_trail.append(payload)
         emit_trail_entry(entry)
+
+    def capture_figure_policy_entry(entry: Any) -> None:
+        payload = (
+            entry.model_dump(mode="json")
+            if hasattr(entry, "model_dump")
+            else entry
+        )
+        figure_policy_trail.append(payload)
+        if figure_policy_recorder is not None:
+            figure_policy_recorder(entry)
 
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:
@@ -356,6 +379,7 @@ def _worker_one(
             core_question_callback=ctx.params.core_question_callback,
             on_question_update=emit_question_update,
             on_trail_entry=None if ctx.params.skip_verify else capture_trail_entry,
+            on_figure_policy_entry=capture_figure_policy_entry,
             prior_scopes=prior_snapshot,
             balanced_batch=ctx.balanced_batch,
         )
@@ -383,6 +407,8 @@ def _worker_one(
         }
         if verification_trail:
             result_event["verification_trail"] = verification_trail
+        if figure_policy_trail:
+            result_event["figure_policy_trail"] = figure_policy_trail
         ctx.loop.call_soon_threadsafe(
             ctx.queue.put_nowait,
             result_event,
@@ -499,11 +525,16 @@ async def generate_question_stream(
                     payload=event["data"],
                     session_factory=_session_factory,
                     verification_trail_json=event.get("verification_trail"),
+                    figure_policy_trail_json=event.get("figure_policy_trail"),
                 )
             yield event
             if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):
                 break
     finally:
-        await signal_task
+        try:
+            await signal_task
+        finally:
+            if ctx.figure_policy_recorder is not None:
+                await ctx.figure_policy_recorder.flush()
         if renderer_pool is not None and html_renderer is not None:
             await renderer_pool.put(html_renderer)

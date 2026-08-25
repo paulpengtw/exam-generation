@@ -280,8 +280,8 @@ def _ns_validate_params(params: Any) -> None:
 
 
 def _ss_validate_params(params: Any) -> None:
-    from src.social_studies.schemas import ContentDomain  # noqa: PLC0415
     from src.social_studies.schema_loader import load_schemas  # noqa: PLC0415
+    from src.social_studies.schemas import ContentDomain  # noqa: PLC0415
 
     question_type_values = {
         row["value"]
@@ -565,6 +565,7 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         core_question_callback=kwargs.get("core_question_callback", True),
         on_question_update=kwargs["on_question_update"],
         on_trail_entry=kwargs.get("on_trail_entry"),
+        on_figure_policy_entry=kwargs.get("on_figure_policy_entry"),
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ss_curriculum_context"],
         balanced_batch=kwargs["balanced_batch"],

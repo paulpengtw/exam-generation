@@ -19,6 +19,13 @@ from src.common.figure_policy import (
     find_figure_kind_collisions,
     normalize_figure_kind,
 )
+from src.common.figure_policy_trail import (
+    FigurePolicyTrailEvent,
+    make_collision_entry,
+    make_repair_entry,
+    make_spec_entry,
+    make_warning_entry,
+)
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
 from src.common.subquestion_forcing import force_grade
@@ -67,6 +74,7 @@ _VISUAL_CONTENT_TYPES = {"含圖片", "graphs/charts/tables"}
 
 QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
 VerificationTrailCallback = Callable[[VerificationTrailEntry], None]
+FigurePolicyTrailCallback = Callable[[FigurePolicyTrailEvent], None]
 
 
 def _emit_question_update(
@@ -936,14 +944,25 @@ def _enforce_figure_kind_diversity(
     image_generation_mode: str,
     obs: Any,
     params: SampledParams,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
 ) -> None:
     """Repair each detected SS figure-kind collision once, then warn if needed."""
-    if params.allow_duplicate_figure_kinds:
-        return
-
     entries = _figure_spec_entries(question, params)
     if not entries:
         return
+
+    def emit_spec_entries() -> None:
+        if on_figure_policy_entry is None:
+            return
+        for entry in _figure_spec_entries(question, params):
+            on_figure_policy_entry(
+                make_spec_entry(question.id, entry["label"], entry["spec"])
+            )
+
+    emit_spec_entries()
+    if params.allow_duplicate_figure_kinds:
+        return
+
     specs = [entry["spec"] for entry in entries]
     pinned = {index for index, entry in enumerate(entries) if entry["pinned"]}
     collisions = find_figure_kind_collisions(specs, pinned, allow_duplicates=False)
@@ -955,15 +974,25 @@ def _enforce_figure_kind_diversity(
         target = _collision_repair_target(entries, left, right)
         if target is None:
             continue
+        left_label = entries[left]["label"]
+        right_label = entries[right]["label"]
+        if on_figure_policy_entry is not None:
+            on_figure_policy_entry(
+                make_collision_entry(question.id, left_label, right_label, _kind)
+            )
         forbidden = [
             normalize_figure_kind(effective_figure_kind(entry["spec"]))
             for index, entry in enumerate(entries)
             if index != target and effective_figure_kind(entry["spec"])
         ]
         target_entry = entries[target]
+        before_spec = target_entry["spec"]
+        before_kind = effective_figure_kind(before_spec)
+        after_kind = before_kind
+        succeeded = False
+        repair_error: str | None = None
         try:
             if target_entry["sub"] is None:
-                before = question.chart_spec
                 _ensure_top_level_visual_spec(
                     question,
                     params,
@@ -971,7 +1000,7 @@ def _enforce_figure_kind_diversity(
                     forbidden_kinds=forbidden,
                     force_repair=True,
                 )
-                if question.chart_spec != before:
+                if question.chart_spec != before_spec:
                     _rerender_top_level_image(
                         question,
                         config,
@@ -980,6 +1009,8 @@ def _enforce_figure_kind_diversity(
                         image_generation_mode,
                         obs,
                     )
+                after_kind = effective_figure_kind(question.chart_spec)
+                succeeded = question.chart_spec != before_spec
             else:
                 sub = target_entry["sub"]
                 cfg = target_entry["config"]
@@ -992,13 +1023,29 @@ def _enforce_figure_kind_diversity(
                     force_repair=True,
                     allow_duplicates=params.allow_duplicate_figure_kinds,
                 )
+                after_kind = effective_figure_kind(sub.chart_spec)
+                succeeded = sub.chart_spec != before_spec
         except Exception as exc:
+            repair_error = str(exc)
             message = (
                 f"Warning: 圖像種類 targeted repair failed for "
                 f"{target_entry['label']}: {exc}; duplicate image shipped"
             )
             print(f"  {message}", file=sys.stderr)
             emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+        if on_figure_policy_entry is not None:
+            on_figure_policy_entry(
+                make_repair_entry(
+                    question.id,
+                    target_entry["label"],
+                    before_kind,
+                    after_kind,
+                    forbidden,
+                    succeeded,
+                    repair_error,
+                )
+            )
+        emit_spec_entries()
 
     entries = _figure_spec_entries(question, params)
     final_collisions = find_figure_kind_collisions(
@@ -1015,6 +1062,16 @@ def _enforce_figure_kind_diversity(
         )
         print(f"  {message}", file=sys.stderr)
         emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+        if on_figure_policy_entry is not None:
+            on_figure_policy_entry(
+                make_warning_entry(
+                    question.id,
+                    message,
+                    left=left_label,
+                    right=right_label,
+                    effective_kind=kind,
+                )
+            )
 
 
 def _ss_render_subquestion_images(
@@ -1025,6 +1082,7 @@ def _ss_render_subquestion_images(
     image_generation_mode: str,
     obs: Any,
     params: SampledParams,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
 ) -> list[str]:
     # Repair missing chart_specs for 小題 slots configured as visual (#320).
     # Mirrors the 題組頂層 repair in _ensure_top_level_visual_spec.
@@ -1064,6 +1122,7 @@ def _ss_render_subquestion_images(
         image_generation_mode,
         obs,
         params,
+        on_figure_policy_entry,
     )
 
     return _render_subquestion_images(
@@ -1125,6 +1184,7 @@ def generate_one(
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
     on_trail_entry: VerificationTrailCallback | None = None,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -1151,6 +1211,7 @@ def generate_one(
         user_core_question=user_core_question,
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,
+        on_figure_policy_entry=on_figure_policy_entry,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
@@ -1220,6 +1281,7 @@ def generate_with_corrections(
     user_core_question: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
     on_trail_entry: VerificationTrailCallback | None = None,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
@@ -1246,6 +1308,7 @@ def generate_with_corrections(
         user_core_question=user_core_question,
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,
+        on_figure_policy_entry=on_figure_policy_entry,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )

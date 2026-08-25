@@ -191,3 +191,104 @@ def test_pinned_subquestion_repairs_top_level_and_rerenders_existing_png(tmp_pat
     assert client.rendered_paths.count(tmp_path / "pinned_test.png") == 2
     assert (tmp_path / "pinned_test.png").exists()
     assert (tmp_path / "pinned_test_sq1.png").exists()
+
+
+def test_clean_visual_run_emits_figure_policy_entries_for_the_題幹_and_visual_小題(
+    tmp_path: Path,
+) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[{"content_type": "含圖片"}, {}, {}],
+    )
+    events: list[dict] = []
+
+    generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=_MainClient(repair_kind="地圖"),
+        params=params,
+        question_id="clean_policy_test",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _SubClient("地圖"),
+        on_figure_policy_entry=lambda entry: events.append(entry.model_dump(mode="json")),
+    )
+
+    assert [entry["kind"] for entry in events] == ["spec", "spec"]
+    assert [(entry["label"], entry["effective_figure_kind"]) for entry in events] == [
+        ("題幹", "表格"),
+        ("小題 1", "地圖"),
+    ]
+
+
+def test_collision_repair_is_recorded_in_the_figure_policy_trail(tmp_path: Path) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[{"content_type": "含圖片"}, {}, {}],
+    )
+    events: list[dict] = []
+
+    generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=_MainClient(repair_kind="地圖"),
+        params=params,
+        question_id="repair_policy_test",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _SubClient("表格"),
+        on_figure_policy_entry=lambda entry: events.append(entry.model_dump(mode="json")),
+    )
+
+    collisions = [entry for entry in events if entry["kind"] == "collision"]
+    repairs = [entry for entry in events if entry["kind"] == "repair"]
+    assert collisions == [
+        {
+            "code": "figure_policy",
+            "kind": "collision",
+            "question_id": "repair_policy_test",
+            "left": "題幹",
+            "right": "小題 1",
+            "effective_figure_kind": "表格",
+            "timestamp": collisions[0]["timestamp"],
+        }
+    ]
+    assert len(repairs) == 1
+    assert repairs[0]["target"] == "小題 1"
+    assert repairs[0]["before_effective_figure_kind"] == "表格"
+    assert repairs[0]["after_effective_figure_kind"] == "地圖"
+    assert repairs[0]["succeeded"] is True
+
+
+def test_collision_shipped_with_warning_is_recorded_in_the_figure_policy_trail(
+    tmp_path: Path,
+) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[{"content_type": "含圖片"}, {}, {}],
+    )
+    events: list[dict] = []
+
+    generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=_MainClient(repair_kind="表格"),
+        params=params,
+        question_id="warning_policy_test",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _SubClient("表格"),
+        on_figure_policy_entry=lambda entry: events.append(entry.model_dump(mode="json")),
+    )
+
+    warnings = [entry for entry in events if entry["kind"] == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["duplicate_image_shipped"] is True
+    assert warnings[0]["left"] == "題幹"
+    assert warnings[0]["right"] == "小題 1"

@@ -55,12 +55,14 @@ def test_generation_record_migration_creates_nullable_tombstone_schema(
         "parent_record_id",
         "annotations_json",
         "verification_trail_json",
+        "figure_policy_trail_json",
     }.issubset(by_name)
     assert by_name["status"]["nullable"] is False
     assert by_name["error"]["nullable"] is True
     assert by_name["parent_record_id"]["nullable"] is True
     assert by_name["annotations_json"]["nullable"] is True
     assert by_name["verification_trail_json"]["nullable"] is True
+    assert by_name["figure_policy_trail_json"]["nullable"] is True
     assert by_name["question_json"]["nullable"] is True
     assert any("user_id" in index["column_names"] for index in indexes)
 
@@ -114,13 +116,13 @@ def test_generation_record_migration_upgrades_existing_rows_and_round_trips(
     engine = create_async_engine(db_url)
     try:
         async def read_upgraded_row() -> tuple[
-            str, str, str | None, str | None, str | None
+            str, str, str | None, str | None, str | None, str | None
         ]:
             async with engine.connect() as conn:
                 result = await conn.execute(
                     text(
                         "SELECT status, question_json, parent_record_id, annotations_json, "
-                        "verification_trail_json "
+                        "verification_trail_json, figure_policy_trail_json "
                         "FROM generation_records "
                         "WHERE id = :id"
                     ),
@@ -134,12 +136,14 @@ def test_generation_record_migration_upgrades_existing_rows_and_round_trips(
             parent_record_id,
             annotations_json,
             verification_trail_json,
+            figure_policy_trail_json,
         ) = asyncio.run(read_upgraded_row())
         assert status == "completed"
         assert json.loads(question_json)["題目"] == ["舊題目"]
         assert parent_record_id is None
         assert annotations_json is None
         assert verification_trail_json is None
+        assert figure_policy_trail_json is None
 
         async def insert_failed_tombstone() -> None:
             async with engine.begin() as conn:
@@ -175,6 +179,7 @@ def test_generation_record_migration_upgrades_existing_rows_and_round_trips(
     assert "parent_record_id" not in names
     assert "annotations_json" not in names
     assert "verification_trail_json" not in names
+    assert "figure_policy_trail_json" not in names
     assert (
         next(column for column in columns if column["name"] == "question_json")["nullable"]
         is False
@@ -225,6 +230,7 @@ def test_generation_record_migration_does_not_backfill_old_failed_generation_log
     finally:
         asyncio.run(engine.dispose())
 
+
     command.upgrade(cfg, "head")
 
     engine = create_async_engine(db_url)
@@ -248,3 +254,30 @@ def test_generation_record_migration_does_not_backfill_old_failed_generation_log
 
     assert record_count == 0
     assert log_status == "failed"
+
+
+def test_generation_log_migration_adds_nullable_figure_policy_staging_column(
+    tmp_path, monkeypatch
+) -> None:
+    db_url = f"sqlite+aiosqlite:///{tmp_path / 'generation-log-policy.db'}"
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    cfg = _alembic_config(db_url)
+
+    command.upgrade(cfg, "head")
+
+    engine = create_async_engine(db_url)
+    try:
+        async def inspect_log() -> dict:
+            async with engine.connect() as conn:
+                def _inspect(sync_conn):
+                    return {
+                        column["name"]: column
+                        for column in inspect(sync_conn).get_columns("generation_logs")
+                    }
+
+                return await conn.run_sync(_inspect)
+
+        columns = asyncio.run(inspect_log())
+        assert columns["figure_policy_trail_json"]["nullable"] is True
+    finally:
+        asyncio.run(engine.dispose())

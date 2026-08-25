@@ -204,6 +204,54 @@ def test_detail_returns_null_verification_trail_for_a_legacy_record(tmp_path) ->
         asyncio.run(engine.dispose())
 
 
+def test_detail_returns_the_persisted_figure_policy_trail_without_listing_it(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+    expected_trail = [
+        {
+            "code": "figure_policy",
+            "kind": "spec",
+            "question_id": "ss_a_0",
+            "label": "題幹",
+            "effective_figure_kind": "地圖",
+            "timestamp": "2026-08-25T00:00:00Z",
+        }
+    ]
+
+    async def stamp_trail() -> str:
+        async with SessionLocal() as session:
+            row = (
+                await session.execute(
+                    __import__("sqlalchemy").select(GenerationRecord).where(
+                        GenerationRecord.user_id == user_a,
+                        GenerationRecord.question_id == "ss_a_0",
+                    )
+                )
+            ).scalar_one()
+            row.figure_policy_trail_json = expected_trail
+            await session.commit()
+            return str(row.id)
+
+    record_id = asyncio.run(stamp_trail())
+    try:
+        with TestClient(app) as client:
+            list_response = client.get(
+                "/api/history",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            detail_response = client.get(
+                f"/api/history/{record_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        listed = next(item for item in list_response.json()["items"] if item["id"] == record_id)
+        assert "figure_policy_trail" not in listed
+        assert detail_response.status_code == 200
+        assert detail_response.json()["figure_policy_trail"] == expected_trail
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
 def _add_failed_row(SessionLocal, user_id: uuid.UUID) -> str:
     record_id = uuid.uuid4()
 

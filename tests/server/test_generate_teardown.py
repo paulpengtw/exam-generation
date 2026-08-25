@@ -155,17 +155,33 @@ async def _test_generate_stream_teardown_distinguishes_disconnect_from_generatio
 
     monkeypatch.setattr(generate_routes, "AsyncSessionLocal", session_factory)
 
-    async def disconnected_stream(
-        *_args: Any,
-        **_kwargs: Any,
-    ) -> AsyncGenerator[dict[str, Any], None]:
-        yield {"event": "started", "data": ""}
-        await asyncio.Event().wait()
+    stream_closed = asyncio.Event()
+
+    class DisconnectAwareStream:
+        def __init__(self) -> None:
+            self._first = True
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self) -> dict[str, Any]:
+            if self._first:
+                self._first = False
+                return {"event": "started", "data": ""}
+            await asyncio.Event().wait()
+            raise AssertionError("the disconnected stream should be closed")
+
+        async def aclose(self) -> None:
+            stream_closed.set()
+
+    def disconnected_stream(*_args: Any, **_kwargs: Any) -> DisconnectAwareStream:
+        return DisconnectAwareStream()
 
     monkeypatch.setattr(generate_routes, "generate_question_stream", disconnected_stream)
     limiter.reset()
     try:
         await _run_asgi(app, disconnect_after_first_body=True)
+        assert stream_closed.is_set()
 
         async with session_factory() as session:
             rows = (

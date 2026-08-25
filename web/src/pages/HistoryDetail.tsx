@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import QuestionCard from "../components/QuestionCard";
+import FigurePolicyTrailTimeline from "../components/FigurePolicyTrailTimeline";
 import type { ExamQuestion } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 import {
@@ -149,6 +150,7 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
                   {JSON.stringify(detail.params_json, null, 2)}
                 </pre>
               </div>
+              <FigurePolicyTrailTimeline entries={detail.figure_policy_trail} />
             </section>
           ) : (
             <QuestionCard
@@ -158,6 +160,7 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
               phase="verified"
               isFinal
               trail={detail.verification_trail}
+              figurePolicyTrail={detail.figure_policy_trail}
             />
           )
         )}

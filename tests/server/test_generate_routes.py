@@ -6,8 +6,11 @@ import asyncio
 import concurrent.futures
 import dataclasses
 import logging
+import threading
+import time
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -160,7 +163,12 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
         async with SessionLocal() as session:
             yield session
 
-    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x", image_api_key="sk-test-key")
+    config = ServerConfig(
+        api_key="x",
+        jwt_secret="test-secret",
+        gemini_api_key="x",
+        image_api_key="sk-test-key",
+    )
     user_id = uuid.uuid4()
 
     async def add_user() -> None:
@@ -789,6 +797,233 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
     orders = sorted(r.exchange_order for r in rows)
     assert orders == [1, 2, 3, 4]
     assert len(set(orders)) == len(orders)
+
+
+def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
+    tmp_path,
+) -> None:
+    """A batch's GenerationLog must retain policy events from every worker."""
+    from types import SimpleNamespace
+
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
+
+    from server.generate.models import GenerateParams
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
+    from src.common.figure_policy_trail import FigurePolicySpecEntry
+    from src.social_studies.schemas import ExamQuestion
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def _init() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_init())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    user_id = uuid.uuid4()
+    log_id = uuid.uuid4()
+
+    async def _seed_log() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="figure-batch@example.com"))
+            session.add(
+                GenerationLog(
+                    id=log_id,
+                    user_id=user_id,
+                    params_json={"subject": "social_studies", "count": 2},
+                    status="started",
+                )
+            )
+            await session.commit()
+
+    asyncio.run(_seed_log())
+
+    config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    params = GenerateParams(subject="social_studies", count=2, skip_verify=True)
+
+    def fake_do_generate(rng_params, _overrides, **kwargs):
+        question_id = kwargs["question_id"]
+        kwargs["on_figure_policy_entry"](
+            FigurePolicySpecEntry(
+                question_id=question_id,
+                label="題幹",
+                effective_figure_kind="地圖",
+                timestamp=datetime.now(timezone.utc),
+            )
+        )
+        return ExamQuestion(
+            id=question_id,
+            核心問題="核心問題",
+            文本="文本",
+            subquestions=[],
+            情境=[c.value for c in rng_params.情境],
+            題型種類=rng_params.題型種類.value,
+            題型=rng_params.題型[0].value,
+            題目=["題目"],
+            正確解題分析=["解析"],
+        )
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
+
+    async def _drive() -> None:
+        async for _ in generate_question_stream(
+            params,
+            config,
+            SimpleNamespace(html_renderer=None, renderer_pool=None),
+            generation_log_id=log_id,
+            subjects={"social_studies": fake_spec},
+            session_factory=SessionLocal,
+        ):
+            pass
+
+    asyncio.run(_drive())
+
+    async def _read_log() -> GenerationLog:
+        async with SessionLocal() as session:
+            row = await session.get(GenerationLog, log_id)
+            assert row is not None
+            return row
+
+    log = asyncio.run(_read_log())
+    asyncio.run(engine.dispose())
+
+    assert log.figure_policy_trail_json is not None
+    assert len(log.figure_policy_trail_json) == 2
+    assert len({entry["question_id"] for entry in log.figure_policy_trail_json}) == 2
+
+
+def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_path) -> None:
+    """A failed tombstone includes policy events emitted by slower sibling workers."""
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
+    from src.common.figure_policy_trail import FigurePolicySpecEntry
+    from src.social_studies.schemas import ExamQuestion
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    config = ServerConfig(
+        api_key="x",
+        jwt_secret="test-secret",
+        output_dir=tmp_path,
+        data_dir=Path("data"),
+    )
+    user_id = uuid.uuid4()
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(User(id=user_id, email="figure-failure@example.com"))
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    failure_started = threading.Event()
+
+    def fake_do_generate(rng_params, _overrides, **kwargs):
+        question_id = kwargs["question_id"]
+        kwargs["on_figure_policy_entry"](
+            FigurePolicySpecEntry(
+                question_id=question_id,
+                label="題幹",
+                effective_figure_kind="地圖",
+                timestamp=datetime.now(timezone.utc),
+            )
+        )
+        if question_id.endswith("_001"):
+            failure_started.set()
+            raise RuntimeError("scripted policy failure")
+
+        assert failure_started.wait(timeout=5)
+        time.sleep(0.25)
+        kwargs["on_figure_policy_entry"](
+            FigurePolicySpecEntry(
+                question_id=question_id,
+                label="小題 1",
+                effective_figure_kind="統計圖",
+                timestamp=datetime.now(timezone.utc),
+            )
+        )
+        return ExamQuestion(
+            id=question_id,
+            核心問題="核心問題",
+            文本="文本",
+            subquestions=[],
+            情境=[c.value for c in rng_params.情境],
+            題型種類=rng_params.題型種類.value,
+            題型=rng_params.題型[0].value,
+            題目=["題目"],
+            正確解題分析=["解析"],
+        )
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
+
+    async def injected_stream(params, config_arg, app_state, **kwargs):
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        asyncio.get_running_loop().set_default_executor(executor)
+        try:
+            async for event in generate_question_stream(
+                params,
+                config_arg,
+                app_state,
+                subjects={"social_studies": fake_spec},
+                **kwargs,
+            ):
+                yield event
+        finally:
+            executor.shutdown(wait=True)
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    limiter.reset()
+
+    from server.generate import routes as gen_routes
+
+    original_stream = gen_routes.generate_question_stream
+    original_session_factory = gen_routes.AsyncSessionLocal
+    gen_routes.generate_question_stream = injected_stream  # type: ignore[assignment]
+    gen_routes.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
+    try:
+        token = create_jwt(user_id, "figure-failure@example.com", config=config)
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/generate?subject=social_studies&count=2&skip_verify=true",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
+        gen_routes.AsyncSessionLocal = original_session_factory  # type: ignore[assignment]
+        limiter.reset()
+
+    assert response.status_code == 200
+
+    async def read_records() -> list[GenerationRecord]:
+        async with SessionLocal() as session:
+            return list((await session.execute(select(GenerationRecord))).scalars().all())
+
+    rows = asyncio.run(read_records())
+    asyncio.run(engine.dispose())
+
+    failed = next(row for row in rows if row.status == "failed")
+    assert failed.figure_policy_trail_json is not None
+    assert len(failed.figure_policy_trail_json) == 3
+    assert len({entry["question_id"] for entry in failed.figure_policy_trail_json}) == 2
+    assert {entry["label"] for entry in failed.figure_policy_trail_json} == {"題幹", "小題 1"}
 
 
 def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
