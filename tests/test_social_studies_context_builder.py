@@ -301,7 +301,7 @@ def test_visual_prompts_steer_distinct_figure_kinds_and_show_known_pins(tmp_path
 
     assert "圖像種類" in parent_prompt
     assert "圖像種類不得重複" in parent_prompt
-    assert "直方圖、盒鬚圖" in parent_prompt
+    assert "直方圖、長條圖、盒鬚圖" in parent_prompt
     assert "已使用圖像種類" in sub_prompt
     assert "廣告" in sub_prompt
     assert "地圖" in sub_prompt

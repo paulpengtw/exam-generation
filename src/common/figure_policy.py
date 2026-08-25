@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from src.social_studies.figure_kind_loader import (
+    CANONICAL_FIGURE_KINDS,
+    FIGURE_KIND_ALIASES,
+)
+
 __all__ = [
     "CONTENT_TYPE_ALLOWED_RENDER_MODES",
     "allowed_render_modes",
     "effective_figure_kind",
     "find_figure_kind_collisions",
+    "normalize_figure_kind",
     "validate_figure_routing",
     "validate_question_figure_routing",
 ]
@@ -20,14 +26,8 @@ CONTENT_TYPE_ALLOWED_RENDER_MODES: dict[str, frozenset[str] | None] = {
 }
 
 
-# ``chart_type`` is a renderer-facing identifier.  Diversity is compared by
-# concrete figure genre, so chart identifiers need the same canonical key as
-# their Chinese vocabulary labels when they meet an HTML/gpt-image spec.
-_CHART_TYPE_TO_FIGURE_KIND: dict[str, str] = {
-    "histogram": "直方圖",
-    "boxplot": "盒鬚圖",
-    "line_chart": "折線圖",
-    "pie_chart": "圓餅圖",
+_CANONICAL_FIGURE_KIND_BY_KEY = {
+    kind.casefold(): kind for kind in CANONICAL_FIGURE_KINDS
 }
 
 
@@ -64,12 +64,20 @@ def effective_figure_kind(spec: object | None) -> str:
     if spec is None:
         return ""
     try:
-        figure_kind = spec.get("figure_kind") if isinstance(spec, dict) else getattr(spec, "figure_kind", "")
+        figure_kind = (
+            spec.get("figure_kind")
+            if isinstance(spec, dict)
+            else getattr(spec, "figure_kind", "")
+        )
         if isinstance(figure_kind, str) and figure_kind.strip():
             return figure_kind.strip()
 
         render_mode = _get_render_mode(spec)
-        chart_type = spec.get("chart_type") if isinstance(spec, dict) else getattr(spec, "chart_type", None)
+        chart_type = (
+            spec.get("chart_type")
+            if isinstance(spec, dict)
+            else getattr(spec, "chart_type", None)
+        )
         if render_mode == "chart" and isinstance(chart_type, str):
             return chart_type.strip()
     except Exception:
@@ -77,11 +85,26 @@ def effective_figure_kind(spec: object | None) -> str:
     return ""
 
 
-def _normalized_figure_kind(spec: object | None) -> str:
-    value = effective_figure_kind(spec).strip().casefold()
-    if not value:
+def normalize_figure_kind(value: str) -> str:
+    """Return the canonical key for a known kind, or normalized free text.
+
+    Canonical labels and their data-backed aliases resolve to the canonical
+    label. Unknown labels remain legal free text and only receive the existing
+    strip/casefold normalization.
+    """
+    if not isinstance(value, str):
         return ""
-    return _CHART_TYPE_TO_FIGURE_KIND.get(value, value).casefold()
+    normalized = value.strip().casefold()
+    if not normalized:
+        return ""
+    return _CANONICAL_FIGURE_KIND_BY_KEY.get(
+        normalized,
+        FIGURE_KIND_ALIASES.get(normalized, normalized),
+    )
+
+
+def _normalized_figure_kind(spec: object | None) -> str:
+    return normalize_figure_kind(effective_figure_kind(spec))
 
 
 def find_figure_kind_collisions(

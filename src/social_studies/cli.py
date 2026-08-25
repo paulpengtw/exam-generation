@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
-from src.common.figure_policy import effective_figure_kind, find_figure_kind_collisions
+from src.common.figure_policy import (
+    effective_figure_kind,
+    find_figure_kind_collisions,
+    normalize_figure_kind,
+)
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
 from src.common.subquestion_forcing import force_grade
@@ -122,7 +126,11 @@ def _figure_kind_repair_instruction(
         lines.append("- 本請求允許圖像種類重複；不需套用不得重複限制。")
     elif forbidden_kinds:
         unique_kinds = list(
-            dict.fromkeys(kind.strip() for kind in forbidden_kinds if kind.strip())
+            dict.fromkeys(
+                normalize_figure_kind(kind)
+                for kind in forbidden_kinds
+                if isinstance(kind, str) and kind.strip()
+            )
         )
         lines.append("- **圖像種類不得為：**" + "、".join(unique_kinds))
     else:
@@ -948,7 +956,7 @@ def _enforce_figure_kind_diversity(
         if target is None:
             continue
         forbidden = [
-            effective_figure_kind(entry["spec"])
+            normalize_figure_kind(effective_figure_kind(entry["spec"]))
             for index, entry in enumerate(entries)
             if index != target and effective_figure_kind(entry["spec"])
         ]
