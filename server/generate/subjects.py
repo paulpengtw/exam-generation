@@ -105,6 +105,9 @@ from src.social_studies.curriculum_loader import (
 from src.social_studies.curriculum_loader import (
     load_learning_performance as load_ss_learning_performance,
 )
+from src.social_studies.domain_mapping import (
+    load_code_to_domains_mapping as load_ss_code_to_domains_mapping,
+)
 from src.social_studies.sampler import sample_params as _ss_sample_params_direct
 from src.social_studies.schema_loader import (
     digital_only_question_types as ss_digital_only_question_types,
@@ -670,6 +673,9 @@ def _ss_build_schemas(config_server: Any, grade: int | None) -> dict:
         for entry in content.get("學習內容", [])
         if entry.get("學習階段") == learning_stage
     ]
+    schemas["內容領域_mapping"] = load_ss_code_to_domains_mapping(
+        curriculum_dir=config_server.social_studies_curriculum_dir,
+    )
     return schemas
 
 
