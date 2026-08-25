@@ -85,4 +85,3 @@
 - [ ] Run exactly the affected tests and required regressions: `tests/test_figure_policy.py`, `tests/test_figure_kind_diversity_social_studies.py`, `tests/test_ns_subq_image_contract.py`, `tests/server/test_figure_policy_trail_persistence.py`, and `tests/server/test_no_subject_dispatch.py`.
 - [ ] Run formatting/type/lint checks applicable to touched Python files.
 - [ ] Inspect `git diff`, verify the lane tree is clean, and push the final branch state.
-
