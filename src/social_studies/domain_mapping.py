@@ -58,3 +58,16 @@ def load_domain_mapping(
         code_to_domains=code_to_domains,
         domain_to_codes=domain_to_codes,
     )
+
+
+def load_code_to_domains_mapping(
+    path: Path | None = None,
+    *,
+    curriculum_dir: Path | None = None,
+) -> dict[str, list[str]]:
+    """Read the ICCS mapping as a JSON-serialisable code-to-domains dict."""
+    mapping = load_domain_mapping(path, curriculum_dir=curriculum_dir)
+    return {
+        code: sorted(domains)
+        for code, domains in mapping.code_to_domains.items()
+    }

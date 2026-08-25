@@ -112,6 +112,8 @@ export function SearchPicker({
 export interface SubQuestionCurriculumPickersProps {
   availableLearningPerformance: SearchPickerEntry[];
   availableLearningContent: SearchPickerEntry[];
+  filteredLpPool?: string[];
+  filteredLcPool?: string[];
   learningPerformance?: string[];
   learningContent?: string[];
   onLearningPerformanceChange: (values: string[] | undefined) => void;
@@ -121,35 +123,50 @@ export interface SubQuestionCurriculumPickersProps {
 export default function SubQuestionCurriculumPickers({
   availableLearningPerformance,
   availableLearningContent,
+  filteredLpPool,
+  filteredLcPool,
   learningPerformance = [],
   learningContent = [],
   onLearningPerformanceChange,
   onLearningContentChange,
 }: SubQuestionCurriculumPickersProps) {
-  if (availableLearningPerformance.length === 0 && availableLearningContent.length === 0) {
+  const visibleLearningPerformance = filteredLpPool === undefined
+    ? availableLearningPerformance
+    : availableLearningPerformance.filter((entry) => filteredLpPool.includes(entry.value));
+  const visibleLearningContent = filteredLcPool === undefined
+    ? availableLearningContent
+    : availableLearningContent.filter((entry) => filteredLcPool.includes(entry.value));
+  const visibleLearningPerformanceValues = filteredLpPool === undefined
+    ? learningPerformance
+    : learningPerformance.filter((value) => filteredLpPool.includes(value));
+  const visibleLearningContentValues = filteredLcPool === undefined
+    ? learningContent
+    : learningContent.filter((value) => filteredLcPool.includes(value));
+
+  if (visibleLearningPerformance.length === 0 && visibleLearningContent.length === 0) {
     return null;
   }
 
   return (
     <div className="mt-3 space-y-2">
       <p className="text-xs text-gray-500">留空 = 沿用全域設定</p>
-      {availableLearningPerformance.length > 0 && (
+      {visibleLearningPerformance.length > 0 && (
         <div>
           <p className="text-xs text-gray-500 mb-0.5">學習表現 (留空沿用全域)</p>
           <SearchPicker
-            available={availableLearningPerformance}
-            selected={learningPerformance}
+            available={visibleLearningPerformance}
+            selected={visibleLearningPerformanceValues}
             onChange={(values) => onLearningPerformanceChange(values.length ? values : undefined)}
             placeholder="搜尋學習表現..."
           />
         </div>
       )}
-      {availableLearningContent.length > 0 && (
+      {visibleLearningContent.length > 0 && (
         <div>
           <p className="text-xs text-gray-500 mb-0.5">學習內容 (留空沿用全域)</p>
           <SearchPicker
-            available={availableLearningContent}
-            selected={learningContent}
+            available={visibleLearningContent}
+            selected={visibleLearningContentValues}
             onChange={(values) => onLearningContentChange(values.length ? values : undefined)}
             placeholder="搜尋學習內容..."
           />

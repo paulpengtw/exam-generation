@@ -671,6 +671,7 @@ function DraftSummary({
                       <SubquestionConfigCards
                         configs={fields.subquestionConfigs}
                         subject={subject}
+                        contentDomain={fields.contentDomain}
                         questionTypes={schemas?.題型 ?? []}
                         contentTypes={schemas?.題目內容類型 ?? []}
                         lcEntryByCode={lcEntryByCode}
@@ -864,6 +865,11 @@ const SS_SUBJECT_FILTER_TO_CONTENT_CODE: Record<string, string | null> = {
   "公民與社會": "公",
   "跨科": null,
 };
+const ICCS_DOMAIN_FILTER_SUBJECTS = new Set(["公民與社會", "跨科"]);
+
+function isPublicSocialStudiesCode(code: string): boolean {
+  return code.startsWith("公");
+}
 
 const PIN_RULE_MESSAGE_KEYS: Record<SocialStudiesPinRuleViolation, string> = {
   knowing_defining_limit: "form.pin_rule.knowing_defining_limit",
@@ -1783,6 +1789,43 @@ export default function ParamForm({
     return entries;
   }, [schemas, subjectFilter, subject]);
 
+  const iccsDomainMappedCodes = useMemo(() => {
+    if (
+      subject !== "social_studies" ||
+      !ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter) ||
+      !contentDomain ||
+      !schemas?.內容領域_mapping
+    ) {
+      return undefined;
+    }
+    return new Set(
+      Object.entries(schemas.內容領域_mapping)
+        .filter(([, domains]) => domains.includes(contentDomain))
+        .map(([code]) => code),
+    );
+  }, [contentDomain, schemas, subject, subjectFilter]);
+
+  const filteredLpPool = useMemo(() => {
+    if (iccsDomainMappedCodes === undefined) return undefined;
+    return availableLearningPerformance
+      .filter((entry) => !isPublicSocialStudiesCode(entry.value) || iccsDomainMappedCodes.has(entry.value))
+      .map((entry) => entry.value);
+  }, [availableLearningPerformance, iccsDomainMappedCodes]);
+
+  const filteredLcPool = useMemo(() => {
+    if (iccsDomainMappedCodes === undefined) return undefined;
+    return availableLearningContent
+      .filter((entry) => !isPublicSocialStudiesCode(entry.value) || iccsDomainMappedCodes.has(entry.value))
+      .map((entry) => entry.value);
+  }, [availableLearningContent, iccsDomainMappedCodes]);
+
+  const restrictCodesToIccsDomain = (codes: readonly string[]): string[] => {
+    if (iccsDomainMappedCodes === undefined) return [...codes];
+    return codes.filter(
+      (code) => !isPublicSocialStudiesCode(code) || iccsDomainMappedCodes.has(code),
+    );
+  };
+
   const planEffortLevels = useMemo((): string[] => {
     if (!models?.effort) return [];
     if (modelPlan && models.effort[modelPlan]) return models.effort[modelPlan];
@@ -1880,8 +1923,10 @@ export default function ParamForm({
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
     if (isCurriculumSubject && !effectiveContentType) { return; }
-    const lpPoolValues = availableLearningPerformance.map((e) => e.value);
-    const lcPoolValues = availableLearningContent.map((e) => e.value);
+    const selectedLearningPerformance = restrictCodesToIccsDomain(learningPerformance);
+    const selectedLearningContent = restrictCodesToIccsDomain(learningContent);
+    const lpPoolValues = filteredLpPool ?? availableLearningPerformance.map((e) => e.value);
+    const lcPoolValues = filteredLcPool ?? availableLearningContent.map((e) => e.value);
     const hasHistoryPerQuestionParams = historyPerQuestionParams.length === count;
     const preserveHistoryPerQuestionParams =
       hasHistoryPerQuestionParams && historyPredrawnFields === null;
@@ -1889,12 +1934,12 @@ export default function ParamForm({
     // If no learning_performance selected, pre-draw randomly to match backend sampling
     let finalLp: string[] | undefined;
     let autoDrawn = false;
-    if (!preserveHistoryPerQuestionParams && isCurriculumSubject && learningPerformance.length === 0 && lpPoolValues.length > 0) {
+    if (!preserveHistoryPerQuestionParams && isCurriculumSubject && selectedLearningPerformance.length === 0 && lpPoolValues.length > 0) {
       const maxDraw = subject === "math" ? 3 : 2;
       finalLp = drawRandomSubset(lpPoolValues, 1, maxDraw);
       autoDrawn = true;
-    } else if (isCurriculumSubject && learningPerformance.length > 0) {
-      finalLp = learningPerformance;
+    } else if (isCurriculumSubject && selectedLearningPerformance.length > 0) {
+      finalLp = selectedLearningPerformance;
     }
 
     setLpWasAutoDrawn(autoDrawn);
@@ -1903,21 +1948,21 @@ export default function ParamForm({
     if (
       !preserveHistoryPerQuestionParams &&
       (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
-      learningContent.length === 0 &&
+      selectedLearningContent.length === 0 &&
       lcPoolValues.length > 0
     ) {
       finalLc = drawRandomSubset(lcPoolValues, 1, 3);
       lcAutoDrawn = true;
     } else if (
       (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
-      learningContent.length > 0
+      selectedLearningContent.length > 0
     ) {
-      finalLc = learningContent;
+      finalLc = selectedLearningContent;
     }
 
     setLcWasAutoDrawn(lcAutoDrawn);
-    const perSubqLpPool = learningPerformance.length > 0 ? learningPerformance : (finalLp ?? []);
-    const perSubqLcPool = learningContent.length > 0 ? learningContent : (finalLc ?? []);
+    const perSubqLpPool = selectedLearningPerformance.length > 0 ? selectedLearningPerformance : (finalLp ?? []);
+    const perSubqLcPool = selectedLearningContent.length > 0 ? selectedLearningContent : (finalLc ?? []);
     // #444: persist pools so the 重抽 handler can draw from the same source.
     perSubqLcPoolRef.current = perSubqLcPool;
     perSubqLpPoolRef.current = perSubqLpPool;
@@ -1933,15 +1978,17 @@ export default function ParamForm({
       ? subquestionConfigs
           .slice(0, subQuestionCount as number)
           .map((cfg) => {
-            const hasExplicitLc = (cfg.learning_content?.length ?? 0) > 0;
-            const hasExplicitLp = (cfg.learning_performance?.length ?? 0) > 0;
+            const configuredLc = restrictCodesToIccsDomain(cfg.learning_content ?? []);
+            const configuredLp = restrictCodesToIccsDomain(cfg.learning_performance ?? []);
+            const hasExplicitLc = configuredLc.length > 0;
+            const hasExplicitLp = configuredLp.length > 0;
             const resolvedLc = hasExplicitLc
-              ? cfg.learning_content
+              ? configuredLc
               : perSubqLcPool.length > 0
                 ? drawSubqLcFromPool(perSubqLcPool)
                 : undefined;
             const resolvedLp = hasExplicitLp
-              ? cfg.learning_performance
+              ? configuredLp
               : perSubqLpPool.length > 0
                 ? drawSubqLpFromPool(perSubqLpPool)
                 : undefined;
@@ -2110,21 +2157,29 @@ export default function ParamForm({
         (!historyQuestionParams && autoDrawn);
       const redrawQuestionLc = historyPredrawnFields?.has(questionLcAddress) ||
         (!historyQuestionParams && lcAutoDrawn);
-      const questionLpPool = learningPerformance.length > 0
-        ? learningPerformance
+      const questionLpPool = selectedLearningPerformance.length > 0
+        ? selectedLearningPerformance
         : autoDrawn
           ? lpPoolValues
           : (finalLp ?? lpPoolValues);
-      const questionLcPool = learningContent.length > 0
-        ? learningContent
+      const questionLcPool = selectedLearningContent.length > 0
+        ? selectedLearningContent
         : lcAutoDrawn
           ? lcPoolValues
           : (finalLc ?? lcPoolValues);
       const historyQuestionLp = Array.isArray(historyQuestionParams?.learning_performance)
-        ? historyQuestionParams.learning_performance.filter((code): code is string => typeof code === "string")
+        ? restrictCodesToIccsDomain(
+            historyQuestionParams.learning_performance.filter(
+              (code): code is string => typeof code === "string",
+            ),
+          )
         : undefined;
       const historyQuestionLc = Array.isArray(historyQuestionParams?.learning_content)
-        ? historyQuestionParams.learning_content.filter((code): code is string => typeof code === "string")
+        ? restrictCodesToIccsDomain(
+            historyQuestionParams.learning_content.filter(
+              (code): code is string => typeof code === "string",
+            ),
+          )
         : undefined;
       const questionLp = redrawQuestionLp
         ? drawQuestionSubset(questionLpPool, 1, subject === "math" ? 3 : 2, previousQuestionLp)
@@ -2173,11 +2228,17 @@ export default function ParamForm({
         ? parseSubquestionConfigs(historyQuestionParams.subquestion_configs)
         : subquestionConfigs;
       const questionSubquestionConfigs = shouldDrawPerSubq
-        ? sourceSubquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
-            const hasExplicitLc = (cfg.learning_content?.length ?? 0) > 0;
-            const hasExplicitLp = (cfg.learning_performance?.length ?? 0) > 0;
-            const lcPool = learningContent.length > 0 ? learningContent : (questionLc ?? perSubqLcPool);
-            const lpPool = learningPerformance.length > 0 ? learningPerformance : (questionLp ?? perSubqLpPool);
+          ? sourceSubquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
+            const configuredLc = restrictCodesToIccsDomain(cfg.learning_content ?? []);
+            const configuredLp = restrictCodesToIccsDomain(cfg.learning_performance ?? []);
+            const hasExplicitLc = configuredLc.length > 0;
+            const hasExplicitLp = configuredLp.length > 0;
+            const lcPool = selectedLearningContent.length > 0
+              ? selectedLearningContent
+              : (questionLc ?? perSubqLcPool);
+            const lpPool = selectedLearningPerformance.length > 0
+              ? selectedLearningPerformance
+              : (questionLp ?? perSubqLpPool);
             const lcAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_content`;
             const lpAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_performance`;
             const redrawLc = historyPredrawnFields?.has(lcAddress) || (!historyQuestionParams && !hasExplicitLc);
@@ -2191,7 +2252,7 @@ export default function ParamForm({
                     previousQuestionSubquestions?.[subquestionIndex]?.learning_content,
                   )
                 : undefined
-              : cfg.learning_content;
+              : configuredLc;
             const resolvedLp = redrawLp
               ? lpPool.length > 0
                 ? drawQuestionSubset(
@@ -2201,7 +2262,7 @@ export default function ParamForm({
                     previousQuestionSubquestions?.[subquestionIndex]?.learning_performance,
                   )
                 : undefined
-              : cfg.learning_performance;
+              : configuredLp;
             if (redrawLc && resolvedLc?.length) {
               hasRedrawnSubquestion = true;
               questionPredrawnFields.push(lcAddress);
@@ -2862,12 +2923,15 @@ export default function ParamForm({
                     <SubquestionConfigCards
                       configs={questionSubquestionConfigs}
                       subject={subject}
+                      contentDomain={typeof p.content_domain === "string" ? p.content_domain : undefined}
                       questionTypes={availableQuestionTypes}
                       contentTypes={schemas?.題目內容類型 ?? []}
                       lcEntryByCode={lcEntryByCode}
                       lpEntryByCode={lpEntryByCode}
                       availableLc={allLcEntries}
                       availableLp={allLpEntries}
+                      filteredLcPool={filteredLcPool}
+                      filteredLpPool={filteredLpPool}
                       onInstructionChange={(subquestionIndex, instruction) =>
                         updatePendingSubquestionInstruction(index, subquestionIndex, instruction)
                       }
@@ -3682,6 +3746,8 @@ export default function ParamForm({
                   <SubQuestionCurriculumPickers
                     availableLearningPerformance={availableLearningPerformance}
                     availableLearningContent={availableLearningContent}
+                    filteredLpPool={filteredLpPool}
+                    filteredLcPool={filteredLcPool}
                     learningPerformance={cfg.learning_performance}
                     learningContent={cfg.learning_content}
                     onLearningPerformanceChange={(values) =>
