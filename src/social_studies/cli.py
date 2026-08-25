@@ -557,6 +557,13 @@ def _canonicalize_repaired_figure_kind(value: str) -> str:
     return normalized if normalized in CANONICAL_FIGURE_KINDS else stripped
 
 
+def _figure_kind_repair_key(sub: SubQuestion) -> str:
+    """Return a stable per-slot key independent of model-reported 序號."""
+    if sub._plan_index is not None:
+        return f"小題 plan {sub._plan_index}"
+    return f"小題 object {id(sub)}"
+
+
 def _repair_figure_kind_declaration(
     *,
     question: ExamQuestion,
@@ -954,9 +961,10 @@ def _ss_prepare_visual_policy(
         if sub.chart_spec is None or _declared_figure_kind(sub.chart_spec):
             continue
         label = f"小題 {sub.序號}"
-        if label in attempted:
+        attempt_key = _figure_kind_repair_key(sub)
+        if attempt_key in attempted:
             continue
-        attempted.add(label)
+        attempted.add(attempt_key)
         _repair_figure_kind_declaration(
             question=question,
             label=label,
@@ -1232,8 +1240,6 @@ def _warn_about_undeclared_figure_kinds(
     on_figure_policy_entry: FigurePolicyTrailCallback | None,
 ) -> None:
     """Record unresolved declaration omissions without blocking image output."""
-    if on_figure_policy_entry is None:
-        return
     for entry in _figure_spec_entries(question, params):
         if _declared_figure_kind(entry["spec"]):
             continue
@@ -1244,15 +1250,16 @@ def _warn_about_undeclared_figure_kinds(
         )
         print(f"  {message}", file=sys.stderr)
         emit_stage(obs, "image_agent", "render_image", "warning", message=message)
-        on_figure_policy_entry(
-            make_warning_entry(
-                question.id,
-                message,
-                duplicate_image_shipped=False,
-                right=entry["label"],
-                effective_kind=effective_kind or None,
+        if on_figure_policy_entry is not None:
+            on_figure_policy_entry(
+                make_warning_entry(
+                    question.id,
+                    message,
+                    duplicate_image_shipped=False,
+                    right=entry["label"],
+                    effective_kind=effective_kind or None,
+                )
             )
-        )
 
 
 def _ss_render_subquestion_images(
@@ -1297,17 +1304,18 @@ def _ss_render_subquestion_images(
 
     for sub in question.subquestions:
         label = f"小題 {sub.序號}"
+        attempt_key = _figure_kind_repair_key(sub)
         if (
             sub.chart_spec is None
             or _declared_figure_kind(sub.chart_spec)
             or client is None
-            or label in question._figure_kind_repair_attempted
+            or attempt_key in question._figure_kind_repair_attempted
         ):
             continue
-        question._figure_kind_repair_attempted.add(label)
+        question._figure_kind_repair_attempted.add(attempt_key)
         _repair_figure_kind_declaration(
             question=question,
-            label=f"小題 {sub.序號}",
+            label=label,
             spec=sub.chart_spec,
             params=params,
             client=client,
