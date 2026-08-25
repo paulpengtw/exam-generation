@@ -1678,9 +1678,15 @@ export default function ParamForm({
       ].filter((message): message is string => message !== null).join(" "));
       // Drop the missing entries so the form submits a clean payload.
       const allowedCtx = new Set(schemas.情境?.map((s) => s.value));
-      setField("context", (prev) => prev.filter((v) => allowedCtx.has(v)));
+      setField("context", (prev) => {
+        const next = prev.filter((v) => allowedCtx.has(v));
+        return next.length === prev.length ? prev : next;
+      });
       const allowedQT = new Set(schemas.題型?.map((s) => s.value));
-      setField("qType", (prev) => prev.filter((v) => allowedQT.has(v)));
+      setField("qType", (prev) => {
+        const next = prev.filter((v) => allowedQT.has(v));
+        return next.length === prev.length ? prev : next;
+      });
       const allowedST = new Set(schemas.題型種類?.map((s) => s.value));
       setField("setType", (prev) => (allowedST.has(prev) ? prev : ""));
       const allowedDomains = new Set(schemas.內容領域?.map((s) => s.value));
