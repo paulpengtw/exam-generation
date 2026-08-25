@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 from alembic.config import Config as AlembicConfig
+
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
 

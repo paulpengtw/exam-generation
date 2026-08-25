@@ -4,6 +4,9 @@ import random
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
 from server.generate.service import build_prompt_previews

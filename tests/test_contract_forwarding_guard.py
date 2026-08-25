@@ -29,6 +29,8 @@ from typing import Any
 
 import pytest
 
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from server.generate import service as _svc
 from server.generate.models import GenerateParams
 from server.generate.subjects import (

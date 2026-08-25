@@ -7,6 +7,8 @@ from contextlib import redirect_stdout
 from unittest.mock import MagicMock
 
 import pytest
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
 from fastapi import HTTPException
 
 from server.auth import (
