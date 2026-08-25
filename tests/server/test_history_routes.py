@@ -204,7 +204,7 @@ def test_detail_returns_null_verification_trail_for_a_legacy_record(tmp_path) ->
         asyncio.run(engine.dispose())
 
 
-def test_detail_returns_the_persisted_figure_policy_trail_without_listing_it(tmp_path) -> None:
+def test_list_and_detail_return_the_persisted_figure_policy_trail(tmp_path) -> None:
     app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
     expected_trail = [
         {
@@ -244,7 +244,7 @@ def test_detail_returns_the_persisted_figure_policy_trail_without_listing_it(tmp
             )
 
         listed = next(item for item in list_response.json()["items"] if item["id"] == record_id)
-        assert "figure_policy_trail" not in listed
+        assert listed["figure_policy_trail"] == expected_trail
         assert detail_response.status_code == 200
         assert detail_response.json()["figure_policy_trail"] == expected_trail
     finally:

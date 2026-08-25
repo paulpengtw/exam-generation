@@ -58,6 +58,47 @@ describe("HistoryPage (list mode)", () => {
     expect(screen.getByText("Verified")).toBeInTheDocument();
   });
 
+  it("marks a history row when its trail records a shipped figure-kind collision", async () => {
+    listHistoryMock.mockResolvedValueOnce({
+      total: 1,
+      items: [
+        {
+          id: "degraded-id",
+          subject: "social_studies",
+          question_id: "ss-degraded",
+          created_at: "2026-07-15T00:00:00Z",
+          preview: "圖像種類碰撞",
+          verified: true,
+          figure_policy_trail: [
+            {
+              code: "figure_policy",
+              kind: "warning",
+              question_id: "ss-degraded",
+              message: "duplicate image shipped",
+              duplicate_image_shipped: true,
+              left: "題幹",
+              right: "小題 1",
+              effective_figure_kind: "地圖",
+              timestamp: "2026-08-25T00:00:00Z",
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history"]}>
+        <Routes>
+          <Route path="/history" element={<HistoryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Figure-kind diversity degraded")).toBeInTheDocument(),
+    );
+  });
+
   it("shows the empty-state message when the API returns no items", async () => {
     listHistoryMock.mockResolvedValueOnce({ total: 0, items: [] });
 
