@@ -931,19 +931,44 @@ def _ss_prepare_visual_policy(
     *,
     on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
 ) -> None:
-    """Declare an existing 題幹 visual spec before the shared renderer runs."""
-    if question.chart_spec is None or _declared_figure_kind(question.chart_spec) or client is None:
+    """Declare every existing visual spec before the shared renderer runs."""
+    if client is None:
         return
 
-    _repair_figure_kind_declaration(
-        question=question,
-        label="題幹",
-        spec=question.chart_spec,
-        params=params,
-        client=client,
-        set_spec=lambda repaired: setattr(question, "chart_spec", repaired),
-        on_figure_policy_entry=on_figure_policy_entry,
-    )
+    attempted = question._figure_kind_repair_attempted
+    if question.chart_spec is not None and not _declared_figure_kind(question.chart_spec):
+        label = "題幹"
+        if label not in attempted:
+            attempted.add(label)
+            _repair_figure_kind_declaration(
+                question=question,
+                label=label,
+                spec=question.chart_spec,
+                params=params,
+                client=client,
+                set_spec=lambda repaired: setattr(question, "chart_spec", repaired),
+                on_figure_policy_entry=on_figure_policy_entry,
+            )
+
+    for sub in question.subquestions:
+        if sub.chart_spec is None or _declared_figure_kind(sub.chart_spec):
+            continue
+        label = f"小題 {sub.序號}"
+        if label in attempted:
+            continue
+        attempted.add(label)
+        _repair_figure_kind_declaration(
+            question=question,
+            label=label,
+            spec=sub.chart_spec,
+            params=params,
+            client=client,
+            set_spec=lambda repaired, sub=sub: setattr(sub, "chart_spec", repaired),
+            on_figure_policy_entry=on_figure_policy_entry,
+            forbidden_kinds=_known_figure_kinds_for_subquestion_repair(
+                question, params, sub,
+            ),
+        )
 
 
 def _subquestion_config_for(params: SampledParams, sub: SubQuestion) -> SubQuestionConfig | None:
@@ -1271,8 +1296,15 @@ def _ss_render_subquestion_images(
                 )
 
     for sub in question.subquestions:
-        if sub.chart_spec is None or _declared_figure_kind(sub.chart_spec) or client is None:
+        label = f"小題 {sub.序號}"
+        if (
+            sub.chart_spec is None
+            or _declared_figure_kind(sub.chart_spec)
+            or client is None
+            or label in question._figure_kind_repair_attempted
+        ):
             continue
+        question._figure_kind_repair_attempted.add(label)
         _repair_figure_kind_declaration(
             question=question,
             label=f"小題 {sub.序號}",

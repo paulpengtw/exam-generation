@@ -165,6 +165,7 @@ class _RepairTopLevelImageClient:
         return {
             "chart_spec": {
                 "render_mode": "html",
+                "figure_kind": "地圖",
                 "title": "都市更新公共設施示意圖",
                 "description": "呈現更新前後街區、公共設施增加與租金變化資訊。",
                 "data": {"更新前": "老舊住宅", "更新後": "公園、捷運站、租金上升"},

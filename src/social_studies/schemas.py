@@ -303,6 +303,10 @@ class ExamQuestion(BaseModel):
     verification: VerificationResult | None = None
     metadata: QuestionMetadata | None = None
 
+    # One declaration-repair budget per visual spec; private so it never
+    # enters persisted question JSON.
+    _figure_kind_repair_attempted: set[str] = PrivateAttr(default_factory=set)
+
     @field_validator("內容領域")
     @classmethod
     def content_domain_must_be_known(cls, value: str | None) -> str | None:

@@ -114,7 +114,7 @@ class _UndeclaredVisualMainClient:
     def get_observer(self):
         return None
 
-    def generate_json(self, _system, user, **_kwargs):
+    def generate_json(self, system, user, **_kwargs):
         self.calls += 1
         if self.calls == 1:
             self.events.append("text")
@@ -137,7 +137,11 @@ class _UndeclaredVisualMainClient:
             return response
         kind = next(self.repaired_kinds)
         self.repair_calls.append(("repair", user))
-        self.events.append("declaration_repair")
+        self.events.append(
+            "declaration_repair"
+            if "只補上既有視覺素材規格" in system
+            else "collision_repair"
+        )
         return {
             "chart_spec": {
                 "render_mode": "gpt_image",
