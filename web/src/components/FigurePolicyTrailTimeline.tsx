@@ -9,7 +9,10 @@ export default function FigurePolicyTrailTimeline({
   entries,
 }: FigurePolicyTrailTimelineProps) {
   const t = useT();
-  if (!entries || entries.length === 0) return null;
+  const visibleEntries = (entries ?? []).filter(
+    (entry) => entry.kind !== "warning" || entry.duplicate_image_shipped,
+  );
+  if (visibleEntries.length === 0) return null;
 
   return (
     <section
@@ -18,7 +21,7 @@ export default function FigurePolicyTrailTimeline({
     >
       <h3 className="font-semibold text-gray-800">{t("card.figurePolicyTrail")}</h3>
       <ol className="mt-3 space-y-2">
-        {entries.map((entry, index) => (
+        {visibleEntries.map((entry, index) => (
           <li
             key={`${entry.timestamp}-${index}`}
             className="rounded border border-purple-200 bg-purple-50 p-3 text-sm"
