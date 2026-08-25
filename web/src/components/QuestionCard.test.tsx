@@ -123,6 +123,35 @@ describe("QuestionCard 圖像種類降級警告", () => {
     expect(banner).toHaveTextContent("小題 1");
     expect(banner).toHaveTextContent("地圖");
   });
+
+  it("does not render degradation UI for a warning that did not ship a duplicate", () => {
+    const figurePolicyTrail: FigurePolicyTrailEntry[] = [
+      {
+        code: "figure_policy",
+        kind: "warning",
+        question_id: "ss-clean",
+        message: "repair completed without shipping a duplicate",
+        duplicate_image_shipped: false,
+        left: "題幹",
+        right: "小題 1",
+        effective_figure_kind: "地圖",
+        timestamp: "2026-08-25T00:00:00+00:00",
+      },
+    ];
+
+    render(
+      <QuestionCard
+        question={question}
+        figurePolicyTrail={figurePolicyTrail}
+        isFinal
+      />,
+    );
+
+    expect(
+      screen.queryByRole("alert", { name: "Figure-kind degradation warning" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Figure-kind warning")).not.toBeInTheDocument();
+  });
 });
 
 afterEach(() => {

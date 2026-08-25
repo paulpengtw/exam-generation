@@ -99,6 +99,46 @@ describe("HistoryPage (list mode)", () => {
     );
   });
 
+  it("does not mark a history row when its trail says no duplicate was shipped", async () => {
+    listHistoryMock.mockResolvedValueOnce({
+      total: 1,
+      items: [
+        {
+          id: "clean-id",
+          subject: "social_studies",
+          question_id: "ss-clean",
+          created_at: "2026-07-15T00:00:00Z",
+          preview: "乾淨結果",
+          verified: true,
+          figure_policy_trail: [
+            {
+              code: "figure_policy",
+              kind: "warning",
+              question_id: "ss-clean",
+              message: "repair completed without shipping a duplicate",
+              duplicate_image_shipped: false,
+              left: "題幹",
+              right: "小題 1",
+              effective_figure_kind: "地圖",
+              timestamp: "2026-08-25T00:00:00Z",
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history"]}>
+        <Routes>
+          <Route path="/history" element={<HistoryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByText("乾淨結果")).toBeInTheDocument());
+    expect(screen.queryByText("Figure-kind diversity degraded")).not.toBeInTheDocument();
+  });
+
   it("shows the empty-state message when the API returns no items", async () => {
     listHistoryMock.mockResolvedValueOnce({ total: 0, items: [] });
 
