@@ -845,6 +845,7 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
 
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
     params = GenerateParams(subject="social_studies", count=2, skip_verify=True)
+    emitted_events: list[dict] = []
 
     def fake_do_generate(rng_params, _overrides, **kwargs):
         question_id = kwargs["question_id"]
@@ -871,7 +872,7 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
     fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
     async def _drive() -> None:
-        async for _ in generate_question_stream(
+        async for event in generate_question_stream(
             params,
             config,
             SimpleNamespace(html_renderer=None, renderer_pool=None),
@@ -879,7 +880,7 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
             subjects={"social_studies": fake_spec},
             session_factory=SessionLocal,
         ):
-            pass
+            emitted_events.append(event)
 
     asyncio.run(_drive())
 
@@ -895,6 +896,9 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
     assert log.figure_policy_trail_json is not None
     assert len(log.figure_policy_trail_json) == 2
     assert len({entry["question_id"] for entry in log.figure_policy_trail_json}) == 2
+    policy_events = [event for event in emitted_events if event["event"] == "trail"]
+    assert len(policy_events) == 2
+    assert all(event["data"]["code"] == "figure_policy" for event in policy_events)
 
 
 def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_path) -> None:
