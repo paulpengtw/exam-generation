@@ -17,7 +17,6 @@
       "chart_spec": {
         "render_mode": "html",
         "figure_kind": "比較表",
-        "chart_type": "table",
         "title": "兩筆公共建設紀錄的制度線索",
         "description": "將甲、乙兩筆資料的公共建設目的、勞動方式與決策程序並列，保留原始資料中可用來比較政府權力的關鍵詞。",
         "data": {

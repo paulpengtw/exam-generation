@@ -17,7 +17,6 @@
       "chart_spec": {
         "render_mode": "html",
         "figure_kind": "表格",
-        "chart_type": "table",
         "title": "甲國女性未就業原因（部分統計）",
         "description": "請以完整資料表呈現各年齡層未就業女性所列原因的比例，單位為百分比。",
         "data": {

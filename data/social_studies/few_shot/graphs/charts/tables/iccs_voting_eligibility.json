@@ -17,7 +17,6 @@
       "chart_spec": {
         "render_mode": "html",
         "figure_kind": "表格",
-        "chart_type": "table",
         "title": "兩位縣民的地方選舉相關資料",
         "description": "以比較表呈現兩人的年齡、設籍時間與法律狀態，保留每一欄的單位與文字標籤。",
         "data": {

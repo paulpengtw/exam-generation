@@ -17,7 +17,6 @@
       "chart_spec": {
         "render_mode": "html",
         "figure_kind": "表格",
-        "chart_type": "table",
         "title": "四家電視臺對候選人的新聞報導比例",
         "description": "以表格呈現固定一週晚間新聞時段的總播報比例，以及正面、負面報導比例；比例皆為百分比。",
         "data": {

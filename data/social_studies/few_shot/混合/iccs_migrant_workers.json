@@ -17,7 +17,6 @@
       "chart_spec": {
         "render_mode": "html",
         "figure_kind": "表格",
-        "chart_type": "table",
         "title": "2022年8月臺灣前四大外籍移工來源國資料",
         "description": "請把國籍、產業移工、社福移工與性別列成可交叉閱讀的資料表；比例單位為百分比。",
         "data": {

@@ -17,7 +17,6 @@
       "chart_spec": {
         "render_mode": "html",
         "figure_kind": "表格",
-        "chart_type": "table",
         "title": "2012至2018年新生兒約定從母姓資料",
         "description": "以比較表呈現各年度出生登記總人數與約定從母姓比例，比例欄保留一位小數。",
         "data": {
