@@ -14,6 +14,7 @@ import QuestionCard from "./QuestionCard";
 import type {
   ExamQuestion,
   SubQuestion,
+  FigurePolicyTrailEntry,
   VerificationTrailEntry,
 } from "../hooks/useGenerate";
 
@@ -88,6 +89,39 @@ describe("QuestionCard Agent 自主驗證修正歷程", () => {
     expect(screen.getByText("Failed")).toBeInTheDocument();
     expect(screen.getByText("The answer and explanation agree.")).toBeInTheDocument();
     expect(screen.getByText("The supplied answer conflicts with the question.")).toBeInTheDocument();
+  });
+});
+
+describe("QuestionCard 圖像種類降級警告", () => {
+  it("shows a warning banner naming the colliding 題幹/小題 pair and 圖像種類", () => {
+    const figurePolicyTrail: FigurePolicyTrailEntry[] = [
+      {
+        code: "figure_policy",
+        kind: "warning",
+        question_id: "ss-policy",
+        message: "duplicate image shipped",
+        duplicate_image_shipped: true,
+        left: "題幹",
+        right: "小題 1",
+        effective_figure_kind: "地圖",
+        timestamp: "2026-08-25T00:00:00+00:00",
+      },
+    ];
+
+    render(
+      <QuestionCard
+        question={question}
+        figurePolicyTrail={figurePolicyTrail}
+        isFinal
+      />,
+    );
+
+    const banner = screen.getByRole("alert", {
+      name: "Figure-kind degradation warning",
+    });
+    expect(banner).toHaveTextContent("題幹");
+    expect(banner).toHaveTextContent("小題 1");
+    expect(banner).toHaveTextContent("地圖");
   });
 });
 
