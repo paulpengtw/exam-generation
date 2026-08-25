@@ -120,8 +120,13 @@ function HistoryList() {
         )}
 
         <ul className="space-y-2">
-          {items.map((item) => (
-            <li key={item.id}>
+          {items.map((item) => {
+            const hasFigurePolicyDegradation = item.figure_policy_trail?.some(
+              (entry) => entry.kind === "warning" && entry.duplicate_image_shipped,
+            ) ?? false;
+
+            return (
+              <li key={item.id}>
               <Link
                 to={`/history/${item.id}`}
                 className="flex flex-col gap-1 rounded border bg-white p-3 shadow-sm hover:border-blue-400"
@@ -138,6 +143,11 @@ function HistoryList() {
                   {item.status === "aborted" && (
                     <span className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
                       {t("history.aborted_badge")}
+                    </span>
+                  )}
+                  {hasFigurePolicyDegradation && (
+                    <span className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                      {t("history.figure_policy_degraded_badge")}
                     </span>
                   )}
                   <span>{new Date(item.created_at).toLocaleString()}</span>
@@ -162,8 +172,9 @@ function HistoryList() {
                   )}
                 </div>
               </Link>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
 
         <div className="flex items-center justify-between">

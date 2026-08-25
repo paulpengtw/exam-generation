@@ -216,6 +216,7 @@ export interface HistoryListItem {
   error: string | null;
   preview: string;
   verified: boolean;
+  figure_policy_trail: FigurePolicyTrailEntry[] | null;
 }
 
 export interface HistoryListResponse {
