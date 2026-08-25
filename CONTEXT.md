@@ -75,7 +75,7 @@ Resolving a value that would otherwise be chosen randomly during generation, bef
 _Avoid_: pre-draw, pre-roll, client-side sampling
 
 **全量預抽**:
-The promise that every value generation would otherwise draw is resolved by 預抽 and 釘選 before 發送前確認, so nothing shown to a supervisor can change after they send. The 參考範例 draw is the single deliberate exception. Drawing during generation survives only for callers that have no 發送前確認 to fill, and that path is being retired.
+The promise that every value generation would otherwise draw is resolved by 預抽 and 釘選 before 發送前確認, so nothing shown to a supervisor can change after they send. The 參考範例 draw is the single deliberate exception. Drawing during generation survives only until the web client obtains its 預抽 from the server-side resolver; it is then removed together with the generation gate that rejects incomplete requests. Every caller — web, API or CLI — resolves first and generates second.
 _Avoid_: full pre-draw, exhaustive sampling, no-backend-randomness
 
 **從屬參數**:
@@ -93,7 +93,7 @@ Sending a resolved value with the request so nothing downstream re-randomises it
 _Avoid_: pin, lock, fix
 
 **確認頁修改**:
-Editing a resolved 各小題配置 value on the confirmation screen. The edited value becomes user-supplied and 釘選; untouched values keep their 預抽 state. Applies per 題組 — it never writes back to the shared form configuration.
+Editing any resolved 預抽 value on the confirmation screen — a 題組-level row such as 內容領域, 核心素養 or 數學思考, or a 各小題配置 row. The edited value becomes user-supplied and 釘選; untouched values keep their 預抽 state. Editing a 從屬參數 parent behaves like 重抽 of that parent with the chosen value: its children re-resolve from the new range, and a pinned child that no longer fits is cleared and re-resolved, never silently corrected. Applies per 題組 — it never writes back to the shared form configuration.
 _Avoid_: final modification, confirmation edit, last-minute tweak
 
 **重抽**:
