@@ -450,6 +450,7 @@ async def stream_modification_run(
                 config=config,
                 user_id=user.id,
                 session_factory=run_session_factory,
+                figure_policy_trail_json=row.figure_policy_trail_json,
                 client_factory=client_factory,
             ):
                 yield _serialize_event(event)
