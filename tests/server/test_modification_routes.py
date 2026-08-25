@@ -58,6 +58,7 @@ def _seed_record(
     owner_id: uuid.UUID | None = None,
     question_json: dict | None = None,
     parent_record_id: uuid.UUID | None = None,
+    figure_policy_trail_json: list[dict] | None = None,
 ) -> tuple[uuid.UUID, uuid.UUID]:
     user_id = owner_id or uuid.uuid4()
     record_id = uuid.uuid4()
@@ -80,6 +81,7 @@ def _seed_record(
                     question_id=payload["id"],
                     params_json={"subject": "social_studies"},
                     question_json=payload,
+                    figure_policy_trail_json=figure_policy_trail_json,
                     image_files=[],
                 )
             )
@@ -971,6 +973,52 @@ def test_modification_stream_appends_child_and_leaves_parent_immutable(
     assert child.parent_record_id == record_id
     assert child.generation_log_id == uuid.UUID(run_id)
     assert child.annotations_json == _modification_payload()
+
+
+def test_modification_stream_preserves_parent_figure_policy_trail(
+    app_ctx, monkeypatch
+) -> None:
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    trail = [
+        {
+            "code": "figure_policy",
+            "kind": "warning",
+            "question_id": base["id"],
+            "message": "duplicate shipped",
+            "duplicate_image_shipped": True,
+            "left": "題幹",
+            "right": "小題 1",
+            "effective_figure_kind": "地圖",
+            "timestamp": "2026-08-25T00:00:00Z",
+        }
+    ]
+    user_id, record_id = _seed_record(
+        SessionLocal,
+        question_json=base,
+        figure_policy_trail_json=trail,
+    )
+    fake = _ScriptedModificationLLM(_scripted_candidate(base))
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+    _run_id, _events = _execute_scripted_modification(
+        app, config, user_id, record_id, fake
+    )
+
+    async def read_child() -> GenerationRecord:
+        async with SessionLocal() as session:
+            return (
+                await session.execute(
+                    select(GenerationRecord).where(
+                        GenerationRecord.parent_record_id == record_id
+                    )
+                )
+            ).scalar_one()
+
+    child = asyncio.run(read_child())
+    assert child.figure_policy_trail_json == trail
 
 
 def test_modification_stream_logs_exchange_under_its_own_generation_log(
