@@ -80,6 +80,8 @@ _Avoid_: full pre-draw, exhaustive sampling, no-backend-randomness
 
 **從屬參數**:
 A setting whose legal values are fixed by another setting's resolved value — 情境子類別 by 情境; 學習內容 / 學習表現 by 科目; and, for 公民與社會 and 跨科, 學習內容 also by 內容領域. A child may have several parents, and its range is the intersection of theirs. 預抽 resolves every parent first and draws the child only from that range. A pair drawn from unrelated ranges is invalid and is rejected, never silently corrected.
+小題數 is also a structural parent: the per-小題 slot list (the 各小題配置 rows) exists only because of the resolved 小題數.
+When 小題數 is 重抽, the slots are rebuilt to the new count; 覆寫'd rows keep their values where they survive, while untouched 預抽 rows re-resolve.
 _Avoid_: dependent field, child parameter, cascading select, parented value
 
 **未送出的輸入**:
