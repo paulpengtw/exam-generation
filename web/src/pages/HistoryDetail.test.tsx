@@ -114,7 +114,26 @@ describe("HistoryDetail", () => {
       created_at: "2026-07-16T00:00:00Z",
       status: "aborted",
       error: null,
-      params_json: { subject: "social_studies", topic: "aborted climate" },
+      params_json: {
+        subject: "social_studies",
+        grade: 8,
+        q_type: ["已停用的題型"],
+        topic: "aborted climate",
+        core_question: "aborted core",
+        sub_question_count: 3,
+        subquestion_configs: JSON.stringify([{
+          question_type: "Complex multiple-choice",
+          instruction: "aborted subquestion",
+        }]),
+        per_question_params: JSON.stringify([{
+          topic: "aborted climate",
+          core_question: "aborted core",
+          subquestion_configs: JSON.stringify([{
+            question_type: "Complex multiple-choice",
+            instruction: "aborted subquestion",
+          }]),
+        }]),
+      },
       question_json: null,
     });
 
@@ -141,6 +160,10 @@ describe("HistoryDetail", () => {
         '"topic":"aborted climate"',
       ),
     );
+    expect(screen.getByTestId("loc-state").textContent).toContain(
+      '"core_question":"aborted core"',
+    );
+    expect(screen.getByTestId("loc-state").textContent).toContain("aborted subquestion");
   });
 
   it("uses the latest record identity returned by history detail for the card", async () => {

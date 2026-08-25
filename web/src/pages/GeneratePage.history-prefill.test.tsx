@@ -220,6 +220,38 @@ const HISTORY_PARAMS = {
   reporting_scale: "3",
 };
 
+// Aborted records use the same GenerateParams.model_dump(mode="json") writer
+// as completed records; the distinction is the GenerationRecord status and
+// null question payload, not a different request object.
+const ABORTED_HISTORY_PARAMS = { ...HISTORY_PARAMS };
+
+// Keep the model_dump envelope intact, but make the raw per-question row
+// sparse as an aborted request may be. The server validates the JSON array and
+// merges each row with the base params; nested fields remain optional.
+const PARTIAL_ABORTED_HISTORY_PARAMS = {
+  ...HISTORY_PARAMS,
+  topic: "中斷時保存的主題",
+  core_question: "中斷時保存的題幹",
+  q_type: ["已停用的題型"],
+  subquestion_configs: JSON.stringify([
+    {
+      question_type: "Complex multiple-choice",
+      instruction: "中斷時已保存的小題指示",
+    },
+  ]),
+  per_question_params: JSON.stringify([{
+    topic: "中斷時保存的主題",
+    core_question: "中斷時保存的題幹",
+    sub_question_count: 3,
+    subquestion_configs: JSON.stringify([
+      {
+        question_type: "Complex multiple-choice",
+        instruction: "中斷時已保存的小題指示",
+      },
+    ]),
+  }]),
+};
+
 const DRAFT_FIELDS: FormFields = {
   grade: 7,
   style: "",
@@ -266,12 +298,12 @@ function selectInField(label: string): HTMLSelectElement {
   return labelElement.parentElement!.querySelector("select") as HTMLSelectElement;
 }
 
-function renderPageWithHistoryState() {
+function renderPageWithHistoryState(prefillParams: Record<string, unknown> = HISTORY_PARAMS) {
   return render(
     <MemoryRouter
       initialEntries={[{
         pathname: "/generate/natural_sciences",
-        state: { prefillParams: HISTORY_PARAMS },
+        state: { prefillParams },
       }]}
     >
       <Routes>
@@ -421,6 +453,81 @@ describe("GeneratePage history prefill with a saved draft", () => {
     }));
     expect(JSON.parse(submittedPerQuestion[0].subquestion_configs as string)).toEqual(
       HISTORY_SUBQUESTION_ROWS,
+    );
+  });
+
+  it("reloads a complete aborted-run payload with 題幹 values and every 各小題配置 row", async () => {
+    localStorage.removeItem("exam_form_draft_history-route-user");
+    renderPageWithHistoryState(ABORTED_HISTORY_PARAMS);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("校園水質監測")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText("部分儲存的參數已不在目前的題目設定中，保留為預設值。"),
+    ).not.toBeInTheDocument();
+
+    const subquestionSection = screen
+      .getByRole("heading", { name: "各小題配置", level: 4 })
+      .parentElement!;
+    const expectedRows = [
+      ["第一自然小題", "Simple multiple-choice", "41", "51", "61", "4", "INc-IV-1", "tr-IV-1"],
+      ["第二自然小題", "Complex multiple-choice", "42", "52", "62", "5", "INc-IV-2", "tr-IV-2"],
+      ["第三自然小題", "Constructed response", "43", "53", "63", "6", "INc-IV-3", "tr-IV-3"],
+    ];
+
+    for (const [index, [instruction, questionType, questionLimit, optionLimit, textLimit, scale, content, performance]] of expectedRows.entries()) {
+      const row = within(subquestionSection)
+        .getByText(`第${index + 1}小題`, { exact: true })
+        .closest("div.rounded")!;
+      expect(within(row).getByDisplayValue(instruction)).toBeInTheDocument();
+      expect(within(row).getByLabelText("題型")).toHaveValue(questionType);
+      expect(within(row).getByLabelText("題目字數限制")).toHaveValue(Number(questionLimit));
+      expect(within(row).getByLabelText("選項字數限制")).toHaveValue(Number(optionLimit));
+      expect(within(row).getByLabelText("文本字數限制")).toHaveValue(Number(textLimit));
+      expect(within(row).getByLabelText("Reporting Scale")).toHaveValue(scale);
+      expect(within(row).getByText(content, { exact: true })).toBeInTheDocument();
+      expect(within(row).getByText(performance, { exact: true })).toBeInTheDocument();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "產生" }));
+    fireEvent.click(await screen.findByRole("button", { name: "確定發送" }));
+
+    await waitFor(() => expect(generateMock).toHaveBeenCalledTimes(1));
+    const submitted = generateMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(submitted.topic).toBe("校園水質監測");
+    expect(submitted.core_question).toBe("如何根據證據判斷水質？");
+    expect(JSON.parse(submitted.per_question_params as string)[0].subquestion_configs).toBe(
+      JSON.stringify(HISTORY_SUBQUESTION_ROWS),
+    );
+  });
+
+  it("shows the existing prefill notice and keeps 題幹 values for a partial aborted payload", async () => {
+    localStorage.removeItem("exam_form_draft_history-route-user");
+    renderPageWithHistoryState(PARTIAL_ABORTED_HISTORY_PARAMS);
+
+    expect(await screen.findByText("部分儲存的參數已不在目前的題目設定中，保留為預設值。"))
+      .toBeInTheDocument();
+    expect(await screen.findByDisplayValue("中斷時保存的主題")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("中斷時已保存的小題指示")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "各小題配置", level: 4 })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "產生" }));
+    expect(await screen.findByText("中斷時保存的題幹")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "確定發送" }));
+
+    await waitFor(() => expect(generateMock).toHaveBeenCalledTimes(1));
+    const submitted = generateMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(submitted.topic).toBe("中斷時保存的主題");
+    expect(submitted.core_question).toBe("中斷時保存的題幹");
+    const submittedPerQuestion = JSON.parse(submitted.per_question_params as string) as Array<Record<string, unknown>>;
+    expect(JSON.parse(submittedPerQuestion[0].subquestion_configs as string)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          question_type: "Complex multiple-choice",
+          instruction: "中斷時已保存的小題指示",
+        }),
+      ]),
     );
   });
 });
