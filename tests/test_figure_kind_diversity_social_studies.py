@@ -97,6 +97,63 @@ class _SubClient:
         return response
 
 
+class _UndeclaredVisualMainClient:
+    def __init__(self, repaired_kinds: list[str], events: list[str]) -> None:
+        self.repaired_kinds = iter(repaired_kinds)
+        self.events = events
+        self.calls = 0
+        self.repair_calls: list[tuple[str, str]] = []
+
+    def get_observer(self):
+        return None
+
+    def generate_json(self, _system, user, **_kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            self.events.append("text")
+            return {
+                "核心問題": "測試核心問題",
+                "文本": "測試文本素材",
+                "取材來源": ["測試來源"],
+                "subquestions": [
+                    {"序號": 1, "題型": "選擇題", "出題概念": "概念一"},
+                    {"序號": 2, "題型": "選擇題", "出題概念": "概念二"},
+                    {"序號": 3, "題型": "選擇題", "出題概念": "概念三"},
+                ],
+            }
+        kind = next(self.repaired_kinds)
+        self.repair_calls.append(("repair", user))
+        self.events.append("declaration_repair")
+        return {
+            "chart_spec": {
+                "render_mode": "gpt_image",
+                "figure_kind": kind,
+                "description": "宣告圖像種類後的圖片",
+            }
+        }
+
+    def generate_image(self, _prompt: str, output_path) -> str:
+        path = Path(output_path)
+        self.events.append(f"render:{path.name}")
+        path.write_bytes(b"png")
+        return str(path)
+
+
+class _UndeclaredVisualSubClient:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def set_observer(self, _obs) -> None:
+        pass
+
+    def generate_json(self, _system, _user, agent_override=None, **_kwargs):
+        index = int(agent_override.split("#")[1])
+        response = _subquestion_response(index, "")
+        if index == 3:
+            response.pop("chart_spec")
+        return response
+
+
 def test_collision_gets_one_repair_and_still_duplicate_ships_with_warning(
     tmp_path: Path,
     capsys,
@@ -129,6 +186,43 @@ def test_collision_gets_one_repair_and_still_duplicate_ships_with_warning(
     assert (tmp_path / "collision_test.png").exists()
     assert (tmp_path / "collision_test_sq1.png").exists()
     assert "圖像種類" in capsys.readouterr().err
+
+
+def test_undeclared_visual_specs_are_repaired_once_before_subquestion_rendering(
+    tmp_path: Path,
+) -> None:
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[
+            {"content_type": "含圖片"},
+            {"content_type": "含圖片"},
+            {},
+        ],
+    )
+    events: list[str] = []
+    client = _UndeclaredVisualMainClient(["地圖", "表格"], events)
+
+    question = generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=client,
+        params=params,
+        question_id="declaration_test",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _UndeclaredVisualSubClient(events),
+    )
+
+    assert isinstance(question, ExamQuestion)
+    assert len(client.repair_calls) == 2
+    assert [sub.chart_spec.figure_kind for sub in question.subquestions[:2]] == [
+        "地圖",
+        "表格",
+    ]
+    first_render = next(i for i, event in enumerate(events) if event.startswith("render:"))
+    assert all(i < first_render for i, event in enumerate(events) if event == "declaration_repair")
 
 
 def test_repair_prompt_lists_forbidden_figure_kinds_in_canonical_form(tmp_path: Path) -> None:
