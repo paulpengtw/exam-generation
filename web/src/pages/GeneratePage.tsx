@@ -358,6 +358,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                   phase={item.phase}
                   isFinal={item.isFinal}
                   trail={item.trail}
+                  figurePolicyTrail={item.figurePolicyTrail}
                 />
               ))}
             </div>

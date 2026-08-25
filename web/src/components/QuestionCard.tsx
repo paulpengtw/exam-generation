@@ -448,7 +448,10 @@ export default function QuestionCard({
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
   const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
   const figurePolicyWarnings = (figurePolicyTrail ?? []).filter(
-    (entry) => entry.kind === "warning" && entry.duplicate_image_shipped,
+    (
+      entry,
+    ): entry is Extract<FigurePolicyTrailEntry, { kind: "warning" }> =>
+      entry.kind === "warning" && entry.duplicate_image_shipped,
   );
   const phaseLabel = isFinal
     ? t("card.final")

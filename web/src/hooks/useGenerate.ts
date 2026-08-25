@@ -195,6 +195,7 @@ export interface GeneratedQuestion {
   phase: DraftPhase;
   isFinal: boolean;
   trail?: VerificationTrailEntry[];
+  figurePolicyTrail?: FigurePolicyTrailEntry[];
 }
 
 export type LlmCallEvent =
@@ -450,6 +451,9 @@ export function useGenerate(): UseGenerateReturn {
   const controllerRef = useRef<AbortController | null>(null);
   const nextFinalIndexRef = useRef(0);
   const trailByQuestionRef = useRef(new Map<string, VerificationTrailEntry[]>());
+  const figurePolicyTrailByQuestionRef = useRef(
+    new Map<string, FigurePolicyTrailEntry[]>(),
+  );
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
@@ -473,6 +477,7 @@ export function useGenerate(): UseGenerateReturn {
     setSubQuestionTotal(null);
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
+    figurePolicyTrailByQuestionRef.current.clear();
     setStatus("idle");
   }, []);
 
@@ -502,6 +507,7 @@ export function useGenerate(): UseGenerateReturn {
     setSubQuestionTotal(null);
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
+    figurePolicyTrailByQuestionRef.current.clear();
 
     fetchEventSource(url, {
       signal: controller.signal,
@@ -618,22 +624,36 @@ export function useGenerate(): UseGenerateReturn {
                 phase: parsed.phase,
                 isFinal: false,
                 trail: trailByQuestionRef.current.get(laneKey) ?? [],
+                figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
               }));
             } catch { /* ignore malformed draft updates */ }
             break;
           }
           case "trail": {
             try {
-              const parsed = JSON.parse(ev.data) as VerificationTrailEntry;
-              if (parsed.code !== "verification_trail" || !parsed.question_id) break;
-              const previous = trailByQuestionRef.current.get(parsed.question_id) ?? [];
-              const trail = [...previous, parsed];
-              trailByQuestionRef.current.set(parsed.question_id, trail);
-              setDisplayResults((prev) => prev.map((item) => (
-                questionKey(item.question, item.index) === parsed.question_id
-                  ? { ...item, trail }
-                  : item
-              )));
+              const parsed = JSON.parse(ev.data) as
+                | VerificationTrailEntry
+                | FigurePolicyTrailEntry;
+              if (!parsed.question_id) break;
+              if (parsed.code === "verification_trail") {
+                const previous = trailByQuestionRef.current.get(parsed.question_id) ?? [];
+                const trail = [...previous, parsed];
+                trailByQuestionRef.current.set(parsed.question_id, trail);
+                setDisplayResults((prev) => prev.map((item) => (
+                  questionKey(item.question, item.index) === parsed.question_id
+                    ? { ...item, trail }
+                    : item
+                )));
+              } else if (parsed.code === "figure_policy") {
+                const previous = figurePolicyTrailByQuestionRef.current.get(parsed.question_id) ?? [];
+                const figurePolicyTrail = [...previous, parsed];
+                figurePolicyTrailByQuestionRef.current.set(parsed.question_id, figurePolicyTrail);
+                setDisplayResults((prev) => prev.map((item) => (
+                  questionKey(item.question, item.index) === parsed.question_id
+                    ? { ...item, figurePolicyTrail }
+                    : item
+                )));
+              }
             } catch { /* ignore malformed trail events */ }
             break;
           }
@@ -650,6 +670,7 @@ export function useGenerate(): UseGenerateReturn {
                 phase: "verified",
                 isFinal: true,
                 trail: trailByQuestionRef.current.get(laneKey) ?? [],
+                figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
               }));
             } catch {
               setStatus("error");

@@ -335,6 +335,7 @@ def _worker_one(
             else entry
         )
         figure_policy_trail.append(payload)
+        emit_trail_entry(entry)
         if figure_policy_recorder is not None:
             figure_policy_recorder(entry)
 
