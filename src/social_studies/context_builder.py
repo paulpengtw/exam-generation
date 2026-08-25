@@ -179,9 +179,11 @@ def _figure_kind_guidance(
     """Build the shared 圖像種類 instruction for SS image-spec prompts."""
     vocabulary = _FIGURE_KIND_VOCABULARY_TEXT or "（目前無預載詞彙；請使用具體中文圖像種類）"
     lines = [
+        "  - **圖像種類宣告**：每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告圖像種類；"
+        "`figure_kind` 是自由文字欄位，未知類型仍可使用具體名稱。",
         "  - **圖像種類（`figure_kind`）**：請描述圖片的具體視覺類型；適用時請從 canonical vocabulary 選擇："
         + vocabulary
-        + "。`figure_kind` 是自由文字欄位，未知類型仍可使用具體名稱。"
+        + "。",
     ]
     if required_kind:
         lines.append(f"  - **釘選圖像種類**：本小題必須使用 `{required_kind}`，這是強制值。")
@@ -445,6 +447,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 所有輸出的 `chart_spec` 圖片皆為示意用途、非完全等比例繪製；因此無論 `render_mode` 是 `chart` 或 `html`，`description` 都必須要求下游產生器附上 caption「{image_disclaimer}」。圖表中的數值、標籤與分類仍必須忠實對應 `data`。
 
 ### 圖像種類多樣性
+- 每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告 `figure_kind`；它是自由文字欄位，未知類型仍可使用具體名稱。
 - `figure_kind` 描述具體圖像種類，適用時請從 canonical vocabulary 選擇；它與 `render_mode` 無關。
 - 請優先安排不同的具體圖像種類；request-level 條件會提供本題組是否禁止重複的明確要求。
 
@@ -847,6 +850,7 @@ _TEXT_GENERATION_SYSTEM_PROMPT_TEMPLATE = """\
 
 若全域 `題目內容類型` 是 `含圖片` 或 `graphs/charts/tables`，必須輸出非 null 的 `chart_spec`。
 統計圖使用 `render_mode: "chart"`；HTML排版素材（地圖、表格、廣告等）使用 `render_mode: "html"`。
+每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告 `figure_kind`；它是自由文字欄位，未知類型仍可使用具體名稱。
 請在 `chart_spec.figure_kind` 填寫具體圖像種類，適用時從 canonical vocabulary 選擇。
 預設每張圖（含題幹與所有小題）的圖像種類不得重複，且跨 render_mode 仍以具體種類比較。
 純連續文本不需 `chart_spec`。請只輸出 JSON，不要輸出其他文字。
@@ -1108,6 +1112,7 @@ def build_subquestion_system_prompt(
 - `image_generation_mode` 只指定渲染方式（`html` 或 `gpt_image`），不代表需要圖片；
   若本小題為純文字，不要只因 `image_generation_mode` 而輸出圖片。
 - 無圖片需求時，`chart_spec` 可省略或輸出 `null`。
+- 每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告 `figure_kind`；它是自由文字欄位，未知類型仍可使用具體名稱。
 - `figure_kind` 描述具體圖像種類，適用時請從 canonical vocabulary 選擇（例如直方圖、折線圖、表格、地圖、實驗裝置），
   並且與 `render_mode` 分開指定。
 - `chart_spec` 的 `render_mode` 有兩種：

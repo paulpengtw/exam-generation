@@ -121,6 +121,8 @@ def _figure_kind_repair_instruction(
     """Return the figure-kind constraints for a targeted image-spec repair."""
     vocabulary = "、".join(CANONICAL_FIGURE_KINDS)
     lines = [
+        "- **圖像種類宣告**：每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告 `figure_kind`；"
+        "它是自由文字欄位，未知類型仍可使用具體名稱。",
         "- `figure_kind` 必須描述具體圖像種類；適用時請從 canonical vocabulary 選擇："
         f"{vocabulary}。未知類型仍可使用具體自由文字。"
     ]
@@ -159,7 +161,7 @@ _TOP_LEVEL_IMAGE_REPAIR_SYSTEM_PROMPT = """\
 - `chart_spec` 必須是整個題組共用的視覺素材，不是單一小題專用圖片。
 - 若是圖片式素材、地圖、海報、表單、網頁畫面、流程圖或圖解，使用 `render_mode: "html"`。
 - 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
-- 每個 `chart_spec` 都必須填寫具體的 `figure_kind`；適用時從 canonical vocabulary 選擇。
+- 每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告具體的 `figure_kind`；它是自由文字欄位，適用時從 canonical vocabulary 選擇。
 - 不要加入答案提示。
 """
 
@@ -184,7 +186,7 @@ _SQ_IMAGE_REPAIR_SYSTEM_PROMPT = """\
 - `chart_spec` 必須是此小題專用的視覺素材，不是整個題組共用圖片。
 - 若是圖片式素材、地圖、海報、表單、網頁畫面、流程圖或圖解，使用 `render_mode: "html"`。
 - 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
-- 每個 `chart_spec` 都必須填寫具體的 `figure_kind`；適用時從 canonical vocabulary 選擇。
+- 每個視覺素材規格（每個非 null 的 `chart_spec`）都必須宣告具體的 `figure_kind`；它是自由文字欄位，適用時從 canonical vocabulary 選擇。
 - 不要加入答案提示。
 """
 
