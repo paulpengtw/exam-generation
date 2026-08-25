@@ -517,8 +517,14 @@ def _ns_render_subquestion_images(
     image_generation_mode: str,
     obs: Any,
     params: SampledParams,
+    on_figure_policy_entry: Callable[..., None] | None = None,
 ) -> list[str]:
-    """Render non-null NS 小題 chart specs and attach their PNG filenames."""
+    """Render non-null NS 小題 chart specs and attach their PNG filenames.
+
+    ``on_figure_policy_entry`` is accepted for the shared
+    ``render_subquestion_images_fn`` signature and ignored: the figure-policy
+    trail (issue #550) records 社會領域 runs only.
+    """
     rendered_paths: list[str] = []
     subquestion_image_modes = {
         i: cfg.image_generation_mode
