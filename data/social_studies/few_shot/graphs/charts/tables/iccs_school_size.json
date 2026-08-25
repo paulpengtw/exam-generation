@@ -21,15 +21,16 @@
       "內容領域": "Civic Institutions and Systems",
       "認知歷程": ["Reasoning and Applying–Interpret information"],
       "chart_spec": {
-        "render_mode": "chart",
+        "render_mode": "html",
         "figure_kind": "折線圖",
-        "chart_type": "line_chart",
         "title": "2008至2014年臺灣不同規模國小校數",
-        "description": "請用兩條折線呈現兩類學校校數的年度變化，縱軸為校數、橫軸為年份，圖例清楚標示900人以下與901人以上。",
+        "description": "請以自包含的 HTML/SVG 繪製兩條折線呈現兩類學校校數的年度變化，縱軸為校數、橫軸為年份，圖例清楚標示900人以下與901人以上，並在素材下緣加註 caption「圖片僅為示意，非完全等比例繪製」。",
+        "labels": {
+          "x": "年份",
+          "y": "校數"
+        },
         "data": {
-          "x_label": "年份",
-          "y_label": "校數",
-          "x": [2008, 2009, 2010, 2011, 2012, 2013, 2014],
+          "x_labels": [2008, 2009, 2010, 2011, 2012, 2013, 2014],
           "series": [
             {"name": "900人以下", "values": [1900, 1980, 2050, 2080, 2120, 2160, 2200]},
             {"name": "901人以上", "values": [700, 650, 600, 550, 500, 450, 420]}

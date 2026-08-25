@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.social_studies.data_loader import (
     _parse_few_shot_csv,
     load_few_shot_example_groups,
@@ -178,6 +179,40 @@ def test_unpopulated_content_type_keeps_instruction_only_fallback(content_type: 
     assert f"題目內容類型（{content_type}）" in prompt
     assert "（目前暫無範例，請根據指定條件自行設計。）" in prompt
     assert images == []
+
+
+@pytest.mark.parametrize(
+    ("filename", "x_label", "y_label"),
+    (
+        (
+            "iccs_married_women_labor.json",
+            "時間（年）",
+            "勞動力參與率（%）",
+        ),
+        ("iccs_school_size.json", "年份", "校數"),
+    ),
+)
+def test_iccs_multi_series_stimuli_follow_live_html_render_contract(
+    filename: str,
+    x_label: str,
+    y_label: str,
+) -> None:
+    """Multi-series ICCS stimuli use the existing HTML/SVG rendering path."""
+    path = Path("data/social_studies/few_shot/graphs/charts/tables") / filename
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    spec = loaded[0]["question"]["chart_spec"]
+    data = spec["data"]
+
+    assert spec["render_mode"] == "html"
+    assert spec["figure_kind"] == "折線圖"
+    assert spec["labels"] == {"x": x_label, "y": y_label}
+    assert data["x_labels"]
+    assert data["series"]
+    assert all(len(series["values"]) == len(data["x_labels"]) for series in data["series"])
+    assert "x" not in data
+    assert "x_label" not in data
+    assert "y_label" not in data
+    assert IMAGE_DISCLAIMER in spec["description"]
 
 
 def test_empty_or_unpopulated_content_type_returns_no_examples(tmp_path: Path) -> None:

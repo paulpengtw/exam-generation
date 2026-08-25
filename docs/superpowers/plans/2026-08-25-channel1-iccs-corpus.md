@@ -31,21 +31,21 @@
 - Consumes: `build_text_user_prompt`, `sample_params`, and the checked-in Channel-1 directories.
 - Produces: a regression guard proving populated keys inject a corpus marker and unpopulated keys retain the exact designed fallback.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add a parametrized test for `純文字`, `混合`, and `graphs/charts/tables` that seeds `build_text_user_prompt`, loads the same key, and asserts one checked-in group description is present in the resulting `## 參考範例` block. Add a companion parametrization for `含圖片`, `customized`, and `數位閱讀` that asserts `（目前暫無範例，請根據指定條件自行設計。）` and no exception. Replace the obsolete “Channel-1 is empty after #542” assertion with a non-empty/shape assertion for the three populated keys.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/python -m pytest -q tests/test_fewshot_clean_cut.py`
 
 Expected: the new populated-key prompt test fails because the current Channel-1 directories are empty; the fallback test remains green.
 
-- [ ] **Step 3: Keep implementation minimal**
+- [x] **Step 3: Keep implementation minimal**
 
 Do not alter loader or prompt code. The data groups added in later tasks are the implementation that makes the new test pass.
 
-- [ ] **Step 4: Commit the regression test**
+- [x] **Step 4: Commit the regression test**
 
 Run:
 
@@ -67,15 +67,15 @@ git push -u origin feat/544-channel1-iccs-corpus
 - Consumes: ICCS worked examples in `data/social_studies/ICCS_cognitive_domains.md` and the live curriculum mappings.
 - Produces: four equal-odds pure-text groups covering the text-based worked examples, all four cognitive buckets, and per-subquestion distractor analysis.
 
-- [ ] **Step 1: Add each group with shared text and adapted subquestions**
+- [x] **Step 1: Add each group with shared text and adapted subquestions**
 
 Use one Defining and Describing subquestion at most per group. Recompose the global-mobility/臭蟲, local-governance/行政責任/權力分立, currency/market/white-shrimp, and kinship/family-function examples into coherent shared passages. Do not copy the Channel-2 wording.
 
-- [ ] **Step 2: Validate JSON and loader shape**
+- [x] **Step 2: Validate JSON and loader shape**
 
 Run a JSON parse plus `load_few_shot_example_groups` for `純文字`; assert no group has `chart_spec`, every subquestion has a launched process/domain, and every choice subquestion has flat A–D `誘答分析`.
 
-- [ ] **Step 3: Commit and push the text groups**
+- [x] **Step 3: Commit and push the text groups**
 
 ```bash
 git add data/social_studies/few_shot/純文字
@@ -97,15 +97,15 @@ git push -u origin feat/544-channel1-iccs-corpus
 - Consumes: ICCS table/chart items 1–4, 6, and 7 plus `ICCS_cognitive_domains_fig12.png` and `ICCS_cognitive_domains_fig20.png`.
 - Produces: genuine chart/table groups with complete visual specs and the two source images attached through the existing JSON example shape.
 
-- [ ] **Step 1: Add complete data-bearing chart specs**
+- [x] **Step 1: Add complete data-bearing chart specs**
 
 Use `render_mode: "chart"` for statistical line charts and `render_mode: "html"` for structured tables. Keep answer-required values in `chart_spec.data`, not duplicated in `文本`. Attach the two ICCS PNGs with repository-relative paths and captions.
 
-- [ ] **Step 2: Validate visual groups**
+- [x] **Step 2: Validate visual groups**
 
 Run the loader and assert each group has non-null `chart_spec`, a canonical figure kind, and at least one subquestion whose answer depends on a chart/table value or trend. Check both image paths exist.
 
-- [ ] **Step 3: Commit and push the graph/table groups**
+- [x] **Step 3: Commit and push the graph/table groups**
 
 ```bash
 git add data/social_studies/few_shot/graphs
@@ -123,15 +123,15 @@ git push -u origin feat/544-channel1-iccs-corpus
 - Consumes: ICCS Relate or Integrate examples for 外籍移工 and 公共建設甲乙.
 - Produces: mixed text-plus-table groups with explicit cross-subject `科目` and learning-content codes.
 
-- [ ] **Step 1: Add the mixed groups**
+- [x] **Step 1: Add the mixed groups**
 
 Use the migrant table as geography material for a civic gender/work concept and the two public-works records as history material for a civic rule-of-law concept. Preserve the four-country comparison and the two-record contrast; include a companion subquestion per group without duplicating the source item.
 
-- [ ] **Step 2: Validate cross-subject code truth**
+- [x] **Step 2: Validate cross-subject code truth**
 
 Run the live domain mapping against every `公` code. Assert the selected top-level domain is in each public code’s mapped domain set, and assert every `歷`/`地`/`公` code agrees with its listed `科目`.
 
-- [ ] **Step 3: Commit and push the mixed groups**
+- [x] **Step 3: Commit and push the mixed groups**
 
 ```bash
 git add data/social_studies/few_shot/混合
@@ -145,18 +145,18 @@ git push -u origin feat/544-channel1-iccs-corpus
 - Modify: `tests/test_fewshot_clean_cut.py` if any data-contract assertion needs correction
 - No production code changes permitted
 
-- [ ] **Step 1: Run affected tests**
+- [x] **Step 1: Run affected tests**
 
 Run `.venv/bin/python -m pytest -q tests/test_fewshot_clean_cut.py tests/test_few_shot_distractor_coverage.py tests/test_範例_template_parity.py tests/test_no_pisa_on_live_ss_surfaces.py`.
 
-- [ ] **Step 2: Run the new test and adjacent social prompt tests**
+- [x] **Step 2: Run the new test and adjacent social prompt tests**
 
 Run `.venv/bin/python -m pytest -q tests/test_social_studies_context_builder.py tests/test_prompt_seam_post_removal.py` plus the new prompt-seam test if it is split out.
 
-- [ ] **Step 3: Run broader backend tests in progress-printing chunks**
+- [x] **Step 3: Run broader backend tests in progress-printing chunks**
 
 Run the remaining backend test files in bounded groups, retaining real pass/fail/skip totals and stopping to diagnose any regression before claiming completion.
 
-- [ ] **Step 4: Inspect, commit, push, and verify clean state**
+- [x] **Step 4: Inspect, commit, push, and verify clean state**
 
 Run `git diff --check`, inspect `git status --short`, confirm only the planned data/test/plan files changed, ensure each commit is on the remote, and report the teacher-review summary group by group.
