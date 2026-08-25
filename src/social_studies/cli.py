@@ -551,6 +551,17 @@ def _declared_figure_kind(spec: ImageSpec | None) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _figure_kind_field_was_supplied(spec: ImageSpec) -> bool:
+    """Return whether the model explicitly included the declaration field.
+
+    Older subquestion producers treat any non-null ``chart_spec`` as a
+    complete visual contract.  Preserve that #320 early-out when the newer
+    ``figure_kind`` field is absent entirely; an explicit empty field remains
+    eligible for the declaration repair pass.
+    """
+    return "figure_kind" in spec.model_fields_set
+
+
 def _canonicalize_repaired_figure_kind(value: str) -> str:
     stripped = value.strip()
     normalized = normalize_figure_kind(stripped)
@@ -923,6 +934,14 @@ def _ss_ensure_visual_spec(
         for kind in [effective_figure_kind(sub.chart_spec)]
         if kind
     )
+    if (
+        question.chart_spec is None
+        and params.題目內容類型 in _VISUAL_CONTENT_TYPES
+        and client is not None
+    ):
+        # The top-level chart-spec repair already has the declaration
+        # requirement in its prompt, so it owns this one repair budget.
+        question._figure_kind_repair_attempted.add("題幹")
     _ensure_top_level_visual_spec(
         question,
         params,
@@ -963,6 +982,12 @@ def _ss_prepare_visual_policy(
         label = f"小題 {sub.序號}"
         attempt_key = _figure_kind_repair_key(sub)
         if attempt_key in attempted:
+            continue
+        if not _figure_kind_field_was_supplied(sub.chart_spec):
+            # Keep the pre-existing #320 contract for a model-supplied
+            # non-null spec that predates the figure-kind field.  Record the
+            # slot as settled so the renderer cannot spend another call on it.
+            attempted.add(attempt_key)
             continue
         attempted.add(attempt_key)
         _repair_figure_kind_declaration(
@@ -1290,6 +1315,14 @@ def _ss_render_subquestion_images(
             cfg = _subquestion_config_for(params, sub)
             ct = sq_visual_content_types.get(plan_idx)
             if ct is not None and cfg is not None:
+                if sub.chart_spec is None and client is not None:
+                    # The existing chart-spec repair and the declaration
+                    # repair share one per-slot budget.  Reserve it before
+                    # requesting the missing spec; the repair prompt already
+                    # asks for its figure_kind.
+                    question._figure_kind_repair_attempted.add(
+                        _figure_kind_repair_key(sub)
+                    )
                 _ensure_subquestion_visual_spec(
                     sub,
                     question,
