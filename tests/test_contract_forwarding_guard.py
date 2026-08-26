@@ -263,6 +263,12 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
                                 #   to _ss_do_sample_params; reverting that makes this test fail
         _NS: (REJECTED, ""),
     },
+    # ── math_thinking — math-only request surface ──
+    "math_thinking": {
+        _MA: (FORWARDED, ""),
+        _SS: (INAPPLICABLE, "math-thinking is a math-only parameter"),
+        _NS: (INAPPLICABLE, "math-thinking is a math-only parameter"),
+    },
     # ── science_competency — NS-specific ──
     "science_competency": {
         _MA: (INAPPLICABLE, "math uses core_competency; science_competency is NS-specific"),
@@ -462,6 +468,7 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     # NS:   rejected (no proof needed)
     ("core_competency", _MA): (_math_do_sample_params, "params.core_competency"),
     ("core_competency", _SS): (_ss_do_sample_params,   "core_competency"),   # ← #196 kill-switch
+    ("math_thinking", _MA): (_math_do_sample_params, "params.math_thinking"),
     # science_competency — NS-specific, forwarded via science_competency_override
     ("science_competency", _NS): (_ns_coerce_overrides, "params.science_competency"),
     # sub_context — NS-specific, forwarded via sub_context_override
@@ -657,6 +664,6 @@ def test_classification_counts() -> None:
     )
     # Hard-coded expected counts — update when fields are added/reclassified
     # +2 ICCS pins + NS figure policy
-    assert forwarded == 102, f"Expected 102 FORWARDED, got {forwarded}"
+    assert forwarded == 103, f"Expected 103 FORWARDED, got {forwarded}"
     assert rejected     == 8,  f"Expected 8 REJECTED, got {rejected}"  # +4 SS-only fields
-    assert inapplicable == 25, f"Expected 25 INAPPLICABLE, got {inapplicable}"
+    assert inapplicable == 27, f"Expected 27 INAPPLICABLE, got {inapplicable}"

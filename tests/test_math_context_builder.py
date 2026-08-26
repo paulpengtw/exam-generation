@@ -12,6 +12,7 @@ from src.context_builder import (
     build_user_prompt,
 )
 from src.sampler import sample_params
+from src.schemas import MathThinking
 
 
 def test_math_content_type_instructions_include_disclaimer_for_image_types() -> None:
@@ -44,3 +45,21 @@ def test_math_user_prompt_omits_disclaimer_when_content_type_is_text(
     params = sample_params(seed=1, content_type="純文字")
     prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER not in prompt
+
+
+def test_math_user_prompt_uses_pinned_math_thinking_and_core_competency(
+    tmp_path: Path,
+) -> None:
+    params = sample_params(
+        grade=8,
+        seed=41,
+        math_thinking=[MathThinking("運用"), MathThinking("形成")],
+        core_competency=["數-J-A2"],
+        content_type="純文字",
+    )
+
+    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+
+    assert "- **數學思考**：運用、形成" in prompt
+    assert "- **核心素養（限定使用）**：數-J-A2" in prompt
+    assert "數-J-C1" not in prompt

@@ -7,6 +7,94 @@ import pytest
 from src.common.resolver import ResolveConflictError, resolve
 
 
+def test_resolve_draws_math_thinking_and_core_competency_when_blank() -> None:
+    payload = {
+        "subject": "math",
+        "seed": 41,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "單一題",
+        "q_type": ["選擇題"],
+        "style": ["text_only"],
+        "learning_content": ["A-7-7"],
+        "learning_performance": ["s-IV-12"],
+        "content_type": "純文字",
+    }
+
+    result = resolve(payload)
+
+    assert result.payload["math_thinking"] == ["形成", "詮釋評估"]
+    assert result.payload["core_competency"] == ["數-J-C1"]
+    assert result.drawn == ["數學思考", "核心素養"]
+
+
+def test_resolve_leaves_supplied_math_thinking_and_core_competency_pinned() -> None:
+    payload = {
+        "subject": "math",
+        "seed": 41,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "單一題",
+        "q_type": ["選擇題"],
+        "style": ["text_only"],
+        "learning_content": ["A-7-7"],
+        "learning_performance": ["s-IV-12"],
+        "math_thinking": ["運用"],
+        "core_competency": ["數-J-A2"],
+        "content_type": "純文字",
+    }
+
+    result = resolve(payload)
+
+    assert result.payload == payload
+    assert result.drawn == []
+
+
+def test_resolve_draws_social_core_competency_when_blank() -> None:
+    payload = {
+        "subject": "social_studies",
+        "seed": 7,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "q_type": ["選擇題"],
+        "subject_filter": ["歷史"],
+        "content_domain": "Civic Institutions and Systems",
+        "target_surface": "紙本",
+        "learning_content": ["歷Ba-Ⅳ-1"],
+        "learning_performance": ["歷1a-Ⅳ-1"],
+        "content_type": "純文字",
+    }
+
+    result = resolve(payload)
+
+    assert result.payload["core_competency"] == ["社-J-C2"]
+    assert result.drawn == ["核心素養"]
+
+
+def test_resolve_leaves_supplied_social_core_competency_pinned() -> None:
+    payload = {
+        "subject": "social_studies",
+        "seed": 7,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "q_type": ["選擇題"],
+        "subject_filter": ["歷史"],
+        "content_domain": "Civic Institutions and Systems",
+        "target_surface": "紙本",
+        "learning_content": ["歷Ba-Ⅳ-1"],
+        "learning_performance": ["歷1a-Ⅳ-1"],
+        "core_competency": ["社-J-A1"],
+        "content_type": "純文字",
+    }
+
+    result = resolve(payload)
+
+    assert result.payload == payload
+    assert result.drawn == []
+
+
 def test_resolve_fills_one_blank_math_field_from_the_request_seed() -> None:
     payload = {
         "subject": "math",
@@ -18,6 +106,7 @@ def test_resolve_fills_one_blank_math_field_from_the_request_seed() -> None:
         "style": ["text_only"],
         "learning_content": ["A-7-7"],
         "learning_performance": ["s-IV-12"],
+        "math_thinking": ["形成"],
         "core_competency": ["數-J-A2"],
     }
 
@@ -35,6 +124,7 @@ def test_resolve_fills_one_blank_math_field_from_the_request_seed() -> None:
         "style": ["text_only"],
         "learning_content": ["A-7-7"],
         "learning_performance": ["s-IV-12"],
+        "math_thinking": ["形成"],
         "core_competency": ["數-J-A2"],
     }
 
@@ -50,6 +140,7 @@ def test_resolve_complete_payload_is_unchanged() -> None:
         "style": ["text_only"],
         "learning_content": ["A-7-7"],
         "learning_performance": ["s-IV-12"],
+        "math_thinking": ["形成"],
         "core_competency": ["數-J-A2"],
         "content_type": "含圖片",
     }
@@ -74,6 +165,7 @@ def test_resolve_complete_payload_is_unchanged() -> None:
                     "style": ["text_only"],
                     "learning_content": ["A-7-7"],
                     "learning_performance": ["s-IV-12"],
+                    "math_thinking": ["形成"],
                     "core_competency": ["數-J-A2"],
                 },
                 {
@@ -84,6 +176,7 @@ def test_resolve_complete_payload_is_unchanged() -> None:
                     "style": ["text_only"],
                     "learning_content": ["A-7-7"],
                     "learning_performance": ["s-IV-12"],
+                    "math_thinking": ["形成"],
                     "core_competency": ["數-J-A2"],
                 },
             ],
@@ -219,6 +312,7 @@ def test_resolve_batch_honors_an_explicit_per_question_seed() -> None:
         "style": ["text_only"],
         "learning_content": ["A-7-7"],
         "learning_performance": ["s-IV-12"],
+        "math_thinking": ["形成"],
         "core_competency": ["數-J-A2"],
     }
 
@@ -254,6 +348,7 @@ def test_resolve_completed_batch_is_idempotent() -> None:
                     "style": ["text_only"],
                     "learning_content": ["A-7-7"],
                     "learning_performance": ["s-IV-12"],
+                    "math_thinking": ["形成"],
                     "core_competency": ["數-J-A2"],
                 },
                 {
@@ -264,6 +359,7 @@ def test_resolve_completed_batch_is_idempotent() -> None:
                     "style": ["text_only"],
                     "learning_content": ["A-7-7"],
                     "learning_performance": ["s-IV-12"],
+                    "math_thinking": ["形成"],
                     "core_competency": ["數-J-A2"],
                 },
             ],
@@ -287,6 +383,7 @@ def test_resolve_redraw_counter_changes_only_the_requested_field() -> None:
         "style": ["text_only"],
         "learning_content": ["A-7-7"],
         "learning_performance": ["s-IV-12"],
+        "math_thinking": ["形成"],
         "core_competency": ["數-J-A2"],
     }
 
@@ -305,6 +402,7 @@ def test_resolve_redraw_counter_changes_only_the_requested_field() -> None:
         "style": ["text_only"],
         "learning_content": ["A-7-7"],
         "learning_performance": ["s-IV-12"],
+        "math_thinking": ["形成"],
         "core_competency": ["數-J-A2"],
     }
     assert {

@@ -345,6 +345,7 @@ export function buildQueryString(params: GenerateParams): string {
   if (params.reporting_scale) qs.append("reporting_scale", params.reporting_scale);
   for (const v of params.learning_performance ?? []) qs.append("learning_performance", v);
   for (const v of params.core_competency ?? []) qs.append("core_competency", v);
+  for (const v of params.math_thinking ?? []) qs.append("math_thinking", v);
   for (const v of params.learning_content ?? []) qs.append("learning_content", v);
   if (params.sub_question_count !== undefined) qs.append("sub_question_count", String(params.sub_question_count));
   if (params.question_word_limit !== undefined) qs.append("question_word_limit", String(params.question_word_limit));

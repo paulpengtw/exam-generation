@@ -10,12 +10,14 @@ from src.social_studies.context_builder import (
 from src.social_studies.context_builder import (
     build_subquestion_system_prompt,
     build_text_system_prompt,
+    build_text_user_prompt,
     build_user_prompt,
 )
 from src.social_studies.context_builder import (
     build_system_prompt as ss_build_system_prompt,
 )
 from src.social_studies.sampler import sample_params
+from src.social_studies.schemas import CoreCompetency
 
 
 def test_topic_replaces_context_in_social_studies_prompt(tmp_path) -> None:
@@ -32,6 +34,19 @@ def test_topic_replaces_context_in_social_studies_prompt(tmp_path) -> None:
     assert "- **情境**：氣候變遷與都市規劃" in prompt
     assert "## 指定情境" in prompt
     assert "主題 / 議題：氣候變遷與都市規劃" in prompt
+
+
+def test_social_text_prompt_offers_only_pinned_core_competencies(tmp_path) -> None:
+    params = sample_params(
+        seed=7,
+        core_competency=[CoreCompetency("社-J-A2")],
+        content_type="純文字",
+    )
+
+    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+
+    assert "- **核心素養（限定使用）**：社-J-A2" in prompt
+    assert "社-J-C2" not in prompt
 
 
 def test_plain_text_content_type_forbids_chart_spec(tmp_path) -> None:

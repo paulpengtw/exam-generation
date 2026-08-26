@@ -42,6 +42,7 @@ export interface GenerateParams {
   science_competency?: string[];
   learning_performance?: string[];
   core_competency?: string[];
+  math_thinking?: string[];
   learning_content?: string[];
   sub_question_count?: number;
   question_word_limit?: number;

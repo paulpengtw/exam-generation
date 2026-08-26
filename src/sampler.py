@@ -79,6 +79,7 @@ def sample_params(
     q_type: list[QuestionType] | None = None,  # type: ignore[valid-type]
     seed: int | None = None,
     *,
+    math_thinking: list[MathThinking] | None = None,  # type: ignore[valid-type]
     core_competency: list[CoreCompetency] | None = None,  # type: ignore[valid-type]
     learning_content: list[str] | None = None,
     learning_performance: list[str] | None = None,
@@ -139,10 +140,15 @@ def sample_params(
     )
 
     # 數學思考 (1-3 items)
-    all_thinking = list(MathThinking)
-    thinking_rng = field_rng("數學思考")
-    thinking_count = thinking_rng.randint(1, 3)
-    selected_thinking = thinking_rng.sample(all_thinking, min(thinking_count, len(all_thinking)))
+    if math_thinking is not None:
+        selected_thinking = math_thinking
+    else:
+        all_thinking = list(MathThinking)
+        thinking_rng = field_rng("數學思考")
+        thinking_count = thinking_rng.randint(1, 3)
+        selected_thinking = thinking_rng.sample(
+            all_thinking, min(thinking_count, len(all_thinking))
+        )
 
     # 學習內容 — pull from curriculum data filtered by stage + 科目.
     lc_entries = allowed_learning_content(

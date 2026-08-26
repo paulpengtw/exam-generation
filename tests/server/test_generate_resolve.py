@@ -45,7 +45,23 @@ def test_resolve_endpoint_returns_completed_math_payload(resolve_client: TestCli
 
     assert response.status_code == 200
     assert response.json()["payload"]["content_type"] == "含圖片"
-    assert response.json()["drawn"] == ["題目內容類型"]
+    assert response.json()["drawn"] == ["數學思考", "題目內容類型"]
+
+
+@pytest.mark.parametrize(
+    "math_thinking",
+    [[], ["形成", "運用", "詮釋評估", "形成"], ["不合法"]],
+)
+def test_resolve_endpoint_rejects_invalid_math_thinking(
+    resolve_client: TestClient,
+    math_thinking: list[str],
+) -> None:
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={"subject": "math", "math_thinking": math_thinking},
+    )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize(
@@ -257,6 +273,7 @@ def test_resolve_endpoint_redraw_preserves_seed_and_siblings(
         "style": ["text_only"],
         "learning_content": ["A-7-7"],
         "learning_performance": ["s-IV-12"],
+        "math_thinking": ["形成", "詮釋評估"],
         "core_competency": ["數-J-A2"],
     }
     assert {

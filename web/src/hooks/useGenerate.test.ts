@@ -497,6 +497,26 @@ describe("buildQueryString — core_competency as repeated keys", () => {
   });
 });
 
+describe("buildQueryString — math_thinking as repeated keys", () => {
+  it("emits every math_thinking value when present", () => {
+    const qs = buildQueryString({
+      subject: "math",
+      math_thinking: ["形成", "詮釋評估"],
+    });
+
+    expect(new URLSearchParams(qs).getAll("math_thinking")).toEqual([
+      "形成",
+      "詮釋評估",
+    ]);
+  });
+
+  it("omits math_thinking when absent", () => {
+    const qs = buildQueryString({ subject: "math" });
+
+    expect(qs).not.toContain("math_thinking");
+  });
+});
+
 describe("buildQueryString — per_question_params serialization", () => {
   it("emits the JSON array string unchanged", () => {
     const perQuestionParams = JSON.stringify([

@@ -18,6 +18,9 @@ For a seeded request, each drawn value uses its own `draw_rng(seed, field_path, 
 Supplied values remain pins; only blank drawable fields use the seeded sampler streams, and batches resolve each row with `seed + index` unless a row pins its own seed.
 Drawn and 重抽 paths use canonical sampler names: top-level fields, `per_question_params[i].<field>`, and `subquestion_configs[j].<field>`.
 Incompatible parent/child pins are rejected before a partial payload can be returned; the existing generation-time fills remain transitional until #608.
+The optional math `math_thinking` request field is resolved from the same keyed sampler stream, while `core_competency` is resolved for math and social-studies requests when blank.
+Resolved values are forwarded unchanged through the web confirmation payload and `/generate`; neither field has a form control or a browser-side draw.
+Math and social-studies prompt builders therefore receive the resolver's pinned competency list, and math receives its pinned `math_thinking` list, as the only values offered to the model.
 
 ### Batch-level prompt dedup (issue #111)
 
