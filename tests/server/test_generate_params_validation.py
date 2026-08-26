@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -88,6 +90,111 @@ def test_generate_params_accepts_a_compatible_ns_context_pair() -> None:
     )
 
     assert params.sub_context == "Food security"
+
+
+@pytest.mark.parametrize(
+    ("field", "code", "subject"),
+    [
+        ("learning_content", "地Aa-Ⅳ-1", "歷史"),
+        ("learning_performance", "地1a-Ⅳ-2", "歷史"),
+    ],
+)
+def test_generate_params_rejects_a_cross_subject_curriculum_pair(
+    field: str,
+    code: str,
+    subject: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match=rf"{subject}.*{code}",
+    ):
+        GenerateParams(
+            subject="social_studies",
+            subject_filter=[subject],
+            **{field: [code]},
+        )
+
+
+def test_generate_params_rejects_cross_subject_pair_in_per_question_params() -> None:
+    with pytest.raises(
+        ValidationError,
+        match=r"歷史.*地Aa-Ⅳ-1",
+    ):
+        GenerateParams(
+            subject="social_studies",
+            count=1,
+            per_question_params=json.dumps(
+                [{"subject_filter": ["歷史"], "learning_content": ["地Aa-Ⅳ-1"]}],
+                ensure_ascii=False,
+            ),
+        )
+
+
+def test_generate_params_rejects_cross_subject_pair_in_subquestion_configs() -> None:
+    with pytest.raises(
+        ValidationError,
+        match=r"歷史.*地Aa-Ⅳ-1",
+    ):
+        GenerateParams(
+            subject="social_studies",
+            subject_filter=["歷史"],
+            subquestion_configs=json.dumps(
+                [{"learning_content": ["地Aa-Ⅳ-1"]}],
+                ensure_ascii=False,
+            ),
+        )
+
+
+@pytest.mark.parametrize("subject", ["歷史", "地理", "公民與社會", "跨科"])
+def test_generate_params_accepts_shared_social_curriculum_entries(subject: str) -> None:
+    params = GenerateParams(
+        subject="social_studies",
+        subject_filter=[subject],
+        learning_content=["Aa-Ⅱ-1"],
+        learning_performance=["社1a-Ⅳ-1"],
+        subquestion_configs=json.dumps(
+            [{
+                "learning_content": ["Aa-Ⅱ-1"],
+                "learning_performance": ["社1a-Ⅳ-1"],
+            }],
+            ensure_ascii=False,
+        ),
+    )
+
+    assert params.learning_content == ["Aa-Ⅱ-1"]
+
+
+def test_generate_params_accepts_a_cross_subject_math_pair() -> None:
+    params = GenerateParams(
+        subject="math",
+        subject_filter=["跨領域"],
+        learning_content=["A-7-1"],
+        learning_performance=["a-IV-1"],
+    )
+
+    assert params.subject_filter == ["跨領域"]
+
+
+@pytest.mark.parametrize(
+    ("field", "code"),
+    [
+        ("learning_content", "A-7-1"),
+        ("learning_performance", "a-IV-1"),
+    ],
+)
+def test_generate_params_rejects_a_cross_strand_math_pair(
+    field: str,
+    code: str,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match=rf"數與量.*{code}",
+    ):
+        GenerateParams(
+            subject="math",
+            subject_filter=["數與量"],
+            **{field: [code]},
+        )
 
 
 @pytest.mark.parametrize(("field", "value"), MATH_UNSUPPORTED_PARAMS)
@@ -208,7 +315,7 @@ def test_generate_params_defaults_count_to_one() -> None:
 
 
 def test_generate_params_defaults_image_generation_mode_to_html() -> None:
-    """Backend/CLI default for image_generation_mode stays 'html'; only the web form UI defaults to gpt_image."""
+    """Backend/CLI default stays html; only the web form defaults to gpt_image."""
     params = GenerateParams()
 
     assert params.image_generation_mode == "html"

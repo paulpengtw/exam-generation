@@ -40,12 +40,12 @@ const SOCIAL_SCHEMA = {
   科目: [{ value: "公民與社會", instruction: "" }],
   核心素養: [{ value: "社-J-A2", instruction: "" }],
   學習表現: [
-    { value: ALLOWED_LP, instruction: "共享社會領域表現", 科目: "社" },
-    { value: OUT_OF_DOMAIN_LP, instruction: "公民表現", 科目: "公" },
+    { value: ALLOWED_LP, instruction: "共享社會領域表現", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
+    { value: OUT_OF_DOMAIN_LP, instruction: "公民表現", 科目: "公", admitted_by: { 科目: ["公民與社會", "跨科"] } },
   ],
   學習內容: [
-    { value: ALLOWED_LC, instruction: "人權普遍性保障原則", 科目: "公" },
-    { value: OUT_OF_DOMAIN_LC, instruction: "公民角色與認同", 科目: "公" },
+    { value: ALLOWED_LC, instruction: "人權普遍性保障原則", 科目: "公", admitted_by: { 科目: ["公民與社會", "跨科"] } },
+    { value: OUT_OF_DOMAIN_LC, instruction: "公民角色與認同", 科目: "公", admitted_by: { 科目: ["公民與社會", "跨科"] } },
   ],
   內容領域_mapping: {
     [ALLOWED_LC]: [DOMAIN],
@@ -142,8 +142,8 @@ describe("#506 confirmation ICCS compatibility", () => {
       getSchemasMock.mockResolvedValue({
         ...SOCIAL_SCHEMA,
         科目: [{ value: current.subjectFilter, instruction: "" }],
-        學習表現: [{ value: current.lp, instruction: "非公民學習表現", 科目: current.prefix }],
-        學習內容: [{ value: current.lc, instruction: "非公民學習內容", 科目: current.prefix }],
+        學習表現: [{ value: current.lp, instruction: "非公民學習表現", 科目: current.prefix, admitted_by: { 科目: [current.subjectFilter, "跨科"] } }],
+        學習內容: [{ value: current.lc, instruction: "非公民學習內容", 科目: current.prefix, admitted_by: { 科目: [current.subjectFilter, "跨科"] } }],
       });
       const view = render(
         <ParamForm

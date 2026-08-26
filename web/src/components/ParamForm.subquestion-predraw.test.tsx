@@ -98,15 +98,31 @@ const SS_SCHEMA = {
   ],
   核心素養: [{ value: "社-J-A2", instruction: "" }],
   學習表現: [
-    { value: "社1a-Ⅳ-1", instruction: "", 科目: "社" },
-    { value: "社1a-Ⅳ-2", instruction: "", 科目: "社" },
-    { value: "社1a-Ⅳ-3", instruction: "", 科目: "社" },
+    { value: "社1a-Ⅳ-1", instruction: "", 科目: "社", admitted_by: { "科目": ["歷史", "地理", "公民與社會", "跨科"] } },
+    { value: "社1a-Ⅳ-2", instruction: "", 科目: "社", admitted_by: { "科目": ["歷史", "地理", "公民與社會", "跨科"] } },
+    { value: "社1a-Ⅳ-3", instruction: "", 科目: "社", admitted_by: { "科目": ["歷史", "地理", "公民與社會", "跨科"] } },
   ],
   學習內容: [
-    { value: "歷Ka-Ⅳ-1", instruction: "", 科目: "歷史" },
-    { value: "歷Ka-Ⅳ-2", instruction: "", 科目: "歷史" },
-    { value: "歷Ka-Ⅳ-3", instruction: "", 科目: "歷史" },
-    { value: "歷Ka-Ⅳ-4", instruction: "", 科目: "歷史" },
+    { value: "歷Ka-Ⅳ-1", instruction: "", 科目: "歷史", admitted_by: { "科目": ["歷史", "跨科"] } },
+    { value: "歷Ka-Ⅳ-2", instruction: "", 科目: "歷史", admitted_by: { "科目": ["歷史", "跨科"] } },
+    { value: "歷Ka-Ⅳ-3", instruction: "", 科目: "歷史", admitted_by: { "科目": ["歷史", "跨科"] } },
+    { value: "歷Ka-Ⅳ-4", instruction: "", 科目: "歷史", admitted_by: { "科目": ["歷史", "跨科"] } },
+  ],
+};
+
+const SS_DISJOINT_SUBJECT_SCHEMA = {
+  ...SS_SCHEMA,
+  科目: [
+    { value: "歷史", instruction: "" },
+    { value: "地理", instruction: "" },
+  ],
+  學習表現: [
+    { value: "地1a-Ⅳ-2", instruction: "", 科目: "地", admitted_by: { "科目": ["地理"] } },
+    { value: "歷1a-Ⅳ-1", instruction: "", 科目: "歷", admitted_by: { "科目": ["歷史"] } },
+  ],
+  學習內容: [
+    { value: "地Aa-Ⅳ-1", instruction: "", 科目: "地", admitted_by: { "科目": ["地理"] } },
+    { value: "歷Aa-Ⅳ-1", instruction: "", 科目: "歷", admitted_by: { "科目": ["歷史"] } },
   ],
 };
 
@@ -410,5 +426,99 @@ describe("社會領域各小題預抽", () => {
       expect(row).not.toHaveProperty("_lcWasAutoDrawn");
       expect(row).not.toHaveProperty("_lpWasAutoDrawn");
     }
+  });
+});
+
+describe("社會領域 per-題組 科目 ranges", () => {
+  it("draws 題組-level and per-小題 LC/LP from each 題組's own 科目", async () => {
+    getSchemasMock.mockResolvedValue(SS_DISJOINT_SUBJECT_SCHEMA);
+    const onSubmit = vi.fn();
+    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={onSubmit}
+        initialParams={{
+          count: 2,
+          sub_question_count: 3,
+          core_question: "固定核心問題",
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_generate/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_confirm_send/i }));
+    random.mockRestore();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params) as Array<{
+      subject_filter: string[];
+      learning_content: string[];
+      learning_performance: string[];
+      subquestion_configs: string;
+    }>;
+    const subjectValues = perQuestion.map((params) => params.subject_filter[0]);
+    expect(subjectValues).toHaveLength(2);
+    expect(new Set(subjectValues)).toEqual(new Set(["歷史", "地理"]));
+
+    const allowedBySubject = {
+      歷史: {
+        learning_content: ["歷Aa-Ⅳ-1"],
+        learning_performance: ["歷1a-Ⅳ-1"],
+      },
+      地理: {
+        learning_content: ["地Aa-Ⅳ-1"],
+        learning_performance: ["地1a-Ⅳ-2"],
+      },
+    } as const;
+    for (const params of perQuestion) {
+      const allowed = allowedBySubject[params.subject_filter[0] as keyof typeof allowedBySubject];
+      expect(allowed.learning_content).toContain(params.learning_content[0]);
+      expect(allowed.learning_performance).toContain(params.learning_performance[0]);
+      const rows = JSON.parse(params.subquestion_configs) as Array<{
+        learning_content: string[];
+        learning_performance: string[];
+      }>;
+      expect(rows).toHaveLength(3);
+      for (const row of rows) {
+        expect(row.learning_content.every((code) => allowed.learning_content.includes(code as never))).toBe(true);
+        expect(row.learning_performance.every((code) => allowed.learning_performance.includes(code as never))).toBe(true);
+      }
+    }
+  });
+
+  it("does not pre-draw an explicitly pinned 科目 per 題組", async () => {
+    getSchemasMock.mockResolvedValue(SS_DISJOINT_SUBJECT_SCHEMA);
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={onSubmit}
+        initialParams={{
+          count: 2,
+          subject_filter: ["歷史"],
+          sub_question_count: 3,
+          core_question: "固定核心問題",
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_generate/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_confirm_send/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const payload = onSubmit.mock.calls[0][0] as {
+      predrawn_fields: string;
+      per_question_params: string;
+    };
+    const perQuestion = JSON.parse(payload.per_question_params) as Array<{
+      subject_filter: string[];
+    }>;
+    const predrawnFields = JSON.parse(payload.predrawn_fields) as string[];
+
+    expect(perQuestion).toHaveLength(2);
+    expect(perQuestion.every((params) => params.subject_filter[0] === "歷史")).toBe(true);
+    expect(predrawnFields).not.toContain("per_question_params[0].subject_filter");
+    expect(predrawnFields).not.toContain("per_question_params[1].subject_filter");
   });
 });

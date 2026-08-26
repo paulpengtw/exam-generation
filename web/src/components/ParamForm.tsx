@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas } from "../api/client";
+import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
 import { filterEntriesByAdmittedParent } from "../lib/admittedBy";
@@ -834,28 +834,22 @@ function defaultFormFields(
   };
 }
 
-const SUBJECT_TO_PERFORMANCE_PREFIXES: Record<string, string[]> = {
-  "": ["社"],
-  "歷史": ["歷", "社"],
-  "地理": ["地", "社"],
-  "公民與社會": ["公", "社"],
-  "跨科": ["歷", "地", "公", "社"],
-};
-const MATH_SUBJECT_TO_STRAND_PREFIXES: Record<string, string[]> = {
-  "": ["n", "N", "r", "R", "a", "A", "f", "F", "s", "S", "g", "G", "d", "D", "p", "P"],
-  "數與量": ["n", "N"],
-  "代數": ["r", "R", "a", "A", "f", "F"],
-  "幾何": ["s", "S", "g", "G"],
-  "統計與機率": ["d", "D", "p", "P"],
-};
-const SS_SUBJECT_FILTER_TO_CONTENT_CODE: Record<string, string | null> = {
-  "": null,
-  "歷史": "歷",
-  "地理": "地",
-  "公民與社會": "公",
-  "跨科": null,
-};
 const ICCS_DOMAIN_FILTER_SUBJECTS = new Set(["公民與社會", "跨科"]);
+
+function filterCurriculumEntriesBySubject<T extends SchemaEntry>(
+  entries: readonly T[],
+  subject: string,
+  resolvedSubject: string | readonly string[] | undefined,
+  allSubjectValues: readonly string[],
+): T[] {
+  if (subject !== "math" && subject !== "social_studies") return [...entries];
+  const values = typeof resolvedSubject === "string"
+    ? resolvedSubject ? [resolvedSubject] : allSubjectValues
+    : resolvedSubject && resolvedSubject.length > 0
+      ? resolvedSubject
+      : allSubjectValues;
+  return filterEntriesByAdmittedParent(entries, "科目", values);
+}
 
 function isPublicSocialStudiesCode(code: string): boolean {
   return code.startsWith("公");
@@ -947,8 +941,8 @@ export default function ParamForm({
   // updatePendingSubquestionLc/Lp can redraw from the same pool when the user
   // clears a picker on the confirmation screen. Kept in refs (not state) because
   // a pool change never needs to trigger a re-render on its own.
-  const perSubqLcPoolRef = useRef<string[]>([]);
-  const perSubqLpPoolRef = useRef<string[]>([]);
+  const perSubqLcPoolsRef = useRef<string[][]>([]);
+  const perSubqLpPoolsRef = useRef<string[][]>([]);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
@@ -1716,10 +1710,12 @@ export default function ParamForm({
   const availableLearningPerformance = useMemo(() => {
     const entries = schemas?.學習表現 ?? [];
     if (subject === "natural_sciences") return entries;
-    const map =
-      subject === "math" ? MATH_SUBJECT_TO_STRAND_PREFIXES : SUBJECT_TO_PERFORMANCE_PREFIXES;
-    const prefixes = map[subjectFilter] ?? map[""];
-    return entries.filter((entry) => prefixes.includes(entry.科目));
+    return filterCurriculumEntriesBySubject(
+      entries,
+      subject,
+      subjectFilter,
+      schemas?.科目?.map((entry) => entry.value) ?? [],
+    );
   }, [schemas, subjectFilter, subject]);
 
   const availableSubContexts = useMemo(() => {
@@ -1762,16 +1758,13 @@ export default function ParamForm({
 
   const availableLearningContent = useMemo(() => {
     const entries = schemas?.學習內容 ?? [];
-    if (subject === "math") {
-      const prefixes =
-        MATH_SUBJECT_TO_STRAND_PREFIXES[subjectFilter] ?? MATH_SUBJECT_TO_STRAND_PREFIXES[""];
-      return entries.filter((entry) => prefixes.includes(entry.科目));
-    }
-    if (subject === "social_studies") {
-      if (!subjectFilter) return entries;
-      const code = SS_SUBJECT_FILTER_TO_CONTENT_CODE[subjectFilter] ?? null;
-      if (code === null) return entries;
-      return entries.filter((e) => e.科目 === code);
+    if (subject === "math" || subject === "social_studies") {
+      return filterCurriculumEntriesBySubject(
+        entries,
+        subject,
+        subjectFilter,
+        schemas?.科目?.map((entry) => entry.value) ?? [],
+      );
     }
     if (subject === "natural_sciences") {
       if (!subjectFilter) return entries;
@@ -1918,6 +1911,7 @@ export default function ParamForm({
     const selectedLearningContent = restrictCodesToIccsDomain(learningContent);
     const lpPoolValues = filteredLpPool ?? availableLearningPerformance.map((e) => e.value);
     const lcPoolValues = filteredLcPool ?? availableLearningContent.map((e) => e.value);
+    const allCurriculumSubjectValues = schemas?.科目?.map((entry) => entry.value) ?? [];
     const hasHistoryPerQuestionParams = historyPerQuestionParams.length === count;
 
     // If no learning_performance selected, pre-draw randomly to match backend sampling
@@ -1950,15 +1944,18 @@ export default function ParamForm({
     }
 
     setLcWasAutoDrawn(lcAutoDrawn);
-    const perSubqLpPool = selectedLearningPerformance.length > 0 ? selectedLearningPerformance : (finalLp ?? []);
-    const perSubqLcPool = selectedLearningContent.length > 0 ? selectedLearningContent : (finalLc ?? []);
-    // #444: persist pools so the 重抽 handler can draw from the same source.
-    perSubqLcPoolRef.current = perSubqLcPool;
-    perSubqLpPoolRef.current = perSubqLpPool;
+    const initialPerSubqLpPool = selectedLearningPerformance.length > 0
+      ? selectedLearningPerformance
+      : (finalLp ?? []);
+    const initialPerSubqLcPool = selectedLearningContent.length > 0
+      ? selectedLearningContent
+      : (finalLc ?? []);
     const shouldDrawPerSubq =
       (subject === "social_studies" || subject === "natural_sciences") &&
       subQuestionCount !== "";
     const builtSubquestionAutoFields: ResolvedSubQuestionConfig[][] = [];
+    const perQuestionSubqLcPools: string[][] = [];
+    const perQuestionSubqLpPools: string[][] = [];
 
     const effectiveSubquestionConfigsInternal: (SubQuestionConfig & {
       _lcWasAutoDrawn?: boolean;
@@ -1973,13 +1970,13 @@ export default function ParamForm({
             const hasExplicitLp = configuredLp.length > 0;
             const resolvedLc = hasExplicitLc
               ? configuredLc
-              : perSubqLcPool.length > 0
-                ? drawSubqLcFromPool(perSubqLcPool)
+              : initialPerSubqLcPool.length > 0
+                ? drawSubqLcFromPool(initialPerSubqLcPool)
                 : undefined;
             const resolvedLp = hasExplicitLp
               ? configuredLp
-              : perSubqLpPool.length > 0
-                ? drawSubqLpFromPool(perSubqLpPool)
+              : initialPerSubqLpPool.length > 0
+                ? drawSubqLpFromPool(initialPerSubqLpPool)
                 : undefined;
             return {
               question_type: cfg.question_type || undefined,
@@ -2125,6 +2122,15 @@ export default function ParamForm({
       const randomSubjectFilter = subject === "social_studies"
         ? drawField("subject_filter", (schemas?.科目 ?? []).map((entry) => entry.value))
         : undefined;
+      const historyQuestionSubject = Array.isArray(historyQuestionParams?.subject_filter)
+        ? historyQuestionParams.subject_filter.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : typeof historyQuestionParams?.subject_filter === "string"
+          ? historyQuestionParams.subject_filter
+          : undefined;
+      const resolvedQuestionSubject =
+        randomSubjectFilter ?? historyQuestionSubject ?? baseParams.subject_filter;
       const historyQuestionContext = Array.isArray(historyQuestionParams?.context)
         ? historyQuestionParams.context.filter(
             (value): value is string => typeof value === "string",
@@ -2146,36 +2152,63 @@ export default function ParamForm({
       const questionLcAddress = `per_question_params[${questionIndex}].learning_content`;
       const redrawQuestionLp = !historyQuestionParams && autoDrawn;
       const redrawQuestionLc = !historyQuestionParams && lcAutoDrawn;
-      const questionLpPool = selectedLearningPerformance.length > 0
+      const questionLpEntries = filterCurriculumEntriesBySubject(
+        schemas?.學習表現 ?? [],
+        subject,
+        resolvedQuestionSubject,
+        allCurriculumSubjectValues,
+      );
+      const questionLcEntries = filterCurriculumEntriesBySubject(
+        schemas?.學習內容 ?? [],
+        subject,
+        resolvedQuestionSubject,
+        allCurriculumSubjectValues,
+      );
+      const questionLpCodes = new Set(
+        restrictCodesToIccsDomain(questionLpEntries.map((entry) => entry.value)),
+      );
+      const questionLcCodes = new Set(
+        restrictCodesToIccsDomain(questionLcEntries.map((entry) => entry.value)),
+      );
+      const questionLpAvailablePool = [...questionLpCodes];
+      const questionLcAvailablePool = [...questionLcCodes];
+      const questionLpSource = selectedLearningPerformance.length > 0
         ? selectedLearningPerformance
         : autoDrawn
-          ? lpPoolValues
+          ? questionLpAvailablePool
           : (finalLp ?? lpPoolValues);
-      const questionLcPool = selectedLearningContent.length > 0
+      const questionLcSource = selectedLearningContent.length > 0
         ? selectedLearningContent
         : lcAutoDrawn
-          ? lcPoolValues
+          ? questionLcAvailablePool
           : (finalLc ?? lcPoolValues);
+      const questionLpPool = questionLpSource.filter((code) => questionLpCodes.has(code));
+      const questionLcPool = questionLcSource.filter((code) => questionLcCodes.has(code));
       const historyQuestionLp = Array.isArray(historyQuestionParams?.learning_performance)
         ? restrictCodesToIccsDomain(
             historyQuestionParams.learning_performance.filter(
               (code): code is string => typeof code === "string",
             ),
-          )
+          ).filter((code) => questionLpCodes.has(code))
         : undefined;
       const historyQuestionLc = Array.isArray(historyQuestionParams?.learning_content)
         ? restrictCodesToIccsDomain(
             historyQuestionParams.learning_content.filter(
               (code): code is string => typeof code === "string",
             ),
-          )
+          ).filter((code) => questionLcCodes.has(code))
         : undefined;
       const questionLp = redrawQuestionLp
-        ? drawQuestionSubset(questionLpPool, 1, subject === "math" ? 3 : 2, previousQuestionLp)
-        : (historyQuestionLp ?? finalLp);
+        ? drawQuestionSubset(
+            questionLpAvailablePool,
+            1,
+            subject === "math" ? 3 : 2,
+            previousQuestionLp,
+          )
+        : (historyQuestionLp ?? finalLp?.filter((code) => questionLpCodes.has(code)));
       const questionLc = redrawQuestionLc
-        ? drawQuestionSubset(questionLcPool, 1, 3, previousQuestionLc)
-        : (historyQuestionLc ?? finalLc);
+        ? drawQuestionSubset(questionLcAvailablePool, 1, 3, previousQuestionLc)
+        : (historyQuestionLc ?? finalLc?.filter((code) => questionLcCodes.has(code)));
       const questionPredrawnFields: string[] = [
         ...(!historyQuestionParams && configuredSeed === undefined
           ? [seedAddress]
@@ -2216,18 +2249,22 @@ export default function ParamForm({
       const sourceSubquestionConfigs = historyQuestionParams
         ? parseSubquestionConfigs(historyQuestionParams.subquestion_configs)
         : subquestionConfigs;
+      const questionSubqLcPool = selectedLearningContent.length > 0
+        ? questionLcPool
+        : (questionLc ?? questionLcPool);
+      const questionSubqLpPool = selectedLearningPerformance.length > 0
+        ? questionLpPool
+        : (questionLp ?? questionLpPool);
+      perQuestionSubqLcPools.push(questionSubqLcPool);
+      perQuestionSubqLpPools.push(questionSubqLpPool);
       const questionSubquestionConfigs = shouldDrawPerSubq
           ? sourceSubquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
             const configuredLc = restrictCodesToIccsDomain(cfg.learning_content ?? []);
             const configuredLp = restrictCodesToIccsDomain(cfg.learning_performance ?? []);
             const hasExplicitLc = configuredLc.length > 0;
             const hasExplicitLp = configuredLp.length > 0;
-            const lcPool = selectedLearningContent.length > 0
-              ? selectedLearningContent
-              : (questionLc ?? perSubqLcPool);
-            const lpPool = selectedLearningPerformance.length > 0
-              ? selectedLearningPerformance
-              : (questionLp ?? perSubqLpPool);
+            const lcPool = questionSubqLcPool;
+            const lpPool = questionSubqLpPool;
             const lcAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_content`;
             const lpAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_performance`;
             const redrawLc = !historyQuestionParams && !hasExplicitLc;
@@ -2379,7 +2416,37 @@ export default function ParamForm({
             ? { ...params, context: admittedContexts }
             : params;
         })
-      : buildPerQuestionParams();
+          : buildPerQuestionParams();
+    const redrawPools = hasHistoryPerQuestionParams
+      ? perQuestionParams.map((params) => {
+          const resolvedSubject =
+            (Array.isArray(params.subject_filter) ? params.subject_filter : undefined)
+              ?? (typeof params.subject_filter === "string" ? params.subject_filter : undefined)
+              ?? baseParams.subject_filter;
+          const lcEntries = filterCurriculumEntriesBySubject(
+            schemas?.學習內容 ?? [],
+            subject,
+            resolvedSubject,
+            allCurriculumSubjectValues,
+          );
+          const lpEntries = filterCurriculumEntriesBySubject(
+            schemas?.學習表現 ?? [],
+            subject,
+            resolvedSubject,
+            allCurriculumSubjectValues,
+          );
+          return {
+            lc: restrictCodesToIccsDomain(lcEntries.map((entry) => entry.value)),
+            lp: restrictCodesToIccsDomain(lpEntries.map((entry) => entry.value)),
+          };
+        })
+      : perQuestionSubqLcPools.map((lc, index) => ({
+          lc,
+          lp: perQuestionSubqLpPools[index] ?? [],
+        }));
+    // #444: persist each 題組's pool so 重抽 uses the same subject-resolved source.
+    perSubqLcPoolsRef.current = redrawPools.map((pool) => pool.lc);
+    perSubqLpPoolsRef.current = redrawPools.map((pool) => pool.lp);
     const usingHistoryPerQuestionParams = hasHistoryPerQuestionParams;
     setPendingPerQuestionParams(perQuestionParams);
     setHasPendingConfirmationEdits(false);
@@ -2567,13 +2634,13 @@ export default function ParamForm({
     lc: string[],
   ) {
     if (lc.length === 0) {
-      // #444 重抽: clearing the picker triggers a fresh draw from the same 全域池
-      // (perSubqLcPoolRef) used by 預抽, via the shared drawSubqLcFromPool helper.
+      // #444 重抽: clearing the picker triggers a fresh draw from the same
+      // 題組-level pool used by 預抽, via the shared drawSubqLcFromPool helper.
       // This keeps the ICCS domain filter (#490/#492) flowing through automatically
       // rather than sampling independently with a second code path.
       // If the pool is genuinely empty, drawSubqLcFromPool returns [] and we leave
       // the field undefined — the backend's "or global pool" fallback still applies.
-      const pool = perSubqLcPoolRef.current;
+      const pool = perSubqLcPoolsRef.current[questionIndex] ?? [];
       const drawn = pool.length > 0 ? drawSubqLcFromPool(pool) : [];
       updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
         learning_content: drawn.length > 0 ? drawn : undefined,
@@ -2646,11 +2713,11 @@ export default function ParamForm({
     lp: string[],
   ) {
     if (lp.length === 0) {
-      // #444 重抽: clearing the picker triggers a fresh draw from the same 全域池
-      // (perSubqLpPoolRef) used by 預抽, via the shared drawSubqLpFromPool helper.
+      // #444 重抽: clearing the picker triggers a fresh draw from the same
+      // 題組-level pool used by 預抽, via the shared drawSubqLpFromPool helper.
       // If the pool is genuinely empty, drawSubqLpFromPool returns [] and the field
       // is left undefined — the backend's "or global pool" fallback still applies.
-      const pool = perSubqLpPoolRef.current;
+      const pool = perSubqLpPoolsRef.current[questionIndex] ?? [];
       const drawn = pool.length > 0 ? drawSubqLpFromPool(pool) : [];
       updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
         learning_performance: drawn.length > 0 ? drawn : undefined,

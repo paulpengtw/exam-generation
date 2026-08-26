@@ -30,12 +30,6 @@ from src.schemas import (
 
 _GRADES: list[int] = load_grades(load_schemas())
 
-# Math curriculum data, materialized in Phase 2.
-_MATH_DATA_DIR = Path(__file__).parent.parent / "data" / "math" / "curriculum"
-_LC_DATA: dict = load_learning_content(_MATH_DATA_DIR)
-_LP_DATA: dict = load_learning_performance(_MATH_DATA_DIR)
-_CC_DATA: dict = load_core_competencies(_MATH_DATA_DIR / "core_competencies.json")
-
 # Math 科目 → 學習內容/學習表現 prefix-letter set.
 _MATH_SUBJECT_TO_PREFIXES: dict[str, set[str]] = {
     "數與量": {"N", "n"},
@@ -44,6 +38,18 @@ _MATH_SUBJECT_TO_PREFIXES: dict[str, set[str]] = {
     "統計與機率": {"D", "P", "d", "p"},
     "跨領域": {"N", "A", "F", "R", "S", "G", "D", "P", "n", "a", "f", "r", "s", "g", "d", "p"},
 }
+
+# Math curriculum data, materialized in Phase 2.
+_MATH_DATA_DIR = Path(__file__).parent.parent / "data" / "math" / "curriculum"
+_LC_DATA: dict = load_learning_content(
+    _MATH_DATA_DIR,
+    subject_to_prefixes=_MATH_SUBJECT_TO_PREFIXES,
+)
+_LP_DATA: dict = load_learning_performance(
+    _MATH_DATA_DIR,
+    subject_to_prefixes=_MATH_SUBJECT_TO_PREFIXES,
+)
+_CC_DATA: dict = load_core_competencies(_MATH_DATA_DIR / "core_competencies.json")
 
 _CONTENT_TYPE_VALUES: list[str] = ["純文字", "含圖片", "graphs/charts/tables", "customized"]
 _RANDOM_CONTENT_TYPE_VALUES: list[str] = [v for v in _CONTENT_TYPE_VALUES if v != "customized"]

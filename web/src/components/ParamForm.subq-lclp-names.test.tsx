@@ -69,12 +69,32 @@ const SS_SCHEMA_WITH_NAMES = {
   科目: [{ value: "歷史", instruction: "" }],
   核心素養: [{ value: "社-J-A2", instruction: "" }],
   學習表現: [
-    { value: "社1a-Ⅳ-1", instruction: "理解歷史時序", 科目: "社" },
-    { value: "社1a-Ⅳ-2", instruction: "解讀史料", 科目: "社" },
+    {
+      value: "社1a-Ⅳ-1",
+      instruction: "理解歷史時序",
+      科目: "社",
+      admitted_by: { "科目": ["歷史", "地理", "公民與社會", "跨科"] },
+    },
+    {
+      value: "社1a-Ⅳ-2",
+      instruction: "解讀史料",
+      科目: "社",
+      admitted_by: { "科目": ["歷史", "地理", "公民與社會", "跨科"] },
+    },
   ],
   學習內容: [
-    { value: "歷Ka-Ⅳ-1", instruction: "臺灣早期歷史", 科目: "歷史" },
-    { value: "歷Ka-Ⅳ-2", instruction: "清代臺灣社會", 科目: "歷史" },
+    {
+      value: "歷Ka-Ⅳ-1",
+      instruction: "臺灣早期歷史",
+      科目: "歷史",
+      admitted_by: { "科目": ["歷史", "跨科"] },
+    },
+    {
+      value: "歷Ka-Ⅳ-2",
+      instruction: "清代臺灣社會",
+      科目: "歷史",
+      admitted_by: { "科目": ["歷史", "跨科"] },
+    },
   ],
 };
 

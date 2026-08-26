@@ -8,13 +8,26 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient
 
 from server.app import create_app
 from server.auth.dependencies import get_config
-from server.config import ServerConfig, _DEFAULT_MODELS_ALLOWED
+from server.config import _DEFAULT_MODELS_ALLOWED, ServerConfig
+
+
+def _schema_curriculum_entries(
+    body: dict,
+    key: str,
+) -> dict[str, dict]:
+    entries = body[key]
+    assert entries
+    assert all("admitted_by" in entry for entry in entries)
+    assert all(set(entry["admitted_by"]) == {"科目"} for entry in entries)
+    assert all(isinstance(entry["admitted_by"]["科目"], list) for entry in entries)
+    return {entry["value"]: entry for entry in entries}
 
 
 def _config(schemas_path: Path) -> ServerConfig:
@@ -114,7 +127,10 @@ def test_math_schemas_include_the_learning_content_pool(tmp_path: Path) -> None:
     learning_content = r.json()["學習內容"]
     assert learning_content
     strand_prefixes = set("NnAaFfRrSsGgDdPp")
-    assert all(set(entry) == {"value", "instruction", "科目"} for entry in learning_content)
+    assert all(
+        set(entry) == {"value", "instruction", "科目", "admitted_by"}
+        for entry in learning_content
+    )
     assert all(
         len(entry["科目"]) == 1 and entry["科目"] in strand_prefixes
         for entry in learning_content
@@ -149,6 +165,193 @@ def test_math_learning_content_is_filtered_to_the_resolved_learning_stage(
     assert r.status_code == 200
     returned_values = {entry["value"] for entry in r.json()["學習內容"]}
     assert returned_values == expected_values
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "math"])
+def test_curriculum_schema_tags_match_each_backend_subject_pool(subject: str) -> None:
+    from src.common.curriculum_loader import (
+        load_learning_content,
+        load_learning_performance,
+    )
+
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.get(f"/api/schemas?subject={subject}&grade=7")
+
+    assert response.status_code == 200
+    body = response.json()
+    content_by_code = _schema_curriculum_entries(body, "學習內容")
+    performance_by_code = _schema_curriculum_entries(body, "學習表現")
+    learning_stage = "第四學習階段"
+    if subject == "social_studies":
+        data_dir = Path(__file__).resolve().parents[2] / "data" / "social_studies" / "curriculum"
+        content_data = load_learning_content(data_dir)
+        performance_data = load_learning_performance(data_dir)
+        expected_prefixes = {
+            "歷史": {"歷", "社", ""},
+            "地理": {"地", "社", ""},
+            "公民與社會": {"公", "社", ""},
+            "跨科": {"歷", "地", "公", "社", ""},
+        }
+    else:
+        data_dir = Path(__file__).resolve().parents[2] / "data" / "math" / "curriculum"
+        content_data = load_learning_content(data_dir)
+        performance_data = load_learning_performance(data_dir)
+        expected_prefixes = {
+            "數與量": {"N", "n"},
+            "代數": {"A", "F", "R", "a", "f", "r"},
+            "幾何": {"S", "G", "s", "g"},
+            "統計與機率": {"D", "P", "d", "p"},
+            "跨領域": {
+                "N", "A", "F", "R", "S", "G", "D", "P",
+                "n", "a", "f", "r", "s", "g", "d", "p",
+            },
+        }
+
+    expected_content_subjects = {
+        candidate: {
+            entry["value"]
+            for entry in content_data["學習內容"]
+            if entry["學習階段"] == learning_stage
+            and entry["科目"] in prefixes
+        }
+        for candidate, prefixes in expected_prefixes.items()
+    }
+    expected_performance_subjects = {
+        candidate: {
+            entry["value"]
+            for entry in performance_data["學習表現"]
+            if entry["學習階段"] == learning_stage
+            and entry["科目"] in prefixes
+        }
+        for candidate, prefixes in expected_prefixes.items()
+    }
+
+    for candidate, expected_codes in expected_content_subjects.items():
+        actual_codes = {
+            code
+            for code, entry in content_by_code.items()
+            if candidate in entry["admitted_by"]["科目"]
+        }
+        assert actual_codes == expected_codes
+    for candidate, expected_codes in expected_performance_subjects.items():
+        actual_codes = {
+            code
+            for code, entry in performance_by_code.items()
+            if candidate in entry["admitted_by"]["科目"]
+        }
+        assert actual_codes == expected_codes
+
+
+def test_social_schema_tags_keep_literal_shared_curriculum_entries() -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        content_response = client.get("/api/schemas?subject=social_studies&grade=3")
+        performance_response = client.get("/api/schemas?subject=social_studies&grade=7")
+
+    assert content_response.status_code == 200
+    assert performance_response.status_code == 200
+    content_by_code = _schema_curriculum_entries(content_response.json(), "學習內容")
+    performance_by_code = _schema_curriculum_entries(
+        performance_response.json(), "學習表現"
+    )
+
+    assert content_by_code["Aa-Ⅱ-1"]["admitted_by"] == {
+        "科目": ["歷史", "地理", "公民與社會", "跨科"],
+    }
+    assert performance_by_code["社1a-Ⅳ-1"]["admitted_by"] == {
+        "科目": ["歷史", "地理", "公民與社會", "跨科"],
+    }
+
+
+def test_social_schema_tags_use_a_runtime_curriculum_directory(tmp_path: Path) -> None:
+    (tmp_path / "schema_meta.csv").write_text(
+        "欄位,值\n學習階段,第四學習階段\ngrades,7;8;9\n",
+        encoding="utf-8-sig",
+    )
+    (tmp_path / "schema_parameters.csv").write_text(
+        "類別,value,instruction\n"
+        "科目,歷史,\n"
+        "科目,地理,\n",
+        encoding="utf-8-sig",
+    )
+    (tmp_path / "內容領域_mapping.csv").write_text(
+        "編碼,內容領域\n",
+        encoding="utf-8-sig",
+    )
+    (tmp_path / "learning_content.json").write_text(
+        json.dumps(
+            {
+                "學習內容": [
+                    {"value": "shared-runtime", "學習階段": "第四學習階段", "科目": ""},
+                    {"value": "history-runtime", "學習階段": "第四學習階段", "科目": "歷"},
+                    {"value": "geography-runtime", "學習階段": "第四學習階段", "科目": "地"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "learning_performance.json").write_text(
+        json.dumps(
+            {
+                "學習表現": [
+                    {
+                        "value": "shared-performance-runtime",
+                        "學習階段": "第四學習階段",
+                        "科目": "社",
+                    },
+                    {
+                        "value": "history-performance-runtime",
+                        "學習階段": "第四學習階段",
+                        "科目": "歷",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    from src.social_studies.curriculum_loader import (
+        load_learning_content,
+        load_learning_performance,
+    )
+
+    loaded_content = load_learning_content(tmp_path / "learning_content.json")
+    assert loaded_content["學習內容"][0]["admitted_by"] == {
+        "科目": ["歷史", "地理", "公民與社會", "跨科"],
+    }
+    loaded_performance = load_learning_performance(
+        tmp_path / "learning_performance.json"
+    )
+    assert loaded_performance["學習表現"][0]["admitted_by"] == {
+        "科目": ["歷史", "地理", "公民與社會", "跨科"],
+    }
+
+    app = create_app()
+    cfg = ServerConfig(
+        api_key="x",
+        jwt_secret="test-secret",
+        social_studies_curriculum_dir=tmp_path,
+    )
+    app.dependency_overrides[get_config] = lambda: cfg
+    with TestClient(app) as client:
+        response = client.get("/api/schemas?subject=social_studies")
+
+    assert response.status_code == 200
+    body = response.json()
+    content_by_code = _schema_curriculum_entries(body, "學習內容")
+    performance_by_code = _schema_curriculum_entries(body, "學習表現")
+    assert content_by_code["shared-runtime"]["admitted_by"] == {
+        "科目": ["歷史", "地理", "公民與社會", "跨科"],
+    }
+    assert content_by_code["history-runtime"]["admitted_by"] == {
+        "科目": ["歷史", "跨科"],
+    }
+    assert performance_by_code["shared-performance-runtime"]["admitted_by"] == {
+        "科目": ["歷史", "地理", "公民與社會", "跨科"],
+    }
 
 
 def test_social_studies_schemas_expose_the_iccs_code_to_domain_mapping() -> None:

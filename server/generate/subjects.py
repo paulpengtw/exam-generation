@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from src.cli import build_generation_prompts as _math_build_prompts_impl
 from src.cli import generate_with_corrections as _math_generate_with_corrections
@@ -24,9 +25,7 @@ from src.common.batch_dedup import (
     extract_ns_prior_scope,
     extract_ss_prior_scope,
 )
-from src.common.curriculum_loader import (
-    load_learning_content as load_common_lc,
-)
+from src.common.curriculum_loader import load_learning_content as load_common_lc
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
 from src.corrector import correct_question as _math_correct_question
 from src.natural_sciences.cli import (
@@ -71,7 +70,7 @@ from src.natural_sciences.schemas import (
     ScienceCompetency as NSScienceCompetency,
 )
 from src.natural_sciences.verifier import verify_question as _ns_verify_question
-from src.sampler import grade_to_learning_stage
+from src.sampler import _MATH_SUBJECT_TO_PREFIXES, grade_to_learning_stage
 from src.sampler import sample_params as _math_sample_params
 from src.schemas import (
     ExamQuestion as MathExamQuestion,
@@ -235,6 +234,74 @@ def _resolve_stage(schemas: dict, grade: int | None) -> str:
     return schemas.get("學習階段", "")
 
 
+def _curriculum_admitted_subjects_by_code(
+    loader: Callable[[], dict],
+    key: Literal["學習內容", "學習表現"],
+) -> dict[str, list[str]]:
+    data = loader()
+    by_code: dict[str, list[str]] = {}
+    for entry in data.get(key, []):
+        if not isinstance(entry, dict) or not isinstance(entry.get("value"), str):
+            continue
+        admitted_subjects = entry.get("admitted_by", {}).get("科目")
+        if not isinstance(admitted_subjects, list):
+            continue
+        existing = by_code.setdefault(entry["value"], [])
+        for subject in admitted_subjects:
+            if isinstance(subject, str) and subject not in existing:
+                existing.append(subject)
+    return by_code
+
+
+def _validate_curriculum_subject_pairs(
+    params: Any,
+    *,
+    load_content: Callable[[], dict],
+    load_performance: Callable[[], dict],
+    subquestion_configs: list[dict] | None = None,
+) -> None:
+    subjects = [value for value in (getattr(params, "subject_filter", None) or []) if value]
+    if not subjects:
+        return
+
+    admissions = {
+        "learning_content": _curriculum_admitted_subjects_by_code(
+            load_content, "學習內容"
+        ),
+        "learning_performance": _curriculum_admitted_subjects_by_code(
+            load_performance, "學習表現"
+        ),
+    }
+    subject_label = "、".join(subjects)
+
+    def validate_values(values: object, field: str) -> None:
+        if not isinstance(values, list):
+            return
+        for code in values:
+            if not isinstance(code, str):
+                continue
+            admitted_subjects = admissions[field].get(code, [])
+            if not any(subject in admitted_subjects for subject in subjects):
+                raise ValueError(
+                    f"科目 {subject_label!r} does not admit {field} code {code!r}"
+                )
+
+    for field in admissions:
+        validate_values(getattr(params, field, None), field)
+    for config in subquestion_configs or []:
+        for field in admissions:
+            validate_values(config.get(field), field)
+
+
+def _math_curriculum_dir() -> Path:
+    return Path(
+        os.environ.get(
+            "MATH_CURRICULUM_DIR",
+            str(Path(__file__).resolve().parents[2] / "data" / "math" / "curriculum"),
+        )
+    )
+
+
 def _ns_validate_params(params: Any) -> None:
     unsupported_surface_fields = [
         field
@@ -314,6 +381,17 @@ def _ss_validate_params(params: Any) -> None:
         decoded = json.loads(params.subquestion_configs) if params.subquestion_configs else []
     except (TypeError, json.JSONDecodeError):
         decoded = []
+    decoded_configs = (
+        [item for item in decoded if isinstance(item, dict)]
+        if isinstance(decoded, list)
+        else None
+    )
+    _validate_curriculum_subject_pairs(
+        params,
+        load_content=load_ss_learning_content,
+        load_performance=load_ss_learning_performance,
+        subquestion_configs=decoded_configs,
+    )
     if isinstance(decoded, list):
         retired_pins = {
             question_type
@@ -347,6 +425,17 @@ def _ss_validate_params(params: Any) -> None:
 
 
 def _math_validate_params(params: Any) -> None:
+    _validate_curriculum_subject_pairs(
+        params,
+        load_content=lambda: load_common_lc(
+            _math_curriculum_dir(),
+            subject_to_prefixes=_MATH_SUBJECT_TO_PREFIXES,
+        ),
+        load_performance=lambda: load_common_lp(
+            _math_curriculum_dir(),
+            subject_to_prefixes=_MATH_SUBJECT_TO_PREFIXES,
+        ),
+    )
     if params.sub_question_count is not None and params.set_type == "單一題":
         raise ValueError(
             "sub_question_count implies 題型種類=題組題, but explicit "
@@ -666,6 +755,7 @@ def _ss_build_schemas(config_server: Any, grade: int | None) -> dict:
             "value": entry["value"],
             "instruction": entry.get("說明", ""),
             "科目": entry.get("科目", ""),
+            "admitted_by": entry["admitted_by"],
         }
         for entry in performance_data.get("學習表現", [])
         if entry.get("學習階段") == learning_stage
@@ -678,6 +768,7 @@ def _ss_build_schemas(config_server: Any, grade: int | None) -> dict:
             "value": entry["value"],
             "instruction": entry.get("條目說明", ""),
             "科目": entry.get("科目", ""),
+            "admitted_by": entry["admitted_by"],
         }
         for entry in content.get("學習內容", [])
         if entry.get("學習階段") == learning_stage
@@ -1040,22 +1131,30 @@ def _math_build_schemas(config_server: Any, grade: int | None) -> dict:
     schemas["科目"] = list(_MATH_SUBJECTS)
     schemas["題目內容類型"] = list(_MATH_CONTENT_TYPES)
     learning_stage = _resolve_stage(schemas, grade)
-    performance = load_common_lp(config_server.math_curriculum_dir)
+    performance = load_common_lp(
+        config_server.math_curriculum_dir,
+        subject_to_prefixes=_MATH_SUBJECT_TO_PREFIXES,
+    )
     schemas["學習表現"] = [
         {
             "value": entry["value"],
             "instruction": entry.get("說明", ""),
             "科目": entry.get("科目", ""),
+            "admitted_by": entry["admitted_by"],
         }
         for entry in performance.get("學習表現", [])
         if entry.get("學習階段") == learning_stage
     ]
-    content = load_common_lc(config_server.math_curriculum_dir)
+    content = load_common_lc(
+        config_server.math_curriculum_dir,
+        subject_to_prefixes=_MATH_SUBJECT_TO_PREFIXES,
+    )
     schemas["學習內容"] = [
         {
             "value": entry["value"],
             "instruction": entry.get("條目說明", ""),
             "科目": entry.get("科目", ""),
+            "admitted_by": entry["admitted_by"],
         }
         for entry in content.get("學習內容", [])
         if entry.get("學習階段") == learning_stage

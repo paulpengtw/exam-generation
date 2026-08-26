@@ -41,6 +41,8 @@ Natural-sciences schema payloads carry each 情境子類別's admitting values a
 `admitted_by: {"情境": [...]}` while retaining the legacy `parent` field for existing consumers.
 The web client uses one generic parent-keyed filter, resolves each 題組's own 情境 before drawing its 情境子類別, and keeps an explicitly pinned 情境 out of the per-題組 draw. The 發送前確認 screen has no editable 情境 path; its per-題組 rows display the already-filtered pair that will be sent.
 
+For 社會領域 and 數學, curriculum rows expose `admitted_by: {"科目": [...]}`, computed when the active curriculum is loaded from the same backend pools used for sampling; shared rows therefore follow backend admission, including runtime `SOCIAL_STUDIES_CURRICULUM_DIR` swaps. ParamForm reuses `filterEntriesByAdmittedParent` for each 題組's resolved 科目 across group and per-小題 學習內容/學習表現 pools, with no client-side prefix tables. An explicitly pinned 科目 remains in the submitted batch but suppresses the per-題組 科目 draw.
+
 數學也 exposes request-level `sub_question_count` and the 題組文本
 `text_word_limit` in the web form. Its 發送前確認 shows those canonical
 top-level values, but it does not pre-draw or submit `subquestion_configs`.

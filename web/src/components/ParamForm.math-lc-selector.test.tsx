@@ -4,11 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getSchemasMock = vi.hoisted(() => vi.fn());
 
 const MATH_LEARNING_CONTENT = [
-  { value: "N-7-1", instruction: "負數與數線", 科目: "N" },
-  { value: "n-IV-2", instruction: "數與量關係", 科目: "n" },
-  { value: "A-7-3", instruction: "代數式", 科目: "A" },
-  { value: "S-8-1", instruction: "幾何與空間", 科目: "S" },
-  { value: "D-9-1", instruction: "資料分析", 科目: "D" },
+  { value: "N-7-1", instruction: "負數與數線", 科目: "N", admitted_by: { 科目: ["數與量", "跨領域"] } },
+  { value: "n-IV-2", instruction: "數與量關係", 科目: "n", admitted_by: { 科目: ["數與量", "跨領域"] } },
+  { value: "A-7-3", instruction: "代數式", 科目: "A", admitted_by: { 科目: ["代數", "跨領域"] } },
+  { value: "S-8-1", instruction: "幾何與空間", 科目: "S", admitted_by: { 科目: ["幾何", "跨領域"] } },
+  { value: "D-9-1", instruction: "資料分析", 科目: "D", admitted_by: { 科目: ["統計與機率", "跨領域"] } },
 ];
 const LEARNING_CONTENT_CODES = MATH_LEARNING_CONTENT.map((entry) => entry.value);
 
@@ -30,8 +30,8 @@ function mathSchema(learningContent = MATH_LEARNING_CONTENT) {
       { value: "跨領域", instruction: "" },
     ],
     學習表現: [
-      { value: "n-IV-1", instruction: "理解數與量", 科目: "n" },
-      { value: "a-IV-1", instruction: "理解代數", 科目: "a" },
+      { value: "n-IV-1", instruction: "理解數與量", 科目: "n", admitted_by: { 科目: ["數與量", "跨領域"] } },
+      { value: "a-IV-1", instruction: "理解代數", 科目: "a", admitted_by: { 科目: ["代數", "跨領域"] } },
     ],
     學習內容: learningContent,
   };
