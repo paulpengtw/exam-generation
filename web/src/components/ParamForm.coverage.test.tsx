@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
+
 vi.mock("../api/client", () => ({
   getSchemas: vi.fn(async () => ({
     grades: [7, 8, 9],
@@ -23,6 +25,7 @@ vi.mock("../api/client", () => ({
   getAvailableModels: vi.fn(async () => ({ allowed: [], defaults: { plan: "", execute: "" } })),
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
   previewGenerate: vi.fn(async () => ({ prompts: [] })),
+  resolveGenerate: resolveGenerateMock,
 }));
 
 vi.mock("../i18n/useT", () => ({
@@ -31,8 +34,42 @@ vi.mock("../i18n/useT", () => ({
 
 import ParamForm, { type GenerateParams } from "./ParamForm";
 
+function resolvedCoveragePayload(payload: Record<string, unknown>) {
+  const rawRows = payload.per_question_params;
+  const sourceRows = typeof rawRows === "string"
+    ? JSON.parse(rawRows) as Record<string, unknown>[]
+    : [];
+  const selected = Array.isArray(payload.learning_content) && payload.learning_content.length > 0
+    ? payload.learning_content as string[]
+    : ["歷Ka-Ⅳ-1"];
+  const rows = sourceRows.map((row, index) => {
+    const rowSelection = Array.isArray(row.learning_content) && row.learning_content.length > 0
+      ? row.learning_content
+      : [index % 2 === 0 ? "歷Ka-Ⅳ-1" : "歷Ka-Ⅳ-2"];
+    return { ...row, learning_content: rowSelection };
+  });
+  const drawn = Array.isArray(payload.learning_content) && payload.learning_content.length > 0
+    ? []
+    : [
+        "learning_content",
+        ...rows.map((_, index) => `per_question_params[${index}].learning_content`),
+      ];
+  return {
+    payload: {
+      ...payload,
+      learning_content: selected,
+      per_question_params: JSON.stringify(rows),
+    },
+    drawn,
+  };
+}
+
 describe("ParamForm coverage_mode dropdown", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) =>
+      resolvedCoveragePayload(payload));
+  });
 
   it("defaults coverage_mode to 'balanced' on submit", async () => {
     const submitted: GenerateParams[] = [];

@@ -14,10 +14,12 @@ paths so ``redraws`` can be replayed through the same keyed streams.
 from __future__ import annotations
 
 import json
+import secrets
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from src.common.randomness import draw_rng
 from src.natural_sciences.sampler import (
     _SUB_CONTEXT_ADMITTED_BY,
     _matching_subcontexts,
@@ -91,6 +93,20 @@ class ResolveConflictError(ValueError):
     def __init__(self, errors: list[dict[str, str]]) -> None:
         self.errors = errors
         super().__init__(str(errors))
+
+
+_BATCH_REQUEST_LEVEL_FIELDS = frozenset(
+    {
+        "subject",
+        "count",
+        "per_question_params",
+        "drawn",
+        "max_retries",
+        "allow_duplicate_figure_kinds",
+        "core_question_callback",
+        "redraws",
+    }
+)
 
 
 def _blank(value: Any) -> bool:
@@ -219,6 +235,57 @@ def _wire_natural_config(config: Any, original: dict[str, Any]) -> dict[str, Any
     if reporting_scale is not None:
         result["reporting_scale"] = reporting_scale
     return result
+
+
+def _draw_subquestion_codes(
+    pool: list[str],
+    *,
+    seed: int | str | None,
+    field_path: str,
+    redraws: dict[str, int] | None,
+    maximum: int,
+) -> list[str]:
+    if not pool:
+        return []
+    rng = draw_rng(seed, field_path, (redraws or {}).get(field_path, 0))
+    count = rng.randint(1, min(maximum, len(pool)))
+    return rng.sample(pool, count)
+
+
+def _fill_subquestion_curriculum_fields(
+    configs: list[Any],
+    originals: list[dict[str, Any]],
+    *,
+    learning_content_pool: list[str],
+    learning_performance_pool: list[str],
+    seed: int | str | None,
+    redraws: dict[str, int] | None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Fill blank per-小題 curriculum fields from the resolved 題組 pools."""
+    completed: list[dict[str, Any]] = []
+    drawn: list[str] = []
+    for index, config in enumerate(configs):
+        original = originals[index] if index < len(originals) else {}
+        row = deepcopy(original)
+        for field, pool, maximum in (
+            ("learning_content", learning_content_pool, 3),
+            ("learning_performance", learning_performance_pool, 2),
+        ):
+            if not _blank(original.get(field)):
+                continue
+            path = f"subquestion_configs[{index}].{field}"
+            values = _draw_subquestion_codes(
+                pool,
+                seed=seed,
+                field_path=path,
+                redraws=redraws,
+                maximum=maximum,
+            )
+            if values:
+                row[field] = values
+                drawn.append(path)
+        completed.append(row)
+    return completed, drawn
 
 
 def _resolve_math(
@@ -377,14 +444,26 @@ def _resolve_social(
     if sampled.sub_question_count is not None:
         completed["sub_question_count"] = sampled.sub_question_count
     sampled_configs = list(sampled.subquestion_configs)
+    original_configs = configs or []
     if "subquestion_configs" in payload or sampled_configs:
-        completed["subquestion_configs"] = [
+        wired_configs = [
             _wire_social_config(
                 config,
-                configs[index] if configs is not None and index < len(configs) else {},
+                original_configs[index] if index < len(original_configs) else {},
             )
             for index, config in enumerate(sampled_configs)
         ]
+        curriculum_configs, subquestion_drawn = _fill_subquestion_curriculum_fields(
+            wired_configs,
+            original_configs,
+            learning_content_pool=list(sampled.學習內容_pool),
+            learning_performance_pool=list(sampled.學習表現_pool),
+            seed=payload.get("seed"),
+            redraws=redraws,
+        )
+        completed["subquestion_configs"] = curriculum_configs
+    else:
+        subquestion_drawn = []
 
     fields = [
         ("grade", "grade"),
@@ -400,7 +479,6 @@ def _resolve_social(
     drawn = _top_drawn(payload, fields)
     if payload.get("sub_question_count") is None and _blank(payload.get("q_type")):
         drawn.append("題型")
-    original_configs = configs or []
     for index, config in enumerate(sampled_configs):
         original = original_configs[index] if index < len(original_configs) else {}
         if _blank(original.get("question_type")) and getattr(config, "question_type", None):
@@ -409,6 +487,7 @@ def _resolve_social(
             config, "認知歷程", None
         ):
             drawn.append(f"subquestion_configs[{index}].認知歷程")
+    drawn.extend(subquestion_drawn)
     if not drawn:
         return ResolveResult(payload=deepcopy(payload), drawn=[])
     return ResolveResult(payload=completed, drawn=drawn)
@@ -496,14 +575,26 @@ def _resolve_natural(
         completed["sub_question_count"] = sampled.sub_question_count
 
     sampled_configs = list(sampled.subquestion_configs)
+    original_configs = configs or []
     if "subquestion_configs" in payload or sampled_configs:
-        completed["subquestion_configs"] = [
+        wired_configs = [
             _wire_natural_config(
                 config,
-                configs[index] if configs is not None and index < len(configs) else {},
+                original_configs[index] if index < len(original_configs) else {},
             )
             for index, config in enumerate(sampled_configs)
         ]
+        curriculum_configs, subquestion_drawn = _fill_subquestion_curriculum_fields(
+            wired_configs,
+            original_configs,
+            learning_content_pool=list(sampled.學習內容_pool),
+            learning_performance_pool=list(sampled.學習表現_pool),
+            seed=payload.get("seed"),
+            redraws=redraws,
+        )
+        completed["subquestion_configs"] = curriculum_configs
+    else:
+        subquestion_drawn = []
 
     fields = [
         ("grade", "grade"),
@@ -518,13 +609,13 @@ def _resolve_natural(
     if payload.get("sub_question_count") is None:
         fields.insert(4, ("q_type", "題型"))
     drawn = _top_drawn(payload, fields)
-    original_configs = configs or []
     for index, config in enumerate(sampled_configs):
         original = original_configs[index] if index < len(original_configs) else {}
         if _blank(original.get("question_type")) and getattr(config, "question_type", None):
             drawn.append(f"subquestion_configs[{index}].question_type")
         if _blank(original.get("reporting_scale")) and getattr(config, "reporting_scale", None):
             drawn.append(f"subquestion_configs[{index}].reporting_scale")
+    drawn.extend(subquestion_drawn)
     if not drawn:
         return ResolveResult(payload=deepcopy(payload), drawn=[])
     return ResolveResult(payload=completed, drawn=drawn)
@@ -580,13 +671,24 @@ def resolve(
         rows = [{} for _ in range(count)]
 
     batch = has_rows or count > 1
+    working_payload = deepcopy(payload)
+    seed_was_drawn = _blank(working_payload.get("seed"))
+    if seed_was_drawn:
+        working_payload["seed"] = secrets.randbelow(2**31)
     if not batch:
-        result = _resolve_one(deepcopy(payload), _local_redraws(redraws, index=0, batch=False))
-        return result
+        result = _resolve_one(
+            working_payload,
+            _local_redraws(redraws, index=0, batch=False),
+        )
+        if not seed_was_drawn:
+            return result
+        completed = deepcopy(result.payload)
+        completed["seed"] = working_payload["seed"]
+        return ResolveResult(payload=completed, drawn=["seed", *result.drawn])
 
     base = {
         key: value
-        for key, value in payload.items()
+        for key, value in working_payload.items()
         if key not in {"subject", "count", "per_question_params", "redraws"}
     }
     resolved_rows: list[dict[str, Any]] = []
@@ -594,9 +696,10 @@ def resolve(
     for index, row in enumerate(rows):
         worker_payload = deepcopy(base)
         worker_payload.update(deepcopy(row))
-        worker_payload["subject"] = payload.get("subject", "math")
+        worker_payload["subject"] = working_payload.get("subject", "math")
         explicit_seed = row.get("seed") if not _blank(row.get("seed")) else None
-        base_seed = payload.get("seed")
+        row_seed_was_drawn = seed_was_drawn and explicit_seed is None
+        base_seed = working_payload.get("seed")
         worker_seed = explicit_seed
         if worker_seed is None and base_seed is not None:
             worker_seed = base_seed + index
@@ -621,13 +724,22 @@ def resolve(
                 for error in exc.errors
             ]
             raise ResolveConflictError(errors) from exc
-        resolved_row = deepcopy(result.payload)
-        resolved_row.pop("subject", None)
+        resolved_row = {
+            key: value
+            for key, value in result.payload.items()
+            if key not in _BATCH_REQUEST_LEVEL_FIELDS
+        }
         resolved_rows.append(resolved_row)
+        if row_seed_was_drawn:
+            result_drawn = ["seed", *result.drawn]
+        else:
+            result_drawn = result.drawn
         drawn.extend(
-            f"per_question_params[{index}].{path}" for path in result.drawn
+            f"per_question_params[{index}].{path}" for path in result_drawn
         )
 
-    completed = deepcopy(payload)
+    completed = deepcopy(working_payload)
     completed["per_question_params"] = resolved_rows
+    if seed_was_drawn:
+        drawn.insert(0, "seed")
     return ResolveResult(payload=completed, drawn=drawn)

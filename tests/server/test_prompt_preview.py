@@ -5,12 +5,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
-from server.config import ServerConfig
 from server.auth.dependencies import get_current_user
-from server.generate.routes import router
+from server.config import ServerConfig
 from server.generate.models import GenerateParams
+from server.generate.routes import router
 from server.generate.service import build_prompt_previews
 from src.cli import generate_one as generate_math
 from src.curriculum_context import load_curriculum_context
@@ -20,9 +21,9 @@ from src.data_loader import (
     load_intro_text,
     load_performance_standards,
 )
-from src.sampler import sample_params as sample_math
 from src.natural_sciences.cli import generate_one as generate_natural_sciences
 from src.natural_sciences.sampler import sample_params as sample_natural_sciences
+from src.sampler import sample_params as sample_math
 from src.social_studies.cli import generate_one as generate_social_studies
 from src.social_studies.sampler import sample_params as sample_social_studies
 
@@ -124,7 +125,7 @@ def test_math_preview_is_byte_identical_to_submit_prompt() -> None:
     assert preview["user_prompt"] == capture.prompts[1]
 
 
-def test_predrawn_fields_are_persisted_but_do_not_change_seed_pinned_preview() -> None:
+def test_drawn_fields_are_persisted_but_do_not_change_seed_pinned_preview() -> None:
     seed = 196
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = _math_state(config)
@@ -137,12 +138,13 @@ def test_predrawn_fields_are_persisted_but_do_not_change_seed_pinned_preview() -
         subject="math",
         seed=seed,
         disable_reference_fewshot=True,
-        predrawn_fields='["learning_content", "per_question_params[0].seed"]',
+        drawn=["learning_content", "per_question_params[0].seed"],
     )
 
-    assert with_metadata.model_dump(mode="json")["predrawn_fields"] == (
-        '["learning_content", "per_question_params[0].seed"]'
-    )
+    assert with_metadata.model_dump(mode="json")["drawn"] == [
+        "learning_content",
+        "per_question_params[0].seed",
+    ]
     assert build_prompt_previews(baseline, config, app_state) == build_prompt_previews(
         with_metadata,
         config,
@@ -247,7 +249,8 @@ def test_count_one_preview_omits_the_spread_instruction_even_under_balanced() ->
     assert "## 出題模式：均衡" not in text_previews[0]["user_prompt"]
 
 
-def test_social_studies_sub_generator_previews_are_byte_identical_after_placeholder_substitution() -> None:
+def test_social_studies_sub_generator_previews_are_byte_identical_after_placeholder_substitution(
+) -> None:
     seed = 191
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ss_curriculum_context=None)
@@ -388,7 +391,8 @@ def test_natural_sciences_preview_with_reporting_scale_is_byte_identical() -> No
     assert preview["user_prompt"] == capture.prompts[1]
 
 
-def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeholder_substitution() -> None:
+def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeholder_substitution(
+) -> None:
     seed = 192
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ns_curriculum_context=None)

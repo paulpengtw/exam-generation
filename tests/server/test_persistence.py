@@ -69,7 +69,7 @@ def test_persist_generation_record_inserts_one_row() -> None:
     params = GenerateParams(
         subject="math",
         skip_verify=True,
-        predrawn_fields='["learning_content"]',
+        drawn=["learning_content"],
     )
     payload: dict[str, Any] = {"id": "q1", "text": "hello"}
 
@@ -88,7 +88,7 @@ def test_persist_generation_record_inserts_one_row() -> None:
     record = rows[0]
     assert record.question_id == "q1"
     assert record.subject == "math"
-    assert record.params_json["predrawn_fields"] == '["learning_content"]'
+    assert record.params_json["drawn"] == ["learning_content"]
 
 
 def test_persist_generation_record_strips_image_base64() -> None:
@@ -163,7 +163,7 @@ def test_persist_failed_generation_record_writes_tombstone_without_question() ->
     params = GenerateParams(
         subject="social_studies",
         topic="climate",
-        predrawn_fields='["per_question_params[0].learning_content"]',
+        drawn=["per_question_params[0].learning_content"],
     )
 
     asyncio.run(
@@ -183,7 +183,7 @@ def test_persist_failed_generation_record_writes_tombstone_without_question() ->
     assert record.status == "failed"
     assert record.error == "Stream error (RuntimeError)"
     assert record.params_json["topic"] == "climate"
-    assert record.params_json["predrawn_fields"] == '["per_question_params[0].learning_content"]'
+    assert record.params_json["drawn"] == ["per_question_params[0].learning_content"]
     assert record.question_json is None
     assert record.image_files == []
 

@@ -25,6 +25,7 @@ vi.mock("../api/client", () => ({
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
   previewGenerate: vi.fn(async () => ({ prompts: [] })),
+  resolveGenerate: vi.fn(async (payload: Record<string, unknown>) => ({ payload, drawn: [] })),
 }));
 vi.mock("../i18n/useT", () => ({
   useT: () => tMock,

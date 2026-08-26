@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
+import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
 import { filterEntriesByAdmittedParent } from "../lib/admittedBy";
 import { renewSessionIfNeeded } from "../lib/sessionRenewal";
 import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
-import { drawRandomSubset } from "../utils/drawRandomSubset";
 import {
   findSocialStudiesPinRuleViolations,
   type SocialStudiesPinRuleViolation,
@@ -33,16 +32,21 @@ export interface SubQuestionConfig {
 }
 
 function parseSubquestionConfigs(value: unknown): SubQuestionConfig[] {
-  if (typeof value !== "string") return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (row): row is SubQuestionConfig => typeof row === "object" && row !== null && !Array.isArray(row),
-    );
-  } catch {
-    return [];
-  }
+  const parsed = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(value) as unknown;
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter(
+    (row): row is SubQuestionConfig => typeof row === "object" && row !== null && !Array.isArray(row),
+  );
 }
 
 function parsePerQuestionParams(value: unknown): Record<string, unknown>[] {
@@ -64,6 +68,14 @@ function parsePerQuestionParams(value: unknown): Record<string, unknown>[] {
     return [];
   }
   return parsed as Record<string, unknown>[];
+}
+
+function normaliseResolvedPerQuestionParams(
+  rows: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return rows.map((row) => Array.isArray(row.subquestion_configs)
+    ? { ...row, subquestion_configs: JSON.stringify(row.subquestion_configs) }
+    : row);
 }
 
 function serialisableSubquestionConfig(config: SubQuestionConfig): SubQuestionConfig {
@@ -258,11 +270,13 @@ export type FormParams = Omit<
   | "seed"
   // Not exposed in the form UI.
   | "max_retries"
-  // Not a form control; a resolved/prefilled value is carried through unchanged.
   // Exposed per-subquestion inside subquestion_configs, not at top level.
   | "question_word_limit"
   // Exposed per-subquestion inside subquestion_configs, not at top level.
   | "option_word_limit"
+  // Not exposed in the form UI, but the resolver completes and the generation
+  // wire must preserve it verbatim.
+  | "core_competency"
   // Form sends a single string; GeneratePage wraps it in [style].
   | "style"
   // Form sends a single string; GeneratePage wraps it in [subject_filter].
@@ -290,10 +304,14 @@ export type FormParams = Omit<
   skip_verify: boolean;
   // Required: defaults to "html".
   image_generation_mode: "html" | "gpt_image";
-  // Form sends a single string; GeneratePage wraps it in [style] for the wire call.
-  style?: string;
-  // Form sends a single string; GeneratePage wraps it in [subject_filter] for the wire call.
-  subject_filter?: string;
+  // The controls send a single string; confirmed resolver payloads already carry arrays.
+  style?: string | string[];
+  // The controls send a single string; confirmed resolver payloads already carry arrays.
+  subject_filter?: string | string[];
+  // History records carry their seed even though the form does not edit it.
+  seed?: number;
+  // Resolver-completed hidden field carried through confirmation.
+  core_competency?: string[];
 };
 
 export interface ParamFormProps {
@@ -714,41 +732,6 @@ function DraftSummary({
   );
 }
 
-function drawQuestionSubset<T>(
-  pool: readonly T[],
-  min: number,
-  max: number,
-  previous?: readonly T[],
-): T[] {
-  const drawn = drawRandomSubset(pool, min, max);
-  if (!previous || pool.length < 2 || JSON.stringify(drawn) !== JSON.stringify(previous)) {
-    return drawn;
-  }
-  const alternative = pool.find((value) => !previous.includes(value));
-  if (alternative !== undefined) return [alternative];
-  return drawn.length > 1 ? [drawn[0]] : drawn;
-}
-
-/**
- * Shared 預抽/重抽 draw path for per-小題 學習內容.
- * Both the confirmation build (預抽) and the 重抽 handler call this function so
- * that future ICCS domain filters (#490/#492) applied to the pool flow through
- * automatically — no second sampling path to maintain.
- * Range: 1–3, matching the 預抽 block.
- */
-function drawSubqLcFromPool(pool: readonly string[]): string[] {
-  return drawRandomSubset(pool, 1, 3);
-}
-
-/**
- * Shared 預抽/重抽 draw path for per-小題 學習表現.
- * See drawSubqLcFromPool for the ICCS-compatibility rationale.
- * Range: 1–2, matching the 預抽 block.
- */
-function drawSubqLpFromPool(pool: readonly string[]): string[] {
-  return drawRandomSubset(pool, 1, 2);
-}
-
 const TEXT_HINT = "500 字";
 const OPTION_HINT = "50 字";
 const DEFAULT_CONTENT_TYPE = "含圖片";
@@ -834,6 +817,25 @@ function defaultFormFields(
 }
 
 const ICCS_DOMAIN_FILTER_SUBJECTS = new Set(["公民與社會", "跨科"]);
+const RESOLVER_FIELD_ALIASES: Record<string, string> = {
+  context: "情境",
+  set_type: "題型種類",
+  q_type: "題型",
+  content_type: "題目內容類型",
+  subject_filter: "科目",
+  content_domain: "內容領域",
+  sub_context: "情境子類別",
+  science_competency: "科學能力",
+  learning_content: "學習內容",
+  learning_performance: "學習表現",
+};
+
+function resolverDrewField(drawns: readonly string[], index: number, key: string): boolean {
+  const prefix = `per_question_params[${index}].`;
+  const canonical = RESOLVER_FIELD_ALIASES[key] ?? key;
+  return drawns.includes(`${prefix}${key}`) || drawns.includes(`${prefix}${canonical}`) ||
+    (index === 0 && (drawns.includes(key) || drawns.includes(canonical)));
+}
 
 function filterCurriculumEntriesBySubject<T extends SchemaEntry>(
   entries: readonly T[],
@@ -880,50 +882,6 @@ function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
       ? domainAdmittedEntries.has(entry)
       : !isPublicSocialStudiesCode(entry.value) || mappedCodes.has(entry.value),
   );
-}
-
-type ContentDomainResolution = {
-  value: string | undefined;
-  drawn: boolean;
-};
-
-/** Single client value-source seam for #604's resolver-backed draw path. */
-function resolveContentDomainForQuestion(
-  subject: string,
-  resolvedSubject: string | readonly string[] | undefined,
-  pinnedDomain: string | undefined,
-  domainEntries: readonly SchemaEntry[],
-  subjectLearningContentEntries: readonly SchemaEntry[],
-  previousDomain: string | undefined,
-  contentDomainMapping: Record<string, string[]> | undefined,
-): ContentDomainResolution {
-  if (subject !== "social_studies" || pinnedDomain) {
-    return { value: pinnedDomain, drawn: false };
-  }
-  const subjectValues = typeof resolvedSubject === "string"
-    ? resolvedSubject ? [resolvedSubject] : []
-    : resolvedSubject ?? [];
-  if (!subjectValues.some((value) => ICCS_DOMAIN_FILTER_SUBJECTS.has(value))) {
-    return { value: undefined, drawn: false };
-  }
-  const drawableDomains = domainEntries
-    .filter((entry) =>
-      filterLearningContentEntriesByDomain(
-        subjectLearningContentEntries,
-        subject,
-        resolvedSubject,
-        entry.value,
-        contentDomainMapping,
-      ).length > 0,
-    )
-    .map((entry) => entry.value);
-  const drawn = drawQuestionSubset(
-    drawableDomains,
-    1,
-    1,
-    previousDomain ? [previousDomain] : undefined,
-  );
-  return { value: drawn[0], drawn: drawn.length > 0 };
 }
 
 function isPublicSocialStudiesCode(code: string): boolean {
@@ -991,15 +949,11 @@ export default function ParamForm({
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
   const [pendingPerQuestionParams, setPendingPerQuestionParams] = useState<Record<string, unknown>[] | null>(null);
   const [hasPendingConfirmationEdits, setHasPendingConfirmationEdits] = useState(false);
+  const [resolverLoading, setResolverLoading] = useState(false);
+  const [resolverError, setResolverError] = useState<string | null>(null);
   // Generic gate: keyed by "${questionIndex}-${subquestionIndex}-${field}". Any truthy entry disables 確認送出.
   const [confirmInvalidFields, setConfirmInvalidFields] = useState<Map<string, true>>(new Map());
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
-  const [lpWasAutoDrawn, setLpWasAutoDrawn] = useState(false);
-  const [lcWasAutoDrawn, setLcWasAutoDrawn] = useState(false);
-  const [pendingResolvedSubquestionConfigs, setPendingResolvedSubquestionConfigs] = useState<
-    ResolvedSubQuestionConfig[][]
-  >([]);
-  const [perQuestionAutoFields, setPerQuestionAutoFields] = useState<string[][]>([]);
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
   const [models, setModels] = useState<AvailableModels | null>(null);
   const [modelsResolved, setModelsResolved] = useState(false);
@@ -1012,12 +966,14 @@ export default function ParamForm({
   const [stalePreviewIndices, setStalePreviewIndices] = useState<Set<number>>(new Set());
   // Accumulates which 題組 indices were edited since the last refetch effect captured them.
   const pendingEditedIndicesRef = useRef<Set<number>>(new Set());
-  // #444 重抽: stores the pools computed during handleSubmit so that
-  // updatePendingSubquestionLc/Lp can redraw from the same pool when the user
-  // clears a picker on the confirmation screen. Kept in refs (not state) because
-  // a pool change never needs to trigger a re-render on its own.
-  const perSubqLcPoolsRef = useRef<string[][]>([]);
-  const perSubqLpPoolsRef = useRef<string[][]>([]);
+  const resolveRequestRef = useRef<{
+    payload: Record<string, unknown>;
+    redraws: Record<string, number>;
+  } | null>(null);
+  const resolveRequestSeqRef = useRef(0);
+  const redrawsRef = useRef<Record<string, number>>({});
+  const pendingParamsRef = useRef<FormParams | null>(null);
+  const pendingPerQuestionParamsRef = useRef<Record<string, unknown>[] | null>(null);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
@@ -1347,10 +1303,15 @@ export default function ParamForm({
   useEffect(() => {
     if (!pendingParams || coreQuestionResolution !== "loading") return;
     let cancelled = false;
+    const pendingSubjectFilter = Array.isArray(pendingParams.subject_filter)
+      ? pendingParams.subject_filter
+      : pendingParams.subject_filter
+        ? [pendingParams.subject_filter]
+        : undefined;
     void planCoreQuestions({
       topic: pendingParams.topic ?? "",
       subject,
-      subject_filter: pendingParams.subject_filter ? [pendingParams.subject_filter] : undefined,
+      subject_filter: pendingSubjectFilter,
       grade: pendingParams.grade,
     }).then(({ candidates }) => {
       if (cancelled) return;
@@ -1358,7 +1319,7 @@ export default function ParamForm({
         setCoreQuestionResolution("failed");
         return;
       }
-      const selected = candidates[Math.floor(Math.random() * candidates.length)];
+      const selected = candidates[0];
       setPendingPerQuestionParams((current) =>
         current?.map((item) => ({ ...item, core_question: selected })) ?? current,
       );
@@ -1376,6 +1337,22 @@ export default function ParamForm({
           per_question_params: perQuestion ? JSON.stringify(perQuestion) : undefined,
         };
       });
+      const currentParams = pendingParamsRef.current;
+      const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
+        parsePerQuestionParams(currentParams?.per_question_params);
+      if (currentParams) {
+        const nextPerQuestionParams = currentPerQuestionParams.map((item) => ({
+          ...item,
+          core_question: selected,
+        }));
+        const nextParams = {
+          ...currentParams,
+          core_question: selected,
+          per_question_params: JSON.stringify(nextPerQuestionParams),
+        };
+        pendingParamsRef.current = nextParams;
+        pendingPerQuestionParamsRef.current = nextPerQuestionParams;
+      }
       setCoreQuestionResolution("generated");
     }).catch(() => {
       if (cancelled) return;
@@ -1885,7 +1862,8 @@ export default function ParamForm({
       subjectFilter,
       contentDomain,
       schemas?.內容領域_mapping,
-    ).map((entry) => entry.value);
+    )
+      .map((entry) => entry.value);
   }, [availableLearningContent, contentDomain, schemas, subject, subjectFilter]);
 
   const restrictCodesToIccsDomain = (codes: readonly string[]): string[] => {
@@ -1974,11 +1952,87 @@ export default function ParamForm({
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
   }
 
+  function storeResolvedResponse(
+    response: Awaited<ReturnType<typeof resolveGenerate>>,
+    preserveConfirmationEdits: boolean,
+  ) {
+    const rawPerQuestionParams = response.payload.per_question_params;
+    const perQuestionParams = rawPerQuestionParams === undefined
+      ? null
+      : normaliseResolvedPerQuestionParams(parsePerQuestionParams(rawPerQuestionParams));
+    const resolvedParams = {
+      ...response.payload,
+      ...(perQuestionParams === null
+        ? {}
+        : { per_question_params: JSON.stringify(perQuestionParams) }),
+      drawn: response.drawn,
+    } as FormParams;
+    setPendingParams(resolvedParams);
+    pendingParamsRef.current = resolvedParams;
+    setPendingPerQuestionParams(perQuestionParams);
+    pendingPerQuestionParamsRef.current = perQuestionParams;
+    setResolverLoading(false);
+    setResolverError(null);
+    setHasPendingConfirmationEdits(preserveConfirmationEdits);
+    setStalePreviewIndices(new Set());
+    pendingEditedIndicesRef.current = new Set();
+    previewRequestedRef.current = false;
+    setPromptPreviews([]);
+  }
+
+  async function resolveForConfirmation(
+    payload: Record<string, unknown>,
+    redraws: Record<string, number>,
+    preserveConfirmationEdits: boolean,
+  ) {
+    const sequence = ++resolveRequestSeqRef.current;
+    resolveRequestRef.current = { payload, redraws };
+    setResolverLoading(true);
+    setResolverError(null);
+    try {
+      const response = await resolveGenerate(payload, redraws);
+      if (sequence !== resolveRequestSeqRef.current) return;
+      const carriedDrawn = Array.isArray(payload.drawn)
+        ? payload.drawn.filter((path): path is string => typeof path === "string")
+        : [];
+      storeResolvedResponse(
+        {
+          ...response,
+          drawn: [...new Set([...carriedDrawn, ...response.drawn])],
+        },
+        preserveConfirmationEdits,
+      );
+    } catch (cause) {
+      if (sequence !== resolveRequestSeqRef.current) return;
+      setResolverLoading(false);
+      setResolverError(
+        cause instanceof Error && cause.message
+          ? cause.message
+          : t("form.confirm_resolve_error"),
+      );
+    }
+  }
+
+  function retryResolver() {
+    const request = resolveRequestRef.current;
+    if (!request || resolverLoading) return;
+    void resolveForConfirmation(
+      request.payload,
+      request.redraws,
+      pendingParamsRef.current !== null,
+    );
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     previewRequestedRef.current = false;
     setPromptPreviews([]);
-    if (grade === "") { return; }
+    setPendingParams(null);
+    pendingParamsRef.current = null;
+    setPendingPerQuestionParams(null);
+    pendingPerQuestionParamsRef.current = null;
+    setResolverError(null);
+    if (grade === "") return;
     if (!setType.trim()) {
       setValidationError(t("form.error_set_type_required"));
       return;
@@ -1987,115 +2041,22 @@ export default function ParamForm({
     const cleanPassage = passage === TEXT_HINT ? undefined : passage;
     const cleanOptions = options.filter((o) => o && o !== OPTION_HINT);
     const cleanTopic = topic.trim();
-    const effectiveContentType =
-      isCurriculumSubject
-        ? (contentType === "customized" ? customContentType.trim() : contentType)
-        : undefined;
-    if (isCurriculumSubject && !effectiveContentType) { return; }
-    const lpPoolValues = filteredLpPool ?? availableLearningPerformance.map((e) => e.value);
-    const lcPoolValues = filteredLcPool ?? availableLearningContent.map((e) => e.value);
+    const effectiveContentType = isCurriculumSubject
+      ? (contentType === "customized" ? customContentType.trim() : contentType)
+      : undefined;
+    if (isCurriculumSubject && !effectiveContentType) return;
     const selectedLearningPerformance = restrictCodesToIccsDomain(learningPerformance);
+    const lcPoolValues = filteredLcPool ?? availableLearningContent.map((entry) => entry.value);
     const selectedLearningContent = filteredLcPool === undefined
       ? restrictCodesToIccsDomain(learningContent)
       : learningContent.filter((code) => lcPoolValues.includes(code));
-    const allCurriculumSubjectValues = schemas?.科目?.map((entry) => entry.value) ?? [];
+    const historyDrawn = Array.isArray(ip.drawn)
+      ? ip.drawn.filter((path): path is string => typeof path === "string")
+      : undefined;
     const hasHistoryPerQuestionParams = historyPerQuestionParams.length === count;
-
-    // If no learning_performance selected, pre-draw randomly to match backend sampling
-    let finalLp: string[] | undefined;
-    let autoDrawn = false;
-    if (!hasHistoryPerQuestionParams && isCurriculumSubject && selectedLearningPerformance.length === 0 && lpPoolValues.length > 0) {
-      const maxDraw = subject === "math" ? 3 : 2;
-      finalLp = drawRandomSubset(lpPoolValues, 1, maxDraw);
-      autoDrawn = true;
-    } else if (isCurriculumSubject && selectedLearningPerformance.length > 0) {
-      finalLp = selectedLearningPerformance;
-    }
-
-    setLpWasAutoDrawn(autoDrawn);
-    let finalLc: string[] | undefined;
-    let lcAutoDrawn = false;
-    if (
-      !hasHistoryPerQuestionParams &&
-      (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
-      selectedLearningContent.length === 0 &&
-      lcPoolValues.length > 0
-    ) {
-      finalLc = drawRandomSubset(lcPoolValues, 1, 3);
-      lcAutoDrawn = true;
-    } else if (
-      (subject === "math" || subject === "natural_sciences" || subject === "social_studies") &&
-      selectedLearningContent.length > 0
-    ) {
-      finalLc = selectedLearningContent;
-    }
-
-    setLcWasAutoDrawn(lcAutoDrawn);
-    const initialPerSubqLpPool = selectedLearningPerformance.length > 0
-      ? selectedLearningPerformance
-      : (finalLp ?? []);
-    const initialPerSubqLcPool = selectedLearningContent.length > 0
-      ? selectedLearningContent
-      : (finalLc ?? []);
-    const shouldDrawPerSubq =
-      (subject === "social_studies" || subject === "natural_sciences") &&
-      subQuestionCount !== "";
-    const builtSubquestionAutoFields: ResolvedSubQuestionConfig[][] = [];
-    const perQuestionSubqLcPools: string[][] = [];
-    const perQuestionSubqLpPools: string[][] = [];
-
-    const effectiveSubquestionConfigsInternal: (SubQuestionConfig & {
-      _lcWasAutoDrawn?: boolean;
-      _lpWasAutoDrawn?: boolean;
-    })[] = shouldDrawPerSubq
-      ? subquestionConfigs
-          .slice(0, subQuestionCount as number)
-          .map((cfg) => {
-            const configuredLc = filteredLcPool === undefined
-              ? [...(cfg.learning_content ?? [])]
-              : (cfg.learning_content ?? []).filter((code) => lcPoolValues.includes(code));
-            const configuredLp = restrictCodesToIccsDomain(cfg.learning_performance ?? []);
-            const hasExplicitLc = configuredLc.length > 0;
-            const hasExplicitLp = configuredLp.length > 0;
-            const resolvedLc = hasExplicitLc
-              ? configuredLc
-              : initialPerSubqLcPool.length > 0
-                ? drawSubqLcFromPool(initialPerSubqLcPool)
-                : undefined;
-            const resolvedLp = hasExplicitLp
-              ? configuredLp
-              : initialPerSubqLpPool.length > 0
-                ? drawSubqLpFromPool(initialPerSubqLpPool)
-                : undefined;
-            return {
-              question_type: cfg.question_type || undefined,
-              cognitive_process: subject === "social_studies" ? cfg.cognitive_process || undefined : undefined,
-              instruction: cfg.instruction?.trim() || undefined,
-              content_type: cfg.content_type || undefined,
-              image_generation_mode: cfg.image_generation_mode || undefined,
-              question_word_limit: cfg.question_word_limit,
-              option_word_limit: cfg.option_word_limit,
-              text_word_limit: cfg.text_word_limit,
-              reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
-              learning_content: resolvedLc?.length ? resolvedLc : undefined,
-              learning_performance: resolvedLp?.length ? resolvedLp : undefined,
-              _lcWasAutoDrawn: !hasExplicitLc && !!resolvedLc?.length,
-              _lpWasAutoDrawn: !hasExplicitLp && !!resolvedLp?.length,
-            };
-          })
-      : [];
-
-    const effectiveSubquestionConfigs: SubQuestionConfig[] = effectiveSubquestionConfigsInternal.map(
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      ({ _lcWasAutoDrawn: _lc, _lpWasAutoDrawn: _lp, ...rest }) => rest,
-    );
-
-    const hasSubquestionConfig = effectiveSubquestionConfigs.some(
-      (c) => c.question_type || c.cognitive_process || c.instruction || c.content_type || c.image_generation_mode || c.question_word_limit || c.option_word_limit || c.text_word_limit || c.reporting_scale || c.learning_content?.length || c.learning_performance?.length,
-    );
     const shouldSendSubquestionConfigs =
       (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== "" && (
-        hasSubquestionConfig || effectiveSubquestionConfigs.length > 0
+        subquestionConfigs.length > 0 || subQuestionCount > 0
       );
 
     const hasHistoryCoreQuestion = hasHistoryPerQuestionParams &&
@@ -2103,9 +2064,9 @@ export default function ParamForm({
         (params) => typeof params.core_question === "string" && params.core_question.length > 0,
       );
     setCoreQuestionResolution(coreQuestion || hasHistoryCoreQuestion ? "idle" : "loading");
-    const baseParams: FormParams = {
+    const baseParams = {
       grade,
-      style: subject === "math" ? style : undefined,
+      style: subject === "math" && style ? style : undefined,
       content_type: effectiveContentType,
       context: subject === "natural_sciences" ? context.slice(0, 1) : context,
       set_type: setType,
@@ -2115,8 +2076,8 @@ export default function ParamForm({
       skip_verify: skipVerify,
       disable_reference_fewshot: disableReferenceFewshot,
       image_generation_mode: imageGenerationMode,
-      difficulty: subject !== "natural_sciences" ? (difficulty === "" ? undefined : difficulty) : undefined,
-      reporting_scale: subject === "natural_sciences" ? (reportingScale === "" ? undefined : reportingScale) : undefined,
+      difficulty: subject !== "natural_sciences" && difficulty !== "" ? difficulty : undefined,
+      reporting_scale: subject === "natural_sciences" && reportingScale !== "" ? reportingScale : undefined,
       ...(subject === "social_studies" || subject === "natural_sciences"
         ? { core_question_callback: coreQuestionCallback }
         : {}),
@@ -2132,10 +2093,7 @@ export default function ParamForm({
       passage: cleanPassage,
       text_word_limit: canUseTextWordLimit ? (textWordLimit ?? undefined) : undefined,
       options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,
-      topic:
-        isCurriculumSubject && cleanTopic
-          ? cleanTopic
-          : undefined,
+      topic: isCurriculumSubject && cleanTopic ? cleanTopic : undefined,
       core_question: coreQuestion || undefined,
       ...(subject === "social_studies" && contentDomain
         ? { content_domain: contentDomain }
@@ -2143,19 +2101,20 @@ export default function ParamForm({
       ...(subject === "social_studies" && targetSurface === "數位"
         ? { target_surface: "數位" as const }
         : {}),
-      learning_performance: finalLp,
-      sub_context: subject === "natural_sciences" ? subContext : undefined,
-      science_competency:
-        subject === "natural_sciences" && scienceCompetency.length > 0
-          ? scienceCompetency
-          : undefined,
-      learning_content:
-        finalLc,
-      sub_question_count: (subject === "social_studies" || subject === "math" || subject === "natural_sciences") && subQuestionCount !== "" ? subQuestionCount : undefined,
-      subquestion_configs:
-        shouldSendSubquestionConfigs
-          ? JSON.stringify(effectiveSubquestionConfigs)
-          : undefined,
+      learning_performance: isCurriculumSubject && selectedLearningPerformance.length > 0
+        ? selectedLearningPerformance
+        : undefined,
+      sub_context: subject === "natural_sciences" ? subContext || undefined : undefined,
+      science_competency: subject === "natural_sciences" && scienceCompetency.length > 0
+        ? scienceCompetency
+        : undefined,
+      learning_content: isCurriculumSubject && selectedLearningContent.length > 0
+        ? selectedLearningContent
+        : undefined,
+      sub_question_count: subQuestionCount !== "" ? subQuestionCount : undefined,
+      subquestion_configs: shouldSendSubquestionConfigs
+        ? JSON.stringify(subquestionConfigs.slice(0, subQuestionCount as number).map(serialisableSubquestionConfig))
+        : undefined,
       model_plan: modelPlan || undefined,
       model_execute: modelExecute || undefined,
       model_verify: modelVerify || undefined,
@@ -2164,447 +2123,34 @@ export default function ParamForm({
       effort_execute: models?.effort ? effortExecute : undefined,
       effort_verify: models?.effort ? (effortVerify || undefined) : undefined,
       effort_correct: models?.effort ? (effortCorrect || undefined) : undefined,
-    };
+      drawn: historyDrawn,
+      ...(configuredSeed !== undefined ? { seed: configuredSeed } : {}),
+    } as FormParams & { seed?: number };
+
     const requestLevelFields = new Set([
       "subject",
       "count",
       "per_question_params",
-      "predrawn_fields",
+      "drawn",
       "max_retries",
       "core_question_callback",
     ]);
-    const perQuestionBase = Object.fromEntries(
-      Object.entries(baseParams).filter(
-        ([key]) =>
-          !requestLevelFields.has(key) &&
-          !(subject === "math" && key === "text_word_limit"),
-      ),
-    );
-
-    let previousQuestionLp: string[] | undefined;
-    let previousQuestionLc: string[] | undefined;
-    let previousQuestionSubquestions: SubQuestionConfig[] | undefined;
-    let previousRandomValues: Record<string, string[] | undefined> = {};
-    const builtPerQuestionAutoFields: string[][] = [];
-    const predrawnFields: string[] = [
-      ...(autoDrawn ? ["learning_performance"] : []),
-      ...(lcAutoDrawn ? ["learning_content"] : []),
-    ];
-    const drawField = (key: string, pool: string[], max = 1): string[] | undefined => {
-      if (userChosenFields.current.has(key) || pool.length === 0) return undefined;
-      return drawQuestionSubset(pool, 1, max, previousRandomValues[key]);
-    };
-    const buildPerQuestionParams = () => Array.from({ length: count }, (_, questionIndex) => {
-      const historyQuestionParams = hasHistoryPerQuestionParams
-        ? historyPerQuestionParams[questionIndex]
-        : undefined;
-      const seedAddress = `per_question_params[${questionIndex}].seed`;
-      const resolvedSeed = historyQuestionParams?.seed !== undefined
-        ? historyQuestionParams.seed
-        : configuredSeed !== undefined
-          ? configuredSeed + questionIndex
-          : Math.floor(Math.random() * 2_147_483_648);
-      const randomStyle = subject === "math"
-        ? drawField("style", (schemas?.question_style ?? []).map((entry) => entry.value))
-        : undefined;
-      const randomContentType = drawField(
-        "content_type",
-        (schemas?.題目內容類型 ?? []).filter((entry) => entry.value !== "customized").map((entry) => entry.value),
-      );
-      const randomContext = drawField("context", (schemas?.情境 ?? []).map((entry) => entry.value));
-      const randomSetType = drawField("set_type", (schemas?.題型種類 ?? []).map((entry) => entry.value));
-      const randomQuestionType = subject !== "social_studies"
-        ? drawField("q_type", (schemas?.題型 ?? []).map((entry) => entry.value))
-        : undefined;
-      const randomSubjectFilter = subject === "social_studies"
-        ? drawField("subject_filter", (schemas?.科目 ?? []).map((entry) => entry.value))
-        : undefined;
-      const historyQuestionSubject = Array.isArray(historyQuestionParams?.subject_filter)
-        ? historyQuestionParams.subject_filter.filter(
-            (value): value is string => typeof value === "string",
-          )
-        : typeof historyQuestionParams?.subject_filter === "string"
-          ? historyQuestionParams.subject_filter
-          : undefined;
-      const resolvedQuestionSubject =
-        randomSubjectFilter ?? historyQuestionSubject ?? baseParams.subject_filter;
-      const historyQuestionContext = Array.isArray(historyQuestionParams?.context)
-        ? historyQuestionParams.context.filter(
-            (value): value is string => typeof value === "string",
-          )
-        : undefined;
-      const resolvedQuestionContext = randomContext ?? historyQuestionContext ?? baseParams.context;
-      const questionSubContextPool = filterEntriesByAdmittedParent(
-        schemas?.情境子類別 ?? [],
-        "情境",
-        resolvedQuestionContext,
-      ).map((entry) => entry.value);
-      const randomSubContext = subject === "natural_sciences"
-        ? drawField("sub_context", questionSubContextPool)
-        : undefined;
-      const randomScienceCompetency = subject === "natural_sciences"
-        ? drawField("science_competency", (schemas?.科學能力 ?? []).map((entry) => entry.value))
-        : undefined;
-      const questionLpAddress = `per_question_params[${questionIndex}].learning_performance`;
-      const questionLcAddress = `per_question_params[${questionIndex}].learning_content`;
-      const redrawQuestionLp = !historyQuestionParams && autoDrawn;
-      const redrawQuestionLc = !historyQuestionParams && lcAutoDrawn;
-      const questionLpEntries = filterCurriculumEntriesBySubject(
-        schemas?.學習表現 ?? [],
-        subject,
-        resolvedQuestionSubject,
-        allCurriculumSubjectValues,
-      );
-      const questionLcEntriesBySubject = filterCurriculumEntriesBySubject(
-        schemas?.學習內容 ?? [],
-        subject,
-        resolvedQuestionSubject,
-        allCurriculumSubjectValues,
-      );
-      const historyQuestionDomain = typeof historyQuestionParams?.content_domain === "string"
-        ? historyQuestionParams.content_domain
-        : undefined;
-      const contentDomainResolution = resolveContentDomainForQuestion(
-        subject,
-        resolvedQuestionSubject,
-        historyQuestionDomain ?? baseParams.content_domain,
-        schemas?.內容領域 ?? [],
-        questionLcEntriesBySubject,
-        previousRandomValues.content_domain?.[0],
-        schemas?.內容領域_mapping,
-      );
-      const randomContentDomain = contentDomainResolution.drawn && contentDomainResolution.value
-        ? [contentDomainResolution.value]
-        : undefined;
-      const resolvedQuestionContentDomain = contentDomainResolution.value;
-      const questionLcEntries = filterLearningContentEntriesByDomain(
-        questionLcEntriesBySubject,
-        subject,
-        resolvedQuestionSubject,
-        resolvedQuestionContentDomain,
-        schemas?.內容領域_mapping,
-      );
-      const questionLpCodes = new Set(
-        restrictCodesToIccsDomain(questionLpEntries.map((entry) => entry.value)),
-      );
-      const questionLcCodes = new Set(questionLcEntries.map((entry) => entry.value));
-      const questionLpAvailablePool = [...questionLpCodes];
-      const questionLcAvailablePool = [...questionLcCodes];
-      const questionLpSource = selectedLearningPerformance.length > 0
-        ? selectedLearningPerformance
-        : autoDrawn
-          ? questionLpAvailablePool
-          : (finalLp ?? lpPoolValues);
-      const questionLcSource = selectedLearningContent.length > 0
-        ? selectedLearningContent
-        : lcAutoDrawn
-          ? questionLcAvailablePool
-          : (finalLc ?? lcPoolValues);
-      const questionLpPool = questionLpSource.filter((code) => questionLpCodes.has(code));
-      const questionLcPool = questionLcSource.filter((code) => questionLcCodes.has(code));
-      const historyQuestionLp = Array.isArray(historyQuestionParams?.learning_performance)
-        ? restrictCodesToIccsDomain(
-            historyQuestionParams.learning_performance.filter(
-              (code): code is string => typeof code === "string",
-            ),
-          ).filter((code) => questionLpCodes.has(code))
-        : undefined;
-      const historyQuestionLc = Array.isArray(historyQuestionParams?.learning_content)
-        ? historyQuestionParams.learning_content
-            .filter((code): code is string => typeof code === "string")
-            .filter((code) => questionLcCodes.has(code))
-        : undefined;
-      const questionLp = redrawQuestionLp
-        ? drawQuestionSubset(
-            questionLpAvailablePool,
-            1,
-            subject === "math" ? 3 : 2,
-            previousQuestionLp,
-          )
-        : (historyQuestionLp ?? finalLp?.filter((code) => questionLpCodes.has(code)));
-      const questionLc = redrawQuestionLc
-        ? drawQuestionSubset(questionLcAvailablePool, 1, 3, previousQuestionLc)
-        : (historyQuestionLc ?? finalLc?.filter((code) => questionLcCodes.has(code)));
-      const questionPredrawnFields: string[] = [
-        ...(!historyQuestionParams && configuredSeed === undefined
-          ? [seedAddress]
-          : []),
-        ...(randomStyle !== undefined
-          ? [`per_question_params[${questionIndex}].style`]
-          : []),
-        ...(randomContentType !== undefined
-          ? [`per_question_params[${questionIndex}].content_type`]
-          : []),
-        ...(randomContext !== undefined
-          ? [`per_question_params[${questionIndex}].context`]
-          : []),
-        ...(randomSetType !== undefined
-          ? [`per_question_params[${questionIndex}].set_type`]
-          : []),
-        ...(randomQuestionType !== undefined
-          ? [`per_question_params[${questionIndex}].q_type`]
-          : []),
-        ...(randomSubjectFilter !== undefined
-          ? [`per_question_params[${questionIndex}].subject_filter`]
-          : []),
-        ...(contentDomainResolution.drawn
-          ? [`per_question_params[${questionIndex}].content_domain`]
-          : []),
-        ...(randomSubContext !== undefined
-          ? [`per_question_params[${questionIndex}].sub_context`]
-          : []),
-        ...(randomScienceCompetency !== undefined
-          ? [`per_question_params[${questionIndex}].science_competency`]
-          : []),
-        ...(redrawQuestionLp && questionLp?.length
-          ? [questionLpAddress]
-          : []),
-        ...(redrawQuestionLc && questionLc?.length
-          ? [questionLcAddress]
-          : []),
-      ];
-      let hasRedrawnSubquestion = false;
-      const questionSubquestionAutoFields: ResolvedSubQuestionConfig[] = [];
-      const sourceSubquestionConfigs = historyQuestionParams
-        ? parseSubquestionConfigs(historyQuestionParams.subquestion_configs)
-        : subquestionConfigs;
-      const questionSubqLcPool = selectedLearningContent.length > 0
-        ? questionLcPool
-        : (questionLc ?? questionLcPool);
-      const questionSubqLpPool = selectedLearningPerformance.length > 0
-        ? questionLpPool
-        : (questionLp ?? questionLpPool);
-      perQuestionSubqLcPools.push(questionSubqLcPool);
-      perQuestionSubqLpPools.push(questionSubqLpPool);
-      const questionSubquestionConfigs = shouldDrawPerSubq
-          ? sourceSubquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
-            const configuredLc = subject === "social_studies" && resolvedQuestionContentDomain
-              ? (cfg.learning_content ?? []).filter((code) => questionLcCodes.has(code))
-              : [...(cfg.learning_content ?? [])];
-            const configuredLp = restrictCodesToIccsDomain(cfg.learning_performance ?? []);
-            const hasExplicitLc = configuredLc.length > 0;
-            const hasExplicitLp = configuredLp.length > 0;
-            const lcPool = questionSubqLcPool;
-            const lpPool = questionSubqLpPool;
-            const lcAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_content`;
-            const lpAddress = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].learning_performance`;
-            const redrawLc = !historyQuestionParams && !hasExplicitLc;
-            const redrawLp = !historyQuestionParams && !hasExplicitLp;
-            const resolvedLc = redrawLc
-              ? lcPool.length > 0
-                ? drawQuestionSubset(
-                    lcPool,
-                    1,
-                    3,
-                    previousQuestionSubquestions?.[subquestionIndex]?.learning_content,
-                  )
-                : undefined
-              : configuredLc;
-            const resolvedLp = redrawLp
-              ? lpPool.length > 0
-                ? drawQuestionSubset(
-                    lpPool,
-                    1,
-                    2,
-                    previousQuestionSubquestions?.[subquestionIndex]?.learning_performance,
-                  )
-                : undefined
-              : configuredLp;
-            if (redrawLc && resolvedLc?.length) {
-              hasRedrawnSubquestion = true;
-              questionPredrawnFields.push(lcAddress);
-            }
-            if (redrawLp && resolvedLp?.length) {
-              hasRedrawnSubquestion = true;
-              questionPredrawnFields.push(lpAddress);
-            }
-            questionSubquestionAutoFields.push({
-              _lcWasAutoDrawn: redrawLc && !!resolvedLc?.length,
-              _lpWasAutoDrawn: redrawLp && !!resolvedLp?.length,
-            });
-            if (historyQuestionParams) {
-              return {
-                ...cfg,
-                ...(redrawLc ? { learning_content: resolvedLc } : {}),
-                ...(redrawLp ? { learning_performance: resolvedLp } : {}),
-              };
-            }
-            return {
-              question_type: cfg.question_type || undefined,
-              cognitive_process: subject === "social_studies" ? cfg.cognitive_process || undefined : undefined,
-              instruction: cfg.instruction?.trim() || undefined,
-              content_type: cfg.content_type || undefined,
-              image_generation_mode: cfg.image_generation_mode || undefined,
-              question_word_limit: cfg.question_word_limit,
-              option_word_limit: cfg.option_word_limit,
-              text_word_limit: cfg.text_word_limit,
-              reporting_scale: subject === "natural_sciences" ? cfg.reporting_scale || undefined : undefined,
-              learning_content: resolvedLc,
-              learning_performance: resolvedLp,
-            };
-          })
-        : [];
-      builtSubquestionAutoFields.push(questionSubquestionAutoFields);
-      builtPerQuestionAutoFields.push([
-        ...(questionPredrawnFields.includes(seedAddress) ? ["seed"] : []),
-        ...(randomStyle !== undefined ? ["style"] : []),
-        ...(randomContentType !== undefined ? ["content_type"] : []),
-        ...(randomContext !== undefined ? ["context"] : []),
-        ...(randomSetType !== undefined ? ["set_type"] : []),
-        ...(randomQuestionType !== undefined ? ["q_type"] : []),
-        ...(randomSubjectFilter !== undefined ? ["subject_filter"] : []),
-        ...(contentDomainResolution.drawn ? ["content_domain"] : []),
-        ...(randomSubContext !== undefined ? ["sub_context"] : []),
-        ...(randomScienceCompetency !== undefined ? ["science_competency"] : []),
-        ...(redrawQuestionLp && questionLp?.length ? ["learning_performance"] : []),
-        ...(redrawQuestionLc && questionLc?.length ? ["learning_content"] : []),
-      ]);
-      const historyQuestionRedraws = {
-        ...(randomStyle !== undefined ? { style: randomStyle } : {}),
-        ...(randomContentType !== undefined ? { content_type: randomContentType[0] } : {}),
-        ...(randomContext !== undefined ? { context: randomContext } : {}),
-        ...(randomSetType !== undefined ? { set_type: randomSetType[0] } : {}),
-        ...(randomQuestionType !== undefined ? { q_type: randomQuestionType } : {}),
-        ...(randomSubjectFilter !== undefined ? { subject_filter: randomSubjectFilter } : {}),
-        ...(randomContentDomain !== undefined ? { content_domain: randomContentDomain[0] } : {}),
-        ...(randomSubContext !== undefined ? { sub_context: randomSubContext[0] } : {}),
-        ...(randomScienceCompetency !== undefined ? { science_competency: randomScienceCompetency } : {}),
-        ...(redrawQuestionLp && questionLp?.length ? { learning_performance: questionLp } : {}),
-        ...(redrawQuestionLc && questionLc?.length ? { learning_content: questionLc } : {}),
-      };
-      const result: Record<string, unknown> = historyQuestionParams
-        ? { ...historyQuestionParams, ...historyQuestionRedraws }
-        : {
-            ...perQuestionBase,
-            seed: resolvedSeed,
-            style: randomStyle ?? (baseParams.style ? [baseParams.style] : undefined),
-            content_type: randomContentType?.[0] ?? baseParams.content_type,
-            context: randomContext ?? baseParams.context,
-            set_type: randomSetType?.[0] ?? baseParams.set_type,
-            q_type: randomQuestionType ?? baseParams.q_type,
-            subject_filter: randomSubjectFilter ?? (baseParams.subject_filter ? [baseParams.subject_filter] : undefined),
-            content_domain: contentDomainResolution.value ?? baseParams.content_domain,
-            sub_context: randomSubContext?.[0] ?? baseParams.sub_context,
-            science_competency: randomScienceCompetency ?? baseParams.science_competency,
-            difficulty: subject !== "natural_sciences" ? (baseParams.difficulty ?? "medium") : undefined,
-            model_plan: baseParams.model_plan ?? models?.defaults.plan,
-            model_execute: baseParams.model_execute ?? models?.defaults.execute,
-            // For verify/correct tiers, defaults.verify / defaults.correct are "" when unset.
-            // Substituting "" would be wrong (it means "no override"). Only apply the default
-            // when the base param is explicitly undefined (user made no selection) AND the
-            // server-configured default is actually a non-empty model id.
-            model_verify: baseParams.model_verify ?? (models?.defaults.verify || undefined),
-            model_correct: baseParams.model_correct ?? (models?.defaults.correct || undefined),
-            // For tier effort levels, "" means "inherit 出題 Effort" — never send it.
-            // Use the server-configured effort default only when it is actually non-empty.
-            effort_verify: baseParams.effort_verify ?? (models?.defaults.effort_verify || undefined),
-            effort_correct: baseParams.effort_correct ?? (models?.defaults.effort_correct || undefined),
-            learning_performance: questionLp,
-            learning_content: questionLc,
-          };
-      if (
-        (shouldSendSubquestionConfigs || !!historyQuestionParams) &&
-        questionSubquestionConfigs.length > 0 &&
-        (!historyQuestionParams || Object.keys(historyQuestionRedraws).length > 0 || hasRedrawnSubquestion)
-      ) {
-        result.subquestion_configs = JSON.stringify(questionSubquestionConfigs);
-      }
-      previousQuestionLp = questionLp;
-      previousQuestionLc = questionLc;
-      previousQuestionSubquestions = questionSubquestionConfigs;
-      previousRandomValues = {
-        style: randomStyle,
-        content_type: randomContentType,
-        context: randomContext,
-        set_type: randomSetType,
-        q_type: randomQuestionType,
-        subject_filter: randomSubjectFilter,
-        content_domain: randomContentDomain,
-        sub_context: randomSubContext,
-        science_competency: randomScienceCompetency,
-      };
-      predrawnFields.push(...questionPredrawnFields);
-      return result;
-    });
-    const perQuestionParams: Record<string, unknown>[] = hasHistoryPerQuestionParams
-      ? historyPerQuestionParams.map((params) => {
-          const hasHistoryContext = Array.isArray(params.context)
-            ? params.context.length > 0
-            : !!params.context;
-          if (subject !== "natural_sciences" || !params.sub_context || hasHistoryContext) {
-            return params;
-          }
-          const admittedContexts = schemas?.情境子類別?.find(
-            (entry) => entry.value === params.sub_context,
-          )?.admitted_by?.["情境"] ?? [];
-          return admittedContexts.length > 0
-            ? { ...params, context: admittedContexts }
-            : params;
-        })
-          : buildPerQuestionParams();
-    const redrawPools = hasHistoryPerQuestionParams
-      ? perQuestionParams.map((params) => {
-          const resolvedSubject =
-            (Array.isArray(params.subject_filter) ? params.subject_filter : undefined)
-              ?? (typeof params.subject_filter === "string" ? params.subject_filter : undefined)
-              ?? baseParams.subject_filter;
-          const lcEntries = filterCurriculumEntriesBySubject(
-            schemas?.學習內容 ?? [],
-            subject,
-            resolvedSubject,
-            allCurriculumSubjectValues,
-          );
-          const lpEntries = filterCurriculumEntriesBySubject(
-            schemas?.學習表現 ?? [],
-            subject,
-            resolvedSubject,
-            allCurriculumSubjectValues,
-          );
-          const resolvedDomain = typeof params.content_domain === "string"
-            ? params.content_domain
-            : undefined;
-          const domainLcEntries = filterLearningContentEntriesByDomain(
-            lcEntries,
-            subject,
-            resolvedSubject,
-            resolvedDomain,
-            schemas?.內容領域_mapping,
-          );
-          return {
-            lc: domainLcEntries.map((entry) => entry.value),
-            lp: restrictCodesToIccsDomain(lpEntries.map((entry) => entry.value)),
-          };
-        })
-      : perQuestionSubqLcPools.map((lc, index) => ({
-          lc,
-          lp: perQuestionSubqLpPools[index] ?? [],
-        }));
-    // #444: persist each 題組's pool so 重抽 uses the same subject-resolved source.
-    perSubqLcPoolsRef.current = redrawPools.map((pool) => pool.lc);
-    perSubqLpPoolsRef.current = redrawPools.map((pool) => pool.lp);
-    const usingHistoryPerQuestionParams = hasHistoryPerQuestionParams;
-    setPendingPerQuestionParams(perQuestionParams);
-    setHasPendingConfirmationEdits(false);
-    // #446: reset stale state when the confirmation screen is (re-)opened
-    setStalePreviewIndices(new Set());
-    pendingEditedIndicesRef.current = new Set();
-    setPendingResolvedSubquestionConfigs(
-      usingHistoryPerQuestionParams
-        ? perQuestionParams.map((params) =>
-            parseSubquestionConfigs(params.subquestion_configs).map(() => ({})),
-          )
-        : builtSubquestionAutoFields,
-    );
-    setPerQuestionAutoFields(
-      usingHistoryPerQuestionParams
-        ? perQuestionParams.map(() => [])
-        : builtPerQuestionAutoFields,
-    );
-    setPendingParams({
+    const perQuestionParams = hasHistoryPerQuestionParams
+      ? historyPerQuestionParams.map((params) => Object.fromEntries(
+          Object.entries(params).filter(([key]) => !requestLevelFields.has(key)),
+        ))
+      : Array.from({ length: count }, () => ({}));
+    const partialParams = {
       ...baseParams,
-      predrawn_fields: JSON.stringify(usingHistoryPerQuestionParams ? [] : predrawnFields),
       per_question_params: JSON.stringify(perQuestionParams),
-    });
+    } as FormParams;
+    setHasPendingConfirmationEdits(false);
+    redrawsRef.current = {};
+    void resolveForConfirmation(
+      toGenerateParams(subject, partialParams) as unknown as Record<string, unknown>,
+      {},
+      false,
+    );
   }
 
   function handleConfirmSend() {
@@ -2622,6 +2168,10 @@ export default function ParamForm({
       draftSaveTimeoutRef.current = null;
     }
     if (userId) clearDraft(userId);
+    resolveRequestSeqRef.current += 1;
+    resolveRequestRef.current = null;
+    pendingParamsRef.current = null;
+    pendingPerQuestionParamsRef.current = null;
     setPendingParams(null);
     setPendingPerQuestionParams(null);
     setHasPendingConfirmationEdits(false);
@@ -2635,27 +2185,39 @@ export default function ParamForm({
     subquestionIndex: number,
     patch: Partial<SubQuestionConfig>,
   ) {
-    // #446: record which 題組 index was edited for per-題組 stale scoping
+    const currentParams = pendingParamsRef.current ?? pendingParams;
+    const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
+      parsePerQuestionParams(currentParams?.per_question_params);
+    const questionParams = currentPerQuestionParams[questionIndex];
+    if (!currentParams || !questionParams) return;
+    const configs = parseSubquestionConfigs(questionParams.subquestion_configs);
+    if (!configs[subquestionIndex]) return;
+    const nextConfigs = configs.map((config, index) =>
+      index === subquestionIndex
+        ? serialisableSubquestionConfig({ ...config, ...patch })
+        : config,
+    );
+    const nextPerQuestionParams = currentPerQuestionParams.map((params, index) =>
+      index === questionIndex
+        ? { ...params, subquestion_configs: JSON.stringify(nextConfigs) }
+        : params,
+    );
+    const changedPaths = Object.keys(patch).map(
+      (field) => `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${field}`,
+    );
+    const nextDrawn = (Array.isArray(currentParams.drawn) ? currentParams.drawn : [])
+      .filter((path) => !changedPaths.includes(path));
+    const nextParams = {
+      ...currentParams,
+      drawn: nextDrawn,
+      per_question_params: JSON.stringify(nextPerQuestionParams),
+    } as FormParams;
+    pendingParamsRef.current = nextParams;
+    pendingPerQuestionParamsRef.current = nextPerQuestionParams;
     pendingEditedIndicesRef.current.add(questionIndex);
     setHasPendingConfirmationEdits(true);
-    setPendingPerQuestionParams((current) => {
-      const perQuestionParams = current ?? parsePerQuestionParams(pendingParams?.per_question_params);
-      const questionParams = perQuestionParams[questionIndex];
-      if (!questionParams) return current;
-      const configs = parseSubquestionConfigs(questionParams.subquestion_configs);
-      if (!configs[subquestionIndex]) return current;
-      const nextConfigs = configs.map((config, index) =>
-        index === subquestionIndex
-          ? serialisableSubquestionConfig({ ...config, ...patch })
-          : config,
-      );
-      const nextPerQuestionParams = perQuestionParams.map((params, index) =>
-        index === questionIndex
-          ? { ...params, subquestion_configs: JSON.stringify(nextConfigs) }
-          : params,
-      );
-      return nextPerQuestionParams;
-    });
+    setPendingParams(nextParams);
+    setPendingPerQuestionParams(nextPerQuestionParams);
   }
 
   function updatePendingSubquestionInstruction(
@@ -2763,53 +2325,69 @@ export default function ParamForm({
     });
   }
 
+  function resubmitSubquestionResolution(
+    questionIndex: number,
+    subquestionIndex: number,
+    field: "learning_content" | "learning_performance",
+  ) {
+    const currentParams = pendingParamsRef.current ?? pendingParams;
+    const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
+      parsePerQuestionParams(currentParams?.per_question_params);
+    const questionParams = currentPerQuestionParams[questionIndex];
+    if (!currentParams || !questionParams) return;
+    const configs = parseSubquestionConfigs(questionParams.subquestion_configs);
+    if (!configs[subquestionIndex]) return;
+
+    const nextConfigs = configs.map((config, index) => {
+      if (index !== subquestionIndex) return config;
+      const nextConfig = { ...config };
+      delete nextConfig[field];
+      return serialisableSubquestionConfig(nextConfig);
+    });
+    const nextPerQuestionParams = currentPerQuestionParams.map((params, index) =>
+      index === questionIndex
+        ? { ...params, subquestion_configs: JSON.stringify(nextConfigs) }
+        : params,
+    );
+    const path =
+      `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${field}`;
+    const nextDrawn = (Array.isArray(currentParams.drawn) ? currentParams.drawn : [])
+      .filter((drawnPath) => drawnPath !== path);
+    const nextParams = {
+      ...currentParams,
+      drawn: nextDrawn,
+      per_question_params: JSON.stringify(nextPerQuestionParams),
+    } as FormParams;
+    const nextRedraws = {
+      ...redrawsRef.current,
+      [path]: (redrawsRef.current[path] ?? 0) + 1,
+    };
+    pendingParamsRef.current = nextParams;
+    pendingPerQuestionParamsRef.current = nextPerQuestionParams;
+    pendingEditedIndicesRef.current.add(questionIndex);
+    redrawsRef.current = nextRedraws;
+    setHasPendingConfirmationEdits(true);
+    setPendingParams(nextParams);
+    setPendingPerQuestionParams(nextPerQuestionParams);
+    void resolveForConfirmation(
+      toGenerateParams(subject, nextParams) as unknown as Record<string, unknown>,
+      nextRedraws,
+      true,
+    );
+  }
+
   function updatePendingSubquestionLc(
     questionIndex: number,
     subquestionIndex: number,
     lc: string[],
   ) {
-    if (lc.length === 0) {
-      // #444 重抽: clearing the picker triggers a fresh draw from the same
-      // 題組-level pool used by 預抽, via the shared drawSubqLcFromPool helper.
-      // This keeps the ICCS domain filter (#490/#492) flowing through automatically
-      // rather than sampling independently with a second code path.
-      // If the pool is genuinely empty, drawSubqLcFromPool returns [] and we leave
-      // the field undefined — the backend's "or global pool" fallback still applies.
-      const pool = perSubqLcPoolsRef.current[questionIndex] ?? [];
-      const drawn = pool.length > 0 ? drawSubqLcFromPool(pool) : [];
-      updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
-        learning_content: drawn.length > 0 ? drawn : undefined,
-      });
-      // Set the auto-drawn flag back to true for this field/小題 only — the amber
-      // 隨機 badge depends on it, and #443's explicit-selection path clears it.
-      setPendingResolvedSubquestionConfigs((current) => {
-        if (!current[questionIndex]?.[subquestionIndex]) return current;
-        const nextQuestion = [...current[questionIndex]];
-        nextQuestion[subquestionIndex] = {
-          ...nextQuestion[subquestionIndex],
-          _lcWasAutoDrawn: drawn.length > 0,
-        };
-        const next = [...current];
-        next[questionIndex] = nextQuestion;
-        return next;
-      });
-    } else {
-      // Explicit user selection: store the codes and clear the auto-drawn flag.
+    if (lc.length > 0) {
       updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
         learning_content: lc,
       });
-      setPendingResolvedSubquestionConfigs((current) => {
-        if (!current[questionIndex]?.[subquestionIndex]) return current;
-        const nextQuestion = [...current[questionIndex]];
-        nextQuestion[subquestionIndex] = {
-          ...nextQuestion[subquestionIndex],
-          _lcWasAutoDrawn: false,
-        };
-        const next = [...current];
-        next[questionIndex] = nextQuestion;
-        return next;
-      });
+      return;
     }
+    resubmitSubquestionResolution(questionIndex, subquestionIndex, "learning_content");
   }
 
   // #446: retry handler — re-fetches using the CURRENT live configuration, not
@@ -2847,48 +2425,18 @@ export default function ParamForm({
     subquestionIndex: number,
     lp: string[],
   ) {
-    if (lp.length === 0) {
-      // #444 重抽: clearing the picker triggers a fresh draw from the same
-      // 題組-level pool used by 預抽, via the shared drawSubqLpFromPool helper.
-      // If the pool is genuinely empty, drawSubqLpFromPool returns [] and the field
-      // is left undefined — the backend's "or global pool" fallback still applies.
-      const pool = perSubqLpPoolsRef.current[questionIndex] ?? [];
-      const drawn = pool.length > 0 ? drawSubqLpFromPool(pool) : [];
-      updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
-        learning_performance: drawn.length > 0 ? drawn : undefined,
-      });
-      setPendingResolvedSubquestionConfigs((current) => {
-        if (!current[questionIndex]?.[subquestionIndex]) return current;
-        const nextQuestion = [...current[questionIndex]];
-        nextQuestion[subquestionIndex] = {
-          ...nextQuestion[subquestionIndex],
-          _lpWasAutoDrawn: drawn.length > 0,
-        };
-        const next = [...current];
-        next[questionIndex] = nextQuestion;
-        return next;
-      });
-    } else {
-      // Explicit user selection: store the codes and clear the auto-drawn flag.
+    if (lp.length > 0) {
       updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
         learning_performance: lp,
       });
-      setPendingResolvedSubquestionConfigs((current) => {
-        if (!current[questionIndex]?.[subquestionIndex]) return current;
-        const nextQuestion = [...current[questionIndex]];
-        nextQuestion[subquestionIndex] = {
-          ...nextQuestion[subquestionIndex],
-          _lpWasAutoDrawn: false,
-        };
-        const next = [...current];
-        next[questionIndex] = nextQuestion;
-        return next;
-      });
+      return;
     }
+    resubmitSubquestionResolution(questionIndex, subquestionIndex, "learning_performance");
   }
 
   if (pendingParams) {
     const p = pendingParams;
+    const drawnPaths = Array.isArray(p.drawn) ? p.drawn : [];
     const resolvedPerQuestionParams = pendingPerQuestionParams ?? (p.per_question_params
       ? JSON.parse(p.per_question_params) as Record<string, unknown>[]
       : []);
@@ -2896,6 +2444,9 @@ export default function ParamForm({
     const allLcEntries = schemas?.學習內容 ?? [];
     const lcEntryByCode = new Map(allLcEntries.map((e) => [e.value, e]));
     const lpEntryByCode = new Map(allLpEntries.map((e) => [e.value, e]));
+    const subjectFilterDisplay = Array.isArray(p.subject_filter)
+      ? p.subject_filter.join(", ")
+      : p.subject_filter;
 
     const allSubjects = ["math", "social_studies", "natural_sciences"];
     const rows = ([
@@ -2911,7 +2462,7 @@ export default function ParamForm({
       { label: t("form.confirm_grade"), value: String(p.grade), subjects: allSubjects },
       { label: t("form.confirm_difficulty"), value: p.difficulty, subjects: ["math", "social_studies"], kind: "defaulted", defaultValue: "medium" },
       { label: t("form.confirm_reporting_scale"), value: p.reporting_scale, subjects: ["natural_sciences"], kind: "defaulted", defaultValue: t("form.confirm_random") },
-      { label: t("form.confirm_subject_filter"), value: p.subject_filter, subjects: ["math", "social_studies"], kind: subject === "social_studies" ? "sampled" : "absent" },
+      { label: t("form.confirm_subject_filter"), value: subjectFilterDisplay, subjects: ["math", "social_studies"], kind: subject === "social_studies" ? "sampled" : "absent" },
       { label: t("form.confirm_content_domain"), value: p.content_domain, subjects: ["social_studies"] },
       { label: t("form.confirm_target_surface"), value: p.target_surface ?? "紙本", subjects: ["social_studies"] },
       { label: t("form.confirm_count"), value: String(p.count), subjects: allSubjects },
@@ -2975,6 +2526,24 @@ export default function ParamForm({
           <h2 className="text-base font-semibold">{t("form.confirm_title")}</h2>
           <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
         </div>
+        {resolverLoading && (
+          <p role="status" aria-live="polite" className="text-sm text-amber-700">
+            {t("form.confirm_resolve_loading")}
+          </p>
+        )}
+        {resolverError && (
+          <div role="alert" className="flex flex-wrap items-center gap-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            <span>{t("form.confirm_resolve_error")} {resolverError}</span>
+            <button
+              type="button"
+              onClick={retryResolver}
+              disabled={resolverLoading}
+              className="rounded border border-red-300 bg-white px-2 py-1 font-medium hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t("form.confirm_resolve_retry")}
+            </button>
+          </div>
+        )}
         <section role="region" aria-label={t("form.confirm_shared_heading")}>
           <h3 className="mb-3 font-semibold text-gray-800">{t("form.confirm_shared_heading")}</h3>
           <dl className="divide-y rounded-lg border bg-gray-50">
@@ -2995,27 +2564,72 @@ export default function ParamForm({
         <div className="space-y-4">
           {resolvedPerQuestionParams.map((questionParams, index) => {
             const heading = t("form.confirm_question_block").replace("{n}", String(index + 1));
-            const questionLpCodes = Array.isArray(questionParams.learning_performance)
-              ? questionParams.learning_performance.filter((code): code is string => typeof code === "string")
+            const questionLpValues = Array.isArray(questionParams.learning_performance) &&
+              questionParams.learning_performance.length > 0
+              ? questionParams.learning_performance
+              : index === 0
+                ? p.learning_performance
+                : undefined;
+            const questionLcValues = Array.isArray(questionParams.learning_content) &&
+              questionParams.learning_content.length > 0
+              ? questionParams.learning_content
+              : index === 0
+                ? p.learning_content
+                : undefined;
+            const questionLpCodes = Array.isArray(questionLpValues)
+              ? questionLpValues.filter((code): code is string => typeof code === "string")
               : [];
-            const questionLcCodes = Array.isArray(questionParams.learning_content)
-              ? questionParams.learning_content.filter((code): code is string => typeof code === "string")
+            const questionLcCodes = Array.isArray(questionLcValues)
+              ? questionLcValues.filter((code): code is string => typeof code === "string")
               : [];
-            const questionLpDisplayEntries = allLpEntries.filter((entry) => questionLpCodes.includes(entry.value));
-            const questionLcDisplayEntries = allLcEntries.filter((entry) => questionLcCodes.includes(entry.value));
+            const resolvedQuestionSubject = Array.isArray(questionParams.subject_filter)
+              ? questionParams.subject_filter.filter((value): value is string => typeof value === "string")
+              : typeof questionParams.subject_filter === "string"
+                ? questionParams.subject_filter
+                : p.subject_filter;
+            const allCurriculumSubjectValues = schemas?.科目?.map((entry) => entry.value) ?? [];
+            const questionLpEntriesBySubject = filterCurriculumEntriesBySubject(
+              allLpEntries,
+              subject,
+              resolvedQuestionSubject,
+              allCurriculumSubjectValues,
+            );
+            const questionLcEntriesBySubject = filterCurriculumEntriesBySubject(
+              allLcEntries,
+              subject,
+              resolvedQuestionSubject,
+              allCurriculumSubjectValues,
+            );
+            const questionContentDomain = typeof questionParams.content_domain === "string"
+              ? questionParams.content_domain
+              : undefined;
+            const questionLpEntries = filterLearningContentEntriesByDomain(
+              questionLpEntriesBySubject,
+              subject,
+              resolvedQuestionSubject,
+              questionContentDomain,
+              schemas?.內容領域_mapping,
+            );
+            const questionLcEntries = filterLearningContentEntriesByDomain(
+              questionLcEntriesBySubject,
+              subject,
+              resolvedQuestionSubject,
+              questionContentDomain,
+              schemas?.內容領域_mapping,
+            );
+            const questionLpDisplayEntries = questionLpEntries.filter((entry) => questionLpCodes.includes(entry.value));
+            const questionLcDisplayEntries = questionLcEntries.filter((entry) => questionLcCodes.includes(entry.value));
             const questionSubquestionConfigs = parseSubquestionConfigs(
               questionParams.subquestion_configs,
-            ).map((config, subquestionIndex): ResolvedSubQuestionConfig => ({
-              ...config,
-              _lcWasAutoDrawn: pendingResolvedSubquestionConfigs[index]?.[subquestionIndex]?._lcWasAutoDrawn,
-              _lpWasAutoDrawn: pendingResolvedSubquestionConfigs[index]?.[subquestionIndex]?._lpWasAutoDrawn,
-            }));
+            ) as ResolvedSubQuestionConfig[];
+            const questionLpWasDrawn = resolverDrewField(drawnPaths, index, "learning_performance");
+            const questionLcWasDrawn = resolverDrewField(drawnPaths, index, "learning_content");
             const questionLpHeading = t(
-              lpWasAutoDrawn ? "form.confirm_lp_random_pool" : "form.confirm_lp_selected",
+              questionLpWasDrawn ? "form.confirm_lp_random_pool" : "form.confirm_lp_selected",
             )
               .replace("{n}", String(questionLpDisplayEntries.length));
             const questionLcHeading = t(
-              lcWasAutoDrawn ? "form.confirm_lc_random_pool" : "form.confirm_lc_selected",
+              questionLcWasDrawn ? "form.confirm_lc_random_pool" : "form.confirm_lc_selected",
             )
               .replace("{n}", String(questionLcDisplayEntries.length));
             const textGeneratorPreview = promptPreviews.find(
@@ -3060,7 +2674,7 @@ export default function ParamForm({
                         : value === undefined
                           ? undefined
                           : String(value);
-                      const isRandom = perQuestionAutoFields[index]?.includes(key);
+                      const isRandom = resolverDrewField(drawnPaths, index, key);
                       const isPredrawnSeed = key === "seed" && isRandom;
                       return (
                         <div key={key} className="flex gap-3 text-sm">
@@ -3085,7 +2699,7 @@ export default function ParamForm({
                           <span className="italic text-gray-400">{t("form.confirm_not_filled")}</span>
                         ) : (
                           <div className="space-y-1">
-                            <p className={`mb-1.5 text-xs font-medium ${lpWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>{questionLpHeading}</p>
+                            <p className={`mb-1.5 text-xs font-medium ${questionLpWasDrawn ? "text-amber-700" : "text-green-700"}`}>{questionLpHeading}</p>
                             <ul className="space-y-1">
                               {questionLpDisplayEntries.map((entry) => (
                                 <li key={entry.value} className="flex gap-2 text-sm">
@@ -3107,7 +2721,7 @@ export default function ParamForm({
                           </span>
                         ) : (
                           <div className="space-y-1">
-                            <p className={`mb-1.5 text-xs font-medium ${lcWasAutoDrawn ? "text-amber-700" : "text-green-700"}`}>{questionLcHeading}</p>
+                            <p className={`mb-1.5 text-xs font-medium ${questionLcWasDrawn ? "text-amber-700" : "text-green-700"}`}>{questionLcHeading}</p>
                             <ul className="space-y-1">
                               {questionLcDisplayEntries.map((entry) => (
                                 <li key={entry.value} className="flex gap-2 text-sm">
@@ -3127,15 +2741,15 @@ export default function ParamForm({
                     <SubquestionConfigCards
                       configs={questionSubquestionConfigs}
                       subject={subject}
-                      contentDomain={typeof questionParams.content_domain === "string" ? questionParams.content_domain : undefined}
+                      questionIndex={index}
+                      drawnPaths={drawnPaths}
+                      contentDomain={questionContentDomain}
                       questionTypes={availableQuestionTypes}
                       contentTypes={schemas?.題目內容類型 ?? []}
                       lcEntryByCode={lcEntryByCode}
                       lpEntryByCode={lpEntryByCode}
-                      availableLc={allLcEntries}
-                      availableLp={allLpEntries}
-                      filteredLcPool={filteredLcPool}
-                      filteredLpPool={filteredLpPool}
+                      availableLc={questionLcEntries}
+                      availableLp={questionLpEntries}
                       onInstructionChange={(subquestionIndex, instruction) =>
                         updatePendingSubquestionInstruction(index, subquestionIndex, instruction)
                       }
@@ -3234,7 +2848,7 @@ export default function ParamForm({
           <button
             type="button"
             onClick={handleConfirmSend}
-            disabled={disabled || confirmInvalidFields.size > 0}
+            disabled={disabled || resolverLoading || resolverError !== null || confirmInvalidFields.size > 0}
             className="inline-flex items-center gap-2 rounded bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("form.btn_confirm_send")}
@@ -3243,10 +2857,16 @@ export default function ParamForm({
             <button
               type="button"
               onClick={() => {
+                resolveRequestSeqRef.current += 1;
+                resolveRequestRef.current = null;
+                pendingParamsRef.current = null;
+                pendingPerQuestionParamsRef.current = null;
                 setPendingParams(null);
                 setPendingPerQuestionParams(null);
                 setHasPendingConfirmationEdits(false);
                 setConfirmInvalidFields(new Map());
+                setResolverLoading(false);
+                setResolverError(null);
                 // #446: clear stale state when navigating back to the form
                 setStalePreviewIndices(new Set());
               }}
@@ -3383,6 +3003,24 @@ export default function ParamForm({
       {validationError && (
         <div role="alert" className="mb-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
           {validationError}
+        </div>
+      )}
+      {resolverLoading && (
+        <p role="status" aria-live="polite" className="text-sm text-amber-700">
+          {t("form.confirm_resolve_loading")}
+        </p>
+      )}
+      {resolverError && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+          <span>{t("form.confirm_resolve_error")} {resolverError}</span>
+          <button
+            type="button"
+            onClick={retryResolver}
+            disabled={resolverLoading}
+            className="rounded border border-red-300 bg-white px-2 py-1 font-medium hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {t("form.confirm_resolve_retry")}
+          </button>
         </div>
       )}
       {pinRuleViolations.length > 0 && (
@@ -4285,7 +3923,7 @@ export default function ParamForm({
 
       <button
         type="submit"
-        disabled={disabled}
+        disabled={disabled || resolverLoading}
         className="inline-flex w-full items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
         {disabled && (

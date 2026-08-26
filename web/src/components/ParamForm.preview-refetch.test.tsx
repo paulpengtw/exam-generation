@@ -15,12 +15,14 @@ const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
 const previewGenerateMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: planCoreQuestionsMock,
   previewGenerate: previewGenerateMock,
+  resolveGenerate: resolveGenerateMock,
 }));
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (state: { lang: string }) => unknown) => selector({ lang: "zh-TW" }),
@@ -50,6 +52,32 @@ function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   const promise = new Promise<T>((r) => { resolve = r; });
   return { promise, resolve };
+}
+
+function resolveConfirmationPayload(payload: Record<string, unknown>) {
+  const rawRows = payload.per_question_params;
+  const sourceRows = typeof rawRows === "string"
+    ? JSON.parse(rawRows) as Record<string, unknown>[]
+    : [];
+  const base = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => ![
+      "subject", "count", "per_question_params", "drawn", "redraws",
+    ].includes(key)),
+  );
+  const seed = typeof payload.seed === "number" ? payload.seed : 900;
+  const rows = sourceRows.map((row, index) => ({
+    ...base,
+    ...row,
+    seed: row.seed ?? seed + index,
+  }));
+  return {
+    payload: {
+      ...payload,
+      ...(typeof payload.seed === "number" ? {} : { seed }),
+      per_question_params: JSON.stringify(rows),
+    },
+    drawn: [],
+  };
 }
 
 // Open the confirmation screen for a social_studies form that has 3 subquestion cards.
@@ -84,6 +112,8 @@ describe("ParamForm 確認頁修改 preview re-fetch (#445)", () => {
     getAvailableModelsMock.mockResolvedValue({ allowed: [], defaults: { plan: "", execute: "" } });
     planCoreQuestionsMock.mockResolvedValue({ candidates: ["候選核心問題"] });
     previewGenerateMock.mockResolvedValue({ prompts: [] });
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) =>
+      resolveConfirmationPayload(payload));
   });
 
   afterEach(() => {
@@ -233,6 +263,8 @@ describe("ParamForm 確認頁修改 preview fetch-failure stale badge + retry (#
     getAvailableModelsMock.mockResolvedValue({ allowed: [], defaults: { plan: "", execute: "" } });
     planCoreQuestionsMock.mockResolvedValue({ candidates: ["候選核心問題"] });
     previewGenerateMock.mockResolvedValue({ prompts: [] });
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) =>
+      resolveConfirmationPayload(payload));
   });
 
   afterEach(() => {

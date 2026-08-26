@@ -4,11 +4,21 @@ import type { FormParams } from "../components/ParamForm";
 export function toGenerateParams(subject: string, params: FormParams): GenerateParams {
   const mathHasUserAuthoredPassage =
     subject === "math" && typeof params.passage === "string" && params.passage.trim() !== "";
+  const styles = Array.isArray(params.style)
+    ? params.style
+    : params.style
+      ? [params.style]
+      : [];
+  const subjectFilters = Array.isArray(params.subject_filter)
+    ? params.subject_filter
+    : params.subject_filter
+      ? [params.subject_filter]
+      : [];
 
   return {
     subject,
     grade: params.grade,
-    style: subject === "math" && params.style ? [params.style] : [],
+    style: subject === "math" ? styles : [],
     content_type:
       subject === "social_studies" || subject === "math" || subject === "natural_sciences"
         ? params.content_type
@@ -34,7 +44,7 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
         : undefined,
     subject_filter:
       subject === "social_studies" || subject === "math"
-        ? (params.subject_filter ? [params.subject_filter] : undefined)
+        ? (subjectFilters.length ? subjectFilters : undefined)
         : undefined,
     core_competency:
       subject === "math" || subject === "social_studies"
@@ -49,7 +59,7 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
     science_competency: subject === "natural_sciences" ? params.science_competency : undefined,
     learning_performance: params.learning_performance,
     learning_content:
-      subject === "social_studies" || subject === "natural_sciences"
+      subject === "social_studies" || subject === "math" || subject === "natural_sciences"
         ? params.learning_content
         : undefined,
     sub_question_count:
@@ -61,7 +71,8 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
         ? params.subquestion_configs
         : undefined,
     per_question_params: params.per_question_params,
-    predrawn_fields: params.predrawn_fields,
+    drawn: params.drawn,
+    seed: params.seed,
     model_plan: params.model_plan,
     model_execute: params.model_execute,
     model_verify: params.model_verify,

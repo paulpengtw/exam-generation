@@ -243,13 +243,13 @@ def test_omitting_per_question_params_preserves_sampled_params_bytes(
 
 
 @pytest.mark.parametrize("subject", ["math", "social_studies", "natural_sciences"])
-def test_predrawn_metadata_preserves_seed_pinned_sampling_bytes(subject: str) -> None:
+def test_drawn_metadata_preserves_seed_pinned_sampling_bytes(subject: str) -> None:
     baseline = GenerateParams(subject=subject, seed=184, coverage_mode="random")
     with_metadata = GenerateParams(
         subject=subject,
         seed=184,
         coverage_mode="random",
-        predrawn_fields='["learning_content", "per_question_params[0].seed"]',
+        drawn=["learning_content", "per_question_params[0].seed"],
     )
 
     baseline_sampled = _sample(baseline, 0, None)

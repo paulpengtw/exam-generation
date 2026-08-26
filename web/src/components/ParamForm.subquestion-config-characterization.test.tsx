@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
   previewGenerate: vi.fn(async () => ({ prompts: [] })),
+  resolveGenerate: resolveGenerateMock,
 }));
 
 vi.mock("../i18n/useT", () => ({
@@ -134,6 +136,7 @@ describe("ParamForm 子題設定 rows characterization", () => {
     getSchemasMock.mockImplementation(async (subject: string) =>
       subject === "natural_sciences" ? NATURAL_SCIENCES_SCHEMA : SOCIAL_SCHEMA,
     );
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) => ({ payload, drawn: [] }));
   });
 
   it.each([
@@ -221,6 +224,27 @@ describe("ParamForm 子題設定 rows characterization", () => {
 
   it("searches the full subject-filtered curriculum pools and submits empty slots via the global fallback while preserving explicit selections", async () => {
     getSchemasMock.mockResolvedValue(CURRICULUM_SOCIAL_SCHEMA);
+    resolveGenerateMock.mockResolvedValueOnce({
+      payload: {
+        subject: "social_studies",
+        grade: 8,
+        count: 1,
+        subject_filter: ["歷史"],
+        per_question_params: JSON.stringify([{
+          subquestion_configs: JSON.stringify([
+            { learning_content: ["歷Ka-Ⅳ-2"], learning_performance: ["社1a-Ⅳ-2"] },
+            { learning_content: ["歷Ka-Ⅳ-1"], learning_performance: ["社1a-Ⅳ-1"] },
+            { learning_content: ["歷Ka-Ⅳ-1"], learning_performance: ["社1a-Ⅳ-1"] },
+          ]),
+        }]),
+      },
+      drawn: [
+        "per_question_params[0].subquestion_configs[1].learning_content",
+        "per_question_params[0].subquestion_configs[1].learning_performance",
+        "per_question_params[0].subquestion_configs[2].learning_content",
+        "per_question_params[0].subquestion_configs[2].learning_performance",
+      ],
+    });
     const onSubmit = vi.fn();
     render(
       <ParamForm
@@ -255,8 +279,11 @@ describe("ParamForm 子題設定 rows characterization", () => {
     fireEvent.click(await screen.findByText("form.btn_confirm_send"));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
 
-    const payload = onSubmit.mock.calls[0][0] as { subquestion_configs: string };
-    const submittedRows = JSON.parse(payload.subquestion_configs) as Array<{
+    const payload = onSubmit.mock.calls[0][0] as { per_question_params: string };
+    const submittedQuestions = JSON.parse(payload.per_question_params) as Array<{
+      subquestion_configs: string;
+    }>;
+    const submittedRows = JSON.parse(submittedQuestions[0].subquestion_configs) as Array<{
       learning_content?: string[];
       learning_performance?: string[];
     }>;

@@ -81,18 +81,18 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (INAPPLICABLE, "expanded per-worker at service level; each override field classified"),
         _NS: (INAPPLICABLE, "expanded per-worker at service level; each override field classified"),
     },
-    "predrawn_fields": {
+    "drawn": {
         _MA: (
             INAPPLICABLE,
-            "client provenance metadata is persisted at request level and ignored by generation",
+            "resolver provenance metadata is persisted at request level and ignored by generation",
         ),
         _SS: (
             INAPPLICABLE,
-            "client provenance metadata is persisted at request level and ignored by generation",
+            "resolver provenance metadata is persisted at request level and ignored by generation",
         ),
         _NS: (
             INAPPLICABLE,
-            "client provenance metadata is persisted at request level and ignored by generation",
+            "resolver provenance metadata is persisted at request level and ignored by generation",
         ),
     },
     # ── Model / effort fields — forwarded via client_config for all subjects ──

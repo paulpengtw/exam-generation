@@ -32,18 +32,21 @@ Supplying 內容領域 is a pin and does not consume its keyed sampler stream; a
 When a batch generates `count > 1` questions, each subject's batch loop accumulates a `list[PriorScope]` of already-accepted siblings (`{核心問題 | 出題概念, 學習內容 codes}`) and passes it to the next question's user prompt via a new optional `prior_scopes` keyword on `build_user_prompt` (math) / `build_text_user_prompt` (社會/自然). The LLM sees a short `## 已生成題目（請避免相似範圍）` block listing up to the 10 most recent siblings so it varies angle/題材 even when learning-content codes overlap. Empty list → section omitted → count=1 prompts are byte-identical to today. Extractor helpers and formatter live in `src/common/batch_dedup.py`. The server's `generate_question_stream` shares one `threading.Lock`-guarded list across concurrent workers — best-effort dedup consistent with the concurrent worker design. Embedding-similarity retry (Phase 2) is out of scope.
 
 ### Web confirmation dialog pre-draw
-The web form always shows both 學習內容 and 學習表現 in the confirmation step before submission. If the user made no manual selection, the frontend pre-draws a random subset (1–3 items for 學習內容, 1–2 for 學習表現) from the available pool before displaying the confirmation screen. This happens regardless of 出題模式: 出題模式 never suppresses or alters the 預抽. What is shown is exactly what will be sent to the backend — no further randomness happens on the backend for those fields when they are present.
+When the user submits the web form, it sends the partial payload (including
+pins, history rows, and `redraws`) to `POST /api/generate/resolve`. The
+confirmation screen is populated only from the resolver's completed
+`{payload, drawn}` response; the browser performs no random draw and does not
+filter a 全域池 for drawing. `drawn` paths drive 隨機 badges and are carried in
+the final generation payload so they are persisted in `params_json`.
 
-For 社會領域 and 自然科學 requests that specify `sub_question_count`, the
-frontend also pre-draws per-小題 學習內容 (1–3) and 學習表現 (1–2) from
-the currently-active global pool whenever a 子題's per-小題 selection is
-empty. The drawn codes appear in the confirmation screen under a
-"各小題配置" section (one card per 小題) and are sent to the backend as
-`subquestion_configs[*].learning_content` / `learning_performance`.
-Explicit per-小題 selections are preserved verbatim and never
-overwritten. Empty global pools disable per-小題 auto-draw for that
-field, in which case the backend's `or global pool` prompt-build
-fallback still applies at generation time.
+For 社會領域 and 自然科學, the resolver also completes blank per-小題
+學習內容 / 學習表現 in the existing 各小題配置 cards. A 重抽 clears only the
+target field, increments its canonical path in `redraws`, and resubmits to the
+resolver; the seed and sibling fields remain unchanged. A pending resolver
+request shows a lightweight loading state, while a 422/5xx leaves no stale
+resolved value in place and offers a retry. Regenerating an older History
+record may silently resolve a field absent from that record; it receives the
+隨機 badge without a separate flag or backfill of the old record.
 
 Natural-sciences schema payloads carry each 情境子類別's admitting values as
 `admitted_by: {"情境": [...]}` while retaining the legacy `parent` field for existing consumers.

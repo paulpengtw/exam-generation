@@ -174,6 +174,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
 
     "form.confirm_title": "Review settings before generating",
     "form.confirm_subtitle": "Please review the configuration below. Click \"Confirm & Generate\" to start, or \"Back\" to adjust.",
+    "form.confirm_resolve_loading": "Resolving settings…",
+    "form.confirm_resolve_error": "Could not resolve settings.",
+    "form.confirm_resolve_retry": "Retry resolving",
     "form.confirm_shared_heading": "Shared settings",
     "form.confirm_topic": "Topic",
     "form.confirm_core_question": "Core question",
@@ -620,6 +623,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
 
     "form.confirm_title": "發送前確認設定",
     "form.confirm_subtitle": "請確認以下設定。確認無誤後點選「確定發送」，或點選「返回」調整。",
+    "form.confirm_resolve_loading": "設定解析中…",
+    "form.confirm_resolve_error": "無法解析出題設定。",
+    "form.confirm_resolve_retry": "重新解析",
     "form.confirm_shared_heading": "共同設定",
     "form.confirm_topic": "主題",
     "form.confirm_core_question": "核心問題",

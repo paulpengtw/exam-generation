@@ -11,6 +11,7 @@ vi.mock("../api/client", () => ({
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: planCoreQuestionsMock,
   previewGenerate: previewGenerateMock,
+  resolveGenerate: vi.fn(async (payload: Record<string, unknown>) => ({ payload, drawn: [] })),
 }));
 
 vi.mock("../store/langStore", () => ({

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getAvailableModels } from "./client";
+import { getAvailableModels, resolveGenerate } from "./client";
 
 const fetchMock = vi.fn();
 
@@ -53,5 +53,34 @@ describe("getAvailableModels", () => {
       }),
     );
     await expect(getAvailableModels()).rejects.toThrow("nope");
+  });
+});
+
+describe("resolveGenerate", () => {
+  it("posts the partial payload and redraw counters to the resolver", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          payload: { subject: "math", seed: 17, learning_content: ["RESOLVED-LC"] },
+          drawn: ["learning_content"],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const payload = { subject: "math", seed: 17, learning_content: [] };
+    const result = await resolveGenerate(payload, { learning_content: 2 });
+
+    expect(result).toEqual({
+      payload: { subject: "math", seed: 17, learning_content: ["RESOLVED-LC"] },
+      drawn: ["learning_content"],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/generate/resolve",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ ...payload, redraws: { learning_content: 2 } }),
+      }),
+    );
   });
 });

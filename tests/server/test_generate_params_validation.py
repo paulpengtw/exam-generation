@@ -257,19 +257,19 @@ def test_generate_params_rejects_invalid_math_thinking(
         GenerateParams(subject="math", math_thinking=math_thinking)
 
 
-def test_generate_params_accepts_optional_predrawn_fields_json_array() -> None:
-    raw = '["learning_content", "per_question_params[0].learning_content"]'
+def test_generate_params_accepts_optional_drawn_paths() -> None:
+    drawn = ["learning_content", "per_question_params[0].learning_content"]
 
-    params = GenerateParams(subject="math", predrawn_fields=raw)
+    params = GenerateParams(subject="math", drawn=drawn)
 
-    assert params.predrawn_fields == raw
-    assert params.model_dump(mode="json")["predrawn_fields"] == raw
+    assert params.drawn == drawn
+    assert params.model_dump(mode="json")["drawn"] == drawn
 
 
-def test_generate_params_without_predrawn_fields_remains_valid() -> None:
+def test_generate_params_without_drawn_remains_valid() -> None:
     params = GenerateParams(subject="math")
 
-    assert params.predrawn_fields is None
+    assert params.drawn is None
 
 
 def test_generate_params_accepts_math_text_word_limit() -> None:
