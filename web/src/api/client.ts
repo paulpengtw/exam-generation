@@ -43,6 +43,8 @@ export interface Schemas {
   認知歷程?: SchemaEntry[];
   內容領域?: SchemaEntry[];
   數學思考: SchemaEntry[];
+  核心素養?: SchemaEntry[];
+  reporting_scale?: SchemaEntry[];
   科學能力?: SchemaEntry[];
   question_style?: SchemaEntry[];
   題目內容類型?: SchemaEntry[];
@@ -215,13 +217,17 @@ export async function resolveGenerate(
     Array.isArray(body.payload) ||
     !("drawn" in body) ||
     !Array.isArray(body.drawn) ||
-    !body.drawn.every((path) => typeof path === "string")
+    !body.drawn.every((path) => typeof path === "string") ||
+    !("cleared" in body) ||
+    !Array.isArray(body.cleared) ||
+    !body.cleared.every((path) => typeof path === "string")
   ) {
     throw new Error("Malformed resolve response");
   }
   return {
     payload: body.payload as Record<string, unknown>,
     drawn: body.drawn as string[],
+    cleared: body.cleared as string[],
   };
 }
 

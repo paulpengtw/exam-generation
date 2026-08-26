@@ -25,6 +25,11 @@ from src.common.batch_dedup import (
     extract_ns_prior_scope,
     extract_ss_prior_scope,
 )
+from src.common.core_competency_loader import allowed_competencies as allowed_math_competencies
+from src.common.core_competency_loader import (
+    competency_instructions as math_competency_instructions,
+)
+from src.common.core_competency_loader import load_core_competencies as load_math_core_competencies
 from src.common.curriculum_loader import load_learning_content as load_common_lc
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
 from src.corrector import correct_question as _math_correct_question
@@ -43,6 +48,10 @@ from src.natural_sciences.curriculum_loader import (
 )
 from src.natural_sciences.curriculum_loader import (
     load_learning_performance as load_ns_learning_performance,
+)
+from src.natural_sciences.reporting_scale import (
+    REPORTING_SCALE_LEVELS,
+    REPORTING_SCALE_ORDER,
 )
 from src.natural_sciences.sampler import sample_params as _ns_sample_params
 from src.natural_sciences.schema_loader import (
@@ -99,6 +108,15 @@ from src.social_studies.cli import (
 )
 from src.social_studies.cli import (
     generate_with_corrections as _ss_generate_with_corrections,
+)
+from src.social_studies.core_competency_loader import (
+    allowed_competencies as allowed_ss_competencies,
+)
+from src.social_studies.core_competency_loader import (
+    competency_instructions as ss_competency_instructions,
+)
+from src.social_studies.core_competency_loader import (
+    load_core_competencies as load_ss_core_competencies,
 )
 from src.social_studies.corrector import correct_question as _ss_correct_question
 from src.social_studies.curriculum_loader import (
@@ -752,6 +770,13 @@ def _ss_build_schemas(config_server: Any, grade: int | None) -> dict:
         config_server.social_studies_curriculum_dir / "learning_performance.json"
     )
     learning_stage = _resolve_stage(schemas, grade)
+    core_path = config_server.social_studies_curriculum_dir / "core_competencies.json"
+    core_data = load_ss_core_competencies(core_path if core_path.exists() else None)
+    core_instructions = ss_competency_instructions(core_data)
+    schemas["核心素養"] = [
+        {"value": value, "instruction": core_instructions.get(value, "")}
+        for value in allowed_ss_competencies(core_data, learning_stage)
+    ]
     schemas["digital_only_question_types"] = ss_digital_only_question_types(schemas)
     schemas["學習表現"] = [
         {
@@ -957,6 +982,10 @@ def _ns_load_planner_stage(config_server: Any, grade: int | None) -> str:
 def _ns_build_schemas(config_server: Any, grade: int | None) -> dict:
     schemas = ns_load_schemas(config_server.natural_sciences_curriculum_dir)
     learning_stage = _resolve_stage(schemas, grade)
+    schemas["reporting_scale"] = [
+        {"value": level, "instruction": REPORTING_SCALE_LEVELS[level]}
+        for level in REPORTING_SCALE_ORDER
+    ]
     performance = load_ns_learning_performance(
         config_server.natural_sciences_curriculum_dir / "learning_performance.json"
     )
@@ -1139,6 +1168,13 @@ def _math_build_schemas(config_server: Any, grade: int | None) -> dict:
     schemas["科目"] = list(_MATH_SUBJECTS)
     schemas["題目內容類型"] = list(_MATH_CONTENT_TYPES)
     learning_stage = _resolve_stage(schemas, grade)
+    core_path = config_server.math_curriculum_dir / "core_competencies.json"
+    core_data = load_math_core_competencies(core_path)
+    core_instructions = math_competency_instructions(core_data)
+    schemas["核心素養"] = [
+        {"value": value, "instruction": core_instructions.get(value, "")}
+        for value in allowed_math_competencies(core_data, learning_stage)
+    ]
     performance = load_common_lp(
         config_server.math_curriculum_dir,
         subject_to_prefixes=_MATH_SUBJECT_TO_PREFIXES,

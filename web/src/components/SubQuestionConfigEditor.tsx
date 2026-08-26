@@ -58,6 +58,7 @@ export function SubQuestionInstructionField({
 export interface SubQuestionReportingScaleFieldProps {
   config: SubQuestionConfig;
   onChange: (patch: Partial<SubQuestionConfig>) => void;
+  options?: SchemaEntry[];
   hideLabel?: boolean;
   emptyOptionLabel?: string;
   badge?: {
@@ -69,12 +70,16 @@ export interface SubQuestionReportingScaleFieldProps {
 export function SubQuestionReportingScaleField({
   config,
   onChange,
+  options,
   hideLabel = false,
   emptyOptionLabel,
   badge,
 }: SubQuestionReportingScaleFieldProps) {
   const reportingScaleId = useId();
   const t = useT();
+  const reportingScaleOptions = options ?? [
+    "1c", "1b", "1a", "2", "3", "4", "5", "6",
+  ].map((value) => ({ value, instruction: `等級 ${value}` }));
 
   return (
     <div>
@@ -94,14 +99,9 @@ export function SubQuestionReportingScaleField({
         className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
       >
         <option value="">{emptyOptionLabel ?? "（隨機）"}</option>
-        <option value="1c">等級 1c</option>
-        <option value="1b">等級 1b</option>
-        <option value="1a">等級 1a</option>
-        <option value="2">等級 2</option>
-        <option value="3">等級 3</option>
-        <option value="4">等級 4</option>
-        <option value="5">等級 5</option>
-        <option value="6">等級 6</option>
+        {reportingScaleOptions.map((entry) => (
+          <option key={entry.value} value={entry.value}>{entry.instruction || entry.value}</option>
+        ))}
       </select>
     </div>
   );

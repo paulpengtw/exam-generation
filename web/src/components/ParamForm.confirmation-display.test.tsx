@@ -792,7 +792,7 @@ describe("ParamForm 發送前確認 display semantics", () => {
       .toHaveValue("原始小題指示一");
   });
 
-  it("renders one inline labelled instruction textarea in every confirmation card without an edit toggle", async () => {
+  it("renders one inline labelled instruction textarea and controls in every confirmation card", async () => {
     getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
 
     await openConfirmation("social_studies", {
@@ -809,7 +809,7 @@ describe("ParamForm 發送前確認 display semantics", () => {
       cards.forEach((card) => {
         expect(within(card).getByLabelText("出題指示")).toBeInTheDocument();
       });
-      expect(question.queryByRole("button", { name: /編輯|edit/i })).not.toBeInTheDocument();
+      expect(question.getAllByRole("button", { name: /編輯|edit/i }).length).toBeGreaterThan(0);
     }
   });
 
@@ -1619,6 +1619,166 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(row.getByText("隨機抽取")).toHaveClass("text-amber-700");
   });
 
+  it("edits 自然科學情境, keeps an invalid pin in the request, and reports its re-resolution", async () => {
+    getSchemasMock.mockResolvedValue({
+      ...SCIENCE_SCHEMA,
+      情境: [
+        { value: "Personal", instruction: "" },
+        { value: "Global", instruction: "" },
+      ],
+      情境子類別: [
+        { value: "健康", parent: "Personal", instruction: "" },
+        { value: "污染", parent: "Global", instruction: "" },
+      ],
+    });
+    resolveGenerateMock
+      .mockResolvedValueOnce({
+        payload: {
+          subject: "natural_sciences",
+          grade: 8,
+          count: 1,
+          per_question_params: JSON.stringify([{
+            context: ["Personal"],
+            sub_context: "健康",
+          }]),
+        },
+        drawn: [
+          "per_question_params[0].情境",
+        ],
+        cleared: [],
+      })
+      .mockResolvedValueOnce({
+        payload: {
+          subject: "natural_sciences",
+          grade: 8,
+          count: 1,
+          per_question_params: JSON.stringify([{
+            context: ["Global"],
+            sub_context: "污染",
+          }]),
+        },
+        drawn: ["per_question_params[0].情境子類別"],
+        cleared: ["per_question_params[0].情境子類別"],
+      });
+
+    await openConfirmation("natural_sciences", { count: 1 });
+    const question = within(screen.getByRole("region", { name: "第1題" }));
+    const contextRow = question.getByText("情境", { selector: "dt" }).parentElement!;
+    fireEvent.click(within(contextRow).getByRole("button", { name: "編輯" }));
+    fireEvent.change(within(contextRow).getByRole("listbox", { name: "情境" }), {
+      target: { value: ["Global"] },
+    });
+
+    await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(2));
+    const [resubmitted, redraws] = resolveGenerateMock.mock.calls[1] as [Record<string, unknown>, Record<string, number>];
+    const row = JSON.parse(resubmitted.per_question_params as string)[0] as Record<string, unknown>;
+    expect(row.context).toEqual(["Global"]);
+    expect(row.sub_context).toBe("健康");
+    expect(redraws).toMatchObject({ "per_question_params[0].情境": 1 });
+    await waitFor(() => expect(question.getByText("污染")).toBeInTheDocument());
+    expect(question.getByText("父參數修改後已重新解析")).toBeInTheDocument();
+  });
+
+  it("edits a drawn social-studies 內容領域 and clears its drawn 學習內容", async () => {
+    getSchemasMock.mockResolvedValue({
+      ...SOCIAL_SCHEMA,
+      科目: [{ value: "公民與社會", instruction: "" }],
+      內容領域: [
+        { value: "Civic Principles", instruction: "" },
+        { value: "Civic Participation", instruction: "" },
+      ],
+      學習內容: [
+        {
+          value: "OLD-LC",
+          instruction: "",
+          科目: "公",
+          admitted_by: { 科目: ["公民與社會"], 內容領域: ["Civic Principles"] },
+        },
+        {
+          value: "NEW-LC",
+          instruction: "",
+          科目: "公",
+          admitted_by: { 科目: ["公民與社會"], 內容領域: ["Civic Participation"] },
+        },
+      ],
+      學習表現: [{
+        value: "LP",
+        instruction: "",
+        科目: "社",
+        admitted_by: { 科目: ["公民與社會"] },
+      }],
+    });
+    resolveGenerateMock
+      .mockResolvedValueOnce({
+        payload: {
+          subject: "social_studies",
+          grade: 8,
+          count: 1,
+          per_question_params: JSON.stringify([{
+            subject_filter: ["公民與社會"],
+            content_domain: "Civic Principles",
+            learning_content: ["OLD-LC"],
+            learning_performance: ["LP"],
+            subquestion_configs: [
+              {
+                question_type: "選擇題",
+                learning_content: ["OLD-LC"],
+                learning_performance: ["LP"],
+              },
+            ],
+          }]),
+        },
+        drawn: [
+          "per_question_params[0].內容領域",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].subquestion_configs[0].learning_content",
+        ],
+        cleared: [],
+      })
+      .mockResolvedValueOnce({
+        payload: {
+          subject: "social_studies",
+          grade: 8,
+          count: 1,
+          per_question_params: JSON.stringify([{
+            subject_filter: ["公民與社會"],
+            content_domain: "Civic Participation",
+            learning_content: ["NEW-LC"],
+            learning_performance: ["LP"],
+            subquestion_configs: [
+              {
+                question_type: "選擇題",
+                learning_content: ["NEW-LC"],
+                learning_performance: ["LP"],
+              },
+            ],
+          }]),
+        },
+        drawn: ["per_question_params[0].學習內容"],
+        cleared: [],
+      });
+
+    await openConfirmation("social_studies", { subject_filter: "公民與社會" });
+    const question = within(screen.getByRole("region", { name: "第1題" }));
+    const domainRow = question.getByText("內容領域: Civic Principles").parentElement!;
+    fireEvent.click(within(domainRow).getByRole("button", { name: "編輯" }));
+    fireEvent.change(within(domainRow).getByRole("combobox", { name: "內容領域" }), {
+      target: { value: "Civic Participation" },
+    });
+
+    await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(2));
+    const [resubmitted, redraws] = resolveGenerateMock.mock.calls[1] as [Record<string, unknown>, Record<string, number>];
+    const row = JSON.parse(resubmitted.per_question_params as string)[0] as Record<string, unknown>;
+    expect(row.content_domain).toBe("Civic Participation");
+    expect(row.learning_content).toBeNull();
+    const nestedConfigs = typeof row.subquestion_configs === "string"
+      ? JSON.parse(row.subquestion_configs) as Array<Record<string, unknown>>
+      : row.subquestion_configs as Array<Record<string, unknown>>;
+    expect(nestedConfigs[0]).not.toHaveProperty("learning_content");
+    expect(redraws).toMatchObject({ "per_question_params[0].內容領域": 1 });
+    await waitFor(() => expect(question.getAllByText("NEW-LC").length).toBeGreaterThan(0));
+  });
+
   it("renders blank 難度 as its resolved medium default", async () => {
     await openConfirmation();
     expect(confirmationRow("難度").getByText("medium")).toBeInTheDocument();
@@ -1712,6 +1872,23 @@ describe("ParamForm 發送前確認 display semantics", () => {
         Array.from(reportingScaleSelect.querySelectorAll("option"), (o) => (o as HTMLOptionElement).value),
       ).toEqual(["", "1c", "1b", "1a", "2", "3", "4", "5", "6"]);
     }
+  });
+
+  it("uses schema-provided Reporting Scale entries in 自然科學 確認卡", async () => {
+    getSchemasMock.mockResolvedValue({
+      ...SCIENCE_SCHEMA,
+      reporting_scale: [{ value: "custom-scale", instruction: "Custom" }],
+    });
+    await openConfirmation("natural_sciences", {
+      sub_question_count: 3,
+      subquestion_configs: [{}, {}, {}],
+    });
+
+    const card = within(screen.getByRole("region", { name: "第1題" })).getAllByRole("listitem")[0];
+    const reportingScaleSelect = within(card).getByLabelText("Reporting Scale");
+    expect(
+      Array.from(reportingScaleSelect.querySelectorAll("option"), (o) => (o as HTMLOptionElement).value),
+    ).toEqual(["", "custom-scale"]);
   });
 
   it("does not render editable Reporting Scale select in 數學 確認卡", async () => {

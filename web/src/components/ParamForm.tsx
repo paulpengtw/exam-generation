@@ -421,6 +421,145 @@ type ConfirmationRow = {
   badge?: string;
 };
 
+function ConfirmationRowActions({
+  isRandom,
+  editor,
+  onRedraw,
+  editLabel,
+  redrawLabel,
+}: {
+  isRandom: boolean;
+  editor?: () => ReactNode;
+  onRedraw?: () => void;
+  editLabel: ReactNode;
+  redrawLabel: ReactNode;
+}) {
+  const [editing, setEditing] = useState(false);
+  if (!isRandom || (editor === undefined && onRedraw === undefined)) return null;
+  return (
+    <span className="ml-3 inline-flex flex-wrap items-center gap-1">
+      {editor !== undefined && !editing && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded border border-gray-300 bg-white px-2 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+        >
+          {editLabel}
+        </button>
+      )}
+      {onRedraw !== undefined && (
+        <button
+          type="button"
+          onClick={() => {
+            setEditing(false);
+            onRedraw();
+          }}
+          className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+        >
+          {redrawLabel}
+        </button>
+      )}
+      {editing && editor?.()}
+    </span>
+  );
+}
+
+function confirmationEntries(
+  entries: readonly SchemaEntry[],
+  current: string | readonly string[] | undefined,
+): SchemaEntry[] {
+  const values = typeof current === "string" ? [current] : current ?? [];
+  const known = new Set(entries.map((entry) => entry.value));
+  return [
+    ...entries,
+    ...values
+      .filter((value) => value !== "" && !known.has(value))
+      .map((value) => ({ value, instruction: "" })),
+  ];
+}
+
+function ConfirmationSingleSelect({
+  label,
+  value,
+  entries,
+  onChange,
+}: {
+  label: string;
+  value: unknown;
+  entries: readonly SchemaEntry[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select
+      aria-label={label}
+      value={typeof value === "string" ? value : ""}
+      onChange={(event) => onChange(event.currentTarget.value)}
+      className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+    >
+      <option value="">未填寫</option>
+      {confirmationEntries(entries, typeof value === "string" ? value : undefined).map((entry) => (
+        <option key={entry.value} value={entry.value}>{entry.value}</option>
+      ))}
+    </select>
+  );
+}
+
+function ConfirmationMultiSelect({
+  label,
+  value,
+  entries,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: unknown;
+  entries: readonly SchemaEntry[];
+  max: number;
+  onChange: (value: string[]) => void;
+}) {
+  const selected = Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+  return (
+    <select
+      multiple
+      aria-label={label}
+      value={selected}
+      onChange={(event) => onChange(
+        Array.from(event.currentTarget.selectedOptions)
+          .map((option) => option.value)
+          .slice(0, max),
+      )}
+      className="min-w-48 rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+      size={Math.min(4, Math.max(2, entries.length))}
+    >
+      {confirmationEntries(entries, selected).map((entry) => (
+        <option key={entry.value} value={entry.value}>{entry.value}</option>
+      ))}
+    </select>
+  );
+}
+
+function ConfirmationSubQuestionCountInput({
+  value,
+  onChange,
+}: {
+  value: unknown;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <input
+      aria-label="小題數"
+      type="number"
+      min={3}
+      max={7}
+      value={typeof value === "number" ? value : ""}
+      onChange={(event) => onChange(Number(event.currentTarget.value))}
+      className="w-24 rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+    />
+  );
+}
+
 function resolveConfirmationValue(
   value: string | undefined,
   kind: ConfirmationValueKind,
@@ -833,6 +972,9 @@ const RESOLVER_FIELD_ALIASES: Record<string, string> = {
   science_competency: "科學能力",
   learning_content: "學習內容",
   learning_performance: "學習表現",
+  core_competency: "核心素養",
+  math_thinking: "數學思考",
+  sub_question_count: "sub_question_count",
 };
 
 const RESOLVER_VALUE_ALIASES: Record<string, string> = {
@@ -891,6 +1033,68 @@ function readConfirmationPathValue(
   };
   const rowValue = match ? readFrom(perQuestionParams[Number(match[1])]) : undefined;
   return rowValue === undefined ? readFrom(root) : rowValue;
+}
+
+const CONFIRMATION_PARENT_CHILDREN: Record<string, string[]> = {
+  "情境": ["情境子類別"],
+  "科目": ["學習內容", "學習表現"],
+  "內容領域": ["學習內容", "學習表現"],
+  sub_question_count: ["subquestion_configs"],
+};
+
+function localConfirmationPath(path: string, index: number): string | undefined {
+  const prefix = `per_question_params[${index}].`;
+  if (path.startsWith(prefix)) return path.slice(prefix.length);
+  if (index === 0 && !path.startsWith("per_question_params[")) return path;
+  return undefined;
+}
+
+function isConfirmationChildPath(
+  path: string,
+  index: number,
+  children: readonly string[],
+): boolean {
+  const local = localConfirmationPath(path, index);
+  if (!local) return false;
+  const slotField = local.match(/^subquestion_configs\[\d+\]\.(.+)$/)?.[1];
+  const slotCanonical = slotField === undefined
+    ? undefined
+    : RESOLVER_FIELD_ALIASES[slotField] ?? slotField;
+  return children.some((child) => child === "subquestion_configs"
+    ? local.startsWith("subquestion_configs[")
+    : local === child || local.startsWith(`${child}.`)
+      || slotCanonical === child || slotCanonical?.startsWith(`${child}.`));
+}
+
+function clearConfirmationPath(
+  row: Record<string, unknown>,
+  path: string,
+  index: number,
+): void {
+  const local = localConfirmationPath(path, index);
+  if (!local) return;
+  const configMatch = local.match(/^subquestion_configs\[(\d+)\]\.(.+)$/);
+  if (configMatch) {
+    const configs = parseSubquestionConfigs(row.subquestion_configs);
+    const configIndex = Number(configMatch[1]);
+    const field = configMatch[2];
+    if (configs[configIndex]) {
+      const key = RESOLVER_VALUE_ALIASES[field] ?? field;
+      const config = configs[configIndex] as Record<string, unknown>;
+      delete config[key];
+      if (field === "認知歷程" || field === "cognitive_process") {
+        delete config.cognitive_process;
+        delete config["認知歷程"];
+      }
+      row.subquestion_configs = JSON.stringify(configs);
+    }
+    return;
+  }
+  const key = RESOLVER_VALUE_ALIASES[local] ?? local;
+  // A batch worker inherits the top-level payload before applying this row.
+  // Null therefore means "clear this row's inherited value"; deleting the key
+  // would accidentally leave the old parent value in the worker payload.
+  row[key] = null;
 }
 
 function filterCurriculumEntriesBySubject<T extends SchemaEntry>(
@@ -1004,6 +1208,7 @@ export default function ParamForm({
   const [surfaceQuestionTypeNotice, setSurfaceQuestionTypeNotice] = useState<string[]>([]);
   const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
   const [pendingPerQuestionParams, setPendingPerQuestionParams] = useState<Record<string, unknown>[] | null>(null);
+  const [clearedPaths, setClearedPaths] = useState<string[]>([]);
   const [hasPendingConfirmationEdits, setHasPendingConfirmationEdits] = useState(false);
   const [resolverLoading, setResolverLoading] = useState(false);
   const [resolverError, setResolverError] = useState<string | null>(null);
@@ -2022,6 +2227,7 @@ export default function ParamForm({
     pendingParamsRef.current = resolvedParams;
     setPendingPerQuestionParams(perQuestionParams);
     pendingPerQuestionParamsRef.current = perQuestionParams;
+    setClearedPaths(response.cleared ?? []);
     setResolverLoading(false);
     setResolverError(null);
     setHasPendingConfirmationEdits(preserveConfirmationEdits);
@@ -2089,6 +2295,7 @@ export default function ParamForm({
     pendingParamsRef.current = null;
     setPendingPerQuestionParams(null);
     pendingPerQuestionParamsRef.current = null;
+    setClearedPaths([]);
     setResolverError(null);
     if (grade === "") return;
     if (!setType.trim()) {
@@ -2232,10 +2439,85 @@ export default function ParamForm({
     pendingPerQuestionParamsRef.current = null;
     setPendingParams(null);
     setPendingPerQuestionParams(null);
+    setClearedPaths([]);
     setHasPendingConfirmationEdits(false);
     // #446: clear stale state on submit
     setStalePreviewIndices(new Set());
     onSubmit(submittedParams);
+  }
+
+  function updatePendingConfirmationField(
+    questionIndex: number,
+    field: string,
+    value: unknown,
+    redraw = false,
+  ) {
+    const currentParams = pendingParamsRef.current ?? pendingParams;
+    const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
+      parsePerQuestionParams(currentParams?.per_question_params);
+    const questionParams = currentPerQuestionParams[questionIndex];
+    if (!currentParams || !questionParams) return;
+
+    const canonical = RESOLVER_FIELD_ALIASES[field] ?? field;
+    const path = `per_question_params[${questionIndex}].${canonical}`;
+    const parentChildren = CONFIRMATION_PARENT_CHILDREN[canonical];
+    const aliases = new Set([
+      path,
+      `per_question_params[${questionIndex}].${field}`,
+      ...(questionIndex === 0 ? [canonical, field] : []),
+    ]);
+    const nextPerQuestionParams = currentPerQuestionParams.map((params, index) => {
+      if (index !== questionIndex) return params;
+      const next = { ...params };
+      if (value === undefined) {
+        if (canonical === "sub_question_count") delete next[field];
+        else next[field] = null;
+      }
+      else next[field] = value;
+      if (parentChildren) {
+        for (const drawnPath of currentParams.drawn ?? []) {
+          if (isConfirmationChildPath(drawnPath, questionIndex, parentChildren)) {
+            clearConfirmationPath(next, drawnPath, questionIndex);
+          }
+        }
+      }
+      return next;
+    });
+    const nextDrawn = (Array.isArray(currentParams.drawn) ? currentParams.drawn : [])
+      .filter((drawnPath) => !aliases.has(drawnPath))
+      .filter((drawnPath) => canonical === "sub_question_count" || !parentChildren || !isConfirmationChildPath(
+        drawnPath,
+        questionIndex,
+        parentChildren,
+      ));
+    const nextParams = {
+      ...currentParams,
+      drawn: nextDrawn,
+      per_question_params: JSON.stringify(nextPerQuestionParams),
+    } as FormParams;
+    if (value === undefined && canonical === "sub_question_count") {
+      delete nextParams.sub_question_count;
+    }
+    const nextRedraws = (redraw || parentChildren)
+      ? {
+          ...redrawsRef.current,
+          [path]: (redrawsRef.current[path] ?? 0) + 1,
+        }
+      : { ...redrawsRef.current };
+
+    pendingParamsRef.current = nextParams;
+    pendingPerQuestionParamsRef.current = nextPerQuestionParams;
+    pendingEditedIndicesRef.current.add(questionIndex);
+    redrawsRef.current = nextRedraws;
+    setHasPendingConfirmationEdits(true);
+    setPendingParams(nextParams);
+    setPendingPerQuestionParams(nextPerQuestionParams);
+    void resolveForConfirmation(
+      toGenerateParams(subject, nextParams) as unknown as Record<string, unknown>,
+      nextRedraws,
+      true,
+      canonical === "sub_question_count",
+    );
   }
 
   function updatePendingSubquestionConfig(
@@ -2250,19 +2532,24 @@ export default function ParamForm({
     if (!currentParams || !questionParams) return;
     const configs = parseSubquestionConfigs(questionParams.subquestion_configs);
     if (!configs[subquestionIndex]) return;
-    const nextConfigs = configs.map((config, index) =>
-      index === subquestionIndex
-        ? serialisableSubquestionConfig({ ...config, ...patch })
-        : config,
-    );
+    const nextConfigs = configs.map((config, index) => {
+      if (index !== subquestionIndex) return config;
+      const nextConfig = { ...config, ...patch } as Record<string, unknown>;
+      if (Object.hasOwn(patch, "cognitive_process")) delete nextConfig["認知歷程"];
+      return serialisableSubquestionConfig(nextConfig as SubQuestionConfig);
+    });
     const nextPerQuestionParams = currentPerQuestionParams.map((params, index) =>
       index === questionIndex
         ? { ...params, subquestion_configs: JSON.stringify(nextConfigs) }
         : params,
     );
-    const changedPaths = Object.keys(patch).map(
-      (field) => `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${field}`,
-    );
+    const changedPaths = Object.keys(patch).flatMap((field) => {
+      const path = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].`;
+      return [
+        `${path}${field}`,
+        ...(field === "cognitive_process" ? [`${path}認知歷程`] : []),
+      ];
+    });
     const nextDrawn = (Array.isArray(currentParams.drawn) ? currentParams.drawn : [])
       .filter((path) => !changedPaths.includes(path));
     const nextParams = {
@@ -2276,51 +2563,6 @@ export default function ParamForm({
     setHasPendingConfirmationEdits(true);
     setPendingParams(nextParams);
     setPendingPerQuestionParams(nextPerQuestionParams);
-  }
-
-  function resubmitSubquestionCount(questionIndex: number) {
-    const currentParams = pendingParamsRef.current ?? pendingParams;
-    const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
-      parsePerQuestionParams(currentParams?.per_question_params);
-    if (!currentParams) return;
-
-    const nextPerQuestionParams = currentPerQuestionParams.map((params, index) => {
-      if (index !== questionIndex) return params;
-      const nextParams = { ...params };
-      delete nextParams.sub_question_count;
-      return {
-        ...nextParams,
-        subquestion_configs: JSON.stringify(parseSubquestionConfigs(params.subquestion_configs)),
-      };
-    });
-    const path = currentPerQuestionParams.length > 0
-      ? `per_question_params[${questionIndex}].sub_question_count`
-      : "sub_question_count";
-    const nextDrawn = (Array.isArray(currentParams.drawn) ? currentParams.drawn : [])
-      .filter((drawnPath) => drawnPath !== path && drawnPath !== "sub_question_count");
-    const nextParams = { ...currentParams } as FormParams;
-    delete nextParams.sub_question_count;
-    nextParams.drawn = nextDrawn;
-    if (currentParams.per_question_params !== undefined) {
-      nextParams.per_question_params = JSON.stringify(nextPerQuestionParams);
-    }
-    const nextRedraws = {
-      ...redrawsRef.current,
-      [path]: (redrawsRef.current[path] ?? 0) + 1,
-    };
-    pendingParamsRef.current = nextParams;
-    pendingPerQuestionParamsRef.current = nextPerQuestionParams;
-    pendingEditedIndicesRef.current.add(questionIndex);
-    redrawsRef.current = nextRedraws;
-    setHasPendingConfirmationEdits(true);
-    setPendingParams(nextParams);
-    setPendingPerQuestionParams(nextPerQuestionParams);
-    void resolveForConfirmation(
-      toGenerateParams(subject, nextParams) as unknown as Record<string, unknown>,
-      nextRedraws,
-      true,
-      true,
-    );
   }
 
   function updatePendingSubquestionInstruction(
@@ -2372,6 +2614,16 @@ export default function ParamForm({
   ) {
     updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
       reporting_scale: reportingScale || undefined,
+    });
+  }
+
+  function updatePendingSubquestionCognitiveProcess(
+    questionIndex: number,
+    subquestionIndex: number,
+    cognitiveProcess: string,
+  ) {
+    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
+      cognitive_process: cognitiveProcess || undefined,
     });
   }
 
@@ -2428,10 +2680,10 @@ export default function ParamForm({
     });
   }
 
-  function resubmitSubquestionResolution(
+  function resubmitSubquestionField(
     questionIndex: number,
     subquestionIndex: number,
-    field: "learning_content" | "learning_performance",
+    field: string,
   ) {
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
@@ -2443,8 +2695,12 @@ export default function ParamForm({
 
     const nextConfigs = configs.map((config, index) => {
       if (index !== subquestionIndex) return config;
-      const nextConfig = { ...config };
+      const nextConfig = { ...config } as Record<string, unknown>;
       delete nextConfig[field];
+      if (field === "cognitive_process" || field === "認知歷程") {
+        delete nextConfig.cognitive_process;
+        delete nextConfig["認知歷程"];
+      }
       return serialisableSubquestionConfig(nextConfig);
     });
     const nextPerQuestionParams = currentPerQuestionParams.map((params, index) =>
@@ -2452,10 +2708,12 @@ export default function ParamForm({
         ? { ...params, subquestion_configs: JSON.stringify(nextConfigs) }
         : params,
     );
+    const canonicalField = field === "cognitive_process" ? "認知歷程" : field;
     const path =
-      `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${field}`;
+      `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${canonicalField}`;
     const nextDrawn = (Array.isArray(currentParams.drawn) ? currentParams.drawn : [])
-      .filter((drawnPath) => drawnPath !== path);
+      .filter((drawnPath) => drawnPath !== path && drawnPath !==
+        `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${field}`);
     const nextParams = {
       ...currentParams,
       drawn: nextDrawn,
@@ -2477,6 +2735,14 @@ export default function ParamForm({
       nextRedraws,
       true,
     );
+  }
+
+  function resubmitSubquestionResolution(
+    questionIndex: number,
+    subquestionIndex: number,
+    field: "learning_content" | "learning_performance",
+  ) {
+    resubmitSubquestionField(questionIndex, subquestionIndex, field);
   }
 
   function updatePendingSubquestionLc(
@@ -2675,6 +2941,23 @@ export default function ParamForm({
                 fieldLabels={drawnValueLabels}
                 alwaysPaths={["內容領域"]}
                 valueForPath={valueForDrawnPath}
+                renderEditor={(path, value) => path === "內容領域" ? (
+                  <ConfirmationSingleSelect
+                    label={t("form.confirm_content_domain")}
+                    value={value}
+                    entries={schemas?.內容領域 ?? []}
+                    onChange={(next) => updatePendingConfirmationField(0, "content_domain", next)}
+                  />
+                ) : undefined}
+                canEdit={(path) => path === "內容領域"}
+                onRedraw={(path) => {
+                  if (path === "內容領域") updatePendingConfirmationField(0, "content_domain", undefined, true);
+                }}
+                canRedraw={(path) => path === "內容領域"}
+                editLabel={t("form.confirm_edit")}
+                redrawLabel={t("form.confirm_redraw")}
+                clearedPaths={clearedPaths}
+                clearedNotice={t("form.confirm_cleared_notice")}
                 emptyValue={t("form.confirm_not_filled")}
                 drawnBadge={t("form.confirm_badge_random")}
                 pinnedBadge={t("form.confirm_badge_user")}
@@ -2687,6 +2970,25 @@ export default function ParamForm({
                 pathPrefix="reporting_scale"
                 alwaysPaths={["reporting_scale"]}
                 valueForPath={valueForDrawnPath}
+                renderEditor={(path, value) => path === "reporting_scale" ? (
+                  <ConfirmationSingleSelect
+                    label={t("form.confirm_reporting_scale")}
+                    value={value}
+                    entries={schemas?.reporting_scale ?? [
+                      ...["1c", "1b", "1a", "2", "3", "4", "5", "6"].map((level) => ({ value: level, instruction: "" })),
+                    ]}
+                    onChange={(next) => updatePendingConfirmationField(0, "reporting_scale", next)}
+                  />
+                ) : undefined}
+                canEdit={(path) => path === "reporting_scale"}
+                onRedraw={(path) => {
+                  if (path === "reporting_scale") updatePendingConfirmationField(0, "reporting_scale", undefined, true);
+                }}
+                canRedraw={(path) => path === "reporting_scale"}
+                editLabel={t("form.confirm_edit")}
+                redrawLabel={t("form.confirm_redraw")}
+                clearedPaths={clearedPaths}
+                clearedNotice={t("form.confirm_cleared_notice")}
                 emptyValue={t("form.confirm_reporting_scale_per_subquestion")}
                 drawnBadge={t("form.confirm_badge_random")}
                 pinnedBadge={t("form.confirm_badge_user")}
@@ -2738,7 +3040,9 @@ export default function ParamForm({
             );
             const questionContentDomain = typeof questionParams.content_domain === "string"
               ? questionParams.content_domain
-              : undefined;
+              : typeof p.content_domain === "string"
+                ? p.content_domain
+                : undefined;
             const questionLpEntries = filterLearningContentEntriesByDomain(
               questionLpEntriesBySubject,
               subject,
@@ -2791,6 +3095,106 @@ export default function ParamForm({
               !path.endsWith(".sub_question_count") &&
               !(subject === "natural_sciences" && path.endsWith(".reporting_scale")),
             );
+            const renderConfirmationEditor = (
+              key: string,
+              value: unknown,
+            ): ReactNode | undefined => {
+              switch (key) {
+                case "style":
+                  return (
+                    <ConfirmationSingleSelect
+                      label={t("form.confirm_style")}
+                      value={Array.isArray(value) ? value[0] : value}
+                      entries={schemas?.question_style ?? []}
+                      onChange={(next) => updatePendingConfirmationField(index, key, next)}
+                    />
+                  );
+                case "content_type":
+                  return (
+                    <ConfirmationSingleSelect
+                      label={t("form.confirm_content_type")}
+                      value={value}
+                      entries={schemas?.題目內容類型 ?? []}
+                      onChange={(next) => updatePendingConfirmationField(index, key, next)}
+                    />
+                  );
+                case "context": {
+                  const current = Array.isArray(value) ? value : [];
+                  return (
+                    <ConfirmationMultiSelect
+                      label={t("form.confirm_context")}
+                      value={current}
+                      entries={schemas?.情境 ?? []}
+                      max={subject === "natural_sciences" ? 1 : schemas?.情境.length ?? 1}
+                      onChange={(next) => updatePendingConfirmationField(index, key, next)}
+                    />
+                  );
+                }
+                case "set_type":
+                  return (
+                    <ConfirmationSingleSelect
+                      label={t("form.confirm_set_type")}
+                      value={value}
+                      entries={schemas?.題型種類 ?? []}
+                      onChange={(next) => updatePendingConfirmationField(index, key, next)}
+                    />
+                  );
+                case "q_type":
+                  return (
+                    <ConfirmationMultiSelect
+                      label={t("form.confirm_q_type")}
+                      value={value}
+                      entries={availableQuestionTypes}
+                      max={availableQuestionTypes.length || 1}
+                      onChange={(next) => updatePendingConfirmationField(index, key, next)}
+                    />
+                  );
+                case "subject_filter": {
+                  const current = Array.isArray(value) ? value : [];
+                  return (
+                    <ConfirmationMultiSelect
+                      label={t("form.confirm_subject_filter")}
+                      value={current}
+                      entries={schemas?.科目 ?? []}
+                      max={1}
+                      onChange={(next) => updatePendingConfirmationField(index, key, next)}
+                    />
+                  );
+                }
+                case "sub_context": {
+                  const currentContext = Array.isArray(questionParams.context)
+                    ? questionParams.context
+                    : typeof questionParams.context === "string"
+                      ? [questionParams.context]
+                      : [];
+                  const entries = filterEntriesByAdmittedParent(
+                    schemas?.情境子類別 ?? [],
+                    "情境",
+                    currentContext,
+                  );
+                  return (
+                    <ConfirmationSingleSelect
+                      label={t("form.confirm_sub_context")}
+                      value={value}
+                      entries={entries}
+                      onChange={(next) => updatePendingConfirmationField(index, key, next)}
+                    />
+                  );
+                }
+                case "science_competency":
+                  return (
+                    <ConfirmationMultiSelect
+                      label={t("form.confirm_science_competency")}
+                      value={value}
+                      entries={schemas?.科學能力 ?? []}
+                      max={2}
+                      onChange={(next) => updatePendingConfirmationField(index, key, next)}
+                    />
+                  );
+                default:
+                  return undefined;
+              }
+            };
             const questionLpWasDrawn = resolverDrewField(drawnPaths, index, "learning_performance");
             const questionLcWasDrawn = resolverDrewField(drawnPaths, index, "learning_content");
             const questionLpHeading = t(
@@ -2837,7 +3241,10 @@ export default function ParamForm({
                 )}
                 {questionSubQuestionCount !== undefined && (
                   <dl className="mb-3">
-                    <div className="flex gap-3 text-sm">
+                    <div
+                      className="flex gap-3 text-sm"
+                      data-drawn-value-path={`${questionPathPrefix}sub_question_count`}
+                    >
                       <dt className="w-40 shrink-0 font-medium text-gray-600">
                         {t("form.confirm_sub_question_count")}
                       </dt>
@@ -2847,14 +3254,32 @@ export default function ParamForm({
                           {t(questionSubQuestionCountWasDrawn ? "form.confirm_badge_random" : "form.confirm_badge_user")}
                         </span>
                         {questionSubQuestionCountWasDrawn && (
-                          <button
-                            type="button"
-                            onClick={() => resubmitSubquestionCount(index)}
-                            disabled={resolverLoading}
-                            className="ml-3 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {t("form.confirm_redraw")}
-                          </button>
+                          <ConfirmationRowActions
+                            isRandom
+                            editor={() => (
+                              <ConfirmationSubQuestionCountInput
+                                value={questionSubQuestionCount}
+                                onChange={(next) => updatePendingConfirmationField(
+                                  index,
+                                  "sub_question_count",
+                                  next,
+                                )}
+                              />
+                            )}
+                            onRedraw={() => updatePendingConfirmationField(
+                              index,
+                              "sub_question_count",
+                              undefined,
+                              true,
+                            )}
+                            editLabel={t("form.confirm_edit")}
+                            redrawLabel={t("form.confirm_redraw")}
+                          />
+                        )}
+                        {clearedPaths.includes(`${questionPathPrefix}sub_question_count`) && (
+                          <span className="ml-2 text-xs font-medium text-amber-700">
+                            {t("form.confirm_cleared_notice")}
+                          </span>
                         )}
                       </dd>
                     </div>
@@ -2870,8 +3295,12 @@ export default function ParamForm({
                           : String(value);
                       const isRandom = resolverDrewField(drawnPaths, index, key);
                       const isPredrawnSeed = key === "seed" && isRandom;
+                      const rowPath = `${questionPathPrefix}${RESOLVER_FIELD_ALIASES[key] ?? key}`;
+                      const editor = key === "seed"
+                        ? undefined
+                        : () => renderConfirmationEditor(key, value);
                       return (
-                        <div key={key} className="flex gap-3 text-sm">
+                        <div key={key} className="flex gap-3 text-sm" data-drawn-value-path={rowPath}>
                           <dt className="w-40 shrink-0 font-medium text-gray-600">
                             {label}
                           </dt>
@@ -2882,6 +3311,20 @@ export default function ParamForm({
                                 ? t("form.confirm_seed_predrawn")
                                 : t(isRandom ? "form.confirm_badge_random" : "form.confirm_badge_user")}
                             </span>
+                            {clearedPaths.includes(rowPath) && (
+                              <span className="ml-2 text-xs font-medium text-amber-700">
+                                {t("form.confirm_cleared_notice")}
+                              </span>
+                            )}
+                            <ConfirmationRowActions
+                              isRandom={isRandom && !isPredrawnSeed}
+                              editor={editor}
+                              onRedraw={key === "seed"
+                                ? undefined
+                                : () => updatePendingConfirmationField(index, key, undefined, true)}
+                              editLabel={t("form.confirm_edit")}
+                              redrawLabel={t("form.confirm_redraw")}
+                            />
                           </dd>
                         </div>
                       );
@@ -2891,12 +3334,71 @@ export default function ParamForm({
                     fieldLabels={drawnValueLabels}
                     alwaysPaths={alwaysDrawnValuePaths}
                     valueForPath={valueForDrawnPath}
+                    renderEditor={(path, value) => {
+                      const field = path.match(/(?:^|\.)([^.[\]]+)$/)?.[1];
+                      if (field === "內容領域") {
+                        return (
+                          <ConfirmationSingleSelect
+                            label={t("form.confirm_content_domain")}
+                            value={value}
+                            entries={schemas?.內容領域 ?? []}
+                            onChange={(next) => updatePendingConfirmationField(index, "content_domain", next)}
+                          />
+                        );
+                      }
+                      if (field === "核心素養" || field === "數學思考") {
+                        const selected = Array.isArray(value)
+                          ? value.filter((item): item is string => typeof item === "string")
+                          : [];
+                        const entries = field === "核心素養"
+                          ? schemas?.核心素養 ?? []
+                          : schemas?.數學思考 ?? [];
+                        return (
+                          <ConfirmationMultiSelect
+                            label={field === "核心素養"
+                              ? t("form.confirm_core_competency")
+                              : t("form.confirm_math_thinking")}
+                            value={selected}
+                            entries={entries}
+                            max={3}
+                            onChange={(next) => updatePendingConfirmationField(
+                              index,
+                              field === "核心素養" ? "core_competency" : "math_thinking",
+                              next,
+                            )}
+                          />
+                        );
+                      }
+                      return undefined;
+                    }}
+                    canEdit={(path) => {
+                      const field = path.match(/(?:^|\.)([^.[\]]+)$/)?.[1];
+                      return field === "內容領域" || field === "核心素養" || field === "數學思考";
+                    }}
+                    onRedraw={(path) => {
+                      const field = path.match(/(?:^|\.)([^.[\]]+)$/)?.[1];
+                      const key = field === "內容領域"
+                        ? "content_domain"
+                        : field === "數學思考" ? "math_thinking" : "core_competency";
+                      updatePendingConfirmationField(index, key, undefined, true);
+                    }}
+                    canRedraw={(path) => {
+                      const field = path.match(/(?:^|\.)([^.[\]]+)$/)?.[1];
+                      return field === "內容領域" || field === "核心素養" || field === "數學思考";
+                    }}
+                    editLabel={t("form.confirm_edit")}
+                    redrawLabel={t("form.confirm_redraw")}
+                    clearedPaths={clearedPaths}
+                    clearedNotice={t("form.confirm_cleared_notice")}
                     emptyValue={t("form.confirm_not_filled")}
                     drawnBadge={t("form.confirm_badge_random")}
                     pinnedBadge={t("form.confirm_badge_user")}
                     compact={(path) => path.endsWith("內容領域")}
                   />
-                  <div className="flex gap-3 text-sm">
+                  <div
+                    className="flex gap-3 text-sm"
+                    data-drawn-value-path={`${questionPathPrefix}學習表現`}
+                  >
                       <dt className="w-40 shrink-0 font-medium text-gray-600">{t("form.confirm_learning_performance")}</dt>
                       <dd className="min-w-0 flex-1 text-gray-900">
                         {questionLpDisplayEntries.length === 0 ? (
@@ -2914,9 +3416,43 @@ export default function ParamForm({
                             </ul>
                           </div>
                         )}
+                        {questionLpWasDrawn && (
+                          <ConfirmationRowActions
+                            isRandom
+                            editor={() => (
+                              <ConfirmationMultiSelect
+                                label={t("form.confirm_learning_performance")}
+                                value={questionLpCodes}
+                                entries={questionLpEntries}
+                                max={subject === "math" ? 3 : 2}
+                                onChange={(next) => updatePendingConfirmationField(
+                                  index,
+                                  "learning_performance",
+                                  next,
+                                )}
+                              />
+                            )}
+                            onRedraw={() => updatePendingConfirmationField(
+                              index,
+                              "learning_performance",
+                              undefined,
+                              true,
+                            )}
+                            editLabel={t("form.confirm_edit")}
+                            redrawLabel={t("form.confirm_redraw")}
+                          />
+                        )}
+                        {clearedPaths.includes(`${questionPathPrefix}學習表現`) && (
+                          <span className="ml-2 text-xs font-medium text-amber-700">
+                            {t("form.confirm_cleared_notice")}
+                          </span>
+                        )}
                       </dd>
                   </div>
-                  <div className="flex gap-3 text-sm">
+                  <div
+                    className="flex gap-3 text-sm"
+                    data-drawn-value-path={`${questionPathPrefix}學習內容`}
+                  >
                       <dt className="w-40 shrink-0 font-medium text-gray-600">{t("form.confirm_learning_content")}</dt>
                       <dd className="min-w-0 flex-1 text-gray-900">
                         {questionLcDisplayEntries.length === 0 ? (
@@ -2936,6 +3472,37 @@ export default function ParamForm({
                             </ul>
                           </div>
                         )}
+                        {questionLcWasDrawn && (
+                          <ConfirmationRowActions
+                            isRandom
+                            editor={() => (
+                              <ConfirmationMultiSelect
+                                label={t("form.confirm_learning_content")}
+                                value={questionLcCodes}
+                                entries={questionLcEntries}
+                                max={3}
+                                onChange={(next) => updatePendingConfirmationField(
+                                  index,
+                                  "learning_content",
+                                  next,
+                                )}
+                              />
+                            )}
+                            onRedraw={() => updatePendingConfirmationField(
+                              index,
+                              "learning_content",
+                              undefined,
+                              true,
+                            )}
+                            editLabel={t("form.confirm_edit")}
+                            redrawLabel={t("form.confirm_redraw")}
+                          />
+                        )}
+                        {clearedPaths.includes(`${questionPathPrefix}學習內容`) && (
+                          <span className="ml-2 text-xs font-medium text-amber-700">
+                            {t("form.confirm_cleared_notice")}
+                          </span>
+                        )}
                       </dd>
                   </div>
                 </dl>
@@ -2948,6 +3515,9 @@ export default function ParamForm({
                       questionIndex={index}
                       drawnPaths={drawnPaths}
                       drawnValueLabels={drawnValueLabels}
+                      cognitiveProcesses={schemas?.認知歷程 ?? []}
+                      reportingScales={schemas?.reporting_scale}
+                      clearedPaths={clearedPaths}
                       showContentDomain={false}
                       questionTypes={availableQuestionTypes}
                       contentTypes={schemas?.題目內容類型 ?? []}
@@ -2970,6 +3540,9 @@ export default function ParamForm({
                       onReportingScaleChange={(subquestionIndex, reportingScale) =>
                         updatePendingSubquestionReportingScale(index, subquestionIndex, reportingScale)
                       }
+                      onCognitiveProcessChange={(subquestionIndex, cognitiveProcess) =>
+                        updatePendingSubquestionCognitiveProcess(index, subquestionIndex, cognitiveProcess)
+                      }
                       onQuestionWordLimitChange={(subquestionIndex, value) =>
                         updatePendingSubquestionQuestionWordLimit(index, subquestionIndex, value)
                       }
@@ -2987,6 +3560,9 @@ export default function ParamForm({
                       }
                       onLpChange={(subquestionIndex, lp) =>
                         updatePendingSubquestionLp(index, subquestionIndex, lp)
+                      }
+                      onFieldRedraw={(subquestionIndex, field) =>
+                        resubmitSubquestionField(index, subquestionIndex, field)
                       }
                     />
                   </section>
@@ -3068,6 +3644,7 @@ export default function ParamForm({
                 pendingPerQuestionParamsRef.current = null;
                 setPendingParams(null);
                 setPendingPerQuestionParams(null);
+                setClearedPaths([]);
                 setHasPendingConfirmationEdits(false);
                 setConfirmInvalidFields(new Map());
                 setResolverLoading(false);

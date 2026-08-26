@@ -21,6 +21,9 @@ export default function SubquestionConfigCards({
   questionIndex = 0,
   drawnPaths,
   drawnValueLabels,
+  cognitiveProcesses,
+  reportingScales,
+  clearedPaths,
   contentDomain,
   showContentDomain = true,
   questionTypes,
@@ -42,6 +45,8 @@ export default function SubquestionConfigCards({
   onFieldValidityChange,
   onLcChange,
   onLpChange,
+  onCognitiveProcessChange,
+  onFieldRedraw,
 }: {
   configs: ResolvedSubQuestionConfig[];
   subject: string;
@@ -50,6 +55,9 @@ export default function SubquestionConfigCards({
   drawnPaths?: readonly string[];
   /** Labels shared with the question-level generic confirmation rows. */
   drawnValueLabels?: DrawnValueLabelMap;
+  cognitiveProcesses?: SchemaEntry[];
+  reportingScales?: SchemaEntry[];
+  clearedPaths?: readonly string[];
   /** Topic-set ICCS content domain shown in non-confirmation summaries. */
   contentDomain?: string;
   /** Confirmation renders the domain through ParamForm's generic row. */
@@ -80,6 +88,9 @@ export default function SubquestionConfigCards({
   onLcChange?: (subquestionIndex: number, lc: string[]) => void;
   /** Called when the user explicitly changes LP codes for a 小題. */
   onLpChange?: (subquestionIndex: number, lp: string[]) => void;
+  onCognitiveProcessChange?: (subquestionIndex: number, cognitiveProcess: string) => void;
+  /** Called when the user requests a resolver redraw for a 小題 field. */
+  onFieldRedraw?: (subquestionIndex: number, field: string) => void;
 }) {
   const t = useT();
   const resolverDrew = (subquestionIndex: number, field: string): boolean => {
@@ -105,7 +116,8 @@ export default function SubquestionConfigCards({
     const field = path.match(/(?:^|\.)([^.[\]]+)$/)?.[1];
     if (!field) return undefined;
     const key = field === "認知歷程" ? "cognitive_process" : field;
-    return (row as unknown as Record<string, unknown>)[key];
+    const values = row as unknown as Record<string, unknown>;
+    return values[key] ?? values[field === "cognitive_process" ? "認知歷程" : field];
   };
 
   return (
@@ -141,11 +153,36 @@ export default function SubquestionConfigCards({
                 pathPrefix={slotPathPrefix}
                 alwaysPaths={[subject === "social_studies" ? cognitivePath : reportingScalePath]}
                 valueForPath={(path) => readDrawnValue(path, row)}
+                renderEditor={subject === "social_studies" ? (path, value) => path.endsWith(".認知歷程") ? (
+                  <select
+                    aria-label={t("form.confirm_subq_cognitive_process")}
+                    value={typeof value === "string" ? value : ""}
+                    onChange={(event) => onCognitiveProcessChange?.(
+                      subquestionIndex,
+                      event.currentTarget.value,
+                    )}
+                    className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+                  >
+                    <option value="">{t("form.confirm_not_filled")}</option>
+                    {(cognitiveProcesses ?? []).map((entry) => (
+                      <option key={entry.value} value={entry.value}>{entry.value}</option>
+                    ))}
+                  </select>
+                ) : undefined : subject === "natural_sciences" && onReportingScaleChange ? (path) => path.endsWith(".reporting_scale") ? (
+                  <SubQuestionReportingScaleField
+                    config={row}
+                    options={reportingScales}
+                    hideLabel
+                    emptyOptionLabel={t("form.confirm_not_filled")}
+                    onChange={(patch) => onReportingScaleChange(subquestionIndex, patch.reporting_scale ?? "")}
+                  />
+                ) : undefined : undefined}
                 renderValue={subject === "natural_sciences" && onReportingScaleChange
                   ? (path) => path.endsWith(".reporting_scale")
                     ? (
                         <SubQuestionReportingScaleField
                           config={row}
+                          options={reportingScales}
                           hideLabel
                           emptyOptionLabel={t("form.confirm_not_filled")}
                           onChange={(patch) => onReportingScaleChange(subquestionIndex, patch.reporting_scale ?? "")}
@@ -156,21 +193,42 @@ export default function SubquestionConfigCards({
                 emptyValue={t("form.confirm_not_filled")}
                 drawnBadge={t("form.confirm_badge_random")}
                 pinnedBadge={t("form.confirm_badge_user")}
+                onRedraw={(path) => {
+                  if (path.endsWith(".認知歷程")) onFieldRedraw?.(subquestionIndex, "cognitive_process");
+                  if (path.endsWith(".reporting_scale")) onFieldRedraw?.(subquestionIndex, "reporting_scale");
+                }}
+                canEdit={(path) => path.endsWith(".認知歷程") || path.endsWith(".reporting_scale")}
+                canRedraw={(path) => path.endsWith(".認知歷程") || path.endsWith(".reporting_scale")}
+                editLabel={t("form.confirm_edit")}
+                redrawLabel={t("form.confirm_redraw")}
+                clearedPaths={clearedPaths}
+                clearedNotice={t("form.confirm_cleared_notice")}
                 compact
               />
             )}
             {onQuestionTypeChange ? (
-              <SubQuestionQuestionTypeField
-                config={row}
-                subject={subject}
-                questionTypes={questionTypes}
-                emptyOptionLabel={t("form.confirm_not_filled")}
-                badge={{
-                  label: t(resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "form.confirm_badge_random" : "form.confirm_badge_user"),
-                  className: `text-xs font-medium ${resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "text-amber-700" : "text-green-700"}`,
-                }}
-                onChange={(patch) => onQuestionTypeChange(subquestionIndex, patch.question_type ?? "")}
-              />
+              <div>
+                <SubQuestionQuestionTypeField
+                  config={row}
+                  subject={subject}
+                  questionTypes={questionTypes}
+                  emptyOptionLabel={t("form.confirm_not_filled")}
+                  badge={{
+                    label: t(resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "form.confirm_badge_random" : "form.confirm_badge_user"),
+                    className: `text-xs font-medium ${resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "text-amber-700" : "text-green-700"}`,
+                  }}
+                  onChange={(patch) => onQuestionTypeChange(subquestionIndex, patch.question_type ?? "")}
+                />
+                {resolverDrew(subquestionIndex, "question_type") && onFieldRedraw && (
+                  <button
+                    type="button"
+                    onClick={() => onFieldRedraw(subquestionIndex, "question_type")}
+                    className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                  >
+                    {t("form.confirm_redraw")}
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type ?? t("form.confirm_random")}</div>
             )}
@@ -296,8 +354,23 @@ export default function SubquestionConfigCards({
                     available={visibleAvailableLc}
                     selected={visibleLearningContent}
                     onChange={(values) => onLcChange(subquestionIndex, values)}
+                    maxSelected={3}
                     placeholder={t("form.confirm_subq_lc_picker_placeholder")}
                   />
+                  {clearedPaths?.includes(`${slotPathPrefix}learning_content`) && (
+                    <span className="text-xs font-medium text-amber-700">
+                      {t("form.confirm_cleared_notice")}
+                    </span>
+                  )}
+                  {resolverDrew(subquestionIndex, "learning_content") && onFieldRedraw && (
+                    <button
+                      type="button"
+                      onClick={() => onFieldRedraw(subquestionIndex, "learning_content")}
+                      className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                    >
+                      {t("form.confirm_redraw")}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <>
@@ -357,8 +430,23 @@ export default function SubquestionConfigCards({
                     available={visibleAvailableLp}
                     selected={visibleLearningPerformance}
                     onChange={(values) => onLpChange(subquestionIndex, values)}
+                    maxSelected={2}
                     placeholder={t("form.confirm_subq_lp_picker_placeholder")}
                   />
+                  {clearedPaths?.includes(`${slotPathPrefix}learning_performance`) && (
+                    <span className="text-xs font-medium text-amber-700">
+                      {t("form.confirm_cleared_notice")}
+                    </span>
+                  )}
+                  {resolverDrew(subquestionIndex, "learning_performance") && onFieldRedraw && (
+                    <button
+                      type="button"
+                      onClick={() => onFieldRedraw(subquestionIndex, "learning_performance")}
+                      className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                    >
+                      {t("form.confirm_redraw")}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <>

@@ -115,6 +115,11 @@ def test_social_studies_schemas_include_content_types() -> None:
     assert learning_performance
     assert {"value", "instruction", "科目"} <= set(learning_performance[0])
     assert "社1b-Ⅳ-1" in {entry["value"] for entry in learning_performance}
+    assert [entry["value"] for entry in body["核心素養"]] == [
+        "社-J-A1", "社-J-A2", "社-J-A3",
+        "社-J-B1", "社-J-B2", "社-J-B3",
+        "社-J-C1", "社-J-C2", "社-J-C3",
+    ]
 
 
 def test_math_schemas_include_the_learning_content_pool(tmp_path: Path) -> None:
@@ -139,6 +144,11 @@ def test_math_schemas_include_the_learning_content_pool(tmp_path: Path) -> None:
         len(entry["科目"]) == 1 and entry["科目"] in strand_prefixes
         for entry in learning_content
     )
+    assert [entry["value"] for entry in r.json()["核心素養"]] == [
+        "數-J-A1", "數-J-A2", "數-J-A3",
+        "數-J-B1", "數-J-B2", "數-J-B3",
+        "數-J-C1", "數-J-C2", "數-J-C3",
+    ]
 
 
 def test_math_learning_content_is_filtered_to_the_resolved_learning_stage(
@@ -436,6 +446,10 @@ def test_natural_sciences_schemas_include_pisa_science_dimensions() -> None:
     ]
     assert len(body["科學能力"]) == 6
     assert any(entry.get("parent") == "Global" for entry in body["情境子類別"])
+    assert [entry["value"] for entry in body["reporting_scale"]] == [
+        "1c", "1b", "1a", "2", "3", "4", "5", "6",
+    ]
+    assert all(entry["instruction"] for entry in body["reporting_scale"])
 
     learning_performance = body["學習表現"]
     assert len(learning_performance) == 20

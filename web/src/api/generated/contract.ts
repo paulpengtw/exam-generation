@@ -78,10 +78,11 @@ export interface ResolveRequest {
   [key: string]: unknown;
 }
 
-/** Completed payload and canonical sampler paths drawn by the resolver. */
+/** Completed payload and canonical sampler paths changed by the resolver. */
 export interface ResolveResponse {
   payload: Record<string, unknown>;
   drawn: string[];
+  cleared: string[];
 }
 
 /** Field-addressed 422 detail emitted for resolver conflicts. */

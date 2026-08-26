@@ -280,6 +280,57 @@ def test_resolve_count_redraw_rebuilds_slots_and_preserves_pinned_rows() -> None
     )
 
 
+def test_resolve_count_edit_reopens_drawn_slots_and_preserves_pinned_rows() -> None:
+    initial = resolve(
+        {
+            "subject": "social_studies",
+            "seed": 0,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["歷史"],
+            "core_competency": ["社-J-A1"],
+            "content_domain": "Civic Institutions and Systems",
+            "target_surface": "紙本",
+            "learning_content": ["歷Ba-Ⅳ-1"],
+            "learning_performance": ["歷1a-Ⅳ-1"],
+            "content_type": "純文字",
+            "sub_question_count": 3,
+        }
+    )
+    initial_configs = initial.payload["subquestion_configs"]
+    pinned_config = {
+        **initial_configs[0],
+        "question_type": "開放式建構反應題",
+    }
+    pinned_paths = {
+        f"subquestion_configs[0].{field}"
+        for field in ("question_type", "認知歷程", "learning_content", "learning_performance")
+    }
+    redraw_payload = {
+        **initial.payload,
+        "sub_question_count": 5,
+        "subquestion_configs": [pinned_config, *initial_configs[1:]],
+        "drawn": [path for path in initial.drawn if path not in pinned_paths],
+    }
+
+    redrawn = resolve(redraw_payload, redraws={"sub_question_count": 1})
+
+    assert redrawn.payload["sub_question_count"] == 5
+    assert len(redrawn.payload["subquestion_configs"]) == 5
+    assert redrawn.payload["subquestion_configs"][0] == pinned_config
+    assert all(
+        f"subquestion_configs[{index}].{field}" in redrawn.drawn
+        for index in range(1, 5)
+        for field in (
+            "question_type",
+            "認知歷程",
+            "learning_content",
+            "learning_performance",
+        )
+    )
+
+
 def test_resolve_fills_one_blank_math_field_from_the_request_seed() -> None:
     payload = {
         "subject": "math",
@@ -692,6 +743,50 @@ def test_resolve_rejects_incompatible_natural_parent_pin() -> None:
     ]
 
 
+def test_resolve_parent_edit_clears_and_redraws_invalid_natural_child() -> None:
+    result = resolve(
+        {
+            "subject": "natural_sciences",
+            "seed": 41,
+            "grade": 8,
+            "context": ["Global"],
+            "sub_context": "Maintenance of health",
+            "set_type": "題組題",
+            "q_type": ["Simple multiple-choice"],
+            "science_competency": ["能力一：以科學的角度解釋現象"],
+            "learning_content": ["INa-Ⅳ-1"],
+            "learning_performance": ["ti-Ⅳ-1"],
+            "content_type": "純文字",
+            "sub_question_count": 3,
+            "subquestion_configs": [
+                {
+                    "question_type": "Simple multiple-choice",
+                    "reporting_scale": "1",
+                    "learning_content": ["INa-Ⅳ-1"],
+                    "learning_performance": ["ti-Ⅳ-1"],
+                },
+                {
+                    "question_type": "Simple multiple-choice",
+                    "reporting_scale": "2",
+                    "learning_content": ["INa-Ⅳ-1"],
+                    "learning_performance": ["ti-Ⅳ-1"],
+                },
+                {
+                    "question_type": "Simple multiple-choice",
+                    "reporting_scale": "3",
+                    "learning_content": ["INa-Ⅳ-1"],
+                    "learning_performance": ["ti-Ⅳ-1"],
+                },
+            ],
+        },
+        redraws={"情境": 1},
+    )
+
+    assert result.payload["sub_context"] == "Management of pollution and air quality"
+    assert result.drawn == ["情境子類別"]
+    assert result.cleared == ["情境子類別"]
+
+
 def test_resolve_rejects_a_pinned_civic_domain_with_an_empty_learning_content_intersection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -741,6 +836,63 @@ def test_resolve_rejects_a_pinned_civic_domain_with_an_empty_learning_content_in
             "parent": target_domain,
         }
     ]
+
+
+def test_resolve_parent_edit_clears_and_redraws_incompatible_civic_learning_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.social_studies import sampler
+
+    monkeypatch.setattr(
+        sampler,
+        "_LC_DATA",
+        {
+            "學習內容": [
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": "公Synthetic-Ⅳ-1",
+                    "admitted_by": {
+                        "科目": ["公民與社會"],
+                        "內容領域": ["Civic Principles"],
+                    },
+                },
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": "公Synthetic-Ⅳ-2",
+                    "admitted_by": {
+                        "科目": ["公民與社會"],
+                        "內容領域": ["Civic Participation"],
+                    },
+                },
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sampler,
+        "_LP_DATA",
+        {"學習表現": [{"學習階段": "第四學習階段", "科目": "社", "value": "社1a-Ⅳ-1"}]},
+    )
+
+    result = resolve(
+        {
+            "subject": "social_studies",
+            "seed": 23,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["公民與社會"],
+            "content_domain": "Civic Participation",
+            "learning_content": ["公Synthetic-Ⅳ-1"],
+            "learning_performance": ["社1a-Ⅳ-1"],
+        },
+        redraws={"內容領域": 1},
+    )
+
+    assert result.payload["learning_content"] == ["公Synthetic-Ⅳ-2"]
+    assert result.cleared == ["學習內容"]
+    assert "學習內容" in result.drawn
 
 
 def test_resolve_keeps_a_pinned_civic_domain_without_consuming_its_keyed_stream(

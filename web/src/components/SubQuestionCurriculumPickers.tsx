@@ -12,18 +12,20 @@ export function SearchPicker({
   onChange,
   placeholder,
   id,
+  maxSelected,
 }: {
   available: SearchPickerEntry[];
   selected: string[];
   onChange: (values: string[]) => void;
   placeholder?: string;
   id?: string;
+  maxSelected?: number;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
 
   const filtered = useMemo(() => {
-    if (!query.trim()) return [];
+    if (!query.trim() || (maxSelected !== undefined && selected.length >= maxSelected)) return [];
     const q = query.toLowerCase();
     return available
       .filter((item) => !selected.includes(item.value))
@@ -33,9 +35,10 @@ export function SearchPicker({
           (item.instruction ?? "").toLowerCase().includes(q),
       )
       .slice(0, 10);
-  }, [available, selected, query]);
+  }, [available, maxSelected, selected, query]);
 
   function handleSelect(value: string) {
+    if (maxSelected !== undefined && selected.length >= maxSelected) return;
     onChange([...selected, value]);
     setQuery("");
     setOpen(false);
@@ -153,23 +156,23 @@ export default function SubQuestionCurriculumPickers({
       {visibleLearningPerformance.length > 0 && (
         <div>
           <p className="text-xs text-gray-500 mb-0.5">學習表現 (留空沿用全域)</p>
-          <SearchPicker
-            available={visibleLearningPerformance}
-            selected={visibleLearningPerformanceValues}
-            onChange={(values) => onLearningPerformanceChange(values.length ? values : undefined)}
-            placeholder="搜尋學習表現..."
-          />
+                  <SearchPicker
+                    available={visibleLearningPerformance}
+                    selected={visibleLearningPerformanceValues}
+                    onChange={(values) => onLearningPerformanceChange(values.length ? values : undefined)}
+                    placeholder="搜尋學習表現..."
+                  />
         </div>
       )}
       {visibleLearningContent.length > 0 && (
         <div>
           <p className="text-xs text-gray-500 mb-0.5">學習內容 (留空沿用全域)</p>
-          <SearchPicker
-            available={visibleLearningContent}
-            selected={visibleLearningContentValues}
-            onChange={(values) => onLearningContentChange(values.length ? values : undefined)}
-            placeholder="搜尋學習內容..."
-          />
+                  <SearchPicker
+                    available={visibleLearningContent}
+                    selected={visibleLearningContentValues}
+                    onChange={(values) => onLearningContentChange(values.length ? values : undefined)}
+                    placeholder="搜尋學習內容..."
+                  />
         </div>
       )}
     </div>
