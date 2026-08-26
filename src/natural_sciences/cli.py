@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_ns_prior_scope
+from src.common.cli_resolver import resolve_and_print
 from src.common.figure_policy import (
     build_figure_consistency_entries,
     effective_figure_kind,
@@ -246,7 +247,100 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--dry-run", action="store_true", help="Show prompt without calling LLM")
     gen.add_argument("--env-file", type=str, help="Path to .env file")
 
+    res = sub.add_parser("resolve", help="Resolve and print generation parameters")
+    res.add_argument("--grade", type=int, choices=_GRADES, help="Target grade level")
+    res.add_argument(
+        "--context",
+        type=str,
+        nargs="+",
+        choices=[c.value for c in QuestionContext],
+        help="情境",
+    )
+    res.add_argument(
+        "--sub-context",
+        type=str,
+        choices=[c.value for c in QuestionSubContext],
+        help="情境子類別",
+    )
+    res.add_argument(
+        "--set-type",
+        type=str,
+        choices=[s.value for s in QuestionSetType],
+        help="題型種類",
+    )
+    res.add_argument(
+        "--q-type",
+        type=str,
+        nargs="+",
+        choices=[q.value for q in QuestionType],
+        help="題型",
+    )
+    res.add_argument(
+        "--science-competency",
+        type=str,
+        nargs="+",
+        choices=[c.value for c in ScienceCompetency],
+        help="科學能力 pool",
+    )
+    res.add_argument("--learning-content", type=str, nargs="+", help="學習內容 編碼")
+    res.add_argument("--learning-performance", type=str, nargs="+", help="學習表現 編碼")
+    res.add_argument("--content-type", type=str, help="題目內容類型")
+    from src.natural_sciences.reporting_scale import REPORTING_SCALE_ORDER as _RS_RESOLVE_ORDER
+    res.add_argument(
+        "--reporting-scale",
+        type=str,
+        choices=list(_RS_RESOLVE_ORDER),
+        default=None,
+        help="目標 PISA Science Reporting Scale 等級",
+    )
+    res.add_argument("--count", type=int, default=1, help="Number of payloads to resolve")
+    res.add_argument("--seed", type=int, help="Random seed for reproducibility")
+
     return parser.parse_args(argv)
+
+
+def _ns_partial_payload(args: argparse.Namespace, seed: int | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"subject": "natural_sciences"}
+    if seed is not None:
+        payload["seed"] = seed
+    fields = {
+        "grade": args.grade,
+        "context": args.context,
+        "sub_context": args.sub_context,
+        "set_type": args.set_type,
+        "q_type": args.q_type,
+        "science_competency": args.science_competency,
+        "learning_content": args.learning_content,
+        "learning_performance": args.learning_performance,
+        "content_type": args.content_type,
+        "reporting_scale": args.reporting_scale,
+    }
+    payload.update({key: value for key, value in fields.items() if value is not None})
+    return payload
+
+
+def _ns_params_from_resolved(payload: dict[str, Any]) -> SampledParams:
+    return sample_params(
+        grade=payload["grade"],
+        context=[QuestionContext(value) for value in payload["context"]],
+        sub_context=QuestionSubContext(payload["sub_context"]),
+        set_type=QuestionSetType(payload["set_type"]),
+        q_type=[QuestionType(value) for value in payload["q_type"]],
+        science_competency=[
+            ScienceCompetency(value) for value in payload["science_competency"]
+        ],
+        learning_content=payload["learning_content"],
+        learning_performance=payload["learning_performance"],
+        content_type=payload["content_type"],
+        seed=payload.get("seed"),
+        sub_question_count=payload.get("sub_question_count"),
+        question_word_limit=payload.get("question_word_limit"),
+        option_word_limit=payload.get("option_word_limit"),
+        subquestion_configs=payload.get("subquestion_configs"),
+        difficulty=payload.get("difficulty"),
+        reporting_scale=payload.get("reporting_scale"),
+        allow_duplicate_figure_kinds=payload.get("allow_duplicate_figure_kinds", False),
+    )
 
 
 def _resolve_enum(value: str | None, enum_cls: type) -> object | None:
@@ -1481,6 +1575,12 @@ def generate_with_corrections(
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
 
+    if args.command == "resolve":
+        for index in range(args.count):
+            seed = args.seed + index if args.seed is not None else None
+            resolve_and_print(_ns_partial_payload(args, seed))
+        return
+
     if args.command != "generate":
         return
 
@@ -1509,21 +1609,6 @@ def main(argv: list[str] | None = None) -> None:
                 file=sys.stderr,
             )
 
-    context_override = (
-        [_resolve_enum(v, QuestionContext) for v in args.context]
-        if args.context else None
-    )
-    sub_context_override = _resolve_enum(args.sub_context, QuestionSubContext)
-    set_type_override = _resolve_enum(args.set_type, QuestionSetType)
-    q_type_override = [_resolve_enum(v, QuestionType) for v in args.q_type] if args.q_type else None
-    science_competency_override = (
-        [_resolve_enum(v, ScienceCompetency) for v in args.science_competency]
-        if args.science_competency else None
-    )
-    learning_content_override = args.learning_content if args.learning_content else None
-    learning_performance_override = args.learning_performance if args.learning_performance else None
-    content_type_override = args.content_type if args.content_type else None
-
     # Build the canonical NS curriculum context once per run; all pipeline stages share it.
     ns_curriculum_context = load_curriculum_context(NATURAL_SCIENCES.data_dir)
 
@@ -1538,19 +1623,11 @@ def main(argv: list[str] | None = None) -> None:
             question_id = f"ns_{timestamp}_{i+1:03d}"
 
             # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
-            params = sample_params(
-                grade=args.grade,
-                context=context_override,
-                sub_context=sub_context_override,
-                set_type=set_type_override,
-                q_type=q_type_override,
-                science_competency=science_competency_override,
-                learning_content=learning_content_override,
-                learning_performance=learning_performance_override,
-                content_type=content_type_override,
-                seed=seed,
-                reporting_scale=args.reporting_scale,
+            resolved = resolve_and_print(
+                _ns_partial_payload(args, seed),
+                delimited=args.dry_run,
             )
+            params = _ns_params_from_resolved(resolved.payload)
 
             print(
                 f"\n[{i + 1}/{args.count}] Sampled: grade={params.grade}, "

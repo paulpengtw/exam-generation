@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
+from src.common.cli_resolver import resolve_and_print
 from src.common.figure_policy import (
     build_figure_consistency_entries,
     effective_figure_kind,
@@ -324,7 +325,102 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--dry-run", action="store_true", help="Show prompt without calling LLM")
     gen.add_argument("--env-file", type=str, help="Path to .env file")
 
+    res = sub.add_parser("resolve", help="Resolve and print generation parameters")
+    res.add_argument("--grade", type=int, choices=_GRADES, help="Target grade level")
+    res.add_argument("--context", type=str, nargs="+", help="情境")
+    res.add_argument("--set-type", type=str, help="題型種類")
+    res.add_argument(
+        "--q-type",
+        type=str,
+        nargs="+",
+        choices=[q.value for q in QuestionType],
+        help="題型",
+    )
+    res.add_argument(
+        "--subject",
+        type=str,
+        nargs="+",
+        choices=[s.value for s in QuestionSubject],  # type: ignore[attr-defined]
+        help="科目焦點",
+    )
+    res.add_argument(
+        "--core-competency",
+        type=str,
+        nargs="+",
+        choices=[c.value for c in CoreCompetency],  # type: ignore[attr-defined]
+        help="核心素養代號 pool",
+    )
+    res.add_argument("--learning-content", type=str, nargs="+", help="學習內容 編碼")
+    res.add_argument("--learning-performance", type=str, nargs="+", help="學習表現 編碼")
+    res.add_argument("--content-type", type=str, help="題目內容類型")
+    res.add_argument(
+        "--difficulty",
+        type=str,
+        choices=["easy", "medium", "hard"],
+        default=None,
+        help="題組難度",
+    )
+    res.add_argument("--count", type=int, default=1, help="Number of payloads to resolve")
+    res.add_argument("--seed", type=int, help="Random seed for reproducibility")
+
     return parser.parse_args(argv)
+
+
+def _ss_partial_payload(args: argparse.Namespace, seed: int | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"subject": "social_studies"}
+    if seed is not None:
+        payload["seed"] = seed
+    fields = {
+        "grade": args.grade,
+        "context": args.context,
+        "set_type": args.set_type,
+        "q_type": args.q_type,
+        "subject_filter": args.subject,
+        "core_competency": args.core_competency,
+        "learning_content": args.learning_content,
+        "learning_performance": args.learning_performance,
+        "content_type": args.content_type,
+        "difficulty": args.difficulty,
+    }
+    payload.update({key: value for key, value in fields.items() if value is not None})
+    return payload
+
+
+def _ss_params_from_resolved(payload: dict[str, Any]) -> SampledParams:
+    subject_filter = payload.get("subject_filter")
+    if subject_filter is not None and not isinstance(subject_filter, list):
+        subject_filter = [subject_filter]
+    q_type = payload.get("q_type")
+    resolved_q_types = [QuestionType(value) for value in q_type] if q_type else None
+    params = sample_params(
+        grade=payload["grade"],
+        context=[QuestionContext(value) for value in payload["context"]],
+        set_type=QuestionSetType(payload["set_type"]),
+        q_type=resolved_q_types,
+        subject=(
+            [QuestionSubject(value) for value in subject_filter]
+            if subject_filter
+            else None
+        ),
+        core_competency=[CoreCompetency(value) for value in payload["core_competency"]],
+        learning_content=payload["learning_content"],
+        learning_performance=payload["learning_performance"],
+        content_type=payload["content_type"],
+        content_domain=payload.get("content_domain"),
+        target_surface=payload.get("target_surface"),
+        seed=payload.get("seed"),
+        sub_question_count=payload.get("sub_question_count"),
+        question_word_limit=payload.get("question_word_limit"),
+        option_word_limit=payload.get("option_word_limit"),
+        subquestion_configs=payload.get("subquestion_configs"),
+        difficulty=payload.get("difficulty"),
+        allow_duplicate_figure_kinds=payload.get("allow_duplicate_figure_kinds", False),
+    )
+    if resolved_q_types is not None:
+        # The transitional SS sampler treats top-level q_type as a draw pool;
+        # the resolver's completed list is already the pinned pool/order.
+        params = params.model_copy(update={"題型": resolved_q_types})
+    return params
 
 
 def _resolve_enum(value: str | None, enum_cls: type) -> object | None:
@@ -1619,6 +1715,12 @@ def generate_with_corrections(
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
 
+    if args.command == "resolve":
+        for index in range(args.count):
+            seed = args.seed + index if args.seed is not None else None
+            resolve_and_print(_ss_partial_payload(args, seed))
+        return
+
     if args.command != "generate":
         return
 
@@ -1647,22 +1749,6 @@ def main(argv: list[str] | None = None) -> None:
                 file=sys.stderr,
             )
 
-    context_override = (
-        [_resolve_enum(v, QuestionContext) for v in args.context]
-        if args.context else None
-    )
-    set_type_override = _resolve_enum(args.set_type, QuestionSetType)
-    q_type_override = [_resolve_enum(v, QuestionType) for v in args.q_type] if args.q_type else None
-    subject_override = [QuestionSubject(v) for v in args.subject] if args.subject else None
-    core_competency_override = (
-        [CoreCompetency(v) for v in args.core_competency]
-        if args.core_competency
-        else None
-    )
-    learning_content_override = args.learning_content if args.learning_content else None
-    learning_performance_override = args.learning_performance if args.learning_performance else None
-    content_type_override = args.content_type if args.content_type else None
-
     # Build the canonical SS curriculum context once per run; all pipeline stages share it.
     ss_curriculum_context = load_curriculum_context(SOCIAL_STUDIES.data_dir)
 
@@ -1678,19 +1764,11 @@ def main(argv: list[str] | None = None) -> None:
         for i in range(args.count):
             seed = (base_seed + i) if base_seed is not None else None
             # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
-            params = sample_params(
-                grade=args.grade,
-                context=context_override,
-                set_type=set_type_override,
-                q_type=q_type_override,
-                subject=subject_override,
-                core_competency=core_competency_override,
-                learning_content=learning_content_override,
-                learning_performance=learning_performance_override,
-                content_type=content_type_override,
-                seed=seed,
-                difficulty=args.difficulty,
+            resolved = resolve_and_print(
+                _ss_partial_payload(args, seed),
+                delimited=args.dry_run,
             )
+            params = _ss_params_from_resolved(resolved.payload)
             params_list.append(params)
 
         briefs = _plan_batch_briefs(client, config, params_list)
