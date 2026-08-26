@@ -33,6 +33,28 @@ def test_sample_params_constrains_context_to_explicit_sub_context_parent() -> No
     assert sampled.情境子類別 is submitted
 
 
+def test_single_admitted_parent_does_not_consume_seeded_rng() -> None:
+    sampled = sample_params(
+        grade=12,
+        sub_context=QuestionSubContext("Maintenance of health"),
+        seed=42,
+    )
+
+    assert sampled.題型.value == "Simple multiple-choice"
+
+
+def test_matching_subcontexts_accepts_any_admitted_parent(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.natural_sciences import sampler
+
+    monkeypatch.setitem(
+        sampler._SUB_CONTEXT_ADMITTED_BY,
+        "Maintenance of health",
+        ["Personal", "Global"],
+    )
+
+    assert QuestionSubContext("Maintenance of health") in sampler._matching_subcontexts({"Global"})
+
+
 def test_sample_params_grade_derives_stage_pools():
     """Grades 7-9 draw 第四學習階段 codes; grades 10-12 draw 第五學習階段 codes."""
     lc_stage = {e["value"]: e["學習階段"] for e in load_learning_content()["學習內容"]}

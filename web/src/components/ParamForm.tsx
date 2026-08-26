@@ -1365,16 +1365,25 @@ export default function ParamForm({
         if (
           subject === "natural_sciences" &&
           s.情境.length > 0 &&
-          ip.context === undefined &&
-          ip.sub_context === undefined
+          ip.context === undefined
         ) {
-          setField("context", [s.情境[0].value]);
-          const firstSub = filterEntriesByAdmittedParent(
-            s.情境子類別 ?? [],
-            "情境",
-            s.情境[0].value,
-          )[0];
-          setField("subContext", firstSub?.value ?? "");
+          if (ip.sub_context !== undefined) {
+            const admittedContexts = s.情境子類別?.find(
+              (entry) => entry.value === ip.sub_context,
+            )?.admitted_by?.["情境"] ?? [];
+            if (admittedContexts.length > 0) {
+              setField("context", admittedContexts);
+              userChosenFields.current.add("context");
+            }
+          } else {
+            setField("context", [s.情境[0].value]);
+            const firstSub = filterEntriesByAdmittedParent(
+              s.情境子類別 ?? [],
+              "情境",
+              s.情境[0].value,
+            )[0];
+            setField("subContext", firstSub?.value ?? "");
+          }
         }
         const questionStyles = s.question_style ?? [];
         if (ip.style === undefined) {
@@ -2356,7 +2365,20 @@ export default function ParamForm({
       return result;
     });
     const perQuestionParams: Record<string, unknown>[] = hasHistoryPerQuestionParams
-      ? historyPerQuestionParams
+      ? historyPerQuestionParams.map((params) => {
+          const hasHistoryContext = Array.isArray(params.context)
+            ? params.context.length > 0
+            : !!params.context;
+          if (subject !== "natural_sciences" || !params.sub_context || hasHistoryContext) {
+            return params;
+          }
+          const admittedContexts = schemas?.情境子類別?.find(
+            (entry) => entry.value === params.sub_context,
+          )?.admitted_by?.["情境"] ?? [];
+          return admittedContexts.length > 0
+            ? { ...params, context: admittedContexts }
+            : params;
+        })
       : buildPerQuestionParams();
     const usingHistoryPerQuestionParams = hasHistoryPerQuestionParams;
     setPendingPerQuestionParams(perQuestionParams);

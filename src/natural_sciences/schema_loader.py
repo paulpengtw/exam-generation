@@ -68,7 +68,7 @@ def build_instructions(schemas: dict) -> dict[str, dict[str, str]]:
 
 
 # NS-only helper — no SS counterpart; kept here rather than pushed into common.
-def subcontexts_for_context(schemas: dict, context: str) -> list[dict[str, str]]:
+def subcontexts_for_context(schemas: dict, context: str) -> list[dict[str, object]]:
     return [
         entry for entry in schemas.get("情境子類別", [])
         if context in entry.get("admitted_by", {}).get("情境", [])

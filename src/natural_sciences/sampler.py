@@ -102,7 +102,12 @@ def sample_params(
     if context is not None:
         selected_context = context
     elif sub_context is not None and _SUB_CONTEXT_ADMITTED_BY.get(sub_context.value):
-        parent = rng.choice(_SUB_CONTEXT_ADMITTED_BY[sub_context.value])
+        admitted_contexts = _SUB_CONTEXT_ADMITTED_BY[sub_context.value]
+        parent = (
+            admitted_contexts[0]
+            if len(admitted_contexts) == 1
+            else rng.choice(admitted_contexts)
+        )
         selected_context = [QuestionContext(parent)]
     else:
         selected_context = [field_rng("情境").choice(list(QuestionContext))]
