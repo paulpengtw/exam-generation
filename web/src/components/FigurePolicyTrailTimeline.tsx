@@ -31,6 +31,7 @@ export default function FigurePolicyTrailTimeline({
               {entry.kind === "collision" && t("card.figurePolicyCollision")}
               {entry.kind === "repair" && t("card.figurePolicyRepair")}
               {entry.kind === "warning" && t("card.figurePolicyWarning")}
+              {entry.kind === "data_inconsistency" && t("card.figurePolicyWarning")}
             </div>
             {entry.kind === "spec" && (
               <p className="mt-1">
@@ -49,6 +50,15 @@ export default function FigurePolicyTrailTimeline({
             )}
             {entry.kind === "warning" && (
               <p className="mt-1 whitespace-pre-wrap text-amber-800">{entry.message}</p>
+            )}
+            {entry.kind === "data_inconsistency" && (
+              <>
+                <p className="mt-1">
+                  {entry.series} @ {String(entry.x)}：{entry.left}={entry.left_value}
+                  {entry.unit}，{entry.right}={entry.right_value}{entry.unit}
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-amber-800">{entry.message}</p>
+              </>
             )}
             <time dateTime={entry.timestamp} className="mt-1 block text-xs text-gray-500">
               {entry.timestamp}

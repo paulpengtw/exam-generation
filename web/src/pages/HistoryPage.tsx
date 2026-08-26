@@ -122,7 +122,9 @@ function HistoryList() {
         <ul className="space-y-2">
           {items.map((item) => {
             const hasFigurePolicyDegradation = item.figure_policy_trail?.some(
-              (entry) => entry.kind === "warning" && entry.duplicate_image_shipped,
+              (entry) =>
+                (entry.kind === "warning" && entry.duplicate_image_shipped) ||
+                entry.kind === "data_inconsistency",
             ) ?? false;
 
             return (

@@ -450,8 +450,12 @@ export default function QuestionCard({
   const figurePolicyWarnings = (figurePolicyTrail ?? []).filter(
     (
       entry,
-    ): entry is Extract<FigurePolicyTrailEntry, { kind: "warning" }> =>
-      entry.kind === "warning" && entry.duplicate_image_shipped,
+    ): entry is Extract<
+      FigurePolicyTrailEntry,
+      { kind: "warning" | "data_inconsistency" }
+    > =>
+      (entry.kind === "warning" && entry.duplicate_image_shipped) ||
+      entry.kind === "data_inconsistency",
   );
   const phaseLabel = isFinal
     ? t("card.final")
@@ -613,7 +617,10 @@ export default function QuestionCard({
           <ul className="mt-1 space-y-1">
             {figurePolicyWarnings.map((warning, index) => (
               <li key={`${warning.timestamp}-${index}`}>
-                {warning.left && warning.right && warning.effective_figure_kind ? (
+                {warning.kind === "warning" &&
+                warning.left &&
+                warning.right &&
+                warning.effective_figure_kind ? (
                   <>
                     {t("card.figurePolicyCollisionPair")}：{warning.left} × {warning.right}；
                     {t("card.figurePolicyEffectiveKind")}：{warning.effective_figure_kind}
