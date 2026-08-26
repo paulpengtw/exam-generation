@@ -39,6 +39,13 @@ confirmation screen is populated only from the resolver's completed
 `{payload, drawn}` response; the browser performs no random draw and does not
 filter a 全域池 for drawing. `drawn` paths drive 隨機 badges and are carried in
 the final generation payload so they are persisted in `params_json`.
+Confirmation value rows use the generic `DrawnValueRows` renderer: a canonical
+field path is matched to a label-map entry, read from the completed payload,
+and rendered with its drawn/pinned badge. This applies to both 題組-level and
+per-小題 paths, while an existing editable control can provide the value slot
+without taking over path or badge handling. Adding another drawable field
+therefore requires only its label-map entry on the client; the resolver remains
+the source of the displayed value.
 
 For 社會領域 and 自然科學, the resolver also completes blank per-小題
 學習內容 / 學習表現 in the existing 各小題配置 cards. A 重抽 clears only the

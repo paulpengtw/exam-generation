@@ -3,6 +3,7 @@ import type { SchemaEntry } from "../api/client";
 import { useT } from "../i18n/useT";
 import { SearchPicker, type SearchPickerEntry } from "./SubQuestionCurriculumPickers";
 import type { SubQuestionConfig } from "../components/ParamForm";
+import DrawnValueRows, { type DrawnValueLabelMap } from "./DrawnValueRows";
 import {
   SubQuestionContentTypeField,
   SubQuestionImageGenerationModeField,
@@ -19,7 +20,9 @@ export default function SubquestionConfigCards({
   subject,
   questionIndex = 0,
   drawnPaths,
+  drawnValueLabels,
   contentDomain,
+  showContentDomain = true,
   questionTypes,
   contentTypes,
   lcEntryByCode,
@@ -45,8 +48,12 @@ export default function SubquestionConfigCards({
   /** Canonical resolver paths used to derive random badges for this question. */
   questionIndex?: number;
   drawnPaths?: readonly string[];
-  /** Topic-set ICCS content domain shown alongside the per-subquestion axes. */
+  /** Labels shared with the question-level generic confirmation rows. */
+  drawnValueLabels?: DrawnValueLabelMap;
+  /** Topic-set ICCS content domain shown in non-confirmation summaries. */
   contentDomain?: string;
+  /** Confirmation renders the domain through ParamForm's generic row. */
+  showContentDomain?: boolean;
   questionTypes: SchemaEntry[];
   contentTypes: SchemaEntry[];
   lcEntryByCode: Map<string, SchemaEntry>;
@@ -90,10 +97,20 @@ export default function SubquestionConfigCards({
   const visibleAvailableLp = filteredLpPool === undefined
     ? availableLp ?? []
     : (availableLp ?? []).filter((entry) => filteredLpPool.includes(entry.value));
+  const defaultDrawnValueLabels: DrawnValueLabelMap = {
+    "認知歷程": t("form.confirm_subq_cognitive_process").replace(/[：:]\s*$/, ""),
+    reporting_scale: t("form.confirm_reporting_scale"),
+  };
+  const readDrawnValue = (path: string, row: ResolvedSubQuestionConfig): unknown => {
+    const field = path.match(/(?:^|\.)([^.[\]]+)$/)?.[1];
+    if (!field) return undefined;
+    const key = field === "認知歷程" ? "cognitive_process" : field;
+    return (row as unknown as Record<string, unknown>)[key];
+  };
 
   return (
     <>
-      {subject === "social_studies" && (
+      {subject === "social_studies" && showContentDomain && (
         <div className="mb-3 text-sm font-medium text-gray-700">
           {t("form.confirm_content_domain")}: {contentDomain ?? t("form.confirm_backend_sampled")}
         </div>
@@ -102,6 +119,9 @@ export default function SubquestionConfigCards({
         {configs.map((row, subquestionIndex) => {
         const lcPickerId = `${baseId}-${subquestionIndex}-lc`;
         const lpPickerId = `${baseId}-${subquestionIndex}-lp`;
+        const cognitivePath = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].認知歷程`;
+        const reportingScalePath = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].reporting_scale`;
+        const slotPathPrefix = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].`;
         const visibleLearningContent = filteredLcPool === undefined
           ? row.learning_content ?? []
           : (row.learning_content ?? []).filter((code) => filteredLcPool.includes(code));
@@ -114,11 +134,37 @@ export default function SubquestionConfigCards({
             <h5 className="mb-2 text-xs font-semibold text-gray-600">
               {t("form.confirm_subquestion_row_title").replace("{n}", String(subquestionIndex + 1))}
             </h5>
+            {drawnPaths !== undefined && (subject === "social_studies" || subject === "natural_sciences") && (
+              <DrawnValueRows
+                drawnPaths={drawnPaths}
+                fieldLabels={drawnValueLabels ?? defaultDrawnValueLabels}
+                pathPrefix={slotPathPrefix}
+                alwaysPaths={[subject === "social_studies" ? cognitivePath : reportingScalePath]}
+                valueForPath={(path) => readDrawnValue(path, row)}
+                renderValue={subject === "natural_sciences" && onReportingScaleChange
+                  ? (path) => path.endsWith(".reporting_scale")
+                    ? (
+                        <SubQuestionReportingScaleField
+                          config={row}
+                          hideLabel
+                          emptyOptionLabel={t("form.confirm_not_filled")}
+                          onChange={(patch) => onReportingScaleChange(subquestionIndex, patch.reporting_scale ?? "")}
+                        />
+                      )
+                    : undefined
+                  : undefined}
+                emptyValue={t("form.confirm_not_filled")}
+                drawnBadge={t("form.confirm_badge_random")}
+                pinnedBadge={t("form.confirm_badge_user")}
+                compact
+              />
+            )}
             {onQuestionTypeChange ? (
               <SubQuestionQuestionTypeField
                 config={row}
                 subject={subject}
                 questionTypes={questionTypes}
+                emptyOptionLabel={t("form.confirm_not_filled")}
                 badge={{
                   label: t(resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "form.confirm_badge_random" : "form.confirm_badge_user"),
                   className: `text-xs font-medium ${resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "text-amber-700" : "text-green-700"}`,
@@ -128,7 +174,6 @@ export default function SubquestionConfigCards({
             ) : (
               <div className="text-sm text-gray-700">{t("form.confirm_subq_q_type")} {row.question_type ?? t("form.confirm_random")}</div>
             )}
-            {subject === "social_studies" && <div className="text-sm text-gray-700">{t("form.confirm_subq_cognitive_process")} {row.cognitive_process ?? t("form.confirm_random")}</div>}
             {onInstructionChange ? (
               <SubQuestionInstructionField
                 config={row}
@@ -223,21 +268,6 @@ export default function SubquestionConfigCards({
             ) : (
               <div className="text-sm text-gray-700">{t("form.confirm_subq_text_word_limit")} {row.text_word_limit ?? t("form.confirm_unlimited")}</div>
             )}
-            {subject === "natural_sciences" && (
-              onReportingScaleChange ? (
-                <SubQuestionReportingScaleField
-                  config={row}
-                  badge={{
-                    label: t(resolverDrew(subquestionIndex, "reporting_scale") || !row.reporting_scale?.trim() ? "form.confirm_badge_random" : "form.confirm_badge_user"),
-                    className: `text-xs font-medium ${resolverDrew(subquestionIndex, "reporting_scale") || !row.reporting_scale?.trim() ? "text-amber-700" : "text-green-700"}`,
-                  }}
-                  onChange={(patch) => onReportingScaleChange(subquestionIndex, patch.reporting_scale ?? "")}
-                />
-              ) : (
-                <div className="text-sm text-gray-700">{t("form.confirm_subq_reporting_scale")} {row.reporting_scale ?? t("form.confirm_random")}</div>
-              )
-            )}
-
             {/* 學習內容 — editable picker when callback provided, read-only otherwise */}
             <div>
               {onLcChange ? (

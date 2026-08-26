@@ -133,7 +133,7 @@ describe("ParamForm — Reporting Scale selection (自然科學)", () => {
       expect(dt.parentElement).toHaveTextContent("4");
     });
 
-    it("prints (random) in confirmation when Reporting Scale is unset", async () => {
+    it("describes per-subquestion resolution when Reporting Scale is unset", async () => {
       getSchemasMock.mockResolvedValue(SCIENCE_SCHEMA);
       const user = userEvent.setup();
       render(<ParamForm subject="natural_sciences" onSubmit={vi.fn()} disabled={false} />);
@@ -141,7 +141,7 @@ describe("ParamForm — Reporting Scale selection (自然科學)", () => {
       await user.click(screen.getByRole("button", { name: /generate/i }));
       await screen.findByRole("heading", { name: /review settings/i });
       const dt = screen.getByText("Reporting Scale", { selector: "dt" });
-      expect(dt.parentElement).toHaveTextContent("(random)");
+      expect(dt.parentElement).toHaveTextContent("Resolved per sub-question");
     });
   });
 });
