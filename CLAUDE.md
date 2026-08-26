@@ -464,11 +464,23 @@ uv sync
 uv run python -m src.cli generate
 
 # Run tests
-uv run pytest
+choom -n 500 -- uv run pytest
 
 # Lint
 uv run ruff check src/
 ```
+
+### Test-run memory discipline
+
+The bot container has ~8 GB total for the bot, Codex, and all active worktree lanes.
+
+1. Run test suites in at most 2–3 concurrent lanes; never run pytest in every worktree at once.
+2. Prefix pytest and other memory-heavy batch commands with `choom -n 500 --`, e.g. `choom -n 500 -- uv run pytest …` or `choom -n 500 -- npm --prefix web test`.
+3. If memory is still tight, bound pytest with `ulimit -v` or reduce concurrency for tests that spawn subprocesses.
+
+`choom` requires no extra privileges; its `oom_score_adj` setting is inherited by children.
+The `tests/test_curriculum_context*.py` tests spawn Python subprocesses, so keep their concurrency especially conservative.
+If `choom` is unavailable, preserve the lane cap and avoid broad parallel pytest runs.
 
 ### Environment Variables
 
