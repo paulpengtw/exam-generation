@@ -48,6 +48,69 @@ def test_resolve_endpoint_returns_completed_math_payload(resolve_client: TestCli
     assert response.json()["drawn"] == ["數學思考", "題目內容類型"]
 
 
+def test_resolve_endpoint_predraws_social_count_and_rebuilds_slots(
+    resolve_client: TestClient,
+) -> None:
+    payload = {
+        "subject": "social_studies",
+        "seed": 0,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "subject_filter": ["歷史"],
+        "core_competency": ["社-J-A1"],
+        "content_domain": "Civic Institutions and Systems",
+        "target_surface": "紙本",
+        "learning_content": ["歷Ba-Ⅳ-1"],
+        "learning_performance": ["歷1a-Ⅳ-1"],
+        "content_type": "純文字",
+    }
+
+    first_response = resolve_client.post("/api/generate/resolve", json=payload)
+
+    assert first_response.status_code == 200
+    first = first_response.json()
+    initial_count = first["payload"]["sub_question_count"]
+    initial_configs = first["payload"]["subquestion_configs"]
+    assert 3 <= initial_count <= 7
+    assert len(initial_configs) == initial_count
+    assert "sub_question_count" in first["drawn"]
+    assert all(
+        config["question_type"]
+        and config["cognitive_process"]
+        and config["learning_content"]
+        and config["learning_performance"]
+        for config in initial_configs
+    )
+
+    pinned_paths = {
+        "subquestion_configs[0].question_type",
+        "subquestion_configs[0].認知歷程",
+        "subquestion_configs[0].learning_content",
+        "subquestion_configs[0].learning_performance",
+    }
+    redraw_payload = {
+        **first["payload"],
+        "sub_question_count": None,
+        "subquestion_configs": [
+            {**initial_configs[0], "question_type": "開放式建構反應題"},
+            *initial_configs[1:],
+        ],
+        "drawn": [path for path in first["drawn"] if path not in pinned_paths],
+    }
+    redraw_response = resolve_client.post(
+        "/api/generate/resolve",
+        json={**redraw_payload, "redraws": {"sub_question_count": 1}},
+    )
+
+    assert redraw_response.status_code == 200
+    redrawn = redraw_response.json()
+    assert redrawn["payload"]["sub_question_count"] == 6
+    assert len(redrawn["payload"]["subquestion_configs"]) == 6
+    assert redrawn["payload"]["subquestion_configs"][0]["question_type"] == "開放式建構反應題"
+    assert "sub_question_count" in redrawn["drawn"]
+
+
 @pytest.mark.parametrize(
     "math_thinking",
     [[], ["形成", "運用", "詮釋評估", "形成"], ["不合法"]],

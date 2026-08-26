@@ -26,6 +26,7 @@ The three CLI entry points expose a client-free `resolve` subcommand with the sa
 Each CLI's `generate` path builds a partial GenerateParams-style payload, resolves and prints one record per question before generation, and passes the completed values through the existing transitional sampler fill.
 Seeded batches resolve each question independently with `seed + index`, so repeated CLI runs with the same pins replay the printed payloads.
 Supplying 內容領域 is a pin and does not consume its keyed sampler stream; a blank value is resolved per 題組 and carried into the submitted `per_question_params` rows.
+For 社會領域 and 自然科學, a blank `sub_question_count` is resolved on the keyed `sub_question_count` stream in the 3–7 range and materializes exactly that many fully resolved `subquestion_configs`; a supplied count remains a pin. A count redraw uses the prior `drawn` paths to reopen only auto-drawn slot fields, preserving user pins while growth adds resolved rows and shrinking drops the tail.
 
 ### Batch-level prompt dedup (issue #111)
 
@@ -47,6 +48,11 @@ request shows a lightweight loading state, while a 422/5xx leaves no stale
 resolved value in place and offers a retry. Regenerating an older History
 record may silently resolve a field absent from that record; it receives the
 隨機 badge without a separate flag or backfill of the old record.
+The form's 小題數 input remains blank when the resolver supplies the count, and
+the confirmation-only draw does not create a 未送出輸入 draft. Its count 重抽
+clears the pending count and resubmits the existing slot rows with the incremented
+keyed counter; the resolver applies the parent-edit survival rule before returning
+the rebuilt list.
 
 Natural-sciences schema payloads carry each 情境子類別's admitting values as
 `admitted_by: {"情境": [...]}` while retaining the legacy `parent` field for existing consumers.
@@ -56,8 +62,9 @@ For 社會領域 and 數學, curriculum rows expose `admitted_by: {"科目": [..
 Social-studies 學習內容 rows for 公民與社會/跨科 additionally carry `admitted_by["內容領域"]` from the ICCS mapping; 歷史/地理 rows omit that key because 內容領域 is not an applicable parent for those subjects.
 
 數學也 exposes request-level `sub_question_count` and the 題組文本
-`text_word_limit` in the web form. Its 發送前確認 shows those canonical
-top-level values, but it does not pre-draw or submit `subquestion_configs`.
+`text_word_limit` in the web form. For a resolved 題組題, 發送前確認 shows the
+sampler-derived count as a canonical value, while math still does not submit
+`subquestion_configs`.
 
 ### 出題模式 is a prompt-level hint
 

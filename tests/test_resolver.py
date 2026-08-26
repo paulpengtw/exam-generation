@@ -71,7 +71,10 @@ def test_resolve_draws_social_core_competency_when_blank() -> None:
     result = resolve(payload)
 
     assert result.payload["core_competency"] == ["社-J-C2"]
-    assert result.drawn == ["核心素養"]
+    assert "核心素養" in result.drawn
+    assert 3 <= result.payload["sub_question_count"] <= 7
+    assert len(result.payload["subquestion_configs"]) == result.payload["sub_question_count"]
+    assert "sub_question_count" in result.drawn
 
 
 def test_resolve_leaves_supplied_social_core_competency_pinned() -> None:
@@ -93,8 +96,10 @@ def test_resolve_leaves_supplied_social_core_competency_pinned() -> None:
 
     result = resolve(payload)
 
-    assert result.payload == payload
-    assert result.drawn == []
+    assert result.payload["core_competency"] == payload["core_competency"]
+    assert 3 <= result.payload["sub_question_count"] <= 7
+    assert len(result.payload["subquestion_configs"]) == result.payload["sub_question_count"]
+    assert "sub_question_count" in result.drawn
 
 
 def test_resolve_assigns_a_seed_when_the_request_omits_one(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -143,6 +148,136 @@ def test_resolve_draws_blank_per_subquestion_curriculum_fields() -> None:
     assert configs[0]["learning_performance"]
     assert "subquestion_configs[0].learning_content" in result.drawn
     assert "subquestion_configs[0].learning_performance" in result.drawn
+
+
+def test_resolve_blank_social_count_builds_a_resolved_slot_list() -> None:
+    result = resolve(
+        {
+            "subject": "social_studies",
+            "seed": 606,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["歷史"],
+            "core_competency": ["社-J-A1"],
+            "content_domain": "Civic Institutions and Systems",
+            "target_surface": "紙本",
+            "learning_content": ["歷Ba-Ⅳ-1"],
+            "learning_performance": ["歷1a-Ⅳ-1"],
+            "content_type": "純文字",
+        }
+    )
+
+    count = result.payload["sub_question_count"]
+    configs = result.payload["subquestion_configs"]
+
+    assert 3 <= count <= 7
+    assert len(configs) == count
+    assert "sub_question_count" in result.drawn
+    assert all(config["question_type"] for config in configs)
+    assert all(config["cognitive_process"] for config in configs)
+    assert all(config["learning_content"] for config in configs)
+    assert all(config["learning_performance"] for config in configs)
+    assert all(
+        f"subquestion_configs[{index}].{field}" in result.drawn
+        for index in range(count)
+        for field in (
+            "question_type",
+            "認知歷程",
+            "learning_content",
+            "learning_performance",
+        )
+    )
+
+
+def test_resolve_blank_natural_count_builds_a_resolved_slot_list() -> None:
+    result = resolve(
+        {
+            "subject": "natural_sciences",
+            "seed": 606,
+            "grade": 8,
+            "context": ["Personal"],
+            "sub_context": "Maintenance of health",
+            "set_type": "題組題",
+            "science_competency": ["能力一：以科學的角度解釋現象"],
+            "learning_content": ["INa-Ⅳ-1"],
+            "learning_performance": ["ti-Ⅳ-1"],
+            "content_type": "純文字",
+        }
+    )
+
+    count = result.payload["sub_question_count"]
+    configs = result.payload["subquestion_configs"]
+
+    assert 3 <= count <= 7
+    assert len(configs) == count
+    assert "sub_question_count" in result.drawn
+    assert all(config["question_type"] for config in configs)
+    assert all(config["reporting_scale"] for config in configs)
+    assert all(config["learning_content"] for config in configs)
+    assert all(config["learning_performance"] for config in configs)
+    assert all(
+        f"subquestion_configs[{index}].{field}" in result.drawn
+        for index in range(count)
+        for field in (
+            "question_type",
+            "reporting_scale",
+            "learning_content",
+            "learning_performance",
+        )
+    )
+
+
+def test_resolve_count_redraw_rebuilds_slots_and_preserves_pinned_rows() -> None:
+    initial = resolve(
+        {
+            "subject": "social_studies",
+            "seed": 0,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["歷史"],
+            "core_competency": ["社-J-A1"],
+            "content_domain": "Civic Institutions and Systems",
+            "target_surface": "紙本",
+            "learning_content": ["歷Ba-Ⅳ-1"],
+            "learning_performance": ["歷1a-Ⅳ-1"],
+            "content_type": "純文字",
+            "sub_question_count": 3,
+        }
+    )
+    initial_configs = initial.payload["subquestion_configs"]
+    pinned_config = {
+        **initial_configs[0],
+        "question_type": "開放式建構反應題",
+    }
+    pinned_paths = {
+        f"subquestion_configs[0].{field}"
+        for field in ("question_type", "認知歷程", "learning_content", "learning_performance")
+    }
+    redraw_payload = {
+        **initial.payload,
+        "sub_question_count": None,
+        "subquestion_configs": [pinned_config, *initial_configs[1:]],
+        "drawn": [path for path in initial.drawn if path not in pinned_paths],
+    }
+
+    redrawn = resolve(redraw_payload, redraws={"sub_question_count": 1})
+
+    assert redrawn.payload["sub_question_count"] == 6
+    assert len(redrawn.payload["subquestion_configs"]) == 6
+    assert redrawn.payload["subquestion_configs"][0] == pinned_config
+    assert "sub_question_count" in redrawn.drawn
+    assert all(
+        f"subquestion_configs[{index}].{field}" in redrawn.drawn
+        for index in range(1, 6)
+        for field in (
+            "question_type",
+            "認知歷程",
+            "learning_content",
+            "learning_performance",
+        )
+    )
 
 
 def test_resolve_fills_one_blank_math_field_from_the_request_seed() -> None:
@@ -199,6 +334,30 @@ def test_resolve_complete_payload_is_unchanged() -> None:
 
     assert result.payload == payload
     assert result.drawn == []
+
+
+def test_resolve_math_group_draws_blank_count_after_set_type_resolution() -> None:
+    result = resolve(
+        {
+            "subject": "math",
+            "seed": 1,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "",
+            "q_type": ["選擇題"],
+            "style": ["text_only"],
+            "learning_content": ["A-7-7"],
+            "learning_performance": ["s-IV-12"],
+            "math_thinking": ["形成"],
+            "core_competency": ["數-J-A2"],
+            "content_type": "純文字",
+            "sub_question_count": "",
+        }
+    )
+
+    assert result.payload["set_type"] == "題組題"
+    assert 3 <= result.payload["sub_question_count"] <= 7
+    assert "sub_question_count" in result.drawn
 
 
 @pytest.mark.parametrize(
