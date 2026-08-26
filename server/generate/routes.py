@@ -28,6 +28,8 @@ from server.generate.models import (
     ImageGenerationMode,
     PlanCoreQuestionsRequest,
     PlanCoreQuestionsResponse,
+    ResolveRequest,
+    ResolveResponse,
     build_sse_error,
 )
 from server.generate.persistence import (
@@ -38,6 +40,7 @@ from server.generate.service import build_prompt_previews, generate_question_str
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
+from src.common.resolver import ResolveConflictError, resolve
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["generate"])
@@ -85,6 +88,29 @@ async def preview_generate_endpoint(
     _check_provider_key_for_model(effective_verify_model, config, "model_verify")    # #375
     _check_provider_key_for_model(effective_correct_model, config, "model_correct")  # #375
     return {"prompts": build_prompt_previews(params, config, request.app.state)}
+
+
+@router.post("/generate/resolve", response_model=ResolveResponse)
+@limiter.limit("30/hour", key_func=jwt_user_key)
+async def resolve_generate_endpoint(
+    request: Request,
+    body: ResolveRequest,
+    _user: User = Depends(get_current_user),
+    _config: ServerConfig = Depends(get_config),
+) -> ResolveResponse:
+    """Resolve a whole generation payload before prompt assembly."""
+    payload = (
+        body.payload
+        if body.payload is not None
+        else body.model_dump(exclude={"payload", "redraws"})
+    )
+    try:
+        result = resolve(payload, redraws=body.redraws)
+    except ResolveConflictError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ResolveResponse(payload=result.payload, drawn=result.drawn)
 
 
 def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:

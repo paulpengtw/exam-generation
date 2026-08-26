@@ -3,6 +3,7 @@
 //
 // Source of truth:
 //   server/generate/models.py       -> GenerateParams
+//   server/generate/models.py       -> ResolveRequest, ResolveResponse, ResolveFieldError
 //   server/generate/marshalling.py  -> SSEEventName, EMITTED_EVENT_NAMES
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,35 @@ export interface GenerateParams {
   effort_verify?: string;
   effort_correct?: string;
   reporting_scale?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Resolve request/response
+// ---------------------------------------------------------------------------
+
+/**
+ * Wire body for POST /api/generate/resolve.
+ * Source of truth: server/generate/models.py:ResolveRequest
+ * The direct form carries the partial generation fields at the top level;
+ * callers may instead put them in `payload` beside `redraws`.
+ */
+export interface ResolveRequest {
+  payload?: Record<string, unknown>;
+  redraws?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+/** Completed payload and canonical sampler paths drawn by the resolver. */
+export interface ResolveResponse {
+  payload: Record<string, unknown>;
+  drawn: string[];
+}
+
+/** Field-addressed 422 detail emitted for resolver conflicts. */
+export interface ResolveFieldError {
+  field: string;
+  code: "incompatible_parent" | "unresolved";
+  parent?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -245,6 +245,35 @@ class GenerateParams(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class ResolveRequest(BaseModel):
+    """JSON body accepted by the whole-payload resolve endpoint.
+
+    The canonical body is the partial generation payload itself.  ``payload``
+    is also accepted as a wrapper for callers that keep counters beside a
+    nested payload; arbitrary fields are preserved for the direct form.
+    """
+
+    payload: dict[str, Any] | None = None
+    redraws: dict[str, int] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ResolveResponse(BaseModel):
+    """Completed payload and canonical field paths drawn to complete it."""
+
+    payload: dict[str, Any]
+    drawn: list[str]
+
+
+class ResolveFieldError(BaseModel):
+    """Field-addressed resolver error used by the 422 response contract."""
+
+    field: str
+    code: Literal["incompatible_parent", "unresolved"]
+    parent: str | None = None
+
+
 # Explicit allowlist of GenerateParams fields that may be overridden on a
 # per-question basis via per_question_params[i].  Any new field added to
 # GenerateParams MUST be deliberately classified here or in REQUEST_LEVEL_FIELDS

@@ -24,6 +24,9 @@ from server.generate.marshalling import EMITTED_EVENT_NAMES, SSEEventName  # noq
 from server.generate.models import (  # noqa: E402
     SERVER_ONLY_GENERATE_FIELDS,
     GenerateParams,
+    ResolveFieldError,
+    ResolveRequest,
+    ResolveResponse,
 )
 
 _REGEN_CMD = "python scripts/generate_ts_contract.py"
@@ -147,6 +150,42 @@ def _generate_sse_block() -> str:
     return "\n".join(lines)
 
 
+def _generate_resolve_block() -> str:
+    """Emit the JSON-body resolve request and response wire types."""
+    # ResolveRequest permits the direct partial-payload form as well as the
+    # optional {payload, redraws} wrapper; the Pydantic model preserves the
+    # direct form's subject-specific fields as extras.
+    _ = ResolveRequest, ResolveResponse, ResolveFieldError
+    return "\n".join(
+        [
+            "/**",
+            " * Wire body for POST /api/generate/resolve.",
+            " * Source of truth: server/generate/models.py:ResolveRequest",
+            " * The direct form carries the partial generation fields at the top level;",
+            " * callers may instead put them in `payload` beside `redraws`.",
+            " */",
+            "export interface ResolveRequest {",
+            "  payload?: Record<string, unknown>;",
+            "  redraws?: Record<string, number>;",
+            "  [key: string]: unknown;",
+            "}",
+            "",
+            "/** Completed payload and canonical sampler paths drawn by the resolver. */",
+            "export interface ResolveResponse {",
+            "  payload: Record<string, unknown>;",
+            "  drawn: string[];",
+            "}",
+            "",
+            "/** Field-addressed 422 detail emitted for resolver conflicts. */",
+            "export interface ResolveFieldError {",
+            '  field: string;',
+            '  code: "incompatible_parent" | "unresolved";',
+            "  parent?: string;",
+            "}",
+        ]
+    )
+
+
 def generate_contract() -> str:
     """Return the full contract.ts content as a string (callable from tests)."""
     header = textwrap.dedent(f"""\
@@ -155,10 +194,12 @@ def generate_contract() -> str:
         //
         // Source of truth:
         //   server/generate/models.py       -> GenerateParams
+        //   server/generate/models.py       -> ResolveRequest, ResolveResponse, ResolveFieldError
         //   server/generate/marshalling.py  -> SSEEventName, EMITTED_EVENT_NAMES
     """)
 
     params_block = _generate_params_block()
+    resolve_block = _generate_resolve_block()
     sse_block = _generate_sse_block()
 
     sections = [
@@ -168,6 +209,12 @@ def generate_contract() -> str:
         "// ---------------------------------------------------------------------------",
         "",
         params_block,
+        "",
+        "// ---------------------------------------------------------------------------",
+        "// Resolve request/response",
+        "// ---------------------------------------------------------------------------",
+        "",
+        resolve_block,
         "",
         "// ---------------------------------------------------------------------------",
         "// SSE event vocabulary",
