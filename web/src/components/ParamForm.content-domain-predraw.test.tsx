@@ -181,4 +181,58 @@ describe("ParamForm social-studies content-domain 預抽", () => {
       TARGET_DOMAIN,
     ]);
   });
+
+  it("keeps unscoped history and geography rows in a pinned cross-subject pool", async () => {
+    const historyCode = "歷Synthetic-Ⅳ-1";
+    const geographyCode = "地Synthetic-Ⅳ-1";
+    getSchemasMock.mockResolvedValue({
+      ...SOCIAL_SCHEMA,
+      學習內容: [
+        {
+          value: historyCode,
+          instruction: "歷史內容",
+          科目: "歷",
+          admitted_by: { 科目: ["歷史", "跨科"] },
+        },
+        {
+          value: geographyCode,
+          instruction: "地理內容",
+          科目: "地",
+          admitted_by: { 科目: ["地理", "跨科"] },
+        },
+        ...SOCIAL_SCHEMA.學習內容,
+      ],
+    });
+    const onSubmit = vi.fn();
+
+    render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{
+          subject_filter: "跨科",
+          content_domain: TARGET_DOMAIN,
+          learning_content: [historyCode, geographyCode],
+          count: 1,
+          sub_question_count: 3,
+          subquestion_configs: [{}, {}, {}],
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    const question = await screen.findByRole("region", { name: "第1題" });
+    expect(within(question).getAllByText(historyCode).length).toBeGreaterThan(0);
+    expect(within(question).getAllByText(geographyCode).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    const payload = onSubmit.mock.calls[0][0] as { per_question_params: string };
+    const perQuestion = JSON.parse(payload.per_question_params) as Array<{
+      learning_content: string[];
+    }>;
+    expect(perQuestion[0].learning_content).toEqual([historyCode, geographyCode]);
+  });
 });

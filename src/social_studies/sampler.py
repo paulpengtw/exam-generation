@@ -92,13 +92,19 @@ def _filter_entries_for_domain(
     filtered: list[dict] = []
     for entry in entries:
         admitted_by = entry.get("admitted_by")
-        if use_admitted_domains and isinstance(admitted_by, dict):
+        if (
+            use_admitted_domains
+            and isinstance(admitted_by, dict)
+            and "內容領域" in admitted_by
+        ):
             admitted_domains = admitted_by.get("內容領域")
             if not isinstance(admitted_domains, list):
                 continue
             if domain.value in admitted_domains:
                 filtered.append(entry)
             continue
+        # The ICCS mapping only governs 公 rows.  Rows without a domain tag
+        # (歷/地/shared curriculum rows) retain the legacy unscoped behavior.
         if not _is_public_code(entry.get("value", "")) or entry["value"] in mapped_codes:
             filtered.append(entry)
     return filtered

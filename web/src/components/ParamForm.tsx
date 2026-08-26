@@ -855,6 +855,7 @@ function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
   subject: string,
   resolvedSubject: string | readonly string[] | undefined,
   contentDomain: string | undefined,
+  contentDomainMapping: Record<string, string[]> | undefined,
 ): T[] {
   if (subject !== "social_studies" || !contentDomain) return [...entries];
   const subjectValues = typeof resolvedSubject === "string"
@@ -863,7 +864,22 @@ function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
   if (!subjectValues.some((value) => ICCS_DOMAIN_FILTER_SUBJECTS.has(value))) {
     return [...entries];
   }
-  return filterEntriesByAdmittedParent(entries, "內容領域", contentDomain);
+  const domainTaggedEntries = entries.filter((entry) =>
+    Object.hasOwn(entry.admitted_by ?? {}, "內容領域"),
+  );
+  const domainAdmittedEntries = new Set(
+    filterEntriesByAdmittedParent(domainTaggedEntries, "內容領域", contentDomain),
+  );
+  const mappedCodes = new Set(
+    Object.entries(contentDomainMapping ?? {})
+      .filter(([, domains]) => domains.includes(contentDomain))
+      .map(([code]) => code),
+  );
+  return entries.filter((entry) =>
+    Object.hasOwn(entry.admitted_by ?? {}, "內容領域")
+      ? domainAdmittedEntries.has(entry)
+      : !isPublicSocialStudiesCode(entry.value) || mappedCodes.has(entry.value),
+  );
 }
 
 type ContentDomainResolution = {
@@ -879,6 +895,7 @@ function resolveContentDomainForQuestion(
   domainEntries: readonly SchemaEntry[],
   subjectLearningContentEntries: readonly SchemaEntry[],
   previousDomain: string | undefined,
+  contentDomainMapping: Record<string, string[]> | undefined,
 ): ContentDomainResolution {
   if (subject !== "social_studies" || pinnedDomain) {
     return { value: pinnedDomain, drawn: false };
@@ -891,10 +908,12 @@ function resolveContentDomainForQuestion(
   }
   const drawableDomains = domainEntries
     .filter((entry) =>
-      filterEntriesByAdmittedParent(
+      filterLearningContentEntriesByDomain(
         subjectLearningContentEntries,
-        "內容領域",
+        subject,
+        resolvedSubject,
         entry.value,
+        contentDomainMapping,
       ).length > 0,
     )
     .map((entry) => entry.value);
@@ -1865,8 +1884,9 @@ export default function ParamForm({
       subject,
       subjectFilter,
       contentDomain,
+      schemas?.內容領域_mapping,
     ).map((entry) => entry.value);
-  }, [availableLearningContent, contentDomain, subject, subjectFilter]);
+  }, [availableLearningContent, contentDomain, schemas, subject, subjectFilter]);
 
   const restrictCodesToIccsDomain = (codes: readonly string[]): string[] => {
     if (iccsDomainMappedCodes === undefined) return [...codes];
@@ -2251,6 +2271,7 @@ export default function ParamForm({
         schemas?.內容領域 ?? [],
         questionLcEntriesBySubject,
         previousRandomValues.content_domain?.[0],
+        schemas?.內容領域_mapping,
       );
       const randomContentDomain = contentDomainResolution.drawn && contentDomainResolution.value
         ? [contentDomainResolution.value]
@@ -2261,6 +2282,7 @@ export default function ParamForm({
         subject,
         resolvedQuestionSubject,
         resolvedQuestionContentDomain,
+        schemas?.內容領域_mapping,
       );
       const questionLpCodes = new Set(
         restrictCodesToIccsDomain(questionLpEntries.map((entry) => entry.value)),
@@ -2546,6 +2568,7 @@ export default function ParamForm({
             subject,
             resolvedSubject,
             resolvedDomain,
+            schemas?.內容領域_mapping,
           );
           return {
             lc: domainLcEntries.map((entry) => entry.value),

@@ -279,6 +279,70 @@ def test_pinned_domain_intersects_the_civic_learning_content_pool(monkeypatch) -
     assert params.學習內容_pool == [target_code]
 
 
+def test_cross_subject_domain_filter_keeps_unscoped_history_and_geography_codes(
+    monkeypatch,
+) -> None:
+    from src.social_studies import sampler
+    from src.social_studies.schemas import QuestionSubject
+
+    target_domain = "Civic Principles"
+    history_code = "歷Synthetic-Ⅳ-1"
+    geography_code = "地Synthetic-Ⅳ-1"
+    civic_code = "公Synthetic-Ⅳ-1"
+    monkeypatch.setattr(
+        sampler,
+        "_LC_DATA",
+        {
+            "學習內容": [
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "歷",
+                    "value": history_code,
+                    "admitted_by": {"科目": ["歷史", "跨科"]},
+                },
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "地",
+                    "value": geography_code,
+                    "admitted_by": {"科目": ["地理", "跨科"]},
+                },
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": civic_code,
+                    "admitted_by": {
+                        "科目": ["公民與社會", "跨科"],
+                        "內容領域": [target_domain],
+                    },
+                },
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sampler,
+        "_LP_DATA",
+        {
+            "學習表現": [
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "社",
+                    "value": "社1a-Ⅳ-1",
+                }
+            ]
+        },
+    )
+
+    params = sampler.sample_params(
+        seed=13,
+        subject=[QuestionSubject("跨科")],
+        content_domain=target_domain,
+        learning_content=[history_code, geography_code],
+        learning_performance=["社1a-Ⅳ-1"],
+    )
+
+    assert params.學習內容_pool == [history_code, geography_code]
+
+
 def test_history_sampling_is_unchanged_when_domain_mapping_is_absent(monkeypatch) -> None:
     from src.social_studies import sampler
     from src.social_studies.domain_mapping import DomainMapping, load_domain_mapping
