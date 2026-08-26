@@ -79,6 +79,7 @@ def _sample_worker_params(
         if has_explicit_worker_seed
         else (worker_params.seed + i) if worker_params.seed is not None else None
     )
+    # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
     return spec.do_sample_params(
         worker_params,
         worker_overrides,

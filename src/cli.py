@@ -918,6 +918,7 @@ def main(argv: list[str] | None = None) -> None:
             seed = (base_seed + i) if base_seed is not None else None
             question_id = f"q_{timestamp}_{i+1:03d}"
 
+            # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
             params = sample_params(
                 grade_content=grade_content,
                 grade=args.grade,

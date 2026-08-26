@@ -1630,6 +1630,7 @@ def main(argv: list[str] | None = None) -> None:
         params_list: list[SampledParams] = []
         for i in range(args.count):
             seed = (base_seed + i) if base_seed is not None else None
+            # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
             params = sample_params(
                 grade=args.grade,
                 context=context_override,
