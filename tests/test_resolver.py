@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import secrets
+
 import pytest
 
 from src.common.resolver import ResolveConflictError, resolve
@@ -93,6 +95,54 @@ def test_resolve_leaves_supplied_social_core_competency_pinned() -> None:
 
     assert result.payload == payload
     assert result.drawn == []
+
+
+def test_resolve_assigns_a_seed_when_the_request_omits_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(secrets, "randbelow", lambda _upper: 123)
+
+    result = resolve(
+        {
+            "subject": "math",
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "單一題",
+            "q_type": ["選擇題"],
+            "style": ["text_only"],
+            "content_type": "純文字",
+            "learning_content": ["A-7-7"],
+            "learning_performance": ["s-IV-12"],
+            "core_competency": ["數-J-A2"],
+        }
+    )
+
+    assert result.payload["seed"] == 123
+    assert "seed" in result.drawn
+
+
+def test_resolve_draws_blank_per_subquestion_curriculum_fields() -> None:
+    result = resolve(
+        {
+            "subject": "social_studies",
+            "seed": 41,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["歷史"],
+            "core_competency": ["社-J-A1"],
+            "content_domain": "Civic Institutions and Systems",
+            "target_surface": "紙本",
+            "learning_content": ["歷Ba-Ⅳ-1"],
+            "learning_performance": ["歷1a-Ⅳ-1"],
+            "sub_question_count": 3,
+            "subquestion_configs": [{}, {}, {}],
+        }
+    )
+
+    configs = result.payload["subquestion_configs"]
+    assert configs[0]["learning_content"]
+    assert configs[0]["learning_performance"]
+    assert "subquestion_configs[0].learning_content" in result.drawn
+    assert "subquestion_configs[0].learning_performance" in result.drawn
 
 
 def test_resolve_fills_one_blank_math_field_from_the_request_seed() -> None:
@@ -297,10 +347,55 @@ def test_resolve_batch_uses_base_seed_plus_index_for_each_subject(
     resolved_rows = result.payload["per_question_params"]
     assert [row["seed"] for row in resolved_rows] == [1, 2]
     assert [row["content_type"] for row in resolved_rows] == expected_content_types
-    assert result.drawn == [
-        "per_question_params[0].題目內容類型",
-        "per_question_params[1].題目內容類型",
-    ]
+    assert all(
+        f"per_question_params[{index}].題目內容類型" in result.drawn
+        for index in range(2)
+    )
+    if subject != "math":
+        assert all(
+            f"per_question_params[{question_index}].subquestion_configs[{subquestion_index}].learning_content"
+            in result.drawn
+            and (
+                f"per_question_params[{question_index}].subquestion_configs[{subquestion_index}].learning_performance"
+                in result.drawn
+            )
+            for question_index in range(2)
+            for subquestion_index in range(3)
+        )
+
+
+def test_resolve_keeps_configured_base_seed_out_of_drawn_paths() -> None:
+    result = resolve(
+        {
+            "subject": "math",
+            "count": 2,
+            "seed": 700,
+            "per_question_params": [{}, {}],
+        }
+    )
+
+    assert [row["seed"] for row in result.payload["per_question_params"]] == [700, 701]
+    assert "per_question_params[0].seed" not in result.drawn
+    assert "per_question_params[1].seed" not in result.drawn
+
+
+def test_resolve_keeps_request_level_fields_out_of_batch_rows() -> None:
+    result = resolve(
+        {
+            "subject": "math",
+            "count": 1,
+            "seed": 700,
+            "core_question_callback": True,
+            "max_retries": 4,
+            "drawn": ["learning_content"],
+            "per_question_params": [{}],
+        }
+    )
+
+    row = result.payload["per_question_params"][0]
+    assert "core_question_callback" not in row
+    assert "max_retries" not in row
+    assert "drawn" not in row
 
 
 def test_resolve_batch_honors_an_explicit_per_question_seed() -> None:

@@ -5,6 +5,7 @@ import {
   type GenerateParams,
   type VerificationTrailEntry,
 } from "../hooks/useGenerate";
+import type { ResolveResponse } from "./generated/contract";
 
 export interface MagicLinkResponse {
   message: string;
@@ -193,6 +194,35 @@ export async function previewGenerate(params: GenerateParams): Promise<PreviewGe
     throw new Error("Malformed prompt preview response");
   }
   return { prompts: body.prompts as PromptPreview[] };
+}
+
+export async function resolveGenerate(
+  payload: Record<string, unknown>,
+  redraws: Record<string, number> = {},
+): Promise<ResolveResponse> {
+  const res = await apiFetch("/api/generate/resolve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, redraws }),
+  });
+  const body = await res.json() as unknown;
+  if (
+    !body ||
+    typeof body !== "object" ||
+    !("payload" in body) ||
+    !body.payload ||
+    typeof body.payload !== "object" ||
+    Array.isArray(body.payload) ||
+    !("drawn" in body) ||
+    !Array.isArray(body.drawn) ||
+    !body.drawn.every((path) => typeof path === "string")
+  ) {
+    throw new Error("Malformed resolve response");
+  }
+  return {
+    payload: body.payload as Record<string, unknown>,
+    drawn: body.drawn as string[],
+  };
 }
 
 export interface AvailableModels {

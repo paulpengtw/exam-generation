@@ -57,7 +57,7 @@ def _setup(tmp_path):
                     params_json={
                         "subject": "social_studies",
                         **(
-                            {"predrawn_fields": '["learning_content"]'}
+                            {"drawn": ["learning_content"]}
                             if i == 0
                             else {}
                         ),
@@ -704,7 +704,7 @@ def test_download_returns_attachment_with_content_disposition(tmp_path) -> None:
         asyncio.run(engine.dispose())
 
 
-def test_download_includes_saved_request_params_with_predraw_provenance(tmp_path) -> None:
+def test_download_includes_saved_request_params_with_drawn_provenance(tmp_path) -> None:
     app, _config, engine, _sm, token, _ua, _ub = _setup(tmp_path)
     try:
         with TestClient(app) as client:
@@ -724,7 +724,7 @@ def test_download_includes_saved_request_params_with_predraw_provenance(tmp_path
 
         assert response.status_code == 200
         body = response.json()
-        assert body["params_json"]["predrawn_fields"] == '["learning_content"]'
+        assert body["params_json"]["drawn"] == ["learning_content"]
         assert body["id"] == "ss_a_0"
     finally:
         limiter.reset()

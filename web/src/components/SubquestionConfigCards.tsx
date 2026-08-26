@@ -12,14 +12,13 @@ import {
   SubQuestionWordLimitField,
 } from "./SubQuestionConfigEditor";
 
-export type ResolvedSubQuestionConfig = SubQuestionConfig & {
-  _lcWasAutoDrawn?: boolean;
-  _lpWasAutoDrawn?: boolean;
-};
+export type ResolvedSubQuestionConfig = SubQuestionConfig;
 
 export default function SubquestionConfigCards({
   configs,
   subject,
+  questionIndex = 0,
+  drawnPaths,
   contentDomain,
   questionTypes,
   contentTypes,
@@ -43,6 +42,9 @@ export default function SubquestionConfigCards({
 }: {
   configs: ResolvedSubQuestionConfig[];
   subject: string;
+  /** Canonical resolver paths used to derive random badges for this question. */
+  questionIndex?: number;
+  drawnPaths?: readonly string[];
   /** Topic-set ICCS content domain shown alongside the per-subquestion axes. */
   contentDomain?: string;
   questionTypes: SchemaEntry[];
@@ -67,12 +69,18 @@ export default function SubquestionConfigCards({
   onTextWordLimitChange?: (subquestionIndex: number, value: number | undefined) => void;
   /** Generic gate: called whenever a field's validity changes. fieldKey is a stable opaque string. */
   onFieldValidityChange?: (subquestionIndex: number, fieldKey: string, isValid: boolean) => void;
-  /** Called when the user explicitly changes LC codes for a 小題. Clears _lcWasAutoDrawn flag. */
+  /** Called when the user explicitly changes LC codes for a 小題. */
   onLcChange?: (subquestionIndex: number, lc: string[]) => void;
-  /** Called when the user explicitly changes LP codes for a 小題. Clears _lpWasAutoDrawn flag. */
+  /** Called when the user explicitly changes LP codes for a 小題. */
   onLpChange?: (subquestionIndex: number, lp: string[]) => void;
 }) {
   const t = useT();
+  const resolverDrew = (subquestionIndex: number, field: string): boolean => {
+    if (drawnPaths === undefined) return false;
+    const prefix = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].`;
+    const canonical = field === "cognitive_process" ? "認知歷程" : field;
+    return drawnPaths.includes(`${prefix}${field}`) || drawnPaths.includes(`${prefix}${canonical}`);
+  };
   // Base ID for associating labels with SearchPicker inputs — forward-compat hook
   // for #506 which will add a domain-scoped pool filter on top of this picker.
   const baseId = useId();
@@ -112,8 +120,8 @@ export default function SubquestionConfigCards({
                 subject={subject}
                 questionTypes={questionTypes}
                 badge={{
-                  label: t(row.question_type?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_random"),
-                  className: `text-xs font-medium ${row.question_type?.trim() ? "text-green-700" : "text-amber-700"}`,
+                  label: t(resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "form.confirm_badge_random" : "form.confirm_badge_user"),
+                  className: `text-xs font-medium ${resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "text-amber-700" : "text-green-700"}`,
                 }}
                 onChange={(patch) => onQuestionTypeChange(subquestionIndex, patch.question_type ?? "")}
               />
@@ -220,8 +228,8 @@ export default function SubquestionConfigCards({
                 <SubQuestionReportingScaleField
                   config={row}
                   badge={{
-                    label: t(row.reporting_scale?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_random"),
-                    className: `text-xs font-medium ${row.reporting_scale?.trim() ? "text-green-700" : "text-amber-700"}`,
+                    label: t(resolverDrew(subquestionIndex, "reporting_scale") || !row.reporting_scale?.trim() ? "form.confirm_badge_random" : "form.confirm_badge_user"),
+                    className: `text-xs font-medium ${resolverDrew(subquestionIndex, "reporting_scale") || !row.reporting_scale?.trim() ? "text-amber-700" : "text-green-700"}`,
                   }}
                   onChange={(patch) => onReportingScaleChange(subquestionIndex, patch.reporting_scale ?? "")}
                 />
@@ -243,11 +251,11 @@ export default function SubquestionConfigCards({
                     </label>
                     <span
                       className={`text-xs font-medium ${
-                        row._lcWasAutoDrawn ? "text-amber-700" : "text-green-700"
+                        resolverDrew(subquestionIndex, "learning_content") ? "text-amber-700" : "text-green-700"
                       }`}
                     >
                       {t(
-                        row._lcWasAutoDrawn
+                        resolverDrew(subquestionIndex, "learning_content")
                           ? "form.confirm_badge_random"
                           : "form.confirm_badge_user",
                       )}
@@ -267,7 +275,7 @@ export default function SubquestionConfigCards({
                     <>
                       <div className="mt-2 text-xs font-medium text-gray-600">
                         {t(
-                          row._lcWasAutoDrawn
+                          resolverDrew(subquestionIndex, "learning_content")
                             ? "form.confirm_subq_lc_random_pool"
                             : "form.confirm_subq_lc_selected",
                         ).replace("{n}", String(visibleLearningContent.length))}
@@ -304,11 +312,11 @@ export default function SubquestionConfigCards({
                     </label>
                     <span
                       className={`text-xs font-medium ${
-                        row._lpWasAutoDrawn ? "text-amber-700" : "text-green-700"
+                        resolverDrew(subquestionIndex, "learning_performance") ? "text-amber-700" : "text-green-700"
                       }`}
                     >
                       {t(
-                        row._lpWasAutoDrawn
+                        resolverDrew(subquestionIndex, "learning_performance")
                           ? "form.confirm_badge_random"
                           : "form.confirm_badge_user",
                       )}
@@ -328,7 +336,7 @@ export default function SubquestionConfigCards({
                     <>
                       <div className="mt-2 text-xs font-medium text-gray-600">
                         {t(
-                          row._lpWasAutoDrawn
+                          resolverDrew(subquestionIndex, "learning_performance")
                             ? "form.confirm_subq_lp_random_pool"
                             : "form.confirm_subq_lp_selected",
                         ).replace("{n}", String(visibleLearningPerformance.length))}

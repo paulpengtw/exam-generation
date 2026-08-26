@@ -5,12 +5,14 @@ const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
 const previewGenerateMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: planCoreQuestionsMock,
   previewGenerate: previewGenerateMock,
+  resolveGenerate: resolveGenerateMock,
 }));
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (state: { lang: string }) => unknown) =>
@@ -18,6 +20,24 @@ vi.mock("../store/langStore", () => ({
 }));
 
 import ParamForm from "./ParamForm";
+
+function resolveConfirmationPayload(payload: Record<string, unknown>) {
+  const sourceRows = typeof payload.per_question_params === "string"
+    ? JSON.parse(payload.per_question_params) as Record<string, unknown>[]
+    : [];
+  const base = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => ![
+      "subject", "count", "per_question_params", "drawn", "redraws",
+    ].includes(key)),
+  );
+  return {
+    payload: {
+      ...payload,
+      per_question_params: JSON.stringify(sourceRows.map((row) => ({ ...base, ...row }))),
+    },
+    drawn: [],
+  };
+}
 
 const DOMAIN = "Civic Principles";
 const PROCESS = "Reasoning and Applying–Relate or Integrate";
@@ -48,6 +68,8 @@ describe("#506 confirmation ICCS axes", () => {
     });
     planCoreQuestionsMock.mockResolvedValue({ candidates: [] });
     previewGenerateMock.mockResolvedValue({ prompts: [] });
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) =>
+      resolveConfirmationPayload(payload));
   });
 
   it("shows 認知歷程 per 小題 and 內容領域 on the question confirmation card", async () => {

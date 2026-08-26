@@ -5,12 +5,14 @@ const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
 const previewGenerateMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: planCoreQuestionsMock,
   previewGenerate: previewGenerateMock,
+  resolveGenerate: resolveGenerateMock,
 }));
 
 vi.mock("../store/langStore", () => ({
@@ -19,6 +21,24 @@ vi.mock("../store/langStore", () => ({
 }));
 
 import ParamForm from "./ParamForm";
+
+function resolveConfirmationPayload(payload: Record<string, unknown>) {
+  const sourceRows = typeof payload.per_question_params === "string"
+    ? JSON.parse(payload.per_question_params) as Record<string, unknown>[]
+    : [];
+  const base = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => ![
+      "subject", "count", "per_question_params", "drawn", "redraws",
+    ].includes(key)),
+  );
+  return {
+    payload: {
+      ...payload,
+      per_question_params: JSON.stringify(sourceRows.map((row) => ({ ...base, ...row }))),
+    },
+    drawn: [],
+  };
+}
 
 const SOCIAL_SCHEMA = {
   學習階段: "第四學習階段",
@@ -77,6 +97,8 @@ describe("ParamForm 社會領域 ICCS domain and surface controls", () => {
     });
     planCoreQuestionsMock.mockResolvedValue({ candidates: [] });
     previewGenerateMock.mockResolvedValue({ prompts: [] });
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) =>
+      resolveConfirmationPayload(payload));
   });
 
   it("renders all four content domains and omits an unset domain pin", async () => {

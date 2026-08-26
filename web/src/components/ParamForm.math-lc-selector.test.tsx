@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 
 const MATH_LEARNING_CONTENT = [
   { value: "N-7-1", instruction: "負數與數線", 科目: "N", admitted_by: { 科目: ["數與量", "跨領域"] } },
@@ -10,7 +11,6 @@ const MATH_LEARNING_CONTENT = [
   { value: "S-8-1", instruction: "幾何與空間", 科目: "S", admitted_by: { 科目: ["幾何", "跨領域"] } },
   { value: "D-9-1", instruction: "資料分析", 科目: "D", admitted_by: { 科目: ["統計與機率", "跨領域"] } },
 ];
-const LEARNING_CONTENT_CODES = MATH_LEARNING_CONTENT.map((entry) => entry.value);
 
 function mathSchema(learningContent = MATH_LEARNING_CONTENT) {
   return {
@@ -45,6 +45,7 @@ vi.mock("../api/client", () => ({
   })),
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
   previewGenerate: vi.fn(async () => ({ prompts: [] })),
+  resolveGenerate: resolveGenerateMock,
 }));
 
 vi.mock("../i18n/useT", () => ({
@@ -65,19 +66,12 @@ function getSubjectFilterSelect(): HTMLSelectElement {
   return select as HTMLSelectElement;
 }
 
-function expectLearningContentDraw(value: unknown): asserts value is string[] {
-  expect(value).toBeInstanceOf(Array);
-  const codes = value as string[];
-  expect(codes.length).toBeGreaterThanOrEqual(1);
-  expect(codes.length).toBeLessThanOrEqual(3);
-  expect(codes.every((code) => LEARNING_CONTENT_CODES.includes(code))).toBe(true);
-}
-
 describe("ParamForm math learning-content selector", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
     getSchemasMock.mockImplementation(async () => mathSchema());
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) => ({ payload, drawn: [] }));
   });
 
   it("shows the 學習內容 selector on the 數學 form when the pool is non-empty", async () => {
@@ -158,6 +152,16 @@ describe("ParamForm math learning-content selector", () => {
 
   it("restores the 預抽 when an explicit selection is cleared", async () => {
     const submitted: GenerateParams[] = [];
+    resolveGenerateMock.mockResolvedValueOnce({
+      payload: {
+        subject: "math",
+        grade: 7,
+        count: 1,
+        learning_content: ["N-7-1"],
+        per_question_params: JSON.stringify([{ learning_content: ["N-7-1"] }]),
+      },
+      drawn: ["learning_content", "per_question_params[0].learning_content"],
+    });
     render(
       <ParamForm subject="math" onSubmit={(params) => submitted.push(params)} disabled={false} />,
     );
@@ -179,7 +183,7 @@ describe("ParamForm math learning-content selector", () => {
 
     fireEvent.click(screen.getByText("form.btn_confirm_send"));
     await waitFor(() => expect(submitted).toHaveLength(1));
-    expectLearningContentDraw(submitted[0].learning_content);
+    expect(submitted[0].learning_content).toEqual(["N-7-1"]);
   });
 
   it("supports both checkbox and search modes on the 數學 form", async () => {

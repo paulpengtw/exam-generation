@@ -5,12 +5,14 @@ const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
 const previewGenerateMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: planCoreQuestionsMock,
   previewGenerate: previewGenerateMock,
+  resolveGenerate: resolveGenerateMock,
 }));
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (state: { lang: string }) => unknown) => selector({ lang: "zh-TW" }),
@@ -55,6 +57,69 @@ const SCIENCE_SCHEMA_WITH_CURRICULUM = {
   學習內容: MATH_SCHEMA_WITH_CURRICULUM.學習內容,
 };
 
+function legacyConfirmationResolve(payload: Record<string, unknown>) {
+  const rawRows = payload.per_question_params;
+  const sourceRows = typeof rawRows === "string"
+    ? JSON.parse(rawRows) as Record<string, unknown>[]
+    : Array.isArray(rawRows)
+      ? rawRows as Record<string, unknown>[]
+      : [];
+  const base = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => ![
+      "subject", "count", "per_question_params", "drawn", "redraws",
+    ].includes(key)),
+  );
+  const subject = payload.subject;
+  const generatedSeed = typeof payload.seed !== "number";
+  const seed = generatedSeed ? 900 : payload.seed as number;
+  const resolvedRows = sourceRows.map((sourceRow, index) => {
+    const row = { ...base, ...sourceRow };
+    delete row.subject;
+    delete row.count;
+    delete row.per_question_params;
+    delete row.drawn;
+    delete row.redraws;
+    if (sourceRow.seed === undefined || sourceRow.seed === null) row.seed = seed + index;
+    if (row.context === undefined || (Array.isArray(row.context) && row.context.length === 0)) {
+      row.context = [subject === "natural_sciences" ? "Personal" : "個人"];
+    }
+    if (row.subquestion_configs === undefined && payload.subquestion_configs !== undefined) {
+      row.subquestion_configs = payload.subquestion_configs;
+    }
+    return row;
+  });
+  const drawn = sourceRows.flatMap((sourceRow, index) => {
+    const paths: string[] = [];
+    if (generatedSeed && (sourceRow.seed === undefined || sourceRow.seed === null)) {
+      paths.push(`per_question_params[${index}].seed`);
+    }
+    if (sourceRow.context === undefined || (Array.isArray(sourceRow.context) && sourceRow.context.length === 0)) {
+      paths.push(`per_question_params[${index}].情境`);
+    }
+    const rawConfigs = resolvedRows[index].subquestion_configs;
+    const configs = typeof rawConfigs === "string"
+      ? JSON.parse(rawConfigs) as Record<string, unknown>[]
+      : Array.isArray(rawConfigs) ? rawConfigs as Record<string, unknown>[] : [];
+    configs.forEach((config, subquestionIndex) => {
+      if ((subject === "social_studies" || subject === "natural_sciences") && !config.question_type) {
+        paths.push(`per_question_params[${index}].subquestion_configs[${subquestionIndex}].question_type`);
+      }
+      if (subject === "natural_sciences" && !config.reporting_scale) {
+        paths.push(`per_question_params[${index}].subquestion_configs[${subquestionIndex}].reporting_scale`);
+      }
+    });
+    return paths;
+  });
+  return {
+    payload: {
+      ...payload,
+      ...(generatedSeed ? { seed } : {}),
+      per_question_params: JSON.stringify(resolvedRows),
+    },
+    drawn: [...(generatedSeed ? ["seed"] : []), ...drawn],
+  };
+}
+
 async function openConfirmation(subject = "math", initialParams = {}, onSubmit = vi.fn()) {
   render(<ParamForm subject={subject} onSubmit={onSubmit} disabled={false} initialParams={initialParams} />);
   fireEvent.click(await screen.findByRole("button", { name: "產生" }));
@@ -80,6 +145,122 @@ describe("ParamForm 發送前確認 display semantics", () => {
     getAvailableModelsMock.mockResolvedValue({ allowed: [], defaults: { plan: "", execute: "" } });
     planCoreQuestionsMock.mockResolvedValue({ candidates: ["候選核心問題"] });
     previewGenerateMock.mockResolvedValue({ prompts: [] });
+    resolveGenerateMock.mockReset();
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) =>
+      legacyConfirmationResolve(payload));
+  });
+
+  it("resolves blank 學習內容/學習表現 before showing 發送前確認", async () => {
+    const onSubmit = vi.fn();
+    getSchemasMock.mockResolvedValue({
+      ...MATH_SCHEMA,
+      學習內容: [{
+        value: "RESOLVED-LC",
+        instruction: "resolver content",
+        admitted_by: { 科目: ["數與量"] },
+      }],
+      學習表現: [{
+        value: "RESOLVED-LP",
+        instruction: "resolver performance",
+        admitted_by: { 科目: ["數與量"] },
+      }],
+    });
+    const resolvedPayload = {
+      subject: "math",
+      grade: 7,
+      count: 1,
+      learning_content: ["RESOLVED-LC"],
+      learning_performance: ["RESOLVED-LP"],
+      per_question_params: JSON.stringify([{
+        grade: 7,
+        seed: 701,
+        learning_content: ["RESOLVED-LC"],
+        learning_performance: ["RESOLVED-LP"],
+      }]),
+    };
+    resolveGenerateMock.mockResolvedValueOnce({
+      payload: resolvedPayload,
+      drawn: [
+        "learning_content",
+        "learning_performance",
+        "per_question_params[0].learning_content",
+        "per_question_params[0].learning_performance",
+      ],
+    });
+
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ core_question: "固定核心問題" }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+
+    await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("RESOLVED-LC")).toBeInTheDocument();
+    expect(screen.getByText("RESOLVED-LP")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      drawn: [
+        "learning_content",
+        "learning_performance",
+        "per_question_params[0].learning_content",
+        "per_question_params[0].learning_performance",
+      ],
+      per_question_params: resolvedPayload.per_question_params,
+    }));
+  });
+
+  it("keeps resolver batch subquestion arrays in the generation wire shape", async () => {
+    getSchemasMock.mockResolvedValue(SCIENCE_SCHEMA_WITH_CURRICULUM);
+    const onSubmit = vi.fn();
+    resolveGenerateMock.mockResolvedValueOnce({
+      payload: {
+        subject: "natural_sciences",
+        grade: 7,
+        count: 1,
+        sub_question_count: 3,
+        per_question_params: [{
+          seed: 701,
+          subquestion_configs: [
+            {
+              question_type: "選擇題",
+              learning_content: ["N-7-1"],
+              learning_performance: ["n-IV-1"],
+            },
+          ],
+        }],
+      },
+      drawn: [
+        "per_question_params[0].subquestion_configs[0].learning_content",
+        "per_question_params[0].subquestion_configs[0].learning_performance",
+      ],
+    });
+
+    render(
+      <ParamForm
+        subject="natural_sciences"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ count: 1, sub_question_count: 3, core_question: "固定核心問題" }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    await screen.findByText("N-7-1");
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const submittedRows = JSON.parse(onSubmit.mock.calls[0][0].per_question_params) as Array<{
+      subquestion_configs: string;
+    }>;
+    expect(typeof submittedRows[0].subquestion_configs).toBe("string");
+    expect(JSON.parse(submittedRows[0].subquestion_configs)[0]).toEqual({
+      question_type: "選擇題",
+      learning_content: ["N-7-1"],
+      learning_performance: ["n-IV-1"],
+    });
   });
 
   it("requests 提示詞預覽 once with the exact payload that 確定發送 submits", async () => {
@@ -441,6 +622,7 @@ describe("ParamForm 發送前確認 display semantics", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: "產生" }));
 
+    await screen.findByRole("region", { name: "第1題" });
     const displayedSeeds = [1, 2].map((number) => {
       const block = screen.getByRole("region", { name: `第${number}題` });
       const seedTerm = within(block).getByText("種子", { selector: "dt" });
@@ -1218,6 +1400,7 @@ describe("ParamForm 發送前確認 display semantics", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: "產生" }));
 
+    await screen.findByRole("region", { name: "第1題" });
     for (const name of ["第1題", "第2題"]) {
       const question = within(screen.getByRole("region", { name }));
       expect(question.getByText("n-IV-1")).toBeInTheDocument();
@@ -1237,9 +1420,24 @@ describe("ParamForm 發送前確認 display semantics", () => {
       .toEqual([["N-7-1"], ["N-7-1"]]);
   });
 
-  it("renders auto-drawn 學習表現 and 學習內容 with codes, instructions, and pre-draw captions per question", async () => {
+  it("renders resolver-drawn 學習表現 and 學習內容 with codes, instructions, and random captions per question", async () => {
     getSchemasMock.mockResolvedValue(SCIENCE_SCHEMA_WITH_CURRICULUM);
-    const random = vi.spyOn(Math, "random").mockReturnValue(0);
+    resolveGenerateMock.mockResolvedValueOnce({
+      payload: {
+        subject: "natural_sciences",
+        grade: 7,
+        count: 1,
+        per_question_params: JSON.stringify([{
+          seed: 917,
+          learning_performance: ["n-IV-2"],
+          learning_content: ["N-7-2"],
+        }]),
+      },
+      drawn: [
+        "per_question_params[0].learning_performance",
+        "per_question_params[0].learning_content",
+      ],
+    });
 
     await openConfirmation("natural_sciences", { core_question: "已提供的核心問題" });
 
@@ -1251,13 +1449,25 @@ describe("ParamForm 發送前確認 display semantics", () => {
     const captions = question.getAllByText("未手動選擇 — 已隨機抽取 1 項（將實際送出）：");
     expect(captions).toHaveLength(2);
     captions.forEach((caption) => expect(caption).toHaveClass("text-amber-700"));
-    random.mockRestore();
   });
 
-  it("draws an unchosen parameter independently and badges each concrete value amber", async () => {
+  it("renders independently resolved per-question values and badges them amber", async () => {
     getSchemasMock.mockResolvedValue(MATH_SCHEMA_WITH_CURRICULUM);
-    const random = vi.spyOn(Math, "random");
-    [0, 0, 0, 0, 0, 0.9, 0].forEach((value) => random.mockReturnValueOnce(value));
+    resolveGenerateMock.mockResolvedValueOnce({
+      payload: {
+        subject: "math",
+        grade: 7,
+        count: 2,
+        per_question_params: JSON.stringify([
+          { seed: 601, learning_performance: ["n-IV-1"] },
+          { seed: 602, learning_performance: ["n-IV-2"] },
+        ]),
+      },
+      drawn: [
+        "per_question_params[0].learning_performance",
+        "per_question_params[1].learning_performance",
+      ],
+    });
     const onSubmit = vi.fn();
     render(
       <ParamForm
@@ -1269,6 +1479,7 @@ describe("ParamForm 發送前確認 display semantics", () => {
     );
     fireEvent.click(await screen.findByRole("button", { name: "產生" }));
 
+    await screen.findByRole("region", { name: "第1題" });
     for (const name of ["第1題", "第2題"]) {
       const row = within(screen.getByRole("region", { name }))
         .getByText("學習表現")
@@ -1280,7 +1491,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
 
     const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params);
     expect(perQuestion[0].learning_performance).not.toEqual(perQuestion[1].learning_performance);
-    random.mockRestore();
   });
 
   it("auto-selects a planned core question and renders it with the 預先產生 badge", async () => {
@@ -1390,7 +1600,19 @@ describe("ParamForm 發送前確認 display semantics", () => {
     }
   });
 
-  it("renders a blank 情境 as a concrete per-question draw", async () => {
+  it("renders a resolver-drawn blank 情境 as a concrete per-question draw", async () => {
+    resolveGenerateMock.mockResolvedValueOnce({
+      payload: {
+        subject: "math",
+        grade: 7,
+        count: 1,
+        per_question_params: JSON.stringify([{
+          seed: 611,
+          context: ["個人"],
+        }]),
+      },
+      drawn: ["per_question_params[0].context"],
+    });
     await openConfirmation();
     const row = confirmationRow("情境");
     expect(row.getByText("個人")).toBeInTheDocument();
@@ -1412,13 +1634,13 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(confirmationRow("文本字數限制").getByText("321")).toBeInTheDocument();
   });
 
-  it("includes math 文本字數限制 in the confirmation payload without per-question materialisation", async () => {
+  it("keeps resolver-completed math 文本字數限制 in the confirmed per-question payload", async () => {
     await openConfirmation("math", { text_word_limit: 321 });
 
     await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(1));
     const payload = previewGenerateMock.mock.calls[0][0];
     expect(payload.text_word_limit).toBe(321);
-    expect(JSON.parse(payload.per_question_params)[0]).not.toHaveProperty("text_word_limit");
+    expect(JSON.parse(payload.per_question_params)[0]).toHaveProperty("text_word_limit", 321);
   });
 
   it.each([

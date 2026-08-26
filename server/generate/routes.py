@@ -248,7 +248,7 @@ async def generate_endpoint(
     text_word_limit: int | None = Query(default=None, ge=1),
     subquestion_configs: str | None = Query(default=None),
     per_question_params: str | None = Query(default=None),
-    predrawn_fields: str | None = Query(default=None),
+    drawn: list[str] | None = Query(default=None),
     model_plan: str | None = Query(default=None),
     model_execute: str | None = Query(default=None),
     model_verify: str | None = Query(default=None),    # #375: per-request tier model override
@@ -332,7 +332,7 @@ async def generate_endpoint(
             text_word_limit=text_word_limit,
             subquestion_configs=subquestion_configs,
             per_question_params=per_question_params,
-            predrawn_fields=predrawn_fields,
+            drawn=drawn,
             model_plan=model_plan,
             model_execute=model_execute,
             model_verify=model_verify,    # #375

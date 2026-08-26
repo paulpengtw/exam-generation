@@ -20,14 +20,46 @@ describe("toGenerateParams", () => {
     expect(params.sub_question_count).toBe(4);
   });
 
-  it("forwards pre-draw provenance metadata unchanged", () => {
-    const raw = '["learning_content", "per_question_params[0].seed"]';
+  it("forwards resolver provenance metadata unchanged", () => {
+    const drawn = ["learning_content", "per_question_params[0].seed"];
 
     const params = toGenerateParams("math", {
-      predrawn_fields: raw,
+      drawn,
     } as FormParams);
 
-    expect(params.predrawn_fields).toBe(raw);
+    expect(params.drawn).toEqual(drawn);
+  });
+
+  it("forwards a carried history seed to the resolver and generation wire", () => {
+    const params = toGenerateParams("math", { seed: 700 } as FormParams);
+
+    expect(params.seed).toBe(700);
+  });
+
+  it("forwards resolver wire arrays without nesting them", () => {
+    const params = toGenerateParams("math", {
+      style: ["課本"],
+      subject_filter: ["歷史"],
+    } as unknown as FormParams);
+
+    expect(params.style).toEqual(["課本"]);
+    expect(params.subject_filter).toEqual(["歷史"]);
+  });
+
+  it("forwards resolver-completed math learning content", () => {
+    const params = toGenerateParams("math", {
+      learning_content: ["N-7-1"],
+    } as FormParams);
+
+    expect(params.learning_content).toEqual(["N-7-1"]);
+  });
+
+  it("carries resolver-only core competency through the confirmed generation wire", () => {
+    const params = toGenerateParams("math", {
+      core_competency: ["數-J-A2"],
+    } as FormParams);
+
+    expect(params.core_competency).toEqual(["數-J-A2"]);
   });
 
   it("forwards resolved core competency and math thinking pins", () => {

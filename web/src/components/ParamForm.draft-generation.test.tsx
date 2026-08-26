@@ -27,6 +27,7 @@ vi.mock("../api/client", () => ({
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
   previewGenerate: vi.fn(async () => ({ prompts: [] })),
+  resolveGenerate: vi.fn(async (payload: Record<string, unknown>) => ({ payload, drawn: [] })),
 }));
 
 import { useAuthStore } from "../store/authStore";
@@ -96,6 +97,7 @@ describe("ParamForm draft generation lifecycle", () => {
     act(() => vi.advanceTimersByTime(500));
 
     fireEvent.click(screen.getByRole("button", { name: "產生" }));
+    await act(async () => { await Promise.resolve(); });
     fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
     expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
 
@@ -127,6 +129,7 @@ describe("ParamForm draft generation lifecycle", () => {
       target: { value: "hard" },
     });
     fireEvent.click(screen.getByRole("button", { name: "產生" }));
+    await act(async () => { await Promise.resolve(); });
     fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
 
     await act(async () => {

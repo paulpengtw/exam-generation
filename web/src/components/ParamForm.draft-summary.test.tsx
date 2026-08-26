@@ -21,6 +21,7 @@ vi.mock("../api/client", () => ({
   })),
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
   previewGenerate: vi.fn(async () => ({ prompts: [] })),
+  resolveGenerate: vi.fn(async (payload: Record<string, unknown>) => ({ payload, drawn: [] })),
 }));
 
 import { useAuthStore } from "../store/authStore";

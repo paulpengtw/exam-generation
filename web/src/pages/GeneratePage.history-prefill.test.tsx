@@ -14,6 +14,7 @@ vi.mock("../api/client", () => ({
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
   previewGenerate: vi.fn(async () => ({ prompts: [] })),
+  resolveGenerate: vi.fn(async (payload: Record<string, unknown>) => ({ payload, drawn: [] })),
 }));
 
 vi.mock("../hooks/useFeedbackDialog", () => ({
@@ -208,7 +209,7 @@ const HISTORY_PARAMS = {
   text_word_limit: 260,
   subquestion_configs: JSON.stringify(HISTORY_SUBQUESTION_ROWS),
   per_question_params: JSON.stringify(HISTORY_PER_QUESTION_PARAMS),
-  predrawn_fields: "[]",
+  drawn: [],
   model_plan: "history-plan",
   model_execute: "history-execute",
   model_verify: "history-verify",
@@ -435,8 +436,7 @@ describe("GeneratePage history prefill with a saved draft", () => {
     await waitFor(() => expect(generateMock).toHaveBeenCalledTimes(1));
     const submitted = generateMock.mock.calls[0][0] as Record<string, unknown>;
     expect(submitted.core_question).toBe("如何根據證據判斷水質？");
-    expect(submitted.predrawn_fields).toEqual(expect.any(String));
-    expect(JSON.parse(submitted.predrawn_fields as string)).toEqual(expect.any(Array));
+    expect(submitted.drawn).toEqual(expect.any(Array));
 
     const submittedPerQuestion = JSON.parse(
       submitted.per_question_params as string,

@@ -5,12 +5,14 @@ const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
 const previewGenerateMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: planCoreQuestionsMock,
   previewGenerate: previewGenerateMock,
+  resolveGenerate: resolveGenerateMock,
 }));
 
 vi.mock("../store/langStore", () => ({
@@ -32,6 +34,52 @@ vi.mock("../i18n/useT", () => ({
 }));
 
 import ParamForm from "./ParamForm";
+
+function resolveConfirmationPayload(payload: Record<string, unknown>) {
+  const sourceRows = typeof payload.per_question_params === "string"
+    ? JSON.parse(payload.per_question_params) as Record<string, unknown>[]
+    : [];
+  const sourceConfigs = typeof payload.subquestion_configs === "string"
+    ? JSON.parse(payload.subquestion_configs) as Record<string, unknown>[]
+    : [];
+  const pinnedDomain = typeof payload.content_domain === "string"
+    ? payload.content_domain
+    : undefined;
+  const selectedLearningContent = Array.isArray(payload.learning_content)
+    ? payload.learning_content
+    : undefined;
+  const domains = [TARGET_DOMAIN, OTHER_DOMAIN];
+  const drawn: string[] = [];
+  const rows = sourceRows.map((sourceRow, index) => {
+    const contentDomain = pinnedDomain ?? domains[index % domains.length];
+    const learningContent = Array.isArray(sourceRow.learning_content)
+      ? sourceRow.learning_content
+      : selectedLearningContent ?? [index % domains.length === 0 ? TARGET_CODE : OTHER_CODE];
+    const configs = sourceConfigs.map((config) => ({
+      ...config,
+      learning_content: config.learning_content ?? learningContent,
+      learning_performance: config.learning_performance ?? ["社1a-Ⅳ-1"],
+    }));
+    if (!pinnedDomain) {
+      drawn.push(`per_question_params[${index}].內容領域`);
+      drawn.push(`per_question_params[${index}].學習內容`);
+    }
+    return {
+      ...sourceRow,
+      content_domain: contentDomain,
+      learning_content: learningContent,
+      learning_performance: sourceRow.learning_performance ?? ["社1a-Ⅳ-1"],
+      subquestion_configs: JSON.stringify(configs),
+    };
+  });
+  return {
+    payload: {
+      ...payload,
+      per_question_params: JSON.stringify(rows),
+    },
+    drawn,
+  };
+}
 
 const TARGET_DOMAIN = "Civic Principles";
 const OTHER_DOMAIN = "Civic Participation";
@@ -93,13 +141,14 @@ describe("ParamForm social-studies content-domain 預抽", () => {
     });
     planCoreQuestionsMock.mockResolvedValue({ candidates: [] });
     previewGenerateMock.mockResolvedValue({ prompts: [] });
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) =>
+      resolveConfirmationPayload(payload));
   });
 
   it.each(["公民與社會", "跨科"])(
     "shows and submits a resolved domain per 題組 for %s, with each LC from its intersection",
     async (subjectFilter) => {
     const onSubmit = vi.fn();
-    const random = vi.spyOn(Math, "random").mockReturnValue(0.9999);
 
     render(
       <ParamForm
@@ -139,7 +188,6 @@ describe("ParamForm social-studies content-domain 預抽", () => {
     expect(perQuestion[0].learning_content).toEqual([TARGET_CODE]);
     expect(perQuestion[1].learning_content).toEqual([OTHER_CODE]);
 
-    random.mockRestore();
     },
   );
 

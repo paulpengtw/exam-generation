@@ -1,16 +1,18 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
 const previewGenerateMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: planCoreQuestionsMock,
   previewGenerate: previewGenerateMock,
+  resolveGenerate: resolveGenerateMock,
 }));
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (state: { lang: string }) => unknown) =>
@@ -18,6 +20,48 @@ vi.mock("../store/langStore", () => ({
 }));
 
 import ParamForm from "./ParamForm";
+
+function resolveConfirmationPayload(payload: Record<string, unknown>) {
+  const sourceRows = typeof payload.per_question_params === "string"
+    ? JSON.parse(payload.per_question_params) as Record<string, unknown>[]
+    : [];
+  const base = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => ![
+      "subject", "count", "per_question_params", "drawn", "redraws",
+    ].includes(key)),
+  );
+  const sourceConfigs = typeof payload.subquestion_configs === "string"
+    ? JSON.parse(payload.subquestion_configs) as Record<string, unknown>[]
+    : [];
+  const isPublicSubject = Array.isArray(payload.subject_filter) &&
+    payload.subject_filter.includes("公民與社會");
+  const resolvedConfigs = sourceConfigs.map((config) => ({
+    ...config,
+    ...(isPublicSubject && !Array.isArray(config.learning_content)
+      ? { learning_content: [ALLOWED_LC] }
+      : {}),
+    ...(isPublicSubject && !Array.isArray(config.learning_performance)
+      ? { learning_performance: [ALLOWED_LP] }
+      : {}),
+  }));
+  const drawn = isPublicSubject
+    ? resolvedConfigs.flatMap((_, subquestionIndex) => [
+        `per_question_params[0].subquestion_configs[${subquestionIndex}].learning_content`,
+        `per_question_params[0].subquestion_configs[${subquestionIndex}].learning_performance`,
+      ])
+    : [];
+  return {
+    payload: {
+      ...payload,
+      per_question_params: JSON.stringify(sourceRows.map((row) => ({
+        ...base,
+        ...row,
+        subquestion_configs: JSON.stringify(resolvedConfigs),
+      }))),
+    },
+    drawn,
+  };
+}
 
 const DOMAIN = "Civic Principles";
 const ALLOWED_LC = "公Ad-Ⅳ-1";
@@ -40,8 +84,8 @@ const SOCIAL_SCHEMA = {
   科目: [{ value: "公民與社會", instruction: "" }],
   核心素養: [{ value: "社-J-A2", instruction: "" }],
   學習表現: [
-    { value: ALLOWED_LP, instruction: "共享社會領域表現", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
-    { value: OUT_OF_DOMAIN_LP, instruction: "公民表現", 科目: "公", admitted_by: { 科目: ["公民與社會", "跨科"] } },
+    { value: ALLOWED_LP, instruction: "共享社會領域表現", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"], "內容領域": [DOMAIN] } },
+    { value: OUT_OF_DOMAIN_LP, instruction: "公民表現", 科目: "公", admitted_by: { 科目: ["公民與社會", "跨科"], "內容領域": ["Civic Roles and Identities"] } },
   ],
   學習內容: [
     {
@@ -87,10 +131,11 @@ describe("#506 confirmation ICCS compatibility", () => {
     });
     planCoreQuestionsMock.mockResolvedValue({ candidates: [] });
     previewGenerateMock.mockResolvedValue({ prompts: [] });
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) =>
+      resolveConfirmationPayload(payload));
   });
 
   it("公民 confirmation card limits LC/LP SearchPicker and 重抽 to the drawn domain pool", async () => {
-    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
     render(
       <ParamForm
         subject="social_studies"
@@ -108,7 +153,6 @@ describe("#506 confirmation ICCS compatibility", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "產生" }));
     await screen.findByRole("heading", { name: "發送前確認設定" });
-    random.mockRestore();
 
     const card = getFirstSubquestionCard();
     const lcInput = card.getByLabelText("學習內容");
@@ -120,16 +164,14 @@ describe("#506 confirmation ICCS compatibility", () => {
     expect(card.queryByText(OUT_OF_DOMAIN_LP)).not.toBeInTheDocument();
 
     const lcPickerRoot = lcInput.parentElement as HTMLElement;
-    expect(readChipCodes(lcPickerRoot)).toEqual([ALLOWED_LC]);
+    await waitFor(() => expect(readChipCodes(lcPickerRoot)).toEqual([ALLOWED_LC]));
 
-    const redrawRandom = vi.spyOn(Math, "random").mockReturnValue(0.99);
     const chip = within(lcPickerRoot).getByText(ALLOWED_LC).closest("span.inline-flex") as HTMLElement;
     act(() => {
       fireEvent.click(within(chip).getByRole("button", { name: "×" }));
     });
-    redrawRandom.mockRestore();
 
-    expect(readChipCodes(lcPickerRoot)).toEqual([ALLOWED_LC]);
+    await waitFor(() => expect(readChipCodes(lcPickerRoot)).toEqual([ALLOWED_LC]));
   });
 
   it("歷史與地理 keep their LC/LP pickers unfiltered by an ICCS domain", async () => {
@@ -170,6 +212,7 @@ describe("#506 confirmation ICCS compatibility", () => {
       );
 
       fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+      await screen.findByRole("heading", { name: "發送前確認設定" });
       const card = getFirstSubquestionCard();
       expect(card.getByText(current.lc)).toBeInTheDocument();
       expect(card.getByText(current.lp)).toBeInTheDocument();

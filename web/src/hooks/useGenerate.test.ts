@@ -437,24 +437,25 @@ describe("buildQueryString — text_word_limit serialization", () => {
   });
 });
 
-describe("buildQueryString — predrawn_fields serialization", () => {
-  it("serializes the optional provenance JSON as one query value", () => {
+describe("buildQueryString — drawn serialization", () => {
+  it("serializes resolver provenance as repeated query values", () => {
     const params = {
       subject: "math",
-      predrawn_fields: '["learning_content", "per_question_params[0].seed"]',
+      drawn: ["learning_content", "per_question_params[0].seed"],
     } as Parameters<typeof buildQueryString>[0];
 
     const qs = buildQueryString(params);
 
-    expect(new URLSearchParams(qs).get("predrawn_fields")).toBe(
-      '["learning_content", "per_question_params[0].seed"]',
-    );
+    expect(new URLSearchParams(qs).getAll("drawn")).toEqual([
+      "learning_content",
+      "per_question_params[0].seed",
+    ]);
   });
 
-  it("omits predrawn_fields when the optional metadata is absent", () => {
+  it("omits drawn when the optional metadata is absent", () => {
     const qs = buildQueryString({ subject: "math" });
 
-    expect(qs).not.toContain("predrawn_fields");
+    expect(qs).not.toContain("drawn");
   });
 });
 

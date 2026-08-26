@@ -29,6 +29,28 @@ vi.mock("../api/client", () => ({
   })),
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
   previewGenerate: vi.fn(async () => ({ prompts: [] })),
+  resolveGenerate: vi.fn(async (payload: Record<string, unknown>) => {
+    const rawRows = payload.per_question_params;
+    const rows = typeof rawRows === "string"
+      ? JSON.parse(rawRows) as Record<string, unknown>[]
+      : [];
+    const resolvedRows = rows.map((row) => ({
+      ...row,
+      ...(payload.core_competency !== undefined
+        ? { core_competency: payload.core_competency }
+        : {}),
+      ...(payload.math_thinking !== undefined
+        ? { math_thinking: payload.math_thinking }
+        : {}),
+    }));
+    return {
+      payload: {
+        ...payload,
+        per_question_params: JSON.stringify(resolvedRows),
+      },
+      drawn: [],
+    };
+  }),
 }));
 
 vi.mock("../i18n/useT", () => ({
