@@ -183,6 +183,32 @@ def _local_redraws(
     return result
 
 
+def _local_drawn(
+    drawn: list[str] | None,
+    *,
+    index: int,
+    batch: bool,
+) -> list[str]:
+    """Strip a batch prefix and normalize prior resolver paths for one sampler."""
+    result: list[str] = []
+    prefix = f"per_question_params[{index}]."
+    first_prefix = "per_question_params[0]."
+    for raw_path in drawn or []:
+        if not isinstance(raw_path, str):
+            continue
+        path = raw_path
+        if path.startswith(prefix):
+            path = path[len(prefix) :]
+        elif path.startswith("per_question_params["):
+            if not (not batch and path.startswith(first_prefix)):
+                continue
+            path = path[len(first_prefix) :]
+        elif batch and index != 0:
+            continue
+        result.append(_canonical_local_path(path))
+    return result
+
+
 def _decode_rows(value: Any, field: str) -> list[dict[str, Any]]:
     if isinstance(value, str):
         try:
@@ -252,6 +278,20 @@ def _draw_subquestion_codes(
     return rng.sample(pool, count)
 
 
+def _resolved_subquestion_count(
+    payload: dict[str, Any], redraws: dict[str, int] | None
+) -> int | None:
+    """Resolve a blank structural 小題數 parent on the resolver's keyed stream."""
+    value = payload.get("sub_question_count")
+    if not _blank(value):
+        return value
+    return draw_rng(
+        payload.get("seed"),
+        "sub_question_count",
+        (redraws or {}).get("sub_question_count", 0),
+    ).randint(3, 7)
+
+
 def _fill_subquestion_curriculum_fields(
     configs: list[Any],
     originals: list[dict[str, Any]],
@@ -266,7 +306,7 @@ def _fill_subquestion_curriculum_fields(
     drawn: list[str] = []
     for index, config in enumerate(configs):
         original = originals[index] if index < len(originals) else {}
-        row = deepcopy(original)
+        row = deepcopy(config)
         for field, pool, maximum in (
             ("learning_content", learning_content_pool, 3),
             ("learning_performance", learning_performance_pool, 2),
@@ -286,6 +326,46 @@ def _fill_subquestion_curriculum_fields(
                 drawn.append(path)
         completed.append(row)
     return completed, drawn
+
+
+def _clear_drawn_subquestion_fields(
+    configs: list[dict[str, Any]], drawn: list[str]
+) -> list[dict[str, Any]]:
+    """Clear prior auto-drawn slot fields while retaining user pins."""
+    drawn_paths = {_canonical_local_path(path) for path in drawn}
+    completed = deepcopy(configs)
+    for index, config in enumerate(completed):
+        for field in (
+            "question_type",
+            "認知歷程",
+            "reporting_scale",
+            "learning_content",
+            "learning_performance",
+        ):
+            path = f"subquestion_configs[{index}].{field}"
+            aliases = {path}
+            if field == "認知歷程":
+                aliases.add(f"subquestion_configs[{index}].cognitive_process")
+            if drawn_paths.intersection(aliases):
+                config.pop(field, None)
+                if field == "認知歷程":
+                    config.pop("cognitive_process", None)
+    return completed
+
+
+def _structural_redraw_configs(
+    configs: list[dict[str, Any]],
+    payload: dict[str, Any],
+    redraws: dict[str, int] | None,
+) -> list[dict[str, Any]]:
+    """Reopen prior auto-drawn slots when their structural parent is redrawn."""
+    if (
+        not configs
+        or not _blank(payload.get("sub_question_count"))
+        or (redraws or {}).get("sub_question_count", 0) <= 0
+    ):
+        return configs
+    return _clear_drawn_subquestion_fields(configs, payload.get("drawn", []))
 
 
 def _resolve_math(
@@ -326,7 +406,11 @@ def _resolve_math(
             None if _blank(payload.get("content_type")) else payload["content_type"]
         ),
         subject_filter=subject_filter,
-        sub_question_count=payload.get("sub_question_count"),
+        sub_question_count=(
+            None
+            if _blank(payload.get("sub_question_count"))
+            else payload["sub_question_count"]
+        ),
         text_word_limit=payload.get("text_word_limit"),
         difficulty=payload.get("difficulty"),
         redraws=redraws,
@@ -377,6 +461,10 @@ def _resolve_social(
         configs = _decode_rows(payload["subquestion_configs"], "subquestion_configs")
     elif "subquestion_configs" in payload:
         configs = []
+    if configs is not None:
+        configs = _structural_redraw_configs(configs, payload, redraws)
+
+    resolved_sub_question_count = _resolved_subquestion_count(payload, redraws)
 
     subject_filter = payload.get("subject_filter")
     subject_values = _as_enum_list(subject_filter, SocialQuestionSubject)
@@ -404,7 +492,7 @@ def _resolve_social(
             ),
             target_surface=payload.get("target_surface"),
             seed=payload.get("seed"),
-            sub_question_count=payload.get("sub_question_count"),
+            sub_question_count=resolved_sub_question_count,
             question_word_limit=payload.get("question_word_limit"),
             option_word_limit=payload.get("option_word_limit"),
             subquestion_configs=configs,
@@ -437,7 +525,7 @@ def _resolve_social(
             "learning_performance": list(sampled.學習表現_pool),
         }
     )
-    if payload.get("sub_question_count") is None or not _blank(payload.get("q_type")):
+    if resolved_sub_question_count is None or not _blank(payload.get("q_type")):
         completed["q_type"] = [_value(item) for item in sampled.題型]
     if "target_surface" in payload:
         completed["target_surface"] = sampled.target_surface
@@ -477,8 +565,10 @@ def _resolve_social(
         ("learning_performance", "學習表現"),
     ]
     drawn = _top_drawn(payload, fields)
-    if payload.get("sub_question_count") is None and _blank(payload.get("q_type")):
+    if resolved_sub_question_count is None and _blank(payload.get("q_type")):
         drawn.append("題型")
+    if _blank(payload.get("sub_question_count")):
+        drawn.append("sub_question_count")
     for index, config in enumerate(sampled_configs):
         original = original_configs[index] if index < len(original_configs) else {}
         if _blank(original.get("question_type")) and getattr(config, "question_type", None):
@@ -527,6 +617,10 @@ def _resolve_natural(
         configs = _decode_rows(payload["subquestion_configs"], "subquestion_configs")
     elif "subquestion_configs" in payload:
         configs = []
+    if configs is not None:
+        configs = _structural_redraw_configs(configs, payload, redraws)
+
+    resolved_sub_question_count = _resolved_subquestion_count(payload, redraws)
 
     sampled = sample_natural_params(
         grade=payload.get("grade"),
@@ -547,7 +641,7 @@ def _resolve_natural(
             None if _blank(payload.get("content_type")) else payload["content_type"]
         ),
         seed=payload.get("seed"),
-        sub_question_count=payload.get("sub_question_count"),
+        sub_question_count=resolved_sub_question_count,
         question_word_limit=payload.get("question_word_limit"),
         option_word_limit=payload.get("option_word_limit"),
         subquestion_configs=configs,
@@ -569,7 +663,11 @@ def _resolve_natural(
             "learning_performance": list(sampled.學習表現_pool),
         }
     )
-    if payload.get("sub_question_count") is None or not _blank(payload.get("q_type")):
+    if (
+        resolved_sub_question_count is None
+        or not _blank(payload.get("q_type"))
+        or _blank(payload.get("sub_question_count"))
+    ):
         completed["q_type"] = [_value(sampled.題型)]
     if sampled.sub_question_count is not None:
         completed["sub_question_count"] = sampled.sub_question_count
@@ -606,9 +704,11 @@ def _resolve_natural(
         ("learning_performance", "學習表現"),
         ("learning_content", "學習內容"),
     ]
-    if payload.get("sub_question_count") is None:
+    if resolved_sub_question_count is None:
         fields.insert(4, ("q_type", "題型"))
     drawn = _top_drawn(payload, fields)
+    if _blank(payload.get("sub_question_count")):
+        drawn.append("sub_question_count")
     for index, config in enumerate(sampled_configs):
         original = original_configs[index] if index < len(original_configs) else {}
         if _blank(original.get("question_type")) and getattr(config, "question_type", None):
@@ -646,7 +746,10 @@ def resolve(
     ``per_question_params[index].``.  Slot paths then use
     ``subquestion_configs[index].field``.  ``redraws`` uses those same paths;
     request aliases are accepted as input but canonical sampler names are
-    returned in ``drawn``.
+    returned in ``drawn``.  When a blank ``sub_question_count`` is redrawn,
+    prior auto-drawn slot fields are cleared and re-resolved, while fields
+    absent from ``drawn`` are pins that survive within the new count; growth
+    adds resolved rows and shrinking drops the tail.
     """
     if not isinstance(payload, dict):
         raise TypeError("payload must be an object")
@@ -676,6 +779,10 @@ def resolve(
     if seed_was_drawn:
         working_payload["seed"] = secrets.randbelow(2**31)
     if not batch:
+        if "drawn" in working_payload:
+            working_payload["drawn"] = _local_drawn(
+                working_payload["drawn"], index=0, batch=False
+            )
         result = _resolve_one(
             working_payload,
             _local_redraws(redraws, index=0, batch=False),
@@ -705,6 +812,10 @@ def resolve(
             worker_seed = base_seed + index
         if worker_seed is not None:
             worker_payload["seed"] = worker_seed
+        if "drawn" in working_payload:
+            worker_payload["drawn"] = _local_drawn(
+                working_payload["drawn"], index=index, batch=True
+            )
         try:
             result = _resolve_one(
                 worker_payload,

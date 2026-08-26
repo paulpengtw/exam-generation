@@ -3,6 +3,10 @@ import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, res
 import { useT } from "../i18n/useT";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
 import { filterEntriesByAdmittedParent } from "../lib/admittedBy";
+import {
+  filterDrawnAfterSubquestionCountRedraw,
+  rebuildSubquestionSlots,
+} from "../lib/rebuildSubquestionSlots";
 import { renewSessionIfNeeded } from "../lib/sessionRenewal";
 import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
@@ -969,6 +973,7 @@ export default function ParamForm({
   const resolveRequestRef = useRef<{
     payload: Record<string, unknown>;
     redraws: Record<string, number>;
+    rebuildSubquestionSlots: boolean;
   } | null>(null);
   const resolveRequestSeqRef = useRef(0);
   const redrawsRef = useRef<Record<string, number>>({});
@@ -1932,14 +1937,8 @@ export default function ParamForm({
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
-    const n = typeof subQuestionCount === "number" ? subQuestionCount : 0;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the editor row count synchronized with the selected count
-    setField("subquestionConfigs", (prev) => {
-      if (n <= 0) return [];
-      if (prev.length === n) return prev;
-      if (prev.length < n) return [...prev, ...Array(n - prev.length).fill({})];
-      return prev.slice(0, n);
-    });
+    setField("subquestionConfigs", (prev) => rebuildSubquestionSlots(prev, subQuestionCount));
   }, [subQuestionCount, setField]);
 
   function updateSubquestionConfig(index: number, patch: Partial<SubQuestionConfig>) {
@@ -1984,9 +1983,10 @@ export default function ParamForm({
     payload: Record<string, unknown>,
     redraws: Record<string, number>,
     preserveConfirmationEdits: boolean,
+    rebuildSubquestionSlots = false,
   ) {
     const sequence = ++resolveRequestSeqRef.current;
-    resolveRequestRef.current = { payload, redraws };
+    resolveRequestRef.current = { payload, redraws, rebuildSubquestionSlots };
     setResolverLoading(true);
     setResolverError(null);
     try {
@@ -1998,7 +1998,12 @@ export default function ParamForm({
       storeResolvedResponse(
         {
           ...response,
-          drawn: [...new Set([...carriedDrawn, ...response.drawn])],
+          drawn: [...new Set([
+            ...(rebuildSubquestionSlots
+              ? filterDrawnAfterSubquestionCountRedraw(carriedDrawn, redraws)
+              : carriedDrawn),
+            ...response.drawn,
+          ])],
         },
         preserveConfirmationEdits,
       );
@@ -2020,6 +2025,7 @@ export default function ParamForm({
       request.payload,
       request.redraws,
       pendingParamsRef.current !== null,
+      request.rebuildSubquestionSlots,
     );
   }
 
@@ -2218,6 +2224,51 @@ export default function ParamForm({
     setHasPendingConfirmationEdits(true);
     setPendingParams(nextParams);
     setPendingPerQuestionParams(nextPerQuestionParams);
+  }
+
+  function resubmitSubquestionCount(questionIndex: number) {
+    const currentParams = pendingParamsRef.current ?? pendingParams;
+    const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
+      parsePerQuestionParams(currentParams?.per_question_params);
+    if (!currentParams) return;
+
+    const nextPerQuestionParams = currentPerQuestionParams.map((params, index) => {
+      if (index !== questionIndex) return params;
+      const nextParams = { ...params };
+      delete nextParams.sub_question_count;
+      return {
+        ...nextParams,
+        subquestion_configs: JSON.stringify(parseSubquestionConfigs(params.subquestion_configs)),
+      };
+    });
+    const path = currentPerQuestionParams.length > 0
+      ? `per_question_params[${questionIndex}].sub_question_count`
+      : "sub_question_count";
+    const nextDrawn = (Array.isArray(currentParams.drawn) ? currentParams.drawn : [])
+      .filter((drawnPath) => drawnPath !== path && drawnPath !== "sub_question_count");
+    const nextParams = { ...currentParams } as FormParams;
+    delete nextParams.sub_question_count;
+    nextParams.drawn = nextDrawn;
+    if (currentParams.per_question_params !== undefined) {
+      nextParams.per_question_params = JSON.stringify(nextPerQuestionParams);
+    }
+    const nextRedraws = {
+      ...redrawsRef.current,
+      [path]: (redrawsRef.current[path] ?? 0) + 1,
+    };
+    pendingParamsRef.current = nextParams;
+    pendingPerQuestionParamsRef.current = nextPerQuestionParams;
+    pendingEditedIndicesRef.current.add(questionIndex);
+    redrawsRef.current = nextRedraws;
+    setHasPendingConfirmationEdits(true);
+    setPendingParams(nextParams);
+    setPendingPerQuestionParams(nextPerQuestionParams);
+    void resolveForConfirmation(
+      toGenerateParams(subject, nextParams) as unknown as Record<string, unknown>,
+      nextRedraws,
+      true,
+      true,
+    );
   }
 
   function updatePendingSubquestionInstruction(
@@ -2474,7 +2525,6 @@ export default function ParamForm({
       { label: t("form.confirm_passage"), value: p.passage, subjects: allSubjects },
       { label: t("form.confirm_options"), value: p.options?.join(", "), subjects: ["math"] },
       { label: t("form.confirm_text_word_limit"), value: p.text_word_limit !== undefined ? String(p.text_word_limit) : undefined, subjects: ["social_studies", "natural_sciences", ...(p.passage?.trim() ? [] : ["math"])], kind: "defaulted", defaultValue: t("form.confirm_unlimited") },
-      { label: t("form.confirm_sub_question_count"), value: p.sub_question_count !== undefined ? String(p.sub_question_count) : undefined, subjects: ["social_studies", "math", "natural_sciences"] },
       { label: t("form.confirm_model_plan"), value: p.model_plan, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       { label: t("form.confirm_model_execute"), value: p.model_execute, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
       { label: t("form.confirm_model_verify"), value: p.model_verify, subjects: allSubjects, kind: "defaulted", defaultValue: t("form.confirm_system_default") },
@@ -2622,6 +2672,16 @@ export default function ParamForm({
             const questionSubquestionConfigs = parseSubquestionConfigs(
               questionParams.subquestion_configs,
             ) as ResolvedSubQuestionConfig[];
+            const questionSubQuestionCount = typeof questionParams.sub_question_count === "number"
+              ? questionParams.sub_question_count
+              : index === 0 && typeof p.sub_question_count === "number"
+                ? p.sub_question_count
+                : undefined;
+            const questionSubQuestionCountWasDrawn = resolverDrewField(
+              drawnPaths,
+              index,
+              "sub_question_count",
+            );
             const questionLpWasDrawn = resolverDrewField(drawnPaths, index, "learning_performance");
             const questionLcWasDrawn = resolverDrewField(drawnPaths, index, "learning_content");
             const questionLpHeading = t(
@@ -2665,6 +2725,31 @@ export default function ParamForm({
                       {t("form.confirm_preview_retry")}
                     </button>
                   </div>
+                )}
+                {questionSubQuestionCount !== undefined && (
+                  <dl className="mb-3">
+                    <div className="flex gap-3 text-sm">
+                      <dt className="w-40 shrink-0 font-medium text-gray-600">
+                        {t("form.confirm_sub_question_count")}
+                      </dt>
+                      <dd className="min-w-0 flex-1 break-words text-gray-900">
+                        <span>{questionSubQuestionCount}</span>
+                        <span className={`ml-2 text-xs font-medium ${questionSubQuestionCountWasDrawn ? "text-amber-700" : "text-green-700"}`}>
+                          {t(questionSubQuestionCountWasDrawn ? "form.confirm_badge_random" : "form.confirm_badge_user")}
+                        </span>
+                        {questionSubQuestionCountWasDrawn && (
+                          <button
+                            type="button"
+                            onClick={() => resubmitSubquestionCount(index)}
+                            disabled={resolverLoading}
+                            className="ml-3 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {t("form.confirm_redraw")}
+                          </button>
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
                 )}
                 <dl className="space-y-2">
                   {perQuestionRows.map(({ key, label }) => {
