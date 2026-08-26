@@ -28,12 +28,12 @@ const MATH_SCHEMA = {
 const MATH_SCHEMA_WITH_CURRICULUM = {
   ...MATH_SCHEMA,
   學習表現: [
-    { value: "n-IV-1", instruction: "理解數與量", 科目: "n" },
-    { value: "n-IV-2", instruction: "運用數與量", 科目: "n" },
+    { value: "n-IV-1", instruction: "理解數與量", 科目: "n", admitted_by: { 科目: ["數與量", "跨領域"] } },
+    { value: "n-IV-2", instruction: "運用數與量", 科目: "n", admitted_by: { 科目: ["數與量", "跨領域"] } },
   ],
   學習內容: [
-    { value: "N-7-1", instruction: "負數與數線", 科目: "N" },
-    { value: "N-7-2", instruction: "質因數分解", 科目: "N" },
+    { value: "N-7-1", instruction: "負數與數線", 科目: "N", admitted_by: { 科目: ["數與量", "跨領域"] } },
+    { value: "N-7-2", instruction: "質因數分解", 科目: "N", admitted_by: { 科目: ["數與量", "跨領域"] } },
   ],
 };
 const SOCIAL_SCHEMA = {

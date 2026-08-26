@@ -45,12 +45,12 @@ const MATH_SCHEMA = {
   ],
   科目: [{ value: "數與量", instruction: "" }],
   學習表現: [
-    { value: "n-IV-1", instruction: "理解數與量", 科目: "n" },
-    { value: "a-IV-1", instruction: "理解代數", 科目: "a" },
+    { value: "n-IV-1", instruction: "理解數與量", 科目: "n", admitted_by: { 科目: ["數與量", "跨領域"] } },
+    { value: "a-IV-1", instruction: "理解代數", 科目: "a", admitted_by: { 科目: ["代數", "跨領域"] } },
   ],
   學習內容: [
-    { value: "N-7-1", instruction: "負數與數線", 科目: "N" },
-    { value: "A-7-2", instruction: "一元一次方程式", 科目: "A" },
+    { value: "N-7-1", instruction: "負數與數線", 科目: "N", admitted_by: { 科目: ["數與量", "跨領域"] } },
+    { value: "A-7-2", instruction: "一元一次方程式", 科目: "A", admitted_by: { 科目: ["代數", "跨領域"] } },
   ],
 };
 
@@ -131,12 +131,12 @@ const SOCIAL_SCHEMA = {
     { value: "地理", instruction: "" },
   ],
   學習表現: [
-    { value: "社1a-Ⅳ-1", instruction: "理解歷史時序", 科目: "社" },
-    { value: "社1a-Ⅳ-2", instruction: "解讀史料", 科目: "社" },
+    { value: "社1a-Ⅳ-1", instruction: "理解歷史時序", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
+    { value: "社1a-Ⅳ-2", instruction: "解讀史料", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
   ],
   學習內容: [
-    { value: "歷Ka-Ⅳ-1", instruction: "臺灣早期歷史", 科目: "歷" },
-    { value: "歷Ka-Ⅳ-2", instruction: "清代臺灣社會", 科目: "歷" },
+    { value: "歷Ka-Ⅳ-1", instruction: "臺灣早期歷史", 科目: "歷", admitted_by: { 科目: ["歷史", "跨科"] } },
+    { value: "歷Ka-Ⅳ-2", instruction: "清代臺灣社會", 科目: "歷", admitted_by: { 科目: ["歷史", "跨科"] } },
   ],
 };
 

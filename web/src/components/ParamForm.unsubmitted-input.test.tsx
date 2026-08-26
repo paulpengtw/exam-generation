@@ -13,11 +13,11 @@ const SOCIAL_SCHEMA = {
   題目內容類型: [{ value: "純文字" }],
   科目: [{ value: "歷史" }, { value: "地理" }],
   學習表現: [
-    { value: "歷1a-IV-1", instruction: "理解歷史時序", 科目: "歷" },
+    { value: "歷1a-IV-1", instruction: "理解歷史時序", 科目: "歷", admitted_by: { 科目: ["歷史", "跨科"] } },
   ],
   學習內容: [
-    { value: "歷Ka-Ⅳ-1", instruction: "古代文明", 科目: "歷" },
-    { value: "歷Ka-Ⅳ-2", instruction: "近代變遷", 科目: "歷" },
+    { value: "歷Ka-Ⅳ-1", instruction: "古代文明", 科目: "歷", admitted_by: { 科目: ["歷史", "跨科"] } },
+    { value: "歷Ka-Ⅳ-2", instruction: "近代變遷", 科目: "歷", admitted_by: { 科目: ["歷史", "跨科"] } },
   ],
   question_style: [],
 };
@@ -33,11 +33,11 @@ const MATH_SCHEMA = {
   題目內容類型: [{ value: "純文字", instruction: "" }],
   科目: [{ value: "數與量", instruction: "" }],
   學習表現: [
-    { value: "n-IV-1", instruction: "理解數與量", 科目: "n" },
+    { value: "n-IV-1", instruction: "理解數與量", 科目: "n", admitted_by: { 科目: ["數與量", "跨領域"] } },
   ],
   學習內容: [
-    { value: "N-7-1", instruction: "負數與數線", 科目: "N" },
-    { value: "N-7-2", instruction: "指數律", 科目: "N" },
+    { value: "N-7-1", instruction: "負數與數線", 科目: "N", admitted_by: { 科目: ["數與量", "跨領域"] } },
+    { value: "N-7-2", instruction: "指數律", 科目: "N", admitted_by: { 科目: ["數與量", "跨領域"] } },
   ],
 };
 

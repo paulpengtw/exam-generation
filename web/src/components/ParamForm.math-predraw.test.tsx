@@ -2,9 +2,9 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const MATH_LEARNING_CONTENT = [
-  { value: "N-7-1", instruction: "負數與數線", 科目: "N" },
-  { value: "A-7-2", instruction: "一元一次方程式", 科目: "A" },
-  { value: "S-7-3", instruction: "幾何與空間", 科目: "S" },
+  { value: "N-7-1", instruction: "負數與數線", 科目: "N", admitted_by: { 科目: ["數與量", "跨領域"] } },
+  { value: "A-7-2", instruction: "一元一次方程式", 科目: "A", admitted_by: { 科目: ["代數", "跨領域"] } },
+  { value: "S-7-3", instruction: "幾何與空間", 科目: "S", admitted_by: { 科目: ["幾何", "跨領域"] } },
 ];
 const LEARNING_CONTENT_CODES = MATH_LEARNING_CONTENT.map((entry) => entry.value);
 
@@ -24,8 +24,8 @@ vi.mock("../api/client", () => ({
       { value: "幾何", instruction: "" },
     ],
     學習表現: [
-      { value: "n-IV-1", instruction: "理解數與量", 科目: "n" },
-      { value: "a-IV-1", instruction: "理解代數", 科目: "a" },
+      { value: "n-IV-1", instruction: "理解數與量", 科目: "n", admitted_by: { 科目: ["數與量", "跨領域"] } },
+      { value: "a-IV-1", instruction: "理解代數", 科目: "a", admitted_by: { 科目: ["代數", "跨領域"] } },
     ],
     學習內容: MATH_LEARNING_CONTENT,
   })),

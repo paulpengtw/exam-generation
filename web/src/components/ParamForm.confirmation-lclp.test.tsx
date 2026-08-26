@@ -40,16 +40,16 @@ const SS_SCHEMA_WITH_CURRICULUM = {
   科目: [{ value: "歷史", instruction: "" }],
   核心素養: [{ value: "社-J-A2", instruction: "" }],
   學習表現: [
-    { value: "社1a-Ⅳ-1", instruction: "理解公民意識", 科目: "社" },
-    { value: "社1b-Ⅳ-1", instruction: "應用公民知識", 科目: "社" },
-    { value: "社1c-Ⅳ-1", instruction: "分析社會現象", 科目: "社" },
-    { value: "社1d-Ⅳ-1", instruction: "評估公民行動", 科目: "社" },
+    { value: "社1a-Ⅳ-1", instruction: "理解公民意識", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
+    { value: "社1b-Ⅳ-1", instruction: "應用公民知識", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
+    { value: "社1c-Ⅳ-1", instruction: "分析社會現象", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
+    { value: "社1d-Ⅳ-1", instruction: "評估公民行動", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
   ],
   學習內容: [
-    { value: "歷Aa-Ⅳ-1", instruction: "古代文明的發展", 科目: "歷史" },
-    { value: "歷Ab-Ⅳ-1", instruction: "中世紀歐洲的演變", 科目: "歷史" },
-    { value: "歷Ac-Ⅳ-1", instruction: "近代民族國家興起", 科目: "歷史" },
-    { value: "歷Ad-Ⅳ-1", instruction: "現代世界局勢", 科目: "歷史" },
+    { value: "歷Aa-Ⅳ-1", instruction: "古代文明的發展", 科目: "歷史", admitted_by: { 科目: ["歷史", "跨科"] } },
+    { value: "歷Ab-Ⅳ-1", instruction: "中世紀歐洲的演變", 科目: "歷史", admitted_by: { 科目: ["歷史", "跨科"] } },
+    { value: "歷Ac-Ⅳ-1", instruction: "近代民族國家興起", 科目: "歷史", admitted_by: { 科目: ["歷史", "跨科"] } },
+    { value: "歷Ad-Ⅳ-1", instruction: "現代世界局勢", 科目: "歷史", admitted_by: { 科目: ["歷史", "跨科"] } },
   ],
 };
 

@@ -4,16 +4,43 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 
-def load_learning_content(data_dir: Path) -> dict:
+def load_learning_content(
+    data_dir: Path,
+    *,
+    subject_to_prefixes: dict[str, set[str]] | None = None,
+) -> dict:
     with open(data_dir / "learning_content.json", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    return (
+        tag_entries_with_admitted_subjects(
+            data,
+            "學習內容",
+            subject_to_prefixes=subject_to_prefixes,
+        )
+        if subject_to_prefixes is not None
+        else data
+    )
 
 
-def load_learning_performance(data_dir: Path) -> dict:
+def load_learning_performance(
+    data_dir: Path,
+    *,
+    subject_to_prefixes: dict[str, set[str]] | None = None,
+) -> dict:
     with open(data_dir / "learning_performance.json", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    return (
+        tag_entries_with_admitted_subjects(
+            data,
+            "學習表現",
+            subject_to_prefixes=subject_to_prefixes,
+        )
+        if subject_to_prefixes is not None
+        else data
+    )
 
 
 def load_performance_intro(data_dir: Path) -> str:
@@ -63,6 +90,90 @@ def allowed_learning_performance(
         if e["學習階段"] == learning_stage
         and (prefixes is None or e["科目"] in prefixes)
     ]
+
+
+def entries_with_admitted_subjects(
+    data: dict,
+    key: Literal["學習內容", "學習表現"],
+    learning_stage: str,
+    *,
+    subject_to_prefixes: dict[str, set[str]],
+) -> list[dict]:
+    """Return a stage pool whose rows declare every admitting subject.
+
+    The admission tag is derived by asking the same ``allowed_*`` pool helper
+    used by the samplers for each subject.  Keeping that calculation here
+    means schema payloads and generation cannot acquire separate prefix rules.
+    """
+    allowed = (
+        allowed_learning_content
+        if key == "學習內容"
+        else allowed_learning_performance
+    )
+    all_entries = allowed(
+        data,
+        learning_stage,
+        subject_to_prefixes=subject_to_prefixes,
+    )
+    admitted_values = {
+        subject: {
+            entry["value"]
+            for entry in allowed(
+                data,
+                learning_stage,
+                subject=subject,
+                subject_to_prefixes=subject_to_prefixes,
+            )
+        }
+        for subject in subject_to_prefixes
+    }
+    return [
+        {
+            **entry,
+            "admitted_by": {
+                "科目": [
+                    subject
+                    for subject, values in admitted_values.items()
+                    if entry["value"] in values
+                ]
+            },
+        }
+        for entry in all_entries
+    ]
+
+
+def tag_entries_with_admitted_subjects(
+    data: dict,
+    key: Literal["學習內容", "學習表現"],
+    *,
+    subject_to_prefixes: dict[str, set[str]],
+) -> dict:
+    """Attach source-of-truth 科目 admission tags to every curriculum row."""
+    by_stage = {
+        stage: {
+            entry["value"]: entry
+            for entry in entries_with_admitted_subjects(
+                data,
+                key,
+                stage,
+                subject_to_prefixes=subject_to_prefixes,
+            )
+        }
+        for stage in dict.fromkeys(
+            entry.get("學習階段")
+            for entry in data.get(key, [])
+            if isinstance(entry, dict) and isinstance(entry.get("學習階段"), str)
+        )
+    }
+    tagged_data = dict(data)
+    tagged_data[key] = [
+        by_stage.get(entry.get("學習階段"), {}).get(
+            entry.get("value"),
+            {**entry, "admitted_by": {"科目": []}},
+        )
+        for entry in data.get(key, [])
+    ]
+    return tagged_data
 
 
 def content_instructions(data: dict) -> dict[str, str]:

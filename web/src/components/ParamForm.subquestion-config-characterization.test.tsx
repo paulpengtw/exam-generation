@@ -70,13 +70,13 @@ const CURRICULUM_SOCIAL_SCHEMA = {
   ...SOCIAL_SCHEMA,
   科目: [{ value: "歷史", instruction: "" }],
   學習表現: [
-    { value: "社1a-Ⅳ-1", instruction: "社會共同表現一", 科目: "社" },
-    { value: "社1a-Ⅳ-2", instruction: "社會共同表現二", 科目: "社" },
-    { value: "歷1a-Ⅳ-1", instruction: "歷史表現一", 科目: "歷" },
+    { value: "社1a-Ⅳ-1", instruction: "社會共同表現一", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
+    { value: "社1a-Ⅳ-2", instruction: "社會共同表現二", 科目: "社", admitted_by: { 科目: ["歷史", "地理", "公民與社會", "跨科"] } },
+    { value: "歷1a-Ⅳ-1", instruction: "歷史表現一", 科目: "歷", admitted_by: { 科目: ["歷史", "跨科"] } },
   ],
   學習內容: [
-    { value: "歷Ka-Ⅳ-1", instruction: "歷史內容一", 科目: "歷" },
-    { value: "歷Ka-Ⅳ-2", instruction: "歷史內容二", 科目: "歷" },
+    { value: "歷Ka-Ⅳ-1", instruction: "歷史內容一", 科目: "歷", admitted_by: { 科目: ["歷史", "跨科"] } },
+    { value: "歷Ka-Ⅳ-2", instruction: "歷史內容二", 科目: "歷", admitted_by: { 科目: ["歷史", "跨科"] } },
   ],
 };
 
