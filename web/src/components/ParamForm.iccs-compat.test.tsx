@@ -44,8 +44,18 @@ const SOCIAL_SCHEMA = {
     { value: OUT_OF_DOMAIN_LP, instruction: "公民表現", 科目: "公", admitted_by: { 科目: ["公民與社會", "跨科"] } },
   ],
   學習內容: [
-    { value: ALLOWED_LC, instruction: "人權普遍性保障原則", 科目: "公", admitted_by: { 科目: ["公民與社會", "跨科"] } },
-    { value: OUT_OF_DOMAIN_LC, instruction: "公民角色與認同", 科目: "公", admitted_by: { 科目: ["公民與社會", "跨科"] } },
+    {
+      value: ALLOWED_LC,
+      instruction: "人權普遍性保障原則",
+      科目: "公",
+      admitted_by: { 科目: ["公民與社會", "跨科"], 內容領域: [DOMAIN] },
+    },
+    {
+      value: OUT_OF_DOMAIN_LC,
+      instruction: "公民角色與認同",
+      科目: "公",
+      admitted_by: { 科目: ["公民與社會", "跨科"], 內容領域: ["Civic Roles and Identities"] },
+    },
   ],
   內容領域_mapping: {
     [ALLOWED_LC]: [DOMAIN],

@@ -850,6 +850,82 @@ function filterCurriculumEntriesBySubject<T extends SchemaEntry>(
   return filterEntriesByAdmittedParent(entries, "科目", values);
 }
 
+function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
+  entries: readonly T[],
+  subject: string,
+  resolvedSubject: string | readonly string[] | undefined,
+  contentDomain: string | undefined,
+  contentDomainMapping: Record<string, string[]> | undefined,
+): T[] {
+  if (subject !== "social_studies" || !contentDomain) return [...entries];
+  const subjectValues = typeof resolvedSubject === "string"
+    ? resolvedSubject ? [resolvedSubject] : []
+    : resolvedSubject ?? [];
+  if (!subjectValues.some((value) => ICCS_DOMAIN_FILTER_SUBJECTS.has(value))) {
+    return [...entries];
+  }
+  const domainTaggedEntries = entries.filter((entry) =>
+    Object.hasOwn(entry.admitted_by ?? {}, "內容領域"),
+  );
+  const domainAdmittedEntries = new Set(
+    filterEntriesByAdmittedParent(domainTaggedEntries, "內容領域", contentDomain),
+  );
+  const mappedCodes = new Set(
+    Object.entries(contentDomainMapping ?? {})
+      .filter(([, domains]) => domains.includes(contentDomain))
+      .map(([code]) => code),
+  );
+  return entries.filter((entry) =>
+    Object.hasOwn(entry.admitted_by ?? {}, "內容領域")
+      ? domainAdmittedEntries.has(entry)
+      : !isPublicSocialStudiesCode(entry.value) || mappedCodes.has(entry.value),
+  );
+}
+
+type ContentDomainResolution = {
+  value: string | undefined;
+  drawn: boolean;
+};
+
+/** Single client value-source seam for #604's resolver-backed draw path. */
+function resolveContentDomainForQuestion(
+  subject: string,
+  resolvedSubject: string | readonly string[] | undefined,
+  pinnedDomain: string | undefined,
+  domainEntries: readonly SchemaEntry[],
+  subjectLearningContentEntries: readonly SchemaEntry[],
+  previousDomain: string | undefined,
+  contentDomainMapping: Record<string, string[]> | undefined,
+): ContentDomainResolution {
+  if (subject !== "social_studies" || pinnedDomain) {
+    return { value: pinnedDomain, drawn: false };
+  }
+  const subjectValues = typeof resolvedSubject === "string"
+    ? resolvedSubject ? [resolvedSubject] : []
+    : resolvedSubject ?? [];
+  if (!subjectValues.some((value) => ICCS_DOMAIN_FILTER_SUBJECTS.has(value))) {
+    return { value: undefined, drawn: false };
+  }
+  const drawableDomains = domainEntries
+    .filter((entry) =>
+      filterLearningContentEntriesByDomain(
+        subjectLearningContentEntries,
+        subject,
+        resolvedSubject,
+        entry.value,
+        contentDomainMapping,
+      ).length > 0,
+    )
+    .map((entry) => entry.value);
+  const drawn = drawQuestionSubset(
+    drawableDomains,
+    1,
+    1,
+    previousDomain ? [previousDomain] : undefined,
+  );
+  return { value: drawn[0], drawn: drawn.length > 0 };
+}
+
 function isPublicSocialStudiesCode(code: string): boolean {
   return code.startsWith("公");
 }
@@ -1796,11 +1872,21 @@ export default function ParamForm({
   }, [availableLearningPerformance, iccsDomainMappedCodes]);
 
   const filteredLcPool = useMemo(() => {
-    if (iccsDomainMappedCodes === undefined) return undefined;
-    return availableLearningContent
-      .filter((entry) => !isPublicSocialStudiesCode(entry.value) || iccsDomainMappedCodes.has(entry.value))
-      .map((entry) => entry.value);
-  }, [availableLearningContent, iccsDomainMappedCodes]);
+    if (
+      subject !== "social_studies" ||
+      !ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter) ||
+      !contentDomain
+    ) {
+      return undefined;
+    }
+    return filterLearningContentEntriesByDomain(
+      availableLearningContent,
+      subject,
+      subjectFilter,
+      contentDomain,
+      schemas?.內容領域_mapping,
+    ).map((entry) => entry.value);
+  }, [availableLearningContent, contentDomain, schemas, subject, subjectFilter]);
 
   const restrictCodesToIccsDomain = (codes: readonly string[]): string[] => {
     if (iccsDomainMappedCodes === undefined) return [...codes];
@@ -1906,10 +1992,12 @@ export default function ParamForm({
         ? (contentType === "customized" ? customContentType.trim() : contentType)
         : undefined;
     if (isCurriculumSubject && !effectiveContentType) { return; }
-    const selectedLearningPerformance = restrictCodesToIccsDomain(learningPerformance);
-    const selectedLearningContent = restrictCodesToIccsDomain(learningContent);
     const lpPoolValues = filteredLpPool ?? availableLearningPerformance.map((e) => e.value);
     const lcPoolValues = filteredLcPool ?? availableLearningContent.map((e) => e.value);
+    const selectedLearningPerformance = restrictCodesToIccsDomain(learningPerformance);
+    const selectedLearningContent = filteredLcPool === undefined
+      ? restrictCodesToIccsDomain(learningContent)
+      : learningContent.filter((code) => lcPoolValues.includes(code));
     const allCurriculumSubjectValues = schemas?.科目?.map((entry) => entry.value) ?? [];
     const hasHistoryPerQuestionParams = historyPerQuestionParams.length === count;
 
@@ -1963,7 +2051,9 @@ export default function ParamForm({
       ? subquestionConfigs
           .slice(0, subQuestionCount as number)
           .map((cfg) => {
-            const configuredLc = restrictCodesToIccsDomain(cfg.learning_content ?? []);
+            const configuredLc = filteredLcPool === undefined
+              ? [...(cfg.learning_content ?? [])]
+              : (cfg.learning_content ?? []).filter((code) => lcPoolValues.includes(code));
             const configuredLp = restrictCodesToIccsDomain(cfg.learning_performance ?? []);
             const hasExplicitLc = configuredLc.length > 0;
             const hasExplicitLp = configuredLp.length > 0;
@@ -2165,18 +2255,39 @@ export default function ParamForm({
         resolvedQuestionSubject,
         allCurriculumSubjectValues,
       );
-      const questionLcEntries = filterCurriculumEntriesBySubject(
+      const questionLcEntriesBySubject = filterCurriculumEntriesBySubject(
         schemas?.學習內容 ?? [],
         subject,
         resolvedQuestionSubject,
         allCurriculumSubjectValues,
       );
+      const historyQuestionDomain = typeof historyQuestionParams?.content_domain === "string"
+        ? historyQuestionParams.content_domain
+        : undefined;
+      const contentDomainResolution = resolveContentDomainForQuestion(
+        subject,
+        resolvedQuestionSubject,
+        historyQuestionDomain ?? baseParams.content_domain,
+        schemas?.內容領域 ?? [],
+        questionLcEntriesBySubject,
+        previousRandomValues.content_domain?.[0],
+        schemas?.內容領域_mapping,
+      );
+      const randomContentDomain = contentDomainResolution.drawn && contentDomainResolution.value
+        ? [contentDomainResolution.value]
+        : undefined;
+      const resolvedQuestionContentDomain = contentDomainResolution.value;
+      const questionLcEntries = filterLearningContentEntriesByDomain(
+        questionLcEntriesBySubject,
+        subject,
+        resolvedQuestionSubject,
+        resolvedQuestionContentDomain,
+        schemas?.內容領域_mapping,
+      );
       const questionLpCodes = new Set(
         restrictCodesToIccsDomain(questionLpEntries.map((entry) => entry.value)),
       );
-      const questionLcCodes = new Set(
-        restrictCodesToIccsDomain(questionLcEntries.map((entry) => entry.value)),
-      );
+      const questionLcCodes = new Set(questionLcEntries.map((entry) => entry.value));
       const questionLpAvailablePool = [...questionLpCodes];
       const questionLcAvailablePool = [...questionLcCodes];
       const questionLpSource = selectedLearningPerformance.length > 0
@@ -2199,11 +2310,9 @@ export default function ParamForm({
           ).filter((code) => questionLpCodes.has(code))
         : undefined;
       const historyQuestionLc = Array.isArray(historyQuestionParams?.learning_content)
-        ? restrictCodesToIccsDomain(
-            historyQuestionParams.learning_content.filter(
-              (code): code is string => typeof code === "string",
-            ),
-          ).filter((code) => questionLcCodes.has(code))
+        ? historyQuestionParams.learning_content
+            .filter((code): code is string => typeof code === "string")
+            .filter((code) => questionLcCodes.has(code))
         : undefined;
       const questionLp = redrawQuestionLp
         ? drawQuestionSubset(
@@ -2238,6 +2347,9 @@ export default function ParamForm({
         ...(randomSubjectFilter !== undefined
           ? [`per_question_params[${questionIndex}].subject_filter`]
           : []),
+        ...(contentDomainResolution.drawn
+          ? [`per_question_params[${questionIndex}].content_domain`]
+          : []),
         ...(randomSubContext !== undefined
           ? [`per_question_params[${questionIndex}].sub_context`]
           : []),
@@ -2266,7 +2378,9 @@ export default function ParamForm({
       perQuestionSubqLpPools.push(questionSubqLpPool);
       const questionSubquestionConfigs = shouldDrawPerSubq
           ? sourceSubquestionConfigs.slice(0, subQuestionCount as number).map((cfg, subquestionIndex) => {
-            const configuredLc = restrictCodesToIccsDomain(cfg.learning_content ?? []);
+            const configuredLc = subject === "social_studies" && resolvedQuestionContentDomain
+              ? (cfg.learning_content ?? []).filter((code) => questionLcCodes.has(code))
+              : [...(cfg.learning_content ?? [])];
             const configuredLp = restrictCodesToIccsDomain(cfg.learning_performance ?? []);
             const hasExplicitLc = configuredLc.length > 0;
             const hasExplicitLp = configuredLp.length > 0;
@@ -2339,6 +2453,7 @@ export default function ParamForm({
         ...(randomSetType !== undefined ? ["set_type"] : []),
         ...(randomQuestionType !== undefined ? ["q_type"] : []),
         ...(randomSubjectFilter !== undefined ? ["subject_filter"] : []),
+        ...(contentDomainResolution.drawn ? ["content_domain"] : []),
         ...(randomSubContext !== undefined ? ["sub_context"] : []),
         ...(randomScienceCompetency !== undefined ? ["science_competency"] : []),
         ...(redrawQuestionLp && questionLp?.length ? ["learning_performance"] : []),
@@ -2351,6 +2466,7 @@ export default function ParamForm({
         ...(randomSetType !== undefined ? { set_type: randomSetType[0] } : {}),
         ...(randomQuestionType !== undefined ? { q_type: randomQuestionType } : {}),
         ...(randomSubjectFilter !== undefined ? { subject_filter: randomSubjectFilter } : {}),
+        ...(randomContentDomain !== undefined ? { content_domain: randomContentDomain[0] } : {}),
         ...(randomSubContext !== undefined ? { sub_context: randomSubContext[0] } : {}),
         ...(randomScienceCompetency !== undefined ? { science_competency: randomScienceCompetency } : {}),
         ...(redrawQuestionLp && questionLp?.length ? { learning_performance: questionLp } : {}),
@@ -2367,6 +2483,7 @@ export default function ParamForm({
             set_type: randomSetType?.[0] ?? baseParams.set_type,
             q_type: randomQuestionType ?? baseParams.q_type,
             subject_filter: randomSubjectFilter ?? (baseParams.subject_filter ? [baseParams.subject_filter] : undefined),
+            content_domain: contentDomainResolution.value ?? baseParams.content_domain,
             sub_context: randomSubContext?.[0] ?? baseParams.sub_context,
             science_competency: randomScienceCompetency ?? baseParams.science_competency,
             difficulty: subject !== "natural_sciences" ? (baseParams.difficulty ?? "medium") : undefined,
@@ -2402,6 +2519,7 @@ export default function ParamForm({
         set_type: randomSetType,
         q_type: randomQuestionType,
         subject_filter: randomSubjectFilter,
+        content_domain: randomContentDomain,
         sub_context: randomSubContext,
         science_competency: randomScienceCompetency,
       };
@@ -2442,8 +2560,18 @@ export default function ParamForm({
             resolvedSubject,
             allCurriculumSubjectValues,
           );
+          const resolvedDomain = typeof params.content_domain === "string"
+            ? params.content_domain
+            : undefined;
+          const domainLcEntries = filterLearningContentEntriesByDomain(
+            lcEntries,
+            subject,
+            resolvedSubject,
+            resolvedDomain,
+            schemas?.內容領域_mapping,
+          );
           return {
-            lc: restrictCodesToIccsDomain(lcEntries.map((entry) => entry.value)),
+            lc: domainLcEntries.map((entry) => entry.value),
             lp: restrictCodesToIccsDomain(lpEntries.map((entry) => entry.value)),
           };
         })
@@ -2784,7 +2912,7 @@ export default function ParamForm({
       { label: t("form.confirm_difficulty"), value: p.difficulty, subjects: ["math", "social_studies"], kind: "defaulted", defaultValue: "medium" },
       { label: t("form.confirm_reporting_scale"), value: p.reporting_scale, subjects: ["natural_sciences"], kind: "defaulted", defaultValue: t("form.confirm_random") },
       { label: t("form.confirm_subject_filter"), value: p.subject_filter, subjects: ["math", "social_studies"], kind: subject === "social_studies" ? "sampled" : "absent" },
-      { label: t("form.confirm_content_domain"), value: p.content_domain, subjects: ["social_studies"], kind: "sampled" },
+      { label: t("form.confirm_content_domain"), value: p.content_domain, subjects: ["social_studies"] },
       { label: t("form.confirm_target_surface"), value: p.target_surface ?? "紙本", subjects: ["social_studies"] },
       { label: t("form.confirm_count"), value: String(p.count), subjects: allSubjects },
       {
@@ -2835,6 +2963,7 @@ export default function ParamForm({
       { key: "set_type", label: t("form.confirm_set_type"), subjects: allSubjects },
       { key: "q_type", label: t("form.confirm_q_type"), subjects: ["math", "natural_sciences"] },
       { key: "subject_filter", label: t("form.confirm_subject_filter"), subjects: ["social_studies"] },
+      { key: "content_domain", label: t("form.confirm_content_domain"), subjects: ["social_studies"] },
       { key: "sub_context", label: t("form.confirm_sub_context"), subjects: ["natural_sciences"] },
       { key: "science_competency", label: t("form.confirm_science_competency"), subjects: ["natural_sciences"] },
     ] satisfies { key: string; label: string; subjects: string[] }[])
@@ -2998,7 +3127,7 @@ export default function ParamForm({
                     <SubquestionConfigCards
                       configs={questionSubquestionConfigs}
                       subject={subject}
-                      contentDomain={typeof p.content_domain === "string" ? p.content_domain : undefined}
+                      contentDomain={typeof questionParams.content_domain === "string" ? questionParams.content_domain : undefined}
                       questionTypes={availableQuestionTypes}
                       contentTypes={schemas?.題目內容類型 ?? []}
                       lcEntryByCode={lcEntryByCode}

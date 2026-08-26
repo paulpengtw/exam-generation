@@ -312,6 +312,60 @@ def test_resolve_endpoint_rejects_incompatible_parent_without_payload(
     assert "payload" not in response.json()
 
 
+def test_resolve_endpoint_rejects_an_empty_pinned_civic_intersection(
+    resolve_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.social_studies import sampler
+
+    target_domain = "Civic Principles"
+    monkeypatch.setattr(
+        sampler,
+        "_LC_DATA",
+        {
+            "學習內容": [
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": "公Synthetic-Ⅳ-1",
+                    "admitted_by": {
+                        "科目": ["公民與社會", "跨科"],
+                        "內容領域": ["Civic Participation"],
+                    },
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sampler,
+        "_LP_DATA",
+        {"學習表現": [{"學習階段": "第四學習階段", "科目": "社", "value": "社1a-Ⅳ-1"}]},
+    )
+
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 23,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["公民與社會"],
+            "content_domain": target_domain,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {
+            "field": "learning_content",
+            "code": "incompatible_parent",
+            "parent": target_domain,
+        }
+    ]
+    assert "payload" not in response.json()
+
+
 def test_resolve_endpoint_requires_authentication() -> None:
     app = create_app()
     with TestClient(app, raise_server_exceptions=False) as client:

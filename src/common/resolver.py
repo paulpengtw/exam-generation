@@ -54,7 +54,12 @@ from src.schemas import (
 from src.schemas import (
     QuestionType as MathQuestionType,
 )
-from src.social_studies.sampler import sample_params as sample_social_params
+from src.social_studies.sampler import (
+    IncompatibleContentDomainError,
+)
+from src.social_studies.sampler import (
+    sample_params as sample_social_params,
+)
 from src.social_studies.schemas import (
     CoreCompetency as SocialCoreCompetency,
 )
@@ -308,35 +313,48 @@ def _resolve_social(
 
     subject_filter = payload.get("subject_filter")
     subject_values = _as_enum_list(subject_filter, SocialQuestionSubject)
-    sampled = sample_social_params(
-        grade=payload.get("grade"),
-        context=_as_enum_list(payload.get("context"), SocialQuestionContext),
-        set_type=_as_enum(payload.get("set_type"), SocialQuestionSetType),
-        q_type=_as_enum_list(payload.get("q_type"), SocialQuestionType),
-        subject=subject_values,
-        core_competency=_as_enum_list(payload.get("core_competency"), SocialCoreCompetency),
-        learning_content=(
-            None if _blank(payload.get("learning_content")) else payload["learning_content"]
-        ),
-        learning_performance=(
-            None
-            if _blank(payload.get("learning_performance"))
-            else payload["learning_performance"]
-        ),
-        content_type=(
-            None if _blank(payload.get("content_type")) else payload["content_type"]
-        ),
-        content_domain=payload.get("content_domain"),
-        target_surface=payload.get("target_surface"),
-        seed=payload.get("seed"),
-        sub_question_count=payload.get("sub_question_count"),
-        question_word_limit=payload.get("question_word_limit"),
-        option_word_limit=payload.get("option_word_limit"),
-        subquestion_configs=configs,
-        difficulty=payload.get("difficulty"),
-        allow_duplicate_figure_kinds=payload.get("allow_duplicate_figure_kinds", False),
-        redraws=redraws,
-    )
+    try:
+        sampled = sample_social_params(
+            grade=payload.get("grade"),
+            context=_as_enum_list(payload.get("context"), SocialQuestionContext),
+            set_type=_as_enum(payload.get("set_type"), SocialQuestionSetType),
+            q_type=_as_enum_list(payload.get("q_type"), SocialQuestionType),
+            subject=subject_values,
+            core_competency=_as_enum_list(payload.get("core_competency"), SocialCoreCompetency),
+            learning_content=(
+                None if _blank(payload.get("learning_content")) else payload["learning_content"]
+            ),
+            learning_performance=(
+                None
+                if _blank(payload.get("learning_performance"))
+                else payload["learning_performance"]
+            ),
+            content_type=(
+                None if _blank(payload.get("content_type")) else payload["content_type"]
+            ),
+            content_domain=(
+                None if _blank(payload.get("content_domain")) else payload["content_domain"]
+            ),
+            target_surface=payload.get("target_surface"),
+            seed=payload.get("seed"),
+            sub_question_count=payload.get("sub_question_count"),
+            question_word_limit=payload.get("question_word_limit"),
+            option_word_limit=payload.get("option_word_limit"),
+            subquestion_configs=configs,
+            difficulty=payload.get("difficulty"),
+            allow_duplicate_figure_kinds=payload.get("allow_duplicate_figure_kinds", False),
+            redraws=redraws,
+        )
+    except IncompatibleContentDomainError as exc:
+        raise ResolveConflictError(
+            [
+                {
+                    "field": "learning_content",
+                    "code": "incompatible_parent",
+                    "parent": str(exc),
+                }
+            ]
+        ) from exc
 
     completed = deepcopy(payload)
     completed.update(

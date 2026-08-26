@@ -12,6 +12,7 @@ All curriculum data (學習內容.json, 學習表現.json) is injected directly 
 ### Script-side randomness
 The Python code handles all random selection (grade, 情境, 題型種類, 題型, 數學思考, 學習內容, 學習表現, 核心素養, 題目內容類型, subject_filter, question style; social-studies parent items are fixed as 題組題, can receive web/API per-小題 `question_type`, `instruction`, `learning_content`, and `learning_performance` constraints — empty per-小題 LC/LP fields fall back to the global sampled pool; explicit per-小題 LC/LP selections are injected into that 子題's prompt with a hard must-use instruction and are forced verbatim into the output SubQuestion (overriding the LLM's choice) — sample blank question types per 小題, and persist instructions as `subquestions[*].出題指示`; natural sciences also adds 情境子類別, 科學能力, and (parallel to social studies) per-小題 SubQuestionConfig support with sub_question_count, subquestion_configs, question_word_limit, option_word_limit — blank 題型 slots are filled from the PISA-Science 題型 pool). After each 子題產生器 response is parsed, `科目` is a 強制值: 社會領域 uses the sampled `params.科目`, while 自然科學 always uses `自然科學`, overriding any conflicting LLM value. An explicitly supplied 情境子類別 is 釘選: if 情境 is omitted its parent constrains the 情境 draw, while an explicitly incompatible 情境/情境子類別 pair is rejected during request validation. The LLM receives deterministic instructions — it does not choose these parameters itself.
 For a seeded request, each drawn value uses its own `draw_rng(seed, field_path, redraws.get(field_path, 0))` stream instead of consuming a shared sequential RNG. Field paths use the serialized top-level parameter name and indexed dotted paths such as `subquestion_configs[2].question_type` for per-小題 slots; 從屬參數 resolve their parent first and then draw the child from that resolved range. `redraws` is a per-field 重抽 counter, so incrementing one path changes only that path's stream and the same seed, pins, and counters replay the same payload.
+For 社會領域, 內容領域 is resolved before its dependent 學習內容 pool: 公民與社會/跨科 draw only domains with a non-empty 科目 intersection, while a pinned empty intersection is an incompatible-parent conflict rather than a redraw.
 
 ### Resolve step (ADR 0019)
 `src/common/resolver.py::resolve` is the pure whole-payload seam shared by the resolve endpoint and the future `/generate` completeness gate.
@@ -24,6 +25,7 @@ Math and social-studies prompt builders therefore receive the resolver's pinned 
 The three CLI entry points expose a client-free `resolve` subcommand with the same subject-specific pin flags as `generate`; it prints `{payload, drawn}` JSON and reports resolver conflicts on stderr with a non-zero exit.
 Each CLI's `generate` path builds a partial GenerateParams-style payload, resolves and prints one record per question before generation, and passes the completed values through the existing transitional sampler fill.
 Seeded batches resolve each question independently with `seed + index`, so repeated CLI runs with the same pins replay the printed payloads.
+Supplying 內容領域 is a pin and does not consume its keyed sampler stream; a blank value is resolved per 題組 and carried into the submitted `per_question_params` rows.
 
 ### Batch-level prompt dedup (issue #111)
 
@@ -48,6 +50,7 @@ Natural-sciences schema payloads carry each 情境子類別's admitting values a
 The web client uses one generic parent-keyed filter, resolves each 題組's own 情境 before drawing its 情境子類別, and keeps an explicitly pinned 情境 out of the per-題組 draw. The 發送前確認 screen has no editable 情境 path; its per-題組 rows display the already-filtered pair that will be sent.
 
 For 社會領域 and 數學, curriculum rows expose `admitted_by: {"科目": [...]}`, computed when the active curriculum is loaded from the same backend pools used for sampling; shared rows therefore follow backend admission, including runtime `SOCIAL_STUDIES_CURRICULUM_DIR` swaps. ParamForm reuses `filterEntriesByAdmittedParent` for each 題組's resolved 科目 across group and per-小題 學習內容/學習表現 pools, with no client-side prefix tables. An explicitly pinned 科目 remains in the submitted batch but suppresses the per-題組 科目 draw.
+Social-studies 學習內容 rows for 公民與社會/跨科 additionally carry `admitted_by["內容領域"]` from the ICCS mapping; 歷史/地理 rows omit that key because 內容領域 is not an applicable parent for those subjects.
 
 數學也 exposes request-level `sub_question_count` and the 題組文本
 `text_word_limit` in the web form. Its 發送前確認 shows those canonical

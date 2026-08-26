@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
+
+ExtraAdmissionTags = Callable[[str], dict[str, list[str]]]
 
 
 def load_learning_content(
     data_dir: Path,
     *,
     subject_to_prefixes: dict[str, set[str]] | None = None,
+    extra_admitted_by: ExtraAdmissionTags | None = None,
 ) -> dict:
     with open(data_dir / "learning_content.json", encoding="utf-8") as f:
         data = json.load(f)
@@ -19,6 +23,7 @@ def load_learning_content(
             data,
             "學習內容",
             subject_to_prefixes=subject_to_prefixes,
+            extra_admitted_by=extra_admitted_by,
         )
         if subject_to_prefixes is not None
         else data
@@ -29,6 +34,7 @@ def load_learning_performance(
     data_dir: Path,
     *,
     subject_to_prefixes: dict[str, set[str]] | None = None,
+    extra_admitted_by: ExtraAdmissionTags | None = None,
 ) -> dict:
     with open(data_dir / "learning_performance.json", encoding="utf-8") as f:
         data = json.load(f)
@@ -37,6 +43,7 @@ def load_learning_performance(
             data,
             "學習表現",
             subject_to_prefixes=subject_to_prefixes,
+            extra_admitted_by=extra_admitted_by,
         )
         if subject_to_prefixes is not None
         else data
@@ -98,6 +105,7 @@ def entries_with_admitted_subjects(
     learning_stage: str,
     *,
     subject_to_prefixes: dict[str, set[str]],
+    extra_admitted_by: ExtraAdmissionTags | None = None,
 ) -> list[dict]:
     """Return a stage pool whose rows declare every admitting subject.
 
@@ -130,16 +138,31 @@ def entries_with_admitted_subjects(
     return [
         {
             **entry,
-            "admitted_by": {
-                "科目": [
+            "admitted_by": _admitted_by(
+                entry["value"],
+                [
                     subject
                     for subject, values in admitted_values.items()
                     if entry["value"] in values
-                ]
-            },
+                ],
+                extra_admitted_by,
+            ),
         }
         for entry in all_entries
     ]
+
+
+def _admitted_by(
+    code: str,
+    subjects: list[str],
+    extra_admitted_by: ExtraAdmissionTags | None,
+) -> dict[str, list[str]]:
+    admitted_by = {"科目": subjects}
+    if extra_admitted_by is not None:
+        for parent, values in extra_admitted_by(code).items():
+            if values:
+                admitted_by[parent] = list(values)
+    return admitted_by
 
 
 def tag_entries_with_admitted_subjects(
@@ -147,6 +170,7 @@ def tag_entries_with_admitted_subjects(
     key: Literal["學習內容", "學習表現"],
     *,
     subject_to_prefixes: dict[str, set[str]],
+    extra_admitted_by: ExtraAdmissionTags | None = None,
 ) -> dict:
     """Attach source-of-truth 科目 admission tags to every curriculum row."""
     by_stage = {
@@ -157,6 +181,7 @@ def tag_entries_with_admitted_subjects(
                 key,
                 stage,
                 subject_to_prefixes=subject_to_prefixes,
+                extra_admitted_by=extra_admitted_by,
             )
         }
         for stage in dict.fromkeys(

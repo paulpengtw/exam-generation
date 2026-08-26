@@ -438,6 +438,93 @@ def test_resolve_rejects_incompatible_natural_parent_pin() -> None:
     ]
 
 
+def test_resolve_rejects_a_pinned_civic_domain_with_an_empty_learning_content_intersection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.social_studies import sampler
+
+    target_domain = "Civic Principles"
+    monkeypatch.setattr(
+        sampler,
+        "_LC_DATA",
+        {
+            "學習內容": [
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": "公Synthetic-Ⅳ-1",
+                    "admitted_by": {
+                        "科目": ["公民與社會", "跨科"],
+                        "內容領域": ["Civic Participation"],
+                    },
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sampler,
+        "_LP_DATA",
+        {"學習表現": [{"學習階段": "第四學習階段", "科目": "社", "value": "社1a-Ⅳ-1"}]},
+    )
+
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "seed": 23,
+                "grade": 8,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "subject_filter": ["公民與社會"],
+                "content_domain": target_domain,
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "learning_content",
+            "code": "incompatible_parent",
+            "parent": target_domain,
+        }
+    ]
+
+
+def test_resolve_keeps_a_pinned_civic_domain_without_consuming_its_keyed_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.social_studies import sampler
+
+    target_domain = "Civic Roles and Identities"
+    original_draw_rng = sampler.draw_rng
+    domain_stream_calls: list[str] = []
+
+    def tracked_draw_rng(seed, field_path, counter=0):
+        if field_path == "內容領域":
+            domain_stream_calls.append(field_path)
+        return original_draw_rng(seed, field_path, counter)
+
+    monkeypatch.setattr(sampler, "draw_rng", tracked_draw_rng)
+
+    result = resolve(
+        {
+            "subject": "social_studies",
+            "seed": 41,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["公民與社會"],
+            "content_domain": target_domain,
+            "content_type": "純文字",
+            "learning_content": ["公Aa-Ⅳ-1"],
+            "learning_performance": ["社1a-Ⅳ-1"],
+        }
+    )
+
+    assert result.payload["content_domain"] == target_domain
+    assert "內容領域" not in result.drawn
+    assert domain_stream_calls == []
+
+
 def test_resolve_accepts_any_admitted_natural_parent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
