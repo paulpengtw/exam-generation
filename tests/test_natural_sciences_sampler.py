@@ -71,6 +71,62 @@ def test_sample_params_seeded_deterministic():
     assert p1.學習表現_pool == p2.學習表現_pool
 
 
+def test_pinning_natural_sciences_content_type_does_not_shift_other_seeded_draws():
+    baseline = sample_params(seed=0, sub_question_count=3)
+    pinned = sample_params(seed=0, sub_question_count=3, content_type="純文字")
+
+    assert pinned.題目內容類型 == "純文字"
+    baseline_payload = baseline.model_dump()
+    pinned_payload = pinned.model_dump()
+    baseline_payload.pop("題目內容類型")
+    pinned_payload.pop("題目內容類型")
+    assert pinned_payload == baseline_payload
+
+
+def test_natural_sciences_slot_redraw_uses_its_indexed_reporting_scale_stream():
+    configs = [SubQuestionConfig(), SubQuestionConfig(), SubQuestionConfig()]
+    baseline = sample_params(seed=17, sub_question_count=3, subquestion_configs=configs)
+    redrawn = sample_params(
+        seed=17,
+        sub_question_count=3,
+        subquestion_configs=configs,
+        redraws={"subquestion_configs[2].reporting_scale": 1},
+    )
+    replay = sample_params(
+        seed=17,
+        sub_question_count=3,
+        subquestion_configs=configs,
+        redraws={"subquestion_configs[2].reporting_scale": 1},
+    )
+
+    assert redrawn.subquestion_configs[2].reporting_scale != (
+        baseline.subquestion_configs[2].reporting_scale
+    )
+    assert redrawn.subquestion_configs[:2] == baseline.subquestion_configs[:2]
+    baseline_payload = baseline.model_dump()
+    redrawn_payload = redrawn.model_dump()
+    baseline_payload["subquestion_configs"][2]["reporting_scale"] = None
+    redrawn_payload["subquestion_configs"][2]["reporting_scale"] = None
+    assert redrawn_payload == baseline_payload
+    assert replay.model_dump_json() == redrawn.model_dump_json()
+
+
+def test_pinning_one_natural_sciences_slot_does_not_shift_other_slot_draws():
+    baseline = sample_params(
+        seed=0,
+        sub_question_count=3,
+        subquestion_configs=[{}, {}, {}],
+    )
+    pinned = sample_params(
+        seed=0,
+        sub_question_count=3,
+        subquestion_configs=[{"question_type": "Complex multiple-choice"}, {}, {}],
+    )
+
+    assert pinned.subquestion_configs[0].question_type.value == "Complex multiple-choice"
+    assert pinned.subquestion_configs[1:] == baseline.subquestion_configs[1:]
+
+
 def test_sample_params_identical_across_repeats_many_seeds():
     for seed in range(20):
         assert sample_params(seed=seed).model_dump() == sample_params(seed=seed).model_dump()
@@ -138,12 +194,12 @@ def test_reporting_scale_explicit_per_subquestion_wins_over_request_level() -> N
 
 
 def test_reporting_scale_absent_uses_independent_rng_scatter() -> None:
-    """Slice 3: no 題組-level → scatter via rng, same as before this feature.
+    """Slice 3: no 題組-level → each slot draws its own keyed scale stream.
 
-    Literal expected values captured from pre-feature code:
+    Literal expected values for keyed streams:
         sample_params(seed=99, sub_question_count=3, subquestion_configs=[3×empty])
-        → ['2', '5', '2']
+        → ['5', '3', '4']
     """
     configs = [SubQuestionConfig(), SubQuestionConfig(), SubQuestionConfig()]
     p = sample_params(seed=99, sub_question_count=3, subquestion_configs=configs)
-    assert [cfg.reporting_scale for cfg in p.subquestion_configs] == ["2", "5", "2"]
+    assert [cfg.reporting_scale for cfg in p.subquestion_configs] == ["5", "3", "4"]

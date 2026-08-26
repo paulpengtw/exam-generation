@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import random
 from pathlib import Path
 
 from src.common.core_competency_loader import (
@@ -16,6 +15,7 @@ from src.common.curriculum_loader import (
     load_learning_performance,
 )
 from src.common.difficulty import Difficulty, resolve_difficulty
+from src.common.randomness import draw_rng
 from src.schema_loader import load_grades, load_schemas
 from src.schemas import (
     CoreCompetency,
@@ -81,6 +81,7 @@ def sample_params(
     sub_question_count: int | None = None,
     text_word_limit: int | None = None,
     difficulty: Difficulty | str | None = None,
+    redraws: dict[str, int] | None = None,
 ) -> SampledParams:
     """Sample random question parameters.
 
@@ -91,12 +92,15 @@ def sample_params(
     """
     del grade_content  # legacy; curriculum data now loaded directly
 
-    rng = random.Random(seed)
+    redraws = redraws or {}
+
+    def field_rng(field_path: str):
+        return draw_rng(seed, field_path, redraws.get(field_path, 0))
 
     resolved_difficulty: Difficulty = resolve_difficulty(difficulty)
 
     # Grade
-    selected_grade = grade if grade is not None else rng.choice(_GRADES)
+    selected_grade = grade if grade is not None else field_rng("grade").choice(_GRADES)
     learning_stage = grade_to_learning_stage(selected_grade)
 
     # 情境
@@ -104,8 +108,9 @@ def sample_params(
     if context is not None:
         selected_context = context
     else:
-        context_count = rng.randint(1, len(all_contexts))
-        selected_context = rng.sample(all_contexts, context_count)
+        context_rng = field_rng("情境")
+        context_count = context_rng.randint(1, len(all_contexts))
+        selected_context = context_rng.sample(all_contexts, context_count)
 
     # 題型種類
     selected_set_type = (
@@ -114,19 +119,24 @@ def sample_params(
         else (
             QuestionSetType("題組題")
             if sub_question_count is not None
-            else rng.choice(list(QuestionSetType))
+            else field_rng("題型種類").choice(list(QuestionSetType))
         )
     )
     if selected_set_type == QuestionSetType("題組題") and sub_question_count is None:
-        sub_question_count = rng.randint(3, 7)
+        sub_question_count = field_rng("sub_question_count").randint(3, 7)
 
     # 題型
-    selected_q_type = rng.choice(q_type) if q_type is not None else rng.choice(list(QuestionType))
+    selected_q_type = (
+        field_rng("題型").choice(q_type)
+        if q_type is not None
+        else field_rng("題型").choice(list(QuestionType))
+    )
 
     # 數學思考 (1-3 items)
     all_thinking = list(MathThinking)
-    thinking_count = rng.randint(1, 3)
-    selected_thinking = rng.sample(all_thinking, min(thinking_count, len(all_thinking)))
+    thinking_rng = field_rng("數學思考")
+    thinking_count = thinking_rng.randint(1, 3)
+    selected_thinking = thinking_rng.sample(all_thinking, min(thinking_count, len(all_thinking)))
 
     # 學習內容 — pull from curriculum data filtered by stage + 科目.
     lc_entries = allowed_learning_content(
@@ -142,8 +152,9 @@ def sample_params(
             raise ValueError(
                 f"No 學習內容 entries for stage={learning_stage} subject={subject_filter}"
             )
-        lc_count = rng.randint(1, min(3, len(lc_entries)))
-        selected_lc_codes = [e["value"] for e in rng.sample(lc_entries, lc_count)]
+        lc_rng = field_rng("學習內容")
+        lc_count = lc_rng.randint(1, min(3, len(lc_entries)))
+        selected_lc_codes = [e["value"] for e in lc_rng.sample(lc_entries, lc_count)]
 
     lc_by_code = {e["value"]: e for e in _LC_DATA["學習內容"]}
     selected_content = [
@@ -162,8 +173,9 @@ def sample_params(
         selected_lp_codes = list(learning_performance)
     else:
         if lp_entries:
-            lp_count = rng.randint(1, min(3, len(lp_entries)))
-            selected_lp_codes = [e["value"] for e in rng.sample(lp_entries, lp_count)]
+            lp_rng = field_rng("學習表現")
+            lp_count = lp_rng.randint(1, min(3, len(lp_entries)))
+            selected_lp_codes = [e["value"] for e in lp_rng.sample(lp_entries, lp_count)]
         else:
             selected_lp_codes = []
     lp_by_code = {e["value"]: e for e in _LP_DATA["學習表現"]}
@@ -180,8 +192,9 @@ def sample_params(
     else:
         cc_pool = allowed_competencies(_CC_DATA, learning_stage)
         if cc_pool:
-            cc_count = rng.randint(1, min(3, len(cc_pool)))
-            selected_competency_values = rng.sample(cc_pool, cc_count)
+            competency_rng = field_rng("核心素養")
+            cc_count = competency_rng.randint(1, min(3, len(cc_pool)))
+            selected_competency_values = competency_rng.sample(cc_pool, cc_count)
         else:
             selected_competency_values = []
 
@@ -189,10 +202,14 @@ def sample_params(
     if content_type and content_type.strip():
         selected_content_type = content_type.strip()
     else:
-        selected_content_type = rng.choice(_RANDOM_CONTENT_TYPE_VALUES)
+        selected_content_type = field_rng("題目內容類型").choice(_RANDOM_CONTENT_TYPE_VALUES)
 
     # Question style
-    selected_style = rng.choice(style) if style is not None else rng.choice(list(QuestionStyle))
+    selected_style = (
+        field_rng("style").choice(style)
+        if style is not None
+        else field_rng("style").choice(list(QuestionStyle))
+    )
 
     return SampledParams(
         grade=selected_grade,

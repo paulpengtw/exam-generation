@@ -75,7 +75,7 @@ def test_sample_params_derives_count_for_drawn_題組題_without_count() -> None
 
     params = sample_params(
         grade=8,
-        seed=0,
+        seed=1,
         content_type="純文字",
         sub_question_count=None,
     )
@@ -114,28 +114,42 @@ def test_sample_params_preserves_single_question_snapshot_without_count() -> Non
     expected = SampledParams(
         grade=8,
         seed=8,
-        情境=["科學", "職業"],
+        情境=["建築與藝術", "科學", "職業"],
         題型種類="單一題",
-        題型="是非題",
-        數學思考=["形成", "詮釋評估", "運用"],
+        題型="開放式建構反應題",
+        數學思考=["形成", "運用", "詮釋評估"],
         學習內容=[
             {
-                "編碼": "S-9-13",
+                "編碼": "S-9-7",
                 "說明": (
-                    "表面積與體積：直角柱、直圓錐、正角錐的展開圖；"
-                    "直角柱、直圓錐、正角錐的表面積；直角柱的體積。"
+                    "點、直線與圓的關係：點與圓的位置關係（內部、圓上、外部）；"
+                    "直線與圓的位置關係（不相交、相切、交於兩點）；"
+                    "圓心與切點的連線垂直此切線（切線性質）；"
+                    "圓心到弦的垂直線段（弦心距）垂直平分此弦。"
                 ),
-            }
+            },
+            {
+                "編碼": "F-8-1",
+                "說明": (
+                    "一次函數：透過對應關係認識函數（不要出現 \t\t\t\t\tf(x)  \t\t\t\t\t"
+                    "的抽象型式）、常數函數（y=c）、一次函數（y=ax+b）。"
+                ),
+            },
         ],
-        style="creative_scenario",
-        核心素養=["數-J-A1", "數-J-C2", "數-J-B1"],
+        style="with_image",
+        核心素養=["數-J-A2", "數-J-C1", "數-J-B1"],
         學習表現=[
             {
-                "編碼": "s-IV-12",
+                "編碼": "f-IV-1",
                 "說明": (
-                    "理解直角三角形中某一銳角的角度決定邊長的比值，"
-                    "認識這些比值的符號，"
+                    "理解常數函數和一次函數的意義，能描繪常數函數和一次函數的圖形，"
                     "並能運用到日常生活的情境解決問題。"
+                ),
+            },
+            {
+                "編碼": "s-IV-7",
+                "說明": (
+                    "理解畢氏定理與其逆敘述，並能應用於數學解題與日常生活的問題。"
                 ),
             }
         ],
@@ -281,7 +295,7 @@ def test_math_drawn_題組題_without_count_now_produces_a_real_題組(tmp_path)
 
     params = sample_params(
         grade=8,
-        seed=0,
+        seed=1,
         content_type="純文字",
         sub_question_count=None,
     )

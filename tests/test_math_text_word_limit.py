@@ -123,5 +123,5 @@ def test_math_flat_prompt_is_byte_for_byte_unchanged_by_text_word_limit() -> Non
     assert limited == baseline
     assert limited_images == baseline_images == []
     assert hashlib.sha256(limited.encode()).hexdigest() == (
-        "850a195851abb329d71da5d96a34ebe1cb90f393857c44c4ed54e75f92e3b7fb"
+        "4fa880d9baf41d69d15c97469fe578248c14a16e7c28c06979fb66ceceb48c88"
     )

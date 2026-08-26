@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 import random
+from collections.abc import Callable
 
 from src.common.difficulty import Difficulty, resolve_difficulty
+from src.common.randomness import draw_rng
 from src.social_studies.core_competency_loader import (
     allowed_competencies,
     load_core_competencies,
@@ -136,7 +138,7 @@ def _resolve_domain_and_pools(
 
 
 def _assign_cognitive_processes(
-    rng: random.Random,
+    field_rng: Callable[[str], random.Random],
     slot_count: int,
     subject: QuestionSubject,
     pinned_assignments: list[str | None] | None = None,
@@ -150,17 +152,28 @@ def _assign_cognitive_processes(
     assignments: list[str | None] = [
         value if value in _COGNITIVE_PROCESS_VALUES else None for value in pins
     ]
+    slot_rngs = {
+        index: field_rng(f"subquestion_configs[{index}].認知歷程")
+        for index in range(slot_count)
+    }
     unpinned_indices = [index for index, value in enumerate(assignments) if value is None]
     tiers = [
-        "Knowing" if rng.random() < (1 / 3) else "Reasoning"
-        for _ in unpinned_indices
+        "Knowing"
+        if slot_rngs[index].random() < (1 / 3)
+        else "Reasoning"
+        for index in unpinned_indices
     ]
     knowing_indices = [
         index for index, tier in zip(unpinned_indices, tiers) if tier == "Knowing"
     ]
     has_pinned_defining = _KNOWING_DEFINING in assignments
     defining_index = (
-        rng.choice(knowing_indices) if knowing_indices and not has_pinned_defining else None
+        min(
+            knowing_indices,
+            key=lambda index: slot_rngs[index].random(),
+        )
+        if knowing_indices and not has_pinned_defining
+        else None
     )
     for index, tier in zip(unpinned_indices, tiers):
         assignments[index] = (
@@ -168,7 +181,7 @@ def _assign_cognitive_processes(
             if index == defining_index
             else _KNOWING_ILLUSTRATING
             if tier == "Knowing"
-            else rng.choice(_REASONING_PROCESSES)
+            else slot_rngs[index].choice(_REASONING_PROCESSES)
         )
 
     if (
@@ -176,13 +189,14 @@ def _assign_cognitive_processes(
         and _REASONING_RELATE not in assignments
         and unpinned_indices
     ):
-        reasoning_index = next(
-            (
-                index
-                for index in unpinned_indices
-                if assignments[index] in _REASONING_PROCESSES
-            ),
-            unpinned_indices[-1],
+        reasoning_candidates = [
+            index
+            for index in unpinned_indices
+            if assignments[index] in _REASONING_PROCESSES
+        ] or unpinned_indices
+        reasoning_index = min(
+            reasoning_candidates,
+            key=lambda index: slot_rngs[index].random(),
         )
         assignments[reasoning_index] = _REASONING_RELATE
 
@@ -236,15 +250,20 @@ def _question_type_draw_pool(
 
 
 def _draw_question_types(
-    rng: random.Random,
+    field_rng: Callable[[str], random.Random],
     pool: list[QuestionType],
-    count: int,
+    slot_indices: list[int],
 ) -> list[QuestionType]:
     weights = [
         _QUESTION_TYPE_WEIGHTS.get(_question_type_value(question_type), 1)
         for question_type in pool
     ]
-    return [rng.choices(pool, weights=weights, k=1)[0] for _ in range(count)]
+    return [
+        field_rng(f"subquestion_configs[{index}].question_type").choices(
+            pool, weights=weights, k=1
+        )[0]
+        for index in slot_indices
+    ]
 
 
 def sample_params(
@@ -266,6 +285,8 @@ def sample_params(
     subquestion_configs: list | None = None,
     difficulty: Difficulty | str | None = None,
     allow_duplicate_figure_kinds: bool = False,
+    *,
+    redraws: dict[str, int] | None = None,
 ) -> SampledParams:
     """Sample random social-studies question parameters.
 
@@ -273,23 +294,30 @@ def sample_params(
     題型種類 is forced to the single 題組題 schema value.
 
     """
-    rng = random.Random(seed)
+    redraws = redraws or {}
+
+    def field_rng(field_path: str) -> random.Random:
+        return draw_rng(seed, field_path, redraws.get(field_path, 0))
+
     resolved_difficulty: Difficulty = resolve_difficulty(difficulty)
     resolved_surface = "紙本" if target_surface is None else target_surface
     if resolved_surface not in {"紙本", "數位"}:
         raise ValueError("target_surface must be one of ['紙本', '數位']")
 
-    selected_grade = grade if grade is not None else rng.choice(_GRADES)
+    selected_grade = grade if grade is not None else field_rng("grade").choice(_GRADES)
 
     all_contexts = list(QuestionContext)
     if context is not None:
         selected_context = context
     else:
-        context_count = rng.randint(1, len(all_contexts))
-        selected_context = rng.sample(all_contexts, context_count)
+        context_rng = field_rng("情境")
+        context_count = context_rng.randint(1, len(all_contexts))
+        selected_context = context_rng.sample(all_contexts, context_count)
 
     # 題型種類 has only one schema value, so this is deterministic.
-    selected_set_type = set_type if set_type is not None else rng.choice(list(QuestionSetType))
+    selected_set_type = (
+        set_type if set_type is not None else field_rng("題型種類").choice(list(QuestionSetType))
+    )
 
     if sub_question_count is not None and not 3 <= sub_question_count <= 7:
         raise ValueError("sub_question_count must be between 3 and 7")
@@ -299,28 +327,32 @@ def sample_params(
     selected_content_type = (
         content_type.strip()
         if content_type and content_type.strip()
-        else rng.choice(_RANDOM_CONTENT_TYPE_VALUES or _CONTENT_TYPE_VALUES or ["純文字"])
+        else field_rng("題目內容類型").choice(
+            _RANDOM_CONTENT_TYPE_VALUES or _CONTENT_TYPE_VALUES or ["純文字"]
+        )
     )
 
     selected_subject = (
-        rng.choice(subject)
+        field_rng("科目").choice(subject)
         if subject is not None
-        else rng.choice(list(QuestionSubject))
+        else field_rng("科目").choice(list(QuestionSubject))
     )
     # Draw the ICCS domain before any learning-content/performance pool is drawn.
     domain_pinned = content_domain is not None
+    domain_rng = field_rng("內容領域")
     selected_content_domain = (
         ContentDomain(content_domain)
         if content_domain is not None
-        else rng.choice(list(ContentDomain))
+        else domain_rng.choice(list(ContentDomain))
     )
 
     if core_competency is not None:
         selected_competency = core_competency
     else:
         pool = _ALLOWED_COMPETENCIES
-        competency_count = rng.randint(1, min(3, len(pool)))
-        selected_competency = rng.sample(pool, competency_count)
+        competency_rng = field_rng("核心素養")
+        competency_count = competency_rng.randint(1, min(3, len(pool)))
+        selected_competency = competency_rng.sample(pool, competency_count)
 
     subj_key = selected_subject.value
     lc_entries = (
@@ -334,7 +366,7 @@ def sample_params(
         else allowed_learning_performance(_LP_DATA, _LEARNING_STAGE, subj_key)
     )
     selected_content_domain, lc_entries, lp_entries = _resolve_domain_and_pools(
-        rng,
+        domain_rng,
         selected_content_domain,
         selected_subject,
         lc_entries,
@@ -345,9 +377,10 @@ def sample_params(
     if learning_content is not None:
         selected_lc_pool = learning_content
     else:
-        lc_count = rng.randint(1, min(3, max(1, len(lc_entries or []))))
+        lc_rng = field_rng("學習內容")
+        lc_count = lc_rng.randint(1, min(3, max(1, len(lc_entries or []))))
         selected_lc_pool = (
-            [e["value"] for e in rng.sample(lc_entries or [], lc_count)]
+            [e["value"] for e in lc_rng.sample(lc_entries or [], lc_count)]
             if lc_entries
             else []
         )
@@ -355,9 +388,10 @@ def sample_params(
     if learning_performance is not None:
         selected_lp_pool = learning_performance
     else:
-        lp_count = rng.randint(1, min(2, max(1, len(lp_entries or []))))
+        lp_rng = field_rng("學習表現")
+        lp_count = lp_rng.randint(1, min(2, max(1, len(lp_entries or []))))
         selected_lp_pool = (
-            [e["value"] for e in rng.sample(lp_entries or [], lp_count)]
+            [e["value"] for e in lp_rng.sample(lp_entries or [], lp_count)]
             if lp_entries
             else []
         )
@@ -393,10 +427,11 @@ def sample_params(
         ]
         # Draw unpinned slots with ICCS composition weights. Pinned slots are
         # untouched; only blank slots consume from the weighted draw stream.
-        blank_count = sum(1 for cfg in resolved_configs if not cfg.question_type)
-        pinned_types = {cfg.question_type for cfg in resolved_configs if cfg.question_type}
-        fill_pool = [q for q in q_type_pool if q not in pinned_types] or q_type_pool[:]
-        fill_iter = iter(_draw_question_types(rng, fill_pool, blank_count))
+        fill_pool = q_type_pool
+        blank_indices = [
+            index for index, cfg in enumerate(resolved_configs) if not cfg.question_type
+        ]
+        fill_iter = iter(_draw_question_types(field_rng, fill_pool, blank_indices))
         resolved_configs = [
             cfg.model_copy(update={"question_type": cfg.question_type or next(fill_iter)})
             for cfg in resolved_configs
@@ -407,12 +442,13 @@ def sample_params(
                 selected_q_types.append(cfg.question_type)
     else:
         # Legacy/global mode for CLI or API callers that do not pin 小題 count.
-        type_count = rng.randint(1, min(3, len(q_type_pool)))
-        selected_q_types = rng.sample(q_type_pool, type_count)
+        q_type_rng = field_rng("題型")
+        type_count = q_type_rng.randint(1, min(3, len(q_type_pool)))
+        selected_q_types = q_type_rng.sample(q_type_pool, type_count)
 
     slot_count = sub_question_count or len(resolved_configs) or _MAX_SUBQUESTION_SLOTS
     selected_cognitive_processes = _assign_cognitive_processes(
-        rng,
+        field_rng,
         slot_count,
         selected_subject,
         [cfg.認知歷程 for cfg in resolved_configs],
