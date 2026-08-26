@@ -472,7 +472,7 @@ uv run uvicorn server.app:create_app --factory --reload --port 8000
 ### Staging smoke test
 
 Set `BASE_URL` (and `SMOKE_AUTH_TOKEN`, or use the existing magic-link prompt), then run `bash scripts/verify_figure_kind_diversity_staging.sh`.
-The script submits the fixed 社會領域 image scenario, waits for its persisted history record, and reports each 圖像種類, pairwise PASS/FAIL, and the figure-policy trail.
+The script resolves the fixed 社會領域 image scenario first, submits the completed payload, waits for its persisted history record, and reports each 圖像種類, pairwise PASS/FAIL, and the figure-policy trail.
 
 Routes live in:
 - `server/auth/routes.py` — sign-up, login, password reset
