@@ -106,7 +106,7 @@ def sample_params(
         parent = (
             admitted_contexts[0]
             if len(admitted_contexts) == 1
-            else rng.choice(admitted_contexts)
+            else field_rng("情境").choice(admitted_contexts)
         )
         selected_context = [QuestionContext(parent)]
     else:
