@@ -18,6 +18,7 @@ import CoreQuestionPicker from "./CoreQuestionPicker";
 import SubQuestionConfigEditor from "./SubQuestionConfigEditor";
 import SubQuestionCurriculumPickers, { SearchPicker } from "./SubQuestionCurriculumPickers";
 import SubquestionConfigCards, { type ResolvedSubQuestionConfig } from "./SubquestionConfigCards";
+import DrawnValueRows from "./DrawnValueRows";
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
 import { toGenerateParams } from "../utils/toGenerateParams";
 
@@ -834,11 +835,62 @@ const RESOLVER_FIELD_ALIASES: Record<string, string> = {
   learning_performance: "學習表現",
 };
 
+const RESOLVER_VALUE_ALIASES: Record<string, string> = {
+  "情境": "context",
+  "題型種類": "set_type",
+  "題型": "q_type",
+  "題目內容類型": "content_type",
+  "數學思考": "math_thinking",
+  "科目": "subject_filter",
+  "內容領域": "content_domain",
+  "情境子類別": "sub_context",
+  "科學能力": "science_competency",
+  "學習內容": "learning_content",
+  "學習表現": "learning_performance",
+  "核心素養": "core_competency",
+  "認知歷程": "cognitive_process",
+};
+
 function resolverDrewField(drawns: readonly string[], index: number, key: string): boolean {
   const prefix = `per_question_params[${index}].`;
   const canonical = RESOLVER_FIELD_ALIASES[key] ?? key;
   return drawns.includes(`${prefix}${key}`) || drawns.includes(`${prefix}${canonical}`) ||
     (index === 0 && (drawns.includes(key) || drawns.includes(canonical)));
+}
+
+function readConfirmationPathValue(
+  path: string,
+  root: Record<string, unknown>,
+  perQuestionParams: Record<string, unknown>[],
+): unknown {
+  const match = path.match(/^per_question_params\[(\d+)\]\.(.+)$/);
+  const localPath = match ? match[2] : path;
+  const readFrom = (source: Record<string, unknown> | undefined): unknown => {
+    if (!source) return undefined;
+    const tokens = localPath.match(/[^.[\]]+|\[\d+\]/g) ?? [];
+    let current: unknown = source;
+    for (const token of tokens) {
+      if (typeof current === "string") {
+        try {
+          current = JSON.parse(current) as unknown;
+        } catch {
+          return undefined;
+        }
+      }
+      if (token.startsWith("[")) {
+        if (!Array.isArray(current)) return undefined;
+        current = current[Number(token.slice(1, -1))];
+        continue;
+      }
+      if (!current || typeof current !== "object") return undefined;
+      const record = current as Record<string, unknown>;
+      const key = Object.hasOwn(record, token) ? token : RESOLVER_VALUE_ALIASES[token];
+      current = key === undefined ? undefined : record[key];
+    }
+    return current;
+  };
+  const rowValue = match ? readFrom(perQuestionParams[Number(match[1])]) : undefined;
+  return rowValue === undefined ? readFrom(root) : rowValue;
 }
 
 function filterCurriculumEntriesBySubject<T extends SchemaEntry>(
@@ -2512,9 +2564,7 @@ export default function ParamForm({
       },
       { label: t("form.confirm_grade"), value: String(p.grade), subjects: allSubjects },
       { label: t("form.confirm_difficulty"), value: p.difficulty, subjects: ["math", "social_studies"], kind: "defaulted", defaultValue: "medium" },
-      { label: t("form.confirm_reporting_scale"), value: p.reporting_scale, subjects: ["natural_sciences"], kind: "defaulted", defaultValue: t("form.confirm_random") },
       { label: t("form.confirm_subject_filter"), value: subjectFilterDisplay, subjects: ["math", "social_studies"], kind: subject === "social_studies" ? "sampled" : "absent" },
-      { label: t("form.confirm_content_domain"), value: p.content_domain, subjects: ["social_studies"] },
       { label: t("form.confirm_target_surface"), value: p.target_surface ?? "紙本", subjects: ["social_studies"] },
       { label: t("form.confirm_count"), value: String(p.count), subjects: allSubjects },
       {
@@ -2564,11 +2614,24 @@ export default function ParamForm({
       { key: "set_type", label: t("form.confirm_set_type"), subjects: allSubjects },
       { key: "q_type", label: t("form.confirm_q_type"), subjects: ["math", "natural_sciences"] },
       { key: "subject_filter", label: t("form.confirm_subject_filter"), subjects: ["social_studies"] },
-      { key: "content_domain", label: t("form.confirm_content_domain"), subjects: ["social_studies"] },
       { key: "sub_context", label: t("form.confirm_sub_context"), subjects: ["natural_sciences"] },
       { key: "science_competency", label: t("form.confirm_science_competency"), subjects: ["natural_sciences"] },
     ] satisfies { key: string; label: string; subjects: string[] }[])
       .filter((row) => row.subjects.includes(subject));
+    const drawnValueLabels = {
+      "內容領域": t("form.confirm_content_domain"),
+      reporting_scale: t("form.confirm_reporting_scale"),
+      "核心素養": t("form.confirm_core_competency"),
+      "數學思考": t("form.confirm_math_thinking"),
+      "認知歷程": t("form.confirm_subq_cognitive_process").replace(/[：:]\s*$/, ""),
+    };
+    const valueForDrawnPath = (path: string): unknown =>
+      readConfirmationPathValue(path, p as Record<string, unknown>, resolvedPerQuestionParams);
+    const sharedContentDomainValue = valueForDrawnPath("內容領域");
+    const hasSharedContentDomain = subject === "social_studies" && (
+      (sharedContentDomainValue !== undefined && sharedContentDomainValue !== "") ||
+      drawnPaths.includes("內容領域")
+    );
 
     return (
       <div className="space-y-4">
@@ -2606,6 +2669,29 @@ export default function ParamForm({
                   </dd>
                 </div>
             ))}
+            {hasSharedContentDomain && (
+              <DrawnValueRows
+                drawnPaths={drawnPaths.filter((path) => path === "內容領域" || path === "content_domain")}
+                fieldLabels={drawnValueLabels}
+                alwaysPaths={["內容領域"]}
+                valueForPath={valueForDrawnPath}
+                emptyValue={t("form.confirm_not_filled")}
+                drawnBadge={t("form.confirm_badge_random")}
+                pinnedBadge={t("form.confirm_badge_user")}
+              />
+            )}
+            {subject === "natural_sciences" && (
+              <DrawnValueRows
+                drawnPaths={drawnPaths}
+                fieldLabels={drawnValueLabels}
+                pathPrefix="reporting_scale"
+                alwaysPaths={["reporting_scale"]}
+                valueForPath={valueForDrawnPath}
+                emptyValue={t("form.confirm_reporting_scale_per_subquestion")}
+                drawnBadge={t("form.confirm_badge_random")}
+                pinnedBadge={t("form.confirm_badge_user")}
+              />
+            )}
           </dl>
         </section>
         {previewRefetchLoading && (
@@ -2681,6 +2767,29 @@ export default function ParamForm({
               drawnPaths,
               index,
               "sub_question_count",
+            );
+            const questionPathPrefix = `per_question_params[${index}].`;
+            const questionDrawnPaths = drawnPaths.filter((path) =>
+              path.startsWith(questionPathPrefix) ||
+                (index === 0 && !path.startsWith("per_question_params[")),
+            ).map((path) =>
+              index === 0 && !path.startsWith("per_question_params[")
+                ? `${questionPathPrefix}${path}`
+                : path,
+            );
+            const alwaysDrawnValuePaths = [
+              ...(subject === "social_studies"
+                ? [`${questionPathPrefix}內容領域`]
+                : []),
+              ...(subject === "math" || subject === "social_studies"
+                ? [`${questionPathPrefix}核心素養`]
+                : []),
+              ...(subject === "math" ? [`${questionPathPrefix}數學思考`] : []),
+            ].filter((path) => valueForDrawnPath(path) !== undefined || questionDrawnPaths.includes(path));
+            const questionLevelDrawnPaths = questionDrawnPaths.filter((path) =>
+              !path.includes(".subquestion_configs[") &&
+              !path.endsWith(".sub_question_count") &&
+              !(subject === "natural_sciences" && path.endsWith(".reporting_scale")),
             );
             const questionLpWasDrawn = resolverDrewField(drawnPaths, index, "learning_performance");
             const questionLcWasDrawn = resolverDrewField(drawnPaths, index, "learning_content");
@@ -2777,6 +2886,16 @@ export default function ParamForm({
                         </div>
                       );
                     })}
+                  <DrawnValueRows
+                    drawnPaths={questionLevelDrawnPaths}
+                    fieldLabels={drawnValueLabels}
+                    alwaysPaths={alwaysDrawnValuePaths}
+                    valueForPath={valueForDrawnPath}
+                    emptyValue={t("form.confirm_not_filled")}
+                    drawnBadge={t("form.confirm_badge_random")}
+                    pinnedBadge={t("form.confirm_badge_user")}
+                    compact={(path) => path.endsWith("內容領域")}
+                  />
                   <div className="flex gap-3 text-sm">
                       <dt className="w-40 shrink-0 font-medium text-gray-600">{t("form.confirm_learning_performance")}</dt>
                       <dd className="min-w-0 flex-1 text-gray-900">
@@ -2828,7 +2947,8 @@ export default function ParamForm({
                       subject={subject}
                       questionIndex={index}
                       drawnPaths={drawnPaths}
-                      contentDomain={questionContentDomain}
+                      drawnValueLabels={drawnValueLabels}
+                      showContentDomain={false}
                       questionTypes={availableQuestionTypes}
                       contentTypes={schemas?.題目內容類型 ?? []}
                       lcEntryByCode={lcEntryByCode}

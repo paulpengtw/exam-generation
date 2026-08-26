@@ -1689,7 +1689,9 @@ describe("ParamForm 發送前確認 display semantics", () => {
       // Reporting Scale is now an editable select on confirmation cards
       const reportingScaleSelect = card.getByLabelText("Reporting Scale");
       expect(reportingScaleSelect).toHaveValue("");
-      expect(within(reportingScaleSelect.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+      const reportingScaleRow = reportingScaleSelect.closest("[data-drawn-value-path]");
+      expect(reportingScaleRow).not.toBeNull();
+      expect(within(reportingScaleRow as HTMLElement).getByText("隨機抽取")).toHaveClass("text-amber-700");
       // LC and LP are now editable SearchPickers in the confirmation view.
       expect(card.getByLabelText("學習內容")).toBeInTheDocument();
       expect(card.getByLabelText("學習表現")).toBeInTheDocument();
@@ -1754,14 +1756,14 @@ describe("ParamForm 發送前確認 display semantics", () => {
     const secondCardFirstScale = within(secondCards[0]).getByLabelText("Reporting Scale");
 
     expect(firstCardFirstScale).toHaveValue("");
-    expect(within(firstCardFirstScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(within(firstCardFirstScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("隨機抽取")).toHaveClass("text-amber-700");
 
     fireEvent.change(firstCardFirstScale, { target: { value: "3" } });
 
     expect(firstCardFirstScale).toHaveValue("3");
-    expect(within(firstCardFirstScale.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
-    expect(within(firstCardSecondScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
-    expect(within(secondCardFirstScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(within(firstCardFirstScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(within(firstCardSecondScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(within(secondCardFirstScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("隨機抽取")).toHaveClass("text-amber-700");
 
     fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -1799,20 +1801,20 @@ describe("ParamForm 發送前確認 display semantics", () => {
     const thirdScale = within(cards[2]).getByLabelText("Reporting Scale");
 
     expect(firstScale).toHaveValue("4");
-    expect(within(firstScale.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(within(firstScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("使用者選擇")).toHaveClass("text-green-700");
     expect(secondScale).toHaveValue("");
-    expect(within(secondScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(within(secondScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("隨機抽取")).toHaveClass("text-amber-700");
     expect(thirdScale).toHaveValue("");
-    expect(within(thirdScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(within(thirdScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("隨機抽取")).toHaveClass("text-amber-700");
 
     // Editing the second card should not affect the first or third
     fireEvent.change(secondScale, { target: { value: "2" } });
     expect(firstScale).toHaveValue("4");
-    expect(within(firstScale.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(within(firstScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("使用者選擇")).toHaveClass("text-green-700");
     expect(secondScale).toHaveValue("2");
-    expect(within(secondScale.parentElement!).getByText("使用者選擇")).toHaveClass("text-green-700");
+    expect(within(secondScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("使用者選擇")).toHaveClass("text-green-700");
     expect(thirdScale).toHaveValue("");
-    expect(within(thirdScale.parentElement!).getByText("隨機抽取")).toHaveClass("text-amber-700");
+    expect(within(thirdScale.closest("[data-drawn-value-path]") as HTMLElement).getByText("隨機抽取")).toHaveClass("text-amber-700");
   });
 
   it("renders blank-everything confirmation for 數學 without （無）", async () => {

@@ -58,6 +58,8 @@ export function SubQuestionInstructionField({
 export interface SubQuestionReportingScaleFieldProps {
   config: SubQuestionConfig;
   onChange: (patch: Partial<SubQuestionConfig>) => void;
+  hideLabel?: boolean;
+  emptyOptionLabel?: string;
   badge?: {
     label: string;
     className: string;
@@ -67,6 +69,8 @@ export interface SubQuestionReportingScaleFieldProps {
 export function SubQuestionReportingScaleField({
   config,
   onChange,
+  hideLabel = false,
+  emptyOptionLabel,
   badge,
 }: SubQuestionReportingScaleFieldProps) {
   const reportingScaleId = useId();
@@ -74,19 +78,22 @@ export function SubQuestionReportingScaleField({
 
   return (
     <div>
-      <div className="flex items-center gap-2">
-        <label htmlFor={reportingScaleId} className="block text-xs text-gray-500">
-          {t("form.reporting_scale")}
-        </label>
-        {badge && <span className={badge.className}>{badge.label}</span>}
-      </div>
+      {!hideLabel && (
+        <div className="flex items-center gap-2">
+          <label htmlFor={reportingScaleId} className="block text-xs text-gray-500">
+            {t("form.reporting_scale")}
+          </label>
+          {badge && <span className={badge.className}>{badge.label}</span>}
+        </div>
+      )}
       <select
         id={reportingScaleId}
+        aria-label={hideLabel ? t("form.reporting_scale") : undefined}
         value={config.reporting_scale ?? ""}
         onChange={(e) => onChange({ reporting_scale: e.target.value || undefined })}
         className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
       >
-        <option value="">（隨機）</option>
+        <option value="">{emptyOptionLabel ?? "（隨機）"}</option>
         <option value="1c">等級 1c</option>
         <option value="1b">等級 1b</option>
         <option value="1a">等級 1a</option>
@@ -105,6 +112,7 @@ export interface SubQuestionQuestionTypeFieldProps {
   subject: string;
   questionTypes: SchemaEntry[];
   onChange: (patch: Partial<SubQuestionConfig>) => void;
+  emptyOptionLabel?: string;
   badge?: {
     label: string;
     className: string;
@@ -116,6 +124,7 @@ export function SubQuestionQuestionTypeField({
   subject,
   questionTypes,
   onChange,
+  emptyOptionLabel,
   badge,
 }: SubQuestionQuestionTypeFieldProps) {
   const questionTypeId = useId();
@@ -136,7 +145,7 @@ export function SubQuestionQuestionTypeField({
         onChange={(e) => onChange({ question_type: e.target.value || undefined })}
         className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
       >
-        <option value="">{t("form.confirm_random")}</option>
+        <option value="">{emptyOptionLabel ?? t("form.confirm_random")}</option>
         {availableQuestionTypes.map((entry) => (
           <option key={entry.value} value={entry.value}>{entry.value}</option>
         ))}
