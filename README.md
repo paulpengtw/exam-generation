@@ -469,6 +469,11 @@ uv sync --extra web
 uv run uvicorn server.app:create_app --factory --reload --port 8000
 ```
 
+### Staging smoke test
+
+Set `BASE_URL` (and `SMOKE_AUTH_TOKEN`, or use the existing magic-link prompt), then run `bash scripts/verify_figure_kind_diversity_staging.sh`.
+The script submits the fixed 社會領域 image scenario, waits for its persisted history record, and reports each 圖像種類, pairwise PASS/FAIL, and the figure-policy trail.
+
 Routes live in:
 - `server/auth/routes.py` — sign-up, login, password reset
 - `server/generate/routes.py` — question generation, SSE streaming. `POST /api/plan-core-questions` branches on `body.subject` (`"math"` | `"social_studies"` | `"natural_sciences"`, default `"social_studies"`); math derives `learning_stage` from `body.grade` via `src.sampler.grade_to_learning_stage`. `GenerateParams` accepts curriculum-aware fields (`subject_filter`, `core_competency`, `learning_content`, `learning_performance`, `content_type`, `topic`, `passage`, `options`, `core_question`, `sub_context`, `science_competency`, `disable_reference_fewshot` (bool, default false, social studies + natural sciences only)) plus per-小題 fields shared by social studies and natural sciences (`sub_question_count`, `question_word_limit`, `option_word_limit`, `subquestion_configs`). `subquestion_configs` may include `question_type`, `instruction`, `learning_content`, and `learning_performance`; missing question types are randomly sampled per 小題, instructions are persisted as `subquestions[*].出題指示`, and empty LC/LP arrays fall back to the global sampled pool. Natural sciences accepts the same subquestion_configs fields; blank question_type slots are filled from the PISA-Science 題型 pool. All three subjects share the same request model.
