@@ -30,6 +30,16 @@ describe("toGenerateParams", () => {
     expect(params.predrawn_fields).toBe(raw);
   });
 
+  it("forwards resolved core competency and math thinking pins", () => {
+    const params = toGenerateParams("math", {
+      core_competency: ["數-J-A2"],
+      math_thinking: ["運用"],
+    } as FormParams);
+
+    expect(params.core_competency).toEqual(["數-J-A2"]);
+    expect(params.math_thinking).toEqual(["運用"]);
+  });
+
   it("forwards the social-studies core-question callback option", () => {
     const params = toGenerateParams("social_studies", {
       core_question_callback: false,

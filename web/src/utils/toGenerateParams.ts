@@ -36,6 +36,11 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
       subject === "social_studies" || subject === "math"
         ? (params.subject_filter ? [params.subject_filter] : undefined)
         : undefined,
+    core_competency:
+      subject === "math" || subject === "social_studies"
+        ? params.core_competency
+        : undefined,
+    math_thinking: subject === "math" ? params.math_thinking : undefined,
     topic: params.topic,
     core_question: params.core_question,
     passage: params.passage,

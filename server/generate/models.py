@@ -139,6 +139,7 @@ class GenerateParams(BaseModel):
     science_competency: list[str] | None = None
     learning_performance: list[str] | None = None
     core_competency: list[str] | None = None
+    math_thinking: list[str] | None = None
     learning_content: list[str] | None = None
     # #100: 子題 count and word limits
     sub_question_count: int | None = Field(default=None, ge=3, le=7)
@@ -188,6 +189,25 @@ class GenerateParams(BaseModel):
         values = value if isinstance(value, list) else [value]
         if any(item == "" for item in values):
             raise ValueError("must not contain an empty value")
+        return value
+
+    @field_validator("math_thinking")
+    @classmethod
+    def math_thinking_values_must_be_valid(
+        cls, value: list[str] | None
+    ) -> list[str] | None:
+        if value is None:
+            return None
+        if not 1 <= len(value) <= 3:
+            raise ValueError("math_thinking must contain 1 to 3 values")
+        from src.schemas import MathThinking  # noqa: PLC0415
+
+        allowed = {member.value for member in MathThinking}
+        invalid = sorted(set(value) - allowed)
+        if invalid:
+            raise ValueError(
+                f"math_thinking contains invalid value(s): {', '.join(invalid)}"
+            )
         return value
 
     @field_validator("per_question_params")
@@ -304,6 +324,7 @@ PER_QUESTION_FIELDS: frozenset[str] = frozenset(
         "science_competency",
         "learning_performance",
         "core_competency",
+        "math_thinking",
         "learning_content",
         "sub_question_count",
         "question_word_limit",

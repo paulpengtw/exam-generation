@@ -76,6 +76,9 @@ from src.schemas import (
     ExamQuestion as MathExamQuestion,
 )
 from src.schemas import (
+    MathThinking,
+)
+from src.schemas import (
     QuestionContext as MathQuestionContext,
 )
 from src.schemas import (
@@ -1053,6 +1056,11 @@ def _math_do_sample_params(
         set_type=overrides["set_type_override"],
         q_type=overrides["q_type_override"],
         seed=seed,
+        math_thinking=(
+            [_resolve_enum(value, MathThinking) for value in params.math_thinking]
+            if params.math_thinking
+            else None
+        ),
         core_competency=params.core_competency,
         learning_content=params.learning_content,
         learning_performance=params.learning_performance,

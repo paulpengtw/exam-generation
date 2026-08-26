@@ -237,6 +237,26 @@ def test_generate_params_accepts_plain_math_request() -> None:
     assert params.subject == "math"
 
 
+def test_generate_params_accepts_math_thinking_values() -> None:
+    params = GenerateParams(
+        subject="math",
+        math_thinking=["形成", "詮釋評估"],
+    )
+
+    assert params.math_thinking == ["形成", "詮釋評估"]
+
+
+@pytest.mark.parametrize(
+    "math_thinking",
+    [[], ["形成", "運用", "詮釋評估", "形成"], ["不合法"]],
+)
+def test_generate_params_rejects_invalid_math_thinking(
+    math_thinking: list[str],
+) -> None:
+    with pytest.raises(ValidationError, match="math_thinking"):
+        GenerateParams(subject="math", math_thinking=math_thinking)
+
+
 def test_generate_params_accepts_optional_predrawn_fields_json_array() -> None:
     raw = '["learning_content", "per_question_params[0].learning_content"]'
 

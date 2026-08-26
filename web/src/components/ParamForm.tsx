@@ -258,8 +258,7 @@ export type FormParams = Omit<
   | "seed"
   // Not exposed in the form UI.
   | "max_retries"
-  // Not exposed in the form UI.
-  | "core_competency"
+  // Not a form control; a resolved/prefilled value is carried through unchanged.
   // Exposed per-subquestion inside subquestion_configs, not at top level.
   | "question_word_limit"
   // Exposed per-subquestion inside subquestion_configs, not at top level.
@@ -2032,6 +2031,14 @@ export default function ParamForm({
         ? { core_question_callback: coreQuestionCallback }
         : {}),
       subject_filter: subjectFilter || undefined,
+      core_competency:
+        subject === "math" || subject === "social_studies"
+          ? fromInit<string[] | undefined>("core_competency", undefined)
+          : undefined,
+      math_thinking:
+        subject === "math"
+          ? fromInit<string[] | undefined>("math_thinking", undefined)
+          : undefined,
       passage: cleanPassage,
       text_word_limit: canUseTextWordLimit ? (textWordLimit ?? undefined) : undefined,
       options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,

@@ -40,6 +40,9 @@ from src.natural_sciences.schemas import (
 )
 from src.sampler import sample_params as sample_math_params
 from src.schemas import (
+    MathThinking,
+)
+from src.schemas import (
     QuestionContext as MathQuestionContext,
 )
 from src.schemas import (
@@ -117,6 +120,7 @@ _TOP_LEVEL_ALIASES = {
     "set_type": "題型種類",
     "q_type": "題型",
     "content_type": "題目內容類型",
+    "math_thinking": "數學思考",
     "subject_filter": "科目",
     "sub_context": "情境子類別",
     "science_competency": "科學能力",
@@ -173,6 +177,22 @@ def _top_drawn(payload: dict[str, Any], fields: list[tuple[str, str]]) -> list[s
     return [canonical for request_name, canonical in fields if _blank(payload.get(request_name))]
 
 
+def _math_thinking_override(value: Any) -> list[MathThinking] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or not 1 <= len(value) <= 3:
+        raise ValueError("math_thinking must be a list with 1 to 3 values")
+    try:
+        return [
+            item if isinstance(item, MathThinking) else MathThinking(item)
+            for item in value
+        ]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "math_thinking contains an invalid value; allowed values are 形成, 運用, 詮釋評估"
+        ) from exc
+
+
 def _wire_social_config(config: Any, original: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(original)
     question_type = _value(getattr(config, "question_type", None))
@@ -214,6 +234,7 @@ def _resolve_math(
         ),
         q_type=_as_enum_list(payload.get("q_type"), MathQuestionType),
         seed=payload.get("seed"),
+        math_thinking=_math_thinking_override(payload.get("math_thinking")),
         core_competency=(
             None
             if _blank(payload.get("core_competency"))
@@ -247,6 +268,7 @@ def _resolve_math(
             "set_type": _value(sampled.題型種類),
             "q_type": [_value(sampled.題型)],
             "style": [_value(sampled.style)],
+            "math_thinking": [_value(item) for item in sampled.數學思考],
             "learning_content": [item.編碼 for item in sampled.學習內容],
             "learning_performance": [item.編碼 for item in sampled.學習表現],
             "core_competency": list(sampled.核心素養),
@@ -260,6 +282,7 @@ def _resolve_math(
         ("context", "情境"),
         ("set_type", "題型種類"),
         ("q_type", "題型"),
+        ("math_thinking", "數學思考"),
         ("learning_content", "學習內容"),
         ("learning_performance", "學習表現"),
         ("core_competency", "核心素養"),

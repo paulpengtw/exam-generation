@@ -68,6 +68,41 @@ describe("ParamForm per-question request contract", () => {
     }
   });
 
+  it("forwards resolved competency and math thinking pins without form controls", async () => {
+    const submitted: FormParams[] = [];
+    const { container } = render(
+      <ParamForm
+        subject="math"
+        onSubmit={(params) => submitted.push(params)}
+        disabled={false}
+        initialParams={{
+          core_competency: ["數-J-A2"],
+          math_thinking: ["運用"],
+        }}
+      />,
+    );
+
+    await screen.findByText("form.btn_generate");
+    expect(screen.queryByLabelText("form.core_competency")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("form.math_thinking")).not.toBeInTheDocument();
+    for (const control of container.querySelectorAll("input, select, textarea")) {
+      expect(["core_competency", "math_thinking"]).not.toContain(control.getAttribute("name"));
+    }
+
+    fireEvent.click(screen.getByText("form.btn_generate"));
+    fireEvent.click(await screen.findByText("form.btn_confirm_send"));
+
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0].core_competency).toEqual(["數-J-A2"]);
+    expect(submitted[0].math_thinking).toEqual(["運用"]);
+    expect(JSON.parse(submitted[0].per_question_params as string)[0]).toEqual(
+      expect.objectContaining({
+        core_competency: ["數-J-A2"],
+        math_thinking: ["運用"],
+      }),
+    );
+  });
+
   it.each(["social_studies", "natural_sciences"] as const)(
     "shows the pre-checked core-question callback checkbox for %s",
     async (subject) => {
