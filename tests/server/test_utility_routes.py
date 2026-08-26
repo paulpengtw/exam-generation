@@ -195,6 +195,28 @@ def test_natural_sciences_schemas_include_pisa_science_dimensions() -> None:
     assert "tr-Ⅳ-1" in {entry["value"] for entry in learning_performance}
 
 
+def test_natural_sciences_subcontexts_declare_their_admitting_context() -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.get("/api/schemas?subject=natural_sciences")
+
+    assert response.status_code == 200
+    entries = response.json()["情境子類別"]
+    assert entries
+    assert all("parent" in entry for entry in entries)
+    assert all("admitted_by" in entry for entry in entries)
+    assert all(set(entry["admitted_by"]) == {"情境"} for entry in entries)
+    assert all(isinstance(entry["admitted_by"]["情境"], list) for entry in entries)
+
+    by_value = {entry["value"]: entry for entry in entries}
+    assert by_value["Choosing non-dairy and vegetarian diets"]["admitted_by"] == {
+        "情境": ["Personal"],
+    }
+    assert by_value["Food security"]["admitted_by"] == {
+        "情境": ["Global"],
+    }
+
+
 def test_models_endpoint_returns_allowlist_and_defaults() -> None:
     app = create_app()
     cfg = ServerConfig(

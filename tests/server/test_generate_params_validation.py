@@ -43,6 +43,53 @@ def test_generate_params_rejects_incompatible_context_and_sub_context() -> None:
         )
 
 
+def test_generate_params_uses_admitted_by_for_ns_pair_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.natural_sciences import schema_loader
+
+    monkeypatch.setattr(
+        schema_loader,
+        "load_schemas",
+        lambda: {
+            "情境子類別": [
+                {
+                    "value": "Synthetic child",
+                    "parent": "Personal",
+                    "admitted_by": {"情境": ["Global"]},
+                },
+            ],
+        },
+    )
+
+    compatible = GenerateParams(
+        subject="natural_sciences",
+        context=["Global"],
+        sub_context="Synthetic child",
+    )
+    assert compatible.context == ["Global"]
+
+    with pytest.raises(
+        ValidationError,
+        match=r"context.*sub_context.*incompatible",
+    ):
+        GenerateParams(
+            subject="natural_sciences",
+            context=["Personal"],
+            sub_context="Synthetic child",
+        )
+
+
+def test_generate_params_accepts_a_compatible_ns_context_pair() -> None:
+    params = GenerateParams(
+        subject="natural_sciences",
+        context=["Global"],
+        sub_context="Food security",
+    )
+
+    assert params.sub_context == "Food security"
+
+
 @pytest.mark.parametrize(("field", "value"), MATH_UNSUPPORTED_PARAMS)
 def test_generate_params_rejects_unhonoured_math_parameter(
     field: str,

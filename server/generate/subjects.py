@@ -267,15 +267,23 @@ def _ns_validate_params(params: Any) -> None:
 
     from src.natural_sciences.schema_loader import load_schemas  # noqa: PLC0415
 
-    parents = {
-        row["value"]: row.get("parent")
-        for row in load_schemas().get("情境子類別", [])
-    }
-    if parents.get(params.sub_context) not in params.context:
+    sub_context_entry = next(
+        (
+            row
+            for row in load_schemas().get("情境子類別", [])
+            if row.get("value") == params.sub_context
+        ),
+        None,
+    )
+    admitted_contexts = (
+        (sub_context_entry or {}).get("admitted_by", {}).get("情境", [])
+    )
+    if not any(context in admitted_contexts for context in params.context):
+        required_context = admitted_contexts[0] if admitted_contexts else None
         raise ValueError(
             "context and sub_context are incompatible: "
             f"sub_context {params.sub_context!r} requires "
-            f"context {parents.get(params.sub_context)!r}"
+            f"context {required_context!r}"
         )
 
 

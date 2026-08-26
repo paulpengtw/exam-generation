@@ -72,8 +72,8 @@ const NATURAL_SCHEMA = {
     { value: "實驗室", instruction: "" },
   ],
   情境子類別: [
-    { value: "健康", parent: "個人", instruction: "" },
-    { value: "野外調查", parent: "實驗室", instruction: "" },
+    { value: "健康", parent: "個人", admitted_by: { 情境: ["個人"] }, instruction: "" },
+    { value: "野外調查", parent: "實驗室", admitted_by: { 情境: ["實驗室"] }, instruction: "" },
   ],
   題型種類: [{ value: "題組題", instruction: "" }],
   題型: [

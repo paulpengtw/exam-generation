@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, type AvailableModels, type PromptPreview, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
+import { filterEntriesByAdmittedParent } from "../lib/admittedBy";
 import { renewSessionIfNeeded } from "../lib/sessionRenewal";
 import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
@@ -774,9 +775,11 @@ function defaultFormFields(
     subject === "natural_sciences" && firstContext ? [firstContext] : [];
   const defaultSubContext =
     subject === "natural_sciences" && firstContext
-      ? (schemas.情境子類別 ?? []).find(
-          (entry) => entry.parent === firstContext,
-        )?.value ?? ""
+      ? filterEntriesByAdmittedParent(
+          schemas.情境子類別 ?? [],
+          "情境",
+          firstContext,
+        )[0]?.value ?? ""
       : "";
   const contentTypes =
     schemas.題目內容類型 as Schemas["題目內容類型"] | undefined;
@@ -1362,12 +1365,15 @@ export default function ParamForm({
         if (
           subject === "natural_sciences" &&
           s.情境.length > 0 &&
+          ip.context === undefined &&
           ip.sub_context === undefined
         ) {
           setField("context", [s.情境[0].value]);
-          const firstSub = (s.情境子類別 ?? []).find(
-            (entry) => entry.parent === s.情境[0].value,
-          );
+          const firstSub = filterEntriesByAdmittedParent(
+            s.情境子類別 ?? [],
+            "情境",
+            s.情境[0].value,
+          )[0];
           setField("subContext", firstSub?.value ?? "");
         }
         const questionStyles = s.question_style ?? [];
@@ -1710,7 +1716,7 @@ export default function ParamForm({
   const availableSubContexts = useMemo(() => {
     const entries = schemas?.情境子類別 ?? [];
     const selectedContext = context[0] ?? "";
-    return entries.filter((entry) => !entry.parent || entry.parent === selectedContext);
+    return filterEntriesByAdmittedParent(entries, "情境", selectedContext);
   }, [schemas, context]);
 
   const availableQuestionTypes = useMemo(() => {
@@ -2110,8 +2116,19 @@ export default function ParamForm({
       const randomSubjectFilter = subject === "social_studies"
         ? drawField("subject_filter", (schemas?.科目 ?? []).map((entry) => entry.value))
         : undefined;
+      const historyQuestionContext = Array.isArray(historyQuestionParams?.context)
+        ? historyQuestionParams.context.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : undefined;
+      const resolvedQuestionContext = randomContext ?? historyQuestionContext ?? baseParams.context;
+      const questionSubContextPool = filterEntriesByAdmittedParent(
+        schemas?.情境子類別 ?? [],
+        "情境",
+        resolvedQuestionContext,
+      ).map((entry) => entry.value);
       const randomSubContext = subject === "natural_sciences"
-        ? drawField("sub_context", availableSubContexts.map((entry) => entry.value))
+        ? drawField("sub_context", questionSubContextPool)
         : undefined;
       const randomScienceCompetency = subject === "natural_sciences"
         ? drawField("science_competency", (schemas?.科學能力 ?? []).map((entry) => entry.value))

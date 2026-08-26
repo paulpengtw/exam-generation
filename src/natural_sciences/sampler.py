@@ -28,8 +28,8 @@ _CONTENT_TYPE_VALUES: list[str] = [
     row["value"] for row in _schemas.get("題目內容類型", []) if row.get("value")
 ]
 _RANDOM_CONTENT_TYPE_VALUES: list[str] = [v for v in _CONTENT_TYPE_VALUES if v != "customized"]
-_SUB_CONTEXT_PARENT: dict[str, str] = {
-    row["value"]: row.get("parent", "")
+_SUB_CONTEXT_ADMITTED_BY: dict[str, list[str]] = {
+    row["value"]: row.get("admitted_by", {}).get("情境", [])
     for row in _schemas.get("情境子類別", [])
     if row.get("value")
 }
@@ -42,7 +42,10 @@ def _matching_subcontexts(context_values: set[str]) -> list[QuestionSubContext]:
     return [
         sub_context
         for sub_context in QuestionSubContext
-        if _SUB_CONTEXT_PARENT.get(sub_context.value) in context_values
+        if any(
+            parent in context_values
+            for parent in _SUB_CONTEXT_ADMITTED_BY.get(sub_context.value, [])
+        )
     ]
 
 
@@ -98,8 +101,8 @@ def sample_params(
 
     if context is not None:
         selected_context = context
-    elif sub_context is not None and _SUB_CONTEXT_PARENT.get(sub_context.value):
-        parent = _SUB_CONTEXT_PARENT[sub_context.value]
+    elif sub_context is not None and _SUB_CONTEXT_ADMITTED_BY.get(sub_context.value):
+        parent = rng.choice(_SUB_CONTEXT_ADMITTED_BY[sub_context.value])
         selected_context = [QuestionContext(parent)]
     else:
         selected_context = [field_rng("情境").choice(list(QuestionContext))]

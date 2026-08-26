@@ -25,6 +25,7 @@ export interface SchemaEntry {
   value: string;
   instruction: string;
   parent?: string;
+  admitted_by?: Record<string, string[]>;
 }
 
 export interface LearningPerformanceEntry extends SchemaEntry {
