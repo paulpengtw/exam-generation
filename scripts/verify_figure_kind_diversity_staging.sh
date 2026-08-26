@@ -40,6 +40,126 @@ fail() {
   exit 1
 }
 
+parse_result_event() {
+  python3 - "$1" "$2" <<'PY'
+import json
+import sys
+
+
+source, destination = sys.argv[1:]
+try:
+    with open(source, encoding="utf-8") as fh:
+        stream = fh.read()
+except OSError as exc:
+    raise SystemExit(f"could not read SSE stream: {exc}") from exc
+
+# SSE permits CRLF, CR, or LF line endings. Normalize first so each blank line
+# is a frame boundary, then apply the browser's data-field joining rule.
+for frame in stream.replace("\r\n", "\n").replace("\r", "\n").split("\n\n"):
+    event_name = None
+    data_lines = []
+    for line in frame.split("\n"):
+        if line.startswith("event:"):
+            value = line[len("event:"):]
+            event_name = value[1:] if value.startswith(" ") else value
+        elif line.startswith("data:"):
+            value = line[len("data:"):]
+            data_lines.append(value[1:] if value.startswith(" ") else value)
+
+    if event_name != "result":
+        continue
+    try:
+        payload = json.loads("\n".join(data_lines))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"result event data is not valid JSON: {exc}") from exc
+    try:
+        with open(destination, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+    except OSError as exc:
+        raise SystemExit(f"could not write result payload: {exc}") from exc
+    raise SystemExit(0)
+
+raise SystemExit("result event not found")
+PY
+}
+
+if [[ "${1:-}" == '--selftest' ]]; then
+  python3 - "$GEN_TMP" <<'PY'
+import json
+import re
+import sys
+
+
+def serialize_event(event):
+    # Mirrors server/generate/routes.py:_serialize_event.
+    data = event.get("data", "")
+    if not isinstance(data, str):
+        data = json.dumps(data, ensure_ascii=False)
+    return {"event": event["event"], "data": data}
+
+
+def encode_event(event, *, comment=None, event_id=None, retry=None):
+    # Mirrors sse_starlette.sse.ServerSentEvent.encode() with its default CRLF.
+    lines = []
+    if comment is not None:
+        for chunk in re.split(r"\r\n|\r|\n", str(comment)):
+            lines.append(f": {chunk}\r\n")
+    if event_id is not None:
+        lines.append(f"id: {event_id}\r\n")
+    lines.append(f"event: {event['event']}\r\n")
+    if event["data"] is not None:
+        for chunk in re.split(r"\r\n|\r|\n", str(event["data"])):
+            lines.append(f"data: {chunk}\r\n")
+    if retry is not None:
+        lines.append(f"retry: {retry}\r\n")
+    lines.append("\r\n")
+    return "".join(lines)
+
+
+result_payload = {
+    "id": "selftest-question-554",
+    "題目": ["第一行", "第二行"],
+    "text": "A line\nB line",
+}
+result_json = json.dumps(result_payload, ensure_ascii=False, indent=2)
+frames = [
+    encode_event(serialize_event({"event": "started", "data": ""})),
+    encode_event(
+        serialize_event({
+            "event": "llm_content",
+            "data": {"purpose": "generator", "text": "chunk one\nchunk two"},
+        }),
+        event_id="llm-1",
+    ),
+    ": ping - 1\r\n\r\n",
+    encode_event(
+        serialize_event({"event": "result", "data": result_json}),
+        event_id="result-1",
+        retry=1000,
+    ),
+    encode_event(serialize_event({"event": "done", "data": ""})),
+    ": ping - 2\r\n\r\n",
+]
+with open(sys.argv[1], "w", encoding="utf-8", newline="") as fh:
+    fh.write("".join(frames))
+PY
+  if ! parse_result_event "$GEN_TMP" "$RESULT_TMP"; then
+    fail 'self-test result parser did not recover the fixture'
+  fi
+  QUESTION_ID=$(python3 - "$RESULT_TMP" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    print(json.load(fh).get("id", ""))
+PY
+  )
+  [[ "$QUESTION_ID" == 'selftest-question-554' ]] \
+    || fail "self-test recovered unexpected question id: ${QUESTION_ID:-<empty>}"
+  printf 'PASS: SSE result self-test recovered question id: %s\n' "$QUESTION_ID"
+  exit 0
+fi
+
 printf 'BASE_URL=%s\n' "$BASE_URL"
 printf 'API_URL=%s\n' "$API_URL"
 printf 'Scenario: social_studies, 題幹 + two 小題 images, gpt_image, count=1, seed=%s\n' "$SEED"
@@ -285,7 +405,7 @@ curl -N -sS -D "$GEN_HDR" -o "$GEN_TMP" \
 GEN_ELAPSED=$((SECONDS - GEN_STARTED))
 
 HTTP_STATUS=$(awk 'NR == 1 {print $2; exit}' "$GEN_HDR" 2>/dev/null || true)
-if ! grep -q '^event: result$' "$GEN_TMP"; then
+if ! parse_result_event "$GEN_TMP" "$RESULT_TMP"; then
   printf 'Generation HTTP status: %s\n' "${HTTP_STATUS:-<none>}"
   printf 'SSE event counts:\n'
   EVENT_COUNTS=$(awk '
@@ -307,29 +427,50 @@ if ! grep -q '^event: result$' "$GEN_TMP"; then
   else
     printf '  <none>\n'
   fi
-  if grep -q '^event: error$' "$GEN_TMP"; then
+  if awk '
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      if (line == "event: error") found = 1
+    }
+    END { exit found ? 0 : 1 }
+  ' "$GEN_TMP"; then
     printf 'First event: error (verbatim):\n'
     python3 - "$GEN_TMP" <<'PY'
 import sys
 
-with open(sys.argv[1], "rb") as fh:
+with open(sys.argv[1], encoding="utf-8", errors="replace", newline="") as fh:
     lines = fh.readlines()
 for index, line in enumerate(lines):
-    if line.rstrip(b"\r\n") != b"event: error":
+    if line.rstrip("\r\n") != "event: error":
         continue
     end = index + 1
     while end < len(lines):
-        if lines[end].rstrip(b"\r\n") == b"":
+        if lines[end].rstrip("\r\n") == "":
             end += 1
             break
         end += 1
-    sys.stdout.buffer.write(b"".join(lines[index:end]))
+    for frame_line in lines[index:end]:
+        output = frame_line.rstrip("\r\n")
+        if output.startswith("data:"):
+            output = output[:200]
+        sys.stdout.write(output + "\n")
     break
 PY
     printf '\n'
   else
     printf 'Last 20 lines of stream (verbatim):\n'
-    tail -n 20 "$GEN_TMP"
+    python3 - "$GEN_TMP" <<'PY'
+import sys
+
+with open(sys.argv[1], encoding="utf-8", errors="replace", newline="") as fh:
+    lines = fh.readlines()
+for line in lines[-20:]:
+    output = line.rstrip("\r\n")
+    if output.startswith("data:"):
+        output = output[:200]
+    sys.stdout.write(output + "\n")
+PY
     printf '\n'
   fi
   printf 'Generation elapsed: %ss\n' "$GEN_ELAPSED"
@@ -339,23 +480,6 @@ fi
 [[ "$HTTP_STATUS" == '200' ]] || fail "GET /api/generate returned HTTP ${HTTP_STATUS:-<none>}"
 printf 'Generation elapsed: %ss\n' "$GEN_ELAPSED"
 
-python3 - "$GEN_TMP" "$RESULT_TMP" <<'PY'
-import json
-import sys
-
-source, destination = sys.argv[1:]
-lines = open(source, encoding="utf-8").read().splitlines()
-for index, line in enumerate(lines):
-    if line.strip() != "event: result":
-        continue
-    for data_line in lines[index + 1:]:
-        if data_line.startswith("data: "):
-            payload = json.loads(data_line[6:])
-            with open(destination, "w", encoding="utf-8") as fh:
-                json.dump(payload, fh, ensure_ascii=False)
-            raise SystemExit(0)
-raise SystemExit("result event not found")
-PY
 [[ -s "$RESULT_TMP" ]] || fail 'generation stream contained no result event'
 
 QUESTION_ID=$(python3 - "$RESULT_TMP" <<'PY'
