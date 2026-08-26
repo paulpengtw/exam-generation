@@ -63,6 +63,7 @@ describe("resolveGenerate", () => {
         JSON.stringify({
           payload: { subject: "math", seed: 17, learning_content: ["RESOLVED-LC"] },
           drawn: ["learning_content"],
+          cleared: [],
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -74,6 +75,7 @@ describe("resolveGenerate", () => {
     expect(result).toEqual({
       payload: { subject: "math", seed: 17, learning_content: ["RESOLVED-LC"] },
       drawn: ["learning_content"],
+      cleared: [],
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/generate/resolve",

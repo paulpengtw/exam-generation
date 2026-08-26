@@ -36,6 +36,8 @@ vi.mock("../i18n/useT", () => ({
     "form.confirm_subq_reporting_scale": "Reporting Scale:",
     "form.confirm_badge_random": "隨機",
     "form.confirm_badge_user": "使用者選擇",
+    "form.confirm_edit": "編輯",
+    "form.confirm_redraw": "重抽",
     "form.confirm_subquestion_heading": "各小題配置",
     "form.confirm_subquestion_row_title": "第 {n} 小題",
     "form.confirm_subq_cognitive_process": "認知歷程:",
@@ -199,6 +201,99 @@ describe("ParamForm generic drawn-value confirmation rows", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it("limits a confirmation 小題學習內容 picker to three codes", async () => {
+    const learningContent = ["LC-1", "LC-2", "LC-3", "LC-4"].map((value) => ({
+      value,
+      instruction: "",
+      admitted_by: { 科目: ["公民與社會"] },
+    }));
+    getSchemasMock.mockResolvedValue({ ...SOCIAL_SCHEMA, 學習內容: learningContent });
+    resolveGenerateMock.mockResolvedValueOnce({
+      payload: {
+        subject: "social_studies",
+        grade: 8,
+        count: 1,
+        per_question_params: JSON.stringify([{
+          subject_filter: ["公民與社會"],
+          content_domain: DOMAIN,
+          sub_question_count: 3,
+          subquestion_configs: [{ learning_content: ["LC-1"] }, {}, {}],
+        }]),
+      },
+      drawn: ["per_question_params[0].subquestion_configs[0].learning_content"],
+    });
+
+    render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={vi.fn()}
+        disabled={false}
+        initialParams={{ subject_filter: "公民與社會", count: 1, sub_question_count: 3 }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+
+    const card = within(await screen.findByRole("region", { name: "第1題" })).getAllByRole("listitem")[0];
+    const picker = within(card).getByLabelText("學習內容");
+    for (const value of ["LC-2", "LC-3"]) {
+      fireEvent.change(picker, { target: { value } });
+      fireEvent.mouseDown(within(card).getByRole("button", { name: new RegExp(value) }));
+    }
+    fireEvent.change(picker, { target: { value: "LC-4" } });
+
+    expect(within(card).getAllByText(/LC-[1-4]/)).toHaveLength(3);
+    expect(within(card).getByText("LC-1")).toBeInTheDocument();
+    expect(within(card).getByText("LC-2")).toBeInTheDocument();
+    expect(within(card).getByText("LC-3")).toBeInTheDocument();
+    expect(within(card).queryByText("LC-4")).not.toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "LC-4" })).not.toBeInTheDocument();
+  });
+
+  it("edits a canonical Chinese cognitive-process key without retaining the old alias", async () => {
+    const onSubmit = vi.fn();
+    resolveGenerateMock.mockResolvedValueOnce({
+      payload: {
+        subject: "social_studies",
+        grade: 8,
+        count: 1,
+        per_question_params: JSON.stringify([{
+          subject_filter: ["公民與社會"],
+          content_domain: DOMAIN,
+          sub_question_count: 3,
+          subquestion_configs: [{ "認知歷程": PROCESS_VALUES[0] }, {}, {}],
+        }]),
+      },
+      drawn: ["per_question_params[0].subquestion_configs[0].認知歷程"],
+    });
+
+    render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ subject_filter: "公民與社會", count: 1, sub_question_count: 3 }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+
+    const card = within(await screen.findByRole("region", { name: "第1題" })).getAllByRole("listitem")[0];
+    const cognitiveRow = within(card).getByText(`認知歷程: ${PROCESS_VALUES[0]}`).closest("[data-drawn-value-path]") as HTMLElement;
+    fireEvent.click(within(cognitiveRow).getByRole("button", { name: "編輯" }));
+    fireEvent.change(within(cognitiveRow).getByLabelText("認知歷程:"), {
+      target: { value: PROCESS_VALUES[1] },
+    });
+
+    expect(within(cognitiveRow).getByText("使用者選擇")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    const submittedRows = JSON.parse(onSubmit.mock.calls[0][0].per_question_params) as Array<{
+      subquestion_configs: string;
+    }>;
+    expect(JSON.parse(submittedRows[0].subquestion_configs)[0]).toEqual({
+      cognitive_process: PROCESS_VALUES[1],
+    });
   });
 
   it("keeps the random badge for top-level canonical draw paths", async () => {
@@ -371,5 +466,65 @@ describe("ParamForm generic drawn-value confirmation rows", () => {
     expect(screen.queryByText("（隨機）")).not.toBeInTheDocument();
     expect(competencyRow).toHaveTextContent("社-J-A2、社-J-B1");
     expect(within(competencyRow).getByText("隨機")).toBeInTheDocument();
+  });
+
+  it("edits a drawn competency in place, re-resolves, and pins the new value", async () => {
+    getSchemasMock.mockResolvedValue({
+      ...MATH_SCHEMA,
+      核心素養: [
+        { value: "數-J-A1", instruction: "" },
+        { value: "數-J-B2", instruction: "" },
+      ],
+    });
+    resolveGenerateMock
+      .mockResolvedValueOnce({
+        payload: {
+          subject: "math",
+          grade: 7,
+          count: 1,
+          per_question_params: JSON.stringify([{ core_competency: ["數-J-A1"] }]),
+        },
+        drawn: ["per_question_params[0].核心素養"],
+        cleared: [],
+      })
+      .mockResolvedValueOnce({
+        payload: {
+          subject: "math",
+          grade: 7,
+          count: 1,
+          per_question_params: JSON.stringify([{ core_competency: ["數-J-B2"] }]),
+        },
+        drawn: [],
+        cleared: [],
+      });
+
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        initialParams={{ count: 1 }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    await screen.findByRole("region", { name: "第1題" });
+
+    const row = within(screen.getByRole("region", { name: "第1題" }))
+      .getByText("核心素養", { selector: "dt" })
+      .parentElement!;
+    fireEvent.click(within(row).getByRole("button", { name: "編輯" }));
+    const editor = within(row).getByRole("listbox", { name: "核心素養" });
+    fireEvent.change(editor, { target: { value: ["數-J-B2"] } });
+
+    await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(2));
+    const resubmitted = resolveGenerateMock.mock.calls[1][0] as Record<string, unknown>;
+    expect(JSON.parse(resubmitted.per_question_params as string)[0].core_competency)
+      .toEqual(["數-J-B2"]);
+    await waitFor(() => expect(within(row).getByText("數-J-B2")).toBeInTheDocument());
+    expect(within(row).getByText("使用者選擇")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+    expect(onSubmit.mock.calls[0][0].per_question_params).toContain("數-J-B2");
   });
 });

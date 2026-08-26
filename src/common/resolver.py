@@ -17,6 +17,7 @@ import json
 import secrets
 from copy import deepcopy
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import Any
 
 from src.common.randomness import draw_rng
@@ -85,6 +86,7 @@ class ResolveResult:
 
     payload: dict[str, Any]
     drawn: list[str]
+    cleared: list[str] = dataclass_field(default_factory=list)
 
 
 class ResolveConflictError(ValueError):
@@ -361,7 +363,6 @@ def _structural_redraw_configs(
     """Reopen prior auto-drawn slots when their structural parent is redrawn."""
     if (
         not configs
-        or not _blank(payload.get("sub_question_count"))
         or (redraws or {}).get("sub_question_count", 0) <= 0
     ):
         return configs
@@ -456,62 +457,88 @@ def _resolve_math(
 def _resolve_social(
     payload: dict[str, Any], redraws: dict[str, int] | None
 ) -> ResolveResult:
+    cleared: list[str] = []
+    sampling_payload = payload
     configs = None
-    if "subquestion_configs" in payload and not _blank(payload["subquestion_configs"]):
-        configs = _decode_rows(payload["subquestion_configs"], "subquestion_configs")
-    elif "subquestion_configs" in payload:
+    if (
+        "subquestion_configs" in sampling_payload
+        and not _blank(sampling_payload["subquestion_configs"])
+    ):
+        configs = _decode_rows(sampling_payload["subquestion_configs"], "subquestion_configs")
+    elif "subquestion_configs" in sampling_payload:
         configs = []
     if configs is not None:
-        configs = _structural_redraw_configs(configs, payload, redraws)
+        configs = _structural_redraw_configs(configs, sampling_payload, redraws)
 
-    resolved_sub_question_count = _resolved_subquestion_count(payload, redraws)
+    resolved_sub_question_count = _resolved_subquestion_count(sampling_payload, redraws)
 
-    subject_filter = payload.get("subject_filter")
+    subject_filter = sampling_payload.get("subject_filter")
     subject_values = _as_enum_list(subject_filter, SocialQuestionSubject)
-    try:
-        sampled = sample_social_params(
-            grade=payload.get("grade"),
-            context=_as_enum_list(payload.get("context"), SocialQuestionContext),
-            set_type=_as_enum(payload.get("set_type"), SocialQuestionSetType),
-            q_type=_as_enum_list(payload.get("q_type"), SocialQuestionType),
+    def sample_social(payload_for_sampling: dict[str, Any]) -> Any:
+        return sample_social_params(
+            grade=payload_for_sampling.get("grade"),
+            context=_as_enum_list(payload_for_sampling.get("context"), SocialQuestionContext),
+            set_type=_as_enum(payload_for_sampling.get("set_type"), SocialQuestionSetType),
+            q_type=_as_enum_list(payload_for_sampling.get("q_type"), SocialQuestionType),
             subject=subject_values,
-            core_competency=_as_enum_list(payload.get("core_competency"), SocialCoreCompetency),
+            core_competency=_as_enum_list(
+                payload_for_sampling.get("core_competency"), SocialCoreCompetency
+            ),
             learning_content=(
-                None if _blank(payload.get("learning_content")) else payload["learning_content"]
+                None
+                if _blank(payload_for_sampling.get("learning_content"))
+                else payload_for_sampling["learning_content"]
             ),
             learning_performance=(
                 None
-                if _blank(payload.get("learning_performance"))
-                else payload["learning_performance"]
+                if _blank(payload_for_sampling.get("learning_performance"))
+                else payload_for_sampling["learning_performance"]
             ),
             content_type=(
-                None if _blank(payload.get("content_type")) else payload["content_type"]
+                None
+                if _blank(payload_for_sampling.get("content_type"))
+                else payload_for_sampling["content_type"]
             ),
             content_domain=(
-                None if _blank(payload.get("content_domain")) else payload["content_domain"]
+                None
+                if _blank(payload_for_sampling.get("content_domain"))
+                else payload_for_sampling["content_domain"]
             ),
-            target_surface=payload.get("target_surface"),
-            seed=payload.get("seed"),
+            target_surface=payload_for_sampling.get("target_surface"),
+            seed=payload_for_sampling.get("seed"),
             sub_question_count=resolved_sub_question_count,
-            question_word_limit=payload.get("question_word_limit"),
-            option_word_limit=payload.get("option_word_limit"),
+            question_word_limit=payload_for_sampling.get("question_word_limit"),
+            option_word_limit=payload_for_sampling.get("option_word_limit"),
             subquestion_configs=configs,
-            difficulty=payload.get("difficulty"),
-            allow_duplicate_figure_kinds=payload.get("allow_duplicate_figure_kinds", False),
+            difficulty=payload_for_sampling.get("difficulty"),
+            allow_duplicate_figure_kinds=payload_for_sampling.get(
+                "allow_duplicate_figure_kinds", False
+            ),
             redraws=redraws,
         )
-    except IncompatibleContentDomainError as exc:
-        raise ResolveConflictError(
-            [
-                {
-                    "field": "learning_content",
-                    "code": "incompatible_parent",
-                    "parent": str(exc),
-                }
-            ]
-        ) from exc
 
-    completed = deepcopy(payload)
+    try:
+        sampled = sample_social(sampling_payload)
+    except IncompatibleContentDomainError as exc:
+        parent_redrawn = any(
+            (redraws or {}).get(parent, 0) > 0 for parent in ("內容領域", "科目")
+        )
+        if not parent_redrawn:
+            raise ResolveConflictError(
+                [
+                    {
+                        "field": "learning_content",
+                        "code": "incompatible_parent",
+                        "parent": str(exc),
+                    }
+                ]
+            ) from exc
+        sampling_payload = deepcopy(payload)
+        sampling_payload["learning_content"] = None
+        cleared.append("學習內容")
+        sampled = sample_social(sampling_payload)
+
+    completed = deepcopy(sampling_payload)
     completed.update(
         {
             "grade": sampled.grade,
@@ -525,15 +552,15 @@ def _resolve_social(
             "learning_performance": list(sampled.學習表現_pool),
         }
     )
-    if resolved_sub_question_count is None or not _blank(payload.get("q_type")):
+    if resolved_sub_question_count is None or not _blank(sampling_payload.get("q_type")):
         completed["q_type"] = [_value(item) for item in sampled.題型]
-    if "target_surface" in payload:
+    if "target_surface" in sampling_payload:
         completed["target_surface"] = sampled.target_surface
     if sampled.sub_question_count is not None:
         completed["sub_question_count"] = sampled.sub_question_count
     sampled_configs = list(sampled.subquestion_configs)
     original_configs = configs or []
-    if "subquestion_configs" in payload or sampled_configs:
+    if "subquestion_configs" in sampling_payload or sampled_configs:
         wired_configs = [
             _wire_social_config(
                 config,
@@ -546,7 +573,7 @@ def _resolve_social(
             original_configs,
             learning_content_pool=list(sampled.學習內容_pool),
             learning_performance_pool=list(sampled.學習表現_pool),
-            seed=payload.get("seed"),
+            seed=sampling_payload.get("seed"),
             redraws=redraws,
         )
         completed["subquestion_configs"] = curriculum_configs
@@ -564,10 +591,10 @@ def _resolve_social(
         ("learning_content", "學習內容"),
         ("learning_performance", "學習表現"),
     ]
-    drawn = _top_drawn(payload, fields)
-    if resolved_sub_question_count is None and _blank(payload.get("q_type")):
+    drawn = _top_drawn(sampling_payload, fields)
+    if resolved_sub_question_count is None and _blank(sampling_payload.get("q_type")):
         drawn.append("題型")
-    if _blank(payload.get("sub_question_count")):
+    if _blank(sampling_payload.get("sub_question_count")):
         drawn.append("sub_question_count")
     for index, config in enumerate(sampled_configs):
         original = original_configs[index] if index < len(original_configs) else {}
@@ -579,8 +606,8 @@ def _resolve_social(
             drawn.append(f"subquestion_configs[{index}].認知歷程")
     drawn.extend(subquestion_drawn)
     if not drawn:
-        return ResolveResult(payload=deepcopy(payload), drawn=[])
-    return ResolveResult(payload=completed, drawn=drawn)
+        return ResolveResult(payload=deepcopy(sampling_payload), drawn=[], cleared=cleared)
+    return ResolveResult(payload=completed, drawn=drawn, cleared=cleared)
 
 
 def _validate_natural_parent(payload: dict[str, Any]) -> None:
@@ -611,46 +638,65 @@ def _validate_natural_parent(payload: dict[str, Any]) -> None:
 def _resolve_natural(
     payload: dict[str, Any], redraws: dict[str, int] | None
 ) -> ResolveResult:
-    _validate_natural_parent(payload)
+    cleared: list[str] = []
+    sampling_payload = payload
+    if (redraws or {}).get("情境", 0) > 0:
+        try:
+            _validate_natural_parent(payload)
+        except ResolveConflictError:
+            sampling_payload = deepcopy(payload)
+            sampling_payload["sub_context"] = None
+            cleared.append("情境子類別")
+    else:
+        _validate_natural_parent(payload)
     configs = None
-    if "subquestion_configs" in payload and not _blank(payload["subquestion_configs"]):
-        configs = _decode_rows(payload["subquestion_configs"], "subquestion_configs")
-    elif "subquestion_configs" in payload:
+    if (
+        "subquestion_configs" in sampling_payload
+        and not _blank(sampling_payload["subquestion_configs"])
+    ):
+        configs = _decode_rows(sampling_payload["subquestion_configs"], "subquestion_configs")
+    elif "subquestion_configs" in sampling_payload:
         configs = []
     if configs is not None:
-        configs = _structural_redraw_configs(configs, payload, redraws)
+        configs = _structural_redraw_configs(configs, sampling_payload, redraws)
 
-    resolved_sub_question_count = _resolved_subquestion_count(payload, redraws)
+    resolved_sub_question_count = _resolved_subquestion_count(sampling_payload, redraws)
 
     sampled = sample_natural_params(
-        grade=payload.get("grade"),
-        context=_as_enum_list(payload.get("context"), NaturalQuestionContext),
-        sub_context=_as_enum(payload.get("sub_context"), QuestionSubContext),
-        set_type=_as_enum(payload.get("set_type"), NaturalQuestionSetType),
-        q_type=_as_enum_list(payload.get("q_type"), NaturalQuestionType),
-        science_competency=_as_enum_list(payload.get("science_competency"), ScienceCompetency),
+        grade=sampling_payload.get("grade"),
+        context=_as_enum_list(sampling_payload.get("context"), NaturalQuestionContext),
+        sub_context=_as_enum(sampling_payload.get("sub_context"), QuestionSubContext),
+        set_type=_as_enum(sampling_payload.get("set_type"), NaturalQuestionSetType),
+        q_type=_as_enum_list(sampling_payload.get("q_type"), NaturalQuestionType),
+        science_competency=_as_enum_list(
+            sampling_payload.get("science_competency"), ScienceCompetency
+        ),
         learning_content=(
-            None if _blank(payload.get("learning_content")) else payload["learning_content"]
+            None
+            if _blank(sampling_payload.get("learning_content"))
+            else sampling_payload["learning_content"]
         ),
         learning_performance=(
             None
-            if _blank(payload.get("learning_performance"))
-            else payload["learning_performance"]
+            if _blank(sampling_payload.get("learning_performance"))
+            else sampling_payload["learning_performance"]
         ),
         content_type=(
-            None if _blank(payload.get("content_type")) else payload["content_type"]
+            None
+            if _blank(sampling_payload.get("content_type"))
+            else sampling_payload["content_type"]
         ),
-        seed=payload.get("seed"),
+        seed=sampling_payload.get("seed"),
         sub_question_count=resolved_sub_question_count,
-        question_word_limit=payload.get("question_word_limit"),
-        option_word_limit=payload.get("option_word_limit"),
+        question_word_limit=sampling_payload.get("question_word_limit"),
+        option_word_limit=sampling_payload.get("option_word_limit"),
         subquestion_configs=configs,
-        difficulty=payload.get("difficulty"),
-        reporting_scale=payload.get("reporting_scale"),
+        difficulty=sampling_payload.get("difficulty"),
+        reporting_scale=sampling_payload.get("reporting_scale"),
         redraws=redraws,
     )
 
-    completed = deepcopy(payload)
+    completed = deepcopy(sampling_payload)
     completed.update(
         {
             "grade": sampled.grade,
@@ -665,8 +711,8 @@ def _resolve_natural(
     )
     if (
         resolved_sub_question_count is None
-        or not _blank(payload.get("q_type"))
-        or _blank(payload.get("sub_question_count"))
+        or not _blank(sampling_payload.get("q_type"))
+        or _blank(sampling_payload.get("sub_question_count"))
     ):
         completed["q_type"] = [_value(sampled.題型)]
     if sampled.sub_question_count is not None:
@@ -674,7 +720,7 @@ def _resolve_natural(
 
     sampled_configs = list(sampled.subquestion_configs)
     original_configs = configs or []
-    if "subquestion_configs" in payload or sampled_configs:
+    if "subquestion_configs" in sampling_payload or sampled_configs:
         wired_configs = [
             _wire_natural_config(
                 config,
@@ -687,7 +733,7 @@ def _resolve_natural(
             original_configs,
             learning_content_pool=list(sampled.學習內容_pool),
             learning_performance_pool=list(sampled.學習表現_pool),
-            seed=payload.get("seed"),
+            seed=sampling_payload.get("seed"),
             redraws=redraws,
         )
         completed["subquestion_configs"] = curriculum_configs
@@ -706,8 +752,8 @@ def _resolve_natural(
     ]
     if resolved_sub_question_count is None:
         fields.insert(4, ("q_type", "題型"))
-    drawn = _top_drawn(payload, fields)
-    if _blank(payload.get("sub_question_count")):
+    drawn = _top_drawn(sampling_payload, fields)
+    if _blank(sampling_payload.get("sub_question_count")):
         drawn.append("sub_question_count")
     for index, config in enumerate(sampled_configs):
         original = original_configs[index] if index < len(original_configs) else {}
@@ -717,8 +763,8 @@ def _resolve_natural(
             drawn.append(f"subquestion_configs[{index}].reporting_scale")
     drawn.extend(subquestion_drawn)
     if not drawn:
-        return ResolveResult(payload=deepcopy(payload), drawn=[])
-    return ResolveResult(payload=completed, drawn=drawn)
+        return ResolveResult(payload=deepcopy(sampling_payload), drawn=[], cleared=cleared)
+    return ResolveResult(payload=completed, drawn=drawn, cleared=cleared)
 
 
 def _resolve_one(
@@ -791,7 +837,11 @@ def resolve(
             return result
         completed = deepcopy(result.payload)
         completed["seed"] = working_payload["seed"]
-        return ResolveResult(payload=completed, drawn=["seed", *result.drawn])
+        return ResolveResult(
+            payload=completed,
+            drawn=["seed", *result.drawn],
+            cleared=result.cleared,
+        )
 
     base = {
         key: value
@@ -800,6 +850,7 @@ def resolve(
     }
     resolved_rows: list[dict[str, Any]] = []
     drawn: list[str] = []
+    cleared: list[str] = []
     for index, row in enumerate(rows):
         worker_payload = deepcopy(base)
         worker_payload.update(deepcopy(row))
@@ -848,9 +899,12 @@ def resolve(
         drawn.extend(
             f"per_question_params[{index}].{path}" for path in result_drawn
         )
+        cleared.extend(
+            f"per_question_params[{index}].{path}" for path in result.cleared
+        )
 
     completed = deepcopy(working_payload)
     completed["per_question_params"] = resolved_rows
     if seed_was_drawn:
         drawn.insert(0, "seed")
-    return ResolveResult(payload=completed, drawn=drawn)
+    return ResolveResult(payload=completed, drawn=drawn, cleared=cleared)

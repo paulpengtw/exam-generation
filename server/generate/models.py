@@ -258,10 +258,11 @@ class ResolveRequest(BaseModel):
 
 
 class ResolveResponse(BaseModel):
-    """Completed payload and canonical field paths drawn to complete it."""
+    """Completed payload and field paths changed while resolving it."""
 
     payload: dict[str, Any]
     drawn: list[str]
+    cleared: list[str]
 
 
 class ResolveFieldError(BaseModel):

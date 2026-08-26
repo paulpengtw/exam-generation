@@ -110,7 +110,7 @@ async def resolve_generate_endpoint(
         raise HTTPException(status_code=422, detail=exc.errors) from exc
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return ResolveResponse(payload=result.payload, drawn=result.drawn)
+    return ResolveResponse(payload=result.payload, drawn=result.drawn, cleared=result.cleared)
 
 
 def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:

@@ -257,6 +257,58 @@ describe("ParamForm blank 小題數 confirmation", () => {
     expect(screen.queryByText("FIRST-LC-1")).not.toBeInTheDocument();
   });
 
+  it("edits the resolved count and rebuilds slots through the resolver", async () => {
+    const pinned = {
+      ...slot("FIRST", 0),
+      cognitive_process: "PIN-認知",
+      learning_content: ["PIN-LC"],
+      learning_performance: ["PIN-LP"],
+    };
+    const initialConfigs = [pinned, slot("FIRST", 1), slot("FIRST", 2)];
+    const rebuiltConfigs = [pinned, ...[1, 2, 3, 4].map((index) => slot("SECOND", index))];
+    const pinnedFields = new Set([
+      "0.question_type",
+      "0.認知歷程",
+      "0.learning_content",
+      "0.learning_performance",
+    ]);
+    resolveGenerateMock
+      .mockResolvedValueOnce(socialResponse(
+        initialConfigs,
+        initialConfigs.length,
+        drawnFor(initialConfigs.length, ["question_type", "認知歷程", "learning_content", "learning_performance"], pinnedFields),
+      ))
+      .mockResolvedValueOnce(socialResponse(
+        rebuiltConfigs,
+        5,
+        drawnFor(5, ["question_type", "認知歷程", "learning_content", "learning_performance"], new Set([
+          "0.question_type",
+          "0.認知歷程",
+          "0.learning_content",
+          "0.learning_performance",
+        ])),
+      ));
+
+    render(<ParamForm subject="social_studies" onSubmit={vi.fn()} disabled={false} />);
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    await screen.findByText("PIN-LC");
+    fireEvent.click(within(countRow()).getByRole("button", { name: "編輯" }));
+    fireEvent.change(within(countRow()).getByRole("spinbutton", { name: "小題數" }), {
+      target: { value: "5" },
+    });
+
+    await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(2));
+    const [editPayload, redraws] = resolveGenerateMock.mock.calls[1] as [Record<string, unknown>, Record<string, number>];
+    const editRows = JSON.parse(editPayload.per_question_params as string) as Record<string, unknown>[];
+    expect(editRows[0].sub_question_count).toBe(5);
+    expect(JSON.parse(editRows[0].subquestion_configs as string)[0]).toEqual(
+      expect.objectContaining(pinned),
+    );
+    expect(redraws).toEqual({ "per_question_params[0].sub_question_count": 1 });
+    expect(countRow()).toHaveTextContent("5");
+    expect(configSection()?.getAllByRole("listitem")).toHaveLength(5);
+  });
+
   it("shows the same drawn count row for natural-sciences slots", async () => {
     getSchemasMock.mockResolvedValue(NS_SCHEMA);
     const configs = [0, 1, 2, 3, 4].map((index) => slot("NS", index));

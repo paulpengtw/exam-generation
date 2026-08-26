@@ -18,7 +18,7 @@ For 社會領域, 內容領域 is resolved before its dependent 學習內容 poo
 `src/common/resolver.py::resolve` is the pure whole-payload seam shared by the resolve endpoint and the future `/generate` completeness gate.
 Supplied values remain pins; only blank drawable fields use the seeded sampler streams, and batches resolve each row with `seed + index` unless a row pins its own seed.
 Drawn and 重抽 paths use canonical sampler names: top-level fields, `per_question_params[i].<field>`, and `subquestion_configs[j].<field>`.
-Incompatible parent/child pins are rejected before a partial payload can be returned; the existing generation-time fills remain transitional until #608.
+Incompatible parent/child pins are rejected on an initial resolve; an explicit confirmation parent redraw clears and re-resolves the incompatible child instead. The existing generation-time fills remain transitional until #608.
 The optional math `math_thinking` request field is resolved from the same keyed sampler stream, while `core_competency` is resolved for math and social-studies requests when blank.
 Resolved values are forwarded unchanged through the web confirmation payload and `/generate`; neither field has a form control or a browser-side draw.
 Math and social-studies prompt builders therefore receive the resolver's pinned competency list, and math receives its pinned `math_thinking` list, as the only values offered to the model.
@@ -36,7 +36,7 @@ When a batch generates `count > 1` questions, each subject's batch loop accumula
 When the user submits the web form, it sends the partial payload (including
 pins, history rows, and `redraws`) to `POST /api/generate/resolve`. The
 confirmation screen is populated only from the resolver's completed
-`{payload, drawn}` response; the browser performs no random draw and does not
+`{payload, drawn, cleared}` response; the browser performs no random draw and does not
 filter a 全域池 for drawing. `drawn` paths drive 隨機 badges and are carried in
 the final generation payload so they are persisted in `params_json`.
 Confirmation value rows use the generic `DrawnValueRows` renderer: a canonical
@@ -46,6 +46,8 @@ per-小題 paths, while an existing editable control can provide the value slot
 without taking over path or badge handling. Adding another drawable field
 therefore requires only its label-map entry on the client; the resolver remains
 the source of the displayed value.
+
+Every resolver-drawn confirmation row offers 編輯 and 重抽; editing pins the selected value in the confirmation payload without changing the form state. Editing 情境, 科目/內容領域, or 小題數 clears only drawn descendants before resubmitting, preserves pinned descendants that still fit, and leaves the seed unchanged. If a pinned descendant no longer fits, the resolver clears and re-resolves it instead of returning 422, lists its canonical path in `cleared`, and the row shows a notice. Enumerated editors use schema options and admitted-parent filters, list editors enforce their cardinality limits, and count edits use the 3–7 slot rebuild rule.
 
 For 社會領域 and 自然科學, the resolver also completes blank per-小題
 學習內容 / 學習表現 in the existing 各小題配置 cards. A 重抽 clears only the
@@ -63,7 +65,7 @@ the rebuilt list.
 
 Natural-sciences schema payloads carry each 情境子類別's admitting values as
 `admitted_by: {"情境": [...]}` while retaining the legacy `parent` field for existing consumers.
-The web client uses one generic parent-keyed filter, resolves each 題組's own 情境 before drawing its 情境子類別, and keeps an explicitly pinned 情境 out of the per-題組 draw. The 發送前確認 screen has no editable 情境 path; its per-題組 rows display the already-filtered pair that will be sent.
+The web client uses one generic parent-keyed filter, resolves each 題組's own 情境 before drawing its 情境子類別, and keeps an explicitly pinned 情境 out of the per-題組 draw. The 發送前確認 screen lets the supervisor edit or redraw the resolved 情境 and shows its schema-filtered 情境子類別 result.
 
 For 社會領域 and 數學, curriculum rows expose `admitted_by: {"科目": [...]}`, computed when the active curriculum is loaded from the same backend pools used for sampling; shared rows therefore follow backend admission, including runtime `SOCIAL_STUDIES_CURRICULUM_DIR` swaps. ParamForm reuses `filterEntriesByAdmittedParent` for each 題組's resolved 科目 across group and per-小題 學習內容/學習表現 pools, with no client-side prefix tables. An explicitly pinned 科目 remains in the submitted batch but suppresses the per-題組 科目 draw.
 Social-studies 學習內容 rows for 公民與社會/跨科 additionally carry `admitted_by["內容領域"]` from the ICCS mapping; 歷史/地理 rows omit that key because 內容領域 is not an applicable parent for those subjects.

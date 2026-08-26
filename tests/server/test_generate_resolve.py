@@ -300,7 +300,11 @@ def test_resolve_endpoint_is_idempotent_and_accepts_wrapped_body(
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert second_response.json() == {"payload": first["payload"], "drawn": []}
+    assert second_response.json() == {
+        "payload": first["payload"],
+        "drawn": [],
+        "cleared": [],
+    }
 
 
 def test_resolve_endpoint_redraw_preserves_seed_and_siblings(
@@ -373,6 +377,54 @@ def test_resolve_endpoint_rejects_incompatible_parent_without_payload(
         }
     ]
     assert "payload" not in response.json()
+
+
+def test_resolve_endpoint_reports_cleared_child_after_parent_edit(
+    resolve_client: TestClient,
+) -> None:
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "natural_sciences",
+            "seed": 41,
+            "grade": 8,
+            "context": ["Global"],
+            "sub_context": "Maintenance of health",
+            "set_type": "題組題",
+            "q_type": ["Simple multiple-choice"],
+            "science_competency": ["能力一：以科學的角度解釋現象"],
+            "learning_content": ["INa-Ⅳ-1"],
+            "learning_performance": ["ti-Ⅳ-1"],
+            "content_type": "純文字",
+            "sub_question_count": 3,
+            "subquestion_configs": [
+                {
+                    "question_type": "Simple multiple-choice",
+                    "reporting_scale": "1",
+                    "learning_content": ["INa-Ⅳ-1"],
+                    "learning_performance": ["ti-Ⅳ-1"],
+                },
+                {
+                    "question_type": "Simple multiple-choice",
+                    "reporting_scale": "2",
+                    "learning_content": ["INa-Ⅳ-1"],
+                    "learning_performance": ["ti-Ⅳ-1"],
+                },
+                {
+                    "question_type": "Simple multiple-choice",
+                    "reporting_scale": "3",
+                    "learning_content": ["INa-Ⅳ-1"],
+                    "learning_performance": ["ti-Ⅳ-1"],
+                },
+            ],
+            "redraws": {"情境": 1},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cleared"] == ["情境子類別"]
+    assert body["drawn"] == ["情境子類別"]
 
 
 def test_resolve_endpoint_rejects_an_empty_pinned_civic_intersection(
