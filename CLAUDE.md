@@ -21,6 +21,9 @@ Incompatible parent/child pins are rejected before a partial payload can be retu
 The optional math `math_thinking` request field is resolved from the same keyed sampler stream, while `core_competency` is resolved for math and social-studies requests when blank.
 Resolved values are forwarded unchanged through the web confirmation payload and `/generate`; neither field has a form control or a browser-side draw.
 Math and social-studies prompt builders therefore receive the resolver's pinned competency list, and math receives its pinned `math_thinking` list, as the only values offered to the model.
+The three CLI entry points expose a client-free `resolve` subcommand with the same subject-specific pin flags as `generate`; it prints `{payload, drawn}` JSON and reports resolver conflicts on stderr with a non-zero exit.
+Each CLI's `generate` path builds a partial GenerateParams-style payload, resolves and prints one record per question before generation, and passes the completed values through the existing transitional sampler fill.
+Seeded batches resolve each question independently with `seed + index`, so repeated CLI runs with the same pins replay the printed payloads.
 
 ### Batch-level prompt dedup (issue #111)
 
@@ -437,7 +440,7 @@ When randomly selecting parameters, respect these rules:
 - **subject_filter**: optional 科目 focus (數與量 / 代數 / 幾何 / 統計與機率 / 跨領域); when set, restricts the 學習內容 and 學習表現 draw pools by prefix.
 - **Question style**: pick one from `question_schemas.json["question_style"][*].value` — determines which few-shot examples to inject and whether to generate images.
 
-CLI overrides: `--subject-filter`, `--core-competency`, `--learning-content`, `--learning-performance`, `--content-type`, `--topic`, `--passage`, `--options`, `--core-question`, `--image-generation-mode` (in addition to the legacy `--grade`, `--style`, `--q-type`, `--context`, `--set-type` flags).
+CLI overrides: `--subject-filter`, `--core-competency`, `--learning-content`, `--learning-performance`, `--content-type`, `--topic`, `--passage`, `--options`, `--core-question`, `--image-generation-mode` (in addition to the legacy `--grade`, `--style`, `--q-type`, `--context`, `--set-type` flags). `resolve` accepts the sampling/pin subset of these flags and prints the completed payload before `generate` uses it.
 
 All 5 categories share the same `{value, instruction}` object format. A non-empty `instruction` on any entry is injected into the LLM user prompt: style instructions land under `## 題目風格`; instructions for 情境, 題型種類, 題型, and 數學思考 land under `## 條件補充說明` (section omitted if all instructions are empty).
 
@@ -445,7 +448,7 @@ All 5 categories share the same `{value, instruction}` object format. A non-empt
 
 Natural sciences sampler picks: grade (from `schema_meta.csv`), **情境** (1 from [Personal / Local-and-national / Global]), **情境子類別** (1 from the sub-contexts whose `parent` matches the chosen 情境), **題型種類** (always 題組題), **題型** (Simple-multiple-choice / Complex-multiple-choice / Constructed-response), **科學能力** (1–2 of 6: 能力一/二/三 + 環境能力一/二/三), **題目內容類型** (1 of 純文字 / 含圖片 / graphs/charts/tables; customized is never random), **學習表現_pool** (1–2 codes from `learning_performance.json` filtered by the 學習階段 derived from the sampled grade via `grade_to_learning_stage` — grades 7-9 → 第四學習階段, 10-12 → 第五學習階段), **學習內容_pool** (1–3 codes: first tries to derive from chosen 學習表現 codes' `對應學習內容` cross-links, then falls back to the full stage pool). There is no `--subject` flag and no 科目 bucketing.
 
-CLI overrides: `--science-competency`, `--sub-context`, `--learning-content`, `--learning-performance`, `--content-type`, `--image-generation-mode`, `--grade`, `--q-type`, `--count`, `--batch`, `--seed`, `--no-verify`, `--max-retries`, `--output`, `--dry-run`. No `--style` flag (few-shot examples are keyed by 題型 folder, not style).
+CLI overrides: `--science-competency`, `--sub-context`, `--learning-content`, `--learning-performance`, `--content-type`, `--image-generation-mode`, `--grade`, `--q-type`, `--count`, `--batch`, `--seed`, `--no-verify`, `--max-retries`, `--output`, `--dry-run`. The client-free `resolve` subcommand accepts the sampling/pin subset and prints the completed payload first. No `--style` flag (few-shot examples are keyed by 題型 folder, not style).
 
 ## Image Rendering Architecture
 

@@ -254,6 +254,35 @@ Environment variables (set in `.env` or export directly):
 
 ## CLI Usage
 
+### Resolve before generation
+
+All three CLIs resolve their sampling pins before generation. The `resolve`
+subcommand prints one JSON object, `{"payload": ..., "drawn": [...]}`, without
+constructing an LLM client; `generate` prints the same resolved record to
+stdout before it calls the generator, then passes every resolved value into the
+existing sampler fill. With `--dry-run`, the record is wrapped in
+`--- BEGIN RESOLVED PAYLOAD ---` / `--- END RESOLVED PAYLOAD ---` before the
+prompt preview; normal generation logs and saved-question notices remain on
+stderr.
+
+```bash
+# Math
+uv run python -m src.cli resolve --seed 42 --grade 8
+uv run python -m src.cli generate --seed 42 --grade 8
+
+# Social studies (`subject_filter` is the printed payload field)
+uv run python -m src.social_studies.cli resolve --seed 42 --grade 8 --subject 歷史
+uv run python -m src.social_studies.cli generate --seed 42 --grade 8 --subject 歷史
+
+# Natural sciences (`sub_context` is the printed payload field)
+uv run python -m src.natural_sciences.cli resolve --seed 42 --grade 8
+uv run python -m src.natural_sciences.cli generate --seed 42 --grade 8
+```
+
+The resolve commands accept the same subject-specific parameter/pin flags as
+their `generate` commands. For `--count > 1`, each record is resolved with the
+same `seed + index` rule used by the resolver.
+
 ### Generate a single question
 
 ```bash

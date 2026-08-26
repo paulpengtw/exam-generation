@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import sys
 from collections.abc import Callable, Sequence
 from datetime import datetime
@@ -13,6 +12,7 @@ from random import Random
 from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_math_prior_scope
+from src.common.cli_resolver import resolve_and_print
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
@@ -22,12 +22,6 @@ from src.common.verification_trail import (
     make_verification_trail_entry,
 )
 from src.config import Config
-from src.corrector import correct_question
-from src.curriculum_context import CurriculumContext, load_curriculum_context
-from src.schema_loader import load_grades, load_schemas
-
-_GRADES: list[int] = load_grades(load_schemas())
-
 from src.context_builder import (
     build_subquestion_system_prompt,
     build_subquestion_user_prompt,
@@ -36,6 +30,8 @@ from src.context_builder import (
     build_text_user_prompt,
     build_user_prompt,
 )
+from src.corrector import correct_question
+from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.data_loader import (
     get_grade_content,
     load_curriculum,
@@ -46,11 +42,13 @@ from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_render_error_sink, make_stderr_observer
 from src.renderer import render_image
 from src.sampler import grade_to_learning_stage, sample_params
+from src.schema_loader import load_grades, load_schemas
 from src.schemas import (
     CoreCompetency,
-    ImageSpec,
     ExamQuestion,
+    ImageSpec,
     LearningContentItem,
+    MathThinking,
     QuestionContext,
     QuestionMetadata,
     QuestionSetType,
@@ -61,6 +59,8 @@ from src.schemas import (
     SubQuestion,
 )
 from src.verifier import verify_question
+
+_GRADES: list[int] = load_grades(load_schemas())
 
 QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
 VerificationTrailCallback = Callable[[VerificationTrailEntry], None]
@@ -108,9 +108,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=[s.value for s in QuestionStyle],  # type: ignore[attr-defined]
         help="Question visual style(s) — randomly picked from given values if multiple",
     )
-    gen.add_argument("--context", type=str, nargs="+", help="情境 (e.g. 個人 社會時事) — one or more values")
+    gen.add_argument(
+        "--context",
+        type=str,
+        nargs="+",
+        help="情境 (e.g. 個人 社會時事) — one or more values",
+    )
     gen.add_argument("--set-type", type=str, help="題型種類 (單一題 or 題組題)")
-    gen.add_argument("--q-type", type=str, nargs="+", help="題型 (one or more of: 選擇題, 是非題, etc.) — randomly picked if multiple")
+    gen.add_argument(
+        "--q-type",
+        type=str,
+        nargs="+",
+        help="題型 (one or more of: 選擇題, 是非題, etc.) — randomly picked if multiple",
+    )
     gen.add_argument(
         "--subject-filter",
         type=str,
@@ -163,13 +173,105 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--batch", action="store_true", help="Output as single JSON array")
     gen.add_argument("--seed", type=int, help="Random seed for reproducibility")
     gen.add_argument("--no-verify", action="store_true", help="Skip verification pass")
-    gen.add_argument("--max-retries", type=int, default=None,
-                     help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)")
+    gen.add_argument(
+        "--max-retries",
+        type=int,
+        default=None,
+        help="Max retries when verification fails (default: LLM_MAX_RETRIES env, fallback 3)",
+    )
     gen.add_argument("--output", type=str, help="Output directory")
     gen.add_argument("--dry-run", action="store_true", help="Show prompt without calling LLM")
     gen.add_argument("--env-file", type=str, help="Path to .env file")
 
+    res = sub.add_parser("resolve", help="Resolve and print generation parameters")
+    res.add_argument("--grade", type=int, choices=_GRADES, help="Target grade level")
+    res.add_argument(
+        "--style",
+        type=str,
+        nargs="+",
+        choices=[s.value for s in QuestionStyle],  # type: ignore[attr-defined]
+        help="Question visual style(s)",
+    )
+    res.add_argument("--context", type=str, nargs="+", help="情境")
+    res.add_argument("--set-type", type=str, help="題型種類")
+    res.add_argument("--q-type", type=str, nargs="+", help="題型")
+    res.add_argument(
+        "--subject-filter",
+        type=str,
+        choices=[s.value for s in QuestionSubject],
+        help="科目焦點",
+    )
+    res.add_argument(
+        "--core-competency",
+        type=str,
+        nargs="+",
+        choices=[c.value for c in CoreCompetency],  # type: ignore[attr-defined]
+        help="核心素養代號 pool",
+    )
+    res.add_argument("--learning-content", type=str, nargs="+", help="學習內容 編碼")
+    res.add_argument("--learning-performance", type=str, nargs="+", help="學習表現 編碼")
+    res.add_argument(
+        "--content-type",
+        type=str,
+        choices=["純文字", "含圖片", "graphs/charts/tables", "customized"],
+        help="題目內容類型",
+    )
+    res.add_argument(
+        "--difficulty",
+        type=str,
+        choices=["easy", "medium", "hard"],
+        default=None,
+        help="題目難度",
+    )
+    res.add_argument("--count", type=int, default=1, help="Number of payloads to resolve")
+    res.add_argument("--seed", type=int, help="Random seed for reproducibility")
+
     return parser.parse_args(argv)
+
+
+def _math_partial_payload(args: argparse.Namespace, seed: int | None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"subject": "math"}
+    if seed is not None:
+        payload["seed"] = seed
+    fields = {
+        "grade": args.grade,
+        "context": args.context,
+        "set_type": args.set_type,
+        "q_type": args.q_type,
+        "style": args.style,
+        "subject_filter": args.subject_filter,
+        "core_competency": args.core_competency,
+        "learning_content": args.learning_content,
+        "learning_performance": args.learning_performance,
+        "content_type": args.content_type,
+        "difficulty": args.difficulty,
+    }
+    payload.update({key: value for key, value in fields.items() if value is not None})
+    return payload
+
+
+def _math_params_from_resolved(
+    payload: dict[str, Any],
+    *,
+    grade_content: dict[int, list[LearningContentItem]],
+) -> SampledParams:
+    return sample_params(
+        grade_content=grade_content,
+        grade=payload["grade"],
+        style=[QuestionStyle(value) for value in payload["style"]],
+        context=[QuestionContext(value) for value in payload["context"]],
+        set_type=QuestionSetType(payload["set_type"]),
+        q_type=[QuestionType(value) for value in payload["q_type"]],
+        seed=payload.get("seed"),
+        math_thinking=[MathThinking(value) for value in payload["math_thinking"]],
+        core_competency=payload["core_competency"],
+        learning_content=payload["learning_content"],
+        learning_performance=payload["learning_performance"],
+        content_type=payload["content_type"],
+        subject_filter=payload.get("subject_filter"),
+        sub_question_count=payload.get("sub_question_count"),
+        difficulty=payload.get("difficulty"),
+    )
 
 
 def _resolve_enum(value: str | None, enum_cls: type) -> object | None:
@@ -856,6 +958,12 @@ def _start_html_renderer(client: "LLMClient | None") -> "PlaywrightRenderer | No
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
 
+    if args.command == "resolve":
+        for index in range(args.count):
+            seed = args.seed + index if args.seed is not None else None
+            resolve_and_print(_math_partial_payload(args, seed))
+        return
+
     if args.command != "generate":
         return
 
@@ -890,23 +998,6 @@ def main(argv: list[str] | None = None) -> None:
     # Started once here and reused across all questions to amortize ~1-2s startup cost
     html_renderer = _start_html_renderer(client) if not args.dry_run else None
 
-    # Resolve optional overrides
-    style_override = [QuestionStyle(v) for v in args.style] if args.style else None
-    context_override = (
-        [_resolve_enum(v, QuestionContext) for v in args.context]
-        if args.context else None
-    )
-    set_type_override = _resolve_enum(args.set_type, QuestionSetType)
-    q_type_override = [_resolve_enum(v, QuestionType) for v in args.q_type] if args.q_type else None
-    core_competency_override = (
-        [CoreCompetency(v) for v in args.core_competency]
-        if args.core_competency else None
-    )
-    learning_content_override = args.learning_content if args.learning_content else None
-    learning_performance_override = args.learning_performance if args.learning_performance else None
-    content_type_override = args.content_type if args.content_type else None
-    subject_filter_override = args.subject_filter if args.subject_filter else None
-
     # Generate questions
     results = []
     prior_scopes: list[PriorScope] = []
@@ -919,20 +1010,11 @@ def main(argv: list[str] | None = None) -> None:
             question_id = f"q_{timestamp}_{i+1:03d}"
 
             # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
-            params = sample_params(
+            partial_payload = _math_partial_payload(args, seed)
+            resolved = resolve_and_print(partial_payload, delimited=args.dry_run)
+            params = _math_params_from_resolved(
+                resolved.payload,
                 grade_content=grade_content,
-                grade=args.grade,
-                style=style_override,
-                context=context_override,
-                set_type=set_type_override,
-                q_type=q_type_override,
-                seed=seed,
-                core_competency=core_competency_override,
-                learning_content=learning_content_override,
-                learning_performance=learning_performance_override,
-                content_type=content_type_override,
-                subject_filter=subject_filter_override,
-                difficulty=args.difficulty,
             )
 
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "
