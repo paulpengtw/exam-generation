@@ -152,6 +152,39 @@ describe("QuestionCard 圖像種類降級警告", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Figure-kind warning")).not.toBeInTheDocument();
   });
+
+  it("shows a cross-figure data inconsistency as a degradation warning", () => {
+    const figurePolicyTrail: FigurePolicyTrailEntry[] = [
+      {
+        code: "figure_policy",
+        kind: "data_inconsistency",
+        question_id: "ss-data-warning",
+        left: "題幹",
+        right: "小題 1",
+        series: "石油",
+        x: 1990,
+        left_value: 38,
+        right_value: 10,
+        conflicting_values: { 題幹: 38, "小題 1": 10 },
+        unit: "%",
+        duplicate_image_shipped: true,
+        message: "Warning: cross-figure data inconsistency for 石油",
+        timestamp: "2026-08-25T00:00:00+00:00",
+      },
+    ];
+
+    render(
+      <QuestionCard
+        question={question}
+        figurePolicyTrail={figurePolicyTrail}
+        isFinal
+      />,
+    );
+
+    expect(
+      screen.getByRole("alert", { name: "Figure-kind degradation warning" }),
+    ).toHaveTextContent("cross-figure data inconsistency");
+  });
 });
 
 afterEach(() => {

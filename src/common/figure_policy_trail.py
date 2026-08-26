@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-from src.common.figure_policy import effective_figure_kind
+from src.common.figure_policy import FigureDataInconsistency, effective_figure_kind
 
 
 class FigurePolicySpecEntry(BaseModel):
@@ -62,11 +62,31 @@ class FigurePolicyWarningEntry(BaseModel):
     timestamp: datetime
 
 
+class FigurePolicyDataInconsistencyEntry(BaseModel):
+    """A shipped warning for conflicting shared data across visual specs."""
+
+    code: Literal["figure_policy"] = "figure_policy"
+    kind: Literal["data_inconsistency"] = "data_inconsistency"
+    question_id: str
+    left: str
+    right: str
+    series: str
+    x: Any
+    left_value: float
+    right_value: float
+    conflicting_values: dict[str, float]
+    unit: str
+    duplicate_image_shipped: bool = True
+    message: str
+    timestamp: datetime
+
+
 FigurePolicyTrailEvent = Annotated[
     FigurePolicySpecEntry
     | FigurePolicyCollisionEntry
     | FigurePolicyRepairEntry
-    | FigurePolicyWarningEntry,
+    | FigurePolicyWarningEntry
+    | FigurePolicyDataInconsistencyEntry,
     Field(discriminator="kind"),
 ]
 
@@ -136,5 +156,35 @@ def make_warning_entry(
         left=left,
         right=right,
         effective_figure_kind=effective_kind,
+        timestamp=_now(),
+    )
+
+
+def make_data_inconsistency_entry(
+    question_id: str,
+    left: str,
+    right: str,
+    conflict: FigureDataInconsistency,
+) -> FigurePolicyDataInconsistencyEntry:
+    message = (
+        f"Warning: cross-figure data inconsistency for {conflict.series} at "
+        f"x={conflict.x!r}: {left}={conflict.left_value:g}, "
+        f"{right}={conflict.right_value:g} {conflict.unit}; "
+        "conflicting figures shipped"
+    )
+    return FigurePolicyDataInconsistencyEntry(
+        question_id=question_id,
+        left=left,
+        right=right,
+        series=conflict.series,
+        x=conflict.x,
+        left_value=conflict.left_value,
+        right_value=conflict.right_value,
+        conflicting_values={
+            left: conflict.left_value,
+            right: conflict.right_value,
+        },
+        unit=conflict.unit,
+        message=message,
         timestamp=_now(),
     )

@@ -54,7 +54,9 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
   const isAborted = detail?.status === "aborted";
   const isInterrupted = isFailed || isAborted;
   const hasFigurePolicyDegradation = detail?.figure_policy_trail?.some(
-    (entry) => entry.kind === "warning" && entry.duplicate_image_shipped,
+    (entry) =>
+      (entry.kind === "warning" && entry.duplicate_image_shipped) ||
+      entry.kind === "data_inconsistency",
   ) ?? false;
   const canDownload = detail != null && !isInterrupted;
   const showDownload = detail == null || canDownload;

@@ -181,11 +181,29 @@ export interface FigurePolicyWarningEntry {
   timestamp: string;
 }
 
+export interface FigurePolicyDataInconsistencyEntry {
+  code: "figure_policy";
+  kind: "data_inconsistency";
+  question_id: string;
+  left: string;
+  right: string;
+  series: string;
+  x: unknown;
+  left_value: number;
+  right_value: number;
+  conflicting_values: Record<string, number>;
+  unit: string;
+  duplicate_image_shipped: boolean;
+  message: string;
+  timestamp: string;
+}
+
 export type FigurePolicyTrailEntry =
   | FigurePolicySpecEntry
   | FigurePolicyCollisionEntry
   | FigurePolicyRepairEntry
-  | FigurePolicyWarningEntry;
+  | FigurePolicyWarningEntry
+  | FigurePolicyDataInconsistencyEntry;
 
 export type DraftPhase = "draft" | "image" | "verified" | "corrected";
 

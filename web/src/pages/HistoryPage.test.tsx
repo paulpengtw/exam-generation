@@ -139,6 +139,52 @@ describe("HistoryPage (list mode)", () => {
     expect(screen.queryByText("Figure-kind diversity degraded")).not.toBeInTheDocument();
   });
 
+  it("marks a history row when its trail records a data inconsistency", async () => {
+    listHistoryMock.mockResolvedValueOnce({
+      total: 1,
+      items: [
+        {
+          id: "data-degraded-id",
+          subject: "social_studies",
+          question_id: "ss-data-degraded",
+          created_at: "2026-07-15T00:00:00Z",
+          preview: "跨圖資料矛盾",
+          verified: true,
+          figure_policy_trail: [
+            {
+              code: "figure_policy",
+              kind: "data_inconsistency",
+              question_id: "ss-data-degraded",
+              left: "題幹",
+              right: "小題 1",
+              series: "石油",
+              x: 1990,
+              left_value: 38,
+              right_value: 10,
+              conflicting_values: { 題幹: 38, "小題 1": 10 },
+              unit: "%",
+              duplicate_image_shipped: true,
+              message: "cross-figure data inconsistency",
+              timestamp: "2026-08-25T00:00:00Z",
+            },
+          ],
+        },
+      ],
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history"]}>
+        <Routes>
+          <Route path="/history" element={<HistoryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("Figure-kind diversity degraded")).toBeInTheDocument(),
+    );
+  });
+
   it("shows the empty-state message when the API returns no items", async () => {
     listHistoryMock.mockResolvedValueOnce({ total: 0, items: [] });
 

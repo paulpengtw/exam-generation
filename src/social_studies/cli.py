@@ -15,13 +15,16 @@ from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
 from src.common.figure_policy import (
+    build_figure_consistency_entries,
     effective_figure_kind,
+    enforce_figure_data_consistency,
     find_figure_kind_collisions,
     normalize_figure_kind,
 )
 from src.common.figure_policy_trail import (
     FigurePolicyTrailEvent,
     make_collision_entry,
+    make_data_inconsistency_entry,
     make_repair_entry,
     make_spec_entry,
     make_warning_entry,
@@ -1045,6 +1048,43 @@ def _figure_spec_entries(
     return entries
 
 
+def _figure_data_consistency_entries(
+    question: ExamQuestion,
+) -> list:
+    return build_figure_consistency_entries(
+        question,
+        _parse_image_spec,
+        _figure_kind_repair_key,
+    )
+
+
+def _enforce_figure_data_consistency(
+    question: ExamQuestion,
+    client: Any,
+    obs: Any,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+) -> None:
+    """Repair or warn for contradictory values shared by a 題組's figures."""
+    def on_unresolved(conflict: Any, entries: Sequence[Any]) -> None:
+        entry = make_data_inconsistency_entry(
+            question.id,
+            entries[conflict.left_index].label,
+            entries[conflict.right_index].label,
+            conflict,
+        )
+        print(f"  {entry.message}", file=sys.stderr)
+        emit_stage(obs, "image_agent", "render_image", "warning", message=entry.message)
+        if on_figure_policy_entry is not None:
+            on_figure_policy_entry(entry)
+
+    enforce_figure_data_consistency(
+        lambda: _figure_data_consistency_entries(question),
+        attempted=question._figure_kind_repair_attempted,
+        client=client,
+        on_unresolved=on_unresolved,
+    )
+
+
 def _collision_repair_target(
     entries: list[dict[str, Any]],
     left: int,
@@ -1144,6 +1184,13 @@ def _enforce_figure_kind_diversity(
             )
 
     emit_spec_entries()
+    _enforce_figure_data_consistency(
+        question,
+        client,
+        obs,
+        on_figure_policy_entry,
+    )
+    entries = _figure_spec_entries(question, params)
     if params.allow_duplicate_figure_kinds:
         return
 
