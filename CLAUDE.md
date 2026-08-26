@@ -515,6 +515,12 @@ choom -n 500 -- uv run pytest
 uv run ruff check src/
 ```
 
+### Full-預抽 guards (ADR 0022)
+
+The runtime completeness gate, static RNG/`sample_params` allowlist, and forwarding RESOLVED/PIN-ONLY classification guard keep 全量預抽 from silently regressing.
+The static allowlist lives in `tests/test_generation_sampler_allowlist.py`; its five resolver modules are documented there.
+Run these guards with the backend tests, and do not delete the allowlist test as dead weight.
+
 ### Test-run memory discipline
 
 The bot container has ~8 GB total for the bot, Codex, and all active worktree lanes.

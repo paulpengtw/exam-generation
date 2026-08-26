@@ -97,6 +97,70 @@ class ResolveConflictError(ValueError):
         super().__init__(str(errors))
 
 
+# Request-side names for every value that a subject resolver can draw.  These
+# are the roots of the canonical paths in ``ResolveResult.drawn``: an indexed
+# ``subquestion_configs[index].<field>`` draw belongs to the
+# ``subquestion_configs`` request field.  Aliases in that result are normalized
+# to these GenerateParams-facing names by the forwarding guard.
+#
+# The seed is included because the outer ``resolve`` function draws a missing
+# request seed before dispatching to a subject resolver.  User material, model
+# settings and generation controls are intentionally absent: they are pins or
+# controls, never resolver draws.
+DRAWABLE_FIELDS: dict[str, frozenset[str]] = {
+    "math": frozenset(
+        {
+            "seed",
+            "grade",
+            "context",
+            "set_type",
+            "q_type",
+            "style",
+            "math_thinking",
+            "learning_content",
+            "learning_performance",
+            "core_competency",
+            "content_type",
+            "sub_question_count",
+        }
+    ),
+    "social_studies": frozenset(
+        {
+            "seed",
+            "grade",
+            "context",
+            "set_type",
+            "q_type",
+            "subject_filter",
+            "content_domain",
+            "core_competency",
+            "learning_content",
+            "learning_performance",
+            "content_type",
+            "sub_question_count",
+            "subquestion_configs",
+        }
+    ),
+    "natural_sciences": frozenset(
+        {
+            "seed",
+            "grade",
+            "context",
+            "sub_context",
+            "set_type",
+            "q_type",
+            "science_competency",
+            "learning_content",
+            "learning_performance",
+            "content_type",
+            "sub_question_count",
+            "reporting_scale",
+            "subquestion_configs",
+        }
+    ),
+}
+
+
 _BATCH_REQUEST_LEVEL_FIELDS = frozenset(
     {
         "subject",

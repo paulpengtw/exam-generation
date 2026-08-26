@@ -14,6 +14,10 @@ For each (field, subject) pair one of the following must hold:
                      Each entry carries a mandatory one-line reason so that adding one
                      is a deliberate act rather than a silent exemption.
 
+Each FORWARDED pair has a second classification in FORWARDING_COMPLETENESS:
+RESOLVED means the resolver owns its draw, while PIN-ONLY means it is a
+non-draw control or user pin with an explicit reason.
+
 The test fails if a new GenerateParams field is added without classifying it for
 all three subjects.
 
@@ -42,6 +46,7 @@ from server.generate.subjects import (
     _ss_coerce_overrides,
 )
 from src.cli import _math_params_from_resolved as _math_params_from_resolved_payload
+from src.common.resolver import DRAWABLE_FIELDS
 from src.natural_sciences.cli import (
     _ns_params_from_resolved as _ns_params_from_resolved_payload,
 )
@@ -54,10 +59,157 @@ from src.social_studies.cli import (
 FORWARDED = "forwarded"
 REJECTED = "rejected"
 INAPPLICABLE = "inapplicable"
+RESOLVED = "resolved"
+PIN_ONLY = "pin-only"
 
 _MA = "math"
 _SS = "social_studies"
 _NS = "natural_sciences"
+
+
+# ── Completeness classification ───────────────────────────────────────────────
+#
+# FORWARDED is deliberately a two-part contract: either the resolver owns the
+# field's draw, or the field is a pin/control with no resolver default.  Keep
+# this separate from CLASSIFICATION so the existing forwarding/rejection proof
+# table remains readable and a new FORWARDED row cannot silently inherit a status.
+FORWARDING_COMPLETENESS: dict[tuple[str, str], tuple[str, str]] = {
+    # Resolver-drawn values (including the global seed and per-slot config draws).
+    **{
+        (field, _MA): (RESOLVED, "")
+        for field in {
+            "seed",
+            "grade",
+            "style",
+            "context",
+            "set_type",
+            "q_type",
+            "content_type",
+            "learning_performance",
+            "core_competency",
+            "math_thinking",
+            "learning_content",
+            "sub_question_count",
+        }
+    },
+    **{
+        (field, _SS): (RESOLVED, "")
+        for field in {
+            "seed",
+            "grade",
+            "context",
+            "set_type",
+            "q_type",
+            "content_type",
+            "subject_filter",
+            "content_domain",
+            "core_competency",
+            "learning_content",
+            "learning_performance",
+            "sub_question_count",
+            "subquestion_configs",
+        }
+    },
+    **{
+        (field, _NS): (RESOLVED, "")
+        for field in {
+            "seed",
+            "grade",
+            "context",
+            "sub_context",
+            "set_type",
+            "q_type",
+            "science_competency",
+            "content_type",
+            "learning_content",
+            "learning_performance",
+            "sub_question_count",
+            "subquestion_configs",
+            "reporting_scale",
+        }
+    },
+    # Forwarded controls and user pins do not have a resolver draw.
+    **{
+        (field, subject): (PIN_ONLY, reason)
+        for subject, fields in {
+            _MA: {
+                "skip_verify",
+                "max_retries",
+                "image_generation_mode",
+                "difficulty",
+                "subject_filter",
+                "passage",
+                "options",
+                "topic",
+                "core_question",
+                "text_word_limit",
+                "model_plan",
+                "model_execute",
+                "model_verify",
+                "model_correct",
+                "effort_plan",
+                "effort_execute",
+                "effort_verify",
+                "effort_correct",
+            },
+            _SS: {
+                "skip_verify",
+                "disable_reference_fewshot",
+                "max_retries",
+                "image_generation_mode",
+                "difficulty",
+                "coverage_mode",
+                "core_question_callback",
+                "target_surface",
+                "passage",
+                "options",
+                "topic",
+                "core_question",
+                "question_word_limit",
+                "option_word_limit",
+                "text_word_limit",
+                "allow_duplicate_figure_kinds",
+                "model_plan",
+                "model_execute",
+                "model_verify",
+                "model_correct",
+                "effort_plan",
+                "effort_execute",
+                "effort_verify",
+                "effort_correct",
+            },
+            _NS: {
+                "skip_verify",
+                "disable_reference_fewshot",
+                "max_retries",
+                "image_generation_mode",
+                "difficulty",
+                "coverage_mode",
+                "core_question_callback",
+                "passage",
+                "options",
+                "topic",
+                "core_question",
+                "question_word_limit",
+                "option_word_limit",
+                "text_word_limit",
+                "allow_duplicate_figure_kinds",
+                "model_plan",
+                "model_execute",
+                "model_verify",
+                "model_correct",
+                "effort_plan",
+                "effort_execute",
+                "effort_verify",
+                "effort_correct",
+            },
+        }.items()
+        for field in fields
+        for reason in [
+            "forwarded control or user pin; this subject has no resolver draw for the field"
+        ]
+    },
+}
 
 # ── Classification table ───────────────────────────────────────────────────────
 #
@@ -554,9 +706,97 @@ def _validate_params_source(subject: str) -> str | None:
     return inspect.getsource(spec.validate_params)
 
 
+def _drawable_request_field(path: str) -> str:
+    """Return the GenerateParams field owning a resolver drawable path."""
+    head = path.split(".", 1)[0]
+    return head.replace("[]", "")
+
+
+def _forwarding_completeness_errors(
+    fields: set[str],
+    subjects: list[str],
+    classification: dict[str, dict[str, tuple[str, str]]],
+    forwarding_completeness: dict[tuple[str, str], tuple[str, str]],
+    drawable_fields: dict[str, set[str] | frozenset[str]],
+) -> list[str]:
+    """Check the RESOLVED/PIN-ONLY contract against caller-supplied metadata."""
+    errors: list[str] = []
+    drawable_roots = {
+        subject: {_drawable_request_field(path) for path in paths}
+        for subject, paths in drawable_fields.items()
+    }
+
+    for subject in subjects:
+        for path in drawable_fields.get(subject, set()):
+            field = _drawable_request_field(path)
+            if field not in fields:
+                errors.append(
+                    f"drawable field {path!r} for subject {subject!r} has no "
+                    f"GenerateParams request field {field!r}"
+                )
+
+    for field in fields:
+        for subject in subjects:
+            status = classification.get(field, {}).get(subject, (None, ""))[0]
+            key = (field, subject)
+            entry = forwarding_completeness.get(key)
+            if status != FORWARDED:
+                if entry is not None:
+                    errors.append(
+                        f"{key!r} has RESOLVED/PIN-ONLY metadata but is not FORWARDED"
+                    )
+                continue
+            if entry is None:
+                errors.append(
+                    f"({field!r}, {subject!r}) is FORWARDED but is neither "
+                    "RESOLVED nor PIN-ONLY"
+                )
+                continue
+            resolution, reason = entry
+            if resolution not in {RESOLVED, PIN_ONLY}:
+                errors.append(
+                    f"({field!r}, {subject!r}) has invalid completeness status "
+                    f"{resolution!r}; expected RESOLVED or PIN-ONLY"
+                )
+            elif resolution == RESOLVED and field not in drawable_roots.get(subject, set()):
+                errors.append(
+                    f"({field!r}, {subject!r}) is RESOLVED but {field!r} is not "
+                    "in that subject's resolver drawable set"
+                )
+            elif resolution == PIN_ONLY and (not reason.strip() or "\n" in reason):
+                errors.append(
+                    f"({field!r}, {subject!r}) is PIN-ONLY but has no one-line reason"
+                )
+
+    for key in forwarding_completeness:
+        field, subject = key
+        if field not in fields or subject not in subjects:
+            errors.append(f"stale RESOLVED/PIN-ONLY metadata for {key!r}")
+    return errors
+
+
+def _assert_forwarding_completeness(
+    fields: set[str],
+    subjects: list[str],
+    classification: dict[str, dict[str, tuple[str, str]]],
+    forwarding_completeness: dict[tuple[str, str], tuple[str, str]],
+    drawable_fields: dict[str, set[str] | frozenset[str]],
+) -> None:
+    errors = _forwarding_completeness_errors(
+        fields,
+        subjects,
+        classification,
+        forwarding_completeness,
+        drawable_fields,
+    )
+    assert not errors, "Incomplete forwarded-field classification:\n" + "\n".join(
+        f"  {error}" for error in errors
+    )
+
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-_ALL_SUBJECTS = [_MA, _SS, _NS]
+_ALL_SUBJECTS = list(SUBJECTS)
 _ALL_FIELDS = list(GenerateParams.model_fields)
 
 
@@ -583,6 +823,48 @@ def test_classification_covers_all_fields_and_subjects() -> None:
     )
 
 
+def test_forwarded_fields_are_resolved_or_pin_only() -> None:
+    """Every forwarded contract field must have an explicit completeness status."""
+    _assert_forwarding_completeness(
+        set(_ALL_FIELDS),
+        _ALL_SUBJECTS,
+        CLASSIFICATION,
+        FORWARDING_COMPLETENESS,
+        DRAWABLE_FIELDS,
+    )
+
+
+def test_synthetic_forwarded_field_requires_resolved_or_pin_only_metadata() -> None:
+    fields = {"new_field"}
+    classification = {"new_field": {_MA: (FORWARDED, "")}}
+
+    with pytest.raises(AssertionError) as exc_info:
+        _assert_forwarding_completeness(
+            fields,
+            [_MA],
+            classification,
+            {},
+            {_MA: set()},
+        )
+
+    assert "new_field" in str(exc_info.value)
+    assert "RESOLVED nor PIN-ONLY" in str(exc_info.value)
+
+
+def test_synthetic_drawable_without_request_field_is_reported() -> None:
+    with pytest.raises(AssertionError) as exc_info:
+        _assert_forwarding_completeness(
+            {"grade"},
+            [_MA],
+            {"grade": {_MA: (FORWARDED, "")}},
+            {("grade", _MA): (RESOLVED, "")},
+            {_MA: {"grade", "new_drawn_value"}},
+        )
+
+    assert "new_drawn_value" in str(exc_info.value)
+    assert "GenerateParams" in str(exc_info.value)
+
+
 def test_no_extra_classifications_beyond_known_fields() -> None:
     """CLASSIFICATION should not reference fields that no longer exist in GenerateParams.
 
@@ -594,6 +876,19 @@ def test_no_extra_classifications_beyond_known_fields() -> None:
         "CLASSIFICATION contains entries for fields not in GenerateParams: "
         + ", ".join(sorted(extra))
     )
+
+
+def test_no_extra_subject_classifications_beyond_registry() -> None:
+    """A removed subject must not leave stale field classifications behind."""
+    extra = sorted(
+        {
+            subject
+            for classifications in CLASSIFICATION.values()
+            for subject in classifications
+            if subject not in _ALL_SUBJECTS
+        }
+    )
+    assert not extra, "CLASSIFICATION contains unknown subjects: " + ", ".join(extra)
 
 
 @pytest.mark.parametrize(
