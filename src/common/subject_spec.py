@@ -180,10 +180,10 @@ class SubjectGenerationSpec:
     # Signature: (params, n: int) -> list[dict]
     make_fallback_sq_plans_fn: Callable
 
-    # SS-only: ensure a top-level visual spec exists after subquestions assemble.
+    # Ensure subject-configured visual specs exist after subquestions assemble.
     # Mutates question in-place. Returns True if question.chart_spec changed.
     # Signature: (question, params, client) -> bool
-    # None → no-op (NS uses None)
+    # None → no-op
     ensure_visual_spec_fn: Callable | None
 
     # Render per-subquestion image specs to PNGs.
@@ -207,8 +207,12 @@ class SubjectGenerationSpec:
     #              curriculum_context) -> question
     correct_fn: Callable
 
-    # Optional pre-render subject policy hook.  The social-studies pipeline
-    # uses this to repair existing visual declarations before the shared
-    # top-level image renderer runs; NS deliberately leaves it unset.
+    # Optional pre-render subject policy hook.  Visual subjects use this to
+    # repair existing declarations before the shared top-level renderer runs.
     # Signature: (question, params, client, on_figure_policy_entry=...) -> None
     prepare_visual_policy_fn: Callable | None = None
+
+    # Optional policy hook for visual changes introduced by a correction pass.
+    # Signature: (question, config, client, html_renderer, image_generation_mode,
+    #             obs, params, on_figure_policy_entry=...) -> None
+    post_correction_visual_policy_fn: Callable | None = None

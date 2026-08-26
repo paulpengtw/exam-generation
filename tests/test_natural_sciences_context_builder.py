@@ -150,6 +150,32 @@ def test_ns_user_prompt_omits_disclaimer_for_text_only(tmp_path) -> None:
     assert IMAGE_DISCLAIMER not in prompt
 
 
+def test_ns_visual_prompts_declare_figure_kind_and_accept_free_text(tmp_path: Path) -> None:
+    from src.natural_sciences.context_builder import build_subquestion_user_prompt
+
+    params = sample_params(
+        seed=1,
+        content_type="含圖片",
+        sub_question_count=3,
+        subquestion_configs=[{"content_type": "含圖片", "figure_kind": "電路圖"}, {}, {}],
+    )
+    top_prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    sub_prompt, _ = build_subquestion_user_prompt(
+        核心問題="測試核心問題",
+        文本="測試文本",
+        取材來源=["來源A"],
+        sq_plan={"序號": 1, "題型": "Simple multiple-choice", "出題概念": "測試"},
+        params=params,
+        few_shot_dir=Path("data/natural_sciences/few_shot"),
+        cfg=params.subquestion_configs[0],
+    )
+
+    assert "`figure_kind`" in top_prompt
+    assert "電路圖" in top_prompt
+    assert "`figure_kind`" in sub_prompt
+    assert "圖像種類=電路圖（強制值）" in sub_prompt
+
+
 # --- Issue #280: 文本生成器 sees target Reporting Scale ---
 
 

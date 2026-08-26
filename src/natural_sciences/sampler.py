@@ -88,6 +88,7 @@ def sample_params(
     reporting_scale: str | None = None,
     *,
     redraws: dict[str, int] | None = None,
+    allow_duplicate_figure_kinds: bool = False,
 ) -> SampledParams:
     """Sample random PISA Science parameters for a single 題組."""
 
@@ -252,4 +253,5 @@ def sample_params(
         option_word_limit=option_word_limit,
         subquestion_configs=resolved_configs,
         reporting_scale=reporting_scale,
+        allow_duplicate_figure_kinds=allow_duplicate_figure_kinds,
     )

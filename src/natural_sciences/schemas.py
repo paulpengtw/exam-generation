@@ -26,6 +26,7 @@ class ImageSpec(BaseModel):
     labels: dict = Field(default_factory=dict)
     html: str = ""
     description: str = ""
+    figure_kind: str = ""
 
 
 ChartSpec = ImageSpec
@@ -70,6 +71,7 @@ class SubQuestionConfig(BaseModel):
     instruction: str | None = None
     content_type: str | None = None
     image_generation_mode: Literal["html", "gpt_image"] | None = None
+    figure_kind: str | None = None
     question_word_limit: int | None = None
     option_word_limit: int | None = None
     text_word_limit: int | None = None
@@ -151,6 +153,11 @@ class ExamQuestion(BaseModel):
     verification: VerificationResult | None = None
     metadata: QuestionMetadata | None = None
 
+    # One shared missing-spec/declaration repair budget per visual slot;
+    # collision repairs remain one targeted call per detected collision under
+    # ADR 0015. Private so it is not persisted in the generated question JSON.
+    _figure_kind_repair_attempted: set[str] = PrivateAttr(default_factory=set)
+
 
 class SampledParams(BaseModel):
     """Parameters selected by the sampler for natural-sciences generation."""
@@ -180,3 +187,5 @@ class SampledParams(BaseModel):
     subquestion_configs: list[SubQuestionConfig] = Field(default_factory=list)
     # Issue #280: 題組-level Reporting Scale (None → not specified; never randomised here).
     reporting_scale: str | None = None
+    # Request-level kill switch shared by all subjects' figure policy.
+    allow_duplicate_figure_kinds: bool = False

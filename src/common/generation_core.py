@@ -507,6 +507,12 @@ def generate_with_corrections_core(
         )
 
         prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
+        prior_subquestion_specs = [
+            getattr(sub, "chart_spec", None).model_copy()
+            if getattr(sub, "chart_spec", None)
+            else None
+            for sub in question.subquestions
+        ]
 
         chart_image_path: str | None = None
         if question.圖片:
@@ -547,6 +553,32 @@ def generate_with_corrections_core(
         elif question.圖片:
             p = config.output_dir / question.圖片
             new_chart_image_path = str(p) if p.exists() else None
+
+        visual_specs_changed = (
+            question.chart_spec != prior_chart_spec
+            or len(question.subquestions) != len(prior_subquestion_specs)
+            or any(
+                getattr(sub, "chart_spec", None) != prior_subquestion_specs[index]
+                for index, sub in enumerate(question.subquestions)
+                if index < len(prior_subquestion_specs)
+            )
+        )
+        if (
+            visual_specs_changed
+            and spec.post_correction_visual_policy_fn is not None
+        ):
+            spec.post_correction_visual_policy_fn(
+                question,
+                config,
+                client,
+                html_renderer,
+                image_generation_mode,
+                obs,
+                params,
+                on_figure_policy_entry=on_figure_policy_entry,
+            )
+            if question.圖片:
+                new_chart_image_path = str(config.output_dir / question.圖片)
 
         _emit_correction_trail(
             on_trail_entry,

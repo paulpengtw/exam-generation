@@ -39,6 +39,7 @@ from src.natural_sciences.schema_loader import (
     load_schemas,
 )
 from src.natural_sciences.schemas import SampledParams, SubQuestionConfig
+from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
 
 _schemas = load_schemas()
 _INSTRUCTIONS: dict[str, dict[str, str]] = build_instructions(_schemas)
@@ -88,6 +89,12 @@ _CONTENT_TEXT: str = json.dumps(
     indent=2,
 )
 _STAGE_TO_GRADES: dict[str, list[int]] = _CONTENT_DATA.get("學習階段_to_grades", {})
+_FIGURE_KIND_VOCABULARY = "、".join(CANONICAL_FIGURE_KINDS)
+_FIGURE_KIND_INSTRUCTION = (
+    "每個非 null 的 `chart_spec` 都必須宣告具體的 `figure_kind`。"
+    "它是自由文字欄位，未知類型仍可使用具體名稱；適用時請從 canonical vocabulary 選擇："
+    f"{_FIGURE_KIND_VOCABULARY}。"
+)
 
 # One representative (grade, LC code, LP code) per 學習階段 — used in prompt examples so
 # the example JSON always matches the request's stage and never leaks codes from another stage.
@@ -146,6 +153,7 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
         "請使用 `render_mode: \"html\"`。"
         "\n"
         "在 `description` 與 `data` 中完整描述版面與作答所需元素。"
+        f"{_FIGURE_KIND_INSTRUCTION}"
         "（重要）圖片必須是作答的必要條件：至少一道小題的答案必須直接依賴圖片中才有的資訊，無法僅憑文本回答。"
         "設計時請先確定「移除圖片後此題是否仍可作答」——若可以，請重新設計圖片，使其承載文本中未涵蓋的關鍵資訊"
         "（例如實驗裝置的連接方式、模型圖的標示數據、流程圖的條件分支）。"
@@ -156,6 +164,7 @@ CONTENT_TYPE_INSTRUCTIONS: dict[str, str] = {
     "graphs/charts/tables": (
         "本題組必須包含數據圖表或表格。統計圖請使用 `render_mode: \"chart\"`；"
         "實驗數據表、分類表或多欄比較表請使用 `render_mode: \"html\"`，並在 `data` 中提供完整資料。"
+        f"{_FIGURE_KIND_INSTRUCTION}"
         "（重要）圖表/表格必須是作答的必要條件：至少一道小題須讀取圖表中的具體數值、趨勢或分類才能回答，"
         "且這些數值不得在 `文本` 欄位中重複列出。若移除圖表後題目仍可回答，需重新設計使數據只存在於圖表中。"
         f"（示意圖聲明）圖表軸線、格線與座標比例僅為示意，非完全等比例繪製；"
@@ -451,6 +460,7 @@ def build_user_prompt(
             cfg.option_word_limit,
             cfg.learning_content, cfg.learning_performance,
             cfg.reporting_scale,
+            cfg.figure_kind,
         ))
         if cfg.question_type:
             cfg_parts.append(f"題型={cfg.question_type.value}")
@@ -462,6 +472,8 @@ def build_user_prompt(
             cfg_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
         if cfg.reporting_scale:
             cfg_parts.append(f"目標報告等級={cfg.reporting_scale}")
+        if cfg.figure_kind:
+            cfg_parts.append(f"圖像種類={cfg.figure_kind}（強制值）")
         if has_structural_config:
             cfg_parts.append(f"文本素材類型={cfg.content_type or params.題目內容類型 or '純文字'}")
             cfg_parts.append(f"圖片生成模式={cfg.image_generation_mode or image_generation_mode}")
@@ -909,6 +921,8 @@ def build_subquestion_user_prompt(
         config_parts.append(f"學習表現={','.join(cfg.learning_performance)}")
     if cfg is not None and cfg.content_type:
         config_parts.append(f"題目內容類型={cfg.content_type}")
+    if cfg is not None and cfg.figure_kind:
+        config_parts.append(f"圖像種類={cfg.figure_kind}（強制值）")
     if cfg is not None and (cfg.content_type or cfg.image_generation_mode):
         config_parts.append(
             f"圖片生成模式={cfg.image_generation_mode or image_generation_mode}"
@@ -938,7 +952,10 @@ def build_subquestion_user_prompt(
             "\n\n本小題的 `題目內容類型` 為 `含圖片` 或 `graphs/charts/tables`，"
             "必須在本小題 JSON 中輸出非 null 的 `chart_spec`。"
             "`image_generation_mode` 只指定渲染方式，不能單獨視為需要圖片。"
+            f"{_FIGURE_KIND_INSTRUCTION}"
         )
+        if cfg is not None and cfg.figure_kind:
+            visual_instruction += f"本小題的 `figure_kind` 是強制值：`{cfg.figure_kind.strip()}`。"
     if visual_instruction:
         subquestion_config_section += visual_instruction
     core_question_callback_section = (
