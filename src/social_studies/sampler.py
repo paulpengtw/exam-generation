@@ -69,6 +69,10 @@ _QUESTION_TYPE_WEIGHTS: dict[str, int] = {
 }
 
 
+class IncompatibleContentDomainError(ValueError):
+    """A pinned ICCS domain has no admitted learning-content rows."""
+
+
 def _is_public_code(value: str) -> bool:
     return value.startswith("公")
 
@@ -77,64 +81,73 @@ def _filter_entries_for_domain(
     entries: list[dict],
     domain: ContentDomain,
     subject: QuestionSubject,
+    *,
+    use_admitted_domains: bool = True,
 ) -> list[dict]:
-    """Keep public codes mapped to *domain*; leave all other buckets untouched."""
+    """Keep rows admitted by *domain* for subjects whose parent applies."""
     if subject.value not in _DOMAIN_FILTER_SUBJECTS:
         return entries
 
     mapped_codes = _DOMAIN_MAPPING.domain_to_codes.get(domain.value, set())
-    return [
-        entry
-        for entry in entries
-        if not _is_public_code(entry.get("value", ""))
-        or entry["value"] in mapped_codes
-    ]
+    filtered: list[dict] = []
+    for entry in entries:
+        admitted_by = entry.get("admitted_by")
+        if use_admitted_domains and isinstance(admitted_by, dict):
+            admitted_domains = admitted_by.get("內容領域")
+            if not isinstance(admitted_domains, list):
+                continue
+            if domain.value in admitted_domains:
+                filtered.append(entry)
+            continue
+        if not _is_public_code(entry.get("value", "")) or entry["value"] in mapped_codes:
+            filtered.append(entry)
+    return filtered
 
 
 def _resolve_domain_and_pools(
-    rng: random.Random,
-    selected_domain: ContentDomain,
+    rng: random.Random | None,
+    selected_domain: ContentDomain | None,
     subject: QuestionSubject,
     lc_entries: list[dict] | None,
     lp_entries: list[dict] | None,
     *,
     domain_pinned: bool = False,
 ) -> tuple[ContentDomain, list[dict] | None, list[dict] | None]:
-    """Draw a usable domain, retrying at most once for each ICCS domain."""
+    """Draw once from domains with a non-empty dependent learning-content pool."""
+    domains = list(ContentDomain)
     if subject.value not in _DOMAIN_FILTER_SUBJECTS:
+        if selected_domain is None:
+            assert rng is not None
+            selected_domain = rng.choice(domains)
         return selected_domain, lc_entries, lp_entries
 
-    domains = list(ContentDomain)
-    remaining = [domain for domain in domains if domain != selected_domain]
-    for attempt in range(len(domains)):
-        filtered_lc = (
-            _filter_entries_for_domain(lc_entries, selected_domain, subject)
-            if lc_entries is not None
-            else None
-        )
-        filtered_lp = (
-            _filter_entries_for_domain(lp_entries, selected_domain, subject)
-            if lp_entries is not None
-            else None
-        )
-        lc_empty = lc_entries is not None and bool(lc_entries) and not filtered_lc
-        lp_empty = lp_entries is not None and bool(lp_entries) and not filtered_lp
-        if not lc_empty and not lp_empty:
-            return selected_domain, filtered_lc, filtered_lp
+    usable_domains = [
+        domain
+        for domain in domains
+        if lc_entries is None
+        or _filter_entries_for_domain(lc_entries, domain, subject)
+    ]
+    if not domain_pinned and usable_domains:
+        assert rng is not None
+        selected_domain = rng.choice(usable_domains)
+    selected_domain = selected_domain or domains[0]
 
-        if domain_pinned:
-            return selected_domain, filtered_lc, filtered_lp
-
-        if attempt < len(domains) - 1:
-            selected_domain = rng.choice(remaining)
-            remaining.remove(selected_domain)
-
-    logger.warning(
-        "ICCS domain filter has no usable pool for subject=%s; "
-        "using the unfiltered learning pools",
-        subject.value,
+    filtered_lc = (
+        _filter_entries_for_domain(lc_entries, selected_domain, subject)
+        if lc_entries is not None
+        else None
     )
-    return selected_domain, lc_entries, lp_entries
+    filtered_lp = (
+        _filter_entries_for_domain(
+            lp_entries,
+            selected_domain,
+            subject,
+            use_admitted_domains=False,
+        )
+        if lp_entries is not None
+        else None
+    )
+    return selected_domain, filtered_lc, filtered_lp
 
 
 def _assign_cognitive_processes(
@@ -337,13 +350,11 @@ def sample_params(
         if subject is not None
         else field_rng("科目").choice(list(QuestionSubject))
     )
-    # Draw the ICCS domain before any learning-content/performance pool is drawn.
+    # Resolve the ICCS domain before the dependent learning-content pool draw.
     domain_pinned = content_domain is not None
-    domain_rng = field_rng("內容領域")
+    domain_rng = field_rng("內容領域") if not domain_pinned else None
     selected_content_domain = (
-        ContentDomain(content_domain)
-        if content_domain is not None
-        else domain_rng.choice(list(ContentDomain))
+        ContentDomain(content_domain) if content_domain is not None else None
     )
 
     if core_competency is not None:
@@ -355,11 +366,7 @@ def sample_params(
         selected_competency = competency_rng.sample(pool, competency_count)
 
     subj_key = selected_subject.value
-    lc_entries = (
-        None
-        if learning_content is not None
-        else allowed_learning_content(_LC_DATA, _LEARNING_STAGE, subj_key)
-    )
+    lc_entries = allowed_learning_content(_LC_DATA, _LEARNING_STAGE, subj_key)
     lp_entries = (
         None
         if learning_performance is not None
@@ -373,6 +380,15 @@ def sample_params(
         lp_entries,
         domain_pinned=domain_pinned,
     )
+
+    if domain_pinned and selected_subject.value in _DOMAIN_FILTER_SUBJECTS:
+        admitted_codes = {entry["value"] for entry in lc_entries or []}
+        if not admitted_codes:
+            raise IncompatibleContentDomainError(selected_content_domain.value)
+        if learning_content is not None and any(
+            code not in admitted_codes for code in learning_content
+        ):
+            raise IncompatibleContentDomainError(selected_content_domain.value)
 
     if learning_content is not None:
         selected_lc_pool = learning_content

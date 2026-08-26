@@ -25,7 +25,11 @@ def _schema_curriculum_entries(
     entries = body[key]
     assert entries
     assert all("admitted_by" in entry for entry in entries)
-    assert all(set(entry["admitted_by"]) == {"科目"} for entry in entries)
+    assert all(
+        "科目" in entry["admitted_by"]
+        and set(entry["admitted_by"]) <= {"科目", "內容領域"}
+        for entry in entries
+    )
     assert all(isinstance(entry["admitted_by"]["科目"], list) for entry in entries)
     return {entry["value"]: entry for entry in entries}
 
@@ -365,6 +369,47 @@ def test_social_studies_schemas_expose_the_iccs_code_to_domain_mapping() -> None
     assert set(mapping["公Ab-Ⅳ-1"]) == {
         "Civic Institutions and Systems",
         "Civic Principles",
+    }
+
+
+def test_social_learning_content_schema_tags_iccs_admitting_domains_without_affecting_history(
+) -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.get("/api/schemas?subject=social_studies&grade=7")
+
+    assert response.status_code == 200
+    content_by_code = {
+        entry["value"]: entry for entry in response.json()["學習內容"]
+    }
+
+    assert content_by_code["公Aa-Ⅳ-1"]["admitted_by"] == {
+        "科目": ["公民與社會", "跨科"],
+        "內容領域": ["Civic Roles and Identities"],
+    }
+    assert content_by_code["公Ab-Ⅳ-1"]["admitted_by"] == {
+        "科目": ["公民與社會", "跨科"],
+        "內容領域": [
+            "Civic Institutions and Systems",
+            "Civic Principles",
+        ],
+    }
+    assert content_by_code["歷Ka-Ⅳ-1"]["admitted_by"] == {
+        "科目": ["歷史", "跨科"],
+    }
+    assert "內容領域" not in content_by_code["歷Ka-Ⅳ-1"]["admitted_by"]
+    assert "內容領域" not in content_by_code["地Aa-Ⅳ-1"]["admitted_by"]
+    assert content_by_code["歷Ka-Ⅳ-1"] == {
+        "value": "歷Ka-Ⅳ-1",
+        "instruction": "中華民國的建立與早期發展",
+        "科目": "歷",
+        "admitted_by": {"科目": ["歷史", "跨科"]},
+    }
+    assert content_by_code["地Aa-Ⅳ-1"] == {
+        "value": "地Aa-Ⅳ-1",
+        "instruction": "全球經緯度座標系統。",
+        "科目": "地",
+        "admitted_by": {"科目": ["地理", "跨科"]},
     }
 
 

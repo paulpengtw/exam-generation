@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import random
 import shutil
 from collections import Counter
 from pathlib import Path
+
+import pytest
 
 
 def test_domain_mapping_loads_codes_and_inverse_domain_index() -> None:
@@ -170,6 +173,112 @@ def test_domain_filter_resamples_when_initial_domain_has_no_public_pool(monkeypa
         raise AssertionError("the seeded batch did not draw a non-target initial domain")
 
 
+def test_blank_domain_draws_once_from_domains_with_a_nonempty_civic_pool(monkeypatch) -> None:
+    from src.social_studies import sampler
+    from src.social_studies.schemas import QuestionSubject
+
+    target_domain = "Civic Principles"
+    code = "公Synthetic-Ⅳ-1"
+    monkeypatch.setattr(
+        sampler,
+        "_LC_DATA",
+        {
+            "學習內容": [
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": code,
+                    "admitted_by": {
+                        "科目": ["公民與社會", "跨科"],
+                        "內容領域": [target_domain],
+                    },
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sampler,
+        "_LP_DATA",
+        {"學習表現": [{"學習階段": "第四學習階段", "科目": "社", "value": "社1a-Ⅳ-1"}]},
+    )
+
+    class CountingRandom(random.Random):
+        choice_calls = 0
+
+        def choice(self, sequence):
+            self.choice_calls += 1
+            return super().choice(sequence)
+
+    domain_rng = CountingRandom(7)
+    original_draw_rng = sampler.draw_rng
+
+    def tracked_draw_rng(seed, field_path, counter=0):
+        if field_path == "內容領域":
+            return domain_rng
+        return original_draw_rng(seed, field_path, counter)
+
+    monkeypatch.setattr(sampler, "draw_rng", tracked_draw_rng)
+
+    params = sampler.sample_params(
+        seed=7,
+        subject=[QuestionSubject("公民與社會")],
+    )
+
+    assert params.內容領域.value == target_domain
+    assert params.學習內容_pool == [code]
+    assert domain_rng.choice_calls == 1
+
+
+def test_pinned_domain_intersects_the_civic_learning_content_pool(monkeypatch) -> None:
+    from src.social_studies import sampler
+    from src.social_studies.schemas import QuestionSubject
+
+    target_domain = "Civic Principles"
+    other_domain = "Civic Participation"
+    target_code = "公Synthetic-Ⅳ-1"
+    other_code = "公Synthetic-Ⅳ-2"
+    monkeypatch.setattr(
+        sampler,
+        "_LC_DATA",
+        {
+            "學習內容": [
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": target_code,
+                    "admitted_by": {
+                        "科目": ["公民與社會", "跨科"],
+                        "內容領域": [target_domain],
+                    },
+                },
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": other_code,
+                    "admitted_by": {
+                        "科目": ["公民與社會", "跨科"],
+                        "內容領域": [other_domain],
+                    },
+                },
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        sampler,
+        "_LP_DATA",
+        {"學習表現": [{"學習階段": "第四學習階段", "科目": "社", "value": "社1a-Ⅳ-1"}]},
+    )
+
+    params = sampler.sample_params(
+        seed=11,
+        subject=[QuestionSubject("公民與社會")],
+        content_domain=target_domain,
+    )
+
+    assert params.內容領域.value == target_domain
+    assert params.學習內容_pool == [target_code]
+
+
 def test_history_sampling_is_unchanged_when_domain_mapping_is_absent(monkeypatch) -> None:
     from src.social_studies import sampler
     from src.social_studies.domain_mapping import DomainMapping, load_domain_mapping
@@ -319,15 +428,12 @@ def test_pinned_content_domain_is_not_resampled_when_its_public_pool_is_empty(
         {"學習表現": [{"學習階段": "第四學習階段", "科目": "公", "value": code}]},
     )
 
-    params = sampler.sample_params(
-        seed=2,
-        subject=[QuestionSubject("公民與社會")],
-        content_domain=target.value,
-    )
-
-    assert params.內容領域 == target
-    assert params.學習內容_pool == []
-    assert params.學習表現_pool == []
+    with pytest.raises(sampler.IncompatibleContentDomainError):
+        sampler.sample_params(
+            seed=2,
+            subject=[QuestionSubject("公民與社會")],
+            content_domain=target.value,
+        )
 
 
 def test_blank_content_domain_preserves_seeded_random_domain_draw() -> None:
