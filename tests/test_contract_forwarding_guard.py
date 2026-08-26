@@ -147,7 +147,7 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
     "allow_duplicate_figure_kinds": {
         _MA: (INAPPLICABLE, "SS-only figure-kind diversity kill-switch"),
         _SS: (FORWARDED, ""),
-        _NS: (INAPPLICABLE, "SS-only figure-kind diversity kill-switch"),
+        _NS: (FORWARDED, ""),
     },
     # ── seed — forwarded to every sampler via _sample_worker_params ──
     "seed": {
@@ -376,9 +376,13 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("max_retries",   _MA): (_svc._build_run_context, "params.max_retries"),
     ("max_retries",   _SS): (_svc._build_run_context, "params.max_retries"),
     ("max_retries",   _NS): (_svc._build_run_context, "params.max_retries"),
-    # allow_duplicate_figure_kinds — forwarded directly to the SS sampler
+    # allow_duplicate_figure_kinds — forwarded directly to both visual subjects' samplers
     ("allow_duplicate_figure_kinds", _SS): (
         _ss_do_sample_params,
+        "params.allow_duplicate_figure_kinds",
+    ),
+    ("allow_duplicate_figure_kinds", _NS): (
+        _ns_do_sample_params,
         "params.allow_duplicate_figure_kinds",
     ),
     # seed — accessed as worker_params.seed in _sample_worker_params
@@ -652,6 +656,7 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    assert forwarded    == 101, f"Expected 101 FORWARDED, got {forwarded}"  # +2 ICCS pins
+    # +2 ICCS pins + NS figure policy
+    assert forwarded == 102, f"Expected 102 FORWARDED, got {forwarded}"
     assert rejected     == 8,  f"Expected 8 REJECTED, got {rejected}"  # +4 SS-only fields
-    assert inapplicable == 26, f"Expected 26 INAPPLICABLE, got {inapplicable}"
+    assert inapplicable == 25, f"Expected 25 INAPPLICABLE, got {inapplicable}"

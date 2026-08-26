@@ -65,6 +65,37 @@ def test_completed_social_generation_persists_the_figure_policy_trail() -> None:
     assert rows[0].figure_policy_trail_json == expected_trail
 
 
+def test_completed_natural_sciences_generation_persists_the_same_trail_field() -> None:
+    rows: list[Any] = []
+    expected_trail = [
+        {
+            "code": "figure_policy",
+            "kind": "warning",
+            "question_id": "ns-policy",
+            "message": "duplicate image shipped",
+            "duplicate_image_shipped": True,
+            "left": "題幹",
+            "right": "小題 1",
+            "effective_figure_kind": "實驗裝置",
+            "timestamp": "2026-08-25T00:00:00Z",
+        }
+    ]
+
+    asyncio.run(
+        persist_generation_record(
+            user_id=uuid.uuid4(),
+            generation_log_id=None,
+            subject="natural_sciences",
+            params=GenerateParams(subject="natural_sciences"),
+            payload={"id": "ns-policy"},
+            figure_policy_trail_json=expected_trail,
+            session_factory=_make_factory(rows),
+        )
+    )
+
+    assert rows[0].figure_policy_trail_json == expected_trail
+
+
 def test_incremental_figure_policy_recorder_persists_each_prefix(tmp_path: Path) -> None:
     async def exercise() -> None:
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'policy.db'}")

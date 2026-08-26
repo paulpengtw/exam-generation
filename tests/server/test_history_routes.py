@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient
@@ -232,6 +233,58 @@ def test_list_and_detail_return_the_persisted_figure_policy_trail(tmp_path) -> N
             return str(row.id)
 
     record_id = asyncio.run(stamp_trail())
+    try:
+        with TestClient(app) as client:
+            list_response = client.get(
+                "/api/history",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            detail_response = client.get(
+                f"/api/history/{record_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        listed = next(item for item in list_response.json()["items"] if item["id"] == record_id)
+        assert listed["figure_policy_trail"] == expected_trail
+        assert detail_response.status_code == 200
+        assert detail_response.json()["figure_policy_trail"] == expected_trail
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+
+def test_natural_sciences_history_detail_returns_the_persisted_policy_trail(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+    expected_trail = [
+        {
+            "code": "figure_policy",
+            "kind": "warning",
+            "question_id": "ns-history-policy",
+            "message": "duplicate image shipped",
+            "duplicate_image_shipped": True,
+            "left": "題幹",
+            "right": "小題 1",
+            "effective_figure_kind": "實驗裝置",
+            "timestamp": "2026-08-25T00:00:00Z",
+        }
+    ]
+
+    async def add_record() -> str:
+        async with SessionLocal() as session:
+            row = GenerationRecord(
+                user_id=user_a,
+                subject="natural_sciences",
+                question_id="ns-history-policy",
+                params_json={"subject": "natural_sciences"},
+                question_json={"id": "ns-history-policy"},
+                image_files=[],
+                figure_policy_trail_json=expected_trail,
+            )
+            session.add(row)
+            await session.commit()
+            return str(row.id)
+
+    record_id = asyncio.run(add_record())
     try:
         with TestClient(app) as client:
             list_response = client.get(

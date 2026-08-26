@@ -27,16 +27,13 @@ top-level-image-only.
   rendered to the 小題 image path. A failed or unusable repair leaves the
   `chart_spec` absent and the 題組 continues without that image.
 
-The layered figure-kind-diversity guarantee in ADR 0015 does not extend to
-自然科學; it is explicitly out of scope for now. The code evidence is
-subject-specific: `src/social_studies/figure_kind_loader.py` supplies the
-canonical vocabulary used by the Social Studies schemas and prompts, and
-`src/social_studies/cli.py` is where the collision-repair enforcement is
-called. The NS `ImageSpec` has no `figure_kind`, its `SubQuestionConfig` has
-no figure-kind pin or duplicate kill-switch, and `_NS_SPEC` wires image
-repair/rendering but no figure-kind-diversity hook. The reusable helpers in
-`src/common/figure_policy.py` do not create a guarantee without a subject
-pipeline calling them.
+Issue #580 extends the layered figure-kind-diversity guarantee in ADR 0015 to
+自然科學. NS now uses the same shared canonical vocabulary and policy helpers;
+its `ImageSpec` and `SubQuestionConfig` carry the declaration/pin fields,
+`SampledParams` carries the request-level duplicate kill-switch, and `_NS_SPEC`
+wires declaration/collision enforcement and trail emission around rendering.
+The guarantee remains free-text and degrade-never-block, so NS-specific genres
+remain valid without changing the shared data file.
 
 The end-to-end contract is exercised by
 `tests/test_ns_subq_image_contract.py`; the missing-spec repair, pure-text and
@@ -49,9 +46,9 @@ Natural-sciences visual 小題 can now render independently and can carry their
 own generated PNG in the same way as Social Studies. A missing required spec
 may add one repair call for that 小題, but a failed repair is visible as a
 missing image rather than a failed 題組. The renderer mode remains independent
-of whether a visual spec is required. NS output does not promise distinct
-figure kinds across the 題幹 and 小題 images until a future decision adds the
-schema, prompt, and enforcement machinery needed for that guarantee.
+of whether a visual spec is required, while the shared ADR 0015 declaration,
+collision, and degrade-never-block policy applies to every NS visual spec that
+reaches rendering.
 
 ## Explicitly Rejected Alternatives
 

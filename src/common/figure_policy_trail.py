@@ -1,4 +1,4 @@
-"""Typed events for the 社會領域 圖像種類 policy trail."""
+"""Typed events for the shared 圖像種類 policy trail."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from src.common.figure_policy import effective_figure_kind
 
 
 class FigurePolicySpecEntry(BaseModel):
-    """The effective 圖像種類 observed for one 題幹 or 小題 spec."""
+    """The effective 圖像種類 observed for one 題幹 or 小題 visual spec."""
 
     code: Literal["figure_policy"] = "figure_policy"
     kind: Literal["spec"] = "spec"

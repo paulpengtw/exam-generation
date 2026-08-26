@@ -13,6 +13,17 @@ from pathlib import Path
 from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_ns_prior_scope
+from src.common.figure_policy import (
+    effective_figure_kind,
+    find_figure_kind_collisions,
+    normalize_figure_kind,
+)
+from src.common.figure_policy_trail import (
+    make_collision_entry,
+    make_repair_entry,
+    make_spec_entry,
+    make_warning_entry,
+)
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import NATURAL_SCIENCES, SubjectGenerationSpec
 from src.common.subquestion_forcing import force_grade
@@ -52,12 +63,14 @@ from src.natural_sciences.schemas import (
 )
 from src.natural_sciences.verifier import verify_question
 from src.renderer import render_image
+from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
 
 _GRADES: list[int] = load_grades(load_schemas())
 _VISUAL_CONTENT_TYPES = {"含圖片", "graphs/charts/tables"}
 
 QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
 VerificationTrailCallback = Callable[[VerificationTrailEntry], None]
+FigurePolicyTrailCallback = Callable[..., None]
 
 _NS_SUBQUESTION_IMAGE_REPAIR_SYSTEM_PROMPT = """\
 你是一位108課綱自然科學素養導向題組的視覺素材設計教師。
@@ -69,12 +82,16 @@ _NS_SUBQUESTION_IMAGE_REPAIR_SYSTEM_PROMPT = """\
 - `chart_spec` 必須是此小題專用的視覺素材，不是整個題組共用圖片。
 - 若是統計圖，使用 `render_mode: "chart"` 並提供 `chart_type`、`data`、`labels`。
 - 若是圖片式素材、表格、流程圖或圖解，使用 `render_mode: "html"`。
+- 每個非 null 的 `chart_spec` 都必須宣告具體的 `figure_kind`；它是自由文字欄位，
+  適用時可從 canonical vocabulary 選擇，未知類型仍可使用具體名稱。
 - 不要加入答案提示。
 """
 
 _NS_SUBQUESTION_IMAGE_REPAIR_USER_TEMPLATE = """\
 以下小題的題目內容類型是「{content_type}」，但缺少小題 chart_spec。
 請為此小題補上 `chart_spec`。
+
+{figure_kind_instruction}
 
 題組文本：
 {text}
@@ -83,6 +100,53 @@ _NS_SUBQUESTION_IMAGE_REPAIR_USER_TEMPLATE = """\
 ```json
 {sq_json}
 ```
+"""
+
+_NS_TOP_LEVEL_IMAGE_REPAIR_SYSTEM_PROMPT = """\
+你是一位108課綱自然科學素養導向題組的視覺素材設計教師。
+請只根據既有題組內容，補上一個整個題組共用的主要素材圖片規格。
+
+規則：
+- 只輸出合法 JSON 物件，不要輸出其他文字。
+- JSON 必須包含 `chart_spec` 欄位。
+- `chart_spec` 必須是整個題組共用的視覺素材，不是單一小題專用圖片。
+- 每個非 null 的 `chart_spec` 都必須宣告具體的 `figure_kind`；它是自由文字欄位，
+  適用時可從 canonical vocabulary 選擇，未知類型仍可使用具體名稱。
+- 不要加入答案提示。
+"""
+
+_NS_TOP_LEVEL_IMAGE_REPAIR_USER_TEMPLATE = """\
+以下自然科學題組的全域文本素材類型是「{content_type}」，但缺少題組頂層 chart_spec。
+請為整個題組共用的主要素材補上 `chart_spec`。
+
+{figure_kind_instruction}
+
+```json
+{question_json}
+```
+"""
+
+_NS_FIGURE_KIND_DECLARATION_REPAIR_SYSTEM_PROMPT = """\
+你是一位108課綱自然科學領域的視覺素材修補教師。
+請只補上既有視覺素材規格缺少的圖像種類宣告，不要改變素材內容或渲染方式。
+
+規則：
+- 只輸出合法 JSON 物件，不要輸出其他文字。
+- JSON 必須包含 `chart_spec`；保留原有的 render_mode、chart_type、data、labels、
+  title、description 與 html。
+- 每個非 null 的 `chart_spec` 都必須宣告 `figure_kind`。
+- `figure_kind` 是自由文字欄位；適用時從 canonical vocabulary 選擇，未知類型仍可使用具體名稱。
+"""
+
+_NS_FIGURE_KIND_DECLARATION_REPAIR_USER_TEMPLATE = """\
+以下是{label}目前的視覺素材規格；它尚未宣告 `figure_kind`。
+
+{figure_kind_instruction}
+
+```json
+{spec_json}
+```
+請只回傳包含 `chart_spec.figure_kind` 的 JSON。
 """
 
 
@@ -279,6 +343,10 @@ def _parse_subquestion(
         # above; 年級 gets the same treatment via the shared helper so that
         # 社會領域 (issue #290) can reuse it later.
         force_grade(result, params.grade)
+        if cfg and cfg.figure_kind and result.chart_spec:
+            result.chart_spec = result.chart_spec.model_copy(
+                update={"figure_kind": cfg.figure_kind.strip()}
+            )
         result._plan_index = i
         return result
     except Exception:
@@ -302,6 +370,7 @@ def _parse_text_shell(
                 chart_spec = ImageSpec(
                     render_mode="chart",
                     chart_type=raw_spec.get("chart_type"),
+                    figure_kind=raw_spec.get("figure_kind", ""),
                     data=raw_spec.get("data", {}),
                     labels=raw_spec.get("labels", {}),
                     title=raw_spec.get("title", ""),
@@ -310,9 +379,11 @@ def _parse_text_shell(
             else:
                 chart_spec = ImageSpec(
                     render_mode="html",
+                    figure_kind=raw_spec.get("figure_kind", ""),
                     description=raw_spec.get("description", raw_spec.get("title", "")),
                     title=raw_spec.get("title", ""),
                     data=raw_spec.get("data", {}),
+                    html=raw_spec.get("html", ""),
                 )
 
     return ExamQuestion(
@@ -422,6 +493,7 @@ def _parse_subquestion_image_spec(raw_spec: object) -> ImageSpec | None:
                 return ImageSpec(
                     render_mode="chart",
                     chart_type=raw_spec.get("chart_type"),
+                    figure_kind=raw_spec.get("figure_kind", ""),
                     data=raw_spec.get("data", {}),
                     labels=raw_spec.get("labels", {}),
                     title=raw_spec.get("title", ""),
@@ -432,9 +504,11 @@ def _parse_subquestion_image_spec(raw_spec: object) -> ImageSpec | None:
         try:
             return ImageSpec(
                 render_mode="html",
+                figure_kind=raw_spec.get("figure_kind", ""),
                 description=raw_spec.get("description", raw_spec.get("title", "")),
                 title=raw_spec.get("title", ""),
                 data=raw_spec.get("data", {}),
+                html=raw_spec.get("html", ""),
             )
         except Exception:
             return None
@@ -450,14 +524,156 @@ def _ns_subquestion_config_for(
     return params.subquestion_configs[plan_index - 1]
 
 
+def _ns_figure_kind_repair_instruction(
+    params: SampledParams | None,
+    forbidden_kinds: list[str] | None = None,
+    required_kind: str | None = None,
+    allow_duplicates: bool | None = None,
+) -> str:
+    vocabulary = "、".join(CANONICAL_FIGURE_KINDS)
+    lines = [
+        "- **圖像種類宣告**：每個非 null 的 `chart_spec` 都必須宣告 `figure_kind`；",
+        "  它是自由文字欄位，未知類型仍可使用具體名稱。",
+        "- 適用時請從 canonical vocabulary 選擇：" + vocabulary + "。",
+    ]
+    if required_kind and required_kind.strip():
+        lines.append(f"- 本小題的 `figure_kind` 是強制值：`{required_kind.strip()}`。")
+    duplicate_allowed = (
+        getattr(params, "allow_duplicate_figure_kinds", False)
+        if allow_duplicates is None
+        else allow_duplicates
+    )
+    if duplicate_allowed:
+        lines.append("- 本請求允許圖像種類重複；不需套用不得重複限制。")
+    elif forbidden_kinds:
+        unique_kinds = list(
+            dict.fromkeys(
+                normalize_figure_kind(kind)
+                for kind in forbidden_kinds
+                if isinstance(kind, str) and kind.strip()
+            )
+        )
+        if unique_kinds:
+            lines.append("- **圖像種類不得為：**" + "、".join(unique_kinds))
+    else:
+        lines.append(
+            "- 預設每張圖（含題幹與所有小題）的圖像種類不得重複；"
+            "不同 render_mode 的同一具體種類仍視為重複。"
+        )
+    return "\n".join(lines)
+
+
+def _ns_declared_figure_kind(spec: ImageSpec | None) -> str:
+    if spec is None or not isinstance(spec.figure_kind, str):
+        return ""
+    return spec.figure_kind.strip()
+
+
+def _ns_canonicalize_repaired_figure_kind(value: str) -> str:
+    stripped = value.strip()
+    normalized = normalize_figure_kind(stripped)
+    return normalized if normalized in CANONICAL_FIGURE_KINDS else stripped
+
+
+def _ns_figure_kind_repair_key(sub: SubQuestion) -> str:
+    if sub._plan_index is not None:
+        return f"小題 plan {sub._plan_index}"
+    return f"小題 object {id(sub)}"
+
+
+def _ns_repair_figure_kind_declaration(
+    *,
+    question: ExamQuestion,
+    label: str,
+    spec: ImageSpec,
+    params: SampledParams,
+    client: Any,
+    set_spec: Callable[[ImageSpec], None],
+    on_figure_policy_entry: FigurePolicyTrailCallback | None,
+    forbidden_kinds: list[str] | None = None,
+) -> None:
+    before_kind = effective_figure_kind(spec)
+    after_kind = before_kind
+    succeeded = False
+    repair_error: str | None = None
+    try:
+        response = client.generate_json(
+            _NS_FIGURE_KIND_DECLARATION_REPAIR_SYSTEM_PROMPT,
+            _NS_FIGURE_KIND_DECLARATION_REPAIR_USER_TEMPLATE.format(
+                label=label,
+                figure_kind_instruction=_ns_figure_kind_repair_instruction(
+                    params,
+                    forbidden_kinds=forbidden_kinds,
+                ),
+                spec_json=spec.model_dump_json(exclude_none=True),
+            ),
+            purpose="generate",
+        )
+        raw_spec = response.get("chart_spec") or response.get("image_spec")
+        raw_kind = (
+            raw_spec.get("figure_kind")
+            if isinstance(raw_spec, dict)
+            else response.get("figure_kind")
+        )
+        if isinstance(raw_kind, str) and raw_kind.strip():
+            repaired_spec = spec.model_copy(
+                update={"figure_kind": _ns_canonicalize_repaired_figure_kind(raw_kind)}
+            )
+            set_spec(repaired_spec)
+            after_kind = effective_figure_kind(repaired_spec)
+            succeeded = bool(_ns_declared_figure_kind(repaired_spec))
+    except Exception as exc:
+        repair_error = str(exc)
+
+    if on_figure_policy_entry is not None:
+        on_figure_policy_entry(
+            make_repair_entry(
+                question.id,
+                label,
+                before_kind,
+                after_kind,
+                [
+                    normalize_figure_kind(kind)
+                    for kind in (forbidden_kinds or [])
+                    if isinstance(kind, str) and kind.strip()
+                ],
+                succeeded,
+                repair_error,
+            )
+        )
+
+
+def _ns_force_subquestion_figure_kind(
+    sub: SubQuestion,
+    figure_kind: str | None,
+) -> None:
+    if not sub.chart_spec or not isinstance(figure_kind, str) or not figure_kind.strip():
+        return
+    sub.chart_spec = sub.chart_spec.model_copy(update={"figure_kind": figure_kind.strip()})
+
+
 def _ns_ensure_subquestion_visual_spec(
     sub: SubQuestion,
     question: ExamQuestion,
     content_type: str,
     client: Any,
+    *,
+    figure_kind: str | None = None,
+    forbidden_kinds: list[str] | None = None,
+    force_repair: bool = False,
+    allow_duplicates: bool = False,
 ) -> None:
     """Repair a missing chart_spec for one NS 小題 configured as visual."""
-    if sub.chart_spec or content_type not in _VISUAL_CONTENT_TYPES or client is None:
+    _ns_force_subquestion_figure_kind(sub, figure_kind)
+    if (
+        (sub.chart_spec and not force_repair)
+        or (
+            content_type not in _VISUAL_CONTENT_TYPES
+            and not figure_kind
+            and not force_repair
+        )
+        or client is None
+    ):
         return
 
     sq_json = sub.model_dump_json(
@@ -466,6 +682,12 @@ def _ns_ensure_subquestion_visual_spec(
     )
     user_prompt = _NS_SUBQUESTION_IMAGE_REPAIR_USER_TEMPLATE.format(
         content_type=content_type,
+        figure_kind_instruction=_ns_figure_kind_repair_instruction(
+            None,
+            forbidden_kinds=forbidden_kinds,
+            required_kind=figure_kind,
+            allow_duplicates=allow_duplicates,
+        ),
         text=question.文本,
         sq_json=sq_json,
     )
@@ -488,7 +710,76 @@ def _ns_ensure_subquestion_visual_spec(
     raw_spec = repaired.get("image_spec") or repaired.get("chart_spec")
     image_spec = _parse_subquestion_image_spec(raw_spec)
     if image_spec:
+        _ns_force_subquestion_figure_kind(sub, figure_kind)
+        if figure_kind and figure_kind.strip():
+            image_spec = image_spec.model_copy(update={"figure_kind": figure_kind.strip()})
         sub.chart_spec = image_spec
+
+
+def _ns_ensure_top_level_visual_spec(
+    question: ExamQuestion,
+    params: SampledParams,
+    client: Any,
+    *,
+    forbidden_kinds: list[str] | None = None,
+    force_repair: bool = False,
+) -> None:
+    if (
+        (question.chart_spec and not force_repair)
+        or (params.題目內容類型 not in _VISUAL_CONTENT_TYPES and not force_repair)
+        or client is None
+    ):
+        return
+
+    try:
+        repaired = client.generate_json(
+            _NS_TOP_LEVEL_IMAGE_REPAIR_SYSTEM_PROMPT,
+            _NS_TOP_LEVEL_IMAGE_REPAIR_USER_TEMPLATE.format(
+                content_type=params.題目內容類型,
+                figure_kind_instruction=_ns_figure_kind_repair_instruction(
+                    params,
+                    forbidden_kinds=forbidden_kinds,
+                ),
+                question_json=question.model_dump_json(
+                    exclude_none=True,
+                    exclude={"verification", "圖片"},
+                ),
+            ),
+            purpose="generate",
+        )
+    except Exception as exc:
+        print(f"  Warning: NS top-level image spec repair failed: {exc}", file=sys.stderr)
+        return
+
+    if not isinstance(repaired, dict):
+        return
+    raw_spec = repaired.get("image_spec") or repaired.get("chart_spec")
+    image_spec = _parse_subquestion_image_spec(raw_spec)
+    if image_spec:
+        question.chart_spec = image_spec
+
+
+def _ns_known_figure_kinds_for_subquestion_repair(
+    question: ExamQuestion,
+    params: SampledParams,
+    sub: SubQuestion,
+) -> list[str]:
+    known: list[str] = []
+    if question.chart_spec is not None:
+        kind = effective_figure_kind(question.chart_spec)
+        if kind:
+            known.append(kind)
+    for other in question.subquestions:
+        if other is sub or other.chart_spec is None:
+            continue
+        kind = effective_figure_kind(other.chart_spec)
+        if kind:
+            known.append(kind)
+    current_plan_index = sub._plan_index
+    for index, cfg in enumerate(params.subquestion_configs, start=1):
+        if index != current_plan_index and cfg.figure_kind:
+            known.append(cfg.figure_kind)
+    return list(dict.fromkeys(known))
 
 
 def _ns_ensure_visual_spec(
@@ -496,17 +787,317 @@ def _ns_ensure_visual_spec(
     params: SampledParams,
     client: Any,
 ) -> None:
-    """Repair missing NS 小題 visual specs before the rendering stage."""
+    """Repair missing NS visual specs before the rendering stage."""
     for sub in question.subquestions:
         cfg = _ns_subquestion_config_for(params, sub)
-        if cfg is None or cfg.content_type not in _VISUAL_CONTENT_TYPES:
+        if cfg is None or (
+            cfg.content_type not in _VISUAL_CONTENT_TYPES and not cfg.figure_kind
+        ):
             continue
+        if sub.chart_spec is None and client is not None:
+            question._figure_kind_repair_attempted.add(_ns_figure_kind_repair_key(sub))
         _ns_ensure_subquestion_visual_spec(
             sub,
             question,
-            cfg.content_type,
+            cfg.content_type or "",
             client,
+            figure_kind=cfg.figure_kind,
+            forbidden_kinds=_ns_known_figure_kinds_for_subquestion_repair(
+                question, params, sub
+            ),
+            allow_duplicates=params.allow_duplicate_figure_kinds,
         )
+
+
+def _ns_prepare_visual_policy(
+    question: ExamQuestion,
+    params: SampledParams,
+    client: Any,
+    *,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+) -> None:
+    """Declare every existing NS visual spec before the shared renderer."""
+    if client is None:
+        return
+
+    attempted = question._figure_kind_repair_attempted
+    if question.chart_spec is not None and not _ns_declared_figure_kind(question.chart_spec):
+        if "題幹" not in attempted:
+            attempted.add("題幹")
+            _ns_repair_figure_kind_declaration(
+                question=question,
+                label="題幹",
+                spec=question.chart_spec,
+                params=params,
+                client=client,
+                set_spec=lambda repaired: setattr(question, "chart_spec", repaired),
+                on_figure_policy_entry=on_figure_policy_entry,
+            )
+
+    for sub in question.subquestions:
+        if sub.chart_spec is None or _ns_declared_figure_kind(sub.chart_spec):
+            continue
+        attempt_key = _ns_figure_kind_repair_key(sub)
+        if attempt_key in attempted:
+            continue
+        attempted.add(attempt_key)
+        _ns_repair_figure_kind_declaration(
+            question=question,
+            label=f"小題 {sub.序號}",
+            spec=sub.chart_spec,
+            params=params,
+            client=client,
+            set_spec=lambda repaired, sub=sub: setattr(sub, "chart_spec", repaired),
+            on_figure_policy_entry=on_figure_policy_entry,
+            forbidden_kinds=_ns_known_figure_kinds_for_subquestion_repair(
+                question, params, sub
+            ),
+        )
+
+
+def _ns_figure_spec_entries(
+    question: ExamQuestion,
+    params: SampledParams,
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    if question.chart_spec is not None:
+        entries.append(
+            {
+                "spec": question.chart_spec,
+                "sub": None,
+                "config": None,
+                "label": "題幹",
+                "序號": 0,
+                "plan_index": 0,
+                "pinned": False,
+            }
+        )
+    for sub in question.subquestions:
+        if sub.chart_spec is None:
+            continue
+        cfg = _ns_subquestion_config_for(params, sub)
+        entries.append(
+            {
+                "spec": sub.chart_spec,
+                "sub": sub,
+                "config": cfg,
+                "label": f"小題 {sub.序號}",
+                "序號": sub.序號,
+                "plan_index": sub._plan_index if sub._plan_index is not None else sub.序號,
+                "pinned": bool(cfg and cfg.figure_kind and cfg.figure_kind.strip()),
+            }
+        )
+    return entries
+
+
+def _ns_collision_repair_target(
+    entries: list[dict[str, Any]],
+    left: int,
+    right: int,
+) -> int | None:
+    candidates = [
+        index for index in (left, right) if not entries[index]["pinned"]
+    ]
+    if not candidates:
+        return None
+    sub_candidates = [index for index in candidates if entries[index]["sub"] is not None]
+    top_candidates = [index for index in candidates if entries[index]["sub"] is None]
+    if sub_candidates:
+        return max(sub_candidates, key=lambda index: (entries[index]["plan_index"], index))
+    return top_candidates[0] if top_candidates else candidates[0]
+
+
+def _ns_rerender_top_level_image(
+    question: ExamQuestion,
+    config: Config,
+    client: Any,
+    html_renderer: Any,
+    image_generation_mode: str,
+    obs: Any,
+) -> None:
+    if question.chart_spec is None:
+        return
+    img_path = config.output_dir / f"{question.id}.png"
+    print(f"  Re-rendering image after figure-kind repair: {img_path}", file=sys.stderr)
+    on_render_error, render_failed = make_render_error_sink(obs)
+    emit_stage(obs, "image_agent", "render_image", "start")
+    rendered = render_image(
+        question.chart_spec.model_dump(),
+        img_path,
+        question_text="\n".join(question.題目) or question.文本,
+        html_renderer=html_renderer,
+        llm_client=client,
+        image_generation_mode=image_generation_mode,
+        on_error=on_render_error,
+    )
+    if not render_failed:
+        emit_stage(obs, "image_agent", "render_image", "end")
+    if rendered:
+        question.圖片 = img_path.name
+
+
+def _ns_enforce_figure_kind_diversity(
+    question: ExamQuestion,
+    config: Config,
+    client: Any,
+    html_renderer: Any,
+    image_generation_mode: str,
+    obs: Any,
+    params: SampledParams,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+) -> None:
+    """Repair detected NS collisions once each, then warn if any remain."""
+    entries = _ns_figure_spec_entries(question, params)
+    if not entries:
+        return
+
+    def emit_spec_entries() -> None:
+        if on_figure_policy_entry is None:
+            return
+        for entry in _ns_figure_spec_entries(question, params):
+            on_figure_policy_entry(
+                make_spec_entry(question.id, entry["label"], entry["spec"])
+            )
+
+    emit_spec_entries()
+    if params.allow_duplicate_figure_kinds:
+        return
+
+    collisions = find_figure_kind_collisions(
+        [entry["spec"] for entry in entries],
+        {index for index, entry in enumerate(entries) if entry["pinned"]},
+        allow_duplicates=False,
+    )
+    for left, right, kind in collisions:
+        entries = _ns_figure_spec_entries(question, params)
+        if left >= len(entries) or right >= len(entries):
+            continue
+        target = _ns_collision_repair_target(entries, left, right)
+        if target is None:
+            continue
+        left_label = entries[left]["label"]
+        right_label = entries[right]["label"]
+        if on_figure_policy_entry is not None:
+            on_figure_policy_entry(
+                make_collision_entry(question.id, left_label, right_label, kind)
+            )
+        forbidden = [
+            normalize_figure_kind(effective_figure_kind(entry["spec"]))
+            for index, entry in enumerate(entries)
+            if index != target and effective_figure_kind(entry["spec"])
+        ]
+        target_entry = entries[target]
+        before_spec = target_entry["spec"]
+        before_kind = effective_figure_kind(before_spec)
+        after_kind = before_kind
+        succeeded = False
+        repair_error: str | None = None
+        try:
+            if target_entry["sub"] is None:
+                _ns_ensure_top_level_visual_spec(
+                    question,
+                    params,
+                    client,
+                    forbidden_kinds=forbidden,
+                    force_repair=True,
+                )
+                if question.chart_spec != before_spec:
+                    _ns_rerender_top_level_image(
+                        question,
+                        config,
+                        client,
+                        html_renderer,
+                        image_generation_mode,
+                        obs,
+                    )
+                after_kind = effective_figure_kind(question.chart_spec)
+                succeeded = question.chart_spec != before_spec
+            else:
+                sub = target_entry["sub"]
+                cfg = target_entry["config"]
+                _ns_ensure_subquestion_visual_spec(
+                    sub,
+                    question,
+                    cfg.content_type if cfg and cfg.content_type else "",
+                    client,
+                    forbidden_kinds=forbidden,
+                    force_repair=True,
+                    allow_duplicates=params.allow_duplicate_figure_kinds,
+                )
+                after_kind = effective_figure_kind(sub.chart_spec)
+                succeeded = sub.chart_spec != before_spec
+        except Exception as exc:
+            repair_error = str(exc)
+            message = (
+                f"Warning: NS 圖像種類 targeted repair failed for "
+                f"{target_entry['label']}: {exc}; duplicate image shipped"
+            )
+            print(f"  {message}", file=sys.stderr)
+            emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+        if on_figure_policy_entry is not None:
+            on_figure_policy_entry(
+                make_repair_entry(
+                    question.id,
+                    target_entry["label"],
+                    before_kind,
+                    after_kind,
+                    forbidden,
+                    succeeded,
+                    repair_error,
+                )
+            )
+        emit_spec_entries()
+
+    entries = _ns_figure_spec_entries(question, params)
+    final_collisions = find_figure_kind_collisions(
+        [entry["spec"] for entry in entries],
+        {index for index, entry in enumerate(entries) if entry["pinned"]},
+        allow_duplicates=False,
+    )
+    for left, right, kind in final_collisions:
+        left_label = entries[left]["label"]
+        right_label = entries[right]["label"]
+        message = (
+            f"Warning: NS 圖像種類 diversity violation remains between "
+            f"{left_label} and {right_label} ({kind}); duplicate image shipped"
+        )
+        print(f"  {message}", file=sys.stderr)
+        emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+        if on_figure_policy_entry is not None:
+            on_figure_policy_entry(
+                make_warning_entry(
+                    question.id,
+                    message,
+                    left=left_label,
+                    right=right_label,
+                    effective_kind=kind,
+                )
+            )
+
+
+def _ns_warn_about_undeclared_figure_kinds(
+    question: ExamQuestion,
+    params: SampledParams,
+    obs: Any,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None,
+) -> None:
+    for entry in _ns_figure_spec_entries(question, params):
+        if _ns_declared_figure_kind(entry["spec"]):
+            continue
+        effective_kind = effective_figure_kind(entry["spec"])
+        message = f"Warning: NS {entry['label']} 未宣告圖像種類；視覺素材仍繼續渲染"
+        print(f"  {message}", file=sys.stderr)
+        emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+        if on_figure_policy_entry is not None:
+            on_figure_policy_entry(
+                make_warning_entry(
+                    question.id,
+                    message,
+                    duplicate_image_shipped=False,
+                    right=entry["label"],
+                    effective_kind=effective_kind or None,
+                )
+            )
 
 
 def _ns_render_subquestion_images(
@@ -519,12 +1110,64 @@ def _ns_render_subquestion_images(
     params: SampledParams,
     on_figure_policy_entry: Callable[..., None] | None = None,
 ) -> list[str]:
-    """Render non-null NS 小題 chart specs and attach their PNG filenames.
+    """Apply NS figure policy, then render non-null subquestion chart specs."""
+    for sub in question.subquestions:
+        cfg = _ns_subquestion_config_for(params, sub)
+        if cfg is None or (
+            cfg.content_type not in _VISUAL_CONTENT_TYPES and not cfg.figure_kind
+        ):
+            continue
+        if sub.chart_spec is None and client is not None:
+            attempt_key = _ns_figure_kind_repair_key(sub)
+            if attempt_key in question._figure_kind_repair_attempted:
+                continue
+            question._figure_kind_repair_attempted.add(attempt_key)
+        _ns_ensure_subquestion_visual_spec(
+            sub,
+            question,
+            cfg.content_type or "",
+            client,
+            figure_kind=cfg.figure_kind,
+            forbidden_kinds=_ns_known_figure_kinds_for_subquestion_repair(
+                question, params, sub
+            ),
+            allow_duplicates=params.allow_duplicate_figure_kinds,
+        )
 
-    ``on_figure_policy_entry`` is accepted for the shared
-    ``render_subquestion_images_fn`` signature and ignored: the figure-policy
-    trail (issue #550) records 社會領域 runs only.
-    """
+    for sub in question.subquestions:
+        if sub.chart_spec is None or _ns_declared_figure_kind(sub.chart_spec) or client is None:
+            continue
+        attempt_key = _ns_figure_kind_repair_key(sub)
+        if attempt_key in question._figure_kind_repair_attempted:
+            continue
+        question._figure_kind_repair_attempted.add(attempt_key)
+        _ns_repair_figure_kind_declaration(
+            question=question,
+            label=f"小題 {sub.序號}",
+            spec=sub.chart_spec,
+            params=params,
+            client=client,
+            set_spec=lambda repaired, sub=sub: setattr(sub, "chart_spec", repaired),
+            on_figure_policy_entry=on_figure_policy_entry,
+            forbidden_kinds=_ns_known_figure_kinds_for_subquestion_repair(
+                question, params, sub
+            ),
+        )
+
+    _ns_enforce_figure_kind_diversity(
+        question,
+        config,
+        client,
+        html_renderer,
+        image_generation_mode,
+        obs,
+        params,
+        on_figure_policy_entry,
+    )
+    _ns_warn_about_undeclared_figure_kinds(
+        question, params, obs, on_figure_policy_entry
+    )
+
     rendered_paths: list[str] = []
     subquestion_image_modes = {
         i: cfg.image_generation_mode
@@ -561,6 +1204,46 @@ def _ns_render_subquestion_images(
     return rendered_paths
 
 
+def _ns_post_correction_visual_policy(
+    question: ExamQuestion,
+    config: Config,
+    client: Any,
+    html_renderer: Any,
+    image_generation_mode: str,
+    obs: Any,
+    params: SampledParams,
+    *,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+) -> None:
+    """Reapply NS policy when a correction pass changes visual specs."""
+    prior_top_spec = question.chart_spec.model_copy() if question.chart_spec else None
+    _ns_prepare_visual_policy(
+        question,
+        params,
+        client,
+        on_figure_policy_entry=on_figure_policy_entry,
+    )
+    if question.chart_spec != prior_top_spec:
+        _ns_rerender_top_level_image(
+            question,
+            config,
+            client,
+            html_renderer,
+            image_generation_mode,
+            obs,
+        )
+    _ns_render_subquestion_images(
+        question,
+        config,
+        client,
+        html_renderer,
+        image_generation_mode,
+        obs,
+        params,
+        on_figure_policy_entry=on_figure_policy_entry,
+    )
+
+
 _NS_SPEC = SubjectGenerationSpec(
     few_shot_subdir="natural_sciences",
     build_text_system_fn=_ns_build_text_system,
@@ -572,6 +1255,8 @@ _NS_SPEC = SubjectGenerationSpec(
     make_fallback_sq_plans_fn=_ns_make_fallback_sq_plans,
     ensure_visual_spec_fn=_ns_ensure_visual_spec,
     render_subquestion_images_fn=_ns_render_subquestion_images,
+    prepare_visual_policy_fn=_ns_prepare_visual_policy,
+    post_correction_visual_policy_fn=_ns_post_correction_visual_policy,
     image_question_text_fn=lambda q: "\n".join(q.題目),
     verify_fn=verify_question,
     correct_fn=correct_question,
@@ -610,6 +1295,7 @@ def generate_one(
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
     core_question_callback: bool = True,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA Science question set."""
     params = _with_text_word_limit(params, text_word_limit)
@@ -631,6 +1317,7 @@ def generate_one(
         core_question_callback=core_question_callback,
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,
+        on_figure_policy_entry=on_figure_policy_entry,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
@@ -702,6 +1389,7 @@ def generate_with_corrections(
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
     core_question_callback: bool = True,
+    on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
@@ -730,6 +1418,7 @@ def generate_with_corrections(
         core_question_callback=core_question_callback,
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,
+        on_figure_policy_entry=on_figure_policy_entry,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,

@@ -755,6 +755,7 @@ def _ns_do_sample_params(
         subquestion_configs=subquestion_configs_decoded,
         difficulty=params.difficulty,
         reporting_scale=params.reporting_scale,
+        allow_duplicate_figure_kinds=params.allow_duplicate_figure_kinds,
     )
 
 
@@ -777,6 +778,7 @@ def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         core_question_callback=kwargs.get("core_question_callback", True),
         on_question_update=kwargs["on_question_update"],
         on_trail_entry=kwargs.get("on_trail_entry"),
+        on_figure_policy_entry=kwargs.get("on_figure_policy_entry"),
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ns_curriculum_context"],
         balanced_batch=kwargs["balanced_batch"],

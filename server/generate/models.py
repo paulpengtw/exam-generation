@@ -92,12 +92,12 @@ def decode_predrawn_fields(raw: str | None) -> list[str] | None:
 
 
 class SubQuestionConfig(BaseModel):
-    """Wire shape for a per-小題 config used by social studies.
+    """Wire shape for a per-小題 config used by visual subjects.
 
     The server accepts the config array as JSON so that subject adapters can
     own the complete config schema.  Keeping extra fields here preserves that
-    existing boundary while making the SS figure-kind pin an explicit server
-    model field.
+    existing boundary while making the shared figure-kind pin an explicit
+    server model field.
     """
 
     figure_kind: str | None = None
@@ -147,7 +147,7 @@ class GenerateParams(BaseModel):
     text_word_limit: int | None = Field(default=None, ge=1)
     # #101: per-子題 configs as JSON string (array of {content_type, image_generation_mode, ...})
     subquestion_configs: str | None = None
-    # SS-only request-level kill-switch; intentionally not exposed by the web UI.
+    # Shared request-level figure-policy kill-switch; intentionally not exposed by the web UI.
     allow_duplicate_figure_kinds: bool = False
     per_question_params: str | None = None
     # #408: client-side pre-draw provenance; inert to sampling and generation.
