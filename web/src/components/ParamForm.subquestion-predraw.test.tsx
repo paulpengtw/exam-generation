@@ -58,6 +58,28 @@ const NS_SCHEMA = {
   ],
 };
 
+const NS_BATCH_CONTEXT_SCHEMA = {
+  ...NS_SCHEMA,
+  情境: [
+    { value: "Personal", instruction: "" },
+    { value: "Global", instruction: "" },
+  ],
+  情境子類別: [
+    {
+      value: "Personal child",
+      parent: "Personal",
+      admitted_by: { "情境": ["Personal"] },
+      instruction: "",
+    },
+    {
+      value: "Global child",
+      parent: "Global",
+      admitted_by: { "情境": ["Global"] },
+      instruction: "",
+    },
+  ],
+};
+
 const SS_SCHEMA = {
   學習階段: "第四學習階段",
   grades: [7, 8, 9],
@@ -96,6 +118,141 @@ beforeEach(() => {
 });
 
 describe("per-子題 pre-draw (natural_sciences)", () => {
+  it("draws each 題組's 情境子類別 from that 題組's resolved 情境", async () => {
+    getSchemasMock.mockResolvedValue(NS_BATCH_CONTEXT_SCHEMA);
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="natural_sciences"
+        onSubmit={onSubmit}
+        initialParams={{ count: 2, core_question: "固定核心問題" }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_generate/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_confirm_send/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params) as Array<{
+      context: string[];
+      sub_context: string;
+    }>;
+    const admittedByContext: Record<string, string> = {
+      Personal: "Personal child",
+      Global: "Global child",
+    };
+
+    expect(new Set(perQuestion.map((params) => params.context[0]))).toEqual(
+      new Set(["Personal", "Global"]),
+    );
+    for (const params of perQuestion) {
+      expect(params.sub_context).toBe(admittedByContext[params.context[0]]);
+    }
+  });
+
+  it("keeps an explicitly pinned 情境 for every 題組 and only draws its admitted child", async () => {
+    getSchemasMock.mockResolvedValue(NS_BATCH_CONTEXT_SCHEMA);
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="natural_sciences"
+        onSubmit={onSubmit}
+        initialParams={{
+          count: 2,
+          context: ["Global"],
+          core_question: "固定核心問題",
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_generate/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_confirm_send/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const payload = onSubmit.mock.calls[0][0] as {
+      predrawn_fields: string;
+      per_question_params: string;
+    };
+    const perQuestion = JSON.parse(payload.per_question_params) as Array<{
+      context: string[];
+      sub_context: string;
+    }>;
+    const predrawnFields = JSON.parse(payload.predrawn_fields) as string[];
+
+    expect(perQuestion).toHaveLength(2);
+    expect(perQuestion.every((params) => params.context[0] === "Global")).toBe(true);
+    expect(perQuestion.every((params) => params.sub_context === "Global child")).toBe(true);
+    expect(predrawnFields).not.toContain("per_question_params[0].context");
+    expect(predrawnFields).not.toContain("per_question_params[1].context");
+  });
+
+  it("keeps an explicitly pinned 情境子類別 under its admitting 情境", async () => {
+    getSchemasMock.mockResolvedValue(NS_BATCH_CONTEXT_SCHEMA);
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="natural_sciences"
+        onSubmit={onSubmit}
+        initialParams={{
+          count: 2,
+          sub_context: "Personal child",
+          core_question: "固定核心問題",
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_generate/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_confirm_send/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const payload = onSubmit.mock.calls[0][0] as {
+      predrawn_fields: string;
+      per_question_params: string;
+    };
+    const perQuestion = JSON.parse(payload.per_question_params) as Array<{
+      context: string[];
+      sub_context: string;
+    }>;
+    const predrawnFields = JSON.parse(payload.predrawn_fields) as string[];
+
+    expect(perQuestion).toHaveLength(2);
+    expect(perQuestion.every((params) => params.context[0] === "Personal")).toBe(true);
+    expect(perQuestion.every((params) => params.sub_context === "Personal child")).toBe(true);
+    expect(predrawnFields).not.toContain("per_question_params[0].context");
+    expect(predrawnFields).not.toContain("per_question_params[1].context");
+  });
+
+  it("restores history 題組 rows with a pinned 情境子類別 under its admitting 情境", async () => {
+    getSchemasMock.mockResolvedValue(NS_BATCH_CONTEXT_SCHEMA);
+    const onSubmit = vi.fn();
+    render(
+      <ParamForm
+        subject="natural_sciences"
+        onSubmit={onSubmit}
+        initialParams={{
+          count: 2,
+          core_question: "固定核心問題",
+          per_question_params: JSON.stringify([
+            { sub_context: "Personal child", seed: 101 },
+            { sub_context: "Personal child", seed: 102 },
+          ]),
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_generate/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /form\.btn_confirm_send/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const perQuestion = JSON.parse(
+      onSubmit.mock.calls[0][0].per_question_params,
+    ) as Array<{ context: string[]; sub_context: string }>;
+
+    expect(perQuestion).toHaveLength(2);
+    expect(perQuestion.every((params) => params.context[0] === "Personal")).toBe(true);
+    expect(perQuestion.every((params) => params.sub_context === "Personal child")).toBe(true);
+  });
+
   it("fills empty per-小題 learning_content/performance with a random subset before submit", async () => {
     const onSubmit = vi.fn();
     render(<ParamForm subject="natural_sciences" onSubmit={onSubmit} />);

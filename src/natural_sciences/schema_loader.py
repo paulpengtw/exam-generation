@@ -18,12 +18,20 @@ from src.common.subject_spec import NATURAL_SCIENCES as _SPEC
 
 
 def load_schemas(curriculum_dir: Path | None = None) -> dict:
-    return _base.load_schemas(
+    schemas = _base.load_schemas(
         _SPEC.schema_categories,
         _SPEC.curriculum_dir_env,
         _SPEC.data_dir,
         curriculum_dir,
     )
+    for entry in schemas.get("情境子類別", []):
+        parent_values = [
+            value.strip()
+            for value in entry.get("parent", "").split(";")
+            if value.strip()
+        ]
+        entry["admitted_by"] = {"情境": parent_values}
+    return schemas
 
 
 def build_enums(schemas: dict) -> tuple:
@@ -60,8 +68,8 @@ def build_instructions(schemas: dict) -> dict[str, dict[str, str]]:
 
 
 # NS-only helper — no SS counterpart; kept here rather than pushed into common.
-def subcontexts_for_context(schemas: dict, context: str) -> list[dict[str, str]]:
+def subcontexts_for_context(schemas: dict, context: str) -> list[dict[str, object]]:
     return [
         entry for entry in schemas.get("情境子類別", [])
-        if entry.get("parent") == context
+        if context in entry.get("admitted_by", {}).get("情境", [])
     ]
