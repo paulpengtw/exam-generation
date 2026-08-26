@@ -63,6 +63,7 @@ JWT=$(printf '%s' "$verify" | python3 -c 'import json,sys;print(json.load(sys.st
 [[ -n "$JWT" ]] && pass "received JWT" || fail "no access_token in response"
 
 AUTH_HEADER="Authorization: Bearer $JWT"
+MATH_QUERY_BASE="subject=math&seed=41&grade=8&context=%E5%80%8B%E4%BA%BA&set_type=%E5%96%AE%E4%B8%80%E9%A1%8C&q_type=%E9%81%B8%E6%93%87%E9%A1%8C&math_thinking=%E5%BD%A2%E6%88%90&learning_content=A-7-7&learning_performance=s-IV-12&core_competency=%E6%95%B8-J-A2&content_type=%E7%B4%94%E6%96%87%E5%AD%97&skip_verify=true&count=1"
 
 ############################################
 # Phase 2 helpers
@@ -119,7 +120,7 @@ count_events() {
 
 step "Phase 2: SSE basic stream (text_only, skip_verify=true)"
 SSE_OUT="$TMPDIR_ROOT/sse_basic.log"
-stream_sse "$BASE_URL/api/generate?grade=8&style=text_only&skip_verify=true" "$SSE_OUT"
+stream_sse "$BASE_URL/api/generate?$MATH_QUERY_BASE&style=text_only" "$SSE_OUT"
 
 [[ -s "$SSE_OUT" ]] || fail "SSE stream produced no output"
 pass "stream produced output ($(wc -l <"$SSE_OUT") lines)"
@@ -172,11 +173,11 @@ fi
 step "Phase 2: two simultaneous requests are serialized (semaphore)"
 A_OUT="$TMPDIR_ROOT/sse_a.log"
 B_OUT="$TMPDIR_ROOT/sse_b.log"
-stream_sse "$BASE_URL/api/generate?grade=8&style=text_only&skip_verify=true" "$A_OUT" &
+stream_sse "$BASE_URL/api/generate?$MATH_QUERY_BASE&style=text_only" "$A_OUT" &
 PID_A=$!
 # small offset so the second request truly arrives while A holds the lock
 sleep 0.5
-stream_sse "$BASE_URL/api/generate?grade=8&style=text_only&skip_verify=true" "$B_OUT" &
+stream_sse "$BASE_URL/api/generate?$MATH_QUERY_BASE&style=text_only" "$B_OUT" &
 PID_B=$!
 wait "$PID_A" "$PID_B"
 
@@ -189,7 +190,7 @@ pass "both concurrent requests completed without error"
 
 step "Phase 2: style=with_chart returns image_base64"
 CHART_OUT="$TMPDIR_ROOT/sse_chart.log"
-stream_sse "$BASE_URL/api/generate?grade=8&style=with_chart&skip_verify=true" "$CHART_OUT"
+stream_sse "$BASE_URL/api/generate?$MATH_QUERY_BASE&style=with_chart" "$CHART_OUT"
 grep -q "^event: result$" "$CHART_OUT" || fail "with_chart: no result event"
 CHART_JSON=$(extract_event_data "$CHART_OUT" result)
 echo "$CHART_JSON" | python3 -c '

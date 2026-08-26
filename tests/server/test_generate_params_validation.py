@@ -33,53 +33,14 @@ def test_generate_params_rejects_empty_enum_values(field: str, value: object) ->
         GenerateParams(**{field: value})
 
 
-def test_generate_params_rejects_incompatible_context_and_sub_context() -> None:
-    with pytest.raises(
-        ValidationError,
-        match=r"context.*sub_context.*incompatible",
-    ):
-        GenerateParams(
-            subject="natural_sciences",
-            context=["Global"],
-            sub_context="Maintenance of health",
-        )
-
-
-def test_generate_params_uses_admitted_by_for_ns_pair_validation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from src.natural_sciences import schema_loader
-
-    monkeypatch.setattr(
-        schema_loader,
-        "load_schemas",
-        lambda: {
-            "情境子類別": [
-                {
-                    "value": "Synthetic child",
-                    "parent": "Personal",
-                    "admitted_by": {"情境": ["Global"]},
-                },
-            ],
-        },
-    )
-
-    compatible = GenerateParams(
+def test_generate_params_defers_ns_parent_validation_to_resolver() -> None:
+    params = GenerateParams(
         subject="natural_sciences",
         context=["Global"],
-        sub_context="Synthetic child",
+        sub_context="Maintenance of health",
     )
-    assert compatible.context == ["Global"]
-
-    with pytest.raises(
-        ValidationError,
-        match=r"context.*sub_context.*incompatible",
-    ):
-        GenerateParams(
-            subject="natural_sciences",
-            context=["Personal"],
-            sub_context="Synthetic child",
-        )
+    assert params.context == ["Global"]
+    assert params.sub_context == "Maintenance of health"
 
 
 def test_generate_params_accepts_a_compatible_ns_context_pair() -> None:

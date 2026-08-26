@@ -225,11 +225,11 @@ def test_build_subquestion_user_prompt_explicit_lc_lp_uses_cfg():
     import random
 
     from src.social_studies.context_builder import build_subquestion_user_prompt
-    from src.social_studies.sampler import ss_sample_params
+    from src.social_studies.sampler import sample_params
     from src.social_studies.schemas import SubQuestionConfig
 
     rng = random.Random(42)
-    params = ss_sample_params(rng=rng, content_type="純文字")
+    params = sample_params(seed=rng.randrange(2**32), content_type="純文字")
     cfg = SubQuestionConfig(learning_content=["歷Ka-Ⅳ-1"], learning_performance=["社1b-Ⅳ-1"])
     sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "測試"}
     import pathlib
@@ -255,11 +255,11 @@ def test_build_subquestion_user_prompt_empty_cfg_uses_global_pool():
     import random
 
     from src.social_studies.context_builder import build_subquestion_user_prompt
-    from src.social_studies.sampler import ss_sample_params
+    from src.social_studies.sampler import sample_params
     from src.social_studies.schemas import SubQuestionConfig
 
     rng = random.Random(42)
-    params = ss_sample_params(rng=rng, content_type="純文字")
+    params = sample_params(seed=rng.randrange(2**32), content_type="純文字")
     cfg = SubQuestionConfig()  # empty
     sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "測試"}
     few_shot_dir = pathlib.Path("data/social_studies/few_shot")

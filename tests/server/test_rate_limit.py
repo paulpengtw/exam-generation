@@ -7,6 +7,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient
@@ -21,6 +22,7 @@ from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import Base, User
 from server.rate_limit import limiter
+from tests.server.generate_test_utils import complete_math_query_params
 
 
 def _config() -> ServerConfig:
@@ -99,9 +101,17 @@ def test_generate_rate_limit_returns_429_after_10(app_ctx) -> None:
     try:
         with TestClient(app) as client:
             for _ in range(10):
-                r = client.get("/api/generate", headers=headers)
+                r = client.get(
+                    "/api/generate",
+                    params=complete_math_query_params(),
+                    headers=headers,
+                )
                 assert r.status_code == 200
-            r11 = client.get("/api/generate", headers=headers)
+            r11 = client.get(
+                "/api/generate",
+                params=complete_math_query_params(),
+                headers=headers,
+            )
     finally:
         gen_routes.generate_question_stream = original  # type: ignore[assignment]
 

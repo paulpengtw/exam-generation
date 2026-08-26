@@ -781,7 +781,7 @@ def build_user_prompt(
     q_types_str = "、".join(t.value for t in params.題型)
     sub_q_count_str = (
         str(params.sub_question_count)
-        if params.sub_question_count else "3–7（由命題教師自行決定）"
+        if params.sub_question_count is not None else "（已由解析器完成）"
     )
 
     brief = getattr(params, "creative_brief", None)

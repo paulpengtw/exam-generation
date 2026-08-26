@@ -4,11 +4,9 @@ This module is the ONLY place in server/ where subject strings appear as keys.
 Every dispatch site in service.py, routes.py, and utility/routes.py must resolve
 behaviour through SUBJECTS[subject_key] rather than if/elif chains.
 
-Adapters for do_generate / do_sample_params use a lazy import of
-``server.generate.service`` at call time so that test monkeypatches applied to
-module-level names in service.py (e.g. ``service.ss_generate_with_corrections``)
-are still intercepted correctly.  The lazy import resolves at first call, after
-all modules are fully loaded, so there is no circular-import issue at load time.
+Subject adapters are imported here once and patched at this module boundary by
+the service seam tests.  They convert the resolver-completed payload and keep
+generation independent of the random samplers.
 """
 from __future__ import annotations
 
@@ -18,6 +16,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+from src.cli import _math_params_from_resolved as _math_params_from_resolved_impl
 from src.cli import build_generation_prompts as _math_build_prompts_impl
 from src.cli import generate_with_corrections as _math_generate_with_corrections
 from src.common.batch_dedup import (
@@ -33,6 +32,9 @@ from src.common.core_competency_loader import load_core_competencies as load_mat
 from src.common.curriculum_loader import load_learning_content as load_common_lc
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
 from src.corrector import correct_question as _math_correct_question
+from src.natural_sciences.cli import (
+    _ns_params_from_resolved as _ns_params_from_resolved_impl,
+)
 from src.natural_sciences.cli import (
     build_generation_prompts as _ns_build_prompts_impl,
 )
@@ -53,7 +55,6 @@ from src.natural_sciences.reporting_scale import (
     REPORTING_SCALE_LEVELS,
     REPORTING_SCALE_ORDER,
 )
-from src.natural_sciences.sampler import sample_params as _ns_sample_params
 from src.natural_sciences.schema_loader import (
     load_learning_stage as ns_load_learning_stage,
 )
@@ -80,12 +81,8 @@ from src.natural_sciences.schemas import (
 )
 from src.natural_sciences.verifier import verify_question as _ns_verify_question
 from src.sampler import _MATH_SUBJECT_TO_PREFIXES, grade_to_learning_stage
-from src.sampler import sample_params as _math_sample_params
 from src.schemas import (
     ExamQuestion as MathExamQuestion,
-)
-from src.schemas import (
-    MathThinking,
 )
 from src.schemas import (
     QuestionContext as MathQuestionContext,
@@ -100,6 +97,9 @@ from src.schemas import (
     QuestionType as MathQuestionType,
 )
 from src.social_studies.cli import _plan_batch_briefs as _ss_plan_batch_briefs
+from src.social_studies.cli import (
+    _ss_params_from_resolved as _ss_params_from_resolved_impl,
+)
 from src.social_studies.cli import (
     build_generation_prompts as _ss_build_prompts_impl,
 )
@@ -128,7 +128,6 @@ from src.social_studies.curriculum_loader import (
 from src.social_studies.domain_mapping import (
     load_code_to_domains_mapping as load_ss_code_to_domains_mapping,
 )
-from src.social_studies.sampler import sample_params as _ss_sample_params_direct
 from src.social_studies.schema_loader import (
     digital_only_question_types as ss_digital_only_question_types,
 )
@@ -170,6 +169,27 @@ def _resolve_enum(value: str | None, enum_cls: type) -> Any:
     raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
 
 
+def resolved_payload_for_index(params: Any, index: int) -> dict[str, Any]:
+    """Return the already-resolved request payload for one worker."""
+    payload = params.model_dump(mode="json")
+    raw_rows = payload.get("per_question_params")
+    row: dict[str, Any] | None = None
+    if raw_rows:
+        if isinstance(raw_rows, str):
+            raw_rows = json.loads(raw_rows)
+        if not isinstance(raw_rows, list) or index >= len(raw_rows):
+            raise ValueError("resolved per_question_params has no worker row")
+        row = raw_rows[index]
+        if not isinstance(row, dict):
+            raise ValueError(f"resolved per_question_params[{index}] must be an object")
+        payload.update(row)
+    payload["per_question_params"] = None
+    row_seed = row.get("seed") if row is not None else None
+    if row_seed is None and params.seed is not None:
+        payload["seed"] = params.seed + index
+    return payload
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SubjectSpec dataclass
 # ─────────────────────────────────────────────────────────────────────────────
@@ -192,13 +212,14 @@ class SubjectSpec:
                             index (None means no brief).  Returns ``[]`` for
                             subjects that don't support creative planning so
                             ``i < len([])`` is always False.
-    do_sample_params        ``(params, overrides, *, seed,
-                            subquestion_configs_decoded)
-                            -> SampledParams``
+    params_from_resolved_payload
+                            ``(payload, overrides) -> SampledParams``
+                            Converts the resolver's completed wire payload
+                            without drawing any new values.
     do_generate             ``(rng_params, overrides, **common_kwargs)
                             -> ExamQuestion``
-                            Adapters use a lazy import of service.py so that
-                            test monkeypatches are intercepted.
+                            Adapters consume the resolver-completed payload so
+                            generation does not perform another random draw.
     build_generation_prompts
                             ``(rng_params, overrides, **common_kwargs)
                             -> (system_prompt, user_prompt, image_paths)``
@@ -226,7 +247,7 @@ class SubjectSpec:
 
     coerce_overrides: Callable
     plan_all_batch_briefs: Callable
-    do_sample_params: Callable
+    params_from_resolved_payload: Callable
     do_generate: Callable
     extract_prior_scope: Callable
 
@@ -349,30 +370,6 @@ def _ns_validate_params(params: Any) -> None:
                 f"reporting_scale {params.reporting_scale!r} is not a valid level; "
                 f"allowed values: {REPORTING_SCALE_ORDER}"
             )
-
-    if params.context is None or params.sub_context is None:
-        return
-
-    from src.natural_sciences.schema_loader import load_schemas  # noqa: PLC0415
-
-    sub_context_entry = next(
-        (
-            row
-            for row in load_schemas().get("情境子類別", [])
-            if row.get("value") == params.sub_context
-        ),
-        None,
-    )
-    admitted_contexts = (
-        (sub_context_entry or {}).get("admitted_by", {}).get("情境", [])
-    )
-    if not any(context in admitted_contexts for context in params.context):
-        required_context = admitted_contexts[0] if admitted_contexts else None
-        raise ValueError(
-            "context and sub_context are incompatible: "
-            f"sub_context {params.sub_context!r} requires "
-            f"context {required_context!r}"
-        )
 
 
 def _ss_validate_params(params: Any) -> None:
@@ -604,64 +601,16 @@ def _ss_plan_all_batch_briefs(
 
     client_factory = kwargs.get("client_factory") or _LLMClient
 
-    context_override = overrides["context_override"]
-    set_type_override = overrides["set_type_override"]
-    q_type_override = overrides["q_type_override"]
-    subject_override = overrides["subject_override"]
-
-    pre_params_list = []
-    for i in range(count):
-        seed = (base_seed + i) if base_seed is not None else None
-        pre_params_list.append(
-            _ss_sample_params_direct(
-                grade=params.grade,
-                context=context_override,
-                set_type=set_type_override,
-                q_type=q_type_override,
-                subject=subject_override,
-                content_type=params.content_type,
-                content_domain=params.content_domain,
-                target_surface=params.target_surface,
-                learning_performance=params.learning_performance,
-                seed=seed,
-                sub_question_count=params.sub_question_count,
-                question_word_limit=params.question_word_limit,
-                option_word_limit=params.option_word_limit,
-                subquestion_configs=decoded_subquestion_configs,
-                allow_duplicate_figure_kinds=params.allow_duplicate_figure_kinds,
-            ),
-        )
+    pre_params_list = [
+        _ss_params_from_resolved_impl(resolved_payload_for_index(params, i))
+        for i in range(count)
+    ]
     planning_client = client_factory(config)
     return _ss_plan_batch_briefs(planning_client, config, pre_params_list)
 
 
-def _ss_do_sample_params(
-    params: Any,
-    overrides: dict,
-    *,
-    seed: int | None,
-    subquestion_configs_decoded: list[dict] | None,
-) -> Any:
-    return _ss_sample_params_direct(
-        grade=params.grade,
-        context=overrides["context_override"],
-        set_type=overrides["set_type_override"],
-        q_type=overrides["q_type_override"],
-        subject=overrides["subject_override"],
-        core_competency=overrides["core_competency_override"],
-        content_type=params.content_type,
-        content_domain=params.content_domain,
-        target_surface=params.target_surface,
-        learning_content=params.learning_content,
-        learning_performance=params.learning_performance,
-        seed=seed,
-        sub_question_count=params.sub_question_count,
-        question_word_limit=params.question_word_limit,
-        option_word_limit=params.option_word_limit,
-        subquestion_configs=subquestion_configs_decoded,
-        difficulty=params.difficulty,
-        allow_duplicate_figure_kinds=params.allow_duplicate_figure_kinds,
-    )
+def _ss_params_from_resolved_payload(payload: dict[str, Any], _overrides: dict) -> Any:
+    return _ss_params_from_resolved_impl(payload)
 
 
 def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
@@ -850,32 +799,8 @@ def _ns_plan_all_batch_briefs(
     return []
 
 
-def _ns_do_sample_params(
-    params: Any,
-    overrides: dict,
-    *,
-    seed: int | None,
-    subquestion_configs_decoded: list[dict] | None,
-) -> Any:
-    return _ns_sample_params(
-        grade=params.grade,
-        context=overrides["context_override"],
-        sub_context=overrides["sub_context_override"],
-        set_type=overrides["set_type_override"],
-        q_type=overrides["q_type_override"],
-        science_competency=overrides["science_competency_override"],
-        content_type=params.content_type,
-        learning_content=params.learning_content,
-        learning_performance=params.learning_performance,
-        seed=seed,
-        sub_question_count=params.sub_question_count,
-        question_word_limit=params.question_word_limit,
-        option_word_limit=params.option_word_limit,
-        subquestion_configs=subquestion_configs_decoded,
-        difficulty=params.difficulty,
-        reporting_scale=params.reporting_scale,
-        allow_duplicate_figure_kinds=params.allow_duplicate_figure_kinds,
-    )
+def _ns_params_from_resolved_payload(payload: dict[str, Any], _overrides: dict) -> Any:
+    return _ns_params_from_resolved_impl(payload)
 
 
 def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
@@ -1066,38 +991,14 @@ def _math_plan_all_batch_briefs(
     return []
 
 
-def _math_do_sample_params(
-    params: Any,
+def _math_params_from_resolved_payload(
+    payload: dict[str, Any],
     overrides: dict,
-    *,
-    seed: int | None,
-    subquestion_configs_decoded: list[dict] | None,
 ) -> Any:
-    math_subject_filter: str | None = None
-    if params.subject_filter:
-        math_subject_filter = params.subject_filter[0]
-
-    return _math_sample_params(
+    return _math_params_from_resolved_impl(
+        payload,
         grade_content=overrides["grade_content"],
-        grade=params.grade,
-        style=overrides["style_override"],
-        context=overrides["context_override"],
-        set_type=overrides["set_type_override"],
-        q_type=overrides["q_type_override"],
-        seed=seed,
-        math_thinking=(
-            [_resolve_enum(value, MathThinking) for value in params.math_thinking]
-            if params.math_thinking
-            else None
-        ),
-        core_competency=params.core_competency,
-        learning_content=params.learning_content,
-        learning_performance=params.learning_performance,
-        content_type=params.content_type,
-        subject_filter=math_subject_filter,
-        sub_question_count=params.sub_question_count,
-        text_word_limit=params.text_word_limit,
-        difficulty=params.difficulty,
+        performance=overrides["performance"],
     )
 
 
@@ -1217,7 +1118,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         exam_question_cls=SSExamQuestion,
         coerce_overrides=_ss_coerce_overrides,
         plan_all_batch_briefs=_ss_plan_all_batch_briefs,
-        do_sample_params=_ss_do_sample_params,
+        params_from_resolved_payload=_ss_params_from_resolved_payload,
         do_generate=_ss_do_generate,
         build_generation_prompts=_ss_build_generation_prompts,
         build_subquestion_prompt_previews=_ss_build_subquestion_prompt_previews,
@@ -1236,7 +1137,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         exam_question_cls=NSExamQuestion,
         coerce_overrides=_ns_coerce_overrides,
         plan_all_batch_briefs=_ns_plan_all_batch_briefs,
-        do_sample_params=_ns_do_sample_params,
+        params_from_resolved_payload=_ns_params_from_resolved_payload,
         do_generate=_ns_do_generate,
         build_generation_prompts=_ns_build_generation_prompts,
         build_subquestion_prompt_previews=_ns_build_subquestion_prompt_previews,
@@ -1255,7 +1156,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         exam_question_cls=MathExamQuestion,
         coerce_overrides=_math_coerce_overrides,
         plan_all_batch_briefs=_math_plan_all_batch_briefs,
-        do_sample_params=_math_do_sample_params,
+        params_from_resolved_payload=_math_params_from_resolved_payload,
         do_generate=_math_do_generate,
         build_generation_prompts=_math_build_generation_prompts,
         extract_prior_scope=extract_math_prior_scope,

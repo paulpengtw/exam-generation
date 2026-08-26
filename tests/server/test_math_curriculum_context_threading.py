@@ -27,13 +27,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.config import ServerConfig
-from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
 from src.curriculum_context import CurriculumContext, load_curriculum_context
 from src.schemas import ExamQuestion, LearningContentItem
+from tests.server.generate_test_utils import resolved_generate_params
 
 
 def _fake_math_generate(**kwargs):
@@ -67,7 +68,9 @@ def _run_math_stream(
         output_dir=tmp_path,
         data_dir=Path("data"),
     )
-    params = GenerateParams(subject="math", count=1, skip_verify=True, seed=1)
+    params = resolved_generate_params(
+        {"subject": "math", "count": 1, "skip_verify": True, "seed": 1}
+    )
     captured: dict = {}
 
     def capturing_stub(**kwargs):

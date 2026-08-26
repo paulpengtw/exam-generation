@@ -8,9 +8,11 @@ import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from sqlalchemy import select
@@ -22,6 +24,7 @@ from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import Base, GenerationLog, GenerationRecord, User
 from server.rate_limit import limiter
+from tests.server.generate_test_utils import complete_math_query_params
 
 
 async def _run_asgi(
@@ -62,7 +65,9 @@ async def _run_asgi(
         "scheme": "http",
         "path": "/api/generate",
         "raw_path": b"/api/generate",
-        "query_string": b"subject=math&count=1",
+        "query_string": urlencode(
+            complete_math_query_params(count=1), doseq=True
+        ).encode(),
         "headers": [],
         "client": ("testclient", 50000),
         "server": ("testserver", 80),
@@ -107,7 +112,9 @@ async def _run_httpx_disconnect(app: Any) -> httpx.Response:
 
     transport = httpx.ASGITransport(app=disconnecting_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        return await client.get("/api/generate", params={"subject": "math", "count": 1})
+        return await client.get(
+            "/api/generate", params=complete_math_query_params(count=1)
+        )
 
 
 async def _test_generate_stream_teardown_distinguishes_disconnect_from_generation_error(

@@ -48,6 +48,42 @@ NonEmptyQueryValue = Annotated[str, Field(min_length=1)]
 GenerateQuery = Annotated[GenerateParams, Query()]
 
 
+def _require_complete_generate_params(params: GenerateParams) -> GenerateParams:
+    """Reject unresolved or incompatible payloads before any generation side effect."""
+    try:
+        result = resolve(params.model_dump(mode="json", exclude_none=True))
+    except ResolveConflictError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if result.drawn:
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {"field": field, "code": "unresolved"}
+                for field in result.drawn
+            ],
+        )
+
+    resolved_payload = dict(result.payload)
+    rows = resolved_payload.get("per_question_params")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get("subquestion_configs"), list):
+                row["subquestion_configs"] = json.dumps(
+                    row["subquestion_configs"], ensure_ascii=False
+                )
+        resolved_payload["per_question_params"] = json.dumps(rows, ensure_ascii=False)
+    configs = resolved_payload.get("subquestion_configs")
+    if isinstance(configs, list):
+        resolved_payload["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)
+    try:
+        return GenerateParams.model_validate(resolved_payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/generate/preview")
 @limiter.limit("30/hour", key_func=jwt_user_key)
 async def preview_generate_endpoint(
@@ -57,6 +93,7 @@ async def preview_generate_endpoint(
     config: ServerConfig = Depends(get_config),
 ) -> dict[str, Any]:
     """Return exact first-stage prompts without invoking an LLM."""
+    params = _require_complete_generate_params(params)
     _check_model_allowed(params.model_plan, config, "model_plan")
     _check_model_allowed(params.model_execute, config, "model_execute")
     _check_model_allowed(params.model_verify, config, "model_verify")    # #375
@@ -354,6 +391,7 @@ async def generate_endpoint(
             [str(e["loc"]) for e in exc.errors()],
         )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    params = _require_complete_generate_params(params)
     logger.info("generate request params=%s", params.model_dump(mode="json"))
 
     log = GenerationLog(

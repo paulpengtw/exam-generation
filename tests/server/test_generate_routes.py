@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import dataclasses
+import json
 import logging
 import threading
 import time
@@ -12,7 +13,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import quote
+from typing import Any
 
 import pytest
 
@@ -29,6 +30,343 @@ from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import Base, GenerationLog, GenerationRecord, User
 from server.rate_limit import limiter
+from src.common.resolver import resolve
+
+
+def _complete_query_params(payload: dict[str, Any]) -> dict[str, Any]:
+    """Encode a resolver-complete payload for the GET route's wire shape."""
+    completed = resolve(payload).payload
+    rows = completed.get("per_question_params")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get("subquestion_configs"), list):
+                row["subquestion_configs"] = json.dumps(
+                    row["subquestion_configs"], ensure_ascii=False
+                )
+        completed["per_question_params"] = json.dumps(rows, ensure_ascii=False)
+    configs = completed.get("subquestion_configs")
+    if isinstance(configs, list):
+        completed["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)
+    return completed
+
+
+def _resolved_generate_params(payload: dict[str, Any]):
+    """Build the service seam's complete model, matching the gated route."""
+    from server.generate.models import GenerateParams
+
+    return GenerateParams.model_validate(_complete_query_params(payload))
+
+
+def test_generate_route_rejects_unresolved_top_level_field() -> None:
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/generate",
+                params={
+                    "subject": "math",
+                    "seed": 41,
+                    "grade": 8,
+                    "context": "個人",
+                    "set_type": "單一題",
+                    "q_type": "選擇題",
+                    "style": "text_only",
+                    "math_thinking": "形成",
+                    "learning_content": "A-7-7",
+                    "learning_performance": "s-IV-12",
+                    "core_competency": "數-J-A2",
+                },
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "題目內容類型", "code": "unresolved"}
+    ]
+
+
+def test_generate_route_rejects_unresolved_per_question_field() -> None:
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    rows = [
+        {
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "單一題",
+            "q_type": ["選擇題"],
+            "style": ["text_only"],
+            "math_thinking": ["形成"],
+            "learning_performance": ["s-IV-12"],
+            "core_competency": ["數-J-A2"],
+            "content_type": "純文字",
+        },
+        {
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "單一題",
+            "q_type": ["選擇題"],
+            "style": ["text_only"],
+            "math_thinking": ["形成"],
+            "learning_content": ["A-7-7"],
+            "learning_performance": ["s-IV-12"],
+            "core_competency": ["數-J-A2"],
+            "content_type": "純文字",
+        },
+    ]
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/generate",
+                params={
+                    "subject": "math",
+                    "seed": 41,
+                    "count": 2,
+                    "per_question_params": json.dumps(rows, ensure_ascii=False),
+                },
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "per_question_params[0].學習內容", "code": "unresolved"}
+    ]
+
+
+def test_generate_route_rejects_unresolved_subquestion_field() -> None:
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    configs = [
+        {
+            "reporting_scale": "1",
+            "learning_content": ["INa-Ⅳ-1"],
+            "learning_performance": ["ti-Ⅳ-1"],
+        },
+        {
+            "question_type": "Simple multiple-choice",
+            "reporting_scale": "2",
+            "learning_content": ["INa-Ⅳ-1"],
+            "learning_performance": ["ti-Ⅳ-1"],
+        },
+        {
+            "question_type": "Simple multiple-choice",
+            "reporting_scale": "3",
+            "learning_content": ["INa-Ⅳ-1"],
+            "learning_performance": ["ti-Ⅳ-1"],
+        },
+    ]
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/generate",
+                params={
+                    "subject": "natural_sciences",
+                    "seed": 41,
+                    "grade": 8,
+                    "context": "Personal",
+                    "sub_context": "Maintenance of health",
+                    "set_type": "題組題",
+                    "science_competency": "能力一：以科學的角度解釋現象",
+                    "learning_content": "INa-Ⅳ-1",
+                    "learning_performance": "ti-Ⅳ-1",
+                    "content_type": "純文字",
+                    "sub_question_count": 3,
+                    "subquestion_configs": json.dumps(configs, ensure_ascii=False),
+                },
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "subquestion_configs[0].question_type", "code": "unresolved"}
+    ]
+
+
+def test_preview_route_rejects_unresolved_top_level_field() -> None:
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/generate/preview",
+                params={
+                    "subject": "math",
+                    "seed": 41,
+                    "grade": 8,
+                    "context": "個人",
+                    "set_type": "單一題",
+                    "q_type": "選擇題",
+                    "style": "text_only",
+                    "math_thinking": "形成",
+                    "learning_content": "A-7-7",
+                    "learning_performance": "s-IV-12",
+                    "core_competency": "數-J-A2",
+                },
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "題目內容類型", "code": "unresolved"}
+    ]
+
+
+def test_generate_route_reports_incompatible_parent_with_resolver_shape() -> None:
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/generate",
+                params={
+                    "subject": "natural_sciences",
+                    "seed": 1,
+                    "grade": 8,
+                    "context": "Global",
+                    "sub_context": "Maintenance of health",
+                    "set_type": "單一題",
+                    "q_type": "Simple multiple-choice",
+                    "science_competency": "能力一：以科學的角度解釋現象",
+                    "learning_content": "INa-Ⅳ-1",
+                    "learning_performance": "ti-Ⅳ-1",
+                    "content_type": "純文字",
+                },
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {
+            "field": "sub_context",
+            "code": "incompatible_parent",
+            "parent": "Personal",
+        }
+    ]
+
+
+def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    user = User(id=uuid.uuid4(), email="resolved@example.com")
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(user)
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    config = ServerConfig(
+        api_key="x",
+        jwt_secret="test-secret",
+        gemini_api_key="x",
+    )
+    from server.generate import routes as gen_routes
+    from server.generate.models import GenerateParams
+
+    captured: dict[str, GenerateParams] = {}
+
+    async def fake_stream(params, *_args, **_kwargs):
+        captured["generate"] = params
+        yield {"event": "done", "data": ""}
+
+    def fake_previews(params, *_args, **_kwargs):
+        captured["preview"] = params
+        return []
+
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    original_stream = gen_routes.generate_question_stream
+    original_previews = gen_routes.build_prompt_previews
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    gen_routes.build_prompt_previews = fake_previews  # type: ignore[assignment]
+    limiter.reset()
+    try:
+        partial = {
+            "subject": "math",
+            "seed": 41,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "單一題",
+            "q_type": ["選擇題"],
+            "style": ["text_only"],
+            "math_thinking": ["形成"],
+            "learning_content": ["A-7-7"],
+            "learning_performance": ["s-IV-12"],
+            "core_competency": ["數-J-A2"],
+            "content_type": "純文字",
+            "count": 1,
+            "skip_verify": True,
+        }
+        with TestClient(app) as client:
+            resolved_response = client.post("/api/generate/resolve", json=partial)
+            assert resolved_response.status_code == 200
+            submitted = GenerateParams.model_validate(resolved_response.json()["payload"])
+            wire_payload = {
+                key: value
+                for key, value in submitted.model_dump(mode="json").items()
+                if value is not None
+            }
+
+            generate_response = client.get("/api/generate", params=wire_payload)
+            preview_response = client.get("/api/generate/preview", params=wire_payload)
+    finally:
+        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
+        gen_routes.build_prompt_previews = original_previews  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert generate_response.status_code == 200, generate_response.text
+    assert preview_response.status_code == 200, preview_response.text
+    expected = submitted.model_dump(mode="json")
+    assert captured["generate"].model_dump(mode="json") == expected
+    assert captured["preview"].model_dump(mode="json") == expected
 
 
 def test_generate_route_returns_422_for_empty_enum_value() -> None:
@@ -138,7 +476,8 @@ def test_generate_route_accepts_count_of_ten() -> None:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?count=10",
+                "/api/generate",
+                params=_complete_query_params({"subject": "math", "count": 10, "seed": 41}),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -196,28 +535,39 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
     gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
-        sq_configs = quote(
-            '[{"question_word_limit":80,"option_word_limit":30,'
-            '"content_type":"純文字","image_generation_mode":"html",'
-            '"question_type":"選擇題","instruction":"聚焦資料判讀"}]',
+        query = _complete_query_params(
+            {
+                "subject": "social_studies",
+                "seed": 41,
+                "image_generation_mode": "gpt_image",
+                "topic": "氣候變遷",
+                "content_type": "timeline",
+                "passage": "素材",
+                "options": ["A", "B"],
+                "subject_filter": ["歷史"],
+                "learning_content": ["歷Ka-Ⅳ-1"],
+                "learning_performance": ["社1b-Ⅳ-1", "社2a-Ⅳ-1"],
+                "sub_question_count": 3,
+                "drawn": ["learning_content"],
+                "subquestion_configs": [
+                    {
+                        "question_word_limit": 80,
+                        "option_word_limit": 30,
+                        "content_type": "純文字",
+                        "image_generation_mode": "html",
+                        "question_type": "選擇題",
+                        "instruction": "聚焦資料判讀",
+                    }
+                ],
+            }
         )
         with TestClient(app) as client:
             gen_routes.logger.addHandler(caplog.handler)
             try:
                 with caplog.at_level(logging.INFO, logger="server.generate.routes"):
                     response = client.get(
-                        "/api/generate?"
-                        "subject=social_studies"
-                        "&image_generation_mode=gpt_image"
-                        "&topic=%E6%B0%A3%E5%80%99%E8%AE%8A%E9%81%B7"
-                        "&content_type=timeline"
-                        "&passage=%E7%B4%A0%E6%9D%90"
-                        "&options=A&options=B"
-                        "&learning_performance=%E7%A4%BE1b-%E2%85%A3-1"
-                        "&learning_performance=%E7%A4%BE2a-%E2%85%A3-1"
-                        "&sub_question_count=3"
-                        "&drawn=learning_content"
-                        f"&subquestion_configs={sq_configs}",
+                        "/api/generate",
+                        params=query,
                         headers={"Authorization": f"Bearer {token}"},
                     )
             finally:
@@ -236,7 +586,7 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
     assert captured["params"].options == ["A", "B"]
     assert captured["params"].learning_performance == ["社1b-Ⅳ-1", "社2a-Ⅳ-1"]
     assert captured["params"].sub_question_count == 3
-    assert captured["params"].drawn == ["learning_content"]
+    assert captured["params"].drawn == ["學習內容"]
     assert "question_word_limit" in captured["params"].subquestion_configs
     assert "question_type" in captured["params"].subquestion_configs
     assert "instruction" in captured["params"].subquestion_configs
@@ -309,14 +659,20 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?"
-                "subject=natural_sciences"
-                "&context=Global"
-                "&sub_context=Food+security"
-                "&science_competency=%E8%83%BD%E5%8A%9B%E4%B8%80%EF%BC%9A%E4%BB%A5%E7%A7%91%E5%AD%B8%E7%9A%84%E8%A7%92%E5%BA%A6%E8%A7%A3%E9%87%8B%E7%8F%BE%E8%B1%A1"
-                "&q_type=Constructed+response"
-                "&content_type=graphs%2Fcharts%2Ftables"
-                "&learning_performance=tr-%E2%85%A3-1",
+                "/api/generate",
+                params=_complete_query_params(
+                    {
+                        "subject": "natural_sciences",
+                        "seed": 41,
+                        "context": ["Global"],
+                        "sub_context": "Food security",
+                        "science_competency": ["能力一：以科學的角度解釋現象"],
+                        "q_type": ["Constructed response"],
+                        "content_type": "graphs/charts/tables",
+                        "learning_content": ["INa-Ⅳ-1"],
+                        "learning_performance": ["tr-Ⅳ-1"],
+                    }
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -338,13 +694,14 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
     import dataclasses
     from types import SimpleNamespace
 
-    from server.generate.models import GenerateParams
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
     from src.social_studies.schemas import ExamQuestion
 
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
-    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+    params = _resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "seed": 41, "skip_verify": True}
+    )
 
     def fake_generate_with_corrections(**kwargs):
         question_id = kwargs["question_id"]
@@ -437,7 +794,10 @@ def test_generate_route_accepts_difficulty_query_param() -> None:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             ok = client.get(
-                "/api/generate?subject=math&difficulty=hard",
+                "/api/generate",
+                params=_complete_query_params(
+                    {"subject": "math", "seed": 41, "difficulty": "hard"}
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
             bad = client.get(
@@ -504,7 +864,10 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
         with TestClient(app) as client:
             # No coverage_mode in the query → defaults to "balanced".
             r_default = client.get(
-                "/api/generate?subject=social_studies&count=3",
+                "/api/generate",
+                params=_complete_query_params(
+                    {"subject": "social_studies", "count": 3, "seed": 41}
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
             assert r_default.status_code == 200
@@ -512,7 +875,15 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
 
             # Explicit random passes through.
             r_random = client.get(
-                "/api/generate?subject=social_studies&count=3&coverage_mode=random",
+                "/api/generate",
+                params=_complete_query_params(
+                    {
+                        "subject": "social_studies",
+                        "count": 3,
+                        "seed": 41,
+                        "coverage_mode": "random",
+                    }
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
             assert r_random.status_code == 200
@@ -541,7 +912,6 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
         create_async_engine,
     )
 
-    from server.generate.models import GenerateParams
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
@@ -563,7 +933,9 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
         data_dir=Path("data"),
         llm_exchange_retention_days=30,
     )
-    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+    params = _resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "seed": 41, "skip_verify": True}
+    )
 
     def fake_generate_with_corrections(**kwargs):
         question_id = kwargs["question_id"]
@@ -679,7 +1051,6 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
         create_async_engine,
     )
 
-    from server.generate.models import GenerateParams
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
@@ -701,7 +1072,9 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
         data_dir=Path("data"),
         llm_exchange_retention_days=30,
     )
-    params = GenerateParams(subject="social_studies", count=2, skip_verify=True)
+    params = _resolved_generate_params(
+        {"subject": "social_studies", "count": 2, "seed": 41, "skip_verify": True}
+    )
 
     def fake_generate_with_corrections(**kwargs):
         question_id = kwargs["question_id"]
@@ -811,7 +1184,6 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
         create_async_engine,
     )
 
-    from server.generate.models import GenerateParams
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
     from src.common.figure_policy_trail import FigurePolicySpecEntry
@@ -844,7 +1216,9 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
     asyncio.run(_seed_log())
 
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
-    params = GenerateParams(subject="social_studies", count=2, skip_verify=True)
+    params = _resolved_generate_params(
+        {"subject": "social_studies", "count": 2, "seed": 41, "skip_verify": True}
+    )
     emitted_events: list[dict] = []
 
     def fake_do_generate(rng_params, _overrides, **kwargs):
@@ -1006,7 +1380,15 @@ def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_
         token = create_jwt(user_id, "figure-failure@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=social_studies&count=2&skip_verify=true",
+                "/api/generate",
+                params=_complete_query_params(
+                    {
+                        "subject": "social_studies",
+                        "count": 2,
+                        "seed": 41,
+                        "skip_verify": True,
+                    }
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -1041,7 +1423,6 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
         create_async_engine,
     )
 
-    from server.generate.models import GenerateParams
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
@@ -1063,7 +1444,9 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
         data_dir=Path("data"),
         llm_exchange_retention_days=0,
     )
-    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+    params = _resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "seed": 41, "skip_verify": True}
+    )
 
     def fake_generate_with_corrections(**kwargs):
         obs = kwargs["client"].get_observer()
@@ -1232,7 +1615,8 @@ def test_generate_route_valid_subjects_still_accepted() -> None:
         with TestClient(app) as client:
             for subject in ("math", "social_studies", "natural_sciences"):
                 r = client.get(
-                    f"/api/generate?subject={subject}",
+                    "/api/generate",
+                    params=_complete_query_params({"subject": subject, "seed": 41}),
                     headers={"Authorization": f"Bearer {token}"},
                 )
                 assert r.status_code == 200, f"expected 200 for subject={subject!r}"
@@ -1263,12 +1647,13 @@ def test_service_worker_error_event_is_structured(tmp_path) -> None:
     import dataclasses
     from types import SimpleNamespace
 
-    from server.generate.models import GenerateParams
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
 
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
-    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+    params = _resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "seed": 41, "skip_verify": True}
+    )
 
     def fake_do_generate(rng_params, overrides, **kwargs):
         raise RuntimeError("boom")
@@ -1341,7 +1726,8 @@ def test_route_outer_error_event_is_structured() -> None:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=math",
+                "/api/generate",
+                params=_complete_query_params({"subject": "math", "seed": 41}),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -1448,7 +1834,15 @@ def test_generate_route_persists_one_failed_record_after_prior_success(tmp_path)
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=social_studies&count=2&skip_verify=true",
+                "/api/generate",
+                params=_complete_query_params(
+                    {
+                        "subject": "social_studies",
+                        "count": 2,
+                        "seed": 41,
+                        "skip_verify": True,
+                    }
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -1524,7 +1918,10 @@ def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=natural_sciences&reporting_scale=4",
+                "/api/generate",
+                params=_complete_query_params(
+                    {"subject": "natural_sciences", "seed": 41, "reporting_scale": "4"}
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -1641,7 +2038,8 @@ def test_generate_valid_request_emits_no_validation_warning(caplog) -> None:
             with caplog.at_level(logging.WARNING, logger="server.generate.routes"):
                 with TestClient(app) as client:
                     response = client.get(
-                        "/api/generate?subject=math",
+                        "/api/generate",
+                        params=_complete_query_params({"subject": "math", "seed": 41}),
                         headers={"Authorization": f"Bearer {token}"},
                     )
         finally:

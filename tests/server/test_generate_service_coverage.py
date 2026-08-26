@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.config import ServerConfig
@@ -20,6 +21,7 @@ from src.social_studies.schemas import (
     QuestionType,
     SampledParams,
 )
+from tests.server.generate_test_utils import resolved_generate_params
 
 
 def _fake_generate_with_corrections(**kwargs):
@@ -60,20 +62,16 @@ def _run_stream(params: GenerateParams, tmp_path: Path) -> list[dict]:
     return events
 
 
+def _resolved_social_params(**overrides) -> GenerateParams:
+    return resolved_generate_params({"subject": "social_studies", **overrides})
+
+
 def test_balanced_and_random_draw_identically_for_the_same_seed(tmp_path) -> None:
-    balanced_params = GenerateParams(
-        subject="social_studies",
-        count=4,
-        skip_verify=True,
-        coverage_mode="balanced",
-        seed=13,
+    balanced_params = _resolved_social_params(
+        count=4, skip_verify=True, coverage_mode="balanced", seed=13
     )
-    random_params = GenerateParams(
-        subject="social_studies",
-        count=4,
-        skip_verify=True,
-        coverage_mode="random",
-        seed=13,
+    random_params = _resolved_social_params(
+        count=4, skip_verify=True, coverage_mode="random", seed=13
     )
     balanced_events = _run_stream(balanced_params, tmp_path)
     random_events = _run_stream(random_params, tmp_path)
@@ -103,12 +101,8 @@ def test_balanced_and_random_draw_identically_for_the_same_seed(tmp_path) -> Non
 
 
 def test_random_mode_stamps_metadata(tmp_path) -> None:
-    params = GenerateParams(
-        subject="social_studies",
-        count=3,
-        skip_verify=True,
-        coverage_mode="random",
-        seed=13,
+    params = _resolved_social_params(
+        count=3, skip_verify=True, coverage_mode="random", seed=13
     )
     events = _run_stream(params, tmp_path)
     results = [e["data"] for e in events if e["event"] == "result"]
@@ -117,19 +111,11 @@ def test_random_mode_stamps_metadata(tmp_path) -> None:
 
 
 def test_count_one_stamps_the_requested_mode(tmp_path) -> None:
-    balanced_params = GenerateParams(
-        subject="social_studies",
-        count=1,
-        skip_verify=True,
-        coverage_mode="balanced",
-        seed=5,
+    balanced_params = _resolved_social_params(
+        count=1, skip_verify=True, coverage_mode="balanced", seed=5
     )
-    random_params = GenerateParams(
-        subject="social_studies",
-        count=1,
-        skip_verify=True,
-        coverage_mode="random",
-        seed=5,
+    random_params = _resolved_social_params(
+        count=1, skip_verify=True, coverage_mode="random", seed=5
     )
     balanced_events = _run_stream(balanced_params, tmp_path)
     random_events = _run_stream(random_params, tmp_path)
@@ -145,19 +131,11 @@ def test_count_one_stamps_the_requested_mode(tmp_path) -> None:
 
 
 def test_coverage_mode_used_reflects_the_requested_mode_for_a_batch(tmp_path) -> None:
-    balanced_params = GenerateParams(
-        subject="social_studies",
-        count=3,
-        skip_verify=True,
-        coverage_mode="balanced",
-        seed=13,
+    balanced_params = _resolved_social_params(
+        count=3, skip_verify=True, coverage_mode="balanced", seed=13
     )
-    random_params = GenerateParams(
-        subject="social_studies",
-        count=3,
-        skip_verify=True,
-        coverage_mode="random",
-        seed=13,
+    random_params = _resolved_social_params(
+        count=3, skip_verify=True, coverage_mode="random", seed=13
     )
     balanced_events = _run_stream(balanced_params, tmp_path)
     random_events = _run_stream(random_params, tmp_path)
@@ -179,8 +157,7 @@ def test_coverage_mode_used_reflects_the_requested_mode_for_a_batch(tmp_path) ->
 
 def test_user_q_type_pool_wins_over_balanced_assignment(tmp_path) -> None:
     # An explicit user q_type pin must determine every 題型 draw.
-    params = GenerateParams(
-        subject="social_studies",
+    params = _resolved_social_params(
         count=3,
         skip_verify=True,
         coverage_mode="balanced",
@@ -194,8 +171,7 @@ def test_user_q_type_pool_wins_over_balanced_assignment(tmp_path) -> None:
 
 def test_user_learning_content_wins_over_balanced_assignment(tmp_path) -> None:
     # Every emitted question's sampled LC pool must equal the user's explicit pin.
-    params = GenerateParams(
-        subject="social_studies",
+    params = _resolved_social_params(
         count=2,
         skip_verify=True,
         coverage_mode="balanced",

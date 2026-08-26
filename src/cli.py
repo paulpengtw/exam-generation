@@ -13,6 +13,7 @@ from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_math_prior_scope
 from src.common.cli_resolver import resolve_and_print
+from src.common.difficulty import DEFAULT_DIFFICULTY
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
@@ -41,7 +42,7 @@ from src.data_loader import (
 from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_stage, make_render_error_sink, make_stderr_observer
 from src.renderer import render_image
-from src.sampler import grade_to_learning_stage, sample_params
+from src.sampler import grade_to_learning_stage
 from src.schema_loader import load_grades, load_schemas
 from src.schemas import (
     CoreCompetency,
@@ -254,23 +255,45 @@ def _math_params_from_resolved(
     payload: dict[str, Any],
     *,
     grade_content: dict[int, list[LearningContentItem]],
+    performance: dict[str, dict[str, str]] | None = None,
 ) -> SampledParams:
-    return sample_params(
-        grade_content=grade_content,
+    content_by_code = {
+        item.編碼: item
+        for items in grade_content.values()
+        for item in items
+    }
+    performance_by_code = {
+        code: description
+        for stage_entries in (performance or {}).values()
+        for code, description in stage_entries.items()
+    }
+    learning_content = [
+        content_by_code.get(code, LearningContentItem(編碼=code, 說明=""))
+        for code in payload["learning_content"]
+    ]
+    learning_performance = [
+        LearningContentItem(編碼=code, 說明=performance_by_code.get(code, ""))
+        for code in payload["learning_performance"]
+    ]
+    subject_filter = payload.get("subject_filter")
+    if isinstance(subject_filter, list):
+        subject_filter = subject_filter[0] if subject_filter else None
+    return SampledParams(
         grade=payload["grade"],
-        style=[QuestionStyle(value) for value in payload["style"]],
-        context=[QuestionContext(value) for value in payload["context"]],
-        set_type=QuestionSetType(payload["set_type"]),
-        q_type=[QuestionType(value) for value in payload["q_type"]],
         seed=payload.get("seed"),
-        math_thinking=[MathThinking(value) for value in payload["math_thinking"]],
-        core_competency=payload["core_competency"],
-        learning_content=payload["learning_content"],
-        learning_performance=payload["learning_performance"],
-        content_type=payload["content_type"],
-        subject_filter=payload.get("subject_filter"),
+        情境=[QuestionContext(value) for value in payload["context"]],
+        題型種類=QuestionSetType(payload["set_type"]),
+        題型=QuestionType(payload["q_type"][0]),
+        數學思考=[MathThinking(value) for value in payload["math_thinking"]],
+        學習內容=learning_content,
+        style=QuestionStyle(payload["style"][0]),
+        核心素養=list(payload["core_competency"]),
+        學習表現=learning_performance,
+        題目內容類型=payload["content_type"],
+        subject_filter=subject_filter,
         sub_question_count=payload.get("sub_question_count"),
-        difficulty=payload.get("difficulty"),
+        text_word_limit=payload.get("text_word_limit"),
+        difficulty=payload.get("difficulty") or DEFAULT_DIFFICULTY,
     )
 
 
@@ -1009,12 +1032,12 @@ def main(argv: list[str] | None = None) -> None:
             seed = (base_seed + i) if base_seed is not None else None
             question_id = f"q_{timestamp}_{i+1:03d}"
 
-            # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
             partial_payload = _math_partial_payload(args, seed)
             resolved = resolve_and_print(partial_payload, delimited=args.dry_run)
             params = _math_params_from_resolved(
                 resolved.payload,
                 grade_content=grade_content,
+                performance=performance,
             )
 
             print(f"\n[{i+1}/{args.count}] Sampled: grade={params.grade}, "

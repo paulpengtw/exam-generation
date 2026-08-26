@@ -7,6 +7,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient
@@ -19,6 +20,7 @@ from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import Base, User
 from server.rate_limit import limiter
+from tests.server.generate_test_utils import complete_math_query_params
 
 
 def _make_app_and_token(allowed: tuple[str, ...] = ()):
@@ -36,7 +38,13 @@ def _make_app_and_token(allowed: tuple[str, ...] = ()):
             yield session
 
     if not allowed:
-        allowed = ("claude-opus-5", "claude-fable-5", "claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-4-6")
+        allowed = (
+            "claude-opus-5",
+            "claude-fable-5",
+            "claude-sonnet-5",
+            "claude-sonnet-4-6",
+            "claude-opus-4-6",
+        )
     config = ServerConfig(
         api_key="x",
         jwt_secret="test-secret",
@@ -78,9 +86,11 @@ def test_generate_route_accepts_allowlisted_models_and_forwards_to_params() -> N
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=math"
-                "&model_plan=claude-opus-4-6"
-                "&model_execute=claude-haiku-4-6",
+                "/api/generate",
+                params=complete_math_query_params(
+                    model_plan="claude-opus-4-6",
+                    model_execute="claude-haiku-4-6",
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -111,7 +121,8 @@ def test_generate_route_rejects_unlisted_model_execute_with_422() -> None:
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=math&model_execute=gpt-4o",
+                "/api/generate",
+                params=complete_math_query_params(model_execute="gpt-4o"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -142,7 +153,8 @@ def test_generate_route_absent_overrides_defaults_to_none() -> None:
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=math",
+                "/api/generate",
+                params=complete_math_query_params(),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -212,7 +224,8 @@ def test_generate_route_empty_string_model_execute_treated_as_absent() -> None:
         with TestClient(app) as client:
             # Empty string in query param should not trigger 422
             response = client.get(
-                "/api/generate?subject=math&model_execute=",
+                "/api/generate",
+                params=complete_math_query_params(model_execute=""),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient
@@ -14,6 +15,7 @@ from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import User
 from server.rate_limit import limiter
+from tests.server.generate_test_utils import complete_math_query_params
 
 _GEMINI_MODEL = "gemini-3.1-pro-preview"
 _OPENAI_MODEL = "gpt-5.2"
@@ -65,7 +67,10 @@ def test_gemini_execute_missing_key_rejected_422_generate() -> None:
         gemini_api_key="",
     )
     try:
-        response = client.get(f"/api/generate?model_execute={_GEMINI_MODEL}")
+        response = client.get(
+            "/api/generate",
+            params=complete_math_query_params(model_execute=_GEMINI_MODEL),
+        )
     finally:
         limiter.reset()
     assert response.status_code == 422
@@ -78,7 +83,10 @@ def test_gemini_execute_missing_key_rejected_422_preview() -> None:
         gemini_api_key="",
     )
     try:
-        response = client.get(f"/api/generate/preview?model_execute={_GEMINI_MODEL}")
+        response = client.get(
+            "/api/generate/preview",
+            params=complete_math_query_params(model_execute=_GEMINI_MODEL),
+        )
     finally:
         limiter.reset()
     assert response.status_code == 422
@@ -112,7 +120,10 @@ def test_gemini_execute_with_key_passes_admission_generate() -> None:
         gemini_api_key="g",
     )
     try:
-        response = client.get(f"/api/generate?model_execute={_GEMINI_MODEL}")
+        response = client.get(
+            "/api/generate",
+            params=complete_math_query_params(model_execute=_GEMINI_MODEL),
+        )
     finally:
         limiter.reset()
     assert response.status_code != 422
@@ -124,7 +135,10 @@ def test_gemini_execute_with_key_passes_admission_preview() -> None:
         gemini_api_key="g",
     )
     try:
-        response = client.get(f"/api/generate/preview?model_execute={_GEMINI_MODEL}")
+        response = client.get(
+            "/api/generate/preview",
+            params=complete_math_query_params(model_execute=_GEMINI_MODEL),
+        )
     finally:
         limiter.reset()
     assert response.status_code != 422
@@ -156,7 +170,10 @@ def test_openai_execute_missing_key_rejected_422_generate() -> None:
         openai_api_key="",
     )
     try:
-        response = client.get(f"/api/generate?model_execute={_OPENAI_MODEL}")
+        response = client.get(
+            "/api/generate",
+            params=complete_math_query_params(model_execute=_OPENAI_MODEL),
+        )
     finally:
         limiter.reset()
     assert response.status_code == 422
@@ -169,7 +186,10 @@ def test_openai_execute_missing_key_rejected_422_preview() -> None:
         openai_api_key="",
     )
     try:
-        response = client.get(f"/api/generate/preview?model_execute={_OPENAI_MODEL}")
+        response = client.get(
+            "/api/generate/preview",
+            params=complete_math_query_params(model_execute=_OPENAI_MODEL),
+        )
     finally:
         limiter.reset()
     assert response.status_code == 422
@@ -207,7 +227,9 @@ def test_anthropic_plan_model_missing_key_rejected_422_generate() -> None:
         model_execute=_CLAUDE_EXECUTE,
     )
     try:
-        response = client.get("/api/generate")
+        response = client.get(
+            "/api/generate", params=complete_math_query_params()
+        )
     finally:
         limiter.reset()
     assert response.status_code == 422
@@ -249,7 +271,10 @@ def test_config_default_gemini_execute_missing_key_rejected_422_generate() -> No
     )
     try:
         # No model_execute query param → effective_execute = config.model_execute = gemini
-        response = client.get("/api/generate")
+        response = client.get(
+            "/api/generate",
+            params=complete_math_query_params(),
+        )
     finally:
         limiter.reset()
     assert response.status_code == 422
@@ -287,7 +312,10 @@ def test_not_in_allowlist_fires_before_provider_key_gate_generate() -> None:
         # extra_models_allowed intentionally omits _GEMINI_MODEL
     )
     try:
-        response = client.get(f"/api/generate?model_execute={_GEMINI_MODEL}")
+        response = client.get(
+            "/api/generate",
+            params=complete_math_query_params(model_execute=_GEMINI_MODEL),
+        )
     finally:
         limiter.reset()
     assert response.status_code == 422
@@ -300,7 +328,10 @@ def test_not_in_allowlist_fires_before_provider_key_gate_preview() -> None:
         gemini_api_key="",
     )
     try:
-        response = client.get(f"/api/generate/preview?model_execute={_GEMINI_MODEL}")
+        response = client.get(
+            "/api/generate/preview",
+            params=complete_math_query_params(model_execute=_GEMINI_MODEL),
+        )
     finally:
         limiter.reset()
     assert response.status_code == 422

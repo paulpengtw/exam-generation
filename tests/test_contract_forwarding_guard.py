@@ -17,7 +17,8 @@ For each (field, subject) pair one of the following must hold:
 The test fails if a new GenerateParams field is added without classifying it for
 all three subjects.
 
-Kill-switch: reverting #196's core_competency forwarding into _ss_do_sample_params
+Kill-switch: removing #196's core_competency forwarding from the resolved SS
+adapter
 makes this test fail — which is exactly what it would have caught originally.
 """
 
@@ -36,12 +37,16 @@ from server.generate.models import GenerateParams
 from server.generate.subjects import (
     SUBJECTS,
     _math_coerce_overrides,
-    _math_do_sample_params,
     _ns_coerce_overrides,
     _ns_do_generate,
-    _ns_do_sample_params,
     _ss_coerce_overrides,
-    _ss_do_sample_params,
+)
+from src.cli import _math_params_from_resolved as _math_params_from_resolved_payload
+from src.natural_sciences.cli import (
+    _ns_params_from_resolved as _ns_params_from_resolved_payload,
+)
+from src.social_studies.cli import (
+    _ss_params_from_resolved as _ss_params_from_resolved_payload,
 )
 
 # ── Classification sentinels ──────────────────────────────────────────────────
@@ -149,7 +154,7 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
-    # ── seed — forwarded to every sampler via _sample_worker_params ──
+    # ── seed — forwarded to every subject through the resolved worker payload ──
     "seed": {
         _MA: (FORWARDED, ""),
         _SS: (FORWARDED, ""),
@@ -260,7 +265,7 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
     "core_competency": {
         _MA: (FORWARDED, ""),
         _SS: (FORWARDED, ""),   # ← #196 added core_competency=overrides["core_competency_override"]
-                                #   to _ss_do_sample_params; reverting that makes this test fail
+                                #   to the resolved SS adapter; reverting that makes this test fail
         _NS: (REJECTED, ""),
     },
     # ── math_thinking — math-only request surface ──
@@ -348,7 +353,7 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
 #
 # The core_competency/social_studies row is the kill-switch: reverting #196
 # (which added "core_competency=overrides["core_competency_override"]" to
-# _ss_do_sample_params) removes "core_competency" from that source and breaks this.
+# the resolved SS adapter) removes "core_competency" from that source and breaks this.
 
 FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     # model / effort — forwarded via client_config in _build_run_context
@@ -384,17 +389,17 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("max_retries",   _NS): (_svc._build_run_context, "params.max_retries"),
     # allow_duplicate_figure_kinds — forwarded directly to both visual subjects' samplers
     ("allow_duplicate_figure_kinds", _SS): (
-        _ss_do_sample_params,
-        "params.allow_duplicate_figure_kinds",
+        _ss_params_from_resolved_payload,
+        'payload.get("allow_duplicate_figure_kinds", False)',
     ),
     ("allow_duplicate_figure_kinds", _NS): (
-        _ns_do_sample_params,
-        "params.allow_duplicate_figure_kinds",
+        _ns_params_from_resolved_payload,
+        'payload.get("allow_duplicate_figure_kinds", False)',
     ),
-    # seed — accessed as worker_params.seed in _sample_worker_params
-    ("seed",          _MA): (_svc._sample_worker_params, "worker_params.seed"),
-    ("seed",          _SS): (_svc._sample_worker_params, "worker_params.seed"),
-    ("seed",          _NS): (_svc._sample_worker_params, "worker_params.seed"),
+    # seed — accessed from the resolver-completed worker payload
+    ("seed",          _MA): (_svc.resolved_payload_for_index, "params.seed"),
+    ("seed",          _SS): (_svc.resolved_payload_for_index, "params.seed"),
+    ("seed",          _NS): (_svc.resolved_payload_for_index, "params.seed"),
     # skip_verify — forwarded in _worker_one from ctx.params
     ("skip_verify",       _MA): (_svc._worker_one, "ctx.params.skip_verify"),
     ("skip_verify",       _SS): (_svc._worker_one, "ctx.params.skip_verify"),
@@ -420,16 +425,19 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("core_question", _SS): (_svc._worker_one, "ctx.params.core_question"),
     ("core_question", _NS): (_svc._worker_one, "ctx.params.core_question"),
     # text_word_limit — forwarded in _worker_one (SS/NS) and into math's canonical sampler value
-    ("text_word_limit", _MA): (_math_do_sample_params, "text_word_limit=params.text_word_limit"),
+    ("text_word_limit", _MA): (
+        _math_params_from_resolved_payload,
+        'payload.get("text_word_limit")',
+    ),
     ("text_word_limit", _SS): (_svc._worker_one, "ctx.params.text_word_limit"),
     ("text_word_limit", _NS): (_svc._worker_one, "ctx.params.text_word_limit"),
     # disable_reference_fewshot — forwarded in _worker_one (SS/NS)
     ("disable_reference_fewshot", _SS): (_svc._worker_one, "ctx.params.disable_reference_fewshot"),
     ("disable_reference_fewshot", _NS): (_svc._worker_one, "ctx.params.disable_reference_fewshot"),
     # grade — forwarded directly in each sampler adapter
-    ("grade", _MA): (_math_do_sample_params, "params.grade"),
-    ("grade", _SS): (_ss_do_sample_params,   "params.grade"),
-    ("grade", _NS): (_ns_do_sample_params,   "params.grade"),
+    ("grade", _MA): (_math_params_from_resolved_payload, 'payload["grade"]'),
+    ("grade", _SS): (_ss_params_from_resolved_payload,   'payload["grade"]'),
+    ("grade", _NS): (_ns_params_from_resolved_payload,   'payload["grade"]'),
     # context — forwarded via context_override in coerce_overrides
     ("context", _MA): (_math_coerce_overrides, "params.context"),
     ("context", _SS): (_ss_coerce_overrides,   "params.context"),
@@ -445,52 +453,78 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     # style — math-specific; forwarded via style_override in coerce_overrides
     ("style", _MA): (_math_coerce_overrides, "params.style"),
     # difficulty — forwarded directly in each sampler adapter
-    ("difficulty", _MA): (_math_do_sample_params, "params.difficulty"),
-    ("difficulty", _SS): (_ss_do_sample_params,   "params.difficulty"),
-    ("difficulty", _NS): (_ns_do_sample_params,   "params.difficulty"),
+    ("difficulty", _MA): (_math_params_from_resolved_payload, 'payload.get("difficulty")'),
+    ("difficulty", _SS): (_ss_params_from_resolved_payload,   'payload.get("difficulty")'),
+    ("difficulty", _NS): (_ns_params_from_resolved_payload,   'payload.get("difficulty")'),
     # content_type — forwarded directly in each sampler adapter
-    ("content_type", _MA): (_math_do_sample_params, "params.content_type"),
-    ("content_type", _SS): (_ss_do_sample_params,   "params.content_type"),
-    ("content_type", _NS): (_ns_do_sample_params,   "params.content_type"),
-    ("content_domain", _SS): (_ss_do_sample_params, "content_domain=params.content_domain"),
-    ("target_surface", _SS): (_ss_do_sample_params, "target_surface=params.target_surface"),
+    ("content_type", _MA): (_math_params_from_resolved_payload, 'payload["content_type"]'),
+    ("content_type", _SS): (_ss_params_from_resolved_payload,   'payload["content_type"]'),
+    ("content_type", _NS): (_ns_params_from_resolved_payload,   'payload["content_type"]'),
+    ("content_domain", _SS): (_ss_params_from_resolved_payload, 'payload.get("content_domain")'),
+    ("target_surface", _SS): (_ss_params_from_resolved_payload, 'payload.get("target_surface")'),
     # learning_performance — forwarded directly in each sampler adapter
-    ("learning_performance", _MA): (_math_do_sample_params, "params.learning_performance"),
-    ("learning_performance", _SS): (_ss_do_sample_params,   "params.learning_performance"),
-    ("learning_performance", _NS): (_ns_do_sample_params,   "params.learning_performance"),
+    ("learning_performance", _MA): (
+        _math_params_from_resolved_payload,
+        'payload["learning_performance"]',
+    ),
+    ("learning_performance", _SS): (
+        _ss_params_from_resolved_payload,
+        'payload["learning_performance"]',
+    ),
+    ("learning_performance", _NS): (
+        _ns_params_from_resolved_payload,
+        'payload["learning_performance"]',
+    ),
     # learning_content — forwarded directly in each sampler adapter
-    ("learning_content", _MA): (_math_do_sample_params, "params.learning_content"),
-    ("learning_content", _SS): (_ss_do_sample_params,   "params.learning_content"),
-    ("learning_content", _NS): (_ns_do_sample_params,   "params.learning_content"),
+    ("learning_content", _MA): (_math_params_from_resolved_payload, 'payload["learning_content"]'),
+    ("learning_content", _SS): (_ss_params_from_resolved_payload,   'payload["learning_content"]'),
+    ("learning_content", _NS): (_ns_params_from_resolved_payload,   'payload["learning_content"]'),
     # core_competency — ← KILL-SWITCH for #196
-    # math: forwarded directly in _math_do_sample_params
-    # SS:   forwarded in _ss_do_sample_params via core_competency_override (#196 fix)
-    # NS:   rejected (no proof needed)
-    ("core_competency", _MA): (_math_do_sample_params, "params.core_competency"),
-    ("core_competency", _SS): (_ss_do_sample_params,   "core_competency"),   # ← #196 kill-switch
-    ("math_thinking", _MA): (_math_do_sample_params, "params.math_thinking"),
+    # math and SS consume the completed core-competency payload directly.
+    # NS rejects it (no proof needed).
+    ("core_competency", _MA): (_math_params_from_resolved_payload, 'payload["core_competency"]'),
+    ("core_competency", _SS): (_ss_params_from_resolved_payload,   'payload["core_competency"]'),
+    ("math_thinking", _MA): (_math_params_from_resolved_payload, 'payload["math_thinking"]'),
     # science_competency — NS-specific, forwarded via science_competency_override
     ("science_competency", _NS): (_ns_coerce_overrides, "params.science_competency"),
     # sub_context — NS-specific, forwarded via sub_context_override
     ("sub_context", _NS): (_ns_coerce_overrides, "params.sub_context"),
     # subject_filter — math: direct; SS: via subject_override; NS: inapplicable
-    ("subject_filter", _MA): (_math_do_sample_params, "params.subject_filter"),
+    ("subject_filter", _MA): (_math_params_from_resolved_payload, 'payload.get("subject_filter")'),
     ("subject_filter", _SS): (_ss_coerce_overrides,   "params.subject_filter"),
     # reporting_scale — NS-specific, forwarded directly in NS sampler adapter
-    ("reporting_scale", _NS): (_ns_do_sample_params, "params.reporting_scale"),
+    ("reporting_scale", _NS): (_ns_params_from_resolved_payload, 'payload.get("reporting_scale")'),
     # sub_question_count — forwarded directly by every subject sampler adapter
     ("sub_question_count", _MA): (
-        _math_do_sample_params,
-        "sub_question_count=params.sub_question_count",
+        _math_params_from_resolved_payload,
+        'payload.get("sub_question_count")',
     ),
-    ("sub_question_count", _SS): (_ss_do_sample_params, "params.sub_question_count"),
-    ("sub_question_count", _NS): (_ns_do_sample_params, "params.sub_question_count"),
+    ("sub_question_count", _SS): (
+        _ss_params_from_resolved_payload,
+        'payload.get("sub_question_count")',
+    ),
+    ("sub_question_count", _NS): (
+        _ns_params_from_resolved_payload,
+        'payload.get("sub_question_count")',
+    ),
     # question_word_limit — SS/NS; math rejects
-    ("question_word_limit", _SS): (_ss_do_sample_params, "params.question_word_limit"),
-    ("question_word_limit", _NS): (_ns_do_sample_params, "params.question_word_limit"),
+    ("question_word_limit", _SS): (
+        _ss_params_from_resolved_payload,
+        'payload.get("question_word_limit")',
+    ),
+    ("question_word_limit", _NS): (
+        _ns_params_from_resolved_payload,
+        'payload.get("question_word_limit")',
+    ),
     # option_word_limit — SS/NS; math rejects
-    ("option_word_limit", _SS): (_ss_do_sample_params, "params.option_word_limit"),
-    ("option_word_limit", _NS): (_ns_do_sample_params, "params.option_word_limit"),
+    ("option_word_limit", _SS): (
+        _ss_params_from_resolved_payload,
+        'payload.get("option_word_limit")',
+    ),
+    ("option_word_limit", _NS): (
+        _ns_params_from_resolved_payload,
+        'payload.get("option_word_limit")',
+    ),
     # subquestion_configs — forwarded via decoded configs in _build_run_context; math rejects
     ("subquestion_configs", _SS): (_svc._build_run_context, "params.subquestion_configs"),
     ("subquestion_configs", _NS): (_svc._build_run_context, "params.subquestion_configs"),
@@ -576,7 +610,7 @@ def test_forwarded_field_has_structural_proof(field: str, subject: str) -> None:
     and that token must appear in the named adapter's source.
 
     Reverting #196's core_competency forwarding (removing
-    'core_competency=overrides["core_competency_override"]' from _ss_do_sample_params)
+    'core_competency=overrides["core_competency_override"]' from the resolved SS adapter)
     removes 'core_competency' from that source and fails this test.
     """
     key = (field, subject)

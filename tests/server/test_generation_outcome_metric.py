@@ -8,10 +8,10 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 import sentry_sdk
 from pydantic import BaseModel
-
 
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
@@ -44,13 +44,7 @@ def _make_fake_spec(generation_error: Exception | None = None) -> SubjectSpec:
     ) -> list:
         return []
 
-    def do_sample_params(
-        params: Any,
-        overrides: dict,
-        *,
-        seed: Any,
-        subquestion_configs_decoded: Any,
-    ) -> _FakeParams:
+    def params_from_resolved_payload(payload: dict[str, Any], overrides: dict) -> _FakeParams:
         return _FakeParams()
 
     def do_generate(
@@ -90,7 +84,7 @@ def _make_fake_spec(generation_error: Exception | None = None) -> SubjectSpec:
         exam_question_cls=_FakeQuestion,
         coerce_overrides=coerce_overrides,
         plan_all_batch_briefs=plan_all_batch_briefs,
-        do_sample_params=do_sample_params,
+        params_from_resolved_payload=params_from_resolved_payload,
         do_generate=do_generate,
         extract_prior_scope=extract_prior_scope,
         patch_metadata=None,

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 from pydantic import ValidationError
 
 from server.generate.models import GenerateParams
-from server.generate.subjects import SUBJECTS
+from src.common.resolver import resolve
+from src.social_studies.cli import _ss_params_from_resolved
 
 
 def test_social_studies_uses_requested_core_competencies() -> None:
@@ -16,15 +15,13 @@ def test_social_studies_uses_requested_core_competencies() -> None:
         subject="social_studies",
         core_competency=["社-J-A1", "社-J-C3"],
     )
-    spec = SUBJECTS[params.subject]
-    overrides = spec.coerce_overrides(params, SimpleNamespace())
-
-    sampled = spec.do_sample_params(
-        params,
-        overrides,
-        seed=1,
-        subquestion_configs_decoded=None,
+    result = resolve(
+        {
+            **params.model_dump(mode="json"),
+            "seed": 1,
+        }
     )
+    sampled = _ss_params_from_resolved(result.payload)
 
     assert [competency.value for competency in sampled.核心素養] == [
         "社-J-A1",

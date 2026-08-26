@@ -4,7 +4,7 @@ import * as Sentry from "@sentry/react";
 
 import { useAuthStore } from "../store/authStore";
 import { isSentryEnabled } from "../sentry";
-import type { GenerateParams } from "../api/generated/contract";
+import type { GenerateParams, ResolveFieldError } from "../api/generated/contract";
 
 export type { GenerateParams };
 
@@ -315,6 +315,24 @@ export function parseErrorEventData(raw: string): string {
   return raw;
 }
 
+function formatHttpErrorDetail(detail: unknown): string | null {
+  if (typeof detail === "string" && detail !== "") return detail;
+  if (!Array.isArray(detail)) return null;
+
+  const fieldErrors = detail.filter(
+    (item): item is ResolveFieldError => (
+      item !== null
+      && typeof item === "object"
+      && typeof (item as Record<string, unknown>).field === "string"
+      && typeof (item as Record<string, unknown>).code === "string"
+    ),
+  );
+  if (fieldErrors.length === 0) return null;
+  return `Incomplete request: ${fieldErrors
+    .map(({ field, code }) => `${field} (${code})`)
+    .join("; ")}`;
+}
+
 export function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
   if (params.subject !== undefined) qs.append("subject", params.subject);
@@ -547,11 +565,9 @@ export function useGenerate(): UseGenerateReturn {
             if (
               body !== null &&
               typeof body === "object" &&
-              "detail" in body &&
-              typeof (body as Record<string, unknown>).detail === "string" &&
-              (body as Record<string, unknown>).detail !== ""
+              "detail" in body
             ) {
-              msg = (body as Record<string, string>).detail;
+              msg = formatHttpErrorDetail((body as Record<string, unknown>).detail) ?? msg;
             }
           } catch {
             // non-JSON or unreadable body — keep the generic message

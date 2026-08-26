@@ -1,14 +1,13 @@
 """Tests that per-子題 explicit LC/LP overrides the LLM output in _parse_subquestion."""
-import pytest
-from unittest.mock import patch
 
 
 def _make_ss_params_with_cfg(lc_codes, lp_codes):
-    from src.social_studies.sampler import ss_sample_params
-    from src.social_studies.schemas import SubQuestionConfig
     import random
+
+    from src.social_studies.sampler import sample_params
+    from src.social_studies.schemas import SubQuestionConfig
     rng = random.Random(42)
-    params = ss_sample_params(rng=rng)
+    params = sample_params(seed=rng.randrange(2**32))
     cfg = SubQuestionConfig(learning_content=lc_codes, learning_performance=lp_codes)
     params = params.model_copy(update={"subquestion_configs": [cfg]})
     return params

@@ -15,6 +15,7 @@ from typing import Any
 
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
 from src.common.cli_resolver import resolve_and_print
+from src.common.difficulty import DEFAULT_DIFFICULTY
 from src.common.figure_policy import (
     build_figure_consistency_entries,
     effective_figure_kind,
@@ -51,7 +52,6 @@ from src.social_studies.context_builder import (
 from src.social_studies.corrector import correct_question
 from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
 from src.social_studies.planner import plan_context_angles
-from src.social_studies.sampler import sample_params
 from src.social_studies.schema_loader import load_grades, load_schemas
 from src.social_studies.schemas import (
     CoreCompetency,
@@ -390,37 +390,54 @@ def _ss_params_from_resolved(payload: dict[str, Any]) -> SampledParams:
     subject_filter = payload.get("subject_filter")
     if subject_filter is not None and not isinstance(subject_filter, list):
         subject_filter = [subject_filter]
-    q_type = payload.get("q_type")
-    resolved_q_types = [QuestionType(value) for value in q_type] if q_type else None
-    params = sample_params(
+    raw_configs = payload.get("subquestion_configs") or []
+    if isinstance(raw_configs, str):
+        raw_configs = json.loads(raw_configs)
+    if not isinstance(raw_configs, list):
+        raise ValueError("resolved subquestion_configs must be a list")
+    configs = [SubQuestionConfig.model_validate(item) for item in raw_configs]
+
+    q_type_values = list(payload.get("q_type") or [])
+    if not q_type_values:
+        q_type_values = [
+            config.question_type.value
+            for config in configs
+            if config.question_type is not None
+        ]
+    resolved_q_types: list[QuestionType] = []
+    for value in q_type_values:
+        question_type = QuestionType(value)
+        if question_type not in resolved_q_types:
+            resolved_q_types.append(question_type)
+    if not resolved_q_types:
+        raise ValueError("resolved social-studies payload has no question types")
+
+    return SampledParams(
         grade=payload["grade"],
-        context=[QuestionContext(value) for value in payload["context"]],
-        set_type=QuestionSetType(payload["set_type"]),
-        q_type=resolved_q_types,
-        subject=(
-            [QuestionSubject(value) for value in subject_filter]
-            if subject_filter
-            else None
-        ),
-        core_competency=[CoreCompetency(value) for value in payload["core_competency"]],
-        learning_content=payload["learning_content"],
-        learning_performance=payload["learning_performance"],
-        content_type=payload["content_type"],
-        content_domain=payload.get("content_domain"),
-        target_surface=payload.get("target_surface"),
         seed=payload.get("seed"),
-        sub_question_count=payload.get("sub_question_count"),
+        情境=[QuestionContext(value) for value in payload["context"]],
+        題型種類=QuestionSetType(payload["set_type"]),
+        題型=resolved_q_types,
+        題目內容類型=payload["content_type"],
+        科目=QuestionSubject((subject_filter or ["跨科"])[0]),
+        內容領域=payload.get("content_domain"),
+        target_surface=payload.get("target_surface") or "紙本",
+        核心素養=[CoreCompetency(value) for value in payload["core_competency"]],
+        學習內容_pool=list(payload["learning_content"]),
+        學習表現_pool=list(payload["learning_performance"]),
+        認知歷程_pool=[
+            config.認知歷程
+            for config in configs
+            if config.認知歷程 is not None
+        ],
+        sub_question_count=payload.get("sub_question_count") or len(configs) or None,
         question_word_limit=payload.get("question_word_limit"),
         option_word_limit=payload.get("option_word_limit"),
-        subquestion_configs=payload.get("subquestion_configs"),
-        difficulty=payload.get("difficulty"),
+        text_word_limit=payload.get("text_word_limit"),
+        subquestion_configs=configs,
         allow_duplicate_figure_kinds=payload.get("allow_duplicate_figure_kinds", False),
+        difficulty=payload.get("difficulty") or DEFAULT_DIFFICULTY,
     )
-    if resolved_q_types is not None:
-        # The transitional SS sampler treats top-level q_type as a draw pool;
-        # the resolver's completed list is already the pinned pool/order.
-        params = params.model_copy(update={"題型": resolved_q_types})
-    return params
 
 
 def _resolve_enum(value: str | None, enum_cls: type) -> object | None:
@@ -1763,7 +1780,6 @@ def main(argv: list[str] | None = None) -> None:
         params_list: list[SampledParams] = []
         for i in range(args.count):
             seed = (base_seed + i) if base_seed is not None else None
-            # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
             resolved = resolve_and_print(
                 _ss_partial_payload(args, seed),
                 delimited=args.dry_run,

@@ -7,6 +7,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient
@@ -15,11 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from server.app import create_app
 from server.auth.dependencies import get_config
 from server.auth.tokens import create_jwt
-from server.config import ServerConfig, _EFFORT_LEVELS
+from server.config import _EFFORT_LEVELS, ServerConfig
 from server.db import get_async_session
 from server.models import Base, User
 from server.rate_limit import limiter
-
+from tests.server.generate_test_utils import complete_math_query_params
 
 # ---------------------------------------------------------------------------
 # Shared setup helpers
@@ -45,7 +46,13 @@ def _make_app_and_token(
             yield session
 
     if not allowed:
-        allowed = ("claude-opus-5", "claude-fable-5", "claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-4-6")
+        allowed = (
+            "claude-opus-5",
+            "claude-fable-5",
+            "claude-sonnet-5",
+            "claude-sonnet-4-6",
+            "claude-opus-4-6",
+        )
     config = ServerConfig(
         api_key="x",
         jwt_secret="test-secret",
@@ -152,7 +159,8 @@ def test_generate_endpoint_accepts_valid_effort_plan() -> None:
     try:
         with TestClient(app) as client:
             r = client.get(
-                "/api/generate?subject=math&effort_plan=high",
+                "/api/generate",
+                params=complete_math_query_params(effort_plan="high"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -179,7 +187,8 @@ def test_generate_endpoint_accepts_valid_effort_execute() -> None:
     try:
         with TestClient(app) as client:
             r = client.get(
-                "/api/generate?subject=math&effort_execute=low",
+                "/api/generate",
+                params=complete_math_query_params(effort_execute="low"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -206,7 +215,8 @@ def test_generate_endpoint_rejects_bogus_effort_plan_422() -> None:
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
-                "/api/generate?subject=math&effort_plan=bogus",
+                "/api/generate",
+                params=complete_math_query_params(effort_plan="bogus"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -236,9 +246,11 @@ def test_generate_endpoint_rejects_effort_execute_xhigh_for_sonnet4_6() -> None:
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
-                "/api/generate?subject=math"
-                "&model_execute=claude-sonnet-4-6"
-                "&effort_execute=xhigh",
+                "/api/generate",
+                params=complete_math_query_params(
+                    model_execute="claude-sonnet-4-6",
+                    effort_execute="xhigh",
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -268,9 +280,11 @@ def test_generate_endpoint_accepts_effort_execute_xhigh_for_opus5() -> None:
     try:
         with TestClient(app) as client:
             r = client.get(
-                "/api/generate?subject=math"
-                "&model_execute=claude-opus-5"
-                "&effort_execute=xhigh",
+                "/api/generate",
+                params=complete_math_query_params(
+                    model_execute="claude-opus-5",
+                    effort_execute="xhigh",
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -298,7 +312,8 @@ def test_generate_endpoint_no_effort_params_accepted() -> None:
     try:
         with TestClient(app) as client:
             r = client.get(
-                "/api/generate?subject=math",
+                "/api/generate",
+                params=complete_math_query_params(),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -421,7 +436,7 @@ def test_service_client_config_carries_effort_overrides(monkeypatch) -> None:
     from server.generate import service as svc_module
     from server.generate.models import GenerateParams
 
-    # Intercept the _sample_worker_params call to capture the client_config
+    # Intercept the resolved-worker path to capture the client_config
     # before it's used — avoids the need for a full app_state.
     captured: dict = {}
 
