@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from src.sampler import _MATH_SUBJECT_TO_PREFIXES, grade_to_learning_stage, sample_params
+from src.schemas import QuestionContext
 
 
 def test_grade_to_learning_stage():
@@ -20,6 +21,47 @@ def test_sample_params_seeded_deterministic():
     p2 = sample_params(grade=8, subject_filter="代數", seed=42)
     assert [c.編碼 for c in p1.學習內容] == [c.編碼 for c in p2.學習內容]
     assert p1.核心素養 == p2.核心素養
+
+
+def test_pinning_math_context_does_not_shift_other_seeded_draws():
+    baseline = sample_params(grade=8, content_type="純文字", seed=314159)
+    pinned = sample_params(
+        grade=8,
+        content_type="純文字",
+        context=[QuestionContext("個人")],
+        seed=314159,
+    )
+
+    assert pinned.情境 == [QuestionContext("個人")]
+    baseline_payload = baseline.model_dump()
+    pinned_payload = pinned.model_dump()
+    baseline_payload.pop("情境")
+    pinned_payload.pop("情境")
+    assert pinned_payload == baseline_payload
+
+
+def test_math_redraw_counter_changes_only_its_field_and_replays_deterministically():
+    baseline = sample_params(grade=8, content_type="純文字", seed=1)
+    redrawn = sample_params(
+        grade=8,
+        content_type="純文字",
+        seed=1,
+        redraws={"題型": 1},
+    )
+    replay = sample_params(
+        grade=8,
+        content_type="純文字",
+        seed=1,
+        redraws={"題型": 1},
+    )
+
+    assert redrawn.題型 != baseline.題型
+    baseline_payload = baseline.model_dump()
+    redrawn_payload = redrawn.model_dump()
+    baseline_payload.pop("題型")
+    redrawn_payload.pop("題型")
+    assert redrawn_payload == baseline_payload
+    assert replay.model_dump_json() == redrawn.model_dump_json()
 
 
 def test_sample_params_algebra_filter_picks_algebra_strand():
@@ -64,17 +106,17 @@ def test_sample_params_sub_question_count_pins_math_to_group_question():
     assert p.題型種類.value == "題組題"
 
 
-def test_omitting_sub_question_count_preserves_the_seeded_math_draw_snapshot():
+def test_omitting_sub_question_count_replays_keyed_math_draw_snapshot():
     p = sample_params(grade=8, seed=314159, sub_question_count=None)
 
-    assert p.情境 == ["科學", "數學文字情境"]
-    assert p.題型種類.value == "單一題"
+    assert p.情境 == ["職業"]
+    assert p.題型種類.value == "題組題"
     assert p.題型.value == "選擇題"
-    assert [item.value for item in p.數學思考] == ["運用", "詮釋評估", "形成"]
-    assert [item.編碼 for item in p.學習內容] == ["S-9-9"]
-    assert [item.編碼 for item in p.學習表現] == ["a-IV-3", "n-IV-1", "s-IV-4"]
-    assert p.核心素養 == ["數-J-A3", "數-J-C3", "數-J-C1"]
-    assert p.題目內容類型 == "含圖片"
+    assert [item.value for item in p.數學思考] == ["詮釋評估", "形成", "運用"]
+    assert [item.編碼 for item in p.學習內容] == ["A-7-7", "A-7-8", "S-8-3"]
+    assert [item.編碼 for item in p.學習表現] == ["s-IV-12", "d-IV-1", "a-IV-5"]
+    assert p.核心素養 == ["數-J-A2"]
+    assert p.題目內容類型 == "純文字"
     assert p.style.value == "text_only"
 
 

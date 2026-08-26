@@ -46,7 +46,7 @@ def test_math_group_prompts_describe_the_requested_group_contract() -> None:
     assert "維持單題輸出結構（不是題組）" not in text_user
 
 
-def test_math_flat_prompt_contract_is_unchanged_for_a_fixed_seed() -> None:
+def test_math_flat_prompt_contract_is_stable_for_a_fixed_keyed_seed() -> None:
     from src.context_builder import build_user_prompt
     from src.sampler import sample_params
 
@@ -63,5 +63,5 @@ def test_math_flat_prompt_contract_is_unchanged_for_a_fixed_seed() -> None:
         "`評分規準` 等題組欄位。"
     ) in prompt
     assert hashlib.sha256(prompt.encode()).hexdigest() == (
-        "850a195851abb329d71da5d96a34ebe1cb90f393857c44c4ed54e75f92e3b7fb"
+        "4fa880d9baf41d69d15c97469fe578248c14a16e7c28c06979fb66ceceb48c88"
     )

@@ -11,6 +11,7 @@ All curriculum data (學習內容.json, 學習表現.json) is injected directly 
 
 ### Script-side randomness
 The Python code handles all random selection (grade, 情境, 題型種類, 題型, 數學思考, 學習內容, 學習表現, 核心素養, 題目內容類型, subject_filter, question style; social-studies parent items are fixed as 題組題, can receive web/API per-小題 `question_type`, `instruction`, `learning_content`, and `learning_performance` constraints — empty per-小題 LC/LP fields fall back to the global sampled pool; explicit per-小題 LC/LP selections are injected into that 子題's prompt with a hard must-use instruction and are forced verbatim into the output SubQuestion (overriding the LLM's choice) — sample blank question types per 小題, and persist instructions as `subquestions[*].出題指示`; natural sciences also adds 情境子類別, 科學能力, and (parallel to social studies) per-小題 SubQuestionConfig support with sub_question_count, subquestion_configs, question_word_limit, option_word_limit — blank 題型 slots are filled from the PISA-Science 題型 pool). After each 子題產生器 response is parsed, `科目` is a 強制值: 社會領域 uses the sampled `params.科目`, while 自然科學 always uses `自然科學`, overriding any conflicting LLM value. An explicitly supplied 情境子類別 is 釘選: if 情境 is omitted its parent constrains the 情境 draw, while an explicitly incompatible 情境/情境子類別 pair is rejected during request validation. The LLM receives deterministic instructions — it does not choose these parameters itself.
+For a seeded request, each drawn value uses its own `draw_rng(seed, field_path, redraws.get(field_path, 0))` stream instead of consuming a shared sequential RNG. Field paths use the serialized top-level parameter name and indexed dotted paths such as `subquestion_configs[2].question_type` for per-小題 slots; 從屬參數 resolve their parent first and then draw the child from that resolved range. `redraws` is a per-field 重抽 counter, so incrementing one path changes only that path's stream and the same seed, pins, and counters replay the same payload.
 
 ### Batch-level prompt dedup (issue #111)
 
@@ -569,7 +570,7 @@ Calls 3 + 4 may repeat up to `max_retries` times (default 3, via `LLM_MAX_RETRIE
 
 ### Randomness Summary
 
-All RNG is `random.Random(seed)` per question. Points: grade from `_GRADES` (sampler.py:38), 情境 (41-46), 題型種類 (49), 題型 (52), 數學思考 (55-57), 學習內容 (60-64), style (67), few-shot pick (context_builder.py:208-209).
+Seeded sampler values use independent `draw_rng(seed, field_path, counter)` streams; the 參考範例 selection in each context builder remains a separate prompt-only draw. The sampler paths cover grade, 情境, 題型種類, 題型, curriculum pools, style, and indexed per-小題 fields; `redraws` supplies the counter for the path being 重抽.
 
 ## Agent skills
 
