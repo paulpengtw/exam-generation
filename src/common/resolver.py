@@ -19,7 +19,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.natural_sciences.sampler import (
-    _SUB_CONTEXT_PARENT,
+    _SUB_CONTEXT_ADMITTED_BY,
+    _matching_subcontexts,
 )
 from src.natural_sciences.sampler import (
     sample_params as sample_natural_params,
@@ -381,10 +382,19 @@ def _validate_natural_parent(payload: dict[str, Any]) -> None:
     contexts = [_value(item) for item in contexts if not _blank(item)]
     if not contexts:
         return
-    parent = _SUB_CONTEXT_PARENT.get(sub_context)
-    if parent is not None and parent not in contexts:
+    admitted_parents = _SUB_CONTEXT_ADMITTED_BY.get(sub_context, [])
+    matching_subcontexts = _matching_subcontexts(set(contexts))
+    if admitted_parents and not any(
+        candidate.value == sub_context for candidate in matching_subcontexts
+    ):
         raise ResolveConflictError(
-            [{"field": "sub_context", "code": "incompatible_parent", "parent": "context"}]
+            [
+                {
+                    "field": "sub_context",
+                    "code": "incompatible_parent",
+                    "parent": admitted_parents[0],
+                }
+            ]
         )
 
 

@@ -286,7 +286,11 @@ def test_resolve_endpoint_rejects_incompatible_parent_without_payload(
 
     assert response.status_code == 422
     assert response.json()["detail"] == [
-        {"field": "sub_context", "code": "incompatible_parent", "parent": "context"}
+        {
+            "field": "sub_context",
+            "code": "incompatible_parent",
+            "parent": "Personal",
+        }
     ]
     assert "payload" not in response.json()
 

@@ -332,5 +332,31 @@ def test_resolve_rejects_incompatible_natural_parent_pin() -> None:
         )
 
     assert exc_info.value.errors == [
-        {"field": "sub_context", "code": "incompatible_parent", "parent": "context"}
+        {
+            "field": "sub_context",
+            "code": "incompatible_parent",
+            "parent": "Personal",
+        }
     ]
+
+
+def test_resolve_accepts_any_admitted_natural_parent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.natural_sciences import sampler
+
+    monkeypatch.setitem(
+        sampler._SUB_CONTEXT_ADMITTED_BY,
+        "Maintenance of health",
+        ["Personal", "Global"],
+    )
+
+    result = resolve(
+        {
+            "subject": "natural_sciences",
+            "context": ["Global"],
+            "sub_context": "Maintenance of health",
+        }
+    )
+
+    assert result.payload["context"] == ["Global"]
