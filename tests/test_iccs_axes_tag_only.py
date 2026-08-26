@@ -235,37 +235,12 @@ def test_subquestion_cognitive_process_rejects_unknown_values() -> None:
         )
 
 
-def test_sampler_reserves_cognitive_assignments_when_planner_chooses_count(tmp_path) -> None:
-    from src.social_studies.cli import _parse_subquestion
-    from src.social_studies.context_builder import build_subquestion_user_prompt
+def test_sampler_does_not_assign_cognitive_processes_to_unconfigured_slots() -> None:
     from src.social_studies.sampler import sample_params
 
     params = sample_params(seed=489)
-    assigned = params.認知歷程_pool[2]
-    prompt, _ = build_subquestion_user_prompt(
-        核心問題="測試核心問題",
-        文本="測試文本",
-        取材來源=["測試來源"],
-        sq_plan={"序號": 3, "題型": "選擇題", "出題概念": "測試"},
-        params=params,
-        few_shot_dir=tmp_path,
-        disable_reference_fewshot=True,
-    )
-    subquestion = _parse_subquestion(
-        {
-            "序號": 3,
-            "題型": "選擇題",
-            "題目": "測試題目",
-            "認知歷程": "Knowing–Defining and Describing",
-        },
-        "iccs-default-slot",
-        params,
-        3,
-    )
-
-    assert f"- **認知歷程**：{assigned}" in prompt
-    assert subquestion is not None
-    assert subquestion.認知歷程 == assigned
+    assert params.subquestion_configs == []
+    assert params.認知歷程_pool == []
 
 
 def test_social_corrector_preserves_iccs_tags_during_rebuild() -> None:

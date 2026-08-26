@@ -48,7 +48,6 @@ from src.natural_sciences.context_builder import (
 from src.natural_sciences.corrector import correct_question
 from src.natural_sciences.curriculum_codes import repair_lc_refs, repair_lp_refs
 from src.natural_sciences.curriculum_loader import grade_to_learning_stage
-from src.natural_sciences.sampler import sample_params
 from src.natural_sciences.schema_loader import load_grades, load_schemas
 from src.natural_sciences.schemas import (
     ExamQuestion,
@@ -320,24 +319,49 @@ def _ns_partial_payload(args: argparse.Namespace, seed: int | None) -> dict[str,
 
 
 def _ns_params_from_resolved(payload: dict[str, Any]) -> SampledParams:
-    return sample_params(
+    raw_configs = payload.get("subquestion_configs") or []
+    if isinstance(raw_configs, str):
+        raw_configs = json.loads(raw_configs)
+    if not isinstance(raw_configs, list):
+        raise ValueError("resolved subquestion_configs must be a list")
+    configs = [SubQuestionConfig.model_validate(item) for item in raw_configs]
+
+    question_type = next(
+        (
+            config.question_type
+            for config in configs
+            if config.question_type is not None
+        ),
+        None,
+    )
+    if question_type is None:
+        q_type_values = payload.get("q_type") or []
+        if not q_type_values:
+            raise ValueError("resolved natural-sciences payload has no question type")
+        question_type = QuestionType(q_type_values[0])
+
+    # Difficulty is a shared request field; natural sciences uses Reporting
+    # Scale instead, so the resolved value is intentionally ignored here.
+    _ = payload.get("difficulty")
+
+    return SampledParams(
         grade=payload["grade"],
-        context=[QuestionContext(value) for value in payload["context"]],
-        sub_context=QuestionSubContext(payload["sub_context"]),
-        set_type=QuestionSetType(payload["set_type"]),
-        q_type=[QuestionType(value) for value in payload["q_type"]],
-        science_competency=[
+        seed=payload.get("seed"),
+        情境=[QuestionContext(value) for value in payload["context"]],
+        情境子類別=QuestionSubContext(payload["sub_context"]),
+        題型種類=QuestionSetType(payload["set_type"]),
+        題型=question_type,
+        科學能力=[
             ScienceCompetency(value) for value in payload["science_competency"]
         ],
-        learning_content=payload["learning_content"],
-        learning_performance=payload["learning_performance"],
-        content_type=payload["content_type"],
-        seed=payload.get("seed"),
-        sub_question_count=payload.get("sub_question_count"),
+        題目內容類型=payload["content_type"],
+        學習內容_pool=list(payload["learning_content"]),
+        學習表現_pool=list(payload["learning_performance"]),
+        sub_question_count=payload.get("sub_question_count") or len(configs) or None,
         question_word_limit=payload.get("question_word_limit"),
         option_word_limit=payload.get("option_word_limit"),
-        subquestion_configs=payload.get("subquestion_configs"),
-        difficulty=payload.get("difficulty"),
+        text_word_limit=payload.get("text_word_limit"),
+        subquestion_configs=configs,
         reporting_scale=payload.get("reporting_scale"),
         allow_duplicate_figure_kinds=payload.get("allow_duplicate_figure_kinds", False),
     )
@@ -1622,7 +1646,6 @@ def main(argv: list[str] | None = None) -> None:
             seed = (base_seed + i) if base_seed is not None else None
             question_id = f"ns_{timestamp}_{i+1:03d}"
 
-            # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
             resolved = resolve_and_print(
                 _ns_partial_payload(args, seed),
                 delimited=args.dry_run,

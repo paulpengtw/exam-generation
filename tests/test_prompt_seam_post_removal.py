@@ -80,7 +80,17 @@ def test_channel2_process_exemplar_injection_still_works() -> None:
     Verify a known cognitive_process bucket produces the ICCS exemplar section
     in the subquestion prompt (it reads from process_exemplars/, not Channel-1).
     """
-    params = sample_params(seed=1, content_type="純文字")
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=3,
+        subquestion_configs=[
+            {
+                "question_type": "選擇題",
+                "認知歷程": "Knowing–Defining and Describing",
+            }
+        ],
+    )
     sq_plan = {
         "序號": 1,
         "題型": "選擇題",

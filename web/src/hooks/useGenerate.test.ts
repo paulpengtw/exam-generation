@@ -567,6 +567,35 @@ describe("useGenerate — stream open error detail", () => {
     expect(result.current.errorMessage).toBe("per_question_params[0] has unknown parameter(s): count");
   });
 
+  it("surfaces fielded completeness errors from a gate 422", async () => {
+    const { result } = renderStartedRun();
+    let thrown: unknown;
+
+    await act(async () => {
+      try {
+        await latestStreamOptions().onopen?.(
+          new Response(
+            JSON.stringify({
+              detail: [
+                { field: "per_question_params[0].學習內容", code: "unresolved" },
+              ],
+            }),
+            { status: 422, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toEqual(
+      new Error("Incomplete request: per_question_params[0].學習內容 (unresolved)"),
+    );
+    expect(result.current.errorMessage).toBe(
+      "Incomplete request: per_question_params[0].學習內容 (unresolved)",
+    );
+  });
+
   it("falls back to the generic message when the body is not valid JSON", async () => {
     const { result } = renderStartedRun();
     let thrown: unknown;

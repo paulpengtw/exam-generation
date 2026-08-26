@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import inspect
-import pytest
+import json
 import random
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+from src.common.resolver import resolve
 from src.config import Config
 from src.social_studies.context_builder import (
     build_subquestion_user_prompt,
@@ -292,14 +295,22 @@ def test_social_studies_prompt_preview_reflects_requested_callback_state() -> No
 
     previews_by_state = {}
     for enabled in (True, False):
-        params = GenerateParams(
-            subject="social_studies",
-            seed=41,
-            content_type="純文字",
-            sub_question_count=3,
-            disable_reference_fewshot=True,
-            core_question_callback=enabled,
+        payload = resolve(
+            {
+                "subject": "social_studies",
+                "seed": 41,
+                "content_type": "純文字",
+                "sub_question_count": 3,
+            }
+        ).payload
+        payload["subquestion_configs"] = json.dumps(
+            payload["subquestion_configs"], ensure_ascii=False
         )
+        params = GenerateParams.model_validate({
+            **payload,
+            "disable_reference_fewshot": True,
+            "core_question_callback": enabled,
+        })
         previews_by_state[enabled] = build_prompt_previews(params, config, app_state)
 
     for enabled, previews in previews_by_state.items():
@@ -318,7 +329,7 @@ def test_social_studies_prompt_preview_reflects_requested_callback_state() -> No
 def test_callback_toggle_does_not_change_seeded_social_studies_sampling() -> None:
     pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
     from server.generate.models import GenerateParams
-    from server.generate.service import _sample_worker_params
+    from server.generate.service import _resolved_worker_params
     from server.generate.subjects import SUBJECTS
 
     spec = SUBJECTS["social_studies"]
@@ -328,17 +339,19 @@ def test_callback_toggle_does_not_change_seeded_social_studies_sampling() -> Non
         "content_type": "純文字",
         "sub_question_count": 3,
     }
-    params_on = GenerateParams(**common, core_question_callback=True)
-    params_off = GenerateParams(**common, core_question_callback=False)
+    resolved_payload = resolve(common).payload
+    resolved_payload["subquestion_configs"] = json.dumps(
+        resolved_payload["subquestion_configs"], ensure_ascii=False
+    )
+    params_on = GenerateParams.model_validate({**resolved_payload, "core_question_callback": True})
+    params_off = GenerateParams.model_validate(
+        {**resolved_payload, "core_question_callback": False}
+    )
     app_state = SimpleNamespace(ss_curriculum_context=None)
     overrides_on = spec.coerce_overrides(params_on, app_state)
     overrides_off = spec.coerce_overrides(params_off, app_state)
 
-    sampled_on = _sample_worker_params(
-        0, params_on, spec, overrides_on, None, app_state=app_state
-    )
-    sampled_off = _sample_worker_params(
-        0, params_off, spec, overrides_off, None, app_state=app_state
-    )
+    sampled_on = _resolved_worker_params(0, params_on, spec, overrides_on)
+    sampled_off = _resolved_worker_params(0, params_off, spec, overrides_off)
 
     assert sampled_on.model_dump() == sampled_off.model_dump()

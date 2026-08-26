@@ -13,7 +13,10 @@ from server.config import ServerConfig
 from server.generate.models import GenerateParams
 from server.generate.routes import router
 from server.generate.service import build_prompt_previews
+from server.generate.subjects import resolved_payload_for_index
+from src.cli import _math_params_from_resolved
 from src.cli import generate_one as generate_math
+from src.common.resolver import resolve
 from src.curriculum_context import load_curriculum_context
 from src.data_loader import (
     get_grade_content,
@@ -21,11 +24,10 @@ from src.data_loader import (
     load_intro_text,
     load_performance_standards,
 )
+from src.natural_sciences.cli import _ns_params_from_resolved
 from src.natural_sciences.cli import generate_one as generate_natural_sciences
-from src.natural_sciences.sampler import sample_params as sample_natural_sciences
-from src.sampler import sample_params as sample_math
+from src.social_studies.cli import _ss_params_from_resolved
 from src.social_studies.cli import generate_one as generate_social_studies
-from src.social_studies.sampler import sample_params as sample_social_studies
 
 
 class _CapturingClient:
@@ -86,16 +88,48 @@ def _math_state(config: ServerConfig) -> SimpleNamespace:
     )
 
 
+def _resolved_generate_params(payload: dict) -> GenerateParams:
+    completed = resolve(payload).payload
+    for field in ("subquestion_configs",):
+        if isinstance(completed.get(field), list):
+            completed[field] = json.dumps(completed[field], ensure_ascii=False)
+    rows = completed.get("per_question_params")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get("subquestion_configs"), list):
+                row["subquestion_configs"] = json.dumps(
+                    row["subquestion_configs"], ensure_ascii=False
+                )
+        completed["per_question_params"] = json.dumps(rows, ensure_ascii=False)
+    return GenerateParams.model_validate(completed)
+
+
+def _resolved_subject_params(
+    params: GenerateParams,
+    app_state: SimpleNamespace,
+):
+    payload = resolved_payload_for_index(params, 0)
+    if params.subject == "math":
+        return _math_params_from_resolved(
+            payload,
+            grade_content=app_state.grade_content,
+            performance=app_state.performance,
+        )
+    if params.subject == "social_studies":
+        return _ss_params_from_resolved(payload)
+    return _ns_params_from_resolved(payload)
+
+
 def test_math_preview_is_byte_identical_to_submit_prompt() -> None:
     seed = 187
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = _math_state(config)
-    params = GenerateParams(
-        subject="math", seed=seed, disable_reference_fewshot=True
+    params = _resolved_generate_params(
+        {"subject": "math", "seed": seed, "disable_reference_fewshot": True}
     )
 
     preview = build_prompt_previews(params, config, app_state)[0]
-    sampled = sample_math(grade_content=app_state.grade_content, seed=seed)
+    sampled = _resolved_subject_params(params, app_state)
     capture = _CapturingClient(
         {
             "情境": ["個人"],
@@ -129,17 +163,12 @@ def test_drawn_fields_are_persisted_but_do_not_change_seed_pinned_preview() -> N
     seed = 196
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = _math_state(config)
-    baseline = GenerateParams(
-        subject="math",
-        seed=seed,
-        disable_reference_fewshot=True,
+    baseline = _resolved_generate_params(
+        {"subject": "math", "seed": seed, "disable_reference_fewshot": True}
     )
-    with_metadata = GenerateParams(
-        subject="math",
-        seed=seed,
-        disable_reference_fewshot=True,
-        drawn=["learning_content", "per_question_params[0].seed"],
-    )
+    with_metadata_payload = baseline.model_dump(mode="json")
+    with_metadata_payload["drawn"] = ["learning_content", "per_question_params[0].seed"]
+    with_metadata = GenerateParams.model_validate(with_metadata_payload)
 
     assert with_metadata.model_dump(mode="json")["drawn"] == [
         "learning_content",
@@ -156,15 +185,17 @@ def test_social_studies_preview_is_byte_identical_to_text_generator_prompt() -> 
     seed = 188
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ss_curriculum_context=None)
-    params = GenerateParams(
-        subject="social_studies",
-        seed=seed,
-        disable_reference_fewshot=False,
-        content_type="純文字",
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "seed": seed,
+            "disable_reference_fewshot": False,
+            "content_type": "純文字",
+        }
     )
 
     preview = build_prompt_previews(params, config, app_state)[0]
-    sampled = sample_social_studies(seed=seed, content_type="純文字")
+    sampled = _resolved_subject_params(params, app_state)
     capture = _CapturingClient(
         {
             "核心問題": "測試核心問題",
@@ -189,11 +220,14 @@ def test_social_studies_preview_is_byte_identical_to_text_generator_prompt() -> 
 def test_balanced_batch_preview_shows_the_spread_instruction_in_every_question() -> None:
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ss_curriculum_context=None)
-    params = GenerateParams(
-        subject="social_studies",
-        count=3,
-        coverage_mode="balanced",
-        seed=193,
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "count": 3,
+            "coverage_mode": "balanced",
+            "seed": 193,
+            "per_question_params": [{}, {}, {}],
+        }
     )
 
     previews = build_prompt_previews(params, config, app_state)
@@ -211,11 +245,14 @@ def test_balanced_batch_preview_shows_the_spread_instruction_in_every_question()
 def test_random_batch_preview_omits_the_spread_instruction() -> None:
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ss_curriculum_context=None)
-    params = GenerateParams(
-        subject="social_studies",
-        count=3,
-        coverage_mode="random",
-        seed=194,
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "count": 3,
+            "coverage_mode": "random",
+            "seed": 194,
+            "per_question_params": [{}, {}, {}],
+        }
     )
 
     previews = build_prompt_previews(params, config, app_state)
@@ -233,11 +270,12 @@ def test_random_batch_preview_omits_the_spread_instruction() -> None:
 def test_count_one_preview_omits_the_spread_instruction_even_under_balanced() -> None:
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ss_curriculum_context=None)
-    params = GenerateParams(
-        subject="social_studies",
-        count=1,
-        coverage_mode="balanced",
-        seed=195,
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "count": 1,
+            "coverage_mode": "balanced",
+        }
     )
 
     previews = build_prompt_previews(params, config, app_state)
@@ -254,22 +292,24 @@ def test_social_studies_sub_generator_previews_are_byte_identical_after_placehol
     seed = 191
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ss_curriculum_context=None)
-    params = GenerateParams(
-        subject="social_studies",
-        seed=seed,
-        disable_reference_fewshot=True,
-        content_type="純文字",
-        sub_question_count=3,
-        subquestion_configs="""[
-            {
-                "question_type": "開放式建構反應題",
-                "instruction": "逐字保留這項出題指示",
-                "question_word_limit": 42,
-                "option_word_limit": 17,
-                "learning_content": ["歷Ka-Ⅳ-1"],
-                "learning_performance": ["社1b-Ⅳ-1"]
-            }
-        ]""",
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "seed": seed,
+            "disable_reference_fewshot": True,
+            "content_type": "純文字",
+            "sub_question_count": 3,
+            "subquestion_configs": [
+                {
+                    "question_type": "開放式建構反應題",
+                    "instruction": "逐字保留這項出題指示",
+                    "question_word_limit": 42,
+                    "option_word_limit": 17,
+                    "learning_content": ["歷Ka-Ⅳ-1"],
+                    "learning_performance": ["社1b-Ⅳ-1"],
+                }
+            ],
+        }
     )
     text_payload = {
         "核心問題": "真實核心問題",
@@ -282,21 +322,7 @@ def test_social_studies_sub_generator_previews_are_byte_identical_after_placehol
     }
 
     previews = build_prompt_previews(params, config, app_state)
-    sampled = sample_social_studies(
-        seed=seed,
-        content_type="純文字",
-        sub_question_count=3,
-        subquestion_configs=[
-            {
-                "question_type": "開放式建構反應題",
-                "instruction": "逐字保留這項出題指示",
-                "question_word_limit": 42,
-                "option_word_limit": 17,
-                "learning_content": ["歷Ka-Ⅳ-1"],
-                "learning_performance": ["社1b-Ⅳ-1"],
-            }
-        ],
-    )
+    sampled = _resolved_subject_params(params, app_state)
     captured: dict[int, tuple[str, str]] = {}
     generate_social_studies(
         config=config,
@@ -336,10 +362,12 @@ def test_natural_sciences_preview_is_byte_identical_to_text_generator_prompt() -
     seed = 189
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ns_curriculum_context=None)
-    params = GenerateParams(subject="natural_sciences", seed=seed)
+    params = _resolved_generate_params(
+        {"subject": "natural_sciences", "seed": seed}
+    )
 
     preview = build_prompt_previews(params, config, app_state)[0]
-    sampled = sample_natural_sciences(seed=seed)
+    sampled = _resolved_subject_params(params, app_state)
     capture = _CapturingClient(
         {
             "核心問題": "測試核心問題",
@@ -366,10 +394,16 @@ def test_natural_sciences_preview_with_reporting_scale_is_byte_identical() -> No
     seed = 189
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ns_curriculum_context=None)
-    params = GenerateParams(subject="natural_sciences", seed=seed, reporting_scale="6")
+    params = _resolved_generate_params(
+        {
+            "subject": "natural_sciences",
+            "seed": seed,
+            "reporting_scale": "6",
+        }
+    )
 
     preview = build_prompt_previews(params, config, app_state)[0]
-    sampled = sample_natural_sciences(seed=seed, reporting_scale="6")
+    sampled = _resolved_subject_params(params, app_state)
     capture = _CapturingClient(
         {
             "核心問題": "測試核心問題",
@@ -404,13 +438,15 @@ def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeh
         "learning_content": ["INa-Ⅳ-1"],
         "learning_performance": ["pe-Ⅳ-1"],
     }
-    params = GenerateParams(
-        subject="natural_sciences",
-        seed=seed,
-        disable_reference_fewshot=True,
-        content_type="純文字",
-        sub_question_count=3,
-        subquestion_configs=f"[{json.dumps(slot_config, ensure_ascii=False)}]",
+    params = _resolved_generate_params(
+        {
+            "subject": "natural_sciences",
+            "seed": seed,
+            "disable_reference_fewshot": True,
+            "content_type": "純文字",
+            "sub_question_count": 3,
+            "subquestion_configs": [slot_config],
+        }
     )
     text_payload = {
         "核心問題": "真實自然科學核心問題",
@@ -427,12 +463,7 @@ def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeh
     }
 
     previews = build_prompt_previews(params, config, app_state)
-    sampled = sample_natural_sciences(
-        seed=seed,
-        content_type="純文字",
-        sub_question_count=3,
-        subquestion_configs=[slot_config],
-    )
+    sampled = _resolved_subject_params(params, app_state)
     captured: dict[int, tuple[str, str]] = {}
     generate_natural_sciences(
         config=config,
@@ -474,17 +505,19 @@ def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeh
 def test_same_confirmation_payload_builds_byte_identical_prompts_with_few_shots() -> None:
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = _math_state(config)
-    params = GenerateParams(
-        subject="math",
-        count=1,
-        seed=10,
-        per_question_params='[{"seed": 185}]',
-        disable_reference_fewshot=False,
+    params = _resolved_generate_params(
+        {
+            "subject": "math",
+            "count": 1,
+            "seed": 10,
+            "per_question_params": [{"seed": 185}],
+            "disable_reference_fewshot": False,
+        }
     )
 
     first = build_prompt_previews(params, config, app_state)[0]
     second = build_prompt_previews(params, config, app_state)[0]
-    sampled = sample_math(grade_content=app_state.grade_content, seed=185)
+    sampled = _resolved_subject_params(params, app_state)
     capture = _CapturingClient(
         {
             "情境": ["個人"],
@@ -538,21 +571,20 @@ def test_preview_never_constructs_an_llm_client_for_any_subject(monkeypatch) -> 
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
 
     cases = (
-        (GenerateParams(subject="math", seed=190), _math_state(config)),
+        (_resolved_generate_params({"subject": "math", "seed": 190}), _math_state(config)),
         (
-            GenerateParams(
-                subject="social_studies",
-                seed=190,
-                content_type="純文字",
-                sub_question_count=3,
+            _resolved_generate_params(
+                {
+                    "subject": "social_studies",
+                    "seed": 190,
+                    "content_type": "純文字",
+                }
             ),
             SimpleNamespace(ss_curriculum_context=None),
         ),
         (
-            GenerateParams(
-                subject="natural_sciences",
-                seed=190,
-                sub_question_count=3,
+            _resolved_generate_params(
+                {"subject": "natural_sciences", "seed": 190}
             ),
             SimpleNamespace(ns_curriculum_context=None),
         ),
@@ -568,8 +600,8 @@ def test_preview_never_constructs_an_llm_client_for_any_subject(monkeypatch) -> 
         "subquestion_index" not in preview
         for preview in previews_by_subject["math"]
     )
-    assert len(previews_by_subject["social_studies"]) == 4
-    assert len(previews_by_subject["natural_sciences"]) == 4
+    assert len(previews_by_subject["social_studies"]) == 1 + cases[1][0].sub_question_count
+    assert len(previews_by_subject["natural_sciences"]) == 1 + cases[2][0].sub_question_count
 
 
 def test_preview_route_uses_generate_auth_dependency() -> None:

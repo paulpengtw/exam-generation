@@ -10,6 +10,11 @@ lab apparatus, biology, real-world-proportion geometry) use
 below for the per-``題目內容類型`` mapping.
 """
 
+# Prompt templates intentionally keep several long source lines readable as
+# complete instructions; they are excluded from the repository's 100-column
+# lint check.
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import json
@@ -586,7 +591,7 @@ def build_text_user_prompt(
     count = (
         str(params.sub_question_count)
         if params.sub_question_count is not None
-        else "由文本生成器依素材決定"
+        else "（單一題；題組數量已由解析器完成）"
     )
     set_type_marker = f"- **題型種類**：{params.題型種類.value}\n"
     text = text.replace(

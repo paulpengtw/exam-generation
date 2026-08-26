@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient
@@ -23,6 +24,7 @@ from server.db import get_async_session
 from server.models import Base, User
 from server.rate_limit import limiter
 from src.schemas import ExamQuestion, SubQuestion
+from tests.server.generate_test_utils import complete_math_query_params
 
 
 def _result_payload(response_text: str) -> dict:
@@ -40,7 +42,7 @@ def _result_payload(response_text: str) -> dict:
     raise AssertionError(f"response did not contain a result event: {response_text}")
 
 
-def test_bare_math_http_generation_derives_drawn_group_count(tmp_path: Path) -> None:
+def test_resolved_math_http_generation_preserves_group_count(tmp_path: Path) -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 
     async def init_db() -> None:
@@ -112,10 +114,12 @@ def test_bare_math_http_generation_derives_drawn_group_count(tmp_path: Path) -> 
         ):
             with TestClient(app) as client:
                 result_payloads = []
-                for seed in (3, 0):
+                for seed, set_type in ((3, "題組題"), (0, "單一題")):
                     response = client.get(
                         "/api/generate",
-                        params={"subject": "math", "seed": seed},
+                        params=complete_math_query_params(
+                            seed=seed, set_type=set_type
+                        ),
                         headers={"Authorization": f"Bearer {token}"},
                     )
                     assert response.status_code == 200

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.config import ServerConfig
@@ -28,6 +29,7 @@ from src.common.verification_trail import (
     VerificationTrailInitialEntry,
 )
 from src.social_studies.schemas import ExamQuestion
+from tests.server.generate_test_utils import resolved_generate_params
 
 
 def _make_factory(rows: list[Any]) -> Any:
@@ -184,7 +186,9 @@ def test_completed_stream_persists_the_trail_emitted_by_its_worker(tmp_path) -> 
         SUBJECTS["social_studies"],
         do_generate=fake_do_generate,
     )
-    params = GenerateParams(subject="social_studies", skip_verify=False)
+    params = resolved_generate_params(
+        {"subject": "social_studies", "skip_verify": False}
+    )
     config = ServerConfig(
         api_key="x",
         output_dir=tmp_path,
@@ -230,7 +234,9 @@ def test_skip_verify_stream_persists_a_null_trail(tmp_path) -> None:
         SUBJECTS["social_studies"],
         do_generate=fake_do_generate,
     )
-    params = GenerateParams(subject="social_studies", skip_verify=True)
+    params = resolved_generate_params(
+        {"subject": "social_studies", "skip_verify": True}
+    )
     config = ServerConfig(
         api_key="x",
         output_dir=tmp_path,

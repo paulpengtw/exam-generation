@@ -5,14 +5,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.config import ServerConfig
-from server.generate.models import GenerateParams
 from server.generate.service import build_prompt_previews
 from src.common.batch_dedup import PriorScope
 from src.natural_sciences.context_builder import build_text_user_prompt
 from src.natural_sciences.sampler import sample_params
+from tests.server.generate_test_utils import resolved_generate_params
 
 
 def test_ns_default_call_is_byte_identical(tmp_path) -> None:
@@ -54,11 +55,13 @@ def test_ns_server_balanced_batch_produces_prompt_with_spread_instruction(tmp_pa
     """build_prompt_previews with NS coverage_mode=balanced count>1 → 均衡 block in user prompt."""
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ns_curriculum_context=None)
-    params = GenerateParams(
-        subject="natural_sciences",
-        count=3,
-        coverage_mode="balanced",
-        seed=193,
+    params = resolved_generate_params(
+        {
+            "subject": "natural_sciences",
+            "count": 3,
+            "coverage_mode": "balanced",
+            "seed": 193,
+        }
     )
 
     previews = build_prompt_previews(params, config, app_state)
@@ -72,11 +75,13 @@ def test_ns_server_random_mode_omits_the_spread_instruction(tmp_path) -> None:
     """build_prompt_previews with NS coverage_mode=random → no 均衡 block."""
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ns_curriculum_context=None)
-    params = GenerateParams(
-        subject="natural_sciences",
-        count=3,
-        coverage_mode="random",
-        seed=194,
+    params = resolved_generate_params(
+        {
+            "subject": "natural_sciences",
+            "count": 3,
+            "coverage_mode": "random",
+            "seed": 194,
+        }
     )
 
     previews = build_prompt_previews(params, config, app_state)
@@ -90,11 +95,13 @@ def test_ns_server_count_one_omits_spread_instruction_even_under_balanced(tmp_pa
     """count=1 → no 均衡 block even when coverage_mode=balanced."""
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
     app_state = SimpleNamespace(ns_curriculum_context=None)
-    params = GenerateParams(
-        subject="natural_sciences",
-        count=1,
-        coverage_mode="balanced",
-        seed=195,
+    params = resolved_generate_params(
+        {
+            "subject": "natural_sciences",
+            "count": 1,
+            "coverage_mode": "balanced",
+            "seed": 195,
+        }
     )
 
     previews = build_prompt_previews(params, config, app_state)
@@ -123,17 +130,23 @@ def test_ns_server_stamps_coverage_mode_used_on_metadata(tmp_path) -> None:
     import asyncio
     import dataclasses
 
-    from server.generate.models import GenerateParams
+    from server.config import ServerConfig
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
-    from server.config import ServerConfig
     from src.natural_sciences.schemas import (
         ExamQuestion as NSExamQuestion,
+    )
+    from src.natural_sciences.schemas import (
         QuestionContext as NSQuestionContext,
+    )
+    from src.natural_sciences.schemas import (
         QuestionMetadata as NSQuestionMetadata,
+    )
+    from src.natural_sciences.schemas import (
         QuestionSetType as NSQuestionSetType,
+    )
+    from src.natural_sciences.schemas import (
         QuestionType as NSQuestionType,
-        SampledParams,
     )
 
     def _fake_ns_do_generate(rng_params, overrides, **kwargs):
@@ -151,12 +164,14 @@ def test_ns_server_stamps_coverage_mode_used_on_metadata(tmp_path) -> None:
 
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
     app_state = SimpleNamespace(renderer_pool=None)
-    params = GenerateParams(
-        subject="natural_sciences",
-        count=3,
-        skip_verify=True,
-        coverage_mode="balanced",
-        seed=13,
+    params = resolved_generate_params(
+        {
+            "subject": "natural_sciences",
+            "count": 3,
+            "skip_verify": True,
+            "coverage_mode": "balanced",
+            "seed": 13,
+        }
     )
     events: list[dict] = []
 

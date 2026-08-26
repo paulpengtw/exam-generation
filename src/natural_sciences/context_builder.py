@@ -551,7 +551,7 @@ def build_user_prompt(
         content_type=content_type,
         sub_question_count=(
             str(params.sub_question_count)
-            if params.sub_question_count else "3–7（由命題教師自行決定）"
+            if params.sub_question_count is not None else "（已由解析器完成）"
         ),
         subquestion_config_lines=subquestion_config_lines,
         lc_pool_lines=lc_pool_lines,

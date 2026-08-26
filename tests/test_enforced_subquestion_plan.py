@@ -342,11 +342,11 @@ def test_社會領域_文本生成器計畫題型無效時不丟棄小題() -> N
     assert question.subquestions[0].題型.value == "選擇題"
 
 
-def test_社會領域_未指定小題數量時保留文本生成器決定的數量() -> None:
+def test_社會領域_解析後的小題數量不由文本生成器決定() -> None:
     from src.social_studies.cli import generate_one
     from src.social_studies.sampler import sample_params
 
-    params = sample_params(seed=23, content_type="純文字")
+    params = sample_params(seed=23, content_type="純文字", sub_question_count=4)
 
     question = generate_one(
         config=_config(),
@@ -361,11 +361,11 @@ def test_社會領域_未指定小題數量時保留文本生成器決定的數�
     assert len(question.subquestions) == 4
 
 
-def test_社會領域_未指定小題數量時在子題產生前公告文本生成器決定的數量() -> None:
+def test_社會領域_解析後在子題產生前公告固定小題數量() -> None:
     from src.social_studies.cli import generate_one
     from src.social_studies.sampler import sample_params
 
-    params = sample_params(seed=23, content_type="純文字")
+    params = sample_params(seed=23, content_type="純文字", sub_question_count=4)
     events: list[dict] = []
 
     generate_one(
@@ -561,11 +561,11 @@ def test_自然科學_文本生成器計畫題型無效時不丟棄小題() -> N
     assert question.subquestions[0].題型.value == "Simple multiple-choice"
 
 
-def test_自然科學_未指定小題數量時保留文本生成器決定的數量() -> None:
+def test_自然科學_解析後的小題數量不由文本生成器決定() -> None:
     from src.natural_sciences.cli import generate_one
     from src.natural_sciences.sampler import sample_params
 
-    params = sample_params(seed=23, content_type="純文字")
+    params = sample_params(seed=23, content_type="純文字", sub_question_count=4)
 
     question = generate_one(
         config=_config(),

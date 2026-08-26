@@ -12,18 +12,21 @@ import dataclasses
 import os
 import uuid
 from collections.abc import AsyncGenerator
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
+# Imports are intentionally staged after importorskip and slice headings so
+# this optional-dependency test module can be collected without SQLAlchemy.
+# ruff: noqa: E402
 
 # ── Slice 1: Config defaults and env vars ─────────────────────────────────────
 
-from src.config import Config
-
 from server.config import ServerConfig
+from src.config import Config
 
 
 def test_src_config_effort_verify_default_empty() -> None:
@@ -283,6 +286,7 @@ from server.auth.tokens import create_jwt
 from server.db import get_async_session
 from server.models import Base, User
 from server.rate_limit import limiter
+from tests.server.generate_test_utils import complete_math_query_params
 
 try:
     from fastapi.testclient import TestClient
@@ -369,7 +373,8 @@ def test_generate_endpoint_rejects_invalid_effort_verify_format_422() -> None:
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
-                "/api/generate?subject=math&effort_verify=turbo",
+                "/api/generate",
+                params=complete_math_query_params(effort_verify="turbo"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -398,7 +403,8 @@ def test_generate_endpoint_rejects_invalid_effort_correct_format_422() -> None:
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
-                "/api/generate?subject=math&effort_correct=bogus",
+                "/api/generate",
+                params=complete_math_query_params(effort_correct="bogus"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -434,9 +440,11 @@ def test_generate_endpoint_rejects_explicitly_invalid_effort_verify_for_tier_mod
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
-                "/api/generate?subject=math"
-                "&model_verify=gemini-3.1-pro-preview"
-                "&effort_verify=xhigh",
+                "/api/generate",
+                params=complete_math_query_params(
+                    model_verify="gemini-3.1-pro-preview",
+                    effort_verify="xhigh",
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -476,8 +484,10 @@ def test_generate_endpoint_rejects_inherited_effort_invalid_for_tier_model_422()
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
-                "/api/generate?subject=math"
-                "&model_verify=gemini-3.1-pro-preview",
+                "/api/generate",
+                params=complete_math_query_params(
+                    model_verify="gemini-3.1-pro-preview",
+                ),
                 # No effort_verify → inherits effort_execute=xhigh from config
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -501,9 +511,11 @@ def test_preview_endpoint_also_validates_effort_verify() -> None:
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
-                "/api/generate/preview?subject=math"
-                "&model_verify=gemini-3.1-pro-preview"
-                "&effort_verify=xhigh",
+                "/api/generate/preview",
+                params=complete_math_query_params(
+                    model_verify="gemini-3.1-pro-preview",
+                    effort_verify="xhigh",
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -524,9 +536,11 @@ def test_preview_endpoint_also_validates_effort_correct() -> None:
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
-                "/api/generate/preview?subject=math"
-                "&model_correct=gemini-3.1-pro-preview"
-                "&effort_correct=xhigh",
+                "/api/generate/preview",
+                params=complete_math_query_params(
+                    model_correct="gemini-3.1-pro-preview",
+                    effort_correct="xhigh",
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -555,7 +569,8 @@ def test_generate_endpoint_all_params_unset_no_regression() -> None:
     try:
         with TestClient(app) as client:
             r = client.get(
-                "/api/generate?subject=math",
+                "/api/generate",
+                params=complete_math_query_params(),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:

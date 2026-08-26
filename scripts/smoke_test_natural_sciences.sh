@@ -279,7 +279,8 @@ if [[ -z "$JWT" ]]; then
 fi
 
 if [[ -n "$JWT" ]]; then
-  GEN_URL="$API_URL/api/generate?subject=natural_sciences&grade=8&skip_verify=true&count=1"
+  NS_SUBQUESTION_CONFIGS='[{"question_type":"Simple multiple-choice","reporting_scale":"1","learning_content":["INa-Ⅳ-1"],"learning_performance":["ti-Ⅳ-1"]},{"question_type":"Simple multiple-choice","reporting_scale":"2","learning_content":["INa-Ⅳ-1"],"learning_performance":["ti-Ⅳ-1"]},{"question_type":"Simple multiple-choice","reporting_scale":"3","learning_content":["INa-Ⅳ-1"],"learning_performance":["ti-Ⅳ-1"]}]'
+  GEN_URL="$API_URL/api/generate"
   GEN_TMP=$(mktemp)
   GEN_HDR=$(mktemp)
 
@@ -289,7 +290,22 @@ if [[ -n "$JWT" ]]; then
     --max-time 90 \
     -H "Authorization: Bearer $JWT" \
     -H "Accept: text/event-stream" \
-    "$GEN_URL" 2>/dev/null || true
+    --get "$GEN_URL" \
+    --data-urlencode "subject=natural_sciences" \
+    --data-urlencode "seed=41" \
+    --data-urlencode "grade=8" \
+    --data-urlencode "context=Personal" \
+    --data-urlencode "sub_context=Maintenance of health" \
+    --data-urlencode "set_type=題組題" \
+    --data-urlencode "q_type=Simple multiple-choice" \
+    --data-urlencode "science_competency=能力一：以科學的角度解釋現象" \
+    --data-urlencode "learning_content=INa-Ⅳ-1" \
+    --data-urlencode "learning_performance=ti-Ⅳ-1" \
+    --data-urlencode "content_type=純文字" \
+    --data-urlencode "sub_question_count=3" \
+    --data-urlencode "subquestion_configs=$NS_SUBQUESTION_CONFIGS" \
+    --data-urlencode "skip_verify=true" \
+    --data-urlencode "count=1" 2>/dev/null || true
 
   GEN_STATUS=$(awk 'NR==1{print $2}' "$GEN_HDR" 2>/dev/null || true)
   info "HTTP status = ${GEN_STATUS:-<none>}, body = $(wc -l <"$GEN_TMP") lines"

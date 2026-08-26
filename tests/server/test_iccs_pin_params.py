@@ -132,14 +132,13 @@ def test_social_sampler_defaults_absent_surface_to_paper() -> None:
 
 
 def test_target_surface_reaches_sampled_params() -> None:
-    from server.generate.subjects import _ss_coerce_overrides, _ss_do_sample_params
+    from src.common.resolver import resolve
+    from src.social_studies.cli import _ss_params_from_resolved
 
-    request = GenerateParams(subject="social_studies", target_surface="數位")
-    sampled = _ss_do_sample_params(
-        request,
-        _ss_coerce_overrides(request, object()),
-        seed=3,
-        subquestion_configs_decoded=None,
+    sampled = _ss_params_from_resolved(
+        resolve(
+            {"subject": "social_studies", "seed": 3, "target_surface": "數位"}
+        ).payload
     )
 
     assert sampled.target_surface == "數位"

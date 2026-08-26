@@ -286,6 +286,7 @@ step "CHECK 2: Full auth + generate flow end-to-end via http://localhost:3000"
 FRONTEND_BASE="http://localhost:3000"
 BACKEND_BASE="http://localhost:8000"
 TEST_EMAIL="smoketest@smoke.local"
+MATH_GENERATE_QUERY="subject=math&seed=41&grade=8&context=%E5%80%8B%E4%BA%BA&set_type=%E5%96%AE%E4%B8%80%E9%A1%8C&q_type=%E9%81%B8%E6%93%87%E9%A1%8C&style=text_only&math_thinking=%E5%BD%A2%E6%88%90&learning_content=A-7-7&learning_performance=s-IV-12&core_competency=%E6%95%B8-J-A2&content_type=%E7%B4%94%E6%96%87%E5%AD%97&skip_verify=true&count=1"
 
 # 2a — POST /auth/magic-link (via frontend proxy)
 ML_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -360,7 +361,7 @@ if [[ -n "$JWT" ]]; then
     --max-time 5 \
     -H "Authorization: Bearer $JWT" \
     -H "Accept: text/event-stream" \
-    "$FRONTEND_BASE/api/generate?grade=8&style=text_only&skip_verify=true&count=1" \
+    "$FRONTEND_BASE/api/generate?$MATH_GENERATE_QUERY" \
     2>/dev/null || true)
   # 200 (SSE), 500 (LLM key placeholder — that's expected), or 429 (rate limited)
   # All indicate the endpoint is reachable and auth worked.

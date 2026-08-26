@@ -11,9 +11,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from pydantic import BaseModel
 
-import pytest
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.config import ServerConfig
@@ -38,9 +38,7 @@ def _make_fake_spec() -> SubjectSpec:
     ) -> list:
         return []
 
-    def do_sample_params(
-        params: Any, overrides: dict, *, seed: Any, subquestion_configs_decoded: Any,
-    ) -> object:
+    def params_from_resolved_payload(payload: dict[str, Any], overrides: dict) -> object:
         return object()
 
     def do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> _FakeQuestion:
@@ -64,7 +62,7 @@ def _make_fake_spec() -> SubjectSpec:
         exam_question_cls=_FakeQuestion,
         coerce_overrides=coerce_overrides,
         plan_all_batch_briefs=plan_all_batch_briefs,
-        do_sample_params=do_sample_params,
+        params_from_resolved_payload=params_from_resolved_payload,
         do_generate=do_generate,
         extract_prior_scope=extract_prior_scope,
         patch_metadata=None,
@@ -141,7 +139,9 @@ def test_generation_proceeds_despite_malformed_configs(tmp_path: Path) -> None:
 
     # A result event must appear
     result_events = [e for e in events if e.get("event") == "result"]
-    assert len(result_events) == 1, f"Expected 1 result event, got events: {[e['event'] for e in events]}"
+    assert len(result_events) == 1, (
+        f"Expected 1 result event, got events: {[e['event'] for e in events]}"
+    )
 
     # A stage error must also appear for subquestion_configs
     stage_errors = [

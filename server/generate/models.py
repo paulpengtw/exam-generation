@@ -90,10 +90,12 @@ class SubQuestionConfig(BaseModel):
 
 
 class GenerateParams(BaseModel):
-    """Optional overrides for a generation request.
+    """Wire model for a generation request before the completeness gate.
 
-    Mirrors the CLI flags on `src.cli` `generate` subcommand. All fields are
-    optional; missing fields fall back to random sampling in `sample_params()`.
+    Mirrors the CLI flags on `src.cli` `generate` subcommand. Fields remain
+    optional here so the resolve endpoint can accept partial payloads; the
+    generation and preview routes rerun the resolver and reject any payload
+    whose ``drawn`` list is non-empty.
     """
 
     subject: str = "math"

@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient
@@ -23,13 +24,15 @@ from server.auth.dependencies import get_config
 from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
-from server.generate.models import GenerateParams
 from server.generate.service import _build_run_context, generate_question_stream
 from server.generate.subjects import SUBJECTS
 from server.models import Base, User
 from server.rate_limit import limiter
 from src.social_studies.schemas import ExamQuestion
-
+from tests.server.generate_test_utils import (
+    complete_math_query_params,
+    resolved_generate_params,
+)
 
 # ---------------------------------------------------------------------------
 # Shared setup helpers
@@ -119,7 +122,8 @@ def test_generate_route_rejects_off_roster_model_verify_with_422() -> None:
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=math&model_verify=gpt-4o",
+                "/api/generate",
+                params=complete_math_query_params(model_verify="gpt-4o"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -158,7 +162,8 @@ def test_generate_route_rejects_off_roster_model_correct_with_422() -> None:
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=math&model_correct=gpt-4o",
+                "/api/generate",
+                params=complete_math_query_params(model_correct="gpt-4o"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -208,7 +213,10 @@ def test_generate_route_rejects_verify_model_with_missing_provider_key() -> None
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=math&model_verify=gemini-3.1-pro-preview",
+                "/api/generate",
+                params=complete_math_query_params(
+                    model_verify="gemini-3.1-pro-preview"
+                ),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -244,7 +252,8 @@ def test_generate_route_absent_tier_params_do_not_change_existing_behavior() -> 
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=math",
+                "/api/generate",
+                params=complete_math_query_params(),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -286,12 +295,14 @@ def test_effective_verify_model_chains_off_overridden_execute_model(tmp_path: Pa
         llm_models_allowed=("claude-sonnet-4-6", "claude-opus-4-6"),
     )
     # Request overrides execute but not verify
-    params = GenerateParams(
-        subject="social_studies",
-        count=1,
-        skip_verify=True,
-        model_execute="claude-opus-4-6",   # per-request override
-        model_verify=None,                  # omitted — should chain to overridden execute
+    params = resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "count": 1,
+            "skip_verify": True,
+            "model_execute": "claude-opus-4-6",   # per-request override
+            "model_verify": None,                  # omitted — should chain to overridden execute
+        }
     )
 
     captured: dict = {}
@@ -360,7 +371,8 @@ def test_preview_route_rejects_off_roster_model_verify_with_422() -> None:
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate/preview?subject=math&model_verify=gpt-4o",
+                "/api/generate/preview",
+                params=complete_math_query_params(model_verify="gpt-4o"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -381,7 +393,8 @@ def test_preview_route_rejects_off_roster_model_correct_with_422() -> None:
     try:
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate/preview?subject=math&model_correct=gpt-4o",
+                "/api/generate/preview",
+                params=complete_math_query_params(model_correct="gpt-4o"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -413,13 +426,15 @@ def test_build_run_context_bakes_three_distinct_tier_models(tmp_path: Path) -> N
         data_dir=Path("data"),
         llm_models_allowed=("claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-6"),
     )
-    params = GenerateParams(
-        subject="social_studies",
-        count=1,
-        skip_verify=True,
-        model_execute="claude-opus-4-6",
-        model_verify="claude-haiku-4-6",
-        model_correct="claude-sonnet-4-6",
+    params = resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "count": 1,
+            "skip_verify": True,
+            "model_execute": "claude-opus-4-6",
+            "model_verify": "claude-haiku-4-6",
+            "model_correct": "claude-sonnet-4-6",
+        }
     )
 
     loop = asyncio.new_event_loop()
@@ -449,8 +464,8 @@ def test_build_run_context_bakes_three_distinct_tier_models(tmp_path: Path) -> N
 
 def test_llm_client_model_for_purpose_honours_tier_models(tmp_path: Path) -> None:
     """When all three tier models are configured, _model_for_purpose routes correctly."""
-    from src.llm_client import LLMClient
     from server.config import ServerConfig
+    from src.llm_client import LLMClient
 
     config = ServerConfig(
         api_key="x",
@@ -530,10 +545,8 @@ def test_diverged_tier_models_persisted_in_llm_exchange_model_used(tmp_path: Pat
         creative_planning=False,
         llm_models_allowed=(MODEL_EXECUTE, MODEL_VERIFY, MODEL_CORRECT),
     )
-    params = GenerateParams(
-        subject="social_studies",
-        count=1,
-        skip_verify=True,
+    params = resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "skip_verify": True}
     )
 
     # ── fake Anthropic transport ─────────────────────────────────────────────

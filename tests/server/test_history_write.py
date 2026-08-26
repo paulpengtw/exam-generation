@@ -9,17 +9,18 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.config import ServerConfig
-from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SUBJECTS
 from server.models import Base, GenerationRecord, User
 from src.social_studies.schemas import ExamQuestion
+from tests.server.generate_test_utils import resolved_generate_params
 
 
 def test_generate_stream_writes_generation_record(tmp_path, monkeypatch) -> None:
@@ -40,7 +41,9 @@ def test_generate_stream_writes_generation_record(tmp_path, monkeypatch) -> None
     asyncio.run(add_user())
 
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
-    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+    params = resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "skip_verify": True}
+    )
 
     def fake_generate(**kwargs):
         sampled = kwargs["params"]

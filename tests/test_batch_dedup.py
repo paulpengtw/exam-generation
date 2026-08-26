@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+
 import pytest
 
 from src.common.batch_dedup import (
@@ -222,7 +223,7 @@ def test_math_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> Non
     from pathlib import Path
 
     from src.cli import generate_with_corrections
-    from src.common.batch_dedup import PriorScope, extract_math_prior_scope
+    from src.common.batch_dedup import extract_math_prior_scope
     from src.config import Config
     from src.sampler import sample_params
 
@@ -307,7 +308,7 @@ def test_ss_build_text_user_prompt_renders_prior_scopes_block(tmp_path) -> None:
 def test_ss_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
     from pathlib import Path
 
-    from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
+    from src.common.batch_dedup import extract_ss_prior_scope
     from src.config import Config
     from src.social_studies.cli import generate_with_corrections
     from src.social_studies.sampler import sample_params
@@ -403,7 +404,7 @@ def test_ns_build_text_user_prompt_renders_prior_scopes_block(tmp_path) -> None:
 def test_ns_batch_loop_forwards_prior_scopes_to_next_question(tmp_path) -> None:
     from pathlib import Path
 
-    from src.common.batch_dedup import PriorScope, extract_ns_prior_scope
+    from src.common.batch_dedup import extract_ns_prior_scope
     from src.config import Config
     from src.natural_sciences.cli import generate_with_corrections
     from src.natural_sciences.sampler import sample_params
@@ -492,10 +493,9 @@ def test_server_generate_stream_accumulates_prior_scopes_across_math_workers(tmp
     from pathlib import Path
 
     from server.config import ServerConfig
-    from server.generate.models import GenerateParams
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
-    from src.common.batch_dedup import PriorScope
+    from tests.server.generate_test_utils import resolved_generate_params
 
     captured: dict[int, list[PriorScope] | None] = {}
     order_lock = threading.Lock()
@@ -544,7 +544,9 @@ def test_server_generate_stream_accumulates_prior_scopes_across_math_workers(tmp
         max_retries=0,
         subgen_max_concurrency=1,
     )
-    params = GenerateParams(subject="math", count=2, skip_verify=True, seed=42)
+    params = resolved_generate_params(
+        {"subject": "math", "count": 2, "skip_verify": True, "seed": 42}
+    )
 
     async def _drive() -> list[dict]:
         loop = asyncio.get_running_loop()

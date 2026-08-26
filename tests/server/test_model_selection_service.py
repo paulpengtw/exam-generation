@@ -8,13 +8,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.config import ServerConfig
-from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SUBJECTS
 from src.social_studies.schemas import ExamQuestion
+from tests.server.generate_test_utils import resolved_generate_params
 
 
 def _fake_ss_spec(fake_generate_fn):
@@ -42,12 +43,14 @@ def test_model_execute_override_is_baked_into_llmclient_config(tmp_path: Path) -
             "claude-haiku-4-6",
         ),
     )
-    params = GenerateParams(
-        subject="social_studies",
-        count=1,
-        skip_verify=True,
-        model_execute="claude-haiku-4-6",
-        model_plan="claude-opus-4-6",
+    params = resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "count": 1,
+            "skip_verify": True,
+            "model_execute": "claude-haiku-4-6",
+            "model_plan": "claude-opus-4-6",
+        }
     )
 
     captured: dict = {}
@@ -94,7 +97,9 @@ def test_model_override_absent_preserves_config_defaults(tmp_path: Path) -> None
         output_dir=tmp_path,
         data_dir=Path("data"),
     )
-    params = GenerateParams(subject="social_studies", count=1, skip_verify=True)
+    params = resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "skip_verify": True}
+    )
 
     captured: dict = {}
 
@@ -149,11 +154,13 @@ def test_model_execute_override_reaches_ss_generate_config(tmp_path: Path) -> No
             "claude-haiku-4-6",
         ),
     )
-    params = GenerateParams(
-        subject="social_studies",
-        count=1,
-        skip_verify=True,
-        model_execute="claude-haiku-4-6",
+    params = resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "count": 1,
+            "skip_verify": True,
+            "model_execute": "claude-haiku-4-6",
+        }
     )
 
     captured: dict = {}

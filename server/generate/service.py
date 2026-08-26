@@ -33,59 +33,32 @@ from server.generate.marshalling import (
 from server.generate.models import (
     GenerateParams,
     build_sse_error,
-    decode_per_question_params,
 )
 from server.generate.persistence import (
     make_exchange_recorder,
     make_figure_policy_trail_recorder,
     persist_generation_record,
 )
-from server.generate.subjects import SUBJECTS, SubjectSpec
+from server.generate.subjects import (
+    SUBJECTS,
+    SubjectSpec,
+    resolved_payload_for_index,
+)
 from server.observability import record_generation_outcome
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
 
-def _sample_worker_params(
+def _resolved_worker_params(
     i: int,
     params: GenerateParams,
     spec: SubjectSpec,
     overrides: dict,
-    decoded_subquestion_configs: list[dict] | None,
-    decoded_per_question_params: list[dict[str, Any]] | None = None,
-    app_state: Any = None,
 ) -> Any:
-    """Resolve the sampled parameters for one submit/preview worker index."""
-    worker_params = params
-    worker_overrides = overrides
-    worker_subquestion_configs = decoded_subquestion_configs
-    if decoded_per_question_params is not None:
-        worker_data = params.model_dump()
-        worker_data["per_question_params"] = None
-        worker_params = GenerateParams.model_validate(
-            {**worker_data, **decoded_per_question_params[i]}
-        )
-        worker_overrides = spec.coerce_overrides(worker_params, app_state)
-        worker_subquestion_configs = _decode_subquestion_configs(
-            worker_params.subquestion_configs
-        )
-    has_explicit_worker_seed = (
-        decoded_per_question_params is not None
-        and decoded_per_question_params[i].get("seed") is not None
-    )
-    seed = (
-        worker_params.seed
-        if has_explicit_worker_seed
-        else (worker_params.seed + i) if worker_params.seed is not None else None
-    )
-    # TRANSITIONAL (#602/#608): do not add a new drawable field here — add it to the resolver (src/common/resolver.py).  # noqa: E501
-    return spec.do_sample_params(
-        worker_params,
-        worker_overrides,
-        seed=seed,
-        subquestion_configs_decoded=worker_subquestion_configs,
-    )
+    """Convert one resolver-completed payload for a submit/preview worker."""
+    payload = resolved_payload_for_index(params, i)
+    return spec.params_from_resolved_payload(payload, overrides)
 
 
 def build_prompt_previews(
@@ -96,8 +69,6 @@ def build_prompt_previews(
     """Resolve parameters and build first-stage prompts without an LLM client."""
     spec = SUBJECTS[params.subject]
     overrides = spec.coerce_overrides(params, app_state)
-    decoded_configs = _decode_subquestion_configs(params.subquestion_configs)
-    decoded_per_question = decode_per_question_params(params.per_question_params)
     client_config = dataclasses.replace(
         config,
         model_execute=params.model_execute or config.model_execute,
@@ -112,14 +83,11 @@ def build_prompt_previews(
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
     previews = []
     for i in range(max(1, params.count)):
-        sampled = _sample_worker_params(
+        sampled = _resolved_worker_params(
             i,
             params,
             spec,
             overrides,
-            decoded_configs,
-            decoded_per_question,
-            app_state,
         )
         assert spec.build_generation_prompts is not None
         system, user, _images = spec.build_generation_prompts(
@@ -209,7 +177,6 @@ class _RunContext:
     timestamp: str
     html_renderer: Any
     decoded_subquestion_configs: list | None
-    decoded_per_question_params: list[dict[str, Any]] | None
     app_state: Any
     loop: asyncio.AbstractEventLoop
     queue: asyncio.Queue
@@ -278,9 +245,6 @@ def _build_run_context(
             params.subquestion_configs,
             on_error=on_error,
         ),
-        decoded_per_question_params=decode_per_question_params(
-            params.per_question_params
-        ),
         app_state=app_state,
         loop=loop,
         queue=queue,
@@ -344,14 +308,11 @@ def _worker_one(
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
     try:
-        rng_params = _sample_worker_params(
+        rng_params = _resolved_worker_params(
             i,
             ctx.params,
             ctx.spec,
             ctx.overrides,
-            ctx.decoded_subquestion_configs,
-            ctx.decoded_per_question_params,
-            ctx.app_state,
         )
 
         # Site 2: apply creative brief when available (SS only in practice)

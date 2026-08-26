@@ -12,7 +12,6 @@ import pytest
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.config import ServerConfig
-from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SUBJECTS
 from src.common.verification_trail import (
@@ -21,6 +20,7 @@ from src.common.verification_trail import (
     VerificationTrailInitialEntry,
 )
 from src.social_studies.schemas import ExamQuestion
+from tests.server.generate_test_utils import resolved_generate_params
 
 
 @pytest.mark.parametrize(("skip_verify", "expected_trail_count"), [(False, 4), (True, 0)])
@@ -30,7 +30,9 @@ def test_generate_stream_emits_each_trail_entry_with_its_exact_payload(
     expected_trail_count: int,
 ) -> None:
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=tmp_path)
-    params = GenerateParams(subject="social_studies", count=1, skip_verify=skip_verify)
+    params = resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "skip_verify": skip_verify}
+    )
     entry = VerificationTrailEntry(
         question_id="ss-trail-question",
         passed=False,

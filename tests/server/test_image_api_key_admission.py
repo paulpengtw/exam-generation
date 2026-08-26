@@ -5,6 +5,7 @@ import json
 import uuid
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient
@@ -15,6 +16,7 @@ from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import User
 from server.rate_limit import limiter
+from tests.server.generate_test_utils import complete_math_query_params
 
 
 def _make_client(image_api_key: str = "") -> TestClient:
@@ -33,7 +35,10 @@ def _make_client(image_api_key: str = "") -> TestClient:
 def test_gpt_image_mode_empty_key_rejected_422() -> None:
     client = _make_client(image_api_key="")
     try:
-        response = client.get("/api/generate?image_generation_mode=gpt_image")
+        response = client.get(
+            "/api/generate",
+            params=complete_math_query_params(image_generation_mode="gpt_image"),
+        )
     finally:
         limiter.reset()
     assert response.status_code == 422
@@ -43,7 +48,10 @@ def test_gpt_image_mode_empty_key_rejected_422() -> None:
 def test_gpt_image_mode_with_key_passes_admission() -> None:
     client = _make_client(image_api_key="sk-test-key")
     try:
-        response = client.get("/api/generate?image_generation_mode=gpt_image")
+        response = client.get(
+            "/api/generate",
+            params=complete_math_query_params(image_generation_mode="gpt_image"),
+        )
     finally:
         limiter.reset()
     assert response.status_code != 422
@@ -52,7 +60,9 @@ def test_gpt_image_mode_with_key_passes_admission() -> None:
 def test_html_mode_empty_key_passes_admission() -> None:
     client = _make_client(image_api_key="")
     try:
-        response = client.get("/api/generate")
+        response = client.get(
+            "/api/generate", params=complete_math_query_params()
+        )
     finally:
         limiter.reset()
     assert response.status_code != 422

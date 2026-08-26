@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 from unittest.mock import MagicMock
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SUBJECTS
+from src.common.resolver import resolve
 from src.social_studies.schemas import CreativeBrief, ExamQuestion
 
 
@@ -28,6 +31,19 @@ def _collect(coro):
             events.append(evt)
         return events
     return asyncio.run(_run())
+
+
+def _resolved_params(payload: dict) -> GenerateParams:
+    completed = resolve(payload).payload
+    rows = completed.get("per_question_params")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get("subquestion_configs"), list):
+                row["subquestion_configs"] = json.dumps(
+                    row["subquestion_configs"], ensure_ascii=False
+                )
+        completed["per_question_params"] = json.dumps(rows, ensure_ascii=False)
+    return GenerateParams.model_validate(completed)
 
 
 def _fake_ss_spec(fake_generate_fn):
@@ -67,7 +83,15 @@ def test_ss_batch_calls_plan_context_angles_once(monkeypatch, tmp_path) -> None:
         return eq
 
     cfg = ServerConfig(api_key="x", output_dir=tmp_path, creative_planning=True)
-    params = GenerateParams(subject="social_studies", count=3, skip_verify=True)
+    params = _resolved_params(
+        {
+            "subject": "social_studies",
+            "count": 3,
+            "seed": 3,
+            "per_question_params": [{}, {}, {}],
+            "skip_verify": True,
+        }
+    )
 
     events = _collect(generate_question_stream(
         params, cfg, _AppState(),
@@ -95,7 +119,15 @@ def test_ss_batch_skips_planning_when_flag_disabled(monkeypatch, tmp_path) -> No
         )
 
     cfg = ServerConfig(api_key="x", output_dir=tmp_path, creative_planning=False)
-    params = GenerateParams(subject="social_studies", count=2, skip_verify=True)
+    params = _resolved_params(
+        {
+            "subject": "social_studies",
+            "count": 2,
+            "seed": 4,
+            "per_question_params": [{}, {}],
+            "skip_verify": True,
+        }
+    )
 
     events = _collect(generate_question_stream(
         params, cfg, _AppState(),
@@ -111,15 +143,15 @@ def test_math_branch_never_plans(monkeypatch, tmp_path) -> None:
         MagicMock(side_effect=AssertionError("must not be called for math")),
     )
 
-    # Inject a fake math spec whose do_sample_params raises immediately — this
+    # Inject a fake math spec whose resolved-payload adapter raises immediately — this
     # short-circuits the math generation without needing to monkeypatch service
     # module attributes.
-    def fake_do_sample_params(params, overrides, **kwargs):
+    def fake_params_from_resolved_payload(payload, overrides):
         raise RuntimeError("stop math")
 
     fake_math_spec = dataclasses.replace(
         SUBJECTS["math"],
-        do_sample_params=fake_do_sample_params,
+        params_from_resolved_payload=fake_params_from_resolved_payload,
     )
 
     class _MathState:

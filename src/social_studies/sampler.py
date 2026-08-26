@@ -41,7 +41,6 @@ _CONTENT_TYPE_VALUES: list[str] = [
 _RANDOM_CONTENT_TYPE_VALUES: list[str] = [
     v for v in _CONTENT_TYPE_VALUES if v != "customized"
 ]
-_MAX_SUBQUESTION_SLOTS = 7
 _CC_DATA: dict = load_core_competencies()
 _ALLOWED_COMPETENCY_VALUES: list[str] = allowed_competencies(_CC_DATA, _LEARNING_STAGE)
 _ALLOWED_COMPETENCIES: list[CoreCompetency] = [
@@ -104,7 +103,7 @@ def _filter_entries_for_domain(
                 filtered.append(entry)
             continue
         # The ICCS mapping only governs 公 rows.  Rows without a domain tag
-        # (歷/地/shared curriculum rows) retain the legacy unscoped behavior.
+        # (歷/地/shared curriculum rows) retain the unscoped behavior.
         if not _is_public_code(entry.get("value", "")) or entry["value"] in mapped_codes:
             filtered.append(entry)
     return filtered
@@ -463,12 +462,12 @@ def sample_params(
             if cfg.question_type and cfg.question_type not in selected_q_types:
                 selected_q_types.append(cfg.question_type)
     else:
-        # Legacy/global mode for CLI or API callers that do not pin 小題 count.
-        q_type_rng = field_rng("題型")
-        type_count = q_type_rng.randint(1, min(3, len(q_type_pool)))
-        selected_q_types = q_type_rng.sample(q_type_pool, type_count)
+        # Standalone sampler callers may still omit the count, but there is no
+        # request-wide random 題型 or extra cognitive-process slot.  The resolver
+        # always supplies the structural count before generation reaches here.
+        selected_q_types = list(q_type_pool)
 
-    slot_count = sub_question_count or len(resolved_configs) or _MAX_SUBQUESTION_SLOTS
+    slot_count = len(resolved_configs)
     selected_cognitive_processes = _assign_cognitive_processes(
         field_rng,
         slot_count,
@@ -502,10 +501,3 @@ def sample_params(
         allow_duplicate_figure_kinds=allow_duplicate_figure_kinds,
         difficulty=resolved_difficulty,
     )
-
-
-def ss_sample_params(rng: random.Random | None = None, **kwargs) -> SampledParams:
-    seed = kwargs.pop("seed", None)
-    if seed is None and rng is not None:
-        seed = rng.randrange(2**32)
-    return sample_params(seed=seed, **kwargs)
