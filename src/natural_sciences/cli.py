@@ -1544,6 +1544,7 @@ def generate_with_corrections(
     balanced_batch: bool = False,
     core_question_callback: bool = True,
     on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
@@ -1577,6 +1578,7 @@ def generate_with_corrections(
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
+        is_cancelled=is_cancelled,
     )
     if isinstance(result, ExamQuestion) and result.metadata is not None:
         result.metadata.reporting_scales = [

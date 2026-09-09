@@ -23,35 +23,21 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
     │
     ▼
     [event_generator — routes.py:81]
-    └── drives generate_question_stream(…)  (service.py:88)
+    └── drives generate_question_stream(…)  (service.py)
         │
-        ├── Claim ordinal: _QUEUE_TOTAL += 1  (service.py:104)
-        │
-        ├── [while jobs_ahead > 0]  (service.py:109-115)
-        │   ├── yield SSE: queued {jobs_ahead}
-        │   └── await _QUEUE_CHANGED  (wakes when previous request finishes)
-        │
-        │   [Browser — useGenerate.ts:112-117]
-        │   └── status = "queued" → ProgressLog shows "N jobs ahead" badge
-        │
-        ├── Acquire _GEN_LOCK  (service.py:117)  ← single concurrent generation
         ├── yield SSE: started
         │
         │   [Browser — useGenerate.ts:118-121]
         │   └── status = "generating" → ProgressLog shows spinner
         │
-        ├── asyncio.Queue + LLMClient init  (service.py:121-123)
-        ├── Pull app_state: curriculum, html_renderer (Playwright singleton)
+        ├── asyncio.Queue + LLMClient init + cancel_event = threading.Event()
+        ├── Pull app_state: html_renderer (Playwright singleton)
         │     html_renderer started once at app startup  (app.py:67-74)
         │
-        └── loop.run_in_executor(None, worker)  (service.py:197)
+        └── loop.run_in_executor(None, worker)  (service.py)
             │
             ▼
             [worker — runs in ThreadPoolExecutor thread]
-            │
-            ├── sys.stderr = _QueueWriter(loop, queue)  (service.py:150-151)
-            │     every print(…, file=sys.stderr) → SSE progress event
-            │     via loop.call_soon_threadsafe(queue.put_nowait, …)
             │
             └── for i in range(count):
                 │
@@ -94,8 +80,11 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
                 ├── 8. Write output files to config.output_dir
                 │       {question_id}.json  +  {question_id}.png  (if image)
                 │
+                ├── [cancel check] is_cancelled() → GenerationCancelled (silent exit)
+                │     cancel_event is set by generate_question_stream's finally block
+                │     when the consumer disconnects (GeneratorExit / aclose())
+                │
                 └── 9. queue.put_nowait {event:"result", data: question_json + image_base64}
-                          (service.py:188-190)
 
             [async generator drains queue, yields each event to SSE response]
             │
@@ -111,10 +100,10 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
             └── yield SSE: done
 
 [event_generator finally block]
-├── DB write #2: UPDATE generation_logs {status:"completed"|"failed", completed_at}
+├── DB write #2: UPDATE generation_logs {status:"completed"|"failed"|"aborted", completed_at}
 │     (routes.py:97-107)
-└── _QUEUE_DONE += 1 ; _QUEUE_CHANGED.set()  (service.py:207-209)
-      wakes all queued waiters → they re-emit updated jobs_ahead count
+└── generate_question_stream finally: cancel_event.set() → workers see is_cancelled()=True
+      at their next stage boundary and raise GenerationCancelled (silent exit)
 ```
 
 ## Phase Legend
@@ -123,18 +112,14 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
 |------|------|-------|-------|
 | Submit button | `web/src/components/ParamForm.tsx` | 201 | `type="submit"` in `<form onSubmit={handleSubmit}>` |
 | SSE client open | `web/src/hooks/useGenerate.ts` | 87–150 | `@microsoft/fetch-event-source`, GET with JWT header |
-| Event handling | `web/src/hooks/useGenerate.ts` | 112–141 | queued / started / progress / result / error / done |
-| Progress display | `web/src/components/ProgressLog.tsx` | 30–62 | queue badge, spinner, scrollable `<pre>` log |
+| Event handling | `web/src/hooks/useGenerate.ts` | 112–141 | started / progress / result / error / done |
+| Progress display | `web/src/components/ProgressLog.tsx` | 30–62 | spinner, scrollable `<pre>` log |
 | Question render | `web/src/components/QuestionCard.tsx` | 39–192 | image, 題目, 解題分析, VerificationBadge, downloads |
 | FastAPI route | `server/generate/routes.py` | 36 | `GET /api/generate`, SlowAPI 10/hr per JWT user |
 | DB write start | `server/generate/routes.py` | 69–77 | INSERT `generation_logs {status:"started"}` |
 | SSE response | `server/generate/routes.py` | 109 | `EventSourceResponse` + `X-Accel-Buffering: no` |
-| Queue counters | `server/generate/service.py` | 41–44 | `_GEN_LOCK`, `_QUEUE_TOTAL/DONE`, `_QUEUE_CHANGED` — in-process only |
-| Queue wait loop | `server/generate/service.py` | 104–115 | emits `queued` events, awaits `_QUEUE_CHANGED` |
-| Lock acquire | `server/generate/service.py` | 117 | `asyncio.Lock` — one generation at a time |
-| Worker dispatch | `server/generate/service.py` | 197 | `loop.run_in_executor(None, worker)` — default thread pool |
-| stderr hijack | `server/generate/service.py` | 150–151 | `sys.stderr = _QueueWriter` bridges thread prints → SSE |
-| Queue release | `server/generate/service.py` | 207–209 | `_QUEUE_DONE += 1; _QUEUE_CHANGED.set()` |
+| Worker dispatch | `server/generate/service.py` | — | `loop.run_in_executor(None, worker)` — default thread pool |
+| Cancel signal | `server/generate/service.py` | — | `threading.Event cancel_event` per run; set in finally; checked at stage boundaries |
 | Playwright singleton | `server/app.py` | 67–74 | started in lifespan, attached to `app.state.html_renderer` |
 | DB write finish | `server/generate/routes.py` | 97–107 | UPDATE `generation_logs {status, error, completed_at}` |
 | Parameter sampling | `src/sampler.py` | 21–77 | all RNG via `random.Random(seed)` |
@@ -153,17 +138,17 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
 
 ## Concurrency Notes
 
-- **In-process queue only.** `_GEN_LOCK`, `_QUEUE_TOTAL`, `_QUEUE_DONE`, `_QUEUE_CHANGED` live in `service.py` module globals. Multi-worker deployments (e.g. `uvicorn --workers 4`) would have separate counters per process — jobs_ahead counts would be wrong. Use a single worker (`--workers 1`) or replace with Redis if scaling is needed.
-- **One generation at a time.** The lock is required because `sys.stderr` is process-global. Concurrent generations would interleave progress lines across SSE streams.
-- **Sync work in a thread.** All LLM calls, file I/O, and Playwright screenshots are synchronous. `run_in_executor` keeps the asyncio event loop unblocked so SSE writes and new connections can proceed while a question is generating.
-- **Playwright singleton.** One browser instance is launched at startup (`app.py:67-74`) and reused across all questions. It is not thread-safe; access is serialised by `_GEN_LOCK`.
+- **Parallel workers per request.** Each question in a batch runs in its own `ThreadPoolExecutor` thread. Multiple requests run fully concurrently.
+- **Sync work in a thread.** All LLM calls, file I/O, and Playwright screenshots are synchronous. `run_in_executor` keeps the asyncio event loop unblocked so SSE writes and new connections can proceed while questions are generating.
+- **Cooperative cancel on disconnect.** Each run gets a `threading.Event cancel_event`. The generator's `finally` block sets it when the consumer disconnects (`aclose()` / `GeneratorExit`). Worker threads check `is_cancelled()` at stage boundaries and raise `GenerationCancelled` to exit without emitting an error event. The LLM call in progress is NOT interrupted — cancel takes effect only between stages.
+- **Playwright singleton.** One browser instance is launched at startup (`app.py:67-74`) and reused across all questions via a renderer pool.
 
 ## CLI vs Web
 
-The web server calls `src.cli.generate_with_corrections()` directly (`service.py:166-178`) — the same function the CLI loop body calls. The correction loop runs inside `generate_with_corrections()` so both CLI and web go through the same retry logic. The web layer adds:
+The web server calls subject-specific `do_generate` functions (registered in `SUBJECTS` in `server/generate/subjects.py`) which delegate to `src.common.generation_core.generate_with_corrections_core` — the same pipeline the CLI uses. Both CLI and web go through the same correction loop. The web layer adds:
 
-1. SSE transport (queue + `_QueueWriter` stderr bridge)
-2. In-process queue with position tracking
-3. JWT auth + rate limiting
-4. DB logging (start/finish per request)
-5. Base64 image inlining in the result event
+1. SSE transport (asyncio.Queue bridging thread results to the event loop)
+2. JWT auth + rate limiting
+3. DB logging (start/finish per request)
+4. Base64 image inlining in the result event
+5. Cooperative cancel signal (`threading.Event`) per run

@@ -14,7 +14,11 @@ from typing import Any
 from src.common.batch_dedup import PriorScope, extract_math_prior_scope
 from src.common.cli_resolver import resolve_and_print
 from src.common.difficulty import DEFAULT_DIFFICULTY
-from src.common.generation_core import generate_one_core, generate_with_corrections_core
+from src.common.generation_core import (
+    GenerationCancelled,
+    generate_one_core,
+    generate_with_corrections_core,
+)
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
     VerificationTrailEntry,
@@ -506,6 +510,7 @@ def generate_one(
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> ExamQuestion | str:
     """Generate a single exam question.
 
@@ -539,6 +544,7 @@ def generate_one(
             sub_client_factory=sub_client_factory,
             prior_scopes=prior_scopes,
             curriculum_context=curriculum_context,
+            is_cancelled=is_cancelled,
         )
 
     # Build prompts using the canonical math curriculum corpus.
@@ -572,6 +578,10 @@ def generate_one(
     raw_json = client.generate_json(system_prompt, user_prompt)
     emit_stage(obs, "generator", "llm_generate", "end")
 
+    # Cancel boundary: check after LLM call, before image render / verify.
+    if is_cancelled is not None and is_cancelled():
+        raise GenerationCancelled()
+
     # Parse into ExamQuestion
     question = _parse_question(raw_json, question_id, params, config.model_execute)
     _emit_question_update(on_question_update, question, "draft")
@@ -599,6 +609,10 @@ def generate_one(
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
             _emit_question_update(on_question_update, question, "image")
+
+    # Cancel boundary: check before verify.
+    if is_cancelled is not None and is_cancelled():
+        raise GenerationCancelled()
 
     # Verify if requested
     if not skip_verify:
@@ -692,6 +706,7 @@ def generate_with_corrections(
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
@@ -728,6 +743,7 @@ def generate_with_corrections(
             sub_client_factory=sub_client_factory,
             prior_scopes=prior_scopes,
             curriculum_context=curriculum_context,
+            is_cancelled=is_cancelled,
         )
 
     question = generate_one(
@@ -754,6 +770,7 @@ def generate_with_corrections(
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
+        is_cancelled=is_cancelled,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -762,6 +779,8 @@ def generate_with_corrections(
     obs = client.get_observer() if client else None
 
     for attempt in range(max_retries):
+        if is_cancelled is not None and is_cancelled():
+            raise GenerationCancelled()
         if skip_verify or question.verification is None or question.verification.passed:
             break
 

@@ -91,6 +91,7 @@ def test_ns_validate_params_accepts_text_instruction() -> None:
         text_instruction = "請聚焦電磁波"
         core_competency = None
         reporting_scale = None
+        subquestion_configs = None
 
     # Should not raise
     _ns_validate_params(FakeParams())
@@ -105,6 +106,7 @@ def test_ns_validate_params_still_rejects_content_domain() -> None:
         text_instruction = None
         core_competency = None
         reporting_scale = None
+        subquestion_configs = None
 
     with pytest.raises(ValueError, match="content_domain"):
         _ns_validate_params(FakeParams())

@@ -541,6 +541,8 @@ Tests that launch a real Playwright Chromium browser are marked `@pytest.mark.re
 ### Environment Variables
 
 - `LLM_EXCHANGE_RETENTION_DAYS` (default `30`) — window in days for retaining `llm_exchanges` rows. Set to `0` to disable persistence entirely (no rows written, no pruning).
+- `LLM_TIMEOUT_SECONDS` (default `600`) — HTTP timeout in seconds for LLM API calls. Passed as `timeout=` to the OpenAI-compat client constructor. Set to `0` for no timeout.
+- `IMAGE_TIMEOUT_SECONDS` (default `300`) — HTTP timeout in seconds for image generation API calls. Passed as `timeout=` to the image OpenAI client constructor.
 - `DB_POOL_CHECKOUT_ATTRIBUTION` (default off) — set to `1` or `true` to enable pool-connection checkout attribution. When enabled, each connection checkout records a compact call-stack origin and a timestamp; if a connection is garbage-collected without being returned to the pool, one `WARNING` is emitted to the `server.db_attribution` logger (and forwarded to Sentry by the `LoggingIntegration`). Intended to be **on in staging** (see DEPLOYMENT.md) and **off in production** to avoid the per-checkout `traceback.extract_stack()` cost.
 
 ### Staging smoke tests

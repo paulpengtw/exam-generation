@@ -70,6 +70,8 @@ class Config:
     # Tier-specific effort overrides (issue #377); empty = inherit effort_execute at call time.
     effort_verify: str = ""   # empty → inherit effort_execute (LLM_EFFORT_VERIFY)
     effort_correct: str = ""  # empty → inherit effort_execute (LLM_EFFORT_CORRECT)
+    llm_timeout_seconds: int = 600   # HTTP timeout for LLM API calls (LLM_TIMEOUT_SECONDS)
+    image_timeout_seconds: int = 300  # HTTP timeout for image API calls (IMAGE_TIMEOUT_SECONDS)
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> Config:
@@ -110,6 +112,8 @@ class Config:
             effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", "medium"),
             effort_verify=os.environ.get("LLM_EFFORT_VERIFY", ""),
             effort_correct=os.environ.get("LLM_EFFORT_CORRECT", ""),
+            llm_timeout_seconds=int(os.environ.get("LLM_TIMEOUT_SECONDS", "600")),
+            image_timeout_seconds=int(os.environ.get("IMAGE_TIMEOUT_SECONDS", "300")),
         )
 
     def validate(self) -> None:

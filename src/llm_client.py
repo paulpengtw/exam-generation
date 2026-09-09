@@ -526,7 +526,7 @@ class LLMClient:
         if not api_key:
             raise ValueError(f"{env_name} is required to call {provider} models.")
         base_url = getattr(self.config, url_attr)
-        client = OpenAI(api_key=api_key, base_url=base_url)
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=self.config.llm_timeout_seconds)
         self._compat_clients[provider] = client
         return client
 
@@ -907,6 +907,7 @@ class LLMClient:
             self._image_client = OpenAI(
                 api_key=self.config.image_api_key,
                 base_url=self.config.image_base_url,
+                timeout=self.config.image_timeout_seconds,
             )
 
         purpose = "gpt_image"
