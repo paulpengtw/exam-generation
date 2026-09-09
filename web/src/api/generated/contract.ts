@@ -50,6 +50,7 @@ export interface GenerateParams {
   option_word_limit?: number;
   text_word_limit?: number;
   subquestion_configs?: string;
+  allow_duplicate_figure_kinds?: boolean;
   per_question_params?: string;
   drawn?: string[];
   model_plan?: string;

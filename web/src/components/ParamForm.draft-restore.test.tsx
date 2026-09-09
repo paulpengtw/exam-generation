@@ -97,6 +97,7 @@ const SAVED_FIELDS: FormFields = {
   effortExecute: "max",
   effortVerify: "",
   effortCorrect: "",
+  allowDuplicateFigureKinds: false,
 };
 
 function signIn(): void {

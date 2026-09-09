@@ -169,7 +169,7 @@ describe("ParamForm 子題設定 rows characterization", () => {
         expect(currentRow.getByText("圖片生成模式", { selector: "label" })).toBeInTheDocument();
         expect(currentRow.getByPlaceholderText("例如：請聚焦在資料判讀與因果推論")).toBeInTheDocument();
         expect(currentRow.getAllByRole("spinbutton")).toHaveLength(2);
-        expect(currentRow.getAllByRole("combobox")).toHaveLength(hasReportingScale ? 4 : 3);
+        expect(currentRow.getAllByRole("combobox")).toHaveLength(hasReportingScale ? 5 : 4);
         if (hasReportingScale) {
           expect(currentRow.getByText("Reporting Scale", { selector: "label" })).toBeInTheDocument();
         } else {

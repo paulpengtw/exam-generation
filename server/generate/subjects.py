@@ -128,6 +128,9 @@ from src.social_studies.curriculum_loader import (
 from src.social_studies.domain_mapping import (
     load_code_to_domains_mapping as load_ss_code_to_domains_mapping,
 )
+from src.social_studies.figure_kind_loader import (
+    CANONICAL_FIGURE_KINDS,
+)
 from src.social_studies.schema_loader import (
     digital_only_question_types as ss_digital_only_question_types,
 )
@@ -787,6 +790,7 @@ def _ss_build_schemas(config_server: Any, grade: int | None) -> dict:
     schemas["內容領域_mapping"] = load_ss_code_to_domains_mapping(
         curriculum_dir=config_server.social_studies_curriculum_dir,
     )
+    schemas["figure_kinds"] = list(CANONICAL_FIGURE_KINDS)
     return schemas
 
 
@@ -975,6 +979,7 @@ def _ns_build_schemas(config_server: Any, grade: int | None) -> dict:
     })
     if ns_subjects:
         schemas["科目"] = [{"value": s, "instruction": ""} for s in ns_subjects]
+    schemas["figure_kinds"] = list(CANONICAL_FIGURE_KINDS)
     return schemas
 
 

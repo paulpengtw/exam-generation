@@ -6,6 +6,7 @@ import type { SubQuestionConfig } from "../components/ParamForm";
 import DrawnValueRows, { type DrawnValueLabelMap } from "./DrawnValueRows";
 import {
   SubQuestionContentTypeField,
+  SubQuestionFigureKindField,
   SubQuestionImageGenerationModeField,
   SubQuestionInstructionField,
   SubQuestionQuestionTypeField,
@@ -28,6 +29,7 @@ export default function SubquestionConfigCards({
   showContentDomain = true,
   questionTypes,
   contentTypes,
+  figureKinds,
   lcEntryByCode,
   lpEntryByCode,
   availableLc,
@@ -38,6 +40,7 @@ export default function SubquestionConfigCards({
   onQuestionTypeChange,
   onContentTypeChange,
   onImageModeChange,
+  onFigureKindChange,
   onReportingScaleChange,
   onQuestionWordLimitChange,
   onOptionWordLimitChange,
@@ -63,6 +66,8 @@ export default function SubquestionConfigCards({
   showContentDomain?: boolean;
   questionTypes: SchemaEntry[];
   contentTypes: SchemaEntry[];
+  /** Canonical 圖像種類 vocabulary from the schemas endpoint. Issue #450. */
+  figureKinds?: string[];
   lcEntryByCode: Map<string, SchemaEntry>;
   lpEntryByCode: Map<string, SchemaEntry>;
   /** Full subject-filtered LC pool for the SearchPicker. Required when onLcChange is provided. */
@@ -77,6 +82,7 @@ export default function SubquestionConfigCards({
   onQuestionTypeChange?: (subquestionIndex: number, questionType: string) => void;
   onContentTypeChange?: (subquestionIndex: number, contentType: string) => void;
   onImageModeChange?: (subquestionIndex: number, imageMode: string) => void;
+  onFigureKindChange?: (subquestionIndex: number, figureKind: string) => void;
   onReportingScaleChange?: (subquestionIndex: number, reportingScale: string) => void;
   onQuestionWordLimitChange?: (subquestionIndex: number, value: number | undefined) => void;
   onOptionWordLimitChange?: (subquestionIndex: number, value: number | undefined) => void;
@@ -304,6 +310,24 @@ export default function SubquestionConfigCards({
               />
             ) : (
               <div className="text-sm text-gray-700">{t("form.confirm_subq_o_word_limit")} {row.option_word_limit ?? t("form.confirm_unlimited")}</div>
+            )}
+            {/* 圖像種類 — editable when callback provided, read-only otherwise (issue #450) */}
+            {(subject === "social_studies" || subject === "natural_sciences") && (
+              onFigureKindChange && figureKinds !== undefined ? (
+                <SubQuestionFigureKindField
+                  config={row}
+                  figureKinds={figureKinds}
+                  badge={{
+                    label: t(row.figure_kind?.trim() ? "form.confirm_badge_user" : "form.confirm_badge_inherit"),
+                    className: `text-xs font-medium ${row.figure_kind?.trim() ? "text-green-700" : "text-gray-600"}`,
+                  }}
+                  onChange={(patch) => onFigureKindChange(subquestionIndex, patch.figure_kind ?? "")}
+                />
+              ) : (
+                row.figure_kind?.trim()
+                  ? <div className="text-sm text-gray-700">{t("form.confirm_subq_figure_kind")} <span>{row.figure_kind}</span></div>
+                  : null
+              )
             )}
             {/* 學習內容 — editable picker when callback provided, read-only otherwise */}
             <div>

@@ -92,5 +92,10 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
       (subject === "social_studies" || subject === "math" || subject === "natural_sciences") && !mathHasUserAuthoredPassage
         ? params.text_word_limit
         : undefined,
+    // Omit when false so existing requests stay byte-identical (issue #450).
+    allow_duplicate_figure_kinds:
+      (subject === "social_studies" || subject === "natural_sciences") && params.allow_duplicate_figure_kinds
+        ? true
+        : undefined,
   };
 }
