@@ -69,6 +69,18 @@ class ImageSpec(BaseModel):
     html: str = ""
     description: str = ""
 
+    @field_validator("data", "labels", mode="before")
+    @classmethod
+    def coerce_dict_fields(cls, value: object) -> object:
+        """Issue #630: tolerate Sentry EXAM-GENERATION-API-STAGING-4 fields."""
+        return value if isinstance(value, dict) else {}
+
+    @field_validator("figure_kind", "title", "description", mode="before")
+    @classmethod
+    def coerce_string_fields(cls, value: object) -> object:
+        """Issue #630: tolerate Sentry EXAM-GENERATION-API-STAGING-4 strings."""
+        return value if isinstance(value, str) else ""
+
 
 ChartSpec = ImageSpec
 
