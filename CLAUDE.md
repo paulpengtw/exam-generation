@@ -502,8 +502,8 @@ The entry point is always `render_image()` (`src/renderer.py:271`), called from 
 ## Common Commands
 
 ```bash
-# Install dependencies
-uv sync
+# Install dependencies (also installs the Playwright Chromium binary — not part of uv sync alone)
+bash scripts/setup.sh
 
 # Run the CLI
 uv run python -m src.cli generate
