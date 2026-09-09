@@ -157,6 +157,43 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
     assert "`image_generation_mode` 只指定渲染方式，不能單獨視為需要圖片" in prompt
 
 
+def test_social_text_word_limit_is_not_rendered_in_per_subquestion_config(tmp_path) -> None:
+    from src.social_studies.context_builder import build_subquestion_user_prompt
+
+    params = sample_params(
+        seed=1,
+        sub_question_count=3,
+        subquestion_configs=[
+            {
+                "question_type": "選擇題",
+                "question_word_limit": 80,
+                "option_word_limit": 30,
+                "text_word_limit": 321,
+            }
+        ],
+    ).model_copy(update={"text_word_limit": 321})
+    cfg = params.subquestion_configs[0]
+
+    subquestion_prompt, _ = build_subquestion_user_prompt(
+        核心問題="測試核心問題",
+        文本="測試文本",
+        取材來源=["來源A"],
+        sq_plan={"序號": 1, "題型": "選擇題", "出題概念": "測試"},
+        params=params,
+        few_shot_dir=tmp_path,
+        rng=random.Random(1),
+        cfg=cfg,
+    )
+    text_prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+
+    assert "題目字數上限=80" in subquestion_prompt
+    assert "選項字數上限=30" in subquestion_prompt
+    assert "文本字數上限=" not in subquestion_prompt
+    assert "- **文本字數上限**：321 字" in text_prompt
+    assert "題目字數上限=80，選項字數上限=30" in text_prompt
+    assert "文本字數上限=" not in text_prompt
+
+
 def test_per_subquestion_config_renders_inherited_image_mode(tmp_path) -> None:
     params = sample_params(
         seed=1,

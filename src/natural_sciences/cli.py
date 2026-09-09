@@ -169,23 +169,7 @@ def _with_text_word_limit(
 ) -> SampledParams:
     if text_word_limit is None:
         return params
-
-    slot_count = params.sub_question_count or len(params.subquestion_configs) or 3
-    configs = list(params.subquestion_configs)
-    if len(configs) < slot_count:
-        configs.extend(SubQuestionConfig() for _ in range(slot_count - len(configs)))
-
-    return params.model_copy(
-        update={
-            "text_word_limit": text_word_limit,
-            "subquestion_configs": [
-                cfg
-                if cfg.text_word_limit is not None
-                else cfg.model_copy(update={"text_word_limit": text_word_limit})
-                for cfg in configs
-            ],
-        },
-    )
+    return params.model_copy(update={"text_word_limit": text_word_limit})
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

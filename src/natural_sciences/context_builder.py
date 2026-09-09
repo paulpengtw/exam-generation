@@ -481,8 +481,6 @@ def build_user_prompt(
             cfg_parts.append(f"題目字數上限={cfg.question_word_limit}")
         if cfg.option_word_limit:
             cfg_parts.append(f"選項字數上限={cfg.option_word_limit}")
-        if cfg.text_word_limit:
-            cfg_parts.append(f"文本字數上限={cfg.text_word_limit}")
         if cfg_parts:
             sq_config_parts.append(f"  - 第{i}小題：" + "，".join(cfg_parts))
             for code in cfg.learning_content:
