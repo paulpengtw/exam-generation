@@ -42,6 +42,8 @@ function isSubQuestionConfig(value: unknown): value is SubQuestionConfig {
     isOptionalNumber(value.question_word_limit) &&
     isOptionalNumber(value.option_word_limit) &&
     isOptionalString(value.reporting_scale) &&
+    // figure_kind added in issue #450; accept undefined for old drafts.
+    isOptionalString(value.figure_kind) &&
     (
       value.learning_content === undefined ||
       isStringArray(value.learning_content)
@@ -122,7 +124,10 @@ function isFormFields(value: unknown): value is FormFields {
     // drafts persisted by older builds (which lack these fields) still load;
     // loadDraft normalises undefined → "" (inherit) on hydration.
     (value.effortVerify === undefined || typeof value.effortVerify === "string") &&
-    (value.effortCorrect === undefined || typeof value.effortCorrect === "string")
+    (value.effortCorrect === undefined || typeof value.effortCorrect === "string") &&
+    // allowDuplicateFigureKinds added in issue #450. Accept undefined so old drafts still load;
+    // loadDraft normalises undefined → false on hydration.
+    (value.allowDuplicateFigureKinds === undefined || typeof value.allowDuplicateFigureKinds === "boolean")
   );
 }
 
@@ -183,6 +188,11 @@ export function loadDraft(userId: string): FormDraft | null {
             ? rawFields.coreQuestionCallback
             : true,
         reportingScale: typeof rawFields.reportingScale === "string" ? rawFields.reportingScale : "",
+        // allowDuplicateFigureKinds added in issue #450; old drafts default to false.
+        allowDuplicateFigureKinds:
+          typeof rawFields.allowDuplicateFigureKinds === "boolean"
+            ? rawFields.allowDuplicateFigureKinds
+            : false,
       },
     };
   } catch {

@@ -43,6 +43,7 @@ function makeFields(overrides: Partial<FormFields> = {}): FormFields {
     effortExecute: "medium",
     effortVerify: "",
     effortCorrect: "",
+    allowDuplicateFigureKinds: false,
     ...overrides,
   };
 }

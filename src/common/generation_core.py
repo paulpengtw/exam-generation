@@ -34,6 +34,14 @@ from src.llm_client import LLMClient, emit_plan, emit_stage, make_render_error_s
 from src.renderer import render_image
 
 
+class GenerationCancelled(Exception):
+    """Raised at stage boundaries when the run's cancel signal has been set.
+
+    Workers catch this and exit silently — the client has already disconnected.
+    No error SSE event is emitted; the route layer persists 'aborted'.
+    """
+
+
 def _emit_update(callback: Callable | None, question: Any, phase: str) -> None:
     if callback is not None:
         callback(question, phase)
@@ -192,6 +200,7 @@ def generate_one_core(
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> Any:
     """Shared 文本生成器 → N-parallel-子題產生器 pipeline for NS and SS."""
     # ── Text-prompt build (dry-run returns early) ─────────────────────────
@@ -228,6 +237,10 @@ def generate_one_core(
     emit_stage(obs, "generator", "llm_generate", "start")
     text_raw = client.generate_json(text_system, text_user, images=text_images or None)
     emit_stage(obs, "generator", "llm_generate", "end")
+
+    # ── Cancel boundary: after text generator, before subquestion generation ─
+    if is_cancelled is not None and is_cancelled():
+        raise GenerationCancelled()
 
     question = spec.parse_text_shell_fn(text_raw, question_id, params, config.model_execute)
 
@@ -378,6 +391,10 @@ def generate_one_core(
     question.subquestions = [sq_results[k] for k in sorted(sq_results)]
     _emit_update(on_question_update, question, "draft")
 
+    # ── Cancel boundary: after subquestion generation, before image/verify ─
+    if is_cancelled is not None and is_cancelled():
+        raise GenerationCancelled()
+
     # ── Post-draft hook (SS: ensure_top_level_visual_spec) ────────────────
     if spec.ensure_visual_spec_fn is not None:
         prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
@@ -433,6 +450,10 @@ def generate_one_core(
         if subquestion_image_paths:
             _emit_update(on_question_update, question, "image")
 
+    # ── Cancel boundary: after image rendering, before verification ───────
+    if is_cancelled is not None and is_cancelled():
+        raise GenerationCancelled()
+
     # ── Verification ──────────────────────────────────────────────────────
     if not skip_verify:
         _emit_initial_trail(on_trail_entry, question_id, question)
@@ -485,6 +506,7 @@ def generate_with_corrections_core(
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> Any:
     """generate_one_core followed by up to max_retries correction passes."""
     question = generate_one_core(
@@ -512,6 +534,7 @@ def generate_with_corrections_core(
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
+        is_cancelled=is_cancelled,
     )
 
     if dry_run or not hasattr(question, "verification"):
@@ -520,6 +543,8 @@ def generate_with_corrections_core(
     obs = client.get_observer() if client else None
 
     for attempt in range(max_retries):
+        if is_cancelled is not None and is_cancelled():
+            raise GenerationCancelled()
         if skip_verify or question.verification is None or question.verification.passed:
             break
 

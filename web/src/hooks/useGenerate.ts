@@ -413,6 +413,10 @@ export function buildQueryString(params: GenerateParams): string {
   if (params.core_question_callback !== undefined) {
     qs.append("core_question_callback", String(params.core_question_callback));
   }
+  // Omit when false so existing requests are byte-identical (issue #450).
+  if (params.allow_duplicate_figure_kinds === true) {
+    qs.append("allow_duplicate_figure_kinds", "true");
+  }
   return qs.toString();
 }
 

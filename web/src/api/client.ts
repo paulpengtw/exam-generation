@@ -53,6 +53,7 @@ export interface Schemas {
   學習內容?: LearningPerformanceEntry[];
   內容領域_mapping?: Record<string, string[]>;
   digital_only_question_types?: string[];
+  figure_kinds?: string[];
   [key: string]: unknown;
 }
 

@@ -179,6 +179,7 @@ const HISTORY_FIELDS: FormFields = {
   effortExecute: "medium",
   effortVerify: "",
   effortCorrect: "",
+  allowDuplicateFigureKinds: false,
 };
 
 function signIn(): void {

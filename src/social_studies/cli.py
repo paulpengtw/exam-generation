@@ -1688,6 +1688,7 @@ def generate_with_corrections(
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
     core_question_callback: bool = True,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     result = generate_with_corrections_core(
@@ -1715,6 +1716,7 @@ def generate_with_corrections(
         on_reference_example_entry=on_reference_example_entry,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
+        is_cancelled=is_cancelled,
     )
     if isinstance(result, ExamQuestion):
         _derive_iccs_axes(result, params)
