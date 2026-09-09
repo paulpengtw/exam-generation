@@ -13,12 +13,20 @@ from pathlib import Path
 
 from src.context_builder import (
     build_subquestion_user_prompt as math_build_subquestion_user_prompt,
+)
+from src.context_builder import (
     build_text_user_prompt as math_build_text_user_prompt,
+)
+from src.context_builder import (
     build_user_prompt as math_build_user_prompt,
 )
 from src.natural_sciences.context_builder import (
     build_subquestion_user_prompt as ns_build_subquestion_user_prompt,
+)
+from src.natural_sciences.context_builder import (
     build_text_user_prompt as ns_build_text_user_prompt,
+)
+from src.natural_sciences.context_builder import (
     build_user_prompt as ns_build_user_prompt,
 )
 from src.natural_sciences.data_loader import folder_for_question_type
@@ -26,7 +34,11 @@ from src.natural_sciences.sampler import sample_params as ns_sample_params
 from src.sampler import sample_params as math_sample_params
 from src.social_studies.context_builder import (
     build_subquestion_user_prompt as ss_build_subquestion_user_prompt,
+)
+from src.social_studies.context_builder import (
     build_text_user_prompt as ss_build_text_user_prompt,
+)
+from src.social_studies.context_builder import (
     build_user_prompt as ss_build_user_prompt,
 )
 from src.social_studies.sampler import sample_params as ss_sample_params

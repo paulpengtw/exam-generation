@@ -136,7 +136,8 @@ def test_incremental_reference_example_recorder_persists_each_entry(tmp_path) ->
             async with session_factory() as session:
                 log = await session.get(GenerationLog, log_id)
                 assert log is not None
-                assert log.reference_example_record_json == {"disabled": False, "entries": [_EXAMPLE_ENTRY]}
+                expected = {"disabled": False, "entries": [_EXAMPLE_ENTRY]}
+                assert log.reference_example_record_json == expected
         finally:
             await engine.dispose()
 
@@ -199,7 +200,8 @@ def test_incremental_reference_example_recorder_retries_a_transient_commit_failu
             async with real_session_factory() as session:
                 log = await session.get(GenerationLog, log_id)
                 assert log is not None
-                assert log.reference_example_record_json == {"disabled": False, "entries": [_EXAMPLE_ENTRY]}
+                expected = {"disabled": False, "entries": [_EXAMPLE_ENTRY]}
+                assert log.reference_example_record_json == expected
             assert attempts == 2
         finally:
             await engine.dispose()
