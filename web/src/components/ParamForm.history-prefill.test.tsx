@@ -388,6 +388,23 @@ describe("ParamForm history prefill", () => {
     }));
   });
 
+  it("restores text_instruction into the social-studies form", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+
+    render(
+      <ParamForm
+        subject="social_studies"
+        initialParams={{ text_instruction: "請聚焦地方自治中的證據比較" }}
+        onSubmit={() => {}}
+        disabled={false}
+      />,
+    );
+
+    expect(
+      await screen.findByDisplayValue("請聚焦地方自治中的證據比較"),
+    ).toHaveAttribute("id", "text-instruction");
+  });
+
   it("re-submits a math history entry with its resolved per-question parameters pinned", async () => {
     const onSubmit = vi.fn();
     render(

@@ -25,6 +25,7 @@ function makeFields(overrides: Partial<FormFields> = {}): FormFields {
     subjectFilter: "數與量",
     passage: "500 字",
     textWordLimit: null,
+    textInstruction: "",
     options: ["50 字", "50 字", "50 字", "50 字"],
     topic: "",
     coreQuestion: null,
@@ -66,6 +67,24 @@ describe("formDraft", () => {
       savedAt: NOW.toISOString(),
       fields,
     });
+  });
+
+  it("round-trips textInstruction and normalises legacy drafts without it", () => {
+    type FieldsWithTextInstruction = FormFields & { textInstruction: string };
+    const fields = {
+      ...makeFields(),
+      textInstruction: "請聚焦地方自治中的證據比較",
+    } as FieldsWithTextInstruction;
+
+    saveDraft("teacher-1", fields);
+    expect(
+      (loadDraft("teacher-1")?.fields as FieldsWithTextInstruction).textInstruction,
+    ).toBe("請聚焦地方自治中的證據比較");
+
+    saveDraft("teacher-1", makeFields());
+    expect(
+      (loadDraft("teacher-1")?.fields as FieldsWithTextInstruction).textInstruction,
+    ).toBe("");
   });
 
   it("loads a legacy draft without reportingScale and normalizes it to an empty string", () => {

@@ -101,6 +101,7 @@ def build_prompt_previews(
             user_options=params.options,
             user_topic=params.topic,
             user_core_question=params.core_question,
+            text_instruction=params.text_instruction,
             prior_scopes=[],
             balanced_batch=balanced_batch,
             core_question_callback=params.core_question_callback,
@@ -120,6 +121,7 @@ def build_prompt_previews(
                     user_options=params.options,
                     user_topic=params.topic,
                     user_core_question=params.core_question,
+                    text_instruction=params.text_instruction,
                     prior_scopes=[],
                     core_question_callback=params.core_question_callback,
                 )
@@ -339,6 +341,7 @@ def _worker_one(
             user_options=ctx.params.options,
             user_topic=ctx.params.topic,
             user_core_question=ctx.params.core_question,
+            text_instruction=ctx.params.text_instruction,
             core_question_callback=ctx.params.core_question_callback,
             on_question_update=emit_question_update,
             on_trail_entry=None if ctx.params.skip_verify else capture_trail_entry,

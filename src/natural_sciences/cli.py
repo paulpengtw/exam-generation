@@ -547,7 +547,7 @@ def _ns_build_text_system(params: SampledParams) -> tuple[str, dict]:
 
 def _ns_build_text_user(
     params, few_shot_dir,
-    user_passage, user_options, user_topic, user_core_question,
+    user_passage, user_options, user_topic, user_core_question, _text_instruction,
     image_generation_mode, disable_reference_fewshot, prior_scopes,
     core_question_callback,
     balanced_batch: bool = False,
@@ -1453,6 +1453,7 @@ def generate_one(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    text_instruction: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
     on_trail_entry: VerificationTrailCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
@@ -1479,6 +1480,7 @@ def generate_one(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        text_instruction=text_instruction,
         core_question_callback=core_question_callback,
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,
@@ -1526,6 +1528,7 @@ def build_subquestion_prompt_previews(
         user_options=kwargs.get("user_options"),
         user_topic=kwargs.get("user_topic"),
         user_core_question=kwargs.get("user_core_question"),
+        text_instruction=kwargs.get("text_instruction"),
         prior_scopes=kwargs.get("prior_scopes"),
         core_question_callback=kwargs.get("core_question_callback", True),
     )
@@ -1547,6 +1550,7 @@ def generate_with_corrections(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    text_instruction: str | None = None,
     on_question_update: QuestionUpdateCallback | None = None,
     on_trail_entry: VerificationTrailCallback | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
@@ -1580,6 +1584,7 @@ def generate_with_corrections(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        text_instruction=text_instruction,
         core_question_callback=core_question_callback,
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,

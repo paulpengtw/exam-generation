@@ -351,6 +351,7 @@ export interface FormFields {
   subjectFilter: string;
   passage: string;
   textWordLimit: number | null;
+  textInstruction: string;
   options: string[];
   topic: string;
   coreQuestion: string | null;
@@ -938,6 +939,7 @@ function defaultFormFields(
     subjectFilter: "",
     passage: TEXT_HINT,
     textWordLimit: null,
+    textInstruction: "",
     options: [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
     topic: "",
     coreQuestion: null,
@@ -1297,6 +1299,7 @@ export default function ParamForm({
     })(),
     passage: stringFromInit("passage", TEXT_HINT),
     textWordLimit: fromInit<number | undefined>("text_word_limit", undefined) ?? null,
+    textInstruction: stringFromInit("text_instruction", ""),
     options: fromInit<string[]>(
       "options",
       [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
@@ -1356,6 +1359,7 @@ export default function ParamForm({
     subjectFilter,
     passage,
     textWordLimit,
+    textInstruction,
     options,
     topic,
     coreQuestion,
@@ -1645,6 +1649,7 @@ export default function ParamForm({
       difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
       passage: fromInit<string>("passage", TEXT_HINT),
       textWordLimit: fromInit<number | undefined>("text_word_limit", undefined) ?? null,
+      textInstruction: stringFromInit("text_instruction", ""),
       options: fromInit<string[]>(
         "options",
         [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
@@ -2360,6 +2365,10 @@ export default function ParamForm({
       options: subject === "math" && cleanOptions.length ? cleanOptions : undefined,
       topic: isCurriculumSubject && cleanTopic ? cleanTopic : undefined,
       core_question: coreQuestion || undefined,
+      text_instruction:
+        subject === "social_studies" && textInstruction.trim()
+          ? textInstruction.trim()
+          : undefined,
       ...(subject === "social_studies" && contentDomain
         ? { content_domain: contentDomain }
         : {}),
@@ -2399,6 +2408,7 @@ export default function ParamForm({
       "drawn",
       "max_retries",
       "core_question_callback",
+      "text_instruction",
     ]);
     const perQuestionParams = hasHistoryPerQuestionParams
       ? historyPerQuestionParams.map((params) => Object.fromEntries(
@@ -2820,6 +2830,12 @@ export default function ParamForm({
     const allSubjects = ["math", "social_studies", "natural_sciences"];
     const rows = ([
       { label: t("form.confirm_topic"), value: p.topic, subjects: allSubjects, kind: "absent" },
+      {
+        label: t("form.confirm_text_instruction"),
+        value: p.text_instruction,
+        subjects: ["social_studies"],
+        kind: "absent",
+      },
       {
         label: t("form.confirm_core_question"),
         value: p.core_question,
@@ -4398,6 +4414,22 @@ export default function ParamForm({
             value={textWordLimit ?? ""}
             onChange={(e) => setField("textWordLimit", e.target.value ? Number(e.target.value) : null)}
             placeholder={t("form.unlimited")}
+            className="mt-1 block w-full border rounded px-2 py-1"
+          />
+        </div>
+      )}
+
+      {subject === "social_studies" && (
+        <div>
+          <label htmlFor="text-instruction" className="block text-sm font-medium">
+            {t("form.text_instruction_label")}
+          </label>
+          <input
+            id="text-instruction"
+            type="text"
+            value={textInstruction}
+            onChange={(e) => setField("textInstruction", e.target.value)}
+            placeholder={t("form.text_instruction_placeholder")}
             className="mt-1 block w-full border rounded px-2 py-1"
           />
         </div>

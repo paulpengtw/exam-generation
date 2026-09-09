@@ -437,6 +437,19 @@ describe("buildQueryString — text_word_limit serialization", () => {
   });
 });
 
+describe("buildQueryString — text_instruction serialization", () => {
+  it("serializes text_instruction when set", () => {
+    const qs = buildQueryString({
+      subject: "social_studies",
+      text_instruction: "請聚焦地方自治中的證據比較",
+    });
+
+    expect(new URLSearchParams(qs).get("text_instruction")).toBe(
+      "請聚焦地方自治中的證據比較",
+    );
+  });
+});
+
 describe("buildQueryString — drawn serialization", () => {
   it("serializes resolver provenance as repeated query values", () => {
     const params = {

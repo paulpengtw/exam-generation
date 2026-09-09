@@ -153,7 +153,7 @@ class SubjectGenerationSpec:
 
     # Build text-generator user prompt.
     # Signature: (params, few_shot_dir, user_passage, user_options, user_topic,
-    #              user_core_question, image_generation_mode,
+    #              user_core_question, text_instruction, image_generation_mode,
     #              disable_reference_fewshot, prior_scopes,
     #              core_question_callback) -> tuple[str, list]
     build_text_user_fn: Callable

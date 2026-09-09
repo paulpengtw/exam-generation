@@ -91,6 +91,27 @@ def test_persist_generation_record_inserts_one_row() -> None:
     assert record.params_json["drawn"] == ["learning_content"]
 
 
+def test_persist_generation_record_keeps_text_instruction_in_history_params() -> None:
+    rows: list = []
+    params = GenerateParams(
+        subject="social_studies",
+        text_instruction="請聚焦地方自治中的證據比較",
+    )
+
+    asyncio.run(
+        persist_generation_record(
+            user_id=uuid.uuid4(),
+            generation_log_id=None,
+            subject="social_studies",
+            params=params,
+            payload={"id": "social-text-instruction"},
+            session_factory=_make_factory(rows),
+        )
+    )
+
+    assert rows[0].params_json["text_instruction"] == "請聚焦地方自治中的證據比較"
+
+
 def test_persist_generation_record_strips_image_base64() -> None:
     rows: list = []
     params = GenerateParams(subject="math", skip_verify=True)

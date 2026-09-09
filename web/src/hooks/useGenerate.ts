@@ -358,6 +358,7 @@ export function buildQueryString(params: GenerateParams): string {
   for (const v of params.options ?? []) qs.append("options", v);
   if (params.topic) qs.append("topic", params.topic);
   if (params.core_question) qs.append("core_question", params.core_question);
+  if (params.text_instruction) qs.append("text_instruction", params.text_instruction);
   if (params.sub_context) qs.append("sub_context", params.sub_context);
   for (const v of params.science_competency ?? []) qs.append("science_competency", v);
   if (params.reporting_scale) qs.append("reporting_scale", params.reporting_scale);

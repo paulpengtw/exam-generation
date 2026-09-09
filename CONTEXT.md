@@ -54,6 +54,10 @@ _Avoid_: subquestion config, per-item settings
 A free-text instruction attached to one 小題, telling the generator what that 小題 should focus on.
 _Avoid_: instruction, hint, guidance
 
+**文本出題指示**:
+A request-level free-text instruction attached to a 文本, asking every 題組's 文本生成器 to steer generation for the whole batch. It is a 建議值 and is distinct from the per-小題 出題指示.
+_Avoid_: instruction, text prompt, passage prompt
+
 **出題模式**:
 The request setting that chooses whether batch-wide variety is suggested to the model; it does not control sampling.
 _Avoid_: coverage mode, sampling mode, distribution strategy

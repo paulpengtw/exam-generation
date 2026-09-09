@@ -350,6 +350,8 @@ def _ns_validate_params(params: Any) -> None:
         for field in ("content_domain", "target_surface")
         if getattr(params, field, None) is not None
     ]
+    if params.text_instruction and params.text_instruction.strip():
+        unsupported_surface_fields.append("text_instruction")
     if unsupported_surface_fields:
         raise ValueError(
             "The following parameters are not supported for natural sciences: "
@@ -477,6 +479,8 @@ def _math_validate_params(params: Any) -> None:
         )
         if getattr(params, field) is not None
     ]
+    if params.text_instruction and params.text_instruction.strip():
+        unsupported.append("text_instruction")
     # disable_reference_fewshot is deliberately excluded: its bool=False default
     # makes omission indistinguishable from an explicit false; making it optional
     # would be an out-of-scope wire change.
@@ -629,6 +633,7 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         user_options=kwargs["user_options"],
         user_topic=kwargs["user_topic"],
         user_core_question=kwargs["user_core_question"],
+        text_instruction=kwargs.get("text_instruction"),
         core_question_callback=kwargs.get("core_question_callback", True),
         on_question_update=kwargs["on_question_update"],
         on_trail_entry=kwargs.get("on_trail_entry"),
@@ -652,6 +657,7 @@ def _ss_build_generation_prompts(
         user_options=kwargs["user_options"],
         user_topic=kwargs["user_topic"],
         user_core_question=kwargs["user_core_question"],
+        text_instruction=kwargs.get("text_instruction"),
         prior_scopes=kwargs["prior_scopes"],
         core_question_callback=kwargs.get("core_question_callback", True),
         balanced_batch=kwargs["balanced_batch"],
@@ -670,6 +676,7 @@ def _ss_build_subquestion_prompt_previews(
         user_options=kwargs["user_options"],
         user_topic=kwargs["user_topic"],
         user_core_question=kwargs["user_core_question"],
+        text_instruction=kwargs.get("text_instruction"),
         prior_scopes=kwargs["prior_scopes"],
         core_question_callback=kwargs.get("core_question_callback", True),
     )
@@ -842,6 +849,7 @@ def _ns_build_generation_prompts(
         user_options=kwargs["user_options"],
         user_topic=kwargs["user_topic"],
         user_core_question=kwargs["user_core_question"],
+        text_instruction=kwargs.get("text_instruction"),
         prior_scopes=kwargs["prior_scopes"],
         core_question_callback=kwargs.get("core_question_callback", True),
         balanced_batch=kwargs["balanced_batch"],

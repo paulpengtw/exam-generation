@@ -8,6 +8,7 @@ from src.social_studies.context_builder import (
     CONTENT_TYPE_INSTRUCTIONS as SS_CONTENT_TYPE_INSTRUCTIONS,
 )
 from src.social_studies.context_builder import (
+    build_subquestion_user_prompt,
     build_subquestion_system_prompt,
     build_text_system_prompt,
     build_text_user_prompt,
@@ -34,6 +35,43 @@ def test_topic_replaces_context_in_social_studies_prompt(tmp_path) -> None:
     assert "- **情境**：氣候變遷與都市規劃" in prompt
     assert "## 指定情境" in prompt
     assert "主題 / 議題：氣候變遷與都市規劃" in prompt
+
+
+def test_text_instruction_appears_only_in_social_text_generator_prompt(tmp_path) -> None:
+    params = sample_params(seed=1, content_type="純文字")
+    instruction = "請聚焦地方自治中的證據比較"
+
+    prompt, _ = build_text_user_prompt(
+        params,
+        tmp_path,
+        rng=random.Random(1),
+        text_instruction=instruction,
+    )
+    prompt_without_instruction, _ = build_text_user_prompt(
+        params,
+        tmp_path,
+        rng=random.Random(1),
+    )
+    prompt_with_empty_instruction, _ = build_text_user_prompt(
+        params,
+        tmp_path,
+        rng=random.Random(1),
+        text_instruction="",
+    )
+    subquestion_prompt, _ = build_subquestion_user_prompt(
+        核心問題="測試核心問題",
+        文本="測試文本",
+        取材來源=["來源A"],
+        sq_plan={"序號": 1, "題型": "選擇題", "出題概念": "測試"},
+        params=params,
+        few_shot_dir=tmp_path,
+        rng=random.Random(1),
+    )
+
+    assert "## 文本出題指示" in prompt
+    assert instruction in prompt
+    assert prompt_without_instruction == prompt_with_empty_instruction
+    assert "## 文本出題指示" not in subquestion_prompt
 
 
 def test_social_text_prompt_offers_only_pinned_core_competencies(tmp_path) -> None:
