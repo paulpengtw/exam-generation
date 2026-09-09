@@ -80,6 +80,18 @@ class ImageSpec(BaseModel):
     html: str = ""
     description: str = ""
 
+    @field_validator("data", "labels", mode="before")
+    @classmethod
+    def coerce_dict_fields(cls, value: object) -> object:
+        """Issue #632: tolerate mistyped LLM dict fields (non-dict → {})."""
+        return value if isinstance(value, dict) else {}
+
+    @field_validator("title", "description", mode="before")
+    @classmethod
+    def coerce_string_fields(cls, value: object) -> object:
+        """Issue #632: tolerate mistyped LLM string fields (non-str → '')."""
+        return value if isinstance(value, str) else ""
+
 
 # Backward-compatible alias
 ChartSpec = ImageSpec
