@@ -47,7 +47,7 @@ _Avoid_: global pool, request-level codes, parent codes
 ### 設定 (Configuration)
 
 **各小題配置**:
-The per-小題 settings a user supplies before generation — 題型, 出題指示, 題目內容類型, 圖片生成模式, 字數限制, and explicit 學習內容/學習表現.
+The per-小題 settings a user supplies before generation — 題型, 出題指示, 題目內容類型, 圖片生成模式, 題目字數限制, 選項字數限制, and explicit 學習內容/學習表現. Note: 文本字數限制 is a request-level setting only and is NOT a valid per-小題 config key (ADR 0023).
 _Avoid_: subquestion config, per-item settings
 
 **出題指示**:

@@ -13,4 +13,5 @@ def test_social_cli_keeps_text_word_limit_request_level_without_padding_configs(
 
     assert resolved.text_word_limit == 321
     assert resolved.subquestion_configs == []
-    assert all(cfg.text_word_limit is None for cfg in resolved.subquestion_configs)
+    # text_word_limit is now a request-level-only field; SubQuestionConfig has no such attribute
+    assert not any(hasattr(cfg, "text_word_limit") for cfg in resolved.subquestion_configs)
