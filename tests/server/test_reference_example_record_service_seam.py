@@ -23,7 +23,6 @@ from server.generate.subjects import SUBJECTS
 from src.social_studies.schemas import ExamQuestion
 from tests.server.generate_test_utils import resolved_generate_params
 
-
 _NOW = datetime(2026, 9, 10, tzinfo=timezone.utc)
 
 _EXAMPLE_ENTRY = {
@@ -77,7 +76,9 @@ def test_result_event_carries_reference_example_record_field(tmp_path) -> None:
     """result event must contain reference_example_record with disabled+entries."""
     entries = [_EXAMPLE_ENTRY, _SUB_ENTRY]
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=tmp_path)
-    params = resolved_generate_params({"subject": "social_studies", "count": 1, "skip_verify": True})
+    params = resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "skip_verify": True}
+    )
     fake_spec = _fake_spec(entries)
 
     async def collect() -> list[dict]:
@@ -109,7 +110,9 @@ def test_reference_example_entries_emitted_as_live_trail_events(tmp_path) -> Non
     """Each reference example entry is emitted as a separate trail event."""
     entries = [_EXAMPLE_ENTRY, _SUB_ENTRY]
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=tmp_path)
-    params = resolved_generate_params({"subject": "social_studies", "count": 1, "skip_verify": True})
+    params = resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "skip_verify": True}
+    )
     fake_spec = _fake_spec(entries)
 
     async def collect() -> list[dict]:
@@ -139,7 +142,9 @@ def test_cli_result_json_does_not_include_reference_example_record(tmp_path) -> 
     """The question JSON in the result event data field has no reference_example_record key."""
     entries = [_EXAMPLE_ENTRY]
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=tmp_path)
-    params = resolved_generate_params({"subject": "social_studies", "count": 1, "skip_verify": True})
+    params = resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "skip_verify": True}
+    )
     fake_spec = _fake_spec(entries)
 
     async def collect() -> list[dict]:
