@@ -79,7 +79,7 @@ Resolving a value that would otherwise be chosen randomly during generation, bef
 _Avoid_: pre-draw, pre-roll, client-side sampling
 
 **全量預抽**:
-The promise that every value generation would otherwise draw is resolved by 預抽 and 釘選 before 發送前確認, so nothing shown to a supervisor can change after they send. The 參考範例 draw is the single deliberate exception. Drawing during generation survives only until the web client obtains its 預抽 from the server-side resolver; it is then removed together with the generation gate that rejects incomplete requests. Every caller — web, API or CLI — resolves first and generates second.
+The promise that every value generation would otherwise draw is resolved by 預抽 and 釘選 before 發送前確認, so nothing shown to a supervisor can change after they send. The 參考範例 draw is the single deliberate exception; its outcome is disclosed after the fact as 參考範例紀錄 rather than before sending. Drawing during generation survives only until the web client obtains its 預抽 from the server-side resolver; it is then removed together with the generation gate that rejects incomplete requests. Every caller — web, API or CLI — resolves first and generates second.
 _Avoid_: full pre-draw, exhaustive sampling, no-backend-randomness
 
 **從屬參數**:
@@ -163,8 +163,16 @@ A modal that interrupts an action which would irreversibly discard the user's wo
 _Avoid_: destructive-action modal, are-you-sure dialog, warning modal
 
 **參考範例**:
-The stored worked 題組 injected into a prompt to show the model the target form. Which ones appear is fixed by the request's seed, so one payload always yields the same 參考範例; the choice is not 預抽 and is not shown on 發送前確認.
+The stored worked 題組 injected into a prompt to show the model the target form. Which ones appear is fixed by the request's seed, so one payload always yields the same 參考範例; the choice is not 預抽 and is not shown on 發送前確認, but which ones were drawn is disclosed afterwards as 參考範例紀錄.
 _Avoid_: few-shot examples, exemplars, reference samples
+
+**參考範例紀錄**:
+The record of which 參考範例 each 生成步驟 of a generation drew — one entry per stage and per 小題, each naming the example and holding exactly the portion the prompt received. A sibling of the question, like Agent 自主驗證修正歷程; survives a failed or aborted run for the stages that had already drawn; states explicitly when 關閉參考範例 was set.
+_Avoid_: few-shot log, example trail, 參考範例歷程
+
+**認知歷程範例**:
+A stored 小題 showing one 認知歷程 in practice, drawn per 小題 by that 小題's 認知歷程. 社會領域 only.
+_Avoid_: process exemplar, 歷程範例
 
 **提示詞預覽**:
 The literal system and user prompt text displayed on 發送前確認, assembled without calling any model.
