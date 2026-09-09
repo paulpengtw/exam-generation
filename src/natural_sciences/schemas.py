@@ -28,6 +28,18 @@ class ImageSpec(BaseModel):
     description: str = ""
     figure_kind: str = ""
 
+    @field_validator("data", "labels", mode="before")
+    @classmethod
+    def coerce_dict_fields(cls, value: object) -> object:
+        """Issue #631: tolerate mistyped LLM dict fields (non-dict → {})."""
+        return value if isinstance(value, dict) else {}
+
+    @field_validator("figure_kind", "title", "description", mode="before")
+    @classmethod
+    def coerce_string_fields(cls, value: object) -> object:
+        """Issue #631: tolerate mistyped LLM string fields (non-str → '')."""
+        return value if isinstance(value, str) else ""
+
 
 ChartSpec = ImageSpec
 
