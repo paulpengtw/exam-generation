@@ -2130,3 +2130,80 @@ def test_generate_valid_request_emits_no_validation_warning(caplog) -> None:
         f"unexpected validation warning on valid request: "
         f"{[r.getMessage() for r in route_validation_warnings]}"
     )
+
+
+# Issue #644 — per-小題 text_word_limit must be rejected at the HTTP boundary
+def test_ss_generate_route_rejects_per_subquestion_text_word_limit() -> None:
+    """A per-小題 config row with text_word_limit must produce HTTP 422 for SS.
+
+    Uses a fully-resolved payload (via _complete_query_params) so the
+    completeness gate passes and the 422 is attributable exclusively to the
+    removed text_word_limit key check in _ss_validate_params (#644).
+    """
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+
+    # Start from a fully-resolved SS payload so the completeness gate passes.
+    params = _complete_query_params({"subject": "social_studies", "seed": 41})
+    # Inject text_word_limit into the first subquestion_configs slot after resolution.
+    configs = json.loads(params.get("subquestion_configs") or "[]")
+    if configs:
+        configs[0]["text_word_limit"] = 200
+    params["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)
+
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/api/generate", params=params)
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    # The detail must name the offending path — proving the check in
+    # _ss_validate_params fired, not the completeness gate.
+    assert "subquestion_configs[0].text_word_limit" in json.dumps(
+        response.json(), ensure_ascii=False
+    )
+
+
+def test_ns_generate_route_rejects_per_subquestion_text_word_limit() -> None:
+    """A per-小題 config row with text_word_limit must produce HTTP 422 for NS.
+
+    Uses a fully-resolved payload (via _complete_query_params) so the
+    completeness gate passes and the 422 is attributable exclusively to the
+    removed text_word_limit key check in _ns_validate_params (#644).
+    """
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+
+    # Start from a fully-resolved NS payload so the completeness gate passes.
+    params = _complete_query_params({"subject": "natural_sciences", "seed": 41})
+    # Inject text_word_limit into the first subquestion_configs slot after resolution.
+    configs = json.loads(params.get("subquestion_configs") or "[]")
+    if configs:
+        configs[0]["text_word_limit"] = 200
+    params["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)
+
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/api/generate", params=params)
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    # The detail must name the offending path — proving the check in
+    # _ns_validate_params fired, not the completeness gate.
+    assert "subquestion_configs[0].text_word_limit" in json.dumps(
+        response.json(), ensure_ascii=False
+    )

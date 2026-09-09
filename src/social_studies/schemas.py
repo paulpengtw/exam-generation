@@ -159,7 +159,6 @@ class SubQuestionConfig(BaseModel):
     figure_kind: str | None = None
     question_word_limit: int | None = None
     option_word_limit: int | None = None
-    text_word_limit: int | None = None
     認知歷程: str | None = Field(
         default=None,
         validation_alias=AliasChoices("認知歷程", "cognitive_process"),
