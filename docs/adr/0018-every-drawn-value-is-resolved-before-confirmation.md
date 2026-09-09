@@ -6,6 +6,8 @@ ADR 0001 moved the draw for blank 學習內容/學習表現 into the frontend so
 
 The draw of which 參考範例 (few-shot exemplars) appear in a prompt is the **single deliberate exception**. It is not a parameter of the item — it shapes the prompt, not the 題組's declared 情境/題型/課綱 values — and disclosing it would mean showing prompt bytes, which this effort explicitly does not promise. Seed-determinism was accepted in place of disclosure: the pick is keyed on the request seed, so one payload always yields the same 參考範例. A reader who has just learned 全量預抽 will find `rng.sample` in the three `context_builder` modules and take it for a bug; it is not.
 
+**Amended by ADR 0024.** The draw remains the exception to 預抽 and stays off 發送前確認, but which 參考範例 were drawn is now disclosed after generation as 參考範例紀錄. "Disclosing it would mean showing prompt bytes" no longer holds: the record shows the injected example, not the prompt.
+
 ## Consequences
 
 - 小題數 left blank is 預抽'd 3–7 from the seed and 釘選 (ADR 0002's consequence "requests that omit 小題數量 keep the previous model-decided behaviour" no longer holds for any caller). 小題數 is a structural 從屬參數 parent: 重抽 rebuilds the slot list.
