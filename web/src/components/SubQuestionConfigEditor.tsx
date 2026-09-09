@@ -9,12 +9,56 @@ const PISA_SCIENCE_QUESTION_TYPE_VALUES = [
   "Constructed response",
 ] as const;
 
+export interface SubQuestionFigureKindFieldProps {
+  config: SubQuestionConfig;
+  figureKinds: string[];
+  onChange: (patch: Partial<SubQuestionConfig>) => void;
+  badge?: { label: string; className: string };
+}
+
+export function SubQuestionFigureKindField({
+  config,
+  figureKinds,
+  onChange,
+  badge,
+}: SubQuestionFigureKindFieldProps) {
+  const id = useId();
+  const datalistId = `${id}-datalist`;
+  const t = useT();
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={id} className="block text-xs text-gray-500">
+          {t("form.figure_kind_input")}
+        </label>
+        {badge && <span className={badge.className}>{badge.label}</span>}
+      </div>
+      <input
+        id={id}
+        type="text"
+        list={datalistId}
+        value={config.figure_kind ?? ""}
+        onChange={(e) => onChange({ figure_kind: e.target.value || undefined })}
+        placeholder={t("form.figure_kind_placeholder")}
+        className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
+      />
+      <datalist id={datalistId}>
+        {figureKinds.map((kind) => (
+          <option key={kind} value={kind} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
 export interface SubQuestionConfigEditorProps {
   config: SubQuestionConfig;
   subject: string;
   questionTypes: SchemaEntry[];
   cognitiveProcesses?: SchemaEntry[];
   contentTypes: SchemaEntry[];
+  figureKinds?: string[];
   onChange: (patch: Partial<SubQuestionConfig>) => void;
 }
 
@@ -329,9 +373,11 @@ export default function SubQuestionConfigEditor({
   questionTypes,
   cognitiveProcesses = [],
   contentTypes,
+  figureKinds,
   onChange,
 }: SubQuestionConfigEditorProps) {
   const t = useT();
+  const isVisualSubject = subject === "social_studies" || subject === "natural_sciences";
 
   return (
     <>
@@ -382,6 +428,13 @@ export default function SubQuestionConfigEditor({
         <SubQuestionImageGenerationModeField config={config} onChange={onChange} />
         {subject === "natural_sciences" && (
           <SubQuestionReportingScaleField config={config} onChange={onChange} />
+        )}
+        {isVisualSubject && figureKinds !== undefined && (
+          <SubQuestionFigureKindField
+            config={config}
+            figureKinds={figureKinds}
+            onChange={onChange}
+          />
         )}
       </div>
       <SubQuestionInstructionField config={config} onChange={onChange} />

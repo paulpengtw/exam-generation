@@ -31,6 +31,8 @@ export interface SubQuestionConfig {
   question_word_limit?: number;
   option_word_limit?: number;
   reporting_scale?: string;
+  /** Per-小題 圖像種類 pin (free text; canonical values suggested via datalist). ADR 0015. */
+  figure_kind?: string;
   learning_content?: string[];
   learning_performance?: string[];
 }
@@ -397,6 +399,8 @@ export interface FormFields {
   // Optional for backwards compatibility with drafts saved before #493.
   contentDomain?: string;
   targetSurface?: "紙本" | "數位";
+  /** Request-level kill-switch for ADR 0015 distinct-kind guarantee. Issue #450. */
+  allowDuplicateFigureKinds: boolean;
 }
 
 type FormFieldUpdate<K extends keyof FormFields> =
@@ -984,6 +988,7 @@ function defaultFormFields(
     effortCorrect,
     contentDomain: "",
     targetSurface: "紙本",
+    allowDuplicateFigureKinds: false,
   };
 }
 
@@ -1350,6 +1355,7 @@ export default function ParamForm({
     effortExecute: stringFromInit("effort_execute", window.localStorage.getItem("effort_execute") ?? "medium"),
     effortVerify: stringFromInit("effort_verify", window.localStorage.getItem("effort_verify") ?? ""),
     effortCorrect: stringFromInit("effort_correct", window.localStorage.getItem("effort_correct") ?? ""),
+    allowDuplicateFigureKinds: false,
   }));
   const formSnapshot = formFields;
   const restoreFormSnapshot = setFormFields;
@@ -1407,6 +1413,7 @@ export default function ParamForm({
     effortCorrect,
     contentDomain,
     targetSurface,
+    allowDuplicateFigureKinds,
   } = formSnapshot;
   const configuredSeed = fromInit<number | undefined>("seed", undefined);
   const historyPerQuestionParams = parsePerQuestionParams(ip.per_question_params);
@@ -2430,6 +2437,10 @@ export default function ParamForm({
       effort_execute: models?.effort ? effortExecute : undefined,
       effort_verify: models?.effort ? (effortVerify || undefined) : undefined,
       effort_correct: models?.effort ? (effortCorrect || undefined) : undefined,
+      // Omit when false so existing requests are byte-identical (issue #450).
+      ...((subject === "social_studies" || subject === "natural_sciences") && allowDuplicateFigureKinds
+        ? { allow_duplicate_figure_kinds: true as const }
+        : {}),
       drawn: historyDrawn,
       ...(configuredSeed !== undefined ? { seed: configuredSeed } : {}),
     } as FormParams & { seed?: number };
@@ -2921,6 +2932,13 @@ export default function ParamForm({
         subjects: ["social_studies", "natural_sciences"],
         kind: "defaulted",
         defaultValue: t("form.confirm_no"),
+      },
+      {
+        label: t("form.confirm_allow_duplicate_figure_kinds"),
+        value: p.allow_duplicate_figure_kinds ? t("form.confirm_yes") : undefined,
+        subjects: ["social_studies", "natural_sciences"],
+        kind: "defaulted",
+        defaultValue: undefined,
       },
     ] satisfies ConfirmationRow[]).filter((row) => row.subjects.includes(subject));
     const perQuestionRows = ([
@@ -4413,6 +4431,11 @@ export default function ParamForm({
                     questionTypes={availableQuestionTypes}
                     cognitiveProcesses={subject === "social_studies" ? schemas.認知歷程 ?? [] : []}
                     contentTypes={schemas.題目內容類型 ?? []}
+                    figureKinds={
+                      (subject === "social_studies" || subject === "natural_sciences")
+                        ? schemas.figure_kinds ?? []
+                        : undefined
+                    }
                     onChange={(patch) => updateSubquestionConfig(i, patch)}
                   />
                   <SubQuestionCurriculumPickers
@@ -4551,6 +4574,17 @@ export default function ParamForm({
             onChange={(e) => setField("coreQuestionCallback", e.target.checked)}
           />
           <span className="text-sm">{t("form.core_question_callback")}</span>
+        </label>
+      )}
+
+      {(subject === "social_studies" || subject === "natural_sciences") && (
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={allowDuplicateFigureKinds}
+            onChange={(e) => setField("allowDuplicateFigureKinds", e.target.checked)}
+          />
+          <span className="text-sm">{t("form.allow_duplicate_figure_kinds_label")}</span>
         </label>
       )}
 

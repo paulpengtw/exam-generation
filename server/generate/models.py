@@ -55,9 +55,9 @@ REQUEST_LEVEL_FIELDS: frozenset[str] = frozenset(
 )
 # Backend-only request fields are valid on the API route but intentionally have
 # no web form control or generated client forwarding.
-SERVER_ONLY_GENERATE_FIELDS: frozenset[str] = frozenset(
-    {"allow_duplicate_figure_kinds"}
-)
+# Note: allow_duplicate_figure_kinds was here before issue #450 exposed it in the
+# web UI; it is now forwarded by the frontend and appears in the generated contract.
+SERVER_ONLY_GENERATE_FIELDS: frozenset[str] = frozenset()
 
 
 def decode_per_question_params(raw: str | None) -> list[dict[str, Any]] | None:
