@@ -274,7 +274,7 @@ def test_preview_route_includes_social_text_instruction_in_text_prompt() -> None
     assert instruction in text_prompt
 
 
-@pytest.mark.parametrize("subject", ["natural_sciences", "math"])
+@pytest.mark.parametrize("subject", ["math"])
 def test_generate_route_rejects_text_instruction_for_unwired_subjects(subject: str) -> None:
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: User(

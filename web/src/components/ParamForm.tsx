@@ -2400,7 +2400,7 @@ export default function ParamForm({
       topic: isCurriculumSubject && cleanTopic ? cleanTopic : undefined,
       core_question: coreQuestion || undefined,
       text_instruction:
-        subject === "social_studies" && textInstruction.trim()
+        (subject === "social_studies" || subject === "natural_sciences") && textInstruction.trim()
           ? textInstruction.trim()
           : undefined,
       ...(subject === "social_studies" && contentDomain
@@ -4465,7 +4465,7 @@ export default function ParamForm({
         </div>
       )}
 
-      {subject === "social_studies" && (
+      {(subject === "social_studies" || subject === "natural_sciences") && (
         <div>
           <label htmlFor="text-instruction" className="block text-sm font-medium">
             {t("form.text_instruction_label")}

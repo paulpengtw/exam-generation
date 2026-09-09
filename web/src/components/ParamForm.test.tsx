@@ -225,7 +225,7 @@ describe("ParamForm 文本出題指示", () => {
     getSchemasMock.mockResolvedValue(FAKE_SOCIAL_SCHEMA);
   });
 
-  it("submits the social text instruction and hides it for math and natural sciences", async () => {
+  it("submits the social text instruction and hides it only for math", async () => {
     const onSubmit = vi.fn();
     const onUnsubmittedInput = vi.fn();
     const social = render(
@@ -252,12 +252,6 @@ describe("ParamForm 文本出題指示", () => {
     getSchemasMock.mockResolvedValue(FAKE_MATH_SCHEMA);
     render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
     await screen.findByRole("button", { name: "Generate" });
-    expect(screen.queryByLabelText("文本出題指示")).not.toBeInTheDocument();
-
-    getSchemasMock.mockResolvedValue(FAKE_SCIENCE_SCHEMA);
-    // The previous render is intentionally replaced to verify the second gated subject.
-    render(<ParamForm subject="natural_sciences" onSubmit={() => {}} disabled={false} />);
-    await screen.findAllByRole("button", { name: "Generate" });
     expect(screen.queryByLabelText("文本出題指示")).not.toBeInTheDocument();
   });
 });
