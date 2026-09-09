@@ -41,7 +41,6 @@ export default function SubquestionConfigCards({
   onReportingScaleChange,
   onQuestionWordLimitChange,
   onOptionWordLimitChange,
-  onTextWordLimitChange,
   onFieldValidityChange,
   onLcChange,
   onLpChange,
@@ -81,7 +80,6 @@ export default function SubquestionConfigCards({
   onReportingScaleChange?: (subquestionIndex: number, reportingScale: string) => void;
   onQuestionWordLimitChange?: (subquestionIndex: number, value: number | undefined) => void;
   onOptionWordLimitChange?: (subquestionIndex: number, value: number | undefined) => void;
-  onTextWordLimitChange?: (subquestionIndex: number, value: number | undefined) => void;
   /** Generic gate: called whenever a field's validity changes. fieldKey is a stable opaque string. */
   onFieldValidityChange?: (subquestionIndex: number, fieldKey: string, isValid: boolean) => void;
   /** Called when the user explicitly changes LC codes for a 小題. */
@@ -306,25 +304,6 @@ export default function SubquestionConfigCards({
               />
             ) : (
               <div className="text-sm text-gray-700">{t("form.confirm_subq_o_word_limit")} {row.option_word_limit ?? t("form.confirm_unlimited")}</div>
-            )}
-            {onTextWordLimitChange ? (
-              <SubQuestionWordLimitField
-                config={row}
-                field="text_word_limit"
-                labelKey="form.confirm_subq_text_word_limit_input"
-                placeholder={t("form.confirm_unlimited")}
-                badge={{
-                  label: t(row.text_word_limit != null ? "form.confirm_badge_user" : "form.confirm_badge_unlimited"),
-                  className: `text-xs font-medium ${row.text_word_limit != null ? "text-green-700" : "text-gray-600"}`,
-                }}
-                onChange={(patch) => {
-                  const v = (patch as Partial<SubQuestionConfig>).text_word_limit;
-                  onTextWordLimitChange(subquestionIndex, v);
-                }}
-                onValidityChange={(isValid) => onFieldValidityChange?.(subquestionIndex, "text_word_limit", isValid)}
-              />
-            ) : (
-              <div className="text-sm text-gray-700">{t("form.confirm_subq_text_word_limit")} {row.text_word_limit ?? t("form.confirm_unlimited")}</div>
             )}
             {/* 學習內容 — editable picker when callback provided, read-only otherwise */}
             <div>

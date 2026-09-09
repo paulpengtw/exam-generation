@@ -30,7 +30,6 @@ export interface SubQuestionConfig {
   image_generation_mode?: "html" | "gpt_image";
   question_word_limit?: number;
   option_word_limit?: number;
-  text_word_limit?: number;
   reporting_scale?: string;
   learning_content?: string[];
   learning_performance?: string[];
@@ -85,7 +84,7 @@ function normaliseResolvedPerQuestionParams(
 
 function serialisableSubquestionConfig(config: SubQuestionConfig): SubQuestionConfig {
   return Object.fromEntries(
-    Object.entries(config).filter(([, value]) => value !== undefined),
+    Object.entries(config).filter(([key, value]) => value !== undefined && key !== "text_word_limit"),
   ) as SubQuestionConfig;
 }
 
@@ -2703,16 +2702,6 @@ export default function ParamForm({
     });
   }
 
-  function updatePendingSubquestionTextWordLimit(
-    questionIndex: number,
-    subquestionIndex: number,
-    value: number | undefined,
-  ) {
-    updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
-      text_word_limit: value,
-    });
-  }
-
   /**
    * Generic gate: registers/clears a field's validity.
    * Any registered invalid field disables 確認送出.
@@ -3610,9 +3599,6 @@ export default function ParamForm({
                       }
                       onOptionWordLimitChange={(subquestionIndex, value) =>
                         updatePendingSubquestionOptionWordLimit(index, subquestionIndex, value)
-                      }
-                      onTextWordLimitChange={(subquestionIndex, value) =>
-                        updatePendingSubquestionTextWordLimit(index, subquestionIndex, value)
                       }
                       onFieldValidityChange={(subquestionIndex, fieldKey, isValid) =>
                         setConfirmFieldValidity(index, subquestionIndex, fieldKey, isValid)

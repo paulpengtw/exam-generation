@@ -405,12 +405,12 @@ describe("GeneratePage history prefill with a saved draft", () => {
     });
     const subquestionSection = subquestionHeading.parentElement!;
     const expectedRows = [
-      ["第一自然小題", "Simple multiple-choice", "41", "51", "61", "4", "INc-IV-1", "tr-IV-1"],
-      ["第二自然小題", "Complex multiple-choice", "42", "52", "62", "5", "INc-IV-2", "tr-IV-2"],
-      ["第三自然小題", "Constructed response", "43", "53", "63", "6", "INc-IV-3", "tr-IV-3"],
+      ["第一自然小題", "Simple multiple-choice", "41", "51", "4", "INc-IV-1", "tr-IV-1"],
+      ["第二自然小題", "Complex multiple-choice", "42", "52", "5", "INc-IV-2", "tr-IV-2"],
+      ["第三自然小題", "Constructed response", "43", "53", "6", "INc-IV-3", "tr-IV-3"],
     ];
 
-    for (const [index, [instruction, questionType, questionLimit, optionLimit, textLimit, scale, content, performance]] of expectedRows.entries()) {
+    for (const [index, [instruction, questionType, questionLimit, optionLimit, scale, content, performance]] of expectedRows.entries()) {
       const row = within(subquestionSection)
         .getByText(`第${index + 1}小題`, { exact: true })
         .closest("div.rounded")!;
@@ -424,7 +424,7 @@ describe("GeneratePage history prefill with a saved draft", () => {
       );
       expect(within(row).getByLabelText("題目字數限制")).toHaveValue(Number(questionLimit));
       expect(within(row).getByLabelText("選項字數限制")).toHaveValue(Number(optionLimit));
-      expect(within(row).getByLabelText("文本字數限制")).toHaveValue(Number(textLimit));
+      expect(within(row).queryByLabelText("文本字數限制")).not.toBeInTheDocument();
       expect(within(row).getByLabelText("Reporting Scale")).toHaveValue(scale);
       expect(within(row).getByText(content, { exact: true })).toBeInTheDocument();
       expect(within(row).getByText(performance, { exact: true })).toBeInTheDocument();
@@ -451,8 +451,9 @@ describe("GeneratePage history prefill with a saved draft", () => {
       core_question: "如何根據證據判斷水質？",
       reporting_scale: "3",
     }));
+    const expectedSubquestionRows = HISTORY_SUBQUESTION_ROWS.map((row) => Object.fromEntries(Object.entries(row).filter(([k]) => k !== "text_word_limit")));
     expect(JSON.parse(submittedPerQuestion[0].subquestion_configs as string)).toEqual(
-      HISTORY_SUBQUESTION_ROWS,
+      expectedSubquestionRows,
     );
   });
 
@@ -471,12 +472,12 @@ describe("GeneratePage history prefill with a saved draft", () => {
       .getByRole("heading", { name: "各小題配置", level: 4 })
       .parentElement!;
     const expectedRows = [
-      ["第一自然小題", "Simple multiple-choice", "41", "51", "61", "4", "INc-IV-1", "tr-IV-1"],
-      ["第二自然小題", "Complex multiple-choice", "42", "52", "62", "5", "INc-IV-2", "tr-IV-2"],
-      ["第三自然小題", "Constructed response", "43", "53", "63", "6", "INc-IV-3", "tr-IV-3"],
+      ["第一自然小題", "Simple multiple-choice", "41", "51", "4", "INc-IV-1", "tr-IV-1"],
+      ["第二自然小題", "Complex multiple-choice", "42", "52", "5", "INc-IV-2", "tr-IV-2"],
+      ["第三自然小題", "Constructed response", "43", "53", "6", "INc-IV-3", "tr-IV-3"],
     ];
 
-    for (const [index, [instruction, questionType, questionLimit, optionLimit, textLimit, scale, content, performance]] of expectedRows.entries()) {
+    for (const [index, [instruction, questionType, questionLimit, optionLimit, scale, content, performance]] of expectedRows.entries()) {
       const row = within(subquestionSection)
         .getByText(`第${index + 1}小題`, { exact: true })
         .closest("div.rounded")!;
@@ -484,7 +485,7 @@ describe("GeneratePage history prefill with a saved draft", () => {
       expect(within(row).getByLabelText("題型")).toHaveValue(questionType);
       expect(within(row).getByLabelText("題目字數限制")).toHaveValue(Number(questionLimit));
       expect(within(row).getByLabelText("選項字數限制")).toHaveValue(Number(optionLimit));
-      expect(within(row).getByLabelText("文本字數限制")).toHaveValue(Number(textLimit));
+      expect(within(row).queryByLabelText("文本字數限制")).not.toBeInTheDocument();
       expect(within(row).getByLabelText("Reporting Scale")).toHaveValue(scale);
       expect(within(row).getByText(content, { exact: true })).toBeInTheDocument();
       expect(within(row).getByText(performance, { exact: true })).toBeInTheDocument();
@@ -497,8 +498,9 @@ describe("GeneratePage history prefill with a saved draft", () => {
     const submitted = generateMock.mock.calls[0][0] as Record<string, unknown>;
     expect(submitted.topic).toBe("校園水質監測");
     expect(submitted.core_question).toBe("如何根據證據判斷水質？");
+    const expectedSubquestionRows2 = HISTORY_SUBQUESTION_ROWS.map((row) => Object.fromEntries(Object.entries(row).filter(([k]) => k !== "text_word_limit")));
     expect(JSON.parse(submitted.per_question_params as string)[0].subquestion_configs).toBe(
-      JSON.stringify(HISTORY_SUBQUESTION_ROWS),
+      JSON.stringify(expectedSubquestionRows2),
     );
   });
 

@@ -1075,12 +1075,12 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(JSON.parse(submittedPerQuestion[0].subquestion_configs)).toEqual([
       { instruction: "固定指示一", question_word_limit: 11, content_type: "含圖片", image_generation_mode: "html" },
       { content_type: "純文字", image_generation_mode: "html", option_word_limit: 22 },
-      { content_type: "含圖片", image_generation_mode: "gpt_image", text_word_limit: 33 },
+      { content_type: "含圖片", image_generation_mode: "gpt_image" },
     ]);
     expect(JSON.parse(submittedPerQuestion[1].subquestion_configs)).toEqual([
       { instruction: "固定指示一", question_word_limit: 11 },
       { content_type: "純文字", image_generation_mode: "html", option_word_limit: 22 },
-      { content_type: "含圖片", image_generation_mode: "gpt_image", text_word_limit: 33 },
+      { content_type: "含圖片", image_generation_mode: "gpt_image" },
     ]);
   });
 
@@ -1118,7 +1118,7 @@ describe("ParamForm 發送前確認 display semantics", () => {
     ) as Array<{ subquestion_configs: string }>;
     const untouchedRows = [
       { instruction: "小題二", content_type: "含圖片", image_generation_mode: "gpt_image", option_word_limit: 22 },
-      { instruction: "小題三", content_type: "純文字", image_generation_mode: "html", text_word_limit: 33 },
+      { instruction: "小題三", content_type: "純文字", image_generation_mode: "html" },
     ];
     expect(JSON.parse(submittedPerQuestion[0].subquestion_configs)).toEqual([
       { instruction: "小題一", content_type: "含圖片", image_generation_mode: "html", question_word_limit: 11 },
@@ -1223,7 +1223,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
       {
         question_type: "選擇題",
         instruction: "第一題組修改後",
-        text_word_limit: 11,
         question_word_limit: 22,
         option_word_limit: 33,
         content_type: "純文字",
@@ -1232,7 +1231,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
       {
         question_type: "選擇題",
         instruction: "原始小題指示二",
-        text_word_limit: 44,
         question_word_limit: 55,
         option_word_limit: 66,
         content_type: "純文字",
@@ -1241,7 +1239,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
       {
         question_type: "選擇題",
         instruction: "原始小題指示三",
-        text_word_limit: 77,
         question_word_limit: 88,
         option_word_limit: 99,
         content_type: "純文字",
@@ -1252,7 +1249,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
       {
         question_type: "選擇題",
         instruction: "原始小題指示一",
-        text_word_limit: 11,
         question_word_limit: 22,
         option_word_limit: 33,
         content_type: "純文字",
@@ -1261,7 +1257,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
       {
         question_type: "選擇題",
         instruction: "原始小題指示二",
-        text_word_limit: 44,
         question_word_limit: 55,
         option_word_limit: 66,
         content_type: "純文字",
@@ -1270,7 +1265,6 @@ describe("ParamForm 發送前確認 display semantics", () => {
       {
         question_type: "選擇題",
         instruction: "原始小題指示三",
-        text_word_limit: 77,
         question_word_limit: 88,
         option_word_limit: 99,
         content_type: "純文字",
@@ -1853,7 +1847,7 @@ describe("ParamForm 發送前確認 display semantics", () => {
       // Word-limit fields are now editable inputs (not static text)
       expect(card.getByLabelText("題目字數限制")).toBeInTheDocument();
       expect(card.getByLabelText("選項字數限制")).toBeInTheDocument();
-      expect(card.getByLabelText("文本字數限制")).toBeInTheDocument();
+      expect(card.queryByLabelText("文本字數限制")).not.toBeInTheDocument();
       const contentType = card.getByLabelText("題目內容類型");
       expect(contentType).toHaveValue("");
       expect(within(contentType.parentElement!).getByText("沿用文本設定")).toHaveClass("text-gray-600");
