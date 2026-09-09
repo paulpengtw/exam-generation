@@ -45,6 +45,7 @@ from server.generate.subjects import (
     resolved_payload_for_index,
 )
 from server.observability import record_generation_outcome
+from src.common.generation_core import GenerationCancelled
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -192,6 +193,7 @@ class _RunContext:
     next_order: Any  # Callable[[], int]
     config: ServerConfig
     balanced_batch: bool
+    cancel_event: threading.Event
 
 
 def _build_run_context(
@@ -260,6 +262,7 @@ def _build_run_context(
         next_order=_next_order,
         config=config,
         balanced_batch=balanced_batch,
+        cancel_event=threading.Event(),
     )
 
 
@@ -348,6 +351,7 @@ def _worker_one(
             on_figure_policy_entry=capture_figure_policy_entry,
             prior_scopes=prior_snapshot,
             balanced_batch=ctx.balanced_batch,
+            is_cancelled=ctx.cancel_event.is_set,
         )
 
         # Site 4: metadata patching (SS only; other specs have patch_metadata=None)
@@ -379,6 +383,9 @@ def _worker_one(
             ctx.queue.put_nowait,
             result_event,
         )
+    except GenerationCancelled:
+        # Client disconnected; exit cleanly without emitting an error event.
+        pass
     except Exception as exc:
         record_generation_outcome(ctx.params.subject, "failure")
         ctx.loop.call_soon_threadsafe(
@@ -497,6 +504,7 @@ async def generate_question_stream(
             if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):
                 break
     finally:
+        ctx.cancel_event.set()
         try:
             await signal_task
         finally:

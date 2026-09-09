@@ -641,6 +641,7 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ss_curriculum_context"],
         balanced_batch=kwargs["balanced_batch"],
+        is_cancelled=kwargs.get("is_cancelled"),
     )
 
 
@@ -833,6 +834,7 @@ def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["ns_curriculum_context"],
         balanced_batch=kwargs["balanced_batch"],
+        is_cancelled=kwargs.get("is_cancelled"),
     )
 
 
@@ -1035,6 +1037,7 @@ def _math_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         on_trail_entry=kwargs.get("on_trail_entry"),
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["math_curriculum_context"],
+        is_cancelled=kwargs.get("is_cancelled"),
     )
 
 
