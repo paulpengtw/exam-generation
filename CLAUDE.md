@@ -502,8 +502,9 @@ The entry point is always `render_image()` (`src/renderer.py:271`), called from 
 ## Common Commands
 
 ```bash
-# Install dependencies
-uv sync
+# Install dependencies — runs `uv sync --all-extras --all-groups` (all extras incl. fastapi/sqlalchemy)
+# and `uv run playwright install chromium` (browser binary is NOT installed by uv sync alone)
+bash scripts/setup.sh
 
 # Run the CLI
 uv run python -m src.cli generate
