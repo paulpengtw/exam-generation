@@ -21,7 +21,6 @@ vi.mock("../i18n/useT", () => ({
     if (key === "form.confirm_subq_image_mode_input") return "圖片生成模式";
     if (key === "form.confirm_subq_instruction_input") return "出題指示";
     if (key === "form.confirm_subq_instruction_placeholder") return "例如：請聚焦在資料判讀與因果推論";
-    if (key === "form.confirm_subq_text_word_limit_input") return "文本字數限制";
     if (key === "form.confirm_subq_q_word_limit_input") return "題目字數限制";
     if (key === "form.confirm_subq_o_word_limit_input") return "選項字數限制";
     return key;
@@ -86,7 +85,6 @@ const CONFIGS = [
   {
     question_type: "Simple multiple-choice",
     instruction: "第一小題指示",
-    text_word_limit: 11,
     question_word_limit: 22,
     option_word_limit: 33,
     content_type: "含圖片",
@@ -96,7 +94,6 @@ const CONFIGS = [
   {
     question_type: "Complex multiple-choice",
     instruction: "第二小題指示",
-    text_word_limit: 44,
     question_word_limit: 55,
     option_word_limit: 66,
     content_type: "純文字",
@@ -106,7 +103,6 @@ const CONFIGS = [
   {
     question_type: "Constructed response",
     instruction: "第三小題指示",
-    text_word_limit: 77,
     question_word_limit: 88,
     option_word_limit: 99,
     content_type: "含圖片",
@@ -166,13 +162,13 @@ describe("ParamForm 子題設定 rows characterization", () => {
       for (const index of [1, 2, 3]) {
         const currentRow = row(index);
         expect(currentRow.getByText("題型", { selector: "label" })).toBeInTheDocument();
-        expect(currentRow.getByText("文本字數限制", { selector: "label" })).toBeInTheDocument();
+        expect(currentRow.queryByText("文本字數限制", { selector: "label" })).not.toBeInTheDocument();
         expect(currentRow.getByText("題目字數限制", { selector: "label" })).toBeInTheDocument();
         expect(currentRow.getByText("選項字數限制", { selector: "label" })).toBeInTheDocument();
         expect(currentRow.getByText("題目內容類型", { selector: "label" })).toBeInTheDocument();
         expect(currentRow.getByText("圖片生成模式", { selector: "label" })).toBeInTheDocument();
         expect(currentRow.getByPlaceholderText("例如：請聚焦在資料判讀與因果推論")).toBeInTheDocument();
-        expect(currentRow.getAllByRole("spinbutton")).toHaveLength(3);
+        expect(currentRow.getAllByRole("spinbutton")).toHaveLength(2);
         expect(currentRow.getAllByRole("combobox")).toHaveLength(hasReportingScale ? 4 : 3);
         if (hasReportingScale) {
           expect(currentRow.getByText("Reporting Scale", { selector: "label" })).toBeInTheDocument();
@@ -188,7 +184,7 @@ describe("ParamForm 子題設定 rows characterization", () => {
       const initialConfig = hasReportingScale ? CONFIGS[0] : SOCIAL_CONFIGS[0];
 
       expect(selects[0]).toHaveValue(initialConfig.question_type);
-      expect(numberInputs.map((input) => (input as HTMLInputElement).value)).toEqual(["11", "22", "33"]);
+      expect(numberInputs.map((input) => (input as HTMLInputElement).value)).toEqual(["22", "33"]);
       expect(selects[1]).toHaveValue(initialConfig.content_type);
       expect(selects[2]).toHaveValue(initialConfig.image_generation_mode);
       expect(instruction).toHaveValue(initialConfig.instruction);
@@ -198,7 +194,6 @@ describe("ParamForm 子題設定 rows characterization", () => {
         () => fireEvent.change(selects[0], { target: { value: "" } }),
         () => fireEvent.change(numberInputs[0], { target: { value: "101" } }),
         () => fireEvent.change(numberInputs[1], { target: { value: "202" } }),
-        () => fireEvent.change(numberInputs[2], { target: { value: "303" } }),
         () => fireEvent.change(selects[1], { target: { value: "純文字" } }),
         () => fireEvent.change(selects[2], { target: { value: "html" } }),
         () => fireEvent.change(instruction, { target: { value: "更新後指示" } }),
@@ -214,7 +209,7 @@ describe("ParamForm 子題設定 rows characterization", () => {
       }
 
       expect(selects[0]).toHaveValue("");
-      expect(numberInputs.map((input) => (input as HTMLInputElement).value)).toEqual(["101", "202", "303"]);
+      expect(numberInputs.map((input) => (input as HTMLInputElement).value)).toEqual(["101", "202"]);
       expect(selects[1]).toHaveValue("純文字");
       expect(selects[2]).toHaveValue("html");
       expect(instruction).toHaveValue("更新後指示");

@@ -41,7 +41,6 @@ function isSubQuestionConfig(value: unknown): value is SubQuestionConfig {
     ) &&
     isOptionalNumber(value.question_word_limit) &&
     isOptionalNumber(value.option_word_limit) &&
-    isOptionalNumber(value.text_word_limit) &&
     isOptionalString(value.reporting_scale) &&
     (
       value.learning_content === undefined ||

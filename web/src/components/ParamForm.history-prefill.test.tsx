@@ -150,7 +150,6 @@ const SOCIAL_ROWS_ONE = [
     image_generation_mode: "html",
     question_word_limit: 21,
     option_word_limit: 31,
-    text_word_limit: 41,
     learning_content: ["歷Ka-Ⅳ-1"],
     learning_performance: ["社1a-Ⅳ-1"],
   },
@@ -161,7 +160,6 @@ const SOCIAL_ROWS_ONE = [
     image_generation_mode: "gpt_image",
     question_word_limit: 22,
     option_word_limit: 32,
-    text_word_limit: 42,
     learning_content: ["歷Ka-Ⅳ-2"],
     learning_performance: ["社1a-Ⅳ-2"],
   },
@@ -172,7 +170,6 @@ const SOCIAL_ROWS_ONE = [
     image_generation_mode: "html",
     question_word_limit: 23,
     option_word_limit: 33,
-    text_word_limit: 43,
     learning_content: ["歷Ka-Ⅳ-1", "歷Ka-Ⅳ-2"],
     learning_performance: ["社1a-Ⅳ-1", "社1a-Ⅳ-2"],
   },
@@ -186,7 +183,6 @@ const SOCIAL_ROWS_TWO = [
     image_generation_mode: "html",
     question_word_limit: 51,
     option_word_limit: 61,
-    text_word_limit: 71,
     learning_content: ["歷Ka-Ⅳ-2"],
     learning_performance: ["社1a-Ⅳ-2"],
   },
@@ -197,7 +193,6 @@ const SOCIAL_ROWS_TWO = [
     image_generation_mode: "gpt_image",
     question_word_limit: 52,
     option_word_limit: 62,
-    text_word_limit: 72,
     learning_content: ["歷Ka-Ⅳ-1"],
     learning_performance: ["社1a-Ⅳ-1"],
   },
@@ -208,7 +203,6 @@ const SOCIAL_ROWS_TWO = [
     image_generation_mode: "html",
     question_word_limit: 53,
     option_word_limit: 63,
-    text_word_limit: 73,
     learning_content: ["歷Ka-Ⅳ-1", "歷Ka-Ⅳ-2"],
     learning_performance: ["社1a-Ⅳ-1", "社1a-Ⅳ-2"],
   },
@@ -303,7 +297,6 @@ const NATURAL_SUBQUESTION_ROWS = [
     question_type: "自然選擇題",
     instruction: "第一自然小題",
     content_type: "純文字",
-    text_word_limit: 44,
     reporting_scale: "4",
     learning_content: ["INc-IV-1"],
     learning_performance: ["tr-IV-1"],
@@ -312,7 +305,6 @@ const NATURAL_SUBQUESTION_ROWS = [
     question_type: "自然開放題",
     instruction: "第二自然小題",
     content_type: "純文字",
-    text_word_limit: 45,
     reporting_scale: "5",
     learning_content: ["INc-IV-2"],
     learning_performance: ["tr-IV-2"],
@@ -321,7 +313,6 @@ const NATURAL_SUBQUESTION_ROWS = [
     question_type: "自然選擇題",
     instruction: "第三自然小題",
     content_type: "純文字",
-    text_word_limit: 46,
     reporting_scale: "6",
     learning_content: ["INc-IV-1", "INc-IV-2"],
     learning_performance: ["tr-IV-1", "tr-IV-2"],
@@ -689,7 +680,7 @@ describe("ParamForm history prefill", () => {
     );
 
     expect(await screen.findByDisplayValue("第一小題指示")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("41")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("21")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("form.btn_generate"));
     fireEvent.click(await screen.findByText("form.btn_confirm_send"));
@@ -744,7 +735,6 @@ describe("ParamForm history prefill", () => {
         image_generation_mode: "html",
         question_word_limit: 24,
         option_word_limit: 34,
-        text_word_limit: 44,
         reporting_scale: "4",
         learning_content: ["INc-IV-1"],
         learning_performance: ["tr-IV-1"],
@@ -756,7 +746,6 @@ describe("ParamForm history prefill", () => {
         image_generation_mode: "gpt_image",
         question_word_limit: 25,
         option_word_limit: 35,
-        text_word_limit: 45,
         reporting_scale: "5",
         learning_content: ["INc-IV-2"],
         learning_performance: ["tr-IV-2"],
@@ -768,7 +757,6 @@ describe("ParamForm history prefill", () => {
         image_generation_mode: "html",
         question_word_limit: 26,
         option_word_limit: 36,
-        text_word_limit: 46,
         reporting_scale: "6",
         learning_content: ["INc-IV-1", "INc-IV-2"],
         learning_performance: ["tr-IV-1", "tr-IV-2"],

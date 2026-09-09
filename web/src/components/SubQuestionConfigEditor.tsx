@@ -249,7 +249,7 @@ function isValidWordLimit(raw: string): boolean {
 
 export interface SubQuestionWordLimitFieldProps {
   config: SubQuestionConfig;
-  field: "question_word_limit" | "option_word_limit" | "text_word_limit";
+  field: "question_word_limit" | "option_word_limit";
   labelKey: string;
   placeholder?: string;
   onChange: (patch: Partial<SubQuestionConfig>) => void;
@@ -360,13 +360,6 @@ export default function SubQuestionConfigEditor({
             </select>
           </div>
         )}
-        <SubQuestionWordLimitField
-          config={config}
-          field="text_word_limit"
-          labelKey="form.confirm_subq_text_word_limit_input"
-          placeholder="不限"
-          onChange={onChange}
-        />
         <SubQuestionWordLimitField
           config={config}
           field="question_word_limit"

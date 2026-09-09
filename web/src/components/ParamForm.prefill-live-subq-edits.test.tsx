@@ -295,7 +295,6 @@ describe("ParamForm prefilled live 各小題配置 edits", () => {
       image_generation_mode: "html",
       question_word_limit: 31,
       option_word_limit: 41,
-      text_word_limit: 51,
     }];
     render(
       <ParamForm
@@ -334,9 +333,9 @@ describe("ParamForm prefilled live 各小題配置 edits", () => {
       { target: { value: "使用者新的出題指示" } },
     );
     const wordLimits = firstRow.getAllByRole("spinbutton");
-    fireEvent.change(wordLimits[0], { target: { value: "303" } });
-    fireEvent.change(wordLimits[1], { target: { value: "101" } });
-    fireEvent.change(wordLimits[2], { target: { value: "202" } });
+    expect(wordLimits).toHaveLength(2);
+    fireEvent.change(wordLimits[0], { target: { value: "101" } });
+    fireEvent.change(wordLimits[1], { target: { value: "202" } });
 
     fireEvent.submit(screen.getByText("form.btn_generate").closest("form")!);
     await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(1));
@@ -354,7 +353,6 @@ describe("ParamForm prefilled live 各小題配置 edits", () => {
       image_generation_mode: "gpt_image",
       question_word_limit: 101,
       option_word_limit: 202,
-      text_word_limit: 303,
     });
   });
 

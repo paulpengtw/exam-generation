@@ -332,7 +332,6 @@ describe("ParamForm draft versus history choice", () => {
       "圖片生成模式:",
       "題目字數限制:",
       "選項字數限制:",
-      "文本字數限制:",
     ]) {
       expect(dialog).toHaveTextContent(label);
     }
