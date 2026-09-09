@@ -43,6 +43,9 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "requires_browser: mark test as requiring a working Playwright Chromium browser",
+]
 
 [dependency-groups]
 dev = [
