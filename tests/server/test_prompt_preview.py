@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,12 +9,17 @@ import pytest
 
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
-from server.auth.dependencies import get_current_user
+from fastapi.testclient import TestClient
+
+from server.app import create_app
+from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.generate.models import GenerateParams
 from server.generate.routes import router
 from server.generate.service import build_prompt_previews
 from server.generate.subjects import resolved_payload_for_index
+from server.models import User
+from server.rate_limit import limiter
 from src.cli import _math_params_from_resolved
 from src.cli import generate_one as generate_math
 from src.common.resolver import resolve
@@ -358,6 +364,40 @@ def test_social_studies_sub_generator_previews_are_byte_identical_after_placehol
     assert "社1b-Ⅳ-1" in sub_previews[1]["user_prompt"]
 
 
+def test_social_studies_preview_keeps_text_word_limit_only_on_text_generator() -> None:
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ss_curriculum_context=None)
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "seed": 201,
+            "disable_reference_fewshot": True,
+            "content_type": "純文字",
+            "sub_question_count": 3,
+            "text_word_limit": 321,
+            "subquestion_configs": [
+                {
+                    "question_type": "選擇題",
+                    "question_word_limit": 80,
+                    "option_word_limit": 30,
+                },
+                {},
+                {},
+            ],
+        }
+    )
+
+    previews = build_prompt_previews(params, config, app_state)
+    text_preview = next(p for p in previews if "subquestion_index" not in p)
+    sub_previews = [p for p in previews if "subquestion_index" in p]
+
+    assert "- **文本字數上限**：321 字" in text_preview["user_prompt"]
+    assert "題目字數上限=80，選項字數上限=30" in text_preview["user_prompt"]
+    assert all("文本字數上限=" not in p["user_prompt"] for p in sub_previews)
+    assert "題目字數上限=80" in sub_previews[0]["user_prompt"]
+    assert "選項字數上限=30" in sub_previews[0]["user_prompt"]
+
+
 def test_natural_sciences_preview_is_byte_identical_to_text_generator_prompt() -> None:
     seed = 189
     config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
@@ -387,6 +427,40 @@ def test_natural_sciences_preview_is_byte_identical_to_text_generator_prompt() -
     assert capture.prompts is not None
     assert preview["system_prompt"] == capture.prompts[0]
     assert preview["user_prompt"] == capture.prompts[1]
+
+
+def test_natural_sciences_preview_keeps_text_word_limit_only_on_text_generator() -> None:
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ns_curriculum_context=None)
+    params = _resolved_generate_params(
+        {
+            "subject": "natural_sciences",
+            "seed": 202,
+            "disable_reference_fewshot": True,
+            "content_type": "純文字",
+            "sub_question_count": 3,
+            "text_word_limit": 321,
+            "subquestion_configs": [
+                {
+                    "question_type": "Simple multiple-choice",
+                    "question_word_limit": 80,
+                    "option_word_limit": 30,
+                },
+                {},
+                {},
+            ],
+        }
+    )
+
+    previews = build_prompt_previews(params, config, app_state)
+    text_preview = next(p for p in previews if "subquestion_index" not in p)
+    sub_previews = [p for p in previews if "subquestion_index" in p]
+
+    assert "- **文本字數上限**：321 字" in text_preview["user_prompt"]
+    assert "題目字數上限=80，選項字數上限=30" in text_preview["user_prompt"]
+    assert all("文本字數上限=" not in p["user_prompt"] for p in sub_previews)
+    assert "題目字數上限=80" in sub_previews[0]["user_prompt"]
+    assert "選項字數上限=30" in sub_previews[0]["user_prompt"]
 
 
 def test_natural_sciences_preview_with_reporting_scale_is_byte_identical() -> None:
@@ -423,6 +497,65 @@ def test_natural_sciences_preview_with_reporting_scale_is_byte_identical() -> No
     assert capture.prompts is not None
     assert preview["system_prompt"] == capture.prompts[0]
     assert preview["user_prompt"] == capture.prompts[1]
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences"])
+def test_preview_route_keeps_text_word_limit_only_on_text_generator(subject: str) -> None:
+    params = _resolved_generate_params(
+        {
+            "subject": subject,
+            "seed": 203,
+            "disable_reference_fewshot": True,
+            "content_type": "純文字",
+            "sub_question_count": 3,
+            "text_word_limit": 321,
+            "subquestion_configs": [
+                {
+                    "question_type": (
+                        "選擇題"
+                        if subject == "social_studies"
+                        else "Simple multiple-choice"
+                    ),
+                    "question_word_limit": 80,
+                    "option_word_limit": 30,
+                },
+                {},
+                {},
+            ],
+        }
+    )
+    app = create_app()
+    app.state.ss_curriculum_context = None
+    app.state.ns_curriculum_context = None
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="preview@example.com"
+    )
+    app.dependency_overrides[get_config] = lambda: ServerConfig(
+        api_key="x",
+        data_dir=Path("data"),
+        creative_planning=False,
+    )
+    limiter.reset()
+    query = params.model_dump(mode="json", exclude_none=True)
+
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        try:
+            response = client.get("/api/generate/preview", params=query)
+        finally:
+            client.close()
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 200, response.text
+    previews = response.json()["prompts"]
+    text_preview = next(p for p in previews if "subquestion_index" not in p)
+    sub_previews = [p for p in previews if "subquestion_index" in p]
+
+    assert "- **文本字數上限**：321 字" in text_preview["user_prompt"]
+    assert all("文本字數上限=" not in p["user_prompt"] for p in sub_previews)
+    assert "題目字數上限=80" in sub_previews[0]["user_prompt"]
+    assert "選項字數上限=30" in sub_previews[0]["user_prompt"]
 
 
 def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeholder_substitution(

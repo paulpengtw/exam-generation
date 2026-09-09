@@ -176,6 +176,53 @@ def test_ns_visual_prompts_declare_figure_kind_and_accept_free_text(tmp_path: Pa
     assert "圖像種類=電路圖（強制值）" in sub_prompt
 
 
+def test_natural_sciences_text_word_limit_is_not_rendered_in_per_subquestion_config(
+    tmp_path: Path,
+) -> None:
+    from src.natural_sciences.context_builder import build_subquestion_user_prompt
+    from src.natural_sciences.schemas import QuestionType
+
+    question_type = QuestionType("Simple multiple-choice")
+
+    params = sample_params(
+        seed=1,
+        sub_question_count=3,
+        q_type=[question_type],
+        subquestion_configs=[
+            {
+                "question_type": question_type,
+                "question_word_limit": 80,
+                "option_word_limit": 30,
+                "text_word_limit": 321,
+            }
+        ],
+    ).model_copy(update={"text_word_limit": 321})
+    cfg = params.subquestion_configs[0]
+
+    subquestion_prompt, _ = build_subquestion_user_prompt(
+        核心問題="測試核心問題",
+        文本="測試文本",
+        取材來源=["來源A"],
+        sq_plan={
+            "序號": 1,
+            "題型": "Simple multiple-choice",
+            "出題概念": "測試",
+        },
+        params=params,
+        few_shot_dir=tmp_path,
+        rng=random.Random(1),
+        cfg=cfg,
+    )
+    text_prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+
+    assert "題目字數上限=80" in subquestion_prompt
+    assert "選項字數上限=30" in subquestion_prompt
+    assert "文本字數上限=" not in subquestion_prompt
+    assert "- **文本字數上限**：321 字" in text_prompt
+    assert "題目字數上限=80，選項字數上限=30" in text_prompt
+    assert "文本字數上限=" not in text_prompt
+
+
 # --- Issue #280: 文本生成器 sees target Reporting Scale ---
 
 
