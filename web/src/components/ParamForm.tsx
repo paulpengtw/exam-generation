@@ -89,6 +89,32 @@ function serialisableSubquestionConfig(config: SubQuestionConfig): SubQuestionCo
   ) as SubQuestionConfig;
 }
 
+function mergeLiveSubquestionConfigs(
+  historyValue: unknown,
+  liveConfigs: readonly SubQuestionConfig[],
+  editedFields: ReadonlyMap<number, ReadonlySet<keyof SubQuestionConfig>>,
+  replaceHistory: boolean,
+): string {
+  const historyConfigs = parseSubquestionConfigs(historyValue);
+  const historyHasValues = historyConfigs.some((config) => Object.keys(config).length > 0);
+  const rowCount = Math.max(historyConfigs.length, liveConfigs.length);
+  const mergedConfigs = Array.from({ length: rowCount }, (_, index) => {
+    const historyConfig = historyConfigs[index] ?? {};
+    const liveConfig = liveConfigs[index] ?? {};
+    if (replaceHistory || !historyHasValues) {
+      return serialisableSubquestionConfig(liveConfig);
+    }
+
+    const merged = { ...historyConfig } as Record<string, unknown>;
+    for (const field of editedFields.get(index) ?? []) {
+      if (Object.hasOwn(liveConfig, field)) merged[field] = liveConfig[field];
+      else delete merged[field];
+    }
+    return serialisableSubquestionConfig(merged as SubQuestionConfig);
+  });
+  return JSON.stringify(mergedConfigs);
+}
+
 const RETIRED_SOCIAL_PREFILL_KEYS = ["閱讀歷程", "文本形式", "question_style"] as const;
 const RETIRED_SOCIAL_QUESTION_TYPE = "封閉式建構反應題";
 
@@ -1252,6 +1278,9 @@ export default function ParamForm({
   );
   const ip = normalisedHistoryPrefill.params;
   const userChosenFields = useRef(new Set(Object.keys(ip)));
+  const editedSubquestionFieldsRef = useRef(
+    new Map<number, Set<keyof SubQuestionConfig>>(),
+  );
   function fromInit<T>(key: string, fallback: T): T {
     return (ip[key] as T | undefined) ?? fallback;
   }
@@ -2199,6 +2228,11 @@ export default function ParamForm({
   }, [subQuestionCount, setField]);
 
   function updateSubquestionConfig(index: number, patch: Partial<SubQuestionConfig>) {
+    const editedFields = editedSubquestionFieldsRef.current.get(index) ?? new Set();
+    for (const field of Object.keys(patch) as Array<keyof SubQuestionConfig>) {
+      editedFields.add(field);
+    }
+    editedSubquestionFieldsRef.current.set(index, editedFields);
     setField("subquestionConfigs", (prev) => prev.map((cfg, i) =>
       i === index ? serialisableSubquestionConfig({ ...cfg, ...patch }) : cfg,
     ));
@@ -2401,9 +2435,21 @@ export default function ParamForm({
       "core_question_callback",
     ]);
     const perQuestionParams = hasHistoryPerQuestionParams
-      ? historyPerQuestionParams.map((params) => Object.fromEntries(
-          Object.entries(params).filter(([key]) => !requestLevelFields.has(key)),
-        ))
+      ? historyPerQuestionParams.map((params) => {
+          const questionParams = Object.fromEntries(
+            Object.entries(params).filter(([key]) => !requestLevelFields.has(key)),
+          );
+          if (!shouldSendSubquestionConfigs) return questionParams;
+          return {
+            ...questionParams,
+            subquestion_configs: mergeLiveSubquestionConfigs(
+              params.subquestion_configs,
+              subquestionConfigs.slice(0, subQuestionCount as number).map(serialisableSubquestionConfig),
+              editedSubquestionFieldsRef.current,
+              historyDraftChoice === "draft" || historyDraftChoice === "defaults",
+            ),
+          };
+        })
       : Array.from({ length: count }, () => ({}));
     const partialParams = {
       ...baseParams,
