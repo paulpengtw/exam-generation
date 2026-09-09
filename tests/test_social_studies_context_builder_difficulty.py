@@ -22,14 +22,14 @@ def test_ss_difficulty_instructions_cover_all_three():
 
 def test_text_prompt_contains_difficulty_section_default_medium(tmp_path: Path):
     params = sample_params(seed=1)
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "## 難度要求" in prompt
     assert "medium" in prompt
 
 
 def test_text_prompt_contains_difficulty_section_hard(tmp_path: Path):
     params = sample_params(seed=1, difficulty="hard")
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "## 難度要求" in prompt
     assert "hard" in prompt
     assert DIFFICULTY_INSTRUCTIONS["hard"][:20] in prompt
@@ -38,7 +38,7 @@ def test_text_prompt_contains_difficulty_section_hard(tmp_path: Path):
 def test_subquestion_prompt_echoes_difficulty(tmp_path: Path):
     params = sample_params(seed=1, difficulty=Difficulty.easy)
     sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "測驗擷取訊息"}
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="核心",
         文本="文本內容",
         取材來源=["來源"],

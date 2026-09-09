@@ -2453,6 +2453,7 @@ export default function ParamForm({
       "max_retries",
       "core_question_callback",
       "text_instruction",
+      "allow_duplicate_figure_kinds",
     ]);
     const perQuestionParams = hasHistoryPerQuestionParams
       ? historyPerQuestionParams.map((params) => {

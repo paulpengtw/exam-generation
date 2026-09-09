@@ -122,6 +122,104 @@ async def _staged_figure_policy_trail(
         return None
 
 
+
+class ReferenceExampleRecordRecorder:
+    """Serialize each reference example callback and update its live generation log."""
+
+    _MAX_STAGE_ATTEMPTS = 2
+
+    def __init__(
+        self,
+        generation_log_id: uuid.UUID,
+        loop: asyncio.AbstractEventLoop,
+        session_factory: Any,
+    ) -> None:
+        self._generation_log_id = generation_log_id
+        self._loop = loop
+        self._session_factory = session_factory
+        self._lock = threading.Lock()
+        self._write_lock = asyncio.Lock()
+        self._entries: list[dict[str, Any]] = []
+
+    def __call__(self, entry: Any) -> None:
+        payload = entry.model_dump(mode="json") if hasattr(entry, "model_dump") else entry
+        with self._lock:
+            self._entries.append(payload)
+            snapshot = list(self._entries)
+            self._stage_snapshot(snapshot)
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self._entries)
+
+    def _stage_snapshot(self, entries: list[dict[str, Any]]) -> None:
+        future = asyncio.run_coroutine_threadsafe(
+            self._persist_with_retries(entries),
+            self._loop,
+        )
+        try:
+            future.result(timeout=10)
+        except Exception as exc:  # noqa: BLE001 — persistence is best effort
+            logger.warning("reference example record staging deferred: %s", exc)
+
+    async def flush(self) -> None:
+        """Retry the latest snapshot after all workers have stopped emitting."""
+        snapshot = self.snapshot()
+        if not snapshot:
+            return
+        await self._persist_with_retries(snapshot)
+
+    async def _persist_with_retries(self, entries: list[dict[str, Any]]) -> None:
+        async with self._write_lock:
+            for attempt in range(self._MAX_STAGE_ATTEMPTS):
+                try:
+                    await self._persist(entries)
+                    return
+                except Exception as exc:  # noqa: BLE001 — persistence is best effort
+                    if attempt == self._MAX_STAGE_ATTEMPTS - 1:
+                        logger.warning("reference example record staging failed: %s", exc)
+
+    async def _persist(self, entries: list[dict[str, Any]]) -> None:
+        record = {"disabled": False, "entries": entries}
+        async with self._session_factory() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == self._generation_log_id)
+                .values(reference_example_record_json=record)
+            )
+            await session.commit()
+
+
+def make_reference_example_record_recorder(
+    *,
+    generation_log_id: uuid.UUID | None,
+    loop: asyncio.AbstractEventLoop,
+    session_factory: Any,
+) -> ReferenceExampleRecordRecorder | None:
+    """Create the incremental recorder, or disable it for log-less runs."""
+    if generation_log_id is None:
+        return None
+    return ReferenceExampleRecordRecorder(generation_log_id, loop, session_factory)
+
+
+async def _staged_reference_example_record(
+    generation_log_id: uuid.UUID | None,
+    session_factory: Any,
+) -> list[dict[str, Any]] | None:
+    if generation_log_id is None:
+        return None
+    try:
+        async with session_factory() as session:
+            result = await session.execute(
+                select(GenerationLog).where(GenerationLog.id == generation_log_id)
+            )
+            row = result.scalar_one_or_none()
+            return row.reference_example_record_json if row is not None else None
+    except Exception as exc:  # noqa: BLE001 — tombstone persistence is best effort
+        logger.warning("failed to read staged reference example record: %s", exc)
+        return None
+
+
 async def persist_generation_record(
     *,
     user_id: uuid.UUID,
@@ -134,6 +232,7 @@ async def persist_generation_record(
     annotations_json: dict[str, Any] | None = None,
     verification_trail_json: list[dict[str, Any]] | None = None,
     figure_policy_trail_json: list[dict[str, Any]] | None = None,
+    reference_example_record_json: list[dict[str, Any]] | None = None,
 ) -> uuid.UUID | None:
     """Insert one generation_records row and return its id on success.
 
@@ -157,6 +256,7 @@ async def persist_generation_record(
             question_json=strip_image_base64(payload),
             verification_trail_json=verification_trail_json,
             figure_policy_trail_json=figure_policy_trail_json,
+            reference_example_record_json=reference_example_record_json,
             image_files=extract_image_files(payload),
             status="completed",
         )
@@ -189,6 +289,10 @@ async def persist_failed_generation_record(
             generation_log_id,
             session_factory,
         )
+        reference_example_record_json = await _staged_reference_example_record(
+            generation_log_id,
+            session_factory,
+        )
         record = GenerationRecord(
             user_id=user_id,
             generation_log_id=generation_log_id,
@@ -198,6 +302,7 @@ async def persist_failed_generation_record(
             question_json=None,
             verification_trail_json=None,
             figure_policy_trail_json=figure_policy_trail_json,
+            reference_example_record_json=reference_example_record_json,
             image_files=[],
             status="failed",
             error=error,
@@ -223,6 +328,10 @@ async def persist_aborted_generation_record(
             generation_log_id,
             session_factory,
         )
+        reference_example_record_json = await _staged_reference_example_record(
+            generation_log_id,
+            session_factory,
+        )
         record = GenerationRecord(
             user_id=user_id,
             generation_log_id=generation_log_id,
@@ -232,6 +341,7 @@ async def persist_aborted_generation_record(
             question_json=None,
             verification_trail_json=None,
             figure_policy_trail_json=figure_policy_trail_json,
+            reference_example_record_json=reference_example_record_json,
             image_files=[],
             status="aborted",
         )

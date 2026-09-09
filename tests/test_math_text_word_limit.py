@@ -43,7 +43,7 @@ def test_math_prompt_builder_forwards_limit_on_the_canonical_params(tmp_path, mo
 
     def fake_text_prompt(*args, **kwargs):
         captured["limit"] = args[0].text_word_limit
-        return "text prompt", []
+        return "text prompt", [], []
 
     monkeypatch.setattr(math_cli, "build_text_user_prompt", fake_text_prompt)
 
@@ -71,7 +71,7 @@ def test_math_text_generator_prompt_carries_the_exact_word_limit() -> None:
         text_word_limit=321,
     )
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         Path("data/few_shot"),
         rng=random.Random(19),
@@ -89,7 +89,7 @@ def test_math_text_generator_prompt_omits_word_limit_when_unset() -> None:
 
     params = sample_params(grade=8, seed=23, content_type="純文字", sub_question_count=3)
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         Path("data/few_shot"),
         rng=random.Random(19),
@@ -109,12 +109,12 @@ def test_math_flat_prompt_is_byte_for_byte_unchanged_by_text_word_limit() -> Non
     baseline_params = sample_params(grade=8, seed=7, content_type="純文字")
     limited_params = baseline_params.model_copy(update={"text_word_limit": 321})
 
-    baseline, baseline_images = build_user_prompt(
+    baseline, baseline_images, _draws = build_user_prompt(
         baseline_params,
         Path("data/few_shot"),
         rng=random.Random(19),
     )
-    limited, limited_images = build_user_prompt(
+    limited, limited_images, _draws = build_user_prompt(
         limited_params,
         Path("data/few_shot"),
         rng=random.Random(19),

@@ -91,11 +91,11 @@ def build_text_generation_prompts(
     text_instruction: str | None = None,
     prior_scopes: Sequence[Any] | None = None,
     core_question_callback: bool = False,
-) -> tuple[str, str, list, dict]:
+) -> tuple[str, str, list, dict, list]:
     """Build the exact prompts used by a 文本生成器 call."""
     few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
     text_system, stage_ctx = spec.build_text_system_fn(params)
-    text_user, text_images = spec.build_text_user_fn(
+    text_user, text_images, text_draws = spec.build_text_user_fn(
         params,
         few_shot_dir,
         user_passage,
@@ -108,7 +108,7 @@ def build_text_generation_prompts(
         prior_scopes,
         core_question_callback,
     )
-    return text_system, text_user, text_images, stage_ctx
+    return text_system, text_user, text_images, stage_ctx, text_draws
 
 
 def build_subquestion_generation_prompts(
@@ -127,7 +127,7 @@ def build_subquestion_generation_prompts(
     core_question_callback: bool = False,
 ) -> list[tuple[int, str, str, list]]:
     """Build deterministic 子題產生器 prompts with visible 文本生成器 placeholders."""
-    _, _, _, stage_ctx = build_text_generation_prompts(
+    _, _, _, stage_ctx, _text_draws = build_text_generation_prompts(
         config,
         params,
         spec,
@@ -159,7 +159,7 @@ def build_subquestion_generation_prompts(
             "出題概念": "{{子題 plan：由前一階段產生}}",
         }
         slot_cfg = subquestion_configs[idx - 1] if idx - 1 < len(subquestion_configs) else None
-        sub_user, sub_images = spec.build_subquestion_user_fn(
+        sub_user, sub_images, _sub_draws = spec.build_subquestion_user_fn(
             text_raw,
             params,
             few_shot_dir,
@@ -196,6 +196,7 @@ def generate_one_core(
     on_question_update: Callable | None = None,
     on_trail_entry: Callable[[VerificationTrailEvent], None] | None = None,
     on_figure_policy_entry: Callable[[FigurePolicyTrailEvent], None] | None = None,
+    on_reference_example_entry: Callable | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -203,7 +204,7 @@ def generate_one_core(
 ) -> Any:
     """Shared 文本生成器 → N-parallel-子題產生器 pipeline for NS and SS."""
     # ── Text-prompt build (dry-run returns early) ─────────────────────────
-    text_system, text_user, text_images, stage_ctx = build_text_generation_prompts(
+    text_system, text_user, text_images, stage_ctx, text_ref_draws = build_text_generation_prompts(
         config,
         params,
         spec,
@@ -217,6 +218,11 @@ def generate_one_core(
         prior_scopes=prior_scopes,
         core_question_callback=core_question_callback,
     )
+    if on_reference_example_entry is not None:
+        _now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        for _draw in text_ref_draws:
+            _draw_copy = dict(_draw, question_id=question_id, timestamp=_now.isoformat())
+            on_reference_example_entry(_draw_copy)
     if dry_run:
         img_note = f" ({len(text_images)} few-shot images)" if text_images else ""
         return (
@@ -270,12 +276,19 @@ def generate_one_core(
 
         subquestion_configs = getattr(params, "subquestion_configs", [])
         slot_cfg = subquestion_configs[idx - 1] if idx - 1 < len(subquestion_configs) else None
-        sub_user, sub_images = spec.build_subquestion_user_fn(
+        sub_user, sub_images, sub_ref_draws = spec.build_subquestion_user_fn(
             text_raw, params, few_shot_dir, sq_plan, slot_cfg,
             image_generation_mode, disable_reference_fewshot,
             core_question_callback,
             plan_position == len(sq_plans) - 1,
         )
+        if on_reference_example_entry is not None:
+            _sub_now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+            for _sub_draw in sub_ref_draws:
+                _sub_draw_copy = dict(
+                    _sub_draw, question_id=question_id, timestamp=_sub_now.isoformat()
+                )
+                on_reference_example_entry(_sub_draw_copy)
 
         attempts = 1 + max(0, config.subgen_retries)
         result = None
@@ -489,6 +502,7 @@ def generate_with_corrections_core(
     on_question_update: Callable | None = None,
     on_trail_entry: Callable[[VerificationTrailEvent], None] | None = None,
     on_figure_policy_entry: Callable[[FigurePolicyTrailEvent], None] | None = None,
+    on_reference_example_entry: Callable | None = None,
     sub_client_factory: Callable[[], Any] | None = None,
     prior_scopes: Sequence[Any] | None = None,
     curriculum_context: CurriculumContext | None = None,
@@ -516,6 +530,7 @@ def generate_with_corrections_core(
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,
         on_figure_policy_entry=on_figure_policy_entry,
+        on_reference_example_entry=on_reference_example_entry,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,

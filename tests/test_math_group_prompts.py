@@ -18,13 +18,13 @@ def test_math_group_prompts_describe_the_requested_group_contract() -> None:
     few_shot_dir = Path("data/few_shot")
 
     text_system = build_text_system_prompt()
-    text_user, _ = build_text_user_prompt(
+    text_user, _, _draws = build_text_user_prompt(
         params,
         few_shot_dir,
         rng=random.Random(19),
     )
     sub_system = build_subquestion_system_prompt("第四學習階段")
-    sub_user, _ = build_subquestion_user_prompt(
+    sub_user, _, _draws = build_subquestion_user_prompt(
         核心問題="如何比較兩種方案？",
         文本="方案甲每件 10 元，方案乙每件 12 元。",
         取材來源=["試算資料"],
@@ -51,7 +51,7 @@ def test_math_flat_prompt_contract_is_stable_for_a_fixed_keyed_seed() -> None:
     from src.sampler import sample_params
 
     params = sample_params(grade=8, seed=7, content_type="純文字")
-    prompt, images = build_user_prompt(
+    prompt, images, _draws = build_user_prompt(
         params,
         Path("data/few_shot"),
         rng=random.Random(19),

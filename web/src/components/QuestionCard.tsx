@@ -8,6 +8,7 @@ import type {
   RubricEntry,
   VerificationTrailEntry,
   FigurePolicyTrailEntry,
+  ReferenceExampleRecordShape,
 } from "../hooks/useGenerate";
 import { useModificationRun } from "../hooks/useModificationRun";
 import { useT } from "../i18n/useT";
@@ -21,6 +22,7 @@ import FigureRenderer, {
 import GenerationStatusBar from "./GenerationStatusBar";
 import VerificationTrailTimeline from "./VerificationTrailTimeline";
 import FigurePolicyTrailTimeline from "./FigurePolicyTrailTimeline";
+import ReferenceExampleRecordSection from "./ReferenceExampleRecordSection";
 import InteractiveItemViewer, { type InteractionSubmission } from "./InteractiveItemViewer";
 
 export interface QuestionCardProps {
@@ -30,6 +32,7 @@ export interface QuestionCardProps {
   isFinal?: boolean;
   trail?: VerificationTrailEntry[] | null;
   figurePolicyTrail?: FigurePolicyTrailEntry[] | null;
+  referenceExampleRecord?: ReferenceExampleRecordShape | null;
   onInteractionSubmit?: (submission: InteractionSubmission) => void;
 }
 
@@ -419,6 +422,7 @@ export default function QuestionCard({
   isFinal = true,
   trail = [],
   figurePolicyTrail = [],
+  referenceExampleRecord,
   onInteractionSubmit,
 }: QuestionCardProps) {
   const t = useT();
@@ -801,6 +805,7 @@ export default function QuestionCard({
 
       <VerificationTrailTimeline entries={trail} />
       <FigurePolicyTrailTimeline entries={figurePolicyTrail} />
+      <ReferenceExampleRecordSection record={referenceExampleRecord} />
 
       {modificationResult && (
         <>

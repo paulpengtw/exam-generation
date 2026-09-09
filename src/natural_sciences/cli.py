@@ -1447,6 +1447,7 @@ def generate_one(
     balanced_batch: bool = False,
     core_question_callback: bool = True,
     on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+    on_reference_example_entry: "Callable | None" = None,
 ) -> ExamQuestion | str:
     """Generate a single PISA Science question set."""
     params = _with_text_word_limit(params, text_word_limit)
@@ -1487,7 +1488,7 @@ def build_generation_prompts(
     params = _with_text_word_limit(params, kwargs.pop("text_word_limit", None))
     spec = _ns_spec_for_batch(kwargs.pop("balanced_batch", False))
     kwargs.setdefault("core_question_callback", True)
-    system, user, images, _stage_ctx = build_text_generation_prompts(
+    system, user, images, _stage_ctx, _draws = build_text_generation_prompts(
         config, params, spec, **kwargs
     )
     return system, user, images
@@ -1544,6 +1545,7 @@ def generate_with_corrections(
     balanced_batch: bool = False,
     core_question_callback: bool = True,
     on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+    on_reference_example_entry: "Callable | None" = None,
     is_cancelled: Callable[[], bool] | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
@@ -1575,6 +1577,7 @@ def generate_with_corrections(
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,
         on_figure_policy_entry=on_figure_policy_entry,
+        on_reference_example_entry=on_reference_example_entry,
         sub_client_factory=sub_client_factory,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,

@@ -430,6 +430,7 @@ def build_user_prompt(
             )
         few_shot_text = "\n\n".join(example_texts)
     else:
+        selected = []
         few_shot_text = "（目前暫無範例，請根據指定條件自行設計。）"
 
     science_competencies = "、".join(c.value for c in params.科學能力)
@@ -565,7 +566,22 @@ def build_user_prompt(
         user_materials=user_materials,
         few_shot_examples=few_shot_text,
     )
-    return text, all_image_paths
+    ns_ref_entries = [
+        {
+            "code": "reference_example",
+            "kind": "example",
+            "question_id": "",
+            "stage": "generator",
+            "slot": None,
+            "description": ex.get("description", ""),
+            "source": str(few_shot_dir),
+            "content": ex.get("question", ex),
+            "images": [],
+            "timestamp": "",
+        }
+        for ex in selected
+    ]
+    return text, all_image_paths, ns_ref_entries
 
 
 _TEXT_OUTPUT_FORMAT_BLOCK = """\
@@ -685,7 +701,7 @@ def build_text_user_prompt(
     balanced_batch: bool = False,
     core_question_callback: bool = True,
 ) -> tuple[str, list[Path]]:
-    text, image_paths = build_user_prompt(
+    text, image_paths, _ns_text_entries = build_user_prompt(
         params=params,
         few_shot_dir=few_shot_dir,
         rng=rng,
@@ -733,7 +749,10 @@ def build_text_user_prompt(
             f"\n- **文本字數上限**：{params.text_word_limit} 字\n\n## 參考範例\n",
             1,
         )
-    return text, image_paths
+    ns_text_entries_staged = [
+        {**e, "stage": "text_generator"} for e in _ns_text_entries
+    ]
+    return text, image_paths, ns_text_entries_staged
 
 
 def build_subquestion_system_prompt(
@@ -816,6 +835,28 @@ def build_subquestion_system_prompt(
 """
 
 
+def _build_ns_subq_ref_entries(
+    ex: dict | None,
+    few_shot_dir: "Path",
+    slot_number: int,
+) -> list:
+    """Build reference example entries for a NS subquestion draw."""
+    if ex is None:
+        return []
+    return [{
+        "code": "reference_example",
+        "kind": "example",
+        "question_id": "",
+        "stage": "subquestion_generator",
+        "slot": slot_number,
+        "description": ex.get("description", ""),
+        "source": str(few_shot_dir),
+        "content": ex.get("question", ex),
+        "images": [],
+        "timestamp": "",
+    }]
+
+
 def build_subquestion_user_prompt(
     核心問題: str,
     文本: str,
@@ -844,9 +885,11 @@ def build_subquestion_user_prompt(
         else load_few_shot_example_groups(few_shot_dir, q_type=q_type)
     )
     all_image_paths: list[Path] = []
+    _ns_chosen_ex: dict | None = None
     if example_groups:
         selected_group = rng.choice(example_groups)
         ex = rng.choice(selected_group)
+        _ns_chosen_ex = ex
         q = ex.get("question", ex)
         if isinstance(q, dict) and q.get("subquestions"):
             matching = [
@@ -1014,4 +1057,8 @@ def build_subquestion_user_prompt(
 3. `學習內容` / `學習表現` 必須使用指定學習階段的代號；不得使用其他學習階段的學習內容或學習表現代號。
 4. **誘答分析**：本小題若為 `Simple multiple-choice` 或 `Complex multiple-choice`，`誘答分析` **必須**同時涵蓋題目所有選項標籤（預設 A/B/C/D）；正確選項填「正確答案：…」，其餘選項描述其針對的科學迷思。若為 `Constructed response`，可留空 `{{}}` 或使用 `{{"常見錯誤": "..."}}` 描述一項最常見的科學迷思。
 5. 請只輸出一道小題的 JSON，不要輸出其他文字。
-""", all_image_paths
+""", all_image_paths, _build_ns_subq_ref_entries(
+    ex=_ns_chosen_ex,
+    few_shot_dir=few_shot_dir,
+    slot_number=int(sq_plan.get("序號", 1)),
+)

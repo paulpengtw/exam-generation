@@ -24,14 +24,14 @@ def test_ns_text_prompt_byte_identical_when_instruction_unset(tmp_path: Path) ->
     from src.natural_sciences.sampler import sample_params
 
     params = sample_params(seed=1, content_type="純文字")
-    prompt_no_arg, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
-    prompt_none, _ = build_text_user_prompt(
+    prompt_no_arg, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt_none, _, _draws = build_text_user_prompt(
         params, tmp_path, rng=random.Random(1), text_instruction=None
     )
-    prompt_empty, _ = build_text_user_prompt(
+    prompt_empty, _, _draws = build_text_user_prompt(
         params, tmp_path, rng=random.Random(1), text_instruction=""
     )
-    prompt_blank, _ = build_text_user_prompt(
+    prompt_blank, _, _draws = build_text_user_prompt(
         params, tmp_path, rng=random.Random(1), text_instruction="   "
     )
 
@@ -47,10 +47,10 @@ def test_ns_text_prompt_renders_text_instruction_section(tmp_path: Path) -> None
     params = sample_params(seed=2, content_type="純文字")
     instruction = "請聚焦電磁波的能量傳遞概念"
 
-    prompt_with, _ = build_text_user_prompt(
+    prompt_with, _, _draws = build_text_user_prompt(
         params, tmp_path, rng=random.Random(2), text_instruction=instruction
     )
-    prompt_without, _ = build_text_user_prompt(
+    prompt_without, _, _draws = build_text_user_prompt(
         params, tmp_path, rng=random.Random(2)
     )
 
@@ -65,7 +65,7 @@ def test_ns_text_instruction_does_not_appear_in_subquestion_prompt(tmp_path: Pat
     from src.natural_sciences.sampler import sample_params
 
     params = sample_params(seed=3, content_type="純文字")
-    sq_prompt, _ = build_subquestion_user_prompt(
+    sq_prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["來源A"],

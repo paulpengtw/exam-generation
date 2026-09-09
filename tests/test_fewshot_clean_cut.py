@@ -153,7 +153,7 @@ def test_populated_content_type_injects_iccs_example_at_prompt_seam(
         sub_question_count=3,
     )
 
-    prompt, images = build_text_user_prompt(
+    prompt, images, _draws = build_text_user_prompt(
         params,
         Path("data/social_studies/few_shot"),
         rng=random.Random(seed),
@@ -170,7 +170,7 @@ def test_unpopulated_content_type_keeps_instruction_only_fallback(content_type: 
     seed = 554 + ("含圖片", "customized", "數位閱讀").index(content_type)
     params = sample_params(seed=seed, content_type=content_type, sub_question_count=3)
 
-    prompt, images = build_text_user_prompt(
+    prompt, images, _draws = build_text_user_prompt(
         params,
         Path("data/social_studies/few_shot"),
         rng=random.Random(seed),
@@ -419,7 +419,7 @@ def test_subquestion_prompt_uses_pinned_content_type_for_channel1_injection(tmp_
     )
     params = sample_params(seed=497, content_type="純文字", sub_question_count=3)
 
-    prompt, _images = build_subquestion_user_prompt(
+    prompt, _images, _draws = build_subquestion_user_prompt(
         核心問題="核心問題",
         文本="文本",
         取材來源=["來源"],

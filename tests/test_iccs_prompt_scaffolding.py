@@ -131,30 +131,30 @@ def test_newly_built_social_prompts_do_not_expose_retired_reading_axes(tmp_path:
     from src.social_studies.sampler import sample_params
 
     params = sample_params(seed=491, sub_question_count=3, content_type="純文字")
-    user_prompt, _ = build_user_prompt(
+    user_prompt, _, _draws = build_user_prompt(
         params,
         tmp_path,
         rng=random.Random(491),
         disable_reference_fewshot=True,
     )
-    text_user_prompt, _ = build_text_user_prompt(
+    text_user_prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(491),
         disable_reference_fewshot=True,
     )
-    enabled_text_user_prompt, _ = build_text_user_prompt(
+    enabled_text_user_prompt, _, _draws = build_text_user_prompt(
         params,
         Path("data/social_studies/few_shot"),
         rng=random.Random(491),
     )
     graph_params = sample_params(seed=491, content_type="graphs/charts/tables")
-    graph_text_user_prompt, _ = build_text_user_prompt(
+    graph_text_user_prompt, _, _draws = build_text_user_prompt(
         graph_params,
         Path("data/social_studies/few_shot"),
         rng=random.Random(491),
     )
-    sub_user_prompt, _ = build_subquestion_user_prompt(
+    sub_user_prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["測試來源"],
@@ -196,13 +196,13 @@ def test_text_prompt_uses_subject_specific_content_domain_instruction(tmp_path: 
     history = sample_params(seed=491, subject=[history_subject], content_type="純文字")
     civic = sample_params(seed=491, subject=[civic_subject], content_type="純文字")
 
-    history_prompt, _ = build_text_user_prompt(
+    history_prompt, _, _draws = build_text_user_prompt(
         history,
         tmp_path,
         rng=random.Random(491),
         disable_reference_fewshot=True,
     )
-    civic_prompt, _ = build_text_user_prompt(
+    civic_prompt, _, _draws = build_text_user_prompt(
         civic,
         tmp_path,
         rng=random.Random(491),
@@ -230,7 +230,7 @@ def test_subquestion_prompt_injects_assigned_process_design_guidance(tmp_path: P
     assigned = params.subquestion_configs[0].認知歷程
     guidance = build_instructions(load_schemas())["認知歷程"][assigned]
 
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["測試來源"],
@@ -266,7 +266,7 @@ def test_text_shell_does_not_stamp_retired_axes_when_model_omits_them(tmp_path: 
 def _build_channel2_subquestion_prompt(params, few_shot_dir: Path, rng) -> str:
     from src.social_studies.context_builder import build_subquestion_user_prompt
 
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["測試來源"],
@@ -349,7 +349,7 @@ def test_disable_reference_fewshot_skips_channel2_loader(
     monkeypatch.setattr(context_builder, "load_process_exemplars", fail_if_called, raising=False)
     params = sample_params(seed=491, sub_question_count=3, content_type="純文字")
 
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["測試來源"],

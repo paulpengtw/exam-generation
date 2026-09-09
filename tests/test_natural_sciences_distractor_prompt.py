@@ -21,7 +21,7 @@ def test_ns_system_prompt_contains_distractor_taxonomy() -> None:
 def test_ns_user_prompt_simple_mc_hard_requires_analysis(tmp_path: Path) -> None:
     params = ns_sample_params(seed=1, q_type=["Simple multiple-choice"])
     plan = {"序號": 1, "題型": "Simple multiple-choice", "出題概念": "..."}
-    text, _ = build_subquestion_user_prompt(
+    text, _, _draws = build_subquestion_user_prompt(
         核心問題="q?",
         文本="passage",
         取材來源=["src"],
@@ -37,7 +37,7 @@ def test_ns_user_prompt_simple_mc_hard_requires_analysis(tmp_path: Path) -> None
 def test_ns_user_prompt_complex_mc_hard_requires_analysis(tmp_path: Path) -> None:
     params = ns_sample_params(seed=1, q_type=["Complex multiple-choice"])
     plan = {"序號": 1, "題型": "Complex multiple-choice", "出題概念": "..."}
-    text, _ = build_subquestion_user_prompt(
+    text, _, _draws = build_subquestion_user_prompt(
         核心問題="q?",
         文本="passage",
         取材來源=["src"],
@@ -52,7 +52,7 @@ def test_ns_user_prompt_complex_mc_hard_requires_analysis(tmp_path: Path) -> Non
 def test_ns_user_prompt_constructed_response_marks_optional(tmp_path: Path) -> None:
     params = ns_sample_params(seed=1, q_type=["Constructed response"])
     plan = {"序號": 1, "題型": "Constructed response", "出題概念": "..."}
-    text, _ = build_subquestion_user_prompt(
+    text, _, _draws = build_subquestion_user_prompt(
         核心問題="q?",
         文本="passage",
         取材來源=["src"],

@@ -30,7 +30,7 @@ _PRE_CHANGE_TEXT_REPLACEMENT = (
 
 
 def _pre_change_text_prompt(params, few_shot_dir: Path) -> str:
-    prompt, _ = build_user_prompt(
+    prompt, _, _draws = build_user_prompt(
         params=params,
         few_shot_dir=few_shot_dir,
         rng=random.Random(17),
@@ -42,7 +42,7 @@ def _pre_change_text_prompt(params, few_shot_dir: Path) -> str:
 def test_text_prompt_defaults_to_core_question_callback(tmp_path: Path) -> None:
     params = sample_params(seed=17, content_type="純文字", sub_question_count=3)
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),
@@ -72,7 +72,7 @@ def test_natural_sciences_callback_wording_matches_social_studies() -> None:
 def test_text_prompt_opt_out_is_byte_identical_to_pre_change_output(tmp_path: Path) -> None:
     params = sample_params(seed=17, content_type="純文字", sub_question_count=3)
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),
@@ -95,13 +95,13 @@ def test_only_last_subquestion_gets_callback_instruction(tmp_path: Path) -> None
         "disable_reference_fewshot": True,
     }
 
-    first, _ = build_subquestion_user_prompt(
+    first, _, _draws = build_subquestion_user_prompt(
         **common,
         sq_plan={"序號": 1, "題型": "Simple multiple-choice", "出題概念": "前題"},
         core_question_callback=True,
         is_last=False,
     )
-    last, _ = build_subquestion_user_prompt(
+    last, _, _draws = build_subquestion_user_prompt(
         **common,
         sq_plan={"序號": 3, "題型": "Simple multiple-choice", "出題概念": "統整題"},
         core_question_callback=True,
@@ -133,8 +133,8 @@ def test_subquestion_opt_out_preserves_the_pre_change_prompt_bytes(
         },
     }
 
-    baseline, _ = build_subquestion_user_prompt(**common)
-    opt_out, _ = build_subquestion_user_prompt(
+    baseline, _, _draws = build_subquestion_user_prompt(**common)
+    opt_out, _, _draws = build_subquestion_user_prompt(
         **common,
         core_question_callback=False,
         is_last=True,
@@ -162,7 +162,7 @@ def test_last_slot_callback_composes_with_explicit_subquestion_config(
         ],
     )
 
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="本題組的核心問題",
         文本="本題組的共用文本",
         取材來源=["測試來源"],

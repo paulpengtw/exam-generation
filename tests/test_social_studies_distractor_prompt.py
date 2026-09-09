@@ -22,7 +22,7 @@ def test_subquestion_system_prompt_contains_distractor_taxonomy() -> None:
 def test_subquestion_user_prompt_selection_type_hard_requires_analysis(tmp_path: Path) -> None:
     params = ss_sample_params(seed=1)
     plan = {"序號": 1, "題型": "選擇題", "出題概念": "..."}
-    text, _ = build_subquestion_user_prompt(
+    text, _, _draws = build_subquestion_user_prompt(
         核心問題="q?",
         文本="passage",
         取材來源=["src"],
@@ -38,7 +38,7 @@ def test_subquestion_user_prompt_selection_type_hard_requires_analysis(tmp_path:
 def test_subquestion_user_prompt_constructed_response_marks_optional(tmp_path: Path) -> None:
     params = ss_sample_params(seed=1)
     plan = {"序號": 1, "題型": "開放式建構反應題", "出題概念": "..."}
-    text, _ = build_subquestion_user_prompt(
+    text, _, _draws = build_subquestion_user_prompt(
         核心問題="q?",
         文本="passage",
         取材來源=["src"],

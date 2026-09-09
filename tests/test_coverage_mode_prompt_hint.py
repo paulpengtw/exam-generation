@@ -10,7 +10,7 @@ from src.social_studies.sampler import sample_params
 def test_balanced_batch_injects_the_spread_instruction(tmp_path) -> None:
     params = sample_params(seed=5)
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),
@@ -25,12 +25,12 @@ def test_balanced_batch_injects_the_spread_instruction(tmp_path) -> None:
 def test_default_call_is_byte_identical(tmp_path) -> None:
     params = sample_params(seed=5)
 
-    default_prompt, _ = build_text_user_prompt(
+    default_prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),
     )
-    explicit_random_prompt, _ = build_text_user_prompt(
+    explicit_random_prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),
@@ -45,7 +45,7 @@ def test_default_call_is_byte_identical(tmp_path) -> None:
 def test_reminder_block_terminates_without_trailing_whitespace(tmp_path) -> None:
     params = sample_params(seed=5)
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),
@@ -62,7 +62,7 @@ def test_balanced_instruction_coexists_with_the_prior_scopes_block(tmp_path) -> 
         PriorScope(summary="工業革命如何改變勞動條件？", codes=["歷Ka-Ⅳ-1"]),
     ]
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),

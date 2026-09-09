@@ -30,7 +30,7 @@ def test_ns_text_prompt_no_difficulty(tmp_path: Path) -> None:
     from src.natural_sciences.sampler import sample_params
 
     params = sample_params(seed=42)
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(42))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(42))
     assert "難度" not in prompt, "NS 文本 prompt must not mention 難度"
 
 
@@ -44,7 +44,7 @@ def test_ns_subquestion_prompt_no_difficulty(tmp_path: Path) -> None:
 
     params = sample_params(seed=42)
     sq_plan = {"序號": 1, "題型": "Simple-multiple-choice", "出題概念": "test"}
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="核心",
         文本="文本內容",
         取材來源=["來源"],
@@ -154,7 +154,7 @@ def test_math_prompt_still_contains_difficulty(tmp_path: Path) -> None:
     from src.sampler import sample_params as math_sample_params
 
     params = math_sample_params(seed=1)
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "難度" in prompt, "Math prompt must still mention 難度 (regression guard)"
 
 
@@ -167,7 +167,7 @@ def test_ss_text_prompt_still_contains_difficulty(tmp_path: Path) -> None:
     from src.social_studies.sampler import sample_params as ss_sample
 
     params = ss_sample(seed=1)
-    prompt, _ = ss_text(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = ss_text(params, tmp_path, rng=random.Random(1))
     assert "難度" in prompt, "SS 文本 prompt must still mention 難度 (regression guard)"
 
 
@@ -177,7 +177,7 @@ def test_ss_subquestion_prompt_still_contains_difficulty(tmp_path: Path) -> None
 
     params = ss_sample(seed=1)
     sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "test"}
-    prompt, _ = ss_sub(
+    prompt, _, _draws = ss_sub(
         核心問題="核心",
         文本="文本",
         取材來源=["來源"],
@@ -209,7 +209,7 @@ def test_ns_text_prompt_ignores_difficulty_kwarg(tmp_path: Path) -> None:
     from src.natural_sciences.sampler import sample_params
 
     params = sample_params(seed=1, difficulty="hard")
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "難度" not in prompt, (
         "NS 文本 prompt must not contain 難度 even when difficulty kwarg is passed"
     )

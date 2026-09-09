@@ -205,6 +205,25 @@ export type FigurePolicyTrailEntry =
   | FigurePolicyWarningEntry
   | FigurePolicyDataInconsistencyEntry;
 
+export interface ReferenceExampleEntryShape {
+  code: "reference_example";
+  kind: "example" | "process_exemplar";
+  question_id: string;
+  stage: string;
+  slot?: number | null;
+  description?: string;
+  source: string;
+  content?: unknown;
+  images?: Array<{ path: string; description?: string }>;
+  cognitive_process?: string;
+  timestamp: string;
+}
+
+export interface ReferenceExampleRecordShape {
+  disabled?: boolean;
+  entries: ReferenceExampleEntryShape[];
+}
+
 export type DraftPhase = "draft" | "image" | "verified" | "corrected";
 
 export interface GeneratedQuestion {
@@ -214,6 +233,7 @@ export interface GeneratedQuestion {
   isFinal: boolean;
   trail?: VerificationTrailEntry[];
   figurePolicyTrail?: FigurePolicyTrailEntry[];
+  referenceExampleRecord?: ReferenceExampleRecordShape;
 }
 
 export type LlmCallEvent =
@@ -496,6 +516,9 @@ export function useGenerate(): UseGenerateReturn {
   const figurePolicyTrailByQuestionRef = useRef(
     new Map<string, FigurePolicyTrailEntry[]>(),
   );
+  const referenceExampleEntriesByQuestionRef = useRef(
+    new Map<string, ReferenceExampleEntryShape[]>(),
+  );
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
@@ -520,6 +543,7 @@ export function useGenerate(): UseGenerateReturn {
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
+    referenceExampleEntriesByQuestionRef.current.clear();
     setStatus("idle");
   }, []);
 
@@ -550,6 +574,7 @@ export function useGenerate(): UseGenerateReturn {
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
+    referenceExampleEntriesByQuestionRef.current.clear();
 
     fetchEventSource(url, {
       signal: controller.signal,
@@ -673,11 +698,12 @@ export function useGenerate(): UseGenerateReturn {
             try {
               const parsed = JSON.parse(ev.data) as
                 | VerificationTrailEntry
-                | FigurePolicyTrailEntry;
+                | FigurePolicyTrailEntry
+                | ReferenceExampleEntryShape;
               if (!parsed.question_id) break;
               if (parsed.code === "verification_trail") {
                 const previous = trailByQuestionRef.current.get(parsed.question_id) ?? [];
-                const trail = [...previous, parsed];
+                const trail = [...previous, parsed as VerificationTrailEntry];
                 trailByQuestionRef.current.set(parsed.question_id, trail);
                 setDisplayResults((prev) => prev.map((item) => (
                   questionKey(item.question, item.index) === parsed.question_id
@@ -686,11 +712,20 @@ export function useGenerate(): UseGenerateReturn {
                 )));
               } else if (parsed.code === "figure_policy") {
                 const previous = figurePolicyTrailByQuestionRef.current.get(parsed.question_id) ?? [];
-                const figurePolicyTrail = [...previous, parsed];
+                const figurePolicyTrail = [...previous, parsed as FigurePolicyTrailEntry];
                 figurePolicyTrailByQuestionRef.current.set(parsed.question_id, figurePolicyTrail);
                 setDisplayResults((prev) => prev.map((item) => (
                   questionKey(item.question, item.index) === parsed.question_id
                     ? { ...item, figurePolicyTrail }
+                    : item
+                )));
+              } else if (parsed.code === "reference_example") {
+                const previous = referenceExampleEntriesByQuestionRef.current.get(parsed.question_id) ?? [];
+                const entries = [...previous, parsed as ReferenceExampleEntryShape];
+                referenceExampleEntriesByQuestionRef.current.set(parsed.question_id, entries);
+                setDisplayResults((prev) => prev.map((item) => (
+                  questionKey(item.question, item.index) === parsed.question_id
+                    ? { ...item, referenceExampleRecord: { disabled: false, entries } }
                     : item
                 )));
               }
@@ -704,6 +739,7 @@ export function useGenerate(): UseGenerateReturn {
               nextFinalIndexRef.current += 1;
               setResults((prev) => [...prev, parsed]);
               const laneKey = questionKey(parsed, index);
+              const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
               setDisplayResults((prev) => upsertDisplayResult(prev, {
                 index,
                 question: parsed,
@@ -711,6 +747,9 @@ export function useGenerate(): UseGenerateReturn {
                 isFinal: true,
                 trail: trailByQuestionRef.current.get(laneKey) ?? [],
                 figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
+                referenceExampleRecord: refEntries
+                  ? { disabled: false, entries: refEntries }
+                  : undefined,
               }));
             } catch {
               setStatus("error");

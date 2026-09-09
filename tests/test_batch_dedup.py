@@ -189,11 +189,11 @@ def test_math_build_user_prompt_no_scopes_is_byte_identical(tmp_path) -> None:
     grade_content = {g: [] for g in [7, 8, 9]}
     params = sample_params(grade_content=grade_content, seed=1)
 
-    baseline, _ = build_user_prompt(params, tmp_path, rng=random.Random(2))
-    with_none, _ = build_user_prompt(
+    baseline, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(2))
+    with_none, _, _draws = build_user_prompt(
         params, tmp_path, rng=random.Random(2), prior_scopes=None,
     )
-    with_empty, _ = build_user_prompt(
+    with_empty, _, _draws = build_user_prompt(
         params, tmp_path, rng=random.Random(2), prior_scopes=[],
     )
     assert baseline == with_none == with_empty
@@ -211,7 +211,7 @@ def test_math_build_user_prompt_renders_prior_scopes_block(tmp_path) -> None:
     params = sample_params(grade_content=grade_content, seed=1)
     scopes = [PriorScope(summary="比較有理數大小", codes=["N-7-1", "N-7-2"])]
 
-    prompt, _ = build_user_prompt(
+    prompt, _, _draws = build_user_prompt(
         params, tmp_path, rng=random.Random(2), prior_scopes=scopes,
     )
     assert "## 已生成題目（請避免相似範圍）" in prompt
@@ -283,9 +283,9 @@ def test_ss_build_text_user_prompt_no_scopes_is_byte_identical(tmp_path) -> None
 
     params = sample_params(seed=5)
 
-    baseline, _ = build_text_user_prompt(params, tmp_path)
-    with_none, _ = build_text_user_prompt(params, tmp_path, prior_scopes=None)
-    with_empty, _ = build_text_user_prompt(params, tmp_path, prior_scopes=[])
+    baseline, _, _draws = build_text_user_prompt(params, tmp_path)
+    with_none, _, _draws = build_text_user_prompt(params, tmp_path, prior_scopes=None)
+    with_empty, _, _draws = build_text_user_prompt(params, tmp_path, prior_scopes=[])
     assert baseline == with_none == with_empty
     assert "已生成題目" not in baseline
 
@@ -300,7 +300,7 @@ def test_ss_build_text_user_prompt_renders_prior_scopes_block(tmp_path) -> None:
         PriorScope(summary="工業革命如何改變勞動條件？", codes=["歷Ka-Ⅳ-1", "公Ab-Ⅳ-2"]),
     ]
 
-    prompt, _ = build_text_user_prompt(params, tmp_path, prior_scopes=scopes)
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, prior_scopes=scopes)
     assert "## 已生成題目（請避免相似範圍）" in prompt
     assert "1. 核心問題：工業革命如何改變勞動條件？；學習內容：歷Ka-Ⅳ-1, 公Ab-Ⅳ-2" in prompt
 
@@ -381,9 +381,9 @@ def test_ns_build_text_user_prompt_no_scopes_is_byte_identical(tmp_path) -> None
 
     params = sample_params(seed=7)
 
-    baseline, _ = build_text_user_prompt(params, tmp_path)
-    with_none, _ = build_text_user_prompt(params, tmp_path, prior_scopes=None)
-    with_empty, _ = build_text_user_prompt(params, tmp_path, prior_scopes=[])
+    baseline, _, _draws = build_text_user_prompt(params, tmp_path)
+    with_none, _, _draws = build_text_user_prompt(params, tmp_path, prior_scopes=None)
+    with_empty, _, _draws = build_text_user_prompt(params, tmp_path, prior_scopes=[])
     assert baseline == with_none == with_empty
     assert "已生成題目" not in baseline
 
@@ -396,7 +396,7 @@ def test_ns_build_text_user_prompt_renders_prior_scopes_block(tmp_path) -> None:
     params = sample_params(seed=7)
     scopes = [PriorScope(summary="海洋酸化對生態的影響", codes=["INc-Ⅳ-1"])]
 
-    prompt, _ = build_text_user_prompt(params, tmp_path, prior_scopes=scopes)
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, prior_scopes=scopes)
     assert "## 已生成題目（請避免相似範圍）" in prompt
     assert "1. 核心問題：海洋酸化對生態的影響；學習內容：INc-Ⅳ-1" in prompt
 

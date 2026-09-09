@@ -35,7 +35,7 @@ def test_text_prompt_builder_injects_or_falls_back_by_content_type(
 ) -> None:
     """The text-stage seam reflects whether a live key is populated."""
     params = sample_params(seed=42, content_type=content_type)
-    prompt, image_paths = build_text_user_prompt(
+    prompt, image_paths, _draws = build_text_user_prompt(
         params=params,
         few_shot_dir=FEW_SHOT_DIR,
         rng=random.Random(42),
@@ -56,7 +56,7 @@ def test_subquestion_prompt_builder_injects_or_falls_back_by_content_type(
     """The subquestion-stage seam reflects whether a live key is populated."""
     params = sample_params(seed=42, content_type=content_type)
     sq_plan = {"序號": 1, "題型": "選擇題", "認知歷程": "Knowing–Defining and Describing"}
-    prompt, image_paths = build_subquestion_user_prompt(
+    prompt, image_paths, _draws = build_subquestion_user_prompt(
         核心問題="什麼是公民責任？",
         文本="公民參與社區事務是民主社會的基礎。",
         取材來源=["測試素材"],
@@ -97,7 +97,7 @@ def test_channel2_process_exemplar_injection_still_works() -> None:
         "認知歷程": "Knowing–Defining and Describing",
         "出題概念": "公民責任的定義",
     }
-    prompt, _images = build_subquestion_user_prompt(
+    prompt, _images, _draws = build_subquestion_user_prompt(
         核心問題="公民責任的核心是什麼？",
         文本="民主社會中公民享有權利也負有責任。",
         取材來源=["ICCS測試"],

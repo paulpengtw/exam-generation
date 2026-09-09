@@ -425,7 +425,7 @@ def _math_build_text_user(
     disable_reference_fewshot: bool,
     prior_scopes: Sequence[PriorScope] | None,
     _core_question_callback: bool,
-) -> tuple[str, list[Path]]:
+) -> tuple[str, list[Path], list]:
     return build_text_user_prompt(
         params,
         few_shot_dir,
@@ -455,7 +455,7 @@ def _math_build_subquestion_user(
     disable_reference_fewshot: bool,
     _core_question_callback: bool,
     _is_last: bool,
-) -> tuple[str, list[Path]]:
+) -> tuple[str, list[Path], list]:
     return build_subquestion_user_prompt(
         核心問題=text_raw.get("核心問題", ""),
         文本=text_raw.get("文本", ""),
@@ -654,7 +654,7 @@ def build_generation_prompts(
     if params.sub_question_count is not None:
         learning_stage = grade_to_learning_stage(params.grade)
         system_prompt = build_text_system_prompt(learning_stage=learning_stage)
-        user_prompt, few_shot_images = build_text_user_prompt(
+        user_prompt, few_shot_images, _draws = build_text_user_prompt(
             params,
             config.data_dir / "few_shot",
             rng=Random(params.seed),
@@ -668,7 +668,7 @@ def build_generation_prompts(
         return system_prompt, user_prompt, few_shot_images
 
     system_prompt = build_system_prompt(curriculum_context=curriculum_context)
-    user_prompt, few_shot_images = build_user_prompt(
+    user_prompt, few_shot_images, _draws = build_user_prompt(
         params,
         config.data_dir / "few_shot",
         rng=Random(params.seed),
