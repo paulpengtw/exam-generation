@@ -38,6 +38,7 @@ export interface GenerateParams {
   options?: string[];
   topic?: string;
   core_question?: string;
+  text_instruction?: string;
   sub_context?: string;
   science_competency?: string[];
   learning_performance?: string[];

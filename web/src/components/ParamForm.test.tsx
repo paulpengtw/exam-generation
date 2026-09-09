@@ -9,6 +9,8 @@ const tMock = vi.hoisted(() => {
     "form.grade": "Grade",
     "form.difficulty": "Difficulty",
     "form.text_word_limit": "文本字數限制",
+    "form.text_instruction_label": "文本出題指示",
+    "form.text_instruction_placeholder": "請輸入文本出題指示",
     "form.unlimited": "不限",
     "form.subject_filter": "科目",
     "form.subject_filter_natural_sciences": "依科目篩選學習內容選項",
@@ -217,6 +219,49 @@ describe("ParamForm top-level text word limit", () => {
   );
 });
 
+describe("ParamForm 文本出題指示", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getSchemasMock.mockResolvedValue(FAKE_SOCIAL_SCHEMA);
+  });
+
+  it("submits the social text instruction and hides it for math and natural sciences", async () => {
+    const onSubmit = vi.fn();
+    const onUnsubmittedInput = vi.fn();
+    const social = render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={onSubmit}
+        onUnsubmittedInput={onUnsubmittedInput}
+        disabled={false}
+      />,
+    );
+
+    const input = await screen.findByLabelText("文本出題指示");
+    fireEvent.change(input, { target: { value: "請聚焦地方自治中的證據比較" } });
+    expect(onUnsubmittedInput).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect((onSubmit.mock.calls[0][0] as Record<string, unknown>).text_instruction).toBe(
+      "請聚焦地方自治中的證據比較",
+    );
+
+    social.unmount();
+    getSchemasMock.mockResolvedValue(FAKE_MATH_SCHEMA);
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+    await screen.findByRole("button", { name: "Generate" });
+    expect(screen.queryByLabelText("文本出題指示")).not.toBeInTheDocument();
+
+    getSchemasMock.mockResolvedValue(FAKE_SCIENCE_SCHEMA);
+    // The previous render is intentionally replaced to verify the second gated subject.
+    render(<ParamForm subject="natural_sciences" onSubmit={() => {}} disabled={false} />);
+    await screen.findAllByRole("button", { name: "Generate" });
+    expect(screen.queryByLabelText("文本出題指示")).not.toBeInTheDocument();
+  });
+});
+
 describe("ParamForm prefill", () => {
   it("initializes visible fields from initialParams", async () => {
     getSchemasMock.mockResolvedValue(FAKE_MATH_SCHEMA);
@@ -234,6 +279,23 @@ describe("ParamForm prefill", () => {
       expect(screen.getByDisplayValue("climate change")).toBeInTheDocument(),
     );
     expect((screen.getByLabelText(/Grade/i) as HTMLSelectElement).value).toBe("8");
+  });
+
+  it("restores textInstruction from a social-studies history prefill", async () => {
+    getSchemasMock.mockResolvedValue(FAKE_SOCIAL_SCHEMA);
+
+    render(
+      <ParamForm
+        subject="social_studies"
+        disabled={false}
+        onSubmit={() => {}}
+        initialParams={{ text_instruction: "請聚焦地方自治中的證據比較" }}
+      />,
+    );
+
+    expect(
+      await screen.findByDisplayValue("請聚焦地方自治中的證據比較"),
+    ).toHaveAttribute("id", "text-instruction");
   });
 
   it("shows the prefill-notice when initialParams contain values not in the current schema", async () => {

@@ -80,6 +80,7 @@ def build_text_generation_prompts(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    text_instruction: str | None = None,
     prior_scopes: Sequence[Any] | None = None,
     core_question_callback: bool = False,
 ) -> tuple[str, str, list, dict]:
@@ -93,6 +94,7 @@ def build_text_generation_prompts(
         user_options,
         user_topic,
         user_core_question,
+        text_instruction,
         image_generation_mode,
         disable_reference_fewshot,
         prior_scopes,
@@ -112,6 +114,7 @@ def build_subquestion_generation_prompts(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    text_instruction: str | None = None,
     prior_scopes: Sequence[Any] | None = None,
     core_question_callback: bool = False,
 ) -> list[tuple[int, str, str, list]]:
@@ -126,6 +129,7 @@ def build_subquestion_generation_prompts(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        text_instruction=text_instruction,
         prior_scopes=prior_scopes,
         core_question_callback=core_question_callback,
     )
@@ -179,6 +183,7 @@ def generate_one_core(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    text_instruction: str | None = None,
     core_question_callback: bool = False,
     on_question_update: Callable | None = None,
     on_trail_entry: Callable[[VerificationTrailEvent], None] | None = None,
@@ -199,6 +204,7 @@ def generate_one_core(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        text_instruction=text_instruction,
         prior_scopes=prior_scopes,
         core_question_callback=core_question_callback,
     )
@@ -457,6 +463,7 @@ def generate_with_corrections_core(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    text_instruction: str | None = None,
     core_question_callback: bool = False,
     on_question_update: Callable | None = None,
     on_trail_entry: Callable[[VerificationTrailEvent], None] | None = None,
@@ -482,6 +489,7 @@ def generate_with_corrections_core(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        text_instruction=text_instruction,
         core_question_callback=core_question_callback,
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,

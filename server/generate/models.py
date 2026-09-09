@@ -50,6 +50,7 @@ REQUEST_LEVEL_FIELDS: frozenset[str] = frozenset(
         "max_retries",
         "allow_duplicate_figure_kinds",
         "core_question_callback",
+        "text_instruction",
     }
 )
 # Backend-only request fields are valid on the API route but intentionally have
@@ -121,6 +122,7 @@ class GenerateParams(BaseModel):
     options: list[str] | None = None
     topic: str | None = None
     core_question: str | None = None
+    text_instruction: str | None = None
     sub_context: str | None = None
     science_competency: list[str] | None = None
     learning_performance: list[str] | None = None

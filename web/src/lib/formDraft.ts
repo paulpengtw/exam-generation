@@ -90,6 +90,7 @@ function isFormFields(value: unknown): value is FormFields {
     ) &&
     typeof value.subjectFilter === "string" &&
     typeof value.passage === "string" &&
+    (value.textInstruction === undefined || typeof value.textInstruction === "string") &&
     (
       value.textWordLimit === null ||
       (typeof value.textWordLimit === "number" &&
@@ -176,6 +177,8 @@ export function loadDraft(userId: string): FormDraft | null {
         modelCorrect: typeof rawFields.modelCorrect === "string" ? rawFields.modelCorrect : "",
         effortVerify: typeof rawFields.effortVerify === "string" ? rawFields.effortVerify : "",
         effortCorrect: typeof rawFields.effortCorrect === "string" ? rawFields.effortCorrect : "",
+        textInstruction:
+          typeof rawFields.textInstruction === "string" ? rawFields.textInstruction : "",
         coreQuestionCallback:
           typeof rawFields.coreQuestionCallback === "boolean"
             ? rawFields.coreQuestionCallback

@@ -150,6 +150,25 @@ describe("ParamForm 發送前確認 display semantics", () => {
       legacyConfirmationResolve(payload));
   });
 
+  it("shows the submitted social text instruction in 發送前確認", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const instruction = "請聚焦地方自治中的證據比較";
+
+    await openConfirmation("social_studies", { text_instruction: instruction });
+
+    expect(confirmationRow("文本出題指示").getByText(instruction)).toBeInTheDocument();
+  });
+
+  it("renders an unset social text instruction like other optional settings", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+
+    await openConfirmation("social_studies");
+
+    expect(
+      confirmationRow("文本出題指示").getByText("未填寫"),
+    ).toBeInTheDocument();
+  });
+
   it("resolves blank 學習內容/學習表現 before showing 發送前確認", async () => {
     const onSubmit = vi.fn();
     getSchemasMock.mockResolvedValue({

@@ -547,6 +547,7 @@ def build_user_prompt(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    text_instruction: str | None = None,
     disable_reference_fewshot: bool = False,
     prior_scopes: Sequence[PriorScope] | None = None,
 ) -> tuple[str, list[Path]]:
@@ -752,6 +753,11 @@ def build_user_prompt(
         user_materials_parts.append(
             "## 指定核心問題（請逐字使用，不得修改）\n\n"
             f"核心問題：{user_core_question}"
+        )
+    if text_instruction and text_instruction.strip():
+        user_materials_parts.append(
+            "## 文本出題指示\n\n"
+            f"{text_instruction.strip()}"
         )
     if user_passage:
         user_materials_parts.append(
@@ -1005,6 +1011,7 @@ def build_text_user_prompt(
     user_options: list[str] | None = None,
     user_topic: str | None = None,
     user_core_question: str | None = None,
+    text_instruction: str | None = None,
     disable_reference_fewshot: bool = False,
     prior_scopes: Sequence[PriorScope] | None = None,
     balanced_batch: bool = False,
@@ -1019,6 +1026,7 @@ def build_text_user_prompt(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        text_instruction=text_instruction,
         disable_reference_fewshot=disable_reference_fewshot,
         prior_scopes=prior_scopes,
     )

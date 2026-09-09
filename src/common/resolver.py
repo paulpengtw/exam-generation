@@ -170,6 +170,7 @@ _BATCH_REQUEST_LEVEL_FIELDS = frozenset(
         "max_retries",
         "allow_duplicate_figure_kinds",
         "core_question_callback",
+        "text_instruction",
         "redraws",
     }
 )

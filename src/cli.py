@@ -416,6 +416,7 @@ def _math_build_text_user(
     user_options: list[str] | None,
     user_topic: str | None,
     user_core_question: str | None,
+    _text_instruction: str | None,
     image_generation_mode: str,
     disable_reference_fewshot: bool,
     prior_scopes: Sequence[PriorScope] | None,

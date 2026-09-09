@@ -238,6 +238,73 @@ def test_preview_route_rejects_unresolved_top_level_field() -> None:
     ]
 
 
+def test_preview_route_includes_social_text_instruction_in_text_prompt() -> None:
+    instruction = "請聚焦地方自治中的證據比較"
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_config] = lambda: ServerConfig(
+        api_key="x", gemini_api_key="x"
+    )
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/generate/preview",
+                params=_complete_query_params(
+                    {
+                        "subject": "social_studies",
+                        "seed": 41,
+                        "text_instruction": instruction,
+                    }
+                ),
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 200, response.text
+    text_prompt = next(
+        item["user_prompt"]
+        for item in response.json()["prompts"]
+        if "subquestion_index" not in item
+    )
+    assert "## 文本出題指示" in text_prompt
+    assert instruction in text_prompt
+
+
+@pytest.mark.parametrize("subject", ["natural_sciences", "math"])
+def test_generate_route_rejects_text_instruction_for_unwired_subjects(subject: str) -> None:
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(
+        api_key="x", gemini_api_key="x"
+    )
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                "/api/generate",
+                params=_complete_query_params(
+                    {
+                        "subject": subject,
+                        "seed": 41,
+                        "text_instruction": "請聚焦證據比較",
+                    }
+                ),
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert "text_instruction" in response.text
+
+
 def test_generate_route_reports_incompatible_parent_with_resolver_shape() -> None:
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: User(

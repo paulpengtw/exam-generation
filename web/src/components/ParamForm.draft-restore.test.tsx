@@ -75,6 +75,7 @@ const SAVED_FIELDS: FormFields = {
   subjectFilter: "數與量",
   passage: "保存的文本",
   textWordLimit: 120,
+  textInstruction: "請以在地案例切入",
   options: ["甲", "乙", "丙", "丁"],
   topic: "保存的主題",
   coreQuestion: "保存的核心問題",
