@@ -293,7 +293,10 @@ One-time setup:
    builds are tagged with environment `staging` (via `VITE_IS_STAGING`),
    production builds with `production`.
 3. Set the FastAPI project's DSN as `SENTRY_DSN` on the backend and set
-   `SENTRY_ENVIRONMENT` to `staging` or `production`.
+   `SENTRY_ENVIRONMENT` to `staging` or `production`; also set
+   `DB_POOL_CHECKOUT_ATTRIBUTION=1` on the **staging** backend so that any
+   abandoned asyncpg pool connection is attributed to its owning code path and
+   forwarded to Sentry automatically by the `LoggingIntegration`.
 4. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
    integration and connect the `paulpengtw/exam-generation` repository.
 
