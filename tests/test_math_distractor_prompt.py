@@ -19,21 +19,21 @@ def test_math_system_prompt_contains_distractor_guidance() -> None:
 
 def test_math_user_prompt_mc_type_hard_requires_distractor_analysis(tmp_path: Path) -> None:
     params = sample_params(seed=1, q_type=["選擇題"])
-    text, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    text, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "誘答分析" in text
     assert "必須" in text  # hard requirement phrasing
 
 
 def test_math_user_prompt_true_false_hard_requires_distractor_analysis(tmp_path: Path) -> None:
     params = sample_params(seed=1, q_type=["是非題"])
-    text, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    text, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "誘答分析" in text
     assert "「是」" in text or "是/非" in text  # keys hint
 
 
 def test_math_user_prompt_open_response_marks_distractor_optional(tmp_path: Path) -> None:
     params = sample_params(seed=1, q_type=["開放式建構反應題"])
-    text, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    text, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "常見錯誤" in text  # optional key hint
 
 

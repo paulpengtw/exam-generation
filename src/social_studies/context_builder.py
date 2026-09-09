@@ -638,6 +638,7 @@ def build_user_prompt(
             )
         few_shot_text = "\n\n".join(example_texts)
     else:
+        selected = []
         few_shot_text = "（目前暫無範例，請根據指定條件自行設計。）"
 
     core_competencies = "、".join(c.value for c in params.核心素養)
@@ -817,7 +818,22 @@ def build_user_prompt(
         user_materials=user_materials,
         few_shot_examples=few_shot_text,
     )
-    return text, all_image_paths
+    ss_ref_entries = [
+        {
+            "code": "reference_example",
+            "kind": "example",
+            "question_id": "",
+            "stage": "generator",
+            "slot": None,
+            "description": ex.get("description", ""),
+            "source": str(few_shot_dir),
+            "content": ex.get("question", ex),
+            "images": [{"path": img["path"], "caption": img.get("caption", "")} for img in ex.get("images", [])],
+            "timestamp": "",
+        }
+        for ex in selected
+    ]
+    return text, all_image_paths, ss_ref_entries
 
 
 # ---------------------------------------------------------------------------
@@ -1017,7 +1033,7 @@ def build_text_user_prompt(
     balanced_batch: bool = False,
     core_question_callback: bool = True,
 ) -> tuple[str, list[Path]]:
-    text, image_paths = build_user_prompt(
+    text, image_paths, _text_ref_entries = build_user_prompt(
         params=params,
         few_shot_dir=few_shot_dir,
         rng=rng,
@@ -1069,7 +1085,11 @@ def build_text_user_prompt(
             f"\n- **文本字數上限**：{params.text_word_limit} 字\n\n## 參考範例\n",
             1,
         )
-    return text, image_paths
+    # stage is "text_generator" for phase-split 文本生成器 calls
+    text_ref_entries_staged = [
+        {**e, "stage": "text_generator"} for e in _text_ref_entries
+    ]
+    return text, image_paths, text_ref_entries_staged
 
 
 def build_subquestion_system_prompt(
@@ -1159,6 +1179,46 @@ def build_subquestion_system_prompt(
 """
 
 
+def _build_ss_subq_ref_entries(
+    ex: dict | None,
+    process_exemplar: dict | None,
+    cognitive_process: str,
+    few_shot_dir: "Path",
+    slot_number: int,
+) -> list:
+    """Build reference example entries for a SS subquestion draw."""
+    entries: list = []
+    if ex is not None:
+        entries.append({
+            "code": "reference_example",
+            "kind": "example",
+            "question_id": "",
+            "stage": "subquestion_generator",
+            "slot": slot_number,
+            "description": ex.get("description", ""),
+            "source": str(few_shot_dir),
+            "content": ex.get("question", ex),
+            "images": [
+                {"path": img["path"], "caption": img.get("caption", "")}
+                for img in ex.get("images", [])
+            ],
+            "timestamp": "",
+        })
+    if process_exemplar is not None:
+        entries.append({
+            "code": "reference_example",
+            "kind": "process_exemplar",
+            "question_id": "",
+            "stage": "subquestion_generator",
+            "slot": slot_number,
+            "cognitive_process": cognitive_process,
+            "source": str(few_shot_dir),
+            "content": process_exemplar,
+            "timestamp": "",
+        })
+    return entries
+
+
 def build_subquestion_user_prompt(
     核心問題: str,
     文本: object,
@@ -1207,8 +1267,10 @@ def build_subquestion_user_prompt(
                         matching_examples.append(ex)
                         break
 
+    _chosen_ex: dict | None = None
     if matching_examples or fallback_examples:
         ex = rng.choice(matching_examples or fallback_examples)
+        _chosen_ex = ex
         q = ex.get("question", ex)
         if isinstance(q, dict) and q.get("subquestions"):
             matching_subquestions = [
@@ -1287,12 +1349,16 @@ def build_subquestion_user_prompt(
     process_instruction = _INSTRUCTIONS.get("認知歷程", {}).get(cognitive_process, "")
     domain_instruction = _content_domain_instruction(params)
     process_exemplar_section = ""
+    _chosen_process_exemplar: dict | None = None
+    _process_exemplar_source: str = ""
     if not disable_reference_fewshot:
         process_exemplars = load_process_exemplars().get(cognitive_process, [])
         if process_exemplars:
+            _chosen_process_exemplar = rng.choice(process_exemplars)
+            _process_exemplar_source = str(few_shot_dir)
             process_exemplar_section = "\n\n" + _format_process_exemplar(
                 cognitive_process,
-                rng.choice(process_exemplars),
+                _chosen_process_exemplar,
             )
     config_parts = [f"題型={q_type}"]
     if cfg is not None and cfg.instruction:
@@ -1408,4 +1474,10 @@ def build_subquestion_user_prompt(
 5. **誘答分析**：本小題若為 `選擇題`，`誘答分析` **必須**同時涵蓋題目所有選項標籤（A/B/C/D）；正確選項填「正確答案：…」，其餘選項以認知偏誤角度描述其針對的錯誤概念。若為 `開放式建構反應題`，可留空 `{{}}` 或使用 `{{"常見錯誤": "..."}}` 描述一項最常見錯誤。
 6. 若提供參考範例，範例僅供題材與格式參考；評分尺度以本提示的評分指引為準，不以範例中的舊版代號為準。
 7. 請只輸出一道小題的 JSON，不要輸出其他文字。
-""", all_image_paths
+""", all_image_paths, _build_ss_subq_ref_entries(
+    ex=_chosen_ex,
+    process_exemplar=_chosen_process_exemplar,
+    cognitive_process=cognitive_process,
+    few_shot_dir=few_shot_dir,
+    slot_number=slot_number,
+)

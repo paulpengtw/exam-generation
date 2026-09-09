@@ -37,6 +37,7 @@ from server.generate.models import (
 from server.generate.persistence import (
     make_exchange_recorder,
     make_figure_policy_trail_recorder,
+    make_reference_example_record_recorder,
     persist_generation_record,
 )
 from server.generate.subjects import (
@@ -187,6 +188,7 @@ class _RunContext:
     emit_pipeline: Any  # Callable[..., None] from make_pipeline_emitter
     generation_log_id: uuid.UUID | None
     figure_policy_recorder: Any
+    reference_example_recorder: Any
     retention_days: int
     session_factory: Any
     next_order: Any  # Callable[[], int]
@@ -228,6 +230,11 @@ def _build_run_context(
         loop=loop,
         session_factory=session_factory,
     )
+    reference_example_recorder = make_reference_example_record_recorder(
+        generation_log_id=generation_log_id,
+        loop=loop,
+        session_factory=session_factory,
+    )
 
     def _next_order() -> int:
         with order_lock:
@@ -255,6 +262,7 @@ def _build_run_context(
         emit_pipeline=make_pipeline_emitter(loop, queue),
         generation_log_id=generation_log_id,
         figure_policy_recorder=figure_policy_recorder,
+        reference_example_recorder=reference_example_recorder,
         retention_days=config.llm_exchange_retention_days,
         session_factory=session_factory,
         next_order=_next_order,
@@ -278,6 +286,7 @@ def _worker_one(
         next_order=ctx.next_order,
     )
     figure_policy_recorder = ctx.figure_policy_recorder
+    reference_example_recorder = ctx.reference_example_recorder
     question_client.set_observer(
         make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
     )
@@ -285,6 +294,7 @@ def _worker_one(
     emit_trail_entry = make_trail_emitter(ctx.loop, ctx.queue)
     verification_trail: list[dict[str, Any]] = []
     figure_policy_trail: list[dict[str, Any]] = []
+    reference_example_entries: list[dict[str, Any]] = []
 
     def capture_trail_entry(entry: Any) -> None:
         payload = (
@@ -305,6 +315,16 @@ def _worker_one(
         emit_trail_entry(entry)
         if figure_policy_recorder is not None:
             figure_policy_recorder(entry)
+
+    def capture_reference_example_entry(entry: Any) -> None:
+        payload = (
+            entry.model_dump(mode="json")
+            if hasattr(entry, "model_dump")
+            else entry
+        )
+        reference_example_entries.append(payload)
+        if reference_example_recorder is not None:
+            reference_example_recorder(entry)
 
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:
@@ -346,6 +366,7 @@ def _worker_one(
             on_question_update=emit_question_update,
             on_trail_entry=None if ctx.params.skip_verify else capture_trail_entry,
             on_figure_policy_entry=capture_figure_policy_entry,
+            on_reference_example_entry=capture_reference_example_entry,
             prior_scopes=prior_snapshot,
             balanced_batch=ctx.balanced_batch,
         )
@@ -375,6 +396,8 @@ def _worker_one(
             result_event["verification_trail"] = verification_trail
         if figure_policy_trail:
             result_event["figure_policy_trail"] = figure_policy_trail
+        if reference_example_entries:
+            result_event["reference_example_entries"] = reference_example_entries
         ctx.loop.call_soon_threadsafe(
             ctx.queue.put_nowait,
             result_event,
@@ -492,6 +515,7 @@ async def generate_question_stream(
                     session_factory=_session_factory,
                     verification_trail_json=event.get("verification_trail"),
                     figure_policy_trail_json=event.get("figure_policy_trail"),
+                    reference_example_record_json=event.get("reference_example_entries"),
                 )
             yield event
             if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):
@@ -502,5 +526,7 @@ async def generate_question_stream(
         finally:
             if ctx.figure_policy_recorder is not None:
                 await ctx.figure_policy_recorder.flush()
+            if ctx.reference_example_recorder is not None:
+                await ctx.reference_example_recorder.flush()
         if renderer_pool is not None and html_renderer is not None:
             await renderer_pool.put(html_renderer)

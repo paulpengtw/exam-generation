@@ -205,6 +205,20 @@ export type FigurePolicyTrailEntry =
   | FigurePolicyWarningEntry
   | FigurePolicyDataInconsistencyEntry;
 
+export interface ReferenceExampleEntryShape {
+  code: "reference_example";
+  kind: "example" | "process_exemplar";
+  question_id: string;
+  stage: string;
+  slot?: number | null;
+  description?: string;
+  source: string;
+  content?: unknown;
+  images?: Array<{ path: string; description?: string }>;
+  cognitive_process?: string;
+  timestamp: string;
+}
+
 export type DraftPhase = "draft" | "image" | "verified" | "corrected";
 
 export interface GeneratedQuestion {
@@ -214,6 +228,7 @@ export interface GeneratedQuestion {
   isFinal: boolean;
   trail?: VerificationTrailEntry[];
   figurePolicyTrail?: FigurePolicyTrailEntry[];
+  referenceExampleEntries?: ReferenceExampleEntryShape[];
 }
 
 export type LlmCallEvent =

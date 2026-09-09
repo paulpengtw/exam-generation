@@ -641,3 +641,15 @@ Default five-role vocabulary, label string equals role name. See `docs/agents/tr
 ### Domain docs
 
 Single-context — `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
+
+## 參考範例紀錄 (Reference Example Record) — Issue #670
+
+Each question-generation run now records which few-shot examples were drawn. The record is stored as `reference_example_record_json` (a JSON list) on both `generation_logs` and `generation_records` tables (migration `d9e5f2a3b7c1`).
+
+**Entry kinds:**
+- `kind="example"` — a single-question or text few-shot example
+- `kind="process_exemplar"` — an SS/NS cognitive-process exemplar
+
+**Data flow:** `build_text_user_fn` / `build_subquestion_user_fn` return 3-tuples `(text, images, entries)`. `generate_one_core` emits each entry via `on_reference_example_entry`. `service.py` captures entries in `capture_reference_example_entry`, stages them to the DB via `ReferenceExampleRecordRecorder`, and persists them in `reference_example_record_json` on the `GenerationRecord`. The history detail API returns the field as `reference_example_record`; `QuestionCard` renders it via `ReferenceExampleRecordSection`.
+
+**RNG allowlist:** All 10 few-shot RNG draws in the context builders are covered by `RNG_ALLOWLIST` in `tests/test_generation_sampler_allowlist.py` and now carry `"; disclosed as 參考範例紀錄"` in their reason strings.

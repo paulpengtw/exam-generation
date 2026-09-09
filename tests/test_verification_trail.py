@@ -54,9 +54,9 @@ def _stub_spec(verification: VerificationResult) -> SubjectGenerationSpec:
     return SubjectGenerationSpec(
         few_shot_subdir="math",
         build_text_system_fn=lambda _params: ("system", {}),
-        build_text_user_fn=lambda *_args: ("user", []),
+        build_text_user_fn=lambda *_args: ("user", [], []),
         build_subquestion_system_fn=lambda _stage_ctx: "sub-system",
-        build_subquestion_user_fn=lambda *_args: ("sub-user", []),
+        build_subquestion_user_fn=lambda *_args: ("sub-user", [], []),
         parse_text_shell_fn=lambda _raw, question_id, _params, _model: SimpleNamespace(
             id=question_id,
             subquestions=[],
@@ -89,9 +89,9 @@ def _snapshot_spec(verdicts: list[VerificationResult]) -> SubjectGenerationSpec:
     return SubjectGenerationSpec(
         few_shot_subdir="math",
         build_text_system_fn=lambda _params: ("system", {}),
-        build_text_user_fn=lambda *_args: ("user", []),
+        build_text_user_fn=lambda *_args: ("user", [], []),
         build_subquestion_system_fn=lambda _stage_ctx: "sub-system",
-        build_subquestion_user_fn=lambda *_args: ("sub-user", []),
+        build_subquestion_user_fn=lambda *_args: ("sub-user", [], []),
         parse_text_shell_fn=parse_text_shell,
         parse_subquestion_fn=lambda _raw, _question_id, _params, index: SimpleNamespace(
             序號=index,

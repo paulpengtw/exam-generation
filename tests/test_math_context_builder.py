@@ -35,7 +35,7 @@ def test_math_user_prompt_carries_disclaimer_when_content_type_is_image(
     tmp_path: Path,
 ) -> None:
     params = sample_params(seed=1, content_type="含圖片")
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER in prompt
 
 
@@ -43,7 +43,7 @@ def test_math_user_prompt_omits_disclaimer_when_content_type_is_text(
     tmp_path: Path,
 ) -> None:
     params = sample_params(seed=1, content_type="純文字")
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER not in prompt
 
 
@@ -58,7 +58,7 @@ def test_math_user_prompt_uses_pinned_math_thinking_and_core_competency(
         content_type="純文字",
     )
 
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "- **數學思考**：運用、形成" in prompt
     assert "- **核心素養（限定使用）**：數-J-A2" in prompt

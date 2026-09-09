@@ -311,8 +311,9 @@ def build_user_prompt(
 ) -> tuple[str, list[Path]]:
     """Build the user prompt with sampled parameters and few-shot examples.
 
-    Returns (prompt_text, few_shot_image_paths). Math currently returns an
+    Returns (prompt_text, few_shot_image_paths, reference_entries). Math returns an
     empty image list because the math few-shot loader is JSON-based.
+    Reference entries capture the few-shot examples drawn for this prompt.
     """
     if rng is None:
         rng = random.Random(params.seed)
@@ -447,6 +448,7 @@ def build_user_prompt(
             )
         few_shot_text = "\n\n".join(example_texts)
     else:
+        selected = []
         few_shot_text = "（此風格暫無範例，請根據指定條件自行設計。）"
 
     grade_range = f"{min(_GRADES)}-{max(_GRADES)}年級"
@@ -472,7 +474,22 @@ def build_user_prompt(
         prior_scopes_block=prior_scopes_block,
         few_shot_examples=few_shot_text,
     )
-    return text, []
+    ref_entries = [
+        {
+            "code": "reference_example",
+            "kind": "example",
+            "question_id": "",
+            "stage": "generator",
+            "slot": None,
+            "description": ex.get("description", ""),
+            "source": str(few_shot_dir),
+            "content": ex.get("question", ex),
+            "images": [],
+            "timestamp": "",
+        }
+        for ex in selected
+    ]
+    return text, [], ref_entries
 
 
 def _math_group_few_shot_text(
@@ -491,7 +508,7 @@ def _math_group_few_shot_text(
             flattened.append(example)
 
     if not flattened:
-        return "（目前暫無數學題組題範例，請根據指定條件自行設計。）"
+        return "（目前暫無數學題組題範例，請根據指定條件自行設計。）", []
 
     selected = rng.sample(flattened, min(2, len(flattened)))
     rendered: list[str] = []
@@ -508,7 +525,7 @@ def _math_group_few_shot_text(
             f"### 範例 {index}：{example.get('description', '')}\n"
             f"```json\n{json.dumps(question, ensure_ascii=False, indent=2)}\n```"
         )
-    return "\n\n".join(rendered)
+    return "\n\n".join(rendered), selected
 
 
 def build_text_system_prompt(
@@ -573,7 +590,7 @@ def build_text_user_prompt(
     if rng is None:
         rng = random.Random(params.seed)
 
-    text, image_paths = build_user_prompt(
+    text, image_paths, _base_entries = build_user_prompt(
         params,
         few_shot_dir,
         rng=rng,
@@ -613,11 +630,11 @@ def build_text_user_prompt(
     reference_start = text.find("\n## 參考範例\n")
     reminder_start = text.find("\n## 重要提醒\n", reference_start)
     if reference_start >= 0 and reminder_start >= 0:
-        examples = (
-            "（目前停用參考範例，請根據指定條件自行設計。）"
-            if disable_reference_fewshot
-            else _math_group_few_shot_text(few_shot_dir, rng)
-        )
+        if disable_reference_fewshot:
+            examples = "（目前停用參考範例，請根據指定條件自行設計。）"
+            _group_selected: list = []
+        else:
+            examples, _group_selected = _math_group_few_shot_text(few_shot_dir, rng)
         text = (
             text[:reference_start]
             + "\n## 參考範例\n\n"
@@ -639,7 +656,22 @@ def build_text_user_prompt(
 4. 請依指定的學習內容與數學思考設計小題，並確保每道小題可根據共用文本作答。
 5. 只輸出 JSON 格式的結果。
 """
-    return text, image_paths
+    group_ref_entries = [
+        {
+            "code": "reference_example",
+            "kind": "example",
+            "question_id": "",
+            "stage": "text_generator",
+            "slot": None,
+            "description": ex.get("description", ""),
+            "source": str(few_shot_dir),
+            "content": ex.get("question", ex),
+            "images": [],
+            "timestamp": "",
+        }
+        for ex in _group_selected
+    ]
+    return text, image_paths, group_ref_entries
 
 
 def build_subquestion_system_prompt(
@@ -710,11 +742,11 @@ def build_subquestion_user_prompt(
     performance_lines = "\n".join(
         f"  - {item.編碼}：{item.說明}" for item in params.學習表現
     ) or "  - （依課綱自行選用）"
-    few_shot_text = (
-        "（目前停用參考範例，請根據指定條件自行設計。）"
-        if disable_reference_fewshot
-        else _math_group_few_shot_text(few_shot_dir, rng, subquestion_type=q_type)
-    )
+    if disable_reference_fewshot:
+        few_shot_text = "（目前停用參考範例，請根據指定條件自行設計。）"
+        _subq_selected: list = []
+    else:
+        few_shot_text, _subq_selected = _math_group_few_shot_text(few_shot_dir, rng, subquestion_type=q_type)
     source_text = json.dumps(取材來源, ensure_ascii=False, indent=2)
     slot_number = sq_plan.get("序號", 1)
     return f"""\
@@ -761,4 +793,18 @@ def build_subquestion_user_prompt(
 2. 題型必須嚴格遵守本小題規劃中的 `題型`，出題概念需回應規劃中的能力提示。
 3. 請輸出 `題目`、`答案`、`答案解析`、`誘答分析`、`學習內容`、`學習表現` 與 `出題概念`。
 4. 只輸出一道小題的 JSON，不要輸出其他文字。
-""", []
+""", [], [
+    {
+        "code": "reference_example",
+        "kind": "example",
+        "question_id": "",
+        "stage": "subquestion_generator",
+        "slot": slot_number,
+        "description": ex.get("description", ""),
+        "source": str(few_shot_dir),
+        "content": ex.get("question", ex),
+        "images": [],
+        "timestamp": "",
+    }
+    for ex in _subq_selected
+]

@@ -189,7 +189,7 @@ def test_new_social_studies_prompts_use_native_scoring_language() -> None:
 def test_few_shot_prompt_defers_scoring_scale_to_current_instructions(tmp_path: Path) -> None:
     params = sample_params(seed=1, q_type=[QuestionType("選擇題")])
 
-    prompt, _images = build_user_prompt(
+    prompt, _images, _draws = build_user_prompt(
         params,
         tmp_path,
         disable_reference_fewshot=False,

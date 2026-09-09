@@ -88,7 +88,7 @@ def test_subq_sys_prompt_grade11_example_uses_stage5_codes() -> None:
 def test_subq_user_prompt_must_not_wording_grade11() -> None:
     """子題 user prompt must use 'must not' wording, not soft '應優先使用' wording."""
     params = sample_params(grade=11, seed=7)
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="test",
         文本="test",
         取材來源=["test"],
@@ -108,7 +108,7 @@ def test_subq_user_prompt_must_not_wording_grade11() -> None:
 def test_subq_user_prompt_must_not_wording_grade8() -> None:
     """Grade-8 子題 user prompt must also use hardened 'must not' wording."""
     params = sample_params(grade=8, seed=3)
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="test",
         文本="test",
         取材來源=["test"],

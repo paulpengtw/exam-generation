@@ -101,7 +101,7 @@ def test_ss_text_user_prompt_no_trailing_whitespace(
     params = ss_sample_params(seed=seed)
     mode = "均衡" if balanced_batch else "隨機"
 
-    prompt, _ = ss_build_text_user_prompt(
+    prompt, _, _draws = ss_build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(seed),
@@ -155,7 +155,7 @@ def test_ss_subquestion_user_prompt_no_trailing_whitespace(
         "出題概念": "評量學生能否理解工業革命對社會的影響",
     }
 
-    prompt, _ = ss_build_subquestion_user_prompt(
+    prompt, _, _draws = ss_build_subquestion_user_prompt(
         核心問題="工業革命如何改變勞動條件？",
         文本="工業革命始於十八世紀英國，改變了生產方式與勞動關係。",
         取材來源=["教科書示範素材"],
@@ -200,7 +200,7 @@ def test_ns_text_user_prompt_no_trailing_whitespace(
     """
     params = ns_sample_params(seed=seed)
 
-    prompt, _ = ns_build_text_user_prompt(
+    prompt, _, _draws = ns_build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(seed),
@@ -253,7 +253,7 @@ def test_ns_subquestion_user_prompt_no_trailing_whitespace(
         "出題概念": "評量學生能否以科學角度解釋能量守恆現象",
     }
 
-    prompt, _ = ns_build_subquestion_user_prompt(
+    prompt, _, _draws = ns_build_subquestion_user_prompt(
         核心問題="能量守恆如何在日常生活中體現？",
         文本="能量守恆定律指出能量不會憑空產生或消失，只會從一種形式轉換為另一種形式。",
         取材來源=["PISA科學素養範例"],

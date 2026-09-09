@@ -22,14 +22,14 @@ def _brief() -> CreativeBrief:
 
 def test_without_brief_prompt_matches_current_template(tmp_path) -> None:
     params = sample_params(seed=7)
-    text_before, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    text_before, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "創意取材角度" not in text_before
     assert "## 創意指引" not in text_before
 
 
 def test_with_brief_rewrites_context_line_in_user_prompt(tmp_path) -> None:
     params = sample_params(seed=7).model_copy(update={"creative_brief": _brief()})
-    text, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    text, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert (
         "- **情境**：個人（創意取材角度：以居家防疫日記串起個人與公共衛生決策；"
         "參考取材點：病患日記、家庭記事本）"
@@ -42,7 +42,7 @@ def test_with_brief_rewrites_context_line_in_user_prompt(tmp_path) -> None:
 def test_with_brief_but_empty_hooks_omits_參考取材點(tmp_path) -> None:
     brief = CreativeBrief(selected_context="公共", 題材_angle="市議會辯論觀點", framing_hooks=[])
     params = sample_params(seed=7).model_copy(update={"creative_brief": brief})
-    text, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    text, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "- **情境**：公共（創意取材角度：市議會辯論觀點）" in text
     assert "參考取材點" not in text
 
@@ -60,7 +60,7 @@ def test_system_prompt_appends_創意指引_block_only_with_brief() -> None:
 def test_user_topic_override_still_wins_over_brief(tmp_path) -> None:
     """A user-typed topic replaces the 情境 line entirely; brief text is not injected."""
     params = sample_params(seed=7).model_copy(update={"creative_brief": _brief()})
-    text, _ = build_text_user_prompt(
+    text, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(1),

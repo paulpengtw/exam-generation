@@ -19,12 +19,12 @@ from tests.server.generate_test_utils import resolved_generate_params
 def test_ns_default_call_is_byte_identical(tmp_path) -> None:
     params = sample_params(seed=5)
 
-    default_prompt, _ = build_text_user_prompt(
+    default_prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),
     )
-    explicit_random_prompt, _ = build_text_user_prompt(
+    explicit_random_prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),
@@ -39,7 +39,7 @@ def test_ns_default_call_is_byte_identical(tmp_path) -> None:
 def test_ns_balanced_batch_injects_the_spread_instruction(tmp_path) -> None:
     params = sample_params(seed=5)
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),
@@ -194,7 +194,7 @@ def test_ns_balanced_instruction_coexists_with_prior_scopes_block(tmp_path) -> N
         PriorScope(summary="光合作用如何將光能轉換為化學能？", codes=["INc-IV-1"]),
     ]
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(17),

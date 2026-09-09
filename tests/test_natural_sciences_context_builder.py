@@ -90,7 +90,7 @@ def test_natural_sciences_sampler_keeps_subcontext_under_context() -> None:
 def test_natural_sciences_prompt_includes_pisa_and_curriculum(tmp_path: Path) -> None:
     params = sample_params(seed=1, content_type="純文字")
 
-    prompt, images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, images, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert images == []
     assert "PISA Science" in prompt
@@ -134,19 +134,19 @@ def test_ns_content_type_instructions_omit_disclaimer_for_text_only() -> None:
 
 def test_ns_user_prompt_carries_disclaimer_for_image_content_type(tmp_path) -> None:
     params = sample_params(seed=1, content_type="含圖片")
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER in prompt
 
 
 def test_ns_user_prompt_carries_disclaimer_for_graphs_charts_tables(tmp_path) -> None:
     params = sample_params(seed=1, content_type="graphs/charts/tables")
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER in prompt
 
 
 def test_ns_user_prompt_omits_disclaimer_for_text_only(tmp_path) -> None:
     params = sample_params(seed=1, content_type="純文字")
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER not in prompt
 
 
@@ -159,8 +159,8 @@ def test_ns_visual_prompts_declare_figure_kind_and_accept_free_text(tmp_path: Pa
         sub_question_count=3,
         subquestion_configs=[{"content_type": "含圖片", "figure_kind": "電路圖"}, {}, {}],
     )
-    top_prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
-    sub_prompt, _ = build_subquestion_user_prompt(
+    top_prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    sub_prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["來源A"],
@@ -198,7 +198,7 @@ def test_natural_sciences_text_word_limit_is_not_rendered_in_per_subquestion_con
     ).model_copy(update={"text_word_limit": 321})
     cfg = params.subquestion_configs[0]
 
-    subquestion_prompt, _ = build_subquestion_user_prompt(
+    subquestion_prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["來源A"],
@@ -212,7 +212,7 @@ def test_natural_sciences_text_word_limit_is_not_rendered_in_per_subquestion_con
         rng=random.Random(1),
         cfg=cfg,
     )
-    text_prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    text_prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "題目字數上限=80" in subquestion_prompt
     assert "選項字數上限=30" in subquestion_prompt
@@ -228,14 +228,14 @@ def test_natural_sciences_text_word_limit_is_not_rendered_in_per_subquestion_con
 def test_text_prompt_includes_level6_descriptor_verbatim(tmp_path: Path) -> None:
     """When 題組 targets level 6, the full PISA descriptor must appear verbatim."""
     params = sample_params(seed=1, reporting_scale="6", content_type="純文字")
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert _LEVEL_6_DESCRIPTOR in prompt
 
 
 def test_text_prompt_level6_excludes_level2_descriptor(tmp_path: Path) -> None:
     """Targeting level 6 must NOT emit all eight descriptors — level-2 text absent."""
     params = sample_params(seed=1, reporting_scale="6", content_type="純文字")
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert _LEVEL_2_DESCRIPTOR not in prompt
 
 
@@ -244,7 +244,7 @@ def test_text_prompt_per_subquestion_target_level_in_config(tmp_path: Path) -> N
     params = sample_params(
         seed=1, reporting_scale="6", sub_question_count=3, content_type="純文字"
     )
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "## 各小題配置" in prompt
     # All three 小題 should show their target level (sampler inherits 題組-level → "6")
     assert prompt.count("目標報告等級=6") >= 3
@@ -255,5 +255,5 @@ def test_text_prompt_no_reporting_scale_block_when_none(tmp_path: Path) -> None:
     params = sample_params(seed=1, content_type="純文字")
     # Ensure params has no reporting_scale
     assert params.reporting_scale is None  # type: ignore[attr-defined]
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "Reporting Scale" not in prompt

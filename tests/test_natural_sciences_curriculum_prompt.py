@@ -75,7 +75,7 @@ def test_subquestion_system_prompt_accepts_stage_scoped_texts():
 
 def test_user_prompt_stage_follows_grade(tmp_path: Path):
     params = sample_params(grade=11, seed=3)
-    prompt, _ = build_user_prompt(
+    prompt, _, _draws = build_user_prompt(
         params, tmp_path, rng=random.Random(3)
     )
     assert "11年級（第五學習階段）" in prompt
@@ -84,7 +84,7 @@ def test_user_prompt_stage_follows_grade(tmp_path: Path):
 def test_subquestion_user_prompt_stage_follows_grade(tmp_path: Path):
     params = sample_params(grade=10, seed=3)
     plan = {"序號": 1, "題型": params.題型.value, "出題概念": "測試"}
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="核心",
         文本="文本",
         取材來源=["來源"],

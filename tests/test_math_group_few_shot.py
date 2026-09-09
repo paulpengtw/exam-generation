@@ -12,10 +12,11 @@ def test_math_group_few_shot_is_loaded_from_an_isolated_style_directory() -> Non
     flat = load_few_shot_examples(few_shot_dir, "text_only")
 
     assert grouped
-    assert "題組示例" in _math_group_few_shot_text(
+    _group_text, _group_sel = _math_group_few_shot_text(
         few_shot_dir,
         random.Random(3),
     )
+    assert "題組示例" in _group_text
     assert all(
         "subquestions" not in example.get("question", example)
         for loaded in flat

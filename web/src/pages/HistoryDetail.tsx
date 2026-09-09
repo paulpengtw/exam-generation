@@ -171,6 +171,7 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
               isFinal
               trail={detail.verification_trail}
               figurePolicyTrail={detail.figure_policy_trail}
+              referenceExampleEntries={detail.reference_example_record as unknown as import("../hooks/useGenerate").ReferenceExampleEntryShape[] | null}
             />
           )
         )}

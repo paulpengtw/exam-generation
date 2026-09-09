@@ -24,7 +24,7 @@ from src.social_studies.schemas import CoreCompetency
 def test_topic_replaces_context_in_social_studies_prompt(tmp_path) -> None:
     params = sample_params(seed=1)
 
-    prompt, images = build_user_prompt(
+    prompt, images, _draws = build_user_prompt(
         params,
         tmp_path,
         rng=random.Random(1),
@@ -41,24 +41,24 @@ def test_text_instruction_appears_only_in_social_text_generator_prompt(tmp_path)
     params = sample_params(seed=1, content_type="純文字")
     instruction = "請聚焦地方自治中的證據比較"
 
-    prompt, _ = build_text_user_prompt(
+    prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(1),
         text_instruction=instruction,
     )
-    prompt_without_instruction, _ = build_text_user_prompt(
+    prompt_without_instruction, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(1),
     )
-    prompt_with_empty_instruction, _ = build_text_user_prompt(
+    prompt_with_empty_instruction, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         rng=random.Random(1),
         text_instruction="",
     )
-    subquestion_prompt, _ = build_subquestion_user_prompt(
+    subquestion_prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["來源A"],
@@ -81,7 +81,7 @@ def test_social_text_prompt_offers_only_pinned_core_competencies(tmp_path) -> No
         content_type="純文字",
     )
 
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "- **核心素養（限定使用）**：社-J-A2" in prompt
     assert "社-J-C2" not in prompt
@@ -90,7 +90,7 @@ def test_social_text_prompt_offers_only_pinned_core_competencies(tmp_path) -> No
 def test_plain_text_content_type_forbids_chart_spec(tmp_path) -> None:
     params = sample_params(seed=1, content_type="純文字")
 
-    prompt, images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, images, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert images == []
     assert "- **文本素材類型**：純文字" in prompt
@@ -100,7 +100,7 @@ def test_plain_text_content_type_forbids_chart_spec(tmp_path) -> None:
 def test_graph_chart_table_content_type_requires_visual_spec(tmp_path) -> None:
     params = sample_params(seed=1, content_type="graphs/charts/tables")
 
-    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _images, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "- **文本素材類型**：graphs/charts/tables" in prompt
     assert "本題組必須包含圖表或表格素材" in prompt
@@ -110,7 +110,7 @@ def test_graph_chart_table_content_type_requires_visual_spec(tmp_path) -> None:
 def test_global_image_content_type_requires_top_level_visual_spec(tmp_path) -> None:
     params = sample_params(seed=1, content_type="含圖片")
 
-    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _images, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "- **文本素材類型**：含圖片" in prompt
     assert "全域 `文本素材類型` 是 `含圖片` 或 `graphs/charts/tables`" in prompt
@@ -123,7 +123,7 @@ def test_social_visual_drafting_and_repair_prompts_require_declared_figure_kind(
 ) -> None:
     params = sample_params(seed=1, content_type="含圖片")
 
-    drafting_user, _images = build_user_prompt(
+    drafting_user, _images, _draws = build_user_prompt(
         params,
         tmp_path,
         rng=random.Random(1),
@@ -142,7 +142,7 @@ def test_social_visual_drafting_and_repair_prompts_require_declared_figure_kind(
 def test_custom_content_type_is_used_as_effective_type(tmp_path) -> None:
     params = sample_params(seed=1, content_type="timeline with source excerpts")
 
-    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _images, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "- **文本素材類型**：timeline with source excerpts" in prompt
     assert "請將題目內容類型視為「timeline with source excerpts」" in prompt
@@ -170,7 +170,7 @@ def test_per_subquestion_config_is_rendered_in_prompt(tmp_path) -> None:
         ],
     )
 
-    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _images, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "- **題型**：由各小題配置指定" in prompt
     assert "- **小題數量**：3" in prompt
@@ -211,7 +211,7 @@ def test_social_text_word_limit_is_not_rendered_in_per_subquestion_config(tmp_pa
     ).model_copy(update={"text_word_limit": 321})
     cfg = params.subquestion_configs[0]
 
-    subquestion_prompt, _ = build_subquestion_user_prompt(
+    subquestion_prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["來源A"],
@@ -221,7 +221,7 @@ def test_social_text_word_limit_is_not_rendered_in_per_subquestion_config(tmp_pa
         rng=random.Random(1),
         cfg=cfg,
     )
-    text_prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    text_prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "題目字數上限=80" in subquestion_prompt
     assert "選項字數上限=30" in subquestion_prompt
@@ -243,7 +243,7 @@ def test_per_subquestion_config_renders_inherited_image_mode(tmp_path) -> None:
         ],
     )
 
-    prompt, _images = build_user_prompt(
+    prompt, _images, _draws = build_user_prompt(
         params,
         tmp_path,
         rng=random.Random(1),
@@ -262,7 +262,7 @@ def test_per_subquestion_config_renders_inherited_image_mode(tmp_path) -> None:
 def test_legacy_global_word_limits_render_when_no_row_config(tmp_path) -> None:
     params = sample_params(seed=1, question_word_limit=90, option_word_limit=20)
 
-    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _images, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "## 各小題配置" in prompt
     assert "每道小題題目字數上限：90 字" in prompt
@@ -287,7 +287,7 @@ def test_missing_subquestion_question_types_are_sampled(tmp_path) -> None:
     assert sampled_types[0] == "選擇題"
     assert all(cfg.question_type is not None for cfg in params.subquestion_configs)
 
-    prompt, _images = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _images, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "第1小題：題型=選擇題" in prompt
     assert "第2小題：題型=" in prompt
@@ -308,7 +308,7 @@ def test_build_subquestion_user_prompt_explicit_lc_lp_uses_cfg():
     sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "測試"}
     import pathlib
     few_shot_dir = pathlib.Path("data/social_studies/few_shot")
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["來源A"],
@@ -337,7 +337,7 @@ def test_build_subquestion_user_prompt_empty_cfg_uses_global_pool():
     cfg = SubQuestionConfig()  # empty
     sq_plan = {"序號": 1, "題型": "選擇題", "出題概念": "測試"}
     few_shot_dir = pathlib.Path("data/social_studies/few_shot")
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["來源A"],
@@ -395,8 +395,8 @@ def test_visual_prompts_steer_distinct_figure_kinds_and_show_known_pins(tmp_path
         ],
     )
 
-    parent_prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
-    sub_prompt, _ = __import__(
+    parent_prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    sub_prompt, _, _draws2 = __import__(
         "src.social_studies.context_builder",
         fromlist=["build_subquestion_user_prompt"],
     ).build_subquestion_user_prompt(
@@ -426,7 +426,7 @@ def test_visual_prompts_drop_hard_diversity_wording_when_kill_switch_is_on(tmp_p
         allow_duplicate_figure_kinds=True,
     )
 
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
 
     assert "圖像種類不得重複" not in prompt
     assert "圖像種類不得重複" not in build_text_system_prompt(params=params)
@@ -444,11 +444,11 @@ def test_ss_html_designer_guidance_carries_disclaimer() -> None:
 
 def test_ss_user_prompt_carries_disclaimer_for_image_content_type(tmp_path) -> None:
     params = sample_params(seed=1, content_type="含圖片")
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER in prompt
 
 
 def test_ss_user_prompt_omits_disclaimer_for_plain_text(tmp_path) -> None:
     params = sample_params(seed=1, content_type="純文字")
-    prompt, _ = build_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_user_prompt(params, tmp_path, rng=random.Random(1))
     assert IMAGE_DISCLAIMER not in prompt

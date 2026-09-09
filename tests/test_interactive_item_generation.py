@@ -201,7 +201,7 @@ def test_interactive_subquestion_prompts_define_drag_and_distractor_contract(tmp
         target_surface="數位",
         subquestion_configs=[{"question_type": "拖放題"}],
     )
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["測試來源"],
@@ -230,7 +230,7 @@ def test_interactive_subquestion_prompts_define_slider_and_wrong_zone_contract(t
         target_surface="數位",
         subquestion_configs=[{"question_type": "滑桿題"}],
     )
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["測試來源"],

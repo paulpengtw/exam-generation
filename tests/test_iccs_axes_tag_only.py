@@ -83,12 +83,12 @@ def test_text_and_subquestion_prompts_name_sampled_iccs_assignments(tmp_path) ->
     from src.social_studies.sampler import sample_params
 
     params = sample_params(seed=489, sub_question_count=3, content_type="純文字")
-    text_prompt, _ = build_text_user_prompt(
+    text_prompt, _, _draws = build_text_user_prompt(
         params,
         tmp_path,
         disable_reference_fewshot=True,
     )
-    sub_prompt, _ = build_subquestion_user_prompt(
+    sub_prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="測試核心問題",
         文本="測試文本",
         取材來源=["測試來源"],

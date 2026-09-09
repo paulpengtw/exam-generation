@@ -49,12 +49,12 @@ def test_new_era_social_prompt_builders_emit_no_pisa_axis_strings() -> None:
         sub_question_count=3,
     )
     few_shot_dir = ROOT / "data/social_studies/few_shot"
-    text_user_prompt, _ = build_text_user_prompt(
+    text_user_prompt, _, _draws = build_text_user_prompt(
         params,
         few_shot_dir,
         disable_reference_fewshot=True,
     )
-    subquestion_user_prompt, _ = build_subquestion_user_prompt(
+    subquestion_user_prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="社會制度如何影響公共生活？",
         文本="這是一段測試用共用文本。",
         取材來源=["測試資料"],

@@ -94,6 +94,7 @@ async def list_history(
             ),
             "verified": _verified(r.question_json or {}) if r.status == "completed" else False,
             "figure_policy_trail": r.figure_policy_trail_json,
+            "reference_example_record": r.reference_example_record_json,
         }
         for r in rows
     ]
@@ -227,6 +228,7 @@ async def get_history_detail(
         ),
         "verification_trail": row.verification_trail_json,
         "figure_policy_trail": row.figure_policy_trail_json,
+        "reference_example_record": row.reference_example_record_json,
     }
 
 

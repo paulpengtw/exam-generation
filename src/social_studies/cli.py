@@ -1631,7 +1631,7 @@ def build_generation_prompts(
     params = _with_text_word_limit(params, kwargs.pop("text_word_limit", None))
     spec = _ss_spec_for_batch(kwargs.pop("balanced_batch", False))
     kwargs.setdefault("core_question_callback", True)
-    system, user, images, _stage_ctx = build_text_generation_prompts(
+    system, user, images, _stage_ctx, _draws = build_text_generation_prompts(
         config, params, spec, **kwargs
     )
     return system, user, images
@@ -1683,6 +1683,7 @@ def generate_with_corrections(
     on_question_update: QuestionUpdateCallback | None = None,
     on_trail_entry: VerificationTrailCallback | None = None,
     on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+    on_reference_example_entry: "Callable | None" = None,
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
     balanced_batch: bool = False,
@@ -1711,6 +1712,7 @@ def generate_with_corrections(
         on_question_update=on_question_update,
         on_trail_entry=on_trail_entry,
         on_figure_policy_entry=on_figure_policy_entry,
+        on_reference_example_entry=on_reference_example_entry,
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
     )

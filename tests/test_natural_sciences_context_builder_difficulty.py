@@ -16,7 +16,7 @@ def test_ns_text_prompt_has_no_difficulty_section(tmp_path: Path) -> None:
     from src.natural_sciences.sampler import sample_params
 
     params = sample_params(seed=1)
-    prompt, _ = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
+    prompt, _, _draws = build_text_user_prompt(params, tmp_path, rng=random.Random(1))
     assert "## 難度要求" not in prompt
 
 
@@ -26,7 +26,7 @@ def test_ns_subquestion_prompt_has_no_difficulty_section(tmp_path: Path) -> None
 
     params = sample_params(seed=1)
     sq_plan = {"序號": 1, "題型": "Simple-multiple-choice", "出題概念": "test"}
-    prompt, _ = build_subquestion_user_prompt(
+    prompt, _, _draws = build_subquestion_user_prompt(
         核心問題="核心",
         文本="文本",
         取材來源=["來源"],
