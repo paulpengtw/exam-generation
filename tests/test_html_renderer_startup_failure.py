@@ -156,6 +156,7 @@ def test_stop_after_failed_start_is_safe(monkeypatch: pytest.MonkeyPatch) -> Non
     r.stop()  # Must not raise.
 
 
+@pytest.mark.requires_browser
 def test_stop_is_idempotent_after_success() -> None:
     """Calling stop() twice after a successful start is safe."""
     r = PlaywrightRenderer()
@@ -231,6 +232,7 @@ def test_executor_thread_gone_after_failed_start(monkeypatch: pytest.MonkeyPatch
 # ─── Slice 5: control – successful round-trip ───────────────────────────
 
 
+@pytest.mark.requires_browser
 def test_successful_start_render_stop(tmp_path: Path) -> None:
     """Happy-path: start, render trivial HTML to PNG, stop."""
     html = "<html><body><p>hello</p></body></html>"

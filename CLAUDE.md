@@ -533,6 +533,10 @@ The bot container has ~8 GB total for the bot, Codex, and all active worktree la
 The `tests/test_curriculum_context*.py` tests spawn Python subprocesses, so keep their concurrency especially conservative.
 If `choom` is unavailable, preserve the lane cap and avoid broad parallel pytest runs.
 
+### Browser marker (`requires_browser`)
+
+Tests that launch a real Playwright Chromium browser are marked `@pytest.mark.requires_browser`.  Before the session runs any such test a single probe is made; if the browser is absent or broken, all marked tests are skipped with a message naming the fix command (`uv run playwright install chromium`), and the cause is written once to the terminal summary.  If no marked tests are collected the probe is skipped entirely, adding no startup cost.
+
 ### Environment Variables
 
 - `LLM_EXCHANGE_RETENTION_DAYS` (default `30`) — window in days for retaining `llm_exchanges` rows. Set to `0` to disable persistence entirely (no rows written, no pruning).
