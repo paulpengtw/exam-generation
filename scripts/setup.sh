@@ -2,11 +2,15 @@
 # scripts/setup.sh — Bootstrap the Python environment and Playwright browser.
 #
 # Usage:
-#   bash scripts/setup.sh           # Python-only (uv sync + playwright install chromium)
+#   bash scripts/setup.sh           # Python-only
 #   bash scripts/setup.sh --web     # Full-stack (also runs npm --prefix web install)
 #
-# The script is idempotent: `uv sync` is a no-op when already in sync, and
-# `playwright install` skips browsers already present in the cache
+# What it does (Python-only):
+#   1. uv sync --all-extras --all-groups  — installs all Python deps incl. fastapi/sqlalchemy
+#   2. uv run playwright install chromium — installs the Chromium binary (not part of uv sync)
+#
+# The script is idempotent: uv sync is a no-op when already in sync, and
+# playwright install skips browsers already present in the cache
 # (honouring PLAYWRIGHT_BROWSERS_PATH if set).
 #
 # Exit codes:
@@ -27,15 +31,20 @@ for arg in "$@"; do
     esac
 done
 
-echo "==> [1/2] Installing Python dependencies (uv sync)…"
-uv sync
+TOTAL=2
+if [ "$WEB" = true ]; then
+    TOTAL=3
+fi
 
-echo "==> [2/2] Installing Playwright Chromium binary (uv run playwright install chromium)…"
+echo "==> [1/${TOTAL}] Installing Python dependencies (uv sync --all-extras --all-groups)…"
+uv sync --all-extras --all-groups
+
+echo "==> [2/${TOTAL}] Installing Playwright Chromium binary (uv run playwright install chromium)…"
 echo "    (skips automatically if the browser is already cached)"
 uv run playwright install chromium
 
 if [ "$WEB" = true ]; then
-    echo "==> [3/3] Installing web dependencies (npm --prefix web install)…"
+    echo "==> [3/${TOTAL}] Installing web dependencies (npm --prefix web install)…"
     npm --prefix web install
 fi
 

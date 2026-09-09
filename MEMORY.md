@@ -19,3 +19,10 @@ Durable gotchas and decisions for all agents and developers working on this repo
    `uv run pytest` (and similar commands) then fail with:
    `Failed to spawn: pytest / No such file or directory`.
    Fix: `rm -rf .venv && uv sync` (or `bash scripts/setup.sh`).
+
+3. **Worktree venvs created with bare `uv sync` lack fastapi/sqlalchemy; server tests fail at collection.**
+   `uv sync` without flags installs only the default dependency group, omitting optional
+   extras such as `web` (fastapi, sqlalchemy, uvicorn).  Any test under `tests/server/`
+   that imports those packages will fail with `ModuleNotFoundError` at collection time.
+   Always use `uv sync --all-extras --all-groups` (what `bash scripts/setup.sh` does),
+   or match what CI runs: `uv sync --all-extras --all-groups`.

@@ -185,7 +185,7 @@ Use this if you want to generate questions locally without running the web stack
 git clone <repo-url>
 cd exam-generation
 
-bash scripts/setup.sh   # wraps `uv sync` + `uv run playwright install chromium`
+bash scripts/setup.sh   # installs all extras (fastapi, sqlalchemy, …) + Playwright Chromium binary
 cp .env.example .env
 # Edit .env — at minimum, set LLM_API_KEY
 

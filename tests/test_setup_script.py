@@ -2,7 +2,8 @@
 
 Verifies, without executing a real `uv sync`, that:
   (a) scripts/setup.sh is executable.
-  (b) Running it with `uv` stubbed records `sync` and
+  (b) Running it with `uv` stubbed records
+      `sync --all-extras --all-groups` and
       `run playwright install chromium` in that order.
   (c) A second run makes the same two calls (idempotency is delegated to
       Playwright's own cache check; the shim documents that both calls happen
@@ -78,7 +79,9 @@ def test_setup_script_calls_uv_sync_then_playwright_install(tmp_path: pathlib.Pa
     )
     lines = _read_log_lines(log)
     assert len(lines) >= 2, f"Expected at least 2 uv calls, got: {lines}"
-    assert lines[0] == "sync", f"First call should be 'sync', got {lines[0]!r}"
+    assert lines[0] == "sync --all-extras --all-groups", (
+        f"First call should be 'sync --all-extras --all-groups', got {lines[0]!r}"
+    )
     # The playwright install call may be prefixed with extra flags; the key tokens
     # must appear in the correct positions.
     assert "run" in lines[1], f"Second call should include 'run', got {lines[1]!r}"
@@ -115,8 +118,9 @@ def test_setup_script_idempotent(tmp_path: pathlib.Path) -> None:
     assert len(new_lines) >= 2, (
         f"Second run did not produce new uv calls; log after second run: {lines_after_second}"
     )
-    assert new_lines[0] == "sync", (
-        f"Second run first call should be 'sync', got {new_lines[0]!r}"
+    assert new_lines[0] == "sync --all-extras --all-groups", (
+        f"Second run first call should be 'sync --all-extras --all-groups', "
+        f"got {new_lines[0]!r}"
     )
     second_call = new_lines[1]
     assert "playwright" in second_call and "install" in second_call and "chromium" in second_call, (
