@@ -350,8 +350,6 @@ def _ns_validate_params(params: Any) -> None:
         for field in ("content_domain", "target_surface")
         if getattr(params, field, None) is not None
     ]
-    if params.text_instruction and params.text_instruction.strip():
-        unsupported_surface_fields.append("text_instruction")
     if unsupported_surface_fields:
         raise ValueError(
             "The following parameters are not supported for natural sciences: "
