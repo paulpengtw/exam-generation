@@ -273,7 +273,7 @@ export interface HistoryDetail {
   question_json: Record<string, unknown> | null;
   verification_trail: VerificationTrailEntry[] | null;
   figure_policy_trail: FigurePolicyTrailEntry[] | null;
-  reference_example_record: unknown[] | null;
+  reference_example_record: { disabled?: boolean; entries: unknown[] } | null;
 }
 
 export interface ListHistoryOpts {

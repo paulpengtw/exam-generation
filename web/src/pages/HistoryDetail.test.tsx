@@ -14,6 +14,20 @@ vi.mock("../api/client", () => ({
   downloadHistoryJson: downloadMock,
 }));
 
+vi.mock("../components/ReferenceExampleRecordSection", () => ({
+  default: ({ record }: { record?: { entries: unknown[] } | null }) => {
+    if (record === undefined) return null;
+    if (record === null) {
+      return <div data-testid="ref-section-no-record">No reference examples were recorded.</div>;
+    }
+    return (
+      <div data-testid="ref-section" data-entries={JSON.stringify(record.entries)}>
+        ref-section
+      </div>
+    );
+  },
+}));
+
 vi.mock("../components/QuestionCard", () => ({
   default: ({
     question,
@@ -447,6 +461,86 @@ describe("HistoryDetail", () => {
     expect(
       screen.queryByRole("button", { name: /Download JSON/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders ReferenceExampleRecordSection in the failed panel when a partial record is present", async () => {
+    const partialRecord = {
+      disabled: false,
+      entries: [
+        {
+          code: "reference_example",
+          kind: "example",
+          question_id: "ss-fail",
+          stage: "generator",
+          slot: null,
+          description: "partial entry",
+          source: "/some/path",
+          timestamp: "2026-09-10T00:00:00Z",
+        },
+      ],
+    };
+    getDetailMock.mockResolvedValueOnce({
+      id: "failed-with-record",
+      subject: "social_studies",
+      question_id: "",
+      created_at: "2026-09-10T00:00:00Z",
+      status: "failed",
+      error: "generation failed",
+      params_json: { subject: "social_studies" },
+      question_json: null,
+      reference_example_record: partialRecord,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/failed-with-record"]}>
+        <Routes>
+          <Route
+            path="/history/:id"
+            element={<HistoryDetail recordId="failed-with-record" />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("ref-section")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("ref-section")).toHaveAttribute(
+      "data-entries",
+      JSON.stringify(partialRecord.entries),
+    );
+  });
+
+  it("shows no-record message in the aborted panel when reference_example_record is null", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      id: "aborted-no-record",
+      subject: "social_studies",
+      question_id: "",
+      created_at: "2026-09-10T00:00:00Z",
+      status: "aborted",
+      error: null,
+      params_json: { subject: "social_studies" },
+      question_json: null,
+      reference_example_record: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/history/aborted-no-record"]}>
+        <Routes>
+          <Route
+            path="/history/:id"
+            element={<HistoryDetail recordId="aborted-no-record" />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("ref-section-no-record")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText("No reference examples were recorded."),
+    ).toBeInTheDocument();
   });
 
   it("marks a persisted figure-policy degradation on the history detail", async () => {

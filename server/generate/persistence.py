@@ -180,11 +180,12 @@ class ReferenceExampleRecordRecorder:
                         logger.warning("reference example record staging failed: %s", exc)
 
     async def _persist(self, entries: list[dict[str, Any]]) -> None:
+        record = {"disabled": False, "entries": entries}
         async with self._session_factory() as session:
             await session.execute(
                 update(GenerationLog)
                 .where(GenerationLog.id == self._generation_log_id)
-                .values(reference_example_record_json=entries)
+                .values(reference_example_record_json=record)
             )
             await session.commit()
 

@@ -326,6 +326,7 @@ def _worker_one(
             else entry
         )
         reference_example_entries.append(payload)
+        emit_trail_entry(entry)
         if reference_example_recorder is not None:
             reference_example_recorder(entry)
 
@@ -400,8 +401,10 @@ def _worker_one(
             result_event["verification_trail"] = verification_trail
         if figure_policy_trail:
             result_event["figure_policy_trail"] = figure_policy_trail
-        if reference_example_entries:
-            result_event["reference_example_entries"] = reference_example_entries
+        result_event["reference_example_record"] = {
+            "disabled": False,
+            "entries": reference_example_entries,
+        }
         ctx.loop.call_soon_threadsafe(
             ctx.queue.put_nowait,
             result_event,
@@ -522,7 +525,7 @@ async def generate_question_stream(
                     session_factory=_session_factory,
                     verification_trail_json=event.get("verification_trail"),
                     figure_policy_trail_json=event.get("figure_policy_trail"),
-                    reference_example_record_json=event.get("reference_example_entries"),
+                    reference_example_record_json=event.get("reference_example_record"),
                 )
             yield event
             if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):

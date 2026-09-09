@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 
 import QuestionCard from "../components/QuestionCard";
 import FigurePolicyTrailTimeline from "../components/FigurePolicyTrailTimeline";
+import ReferenceExampleRecordSection from "../components/ReferenceExampleRecordSection";
 import type { ExamQuestion } from "../hooks/useGenerate";
+import type { ReferenceExampleRecordShape } from "../components/ReferenceExampleRecordSection";
 import { useT } from "../i18n/useT";
 import {
   downloadHistoryJson,
@@ -161,6 +163,9 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
                 </pre>
               </div>
               <FigurePolicyTrailTimeline entries={detail.figure_policy_trail} />
+              <ReferenceExampleRecordSection
+                record={detail.reference_example_record as ReferenceExampleRecordShape | null}
+              />
             </section>
           ) : (
             <QuestionCard
@@ -171,7 +176,7 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
               isFinal
               trail={detail.verification_trail}
               figurePolicyTrail={detail.figure_policy_trail}
-              referenceExampleEntries={detail.reference_example_record as unknown as import("../hooks/useGenerate").ReferenceExampleEntryShape[] | null}
+              referenceExampleRecord={detail.reference_example_record as ReferenceExampleRecordShape | null}
             />
           )
         )}

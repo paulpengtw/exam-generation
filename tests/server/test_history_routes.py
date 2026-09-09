@@ -780,3 +780,56 @@ def test_download_excludes_the_persisted_verification_trail(tmp_path) -> None:
     finally:
         limiter.reset()
         asyncio.run(engine.dispose())
+
+
+def test_list_and_detail_return_the_persisted_reference_example_record(tmp_path) -> None:
+    app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
+    expected_record = {
+        "disabled": False,
+        "entries": [
+            {
+                "code": "reference_example",
+                "kind": "example",
+                "question_id": "ss_a_0",
+                "stage": "text_generator",
+                "slot": None,
+                "description": "ICCS test example",
+                "source": "data/social_studies/few_shot",
+                "timestamp": "2026-09-10T00:00:00Z",
+            }
+        ],
+    }
+
+    async def stamp_record() -> str:
+        async with SessionLocal() as session:
+            row = (
+                await session.execute(
+                    __import__("sqlalchemy").select(GenerationRecord).where(
+                        GenerationRecord.user_id == user_a,
+                        GenerationRecord.question_id == "ss_a_0",
+                    )
+                )
+            ).scalar_one()
+            row.reference_example_record_json = expected_record
+            await session.commit()
+            return str(row.id)
+
+    record_id = asyncio.run(stamp_record())
+    try:
+        with TestClient(app) as client:
+            list_response = client.get(
+                "/api/history",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            detail_response = client.get(
+                f"/api/history/{record_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        listed = next(item for item in list_response.json()["items"] if item["id"] == record_id)
+        assert listed["reference_example_record"] == expected_record
+        assert detail_response.status_code == 200
+        assert detail_response.json()["reference_example_record"] == expected_record
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
