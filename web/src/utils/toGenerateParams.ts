@@ -53,7 +53,7 @@ export function toGenerateParams(subject: string, params: FormParams): GenerateP
     math_thinking: subject === "math" ? params.math_thinking : undefined,
     topic: params.topic,
     core_question: params.core_question,
-    text_instruction: subject === "social_studies" ? params.text_instruction : undefined,
+    text_instruction: (subject === "social_studies" || subject === "natural_sciences") ? params.text_instruction : undefined,
     passage: params.passage,
     options: params.options,
     sub_context: subject === "natural_sciences" ? params.sub_context : undefined,

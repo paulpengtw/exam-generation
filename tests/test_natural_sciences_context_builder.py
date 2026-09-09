@@ -193,7 +193,6 @@ def test_natural_sciences_text_word_limit_is_not_rendered_in_per_subquestion_con
                 "question_type": question_type,
                 "question_word_limit": 80,
                 "option_word_limit": 30,
-                "text_word_limit": 321,
             }
         ],
     ).model_copy(update={"text_word_limit": 321})

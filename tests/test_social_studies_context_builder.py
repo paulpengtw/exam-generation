@@ -206,7 +206,6 @@ def test_social_text_word_limit_is_not_rendered_in_per_subquestion_config(tmp_pa
                 "question_type": "選擇題",
                 "question_word_limit": 80,
                 "option_word_limit": 30,
-                "text_word_limit": 321,
             }
         ],
     ).model_copy(update={"text_word_limit": 321})

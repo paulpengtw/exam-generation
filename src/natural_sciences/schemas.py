@@ -86,7 +86,6 @@ class SubQuestionConfig(BaseModel):
     figure_kind: str | None = None
     question_word_limit: int | None = None
     option_word_limit: int | None = None
-    text_word_limit: int | None = None
     reporting_scale: str | None = None
     learning_content: list[str] = Field(default_factory=list)
     learning_performance: list[str] = Field(default_factory=list)

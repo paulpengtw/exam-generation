@@ -350,8 +350,6 @@ def _ns_validate_params(params: Any) -> None:
         for field in ("content_domain", "target_surface")
         if getattr(params, field, None) is not None
     ]
-    if params.text_instruction and params.text_instruction.strip():
-        unsupported_surface_fields.append("text_instruction")
     if unsupported_surface_fields:
         raise ValueError(
             "The following parameters are not supported for natural sciences: "
@@ -372,6 +370,23 @@ def _ns_validate_params(params: Any) -> None:
                 f"reporting_scale {params.reporting_scale!r} is not a valid level; "
                 f"allowed values: {REPORTING_SCALE_ORDER}"
             )
+
+    # Issue #644: reject per-小題 config rows that carry text_word_limit (removed field).
+    # Full SubQuestionConfig.model_validate() is not used here because the wire
+    # SubQuestionConfig in server/generate/models.py deliberately allows extras
+    # (extra="allow") and there is a tolerance test for unknown question-type enum values.
+    if params.subquestion_configs:
+        try:
+            raw = json.loads(params.subquestion_configs)
+        except (TypeError, json.JSONDecodeError):
+            raw = []
+        if isinstance(raw, list):
+            for i, item in enumerate(raw):
+                if isinstance(item, dict) and "text_word_limit" in item:
+                    raise ValueError(
+                        f"subquestion_configs[{i}].text_word_limit is not a valid field; "
+                        "use the request-level text_word_limit instead (ADR 0023)"
+                    )
 
 
 def _ss_validate_params(params: Any) -> None:
@@ -441,6 +456,18 @@ def _ss_validate_params(params: Any) -> None:
                 raise ValueError(
                     "target_surface must be 數位 for digital-only question type(s): "
                     + ", ".join(blocked)
+                )
+
+    # Issue #644: reject per-小題 config rows that carry text_word_limit (removed field).
+    # Full SubQuestionConfig.model_validate() is not used here because the wire
+    # SubQuestionConfig in server/generate/models.py deliberately allows extras
+    # (extra="allow") and there is a tolerance test for unknown question-type enum values.
+    if isinstance(decoded, list):
+        for i, item in enumerate(decoded):
+            if isinstance(item, dict) and "text_word_limit" in item:
+                raise ValueError(
+                    f"subquestion_configs[{i}].text_word_limit is not a valid field; "
+                    "use the request-level text_word_limit instead (ADR 0023)"
                 )
 
 

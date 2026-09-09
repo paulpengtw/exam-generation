@@ -531,7 +531,7 @@ def _ns_build_text_system(params: SampledParams) -> tuple[str, dict]:
 
 def _ns_build_text_user(
     params, few_shot_dir,
-    user_passage, user_options, user_topic, user_core_question, _text_instruction,
+    user_passage, user_options, user_topic, user_core_question, text_instruction,
     image_generation_mode, disable_reference_fewshot, prior_scopes,
     core_question_callback,
     balanced_batch: bool = False,
@@ -544,6 +544,7 @@ def _ns_build_text_user(
         user_options=user_options,
         user_topic=user_topic,
         user_core_question=user_core_question,
+        text_instruction=text_instruction,
         image_generation_mode=image_generation_mode,
         disable_reference_fewshot=disable_reference_fewshot,
         prior_scopes=prior_scopes,

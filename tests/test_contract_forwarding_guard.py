@@ -191,6 +191,7 @@ FORWARDING_COMPLETENESS: dict[tuple[str, str], tuple[str, str]] = {
                 "options",
                 "topic",
                 "core_question",
+                "text_instruction",
                 "question_word_limit",
                 "option_word_limit",
                 "text_word_limit",
@@ -396,11 +397,11 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
-    # ── text instruction — social text-generator request pin; unwired elsewhere ──
+    # ── text instruction — text-generator request pin for SS and NS; rejected for math ──
     "text_instruction": {
         _MA: (REJECTED, ""),
         _SS: (FORWARDED, ""),
-        _NS: (REJECTED, ""),
+        _NS: (FORWARDED, ""),
     },
     # ── learning_performance — forwarded to every sampler directly ──
     "learning_performance": {
@@ -583,8 +584,9 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("core_question", _MA): (_svc._worker_one, "ctx.params.core_question"),
     ("core_question", _SS): (_svc._worker_one, "ctx.params.core_question"),
     ("core_question", _NS): (_svc._worker_one, "ctx.params.core_question"),
-    # text_instruction — social text-generator request pin (no resolver draw/default)
+    # text_instruction — text-generator request pin for SS and NS (no resolver draw/default)
     ("text_instruction", _SS): (_svc._worker_one, "ctx.params.text_instruction"),
+    ("text_instruction", _NS): (_svc._worker_one, "ctx.params.text_instruction"),
     # text_word_limit — forwarded in _worker_one (SS/NS) and into math's canonical sampler value
     ("text_word_limit", _MA): (
         _math_params_from_resolved_payload,
@@ -1001,7 +1003,8 @@ def test_classification_counts() -> None:
         f"({forwarded} forwarded, {rejected} rejected, {inapplicable} inapplicable)"
     )
     # Hard-coded expected counts — update when fields are added/reclassified
-    # +2 ICCS pins + NS figure policy + social text instruction
-    assert forwarded == 104, f"Expected 104 FORWARDED, got {forwarded}"
-    assert rejected     == 10,  f"Expected 10 REJECTED, got {rejected}"  # +4 SS-only fields + text instruction
+    # +2 ICCS pins + NS figure policy + SS/NS text instruction
+    assert forwarded == 105, f"Expected 105 FORWARDED, got {forwarded}"
+    # +4 SS-only fields + math text instruction
+    assert rejected     == 9,  f"Expected 9 REJECTED, got {rejected}"
     assert inapplicable == 27, f"Expected 27 INAPPLICABLE, got {inapplicable}"
