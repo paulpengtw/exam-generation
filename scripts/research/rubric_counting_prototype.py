@@ -529,6 +529,7 @@ class Entry:
 
     def to_dict(self) -> dict:
         d = asdict(self)
+        d["cache_key"] = self.cache_key  # property not captured by asdict
         d["expected_pass"] = self.expected_pass
         d["strict_expected_pass"] = self.strict_expected_pass
         d["llm_passed"] = self.llm_passed
@@ -935,14 +936,7 @@ def main() -> None:
 
     print(f"\n  Strict labeling adds {len(contestable)} more VIOLATES entries.")
 
-    # --- Save labelled set ---
-    labelled = [e.to_dict() for e in all_entries]
-    LABELLED_SET_PATH.write_text(
-        json.dumps(labelled, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    print(f"\nLabelled set saved to {LABELLED_SET_PATH}", file=sys.stderr)
-
-    # --- LLM run ---
+    # --- LLM run (cache-first; re-running with a warm cache makes 0 new calls) ---
     print("\nStarting LLM criterion run...", file=sys.stderr)
     config = Config.from_env()
     client = LLMClient(config)
@@ -956,6 +950,24 @@ def main() -> None:
         rate_limit=config.rate_limit_delay if config.rate_limit_delay > 0 else 0.3,
     )
     print(f"\n  Total new LLM calls: {call_count}", file=sys.stderr)
+
+    # Assert all entries received LLM results (all must be in cache or fetched now)
+    null_verdicts = [e.cache_key for e in all_entries if e.llm_verdict is None]
+    if null_verdicts:
+        raise AssertionError(
+            f"{len(null_verdicts)} entries missing LLM verdict: {null_verdicts[:5]}"
+        )
+    print(
+        f"  All {len(all_entries)} entries matched from cache/LLM.",
+        file=sys.stderr,
+    )
+
+    # --- Save labelled set (after LLM run so llm_* fields are populated) ---
+    labelled = [e.to_dict() for e in all_entries]
+    LABELLED_SET_PATH.write_text(
+        json.dumps(labelled, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"  Labelled set saved to {LABELLED_SET_PATH}", file=sys.stderr)
 
     # --- Per-bucket confusion matrices (all 4 combinations) ---
     print("\n\n========== PER-BUCKET CONFUSION MATRICES ==========")
