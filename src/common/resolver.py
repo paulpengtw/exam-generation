@@ -956,6 +956,14 @@ def resolve(
             for key, value in result.payload.items()
             if key not in _BATCH_REQUEST_LEVEL_FIELDS
         }
+        # Per-row text_instruction override: a non-blank value supplied explicitly
+        # in the row survives so that _resolved_payload_for_index can pick it up
+        # and route it to only that 題組's 文本生成器 prompt.  A blank or absent
+        # row value is not included here; the worker falls back to the request-level
+        # params.text_instruction instead.  (#637)
+        _row_ti = row.get("text_instruction")
+        if isinstance(_row_ti, str) and _row_ti.strip():
+            resolved_row["text_instruction"] = _row_ti
         resolved_rows.append(resolved_row)
         if row_seed_was_drawn:
             result_drawn = ["seed", *result.drawn]

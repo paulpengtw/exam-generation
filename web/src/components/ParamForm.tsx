@@ -2445,6 +2445,8 @@ export default function ParamForm({
       ...(configuredSeed !== undefined ? { seed: configuredSeed } : {}),
     } as FormParams & { seed?: number };
 
+    // text_instruction is now PER_QUESTION_FIELDS (#637): it is allowed in
+    // per_question_params rows so must not be stripped here.
     const requestLevelFields = new Set([
       "subject",
       "count",
@@ -2452,7 +2454,6 @@ export default function ParamForm({
       "drawn",
       "max_retries",
       "core_question_callback",
-      "text_instruction",
       "allow_duplicate_figure_kinds",
     ]);
     const perQuestionParams = hasHistoryPerQuestionParams
@@ -2712,6 +2713,46 @@ export default function ParamForm({
     updatePendingSubquestionConfig(questionIndex, subquestionIndex, {
       option_word_limit: value,
     });
+  }
+
+  /**
+   * Per-題組 文本出題指示 確認頁修改 (#637).
+   *
+   * A non-blank value pins a per-row override for that 題組 only and triggers the
+   * debounced preview re-fetch.  A blank or whitespace-only value removes the
+   * per-row override so the worker falls back to the request-level text_instruction.
+   * Sibling 題組 rows and the form's own text_instruction value are never touched.
+   */
+  function updatePendingQuestionTextInstruction(
+    questionIndex: number,
+    value: string,
+  ) {
+    const currentParams = pendingParamsRef.current ?? pendingParams;
+    const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
+      parsePerQuestionParams(currentParams?.per_question_params);
+    const questionParams = currentPerQuestionParams[questionIndex];
+    if (!currentParams || !questionParams) return;
+    const trimmed = value.trim();
+    const nextPerQuestionParams = currentPerQuestionParams.map((params, i) => {
+      if (i !== questionIndex) return params;
+      const next = { ...params };
+      if (trimmed) {
+        next.text_instruction = trimmed;
+      } else {
+        delete next.text_instruction;
+      }
+      return next;
+    });
+    const nextParams = {
+      ...currentParams,
+      per_question_params: JSON.stringify(nextPerQuestionParams),
+    } as FormParams;
+    pendingParamsRef.current = nextParams;
+    pendingPerQuestionParamsRef.current = nextPerQuestionParams;
+    pendingEditedIndicesRef.current.add(questionIndex);
+    setHasPendingConfirmationEdits(true);
+    setPendingParams(nextParams);
+    setPendingPerQuestionParams(nextPerQuestionParams);
   }
 
   /**
@@ -3275,6 +3316,17 @@ export default function ParamForm({
               questionLcWasDrawn ? "form.confirm_lc_random_pool" : "form.confirm_lc_selected",
             )
               .replace("{n}", String(questionLcDisplayEntries.length));
+            // Per-question effective text_instruction: row-level override (釘選) or
+            // request-level fallback.  Prefills the editable 確認頁修改 field. (#637)
+            const questionTextInstructionOverride =
+              typeof questionParams.text_instruction === "string" &&
+              questionParams.text_instruction.trim() !== ""
+                ? questionParams.text_instruction
+                : null;
+            const effectiveQuestionTextInstruction =
+              questionTextInstructionOverride ??
+              (typeof p.text_instruction === "string" ? p.text_instruction : "");
+
             const textGeneratorPreview = promptPreviews.find(
               (preview) => preview.index === index && preview.subquestion_index === undefined,
             );
@@ -3354,6 +3406,30 @@ export default function ParamForm({
                       </dd>
                     </div>
                   </dl>
+                )}
+                {/* Per-題組 文本出題指示 確認頁修改 (#637) */}
+                {(subject === "social_studies" || subject === "natural_sciences") && (
+                  <div className="mb-3 flex gap-3 text-sm">
+                    <label
+                      htmlFor={`confirm-text-instruction-${index}`}
+                      className="w-40 shrink-0 font-medium text-gray-600"
+                    >
+                      {t("form.confirm_text_instruction")}
+                    </label>
+                    <div className="min-w-0 flex-1">
+                      <textarea
+                        id={`confirm-text-instruction-${index}`}
+                        aria-label={t("form.confirm_text_instruction")}
+                        value={effectiveQuestionTextInstruction}
+                        onChange={(e) =>
+                          updatePendingQuestionTextInstruction(index, e.target.value)
+                        }
+                        rows={2}
+                        placeholder={t("form.text_instruction_placeholder")}
+                        className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
                 )}
                 <dl className="space-y-2">
                   {perQuestionRows.map(({ key, label }) => {

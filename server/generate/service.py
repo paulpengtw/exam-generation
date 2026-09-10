@@ -69,6 +69,17 @@ def _resolved_worker_params(
     return spec.params_from_resolved_payload(payload, overrides)
 
 
+def _per_question_text_instruction(i: int, params: GenerateParams) -> str | None:
+    """Return the effective text_instruction for worker i.
+
+    A non-blank per_question_params[i].text_instruction (a 確認頁修改 override)
+    takes precedence over the request-level params.text_instruction.  A blank or
+    absent row value falls back to the request-level value.  (#637)
+    """
+    payload = resolved_payload_for_index(params, i)
+    return payload.get("text_instruction") or params.text_instruction
+
+
 def build_prompt_previews(
     params: GenerateParams,
     config: ServerConfig,
@@ -98,6 +109,7 @@ def build_prompt_previews(
             overrides,
         )
         assert spec.build_generation_prompts is not None
+        effective_ti = _per_question_text_instruction(i, params)
         system, user, _images = spec.build_generation_prompts(
             sampled,
             overrides,
@@ -109,7 +121,7 @@ def build_prompt_previews(
             user_options=params.options,
             user_topic=params.topic,
             user_core_question=params.core_question,
-            text_instruction=params.text_instruction,
+            text_instruction=effective_ti,
             prior_scopes=[],
             balanced_batch=balanced_batch,
             core_question_callback=params.core_question_callback,
@@ -129,7 +141,7 @@ def build_prompt_previews(
                     user_options=params.options,
                     user_topic=params.topic,
                     user_core_question=params.core_question,
-                    text_instruction=params.text_instruction,
+                    text_instruction=effective_ti,
                     prior_scopes=[],
                     core_question_callback=params.core_question_callback,
                 )
@@ -372,7 +384,7 @@ def _worker_one(
             user_options=ctx.params.options,
             user_topic=ctx.params.topic,
             user_core_question=ctx.params.core_question,
-            text_instruction=ctx.params.text_instruction,
+            text_instruction=_per_question_text_instruction(i, ctx.params),
             core_question_callback=ctx.params.core_question_callback,
             on_question_update=emit_question_update,
             on_trail_entry=None if ctx.params.skip_verify else capture_trail_entry,

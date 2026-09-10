@@ -791,8 +791,12 @@ describe("ParamForm 發送前確認 display semantics", () => {
 
     const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
     const secondQuestion = within(screen.getByRole("region", { name: "第2題" }));
-    const firstInstruction = firstQuestion.getAllByRole("textbox")[0];
-    const secondInstruction = secondQuestion.getAllByRole("textbox")[0];
+    // Within each 題組 region, textbox indices are now:
+    //   [0] = per-題組 文本出題指示 textarea (#637)
+    //   [1] = card 0 instruction, [2] = card 0 LC picker, [3] = card 0 LP picker
+    //   [4] = card 1 instruction, [5] = card 1 LC picker, [6] = card 1 LP picker
+    const firstInstruction = firstQuestion.getAllByRole("textbox")[1];
+    const secondInstruction = secondQuestion.getAllByRole("textbox")[1];
 
     expect(firstInstruction).toHaveValue("原始小題指示一");
     expect(secondInstruction).toHaveValue("原始小題指示一");
@@ -800,9 +804,8 @@ describe("ParamForm 發送前確認 display semantics", () => {
 
     expect(firstInstruction).toHaveValue("第一題組修改後");
     expect(secondInstruction).toHaveValue("原始小題指示一");
-    // Each card now has 3 textboxes: instruction(0), LC picker(1), LP picker(2).
-    // Card 1's instruction is at index 3 (= 0 + 3 cards-worth).
-    expect(firstQuestion.getAllByRole("textbox")[3]).toHaveValue("原始小題指示二");
+    // Card 1's instruction is at index 4 (1 text_instruction + 3 cards-worth from card 0).
+    expect(firstQuestion.getAllByRole("textbox")[4]).toHaveValue("原始小題指示二");
 
     fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
 
