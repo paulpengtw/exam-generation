@@ -176,7 +176,9 @@ describe("formDraft", () => {
   it("loads a draft saved by an older build (without modelVerify/modelCorrect) and normalises missing fields to empty string", () => {
     // Simulate a draft persisted before issue #376 added modelVerify / modelCorrect.
     const oldFields = makeFields({ topic: "舊版草稿" });
-    const { modelVerify: _v, modelCorrect: _c, ...fieldsWithoutNewKeys } = oldFields;
+    const fieldsWithoutNewKeys = Object.fromEntries(
+      Object.entries(oldFields).filter(([k]) => !["modelVerify", "modelCorrect"].includes(k)),
+    ) as typeof oldFields;
     localStorage.setItem(
       "exam_form_draft_teacher-1",
       JSON.stringify({
@@ -196,7 +198,9 @@ describe("formDraft", () => {
   it("loads a draft saved by an older build (without effortVerify/effortCorrect) and normalises missing fields to empty string", () => {
     // Simulate a draft persisted before issue #377 added effortVerify / effortCorrect.
     const oldFields = makeFields({ topic: "效能草稿" });
-    const { effortVerify: _ev, effortCorrect: _ec, ...fieldsWithoutNewKeys } = oldFields;
+    const fieldsWithoutNewKeys = Object.fromEntries(
+      Object.entries(oldFields).filter(([k]) => !["effortVerify", "effortCorrect"].includes(k)),
+    ) as typeof oldFields;
     localStorage.setItem(
       "exam_form_draft_teacher-1",
       JSON.stringify({

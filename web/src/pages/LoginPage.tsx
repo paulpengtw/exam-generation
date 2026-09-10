@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useT } from "../i18n/useT";
@@ -16,21 +16,14 @@ export default function LoginPage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
-  const [signoutInfo, setSignoutInfo] = useState<{
+  const [signoutInfo] = useState<{
     reason: SignoutReason;
     hasDraft: boolean;
-  } | null>(null);
-  const signoutCheckedRef = useRef(false);
-
-  useEffect(() => {
-    if (signoutCheckedRef.current) return;
-    signoutCheckedRef.current = true;
+  } | null>(() => {
     const data = consumeSignoutReason();
-    if (data) {
-      const draft = loadDraft(data.userId);
-      setSignoutInfo({ reason: data.reason, hasDraft: draft !== null });
-    }
-  }, []);
+    if (!data) return null;
+    return { reason: data.reason, hasDraft: loadDraft(data.userId) !== null };
+  });
 
   if (isAuthenticated()) {
     return <Navigate to="/generate" replace />;
