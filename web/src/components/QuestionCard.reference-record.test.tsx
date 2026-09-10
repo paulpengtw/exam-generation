@@ -78,13 +78,14 @@ describe("QuestionCard 參考範例紀錄 integration", () => {
       name: "Show reference examples used during generation",
     });
     expect(toggleBtn).toBeInTheDocument();
-    expect(toggleBtn.textContent).toBe("2");
+    expect(toggleBtn.textContent).toBe("Show reference examples used during generation");
     // Entries are not yet visible
     expect(screen.queryByText("First example")).not.toBeInTheDocument();
 
     // Click toggle to expand
     fireEvent.click(toggleBtn);
 
+    expect(screen.getByTestId("ref-record-counts")).toHaveTextContent("2 entries, 2 subquestions");
     expect(screen.getByText(/First example/)).toBeInTheDocument();
     expect(screen.getByText(/Second example/)).toBeInTheDocument();
   });

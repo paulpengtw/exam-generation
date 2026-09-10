@@ -37,6 +37,10 @@ export default function ReferenceExampleRecordSection({
   const isDisabled = record?.disabled === true;
   const entries = record?.entries ?? [];
 
+  // Compute total and slots for count summary
+  const total = entries.length;
+  const slots = new Set(entries.map((e) => e.slot)).size;
+
   // Build a map from source → first slot that used it (for duplicate badge)
   const sourceToFirstSlot = new Map<string, number | null>();
   for (const entry of entries) {
@@ -45,14 +49,26 @@ export default function ReferenceExampleRecordSection({
     }
   }
 
+  // Interpolate count summary
+  const countSummary = t("card.referenceExampleRecordCountSummary")
+    .replace("{total}", String(total))
+    .replace("{slots}", String(slots));
+
   return (
     <section
       aria-label={t("card.referenceExampleRecord")}
       className="rounded border border-gray-200 bg-gray-50 p-3"
     >
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-gray-800">{t("card.referenceExampleRecord")}</h3>
-        {entries.length > 0 && !isDisabled && (
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-gray-800">{t("card.referenceExampleRecord")}</h3>
+          {total > 0 && !isDisabled && (
+            <span data-testid="ref-record-counts" className="text-xs text-gray-500">
+              {countSummary}
+            </span>
+          )}
+        </div>
+        {total > 0 && !isDisabled && (
           <button
             type="button"
             aria-label={
@@ -65,7 +81,7 @@ export default function ReferenceExampleRecordSection({
           >
             {expanded
               ? t("card.hideReferenceExampleRecord")
-              : `${entries.length}`}
+              : t("card.showReferenceExampleRecord")}
           </button>
         )}
       </div>

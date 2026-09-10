@@ -136,7 +136,8 @@ describe("live generation reference-record surfacing", () => {
         name: "Show reference examples used during generation",
       });
       expect(btn).toBeInTheDocument();
-      expect(btn?.textContent).toBe("2");
+      expect(btn?.textContent).toBe("Show reference examples used during generation");
+      expect(screen.getByTestId("ref-record-counts")).toHaveTextContent("2 entries");
     });
 
     // Emit result (final)
@@ -154,7 +155,7 @@ describe("live generation reference-record surfacing", () => {
         name: "Show reference examples used during generation",
       });
       expect(btn).toBeInTheDocument();
-      expect(btn?.textContent).toBe("2");
+      expect(btn?.textContent).toBe("Show reference examples used during generation");
     });
   });
 

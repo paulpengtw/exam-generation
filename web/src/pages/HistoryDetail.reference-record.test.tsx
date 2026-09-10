@@ -73,7 +73,8 @@ describe("HistoryDetail 參考範例紀錄 section (real component)", () => {
       name: "Show reference examples used during generation",
     });
     expect(toggleBtn).toBeInTheDocument();
-    expect(toggleBtn.textContent).toBe("1");
+    expect(toggleBtn.textContent).toBe("Show reference examples used during generation");
+    expect(screen.getByTestId("ref-record-counts")).toBeInTheDocument();
 
     // Entries not visible until expanded
     expect(screen.queryByText("test ref example")).not.toBeInTheDocument();
