@@ -309,6 +309,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     gen.add_argument("--output", type=str, help="Output directory")
     gen.add_argument("--dry-run", action="store_true", help="Show prompt without calling LLM")
     gen.add_argument("--env-file", type=str, help="Path to .env file")
+    gen.add_argument(
+        "--text-instruction",
+        type=str,
+        default=None,
+        help="文本出題指示：傳給每個題組的文本生成器，作為建議值指引取材與出題方向",
+    )
 
     res = sub.add_parser("resolve", help="Resolve and print generation parameters")
     res.add_argument("--grade", type=int, choices=_GRADES, help="Target grade level")
@@ -1745,6 +1751,10 @@ def main(argv: list[str] | None = None) -> None:
                   f"核心素養={'、'.join(c.value for c in params.核心素養)}, "
                   f"creative_brief={'yes' if params.creative_brief else 'no'}", file=sys.stderr)
 
+            text_instruction = args.text_instruction or None
+            if text_instruction and not text_instruction.strip():
+                text_instruction = None
+
             result = generate_with_corrections(
                 config=config,
                 client=client,
@@ -1759,6 +1769,7 @@ def main(argv: list[str] | None = None) -> None:
                 prior_scopes=list(prior_scopes),
                 curriculum_context=ss_curriculum_context,
                 balanced_batch=balanced_batch,
+                text_instruction=text_instruction,
             )
 
             if args.dry_run:

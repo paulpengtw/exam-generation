@@ -409,6 +409,9 @@ uv run python -m src.social_studies.cli generate --learning-performance 社1b-�
 # Override 核心素養 codes
 uv run python -m src.social_studies.cli generate --core-competency 社-J-A2
 
+# Pass 文本出題指示 to guide the 文本生成器 for every 題組 (blank behaves like omission)
+uv run python -m src.social_studies.cli generate --text-instruction "請聚焦地方自治中的證據比較"
+
 # Batch, seeded
 uv run python -m src.social_studies.cli generate --count 5 --seed 1 --batch
 ```
@@ -442,6 +445,9 @@ uv run python -m src.natural_sciences generate --sub-context 健康
 uv run python -m src.natural_sciences generate --learning-content INc-IV-1 INc-IV-2
 uv run python -m src.natural_sciences generate --learning-performance tr-IV-1
 
+# Pass 文本出題指示 to guide the 文本生成器 for every 題組 (blank behaves like omission)
+uv run python -m src.natural_sciences generate --text-instruction "請聚焦電磁波的能量傳遞概念"
+
 # Batch, seeded
 uv run python -m src.natural_sciences generate --count 5 --seed 1 --batch
 ```
@@ -456,7 +462,7 @@ uv run python -m src.natural_sciences generate --count 5 --seed 1 --batch
 - 社會領域 reads 學習階段 once at import from `schema_meta.csv` (currently 第四學習階段, grades 7–9), rather than deriving it from the sampled 年級 as 數學 and 自然科學 do. All 26 shipped 社會領域 學習表現 entries cover only 第四學習階段, so per-grade derivation would currently be a no-op and would yield an empty 學習表現 pool if the grade range were widened to 10–12. If that data is ever extended, update `schema_meta.csv` and switch to per-grade derivation. `src/social_studies/context_builder.py` reads the same module-level stage into the prompt, so it and `src/social_studies/sampler.py` must be updated in lockstep.
 - The verifier uses a lenient "寬鬆通過、只攔重大問題" stance (distinct from math's strict "明確錯誤").
 
-Most flags work identically to social studies: `--grade`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--max-retries`, `--batch`, `--dry-run`, `--output`, `--content-type`, `--image-generation-mode`. Natural sciences does not use `--style`.
+Most flags work identically to social studies: `--grade`, `--q-type`, `--count`, `--seed`, `--no-verify`, `--max-retries`, `--batch`, `--dry-run`, `--output`, `--content-type`, `--image-generation-mode`, `--text-instruction` (sets the 文本出題指示 for every 題組; blank behaves like omission). Natural sciences does not use `--style`.
 
 Natural-sciences parent items are 題組題 with 3–7 subquestions. Per-小題 configuration (sub_question_count, subquestion_configs with question_type / instruction / learning_content / learning_performance / word limits / content_type / image_generation_mode; explicit per-小題 learning_content/learning_performance are forced into the output SubQuestion verbatim) is web/API-only — there are no dedicated CLI flags. The 子題設定 panel in the web form works identically for natural sciences and social studies. Blank per-小題 question_type values are sampled randomly; instruction is persisted as subquestions[*].出題指示. Top-level 文本字數限制 (passage word-count hint) is available on all subjects; top-level 選項字數限制 (per-option A–D limits) is math-only.
 
