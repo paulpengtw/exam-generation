@@ -12,7 +12,6 @@ import pytest
 from src.config import Config
 from src.llm_client import LLMClient
 
-
 # ---------------------------------------------------------------------------
 # 1. Config defaults and env parsing
 # ---------------------------------------------------------------------------

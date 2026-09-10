@@ -9,7 +9,9 @@ def test_sampled_params_difficulty_default_medium():
     p = SampledParams(
         grade=8,
         情境=[],
-        題型種類=next(iter(__import__("src.schemas", fromlist=["QuestionSetType"]).QuestionSetType)),
+        題型種類=next(
+            iter(__import__("src.schemas", fromlist=["QuestionSetType"]).QuestionSetType)
+        ),
         題型=next(iter(__import__("src.schemas", fromlist=["QuestionType"]).QuestionType)),
         數學思考=[],
         學習內容=[],

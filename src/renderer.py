@@ -9,8 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 import matplotlib
-import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.pyplot as plt
 import numpy as np
 
 matplotlib.use("Agg")  # Non-interactive backend for CLI
@@ -187,7 +187,11 @@ def _render_boxplot(spec: dict, output_path: Path) -> None:
         ax.hlines(max_val, pos - cap_width, pos + cap_width, colors=f"C{i}", linewidth=1.5)
 
         # Annotate five-number summary (use ASCII-safe labels to avoid missing glyph warnings)
-        for val, label_text in [(min_val, f"{min_val}"), (q1, f"Q1={q1}"), (median, f"Med={median}"), (q3, f"Q3={q3}"), (max_val, f"{max_val}")]:
+        summary_labels = [
+            (min_val, f"{min_val}"), (q1, f"Q1={q1}"), (median, f"Med={median}"),
+            (q3, f"Q3={q3}"), (max_val, f"{max_val}"),
+        ]
+        for val, label_text in summary_labels:
             ax.annotate(
                 label_text,
                 (pos + box_width / 2 + 0.05, val),
@@ -223,7 +227,10 @@ def _render_line_chart(spec: dict, output_path: Path) -> None:
         x = np.arange(len(x_labels))
         ax.plot(x, y_values, "o-", color="#4C72B0", linewidth=2, markersize=8)
         for xi, yi in zip(x, y_values):
-            ax.annotate(str(yi), (xi, yi), textcoords="offset points", xytext=(0, 10), ha="center", fontsize=9)
+            ax.annotate(
+                str(yi), (xi, yi), textcoords="offset points",
+                xytext=(0, 10), ha="center", fontsize=9,
+            )
         ax.set_xticks(x)
         ax.set_xticklabels(x_labels, fontsize=10)
     elif "function" in data:
@@ -236,7 +243,11 @@ def _render_line_chart(spec: dict, output_path: Path) -> None:
         import re
         match = re.match(r"y\s*=\s*([-]?\d*\.?\d*)\s*x\s*([+-]\s*\d+\.?\d*)", func_str)
         if match:
-            a = float(match.group(1)) if match.group(1) not in ("", "-") else (-1.0 if match.group(1) == "-" else 1.0)
+            a = (
+                float(match.group(1))
+                if match.group(1) not in ("", "-")
+                else (-1.0 if match.group(1) == "-" else 1.0)
+            )
             b = float(match.group(2).replace(" ", ""))
             y = a * x + b
             ax.plot(x, y, color="#4C72B0", linewidth=2)
@@ -244,7 +255,10 @@ def _render_line_chart(spec: dict, output_path: Path) -> None:
             if "points" in data:
                 for px, py in data["points"]:
                     ax.plot(px, py, "o", color="#E74C3C", markersize=8)
-                    ax.annotate(f"({px}, {py})", (px, py), textcoords="offset points", xytext=(10, 5), fontsize=9)
+                    ax.annotate(
+                        f"({px}, {py})", (px, py),
+                        textcoords="offset points", xytext=(10, 5), fontsize=9,
+                    )
 
     ax.set_xlabel(labels_spec.get("x", ""), fontsize=12)
     ax.set_ylabel(labels_spec.get("y", ""), fontsize=12)
@@ -486,7 +500,11 @@ def _generate_html_via_llm(spec: dict, question_text: str, llm_client) -> str:
                 return stripped
 
             # Unexpected format — retry with clarification
-            prompt = prompt + "\n\nIMPORTANT: Output ONLY the raw <!DOCTYPE html> document. No explanation."
+            prompt = (
+                prompt
+                + "\n\nIMPORTANT: Output ONLY the raw <!DOCTYPE html> document."
+                " No explanation."
+            )
 
         except Exception as e:
             print(f"  Warning: HTML generation attempt {attempt + 1} failed: {e}", file=sys.stderr)

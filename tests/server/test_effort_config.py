@@ -6,10 +6,7 @@ import os
 from pathlib import Path
 from unittest import mock
 
-import pytest
-
-from server.config import ServerConfig, _EFFORT_LEVELS
-
+from server.config import _EFFORT_LEVELS, ServerConfig
 
 # ---------------------------------------------------------------------------
 # 1. _EFFORT_LEVELS module-level constant

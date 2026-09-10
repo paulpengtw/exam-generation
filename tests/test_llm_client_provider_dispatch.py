@@ -9,7 +9,6 @@ import pytest
 from src.config import Config
 from src.llm_client import LLMClient, resolve_provider
 
-
 # ---------------------------------------------------------------------------
 # 1. resolve_provider table
 # ---------------------------------------------------------------------------

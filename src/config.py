@@ -102,7 +102,11 @@ class Config:
             subgen_max_concurrency=int(os.environ.get("SUBGEN_MAX_CONCURRENCY", "6")),
             subgen_retries=int(os.environ.get("SUBGEN_RETRIES", "1")),
             llm_stream=os.environ.get("LLM_STREAM", "1") not in ("0", "false", "False"),
-            log_truncate=int(os.environ["LLM_LOG_TRUNCATE"]) if os.environ.get("LLM_LOG_TRUNCATE") else None,
+            log_truncate=(
+                int(os.environ["LLM_LOG_TRUNCATE"])
+                if os.environ.get("LLM_LOG_TRUNCATE")
+                else None
+            ),
             web_search_provider=os.environ.get("WEB_SEARCH_PROVIDER", "none"),
             web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
@@ -119,4 +123,6 @@ class Config:
     def validate(self) -> None:
         """Check that required config values are present."""
         if not self.api_key:
-            raise ValueError("LLM_API_KEY is required. Set it in .env or as an environment variable.")
+            raise ValueError(
+                "LLM_API_KEY is required. Set it in .env or as an environment variable."
+            )

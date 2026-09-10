@@ -39,8 +39,8 @@ def test_math_user_prompt_open_response_marks_distractor_optional(tmp_path: Path
 
 def test_parse_question_populates_distractor_analysis() -> None:
     from src.cli import _parse_question
-    from src.schemas import SampledParams
     from src.sampler import sample_params
+    from src.schemas import SampledParams
 
     params: SampledParams = sample_params(seed=42, q_type=["選擇題"])
     raw = {

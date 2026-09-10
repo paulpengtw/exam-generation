@@ -10,7 +10,6 @@ import pytest
 from src.config import Config
 from src.llm_client import LLMClient, _accepts_sampling
 
-
 # ---------------------------------------------------------------------------
 # 1. Config.from_env — temperature parsing
 # ---------------------------------------------------------------------------
@@ -87,7 +86,9 @@ def test_accepts_sampling_true_for_normal_models(model: str) -> None:
 # ---------------------------------------------------------------------------
 
 class _FakeMessagesAPI:
-    """Records calls to .create() — mirrors the pattern in test_llm_client_generate_with_tools.py."""
+    """Records calls to .create() — mirrors the pattern
+    in test_llm_client_generate_with_tools.py.
+    """
 
     def __init__(self, response_text: str = '{"ok": true}') -> None:
         self.calls: list[dict] = []
@@ -109,7 +110,9 @@ class _FakeMessagesAPI:
         )
 
 
-def _make_client(temperature: float | None = None, model: str = "claude-sonnet-4-6") -> tuple[LLMClient, _FakeMessagesAPI]:
+def _make_client(
+    temperature: float | None = None, model: str = "claude-sonnet-4-6"
+) -> tuple[LLMClient, _FakeMessagesAPI]:
     """Build a non-streaming LLMClient with temperature config and a recorder."""
     cfg = Config(
         api_key="x",
@@ -155,7 +158,10 @@ def test_call_drops_temperature_and_warns_for_rejecting_model(caplog) -> None:
         client.generate("sys", "user", purpose="generate")
     assert len(fake.calls) == 1
     assert "temperature" not in fake.calls[0]
-    assert any("LLM_TEMPERATURE" in r.message or "temperature" in r.message.lower() for r in caplog.records)
+    assert any(
+        "LLM_TEMPERATURE" in r.message or "temperature" in r.message.lower()
+        for r in caplog.records
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -190,4 +196,7 @@ def test_generate_with_tools_drops_temperature_and_warns(caplog) -> None:
         client.generate_with_tools("sys", "user", tools=[], purpose="generate")
     assert len(fake.calls) == 1
     assert "temperature" not in fake.calls[0]
-    assert any("LLM_TEMPERATURE" in r.message or "temperature" in r.message.lower() for r in caplog.records)
+    assert any(
+        "LLM_TEMPERATURE" in r.message or "temperature" in r.message.lower()
+        for r in caplog.records
+    )

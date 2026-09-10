@@ -347,6 +347,47 @@ def _math_curriculum_dir() -> Path:
     )
 
 
+def _reject_unknown_subquestion_config_keys(
+    decoded_rows: list,
+    config_cls: type,
+    *,
+    subject_label: str,
+) -> None:
+    """Reject any per-小題 config row whose keys are not declared by config_cls.
+
+    Runs config_cls.model_validate(row) for each dict row and collects only
+    errors whose type == "extra_forbidden" (pydantic's extra="forbid" violation).
+    All other error types are ignored — in particular, unknown enum VALUES for
+    question_type are left to existing downstream behaviour: the SS sampler
+    (_coerce_subquestion_config) redraws an unknown question_type, and the NS
+    sampler raises a pydantic enum error, so both already produce 422 without
+    this helper touching enum values.
+
+    Raises ValueError naming every offending path as
+      subquestion_configs[{i}].{key}
+    followed by a generic message.
+    """
+    import pydantic  # noqa: PLC0415
+
+    violations: list[str] = []
+    for i, row in enumerate(decoded_rows):
+        if not isinstance(row, dict):
+            continue
+        try:
+            config_cls.model_validate(row)
+        except pydantic.ValidationError as exc:
+            for error in exc.errors():
+                if error.get("type") == "extra_forbidden":
+                    loc = error.get("loc", ())
+                    key = loc[-1] if loc else "?"
+                    violations.append(
+                        f"subquestion_configs[{i}].{key} is not a valid "
+                        f"各小題配置 field for {subject_label}"
+                    )
+    if violations:
+        raise ValueError("; ".join(violations))
+
+
 def _ns_validate_params(params: Any) -> None:
     unsupported_surface_fields = [
         field
@@ -374,22 +415,18 @@ def _ns_validate_params(params: Any) -> None:
                 f"allowed values: {REPORTING_SCALE_ORDER}"
             )
 
-    # Issue #644: reject per-小題 config rows that carry text_word_limit (removed field).
-    # Full SubQuestionConfig.model_validate() is not used here because the wire
-    # SubQuestionConfig in server/generate/models.py deliberately allows extras
-    # (extra="allow") and there is a tolerance test for unknown question-type enum values.
     if params.subquestion_configs:
         try:
             raw = json.loads(params.subquestion_configs)
         except (TypeError, json.JSONDecodeError):
             raw = []
         if isinstance(raw, list):
-            for i, item in enumerate(raw):
-                if isinstance(item, dict) and "text_word_limit" in item:
-                    raise ValueError(
-                        f"subquestion_configs[{i}].text_word_limit is not a valid field; "
-                        "use the request-level text_word_limit instead (ADR 0023)"
-                    )
+            from src.natural_sciences.schemas import (  # noqa: PLC0415
+                SubQuestionConfig as NSSubQuestionConfig,
+            )
+            _reject_unknown_subquestion_config_keys(
+                raw, NSSubQuestionConfig, subject_label="自然科學"
+            )
 
 
 def _ss_validate_params(params: Any) -> None:
@@ -461,17 +498,13 @@ def _ss_validate_params(params: Any) -> None:
                     + ", ".join(blocked)
                 )
 
-    # Issue #644: reject per-小題 config rows that carry text_word_limit (removed field).
-    # Full SubQuestionConfig.model_validate() is not used here because the wire
-    # SubQuestionConfig in server/generate/models.py deliberately allows extras
-    # (extra="allow") and there is a tolerance test for unknown question-type enum values.
     if isinstance(decoded, list):
-        for i, item in enumerate(decoded):
-            if isinstance(item, dict) and "text_word_limit" in item:
-                raise ValueError(
-                    f"subquestion_configs[{i}].text_word_limit is not a valid field; "
-                    "use the request-level text_word_limit instead (ADR 0023)"
-                )
+        from src.social_studies.schemas import (  # noqa: PLC0415
+            SubQuestionConfig as SSSubQuestionConfig,
+        )
+        _reject_unknown_subquestion_config_keys(
+            decoded, SSSubQuestionConfig, subject_label="社會領域"
+        )
 
 
 def _math_validate_params(params: Any) -> None:

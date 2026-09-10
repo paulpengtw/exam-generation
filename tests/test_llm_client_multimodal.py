@@ -103,7 +103,9 @@ def test_generate_with_image_sends_base64_image_block_to_sdk(tmp_path) -> None:
 
     # Non-streaming path: no observer + llm_stream=False -> messages.create is used.
     # Pin an Anthropic model so the test targets the Anthropic SDK path (client.client).
-    client = LLMClient(Config(api_key="test-key", llm_stream=False, model_execute="claude-sonnet-4-6"))
+    client = LLMClient(
+        Config(api_key="test-key", llm_stream=False, model_execute="claude-sonnet-4-6")
+    )
     recorder = _RecorderMessages()
     client.client.messages = recorder  # type: ignore[assignment]
 

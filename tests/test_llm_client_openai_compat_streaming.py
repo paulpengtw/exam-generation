@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from src.config import Config
 from src.llm_client import LLMClient
-
 
 # ---------------------------------------------------------------------------
 # Helpers

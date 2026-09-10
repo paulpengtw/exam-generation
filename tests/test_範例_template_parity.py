@@ -55,7 +55,8 @@ def test_範例_schema_params_categories_match_live() -> None:
 
 
 def test_範例_few_shot_body_iccs_coverage() -> None:
-    """AC1 row-level: exactly 3 demo groups; 認知歷程 covers all 4 ICCS buckets; 內容領域 from schema.
+    """AC1 row-level: exactly 3 demo groups;
+    認知歷程 covers all 4 ICCS buckets; 內容領域 from schema.
 
     Guards that a template with a correct header but fabricated row values (wrong group
     count, made-up 認知歷程, or 內容領域 absent from the live schema) cannot slip past
@@ -103,7 +104,8 @@ def test_範例_few_shot_body_iccs_coverage() -> None:
     # AC1 sub-criterion 3: every 內容領域 value in the template is drawn from schema_parameters.csv.
     rogue_domains = template_內容領域 - live_內容領域
     assert not rogue_domains, (
-        f"範例_few_shot_examples.csv contains 內容領域 values not present in schema_parameters.csv.\n"
+        f"範例_few_shot_examples.csv contains 內容領域 values"
+        f" not present in schema_parameters.csv.\n"
         f"Rogue values: {sorted(rogue_domains)}\n"
         f"Allowed (live schema): {sorted(live_內容領域)}"
     )

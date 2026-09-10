@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
-
 from src.common.reference_example_record import (
     ReferenceExampleExampleEntry,
     ReferenceExampleProcessExemplarEntry,

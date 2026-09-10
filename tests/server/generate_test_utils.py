@@ -8,7 +8,6 @@ from typing import Any
 from server.generate.models import GenerateParams
 from src.common.resolver import resolve
 
-
 _MATH_FIXTURE: dict[str, Any] = {
     "subject": "math",
     "seed": 41,
