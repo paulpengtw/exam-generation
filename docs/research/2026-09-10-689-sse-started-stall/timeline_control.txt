@@ -1,0 +1,62 @@
+# control  request_start=2026-09-10T05:09:21Z (1789016961.434)  terminal=done  curl_exit=0 
+# started=0.681s pipeline_start=14.595s gap=13.914s total=279.399s pings=18 max_ping_interval=15.011s
+# arrival-ts delta: min=0.087 median=0.093 max=0.888  max_/health_latency=13.598s in_started_window=True
+# offset_s  frame (llm_content/llm_request/llm_response/trail/question_update/plan/result data omitted)
+    0.681  event: started
+   14.595  event: pipeline
+   14.595  data: {"event_name": "pipeline_start", "ts": 1789016975.930157, "total": 1}   [server ts offset 14.496s, delivery delay 0.099s]
+   14.595  event: pipeline
+   14.595  data: {"event_name": "question_start", "ts": 1789016975.9315634, "index": 0, "total": 1}   [server ts offset 14.498s, delivery delay 0.097s]
+   14.598  event: stage
+   14.598  data: {"type": "stage", "agent": "generator", "stage": "llm_generate", "status": "start", "ts": 1789016975.9370606}   [server ts offset 14.503s, delivery delay 0.094s]
+   15.679  : ping - 2026-09-10 05:09:37.017899+00:00
+   30.678  : ping - 2026-09-10 05:09:52.018139+00:00
+   45.689  : ping - 2026-09-10 05:10:07.019186+00:00
+   60.679  : ping - 2026-09-10 05:10:22.020401+00:00
+   62.144  event: stage
+   62.144  data: {"type": "stage", "agent": "generator", "stage": "llm_generate", "status": "end", "ts": 1789017023.4827678}   [server ts offset 62.049s, delivery delay 0.095s]
+   62.345  event: stage
+   62.345  data: {"type": "stage", "agent": "sub_generator#2", "stage": "llm_generate", "status": "start", "ts": 1789017023.6861618, "attempt": 1}   [server ts offset 62.252s, delivery delay 0.093s]
+   62.445  event: stage
+   62.445  data: {"type": "stage", "agent": "sub_generator#1", "stage": "llm_generate", "status": "start", "ts": 1789017023.786433, "attempt": 1}   [server ts offset 62.353s, delivery delay 0.093s]
+   62.462  event: stage
+   62.462  data: {"type": "stage", "agent": "sub_generator#3", "stage": "llm_generate", "status": "start", "ts": 1789017023.8031144, "attempt": 1}   [server ts offset 62.369s, delivery delay 0.093s]
+   75.685  : ping - 2026-09-10 05:10:37.020787+00:00
+   90.679  : ping - 2026-09-10 05:10:52.020778+00:00
+  105.132  event: stage
+  105.132  data: {"type": "stage", "agent": "sub_generator#3", "stage": "llm_generate", "status": "end", "ts": 1789017066.4741375, "attempt": 1}   [server ts offset 105.040s, delivery delay 0.091s]
+  105.679  : ping - 2026-09-10 05:11:07.020778+00:00
+  116.966  event: stage
+  116.966  data: {"type": "stage", "agent": "sub_generator#2", "stage": "llm_generate", "status": "end", "ts": 1789017078.3086858, "attempt": 1}   [server ts offset 116.875s, delivery delay 0.091s]
+  120.678  : ping - 2026-09-10 05:11:22.020966+00:00
+  122.593  event: stage
+  122.593  data: {"type": "stage", "agent": "sub_generator#1", "stage": "llm_generate", "status": "end", "ts": 1789017083.9356997, "attempt": 1}   [server ts offset 122.502s, delivery delay 0.091s]
+  122.597  event: stage
+  122.597  data: {"type": "stage", "agent": "image_agent", "stage": "render_image", "status": "start", "ts": 1789017083.9374166}   [server ts offset 122.504s, delivery delay 0.093s]
+  135.678  : ping - 2026-09-10 05:11:37.020789+00:00
+  150.686  : ping - 2026-09-10 05:11:52.021440+00:00
+  165.680  : ping - 2026-09-10 05:12:07.021596+00:00
+  180.677  : ping - 2026-09-10 05:12:22.021933+00:00
+  186.217  event: stage
+  186.217  data: {"type": "stage", "agent": "image_agent", "stage": "render_image", "status": "end", "ts": 1789017147.5615869}   [server ts offset 186.128s, delivery delay 0.089s]
+  186.945  event: stage
+  186.945  data: {"type": "stage", "agent": "image_agent", "stage": "render_image", "status": "start", "ts": 1789017147.6559966}   [server ts offset 186.222s, delivery delay 0.723s]
+  195.677  : ping - 2026-09-10 05:12:37.021517+00:00
+  210.677  : ping - 2026-09-10 05:12:52.022324+00:00
+  225.678  : ping - 2026-09-10 05:13:07.023069+00:00
+  240.678  : ping - 2026-09-10 05:13:22.023832+00:00
+  244.033  event: stage
+  244.033  data: {"type": "stage", "agent": "image_agent", "stage": "render_image", "status": "end", "ts": 1789017205.379635}   [server ts offset 243.946s, delivery delay 0.087s]
+  244.033  event: stage
+  244.033  data: {"type": "stage", "agent": "image_agent", "stage": "render_image", "status": "start", "ts": 1789017205.3800004}   [server ts offset 243.946s, delivery delay 0.087s]
+  255.678  : ping - 2026-09-10 05:13:37.023629+00:00
+  270.676  : ping - 2026-09-10 05:13:52.023591+00:00
+  278.505  event: stage
+  278.505  data: {"type": "stage", "agent": "image_agent", "stage": "render_image", "status": "end", "ts": 1789017239.8482883}   [server ts offset 278.415s, delivery delay 0.090s]
+  279.087  event: pipeline
+  279.087  data: {"event_name": "question_end", "ts": 1789017239.853671, "index": 0, "total": 1}   [server ts offset 278.420s, delivery delay 0.667s]
+  279.399  event: pipeline
+  279.399  data: {"event_name": "pipeline_end", "ts": 1789017239.9439857, "total": 1}   [server ts offset 278.510s, delivery delay 0.888s]
+  279.399  event: done
+# /health polls: n=204 median=0.297s max=13.598s; polls slower than 1 s:
+#   at offset 1.001s latency 13.598s status 200

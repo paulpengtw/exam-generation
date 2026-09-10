@@ -1,0 +1,40 @@
+{
+  "run": "control",
+  "request_start_epoch": 1789018443.3979053,
+  "request_start_iso": "2026-09-10T05:34:03Z",
+  "http_status": "200",
+  "http_version": "2",
+  "seconds_to_first_byte": 0.479,
+  "seconds_to_started": 0.479,
+  "seconds_to_pipeline_start": null,
+  "gap_started_to_pipeline_start": null,
+  "total_duration_s": 420.01,
+  "ping_count": 27,
+  "max_ping_interval_s": 15.047,
+  "median_ping_interval_s": 15.0,
+  "longest_gap_s": 15.047,
+  "arrival_ts_delta_min": null,
+  "arrival_ts_delta_median": null,
+  "arrival_ts_delta_max": null,
+  "top5_ts_deltas": [],
+  "first_15_events": [
+    {
+      "event": "started",
+      "inner": null,
+      "arrival_offset_s": 0.479
+    }
+  ],
+  "pipeline_events": [],
+  "event_counts": {
+    "started": 1
+  },
+  "terminal": "disconnect",
+  "curl_exit_code": 28,
+  "curl_stderr": "curl: (28) Operation timed out after 420001 milliseconds with 1241 bytes received\n",
+  "max_health_latency_s": 0.759,
+  "max_health_latency_epoch": 1789018851.590827,
+  "max_health_in_started_pipeline_window": false,
+  "clock_skew_s": -0.569,
+  "aborted_at": null,
+  "abort_trigger": null
+}

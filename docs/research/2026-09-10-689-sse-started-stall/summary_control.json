@@ -1,0 +1,173 @@
+{
+  "run": "control",
+  "request_start_epoch": 1789016961.4337237,
+  "request_start_iso": "2026-09-10T05:09:21Z",
+  "http_status": "200",
+  "http_version": null,
+  "seconds_to_first_byte": 0.681,
+  "seconds_to_started": 0.681,
+  "seconds_to_pipeline_start": 14.595,
+  "gap_started_to_pipeline_start": 13.914,
+  "total_duration_s": 279.399,
+  "ping_count": 18,
+  "max_ping_interval_s": 15.011,
+  "median_ping_interval_s": 15.0,
+  "longest_gap_s": 15.008,
+  "arrival_ts_delta_min": 0.087,
+  "arrival_ts_delta_median": 0.093,
+  "arrival_ts_delta_max": 0.888,
+  "top5_ts_deltas": [
+    {
+      "event": "pipeline",
+      "inner": "pipeline_end",
+      "arrival": 1789017240.8324728,
+      "ts": 1789017239.9439857,
+      "delta": 0.888
+    },
+    {
+      "event": "stage",
+      "inner": "image_agent:render_image:start",
+      "arrival": 1789017148.378513,
+      "ts": 1789017147.6559966,
+      "delta": 0.723
+    },
+    {
+      "event": "pipeline",
+      "inner": "question_end",
+      "arrival": 1789017240.5204258,
+      "ts": 1789017239.853671,
+      "delta": 0.667
+    },
+    {
+      "event": "pipeline",
+      "inner": "pipeline_start",
+      "arrival": 1789016976.0289876,
+      "ts": 1789016975.930157,
+      "delta": 0.099
+    },
+    {
+      "event": "pipeline",
+      "inner": "question_start",
+      "arrival": 1789016976.029027,
+      "ts": 1789016975.9315634,
+      "delta": 0.097
+    }
+  ],
+  "first_15_events": [
+    {
+      "event": "started",
+      "inner": null,
+      "arrival_offset_s": 0.681
+    },
+    {
+      "event": "pipeline",
+      "inner": "pipeline_start",
+      "arrival_offset_s": 14.595
+    },
+    {
+      "event": "pipeline",
+      "inner": "question_start",
+      "arrival_offset_s": 14.595
+    },
+    {
+      "event": "stage",
+      "inner": null,
+      "arrival_offset_s": 14.598
+    },
+    {
+      "event": "llm_request",
+      "inner": null,
+      "arrival_offset_s": 24.719
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.383
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.43
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.487
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.536
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.641
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.69
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.737
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.796
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.843
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 27.913
+    }
+  ],
+  "pipeline_events": [
+    {
+      "event_name": "pipeline_start",
+      "arrival_offset_s": 14.595
+    },
+    {
+      "event_name": "question_start",
+      "arrival_offset_s": 14.595
+    },
+    {
+      "event_name": "question_end",
+      "arrival_offset_s": 279.087
+    },
+    {
+      "event_name": "pipeline_end",
+      "arrival_offset_s": 279.399
+    }
+  ],
+  "event_counts": {
+    "started": 1,
+    "pipeline": 4,
+    "stage": 14,
+    "llm_request": 7,
+    "llm_content": 1425,
+    "llm_response": 7,
+    "plan": 1,
+    "trail": 6,
+    "question_update": 3,
+    "result": 1,
+    "done": 1
+  },
+  "terminal": "done",
+  "curl_exit_code": 0,
+  "curl_stderr": "",
+  "max_health_latency_s": 13.598,
+  "max_health_latency_epoch": 1789016962.434693,
+  "max_health_in_started_pipeline_window": true,
+  "clock_skew_s": -0.454,
+  "aborted_at": null,
+  "abort_trigger": null
+}
