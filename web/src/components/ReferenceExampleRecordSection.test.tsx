@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (s: { lang: string }) => unknown) =>
@@ -58,6 +58,10 @@ describe("ReferenceExampleRecordSection", () => {
     expect(
       screen.getByRole("region", { name: "Reference examples" }),
     ).toBeInTheDocument();
+    // Collapsed by default — click toggle to reveal entries
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show reference examples used during generation" }),
+    );
     expect(screen.getByText(/My test description/)).toBeInTheDocument();
   });
 
@@ -83,6 +87,10 @@ describe("ReferenceExampleRecordSection", () => {
     expect(
       screen.getByRole("region", { name: "Reference examples" }),
     ).toBeInTheDocument();
+    // Collapsed by default — click toggle to reveal entries
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show reference examples used during generation" }),
+    );
     expect(screen.getByText(/理解/)).toBeInTheDocument();
   });
 
@@ -100,6 +108,10 @@ describe("ReferenceExampleRecordSection", () => {
           ],
         }}
       />,
+    );
+    // Collapsed by default — click toggle to reveal entries
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show reference examples used during generation" }),
     );
     expect(screen.getByText(/#3/)).toBeInTheDocument();
   });
@@ -125,6 +137,10 @@ describe("ReferenceExampleRecordSection", () => {
           ],
         }}
       />,
+    );
+    // Collapsed by default — click toggle to reveal entries
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show reference examples used during generation" }),
     );
     // The second entry should show "Same as subquestion #1" badge
     expect(screen.getByText(/Same as subquestion #1/)).toBeInTheDocument();

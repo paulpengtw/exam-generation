@@ -805,7 +805,7 @@ export default function QuestionCard({
 
       <VerificationTrailTimeline entries={trail} />
       <FigurePolicyTrailTimeline entries={figurePolicyTrail} />
-      <ReferenceExampleRecordSection record={referenceExampleRecord} />
+      <ReferenceExampleRecordSection record={referenceExampleRecord} inProgress={!isFinal} />
 
       {modificationResult && (
         <>

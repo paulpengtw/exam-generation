@@ -133,10 +133,12 @@ class ReferenceExampleRecordRecorder:
         generation_log_id: uuid.UUID,
         loop: asyncio.AbstractEventLoop,
         session_factory: Any,
+        disabled: bool = False,
     ) -> None:
         self._generation_log_id = generation_log_id
         self._loop = loop
         self._session_factory = session_factory
+        self._disabled = disabled
         self._lock = threading.Lock()
         self._write_lock = asyncio.Lock()
         self._entries: list[dict[str, Any]] = []
@@ -180,7 +182,7 @@ class ReferenceExampleRecordRecorder:
                         logger.warning("reference example record staging failed: %s", exc)
 
     async def _persist(self, entries: list[dict[str, Any]]) -> None:
-        record = {"disabled": False, "entries": entries}
+        record = {"disabled": self._disabled, "entries": entries}
         async with self._session_factory() as session:
             await session.execute(
                 update(GenerationLog)
@@ -195,11 +197,14 @@ def make_reference_example_record_recorder(
     generation_log_id: uuid.UUID | None,
     loop: asyncio.AbstractEventLoop,
     session_factory: Any,
+    disabled: bool = False,
 ) -> ReferenceExampleRecordRecorder | None:
     """Create the incremental recorder, or disable it for log-less runs."""
     if generation_log_id is None:
         return None
-    return ReferenceExampleRecordRecorder(generation_log_id, loop, session_factory)
+    return ReferenceExampleRecordRecorder(
+        generation_log_id, loop, session_factory, disabled=disabled
+    )
 
 
 async def _staged_reference_example_record(
