@@ -19,6 +19,8 @@ browser must set ``PLAYWRIGHT_BROWSERS_PATH`` explicitly.
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -30,10 +32,73 @@ pytest_plugins = ["pytester"]
 # "tests.plugins.playwright_browser" is importable inside the subprocess.
 _PROJECT_ROOT = str(Path(__file__).parent.parent)
 
-# Real browser cache: HOME=/home/claude so the browsers live here.  The
-# explicit path is required because pytester sets HOME to a temp directory,
-# breaking Playwright's default HOME-relative lookup.
-_REAL_BROWSERS_PATH = str(Path.home() / ".cache" / "ms-playwright")
+
+# The developer's real HOME, captured at import time.  Playwright derives its
+# browser cache from HOME, and pytester replaces HOME with a temp directory for
+# the duration of each test, so the real value must be recorded before any
+# pytester fixture runs.
+_REAL_HOME = os.environ.get("HOME")
+
+
+def _browsers_root_and_revision() -> tuple[Path, str]:
+    """Registry root and Chromium revision this interpreter's Playwright resolves.
+
+    Asked of Playwright rather than hardcoded: the cache location is
+    OS-dependent (``~/.cache/ms-playwright`` on Linux,
+    ``~/Library/Caches/ms-playwright`` on macOS, ``%LOCALAPPDATA%`` on
+    Windows).  An explicit path is needed at all because pytester sets HOME to
+    a temp directory, which breaks Playwright's default HOME-relative lookup —
+    so HOME is restored here while Playwright resolves the path.
+    """
+    from playwright.sync_api import sync_playwright
+
+    swapped = _REAL_HOME is not None and os.environ.get("HOME") != _REAL_HOME
+    previous = os.environ.get("HOME")
+    if swapped:
+        os.environ["HOME"] = _REAL_HOME  # type: ignore[assignment]
+    try:
+        with sync_playwright() as pw:
+            executable = Path(pw.chromium.executable_path)
+    finally:
+        if swapped:
+            if previous is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = previous
+
+    for ancestor in executable.parents:
+        if ancestor.name.startswith("chromium-"):
+            return ancestor.parent, ancestor.name.split("-", 1)[1]
+    raise AssertionError(
+        f"Could not derive the Playwright browsers root from {str(executable)!r}"
+    )
+
+
+def _real_browsers_path() -> str:
+    """The browsers root alone, as a string for PLAYWRIGHT_BROWSERS_PATH."""
+    return str(_browsers_root_and_revision()[0])
+
+
+def _headless_shell_relpath() -> Path:
+    """Headless-shell binary path relative to the browsers root.
+
+    Globbed from the real installation rather than hardcoded: the revision
+    directory (``chromium_headless_shell-<rev>``) tracks the Playwright
+    version and the platform directory (``chrome-headless-shell-linux64`` /
+    ``-mac-arm64`` / ...) tracks the host OS.  Pinning either one turns the
+    "broken browser" slice below into a second "missing browser" slice without
+    failing, so it is derived.  The revision is taken from the Chromium build
+    Playwright resolves, because the headless shell shares that revision.
+    """
+    root, revision = _browsers_root_and_revision()
+    binary = "chrome-headless-shell.exe" if sys.platform == "win32" else "chrome-headless-shell"
+    matches = sorted(root.glob(f"chromium_headless_shell-{revision}/*/{binary}"))
+    if not matches:
+        raise AssertionError(
+            f"No headless-shell binary for revision {revision} under {root}. "
+            f"Fix: {_INSTALL_CMD}"
+        )
+    return matches[0].relative_to(root)
 
 _INNER_CONFTEST = f"""
 import sys
@@ -43,13 +108,6 @@ pytest_plugins = ["tests.plugins.playwright_browser"]
 
 # The exact command users must run to install the browser.
 _INSTALL_CMD = "uv run playwright install chromium"
-
-# Chromium headless shell binary path relative to the browsers root.
-_CHROME_REL_PATH = (
-    "chromium_headless_shell-1208"
-    "/chrome-headless-shell-linux64"
-    "/chrome-headless-shell"
-)
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -70,7 +128,7 @@ def _make_empty_browsers_dir(tmp_path: Path) -> Path:
 def _make_broken_browsers_dir(tmp_path: Path) -> Path:
     """Return a browsers dir whose Chromium binary exists but always exits 127."""
     browsers_dir = tmp_path / "broken_pw"
-    binary = browsers_dir / _CHROME_REL_PATH
+    binary = browsers_dir / _headless_shell_relpath()
     binary.parent.mkdir(parents=True)
     binary.write_text("#!/bin/sh\nexit 127\n")
     binary.chmod(0o755)
@@ -129,7 +187,7 @@ def test_present_browser_runs_marked_and_no_skip(
     PLAYWRIGHT_BROWSERS_PATH is set explicitly because pytester sets HOME to a
     temp directory, breaking Playwright's default HOME-relative cache lookup.
     """
-    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", _REAL_BROWSERS_PATH)
+    monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", _real_browsers_path())
 
     pytester.makeconftest(_INNER_CONFTEST)
     pytester.makepyfile(
@@ -191,6 +249,7 @@ def test_no_marked_tests_probe_does_not_run(
 # ─── Slice 4: present but unusable ────────────────────────────────────────────
 
 
+@pytest.mark.requires_browser  # needs a real install to learn the platform layout
 def test_broken_browser_skips_marked_and_reports_cause(
     pytester: pytest.Pytester,
     monkeypatch: pytest.MonkeyPatch,
@@ -217,6 +276,10 @@ def test_broken_browser_skips_marked_and_reports_cause(
     result.assert_outcomes(passed=1, skipped=1)
 
     out = _output(result)
+    assert "Executable doesn't exist" not in out, (
+        "The fixture must produce a binary Playwright actually tries to run, so this "
+        f"slice exercises a *broken* browser rather than a missing one:\n{out}"
+    )
     assert _INSTALL_CMD in out, (
         f"Install message should appear even with a broken binary:\n{out}"
     )

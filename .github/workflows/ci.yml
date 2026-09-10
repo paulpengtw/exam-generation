@@ -23,10 +23,13 @@ jobs:
         # in addition to the optional extras (dev: pytest/ruff, web: fastapi etc.)
         run: uv sync --all-extras --all-groups
 
+      - name: Install Playwright browser
+        # uv sync installs the playwright package but not the browser binary;
+        # that is a separate download (issue #659). Idempotent: skips when cached.
+        run: uv run playwright install --with-deps chromium
+
       - name: Lint (ruff)
-        # Non-blocking: 105 pre-existing errors as of issue #162. Flip to blocking
-        # (remove continue-on-error) once the ruff debt is cleared.
-        continue-on-error: true
+        # Blocking since issue #691: the 105 pre-existing errors from #162 are cleared.
         run: uv run ruff check src/ server/ tests/
 
       - name: Python tests (includes TS contract drift guard)
@@ -54,10 +57,7 @@ jobs:
         run: npx tsc -b --noEmit
 
       - name: Lint (eslint)
-        # Non-blocking: 6 pre-existing react-hooks/set-state-in-effect errors as of issue #162.
-        # 5 in web/src/components/ParamForm.tsx, 1 in web/src/pages/VerifyPage.tsx.
-        # Flip to blocking (remove continue-on-error) once the eslint debt is cleared.
-        continue-on-error: true
+        # Blocking since issue #690: the set-state-in-effect errors from #162 are cleared.
         run: npm run lint
 
       - name: Web tests
