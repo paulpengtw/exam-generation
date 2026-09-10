@@ -158,6 +158,12 @@ describe("ParamForm draft persistence", () => {
   });
 
   it("does not save when delayed model reconciliation only changes defaults", async () => {
+    // Install fake timers BEFORE render so any setTimeout scheduled during render
+    // (including in model-reconciliation effects) is captured and will not fire unless
+    // we explicitly advance time.  Using shouldAdvanceTime:true keeps RTL's internal
+    // waitFor/findBy polling working without needing manual clock ticks.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
     let resolveModels!: (models: {
       allowed: string[];
       defaults: { plan: string; execute: string };
@@ -168,8 +174,9 @@ describe("ParamForm draft persistence", () => {
       }),
     );
     localStorage.setItem("model_plan", "retired-model");
-    await renderForm();
-    vi.useFakeTimers();
+
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+    await screen.findByRole("button", { name: "產生" });
 
     await act(async () => {
       resolveModels({
