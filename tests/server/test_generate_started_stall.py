@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 from pathlib import Path
@@ -183,13 +184,6 @@ def _make_slow_plan_spec() -> SubjectSpec:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#700: a run waiting for a Playwright renderer after `started` "
-        "emits nothing the client can see"
-    ),
-)
 def test_empty_renderer_pool_stalls_after_started_with_no_client_visible_event(
     tmp_path: Path,
 ) -> None:
@@ -437,5 +431,224 @@ def test_batch_brief_planning_does_not_block_event_loop(tmp_path: Path) -> None:
             f"expected >= 5 to indicate the event loop was not blocked. "
             f"On current code plan_all_batch_briefs blocks the loop so ticks stay near 0."
         )
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Test 5 — pool wait exceeds threshold → one WARNING logged
+# ---------------------------------------------------------------------------
+
+
+def test_pool_wait_timeout_logs_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When the renderer pool wait exceeds the threshold, exactly one WARNING is logged.
+
+    The module-level RENDERER_POOL_WAIT_WARN_THRESHOLD_S constant is monkeypatched
+    to a small value so the test does not have to wait seconds for the warning.
+    """
+    import server.generate.service as svc  # noqa: PLC0415
+
+    threshold = 0.05  # seconds — monkeypatched well below the default
+    monkeypatch.setattr(svc, "RENDERER_POOL_WAIT_WARN_THRESHOLD_S", threshold)
+
+    async def run() -> None:
+        sentinel = object()
+        pool: asyncio.Queue = asyncio.Queue()  # starts empty
+        app_state = SimpleNamespace(renderer_pool=pool)
+        config = ServerConfig(
+            api_key="x", output_dir=tmp_path, data_dir=Path("data"), creative_planning=False
+        )
+        params = GenerateParams(subject="fake", count=1, skip_verify=True)
+        stream = generate_question_stream(
+            params, config, app_state, subjects={"fake": _make_happy_spec()}
+        )
+
+        # Consume "started"
+        first = await stream.__anext__()
+        assert first["event"] == "started"
+
+        # Consume "renderer/acquire/start" (emitted before pool.get())
+        second = await stream.__anext__()
+        assert second["event"] == "stage"
+        assert second["data"]["agent"] == "renderer"
+        assert second["data"]["status"] == "start"
+
+        # Schedule putting an item in the pool after the threshold fires
+        async def put_after_threshold() -> None:
+            await asyncio.sleep(threshold * 4)
+            await pool.put(sentinel)
+
+        putter = asyncio.create_task(put_after_threshold())
+
+        # This __anext__() call runs renderer_pool.get() (blocks until pool has item).
+        # asyncio.wait_for inside the generator times out after `threshold`, logging
+        # the warning, then waits again; put_after_threshold unblocks it.
+        third = await stream.__anext__()
+        assert third["event"] == "stage"
+        assert third["data"]["agent"] == "renderer"
+        assert third["data"]["status"] == "end"
+
+        await putter
+
+        # Drain remaining events
+        async for _ in stream:
+            pass
+
+    with caplog.at_level(logging.WARNING, logger="server.generate.service"):
+        asyncio.run(run())
+
+    warning_records = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "renderer" in r.message.lower()
+    ]
+    assert len(warning_records) == 1, (
+        f"expected exactly 1 WARNING about renderer pool wait; got {len(warning_records)}: "
+        + ", ".join(r.message for r in warning_records)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 6 — aclose after acquire/end returns renderer (issue #700 leak window)
+# ---------------------------------------------------------------------------
+
+
+def test_aclose_after_acquire_end_returns_renderer_to_pool(tmp_path: Path) -> None:
+    """Calling aclose() after consume of acquire/end (but before pipeline_start)
+    must still return the renderer to the pool.
+
+    Without the fix, GeneratorExit at the acquire/end yield exits the generator
+    before any finally that puts the renderer back, so the renderer leaks.
+    """
+
+    async def run() -> None:
+        sentinel = object()
+        pool: asyncio.Queue = asyncio.Queue()
+        pool.put_nowait(sentinel)
+        app_state = SimpleNamespace(renderer_pool=pool)
+        config = ServerConfig(
+            api_key="x", output_dir=tmp_path, data_dir=Path("data"), creative_planning=False
+        )
+        params = GenerateParams(subject="fake", count=1, skip_verify=True)
+        stream = generate_question_stream(
+            params, config, app_state, subjects={"fake": _make_happy_spec()}
+        )
+
+        # started
+        e1 = await stream.__anext__()
+        assert e1["event"] == "started"
+
+        # renderer/acquire/start
+        e2 = await stream.__anext__()
+        assert e2["event"] == "stage"
+        assert e2["data"]["agent"] == "renderer"
+        assert e2["data"]["status"] == "start"
+
+        # renderer/acquire/end  (renderer is now held; pool is empty)
+        e3 = await stream.__anext__()
+        assert e3["event"] == "stage"
+        assert e3["data"]["agent"] == "renderer"
+        assert e3["data"]["status"] == "end"
+
+        # Client disconnects before pipeline_start
+        await stream.aclose()
+
+        assert pool.qsize() == 1, (
+            "renderer must be returned to pool after aclose() at acquire/end"
+        )
+        assert pool.get_nowait() is sentinel, "returned item must be the original sentinel"
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — plan_all_batch_briefs raises returns renderer (issue #700 leak window)
+# ---------------------------------------------------------------------------
+
+
+class _FakePlanError(RuntimeError):
+    """Sentinel exception raised by plan_all_batch_briefs in test 7."""
+
+
+def _make_failing_plan_spec() -> SubjectSpec:
+    """Spec whose plan_all_batch_briefs always raises _FakePlanError."""
+
+    def coerce_overrides(params: Any, app_state: Any) -> dict:
+        return {}
+
+    def plan_all_batch_briefs(*a: Any, **kw: Any) -> list:
+        raise _FakePlanError("plan_all_batch_briefs failed (test 7)")
+
+    def params_from_resolved_payload(payload: dict, overrides: dict) -> _FakeParams:
+        return _FakeParams()
+
+    def do_generate(  # pragma: no cover
+        rng_params: Any, overrides: dict, **kw: Any
+    ) -> _FakeQuestion:
+        return _FakeQuestion(id=kw["question_id"])
+
+    def extract_prior_scope(q: Any) -> None:
+        return None
+
+    def plan_core_questions(client: Any, topic: str, **kw: Any) -> list:  # pragma: no cover
+        return []
+
+    def load_planner_stage(cfg: Any, grade: Any) -> str:  # pragma: no cover
+        return "第四學習階段"
+
+    def build_schemas(cfg: Any, grade: Any) -> dict:  # pragma: no cover
+        return {}
+
+    return SubjectSpec(
+        key="fake",
+        question_id_prefix="fake_",
+        exam_question_cls=_FakeQuestion,
+        coerce_overrides=coerce_overrides,
+        plan_all_batch_briefs=plan_all_batch_briefs,
+        params_from_resolved_payload=params_from_resolved_payload,
+        do_generate=do_generate,
+        extract_prior_scope=extract_prior_scope,
+        patch_metadata=None,
+        plan_core_questions=plan_core_questions,
+        load_planner_stage=load_planner_stage,
+        build_schemas=build_schemas,
+    )
+
+
+def test_plan_all_batch_briefs_raises_returns_renderer_to_pool(tmp_path: Path) -> None:
+    """If plan_all_batch_briefs raises, the renderer must still be returned.
+
+    Without the fix, the exception exits the generator before the finally that
+    puts the renderer back, so the renderer leaks permanently.
+    """
+
+    async def run() -> None:
+        sentinel = object()
+        pool: asyncio.Queue = asyncio.Queue()
+        pool.put_nowait(sentinel)
+        app_state = SimpleNamespace(renderer_pool=pool)
+        config = ServerConfig(
+            api_key="x", output_dir=tmp_path, data_dir=Path("data"), creative_planning=False
+        )
+        params = GenerateParams(subject="fake", count=1, skip_verify=True)
+        stream = generate_question_stream(
+            params, config, app_state, subjects={"fake": _make_failing_plan_spec()}
+        )
+
+        # Drain the stream; expect the _FakePlanError to propagate through __anext__
+        try:
+            async for _evt in stream:
+                pass
+        except _FakePlanError:
+            pass  # expected
+
+        assert pool.qsize() == 1, (
+            "renderer must be returned to pool even when plan_all_batch_briefs raises"
+        )
+        assert pool.get_nowait() is sentinel, "returned item must be the original sentinel"
 
     asyncio.run(run())
