@@ -320,6 +320,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "agent.corrector": "Corrector",
     "agent.image_agent": "Image Agent",
     "agent.planner": "Planner",
+    "agent.renderer": "Renderer",
 
     "stage.llm_generate": "Generating question",
     "stage.prompt_build": "Building prompt",
@@ -327,6 +328,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "stage.verify": "Verifying answer",
     "stage.correct": "Correcting question",
     "stage.html_render": "Rendering HTML",
+    "stage.acquire": "Waiting for renderer",
 
     "agent_panel.title": "Agent Status",
     "agent_panel.aggregate_label": "Aggregate · across {n} questions",
@@ -797,6 +799,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "agent.corrector": "修正器",
     "agent.image_agent": "圖片生成器",
     "agent.planner": "規劃器",
+    "agent.renderer": "渲染器",
 
     "stage.llm_generate": "生成題目中",
     "stage.prompt_build": "建構提示詞",
@@ -804,6 +807,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "stage.verify": "驗證答案",
     "stage.correct": "修正題目",
     "stage.html_render": "渲染 HTML",
+    "stage.acquire": "等待渲染器",
 
     "agent_panel.title": "多 Agent 狀態",
     "agent_panel.aggregate_label": "合計模式 · {n} 題彙總",

@@ -151,13 +151,6 @@ def _make_blocking_spec(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#700: renderer leaked on client disconnect; "
-        "generator cleanup interrupted before renderer_pool.put"
-    ),
-)
 def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
     tmp_path: Path,
 ) -> None:
