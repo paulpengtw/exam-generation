@@ -233,7 +233,9 @@ def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
         # The route calls stream.aclose() on disconnect, which throws GeneratorExit
         # into this proxy.  The proxy MUST explicitly call inner.aclose() in its
         # finally block so that generate_question_stream's own finally block runs
-        # (setting cancel_event and returning the renderer).
+        # (setting cancel_event and flushing recorders).  With the per-render lease
+        # there is no stream-level renderer return, but aclose() must still run so
+        # cancel_event is set and the worker can exit cleanly.
         async def _stream_with_fake(
             params: Any, config_: Any, app_state: Any, **kwargs: Any
         ) -> Any:
@@ -333,7 +335,7 @@ def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
             route_task = asyncio.create_task(app(scope, receive, send_fn))
 
             # Wait for pipeline_start to appear in the SSE body — confirms the
-            # generator has passed its ``started`` event and acquired the renderer.
+            # generator has passed its ``started`` event and submitted workers.
             try:
                 await asyncio.wait_for(pipeline_start_seen.wait(), timeout=15.0)
             except asyncio.TimeoutError:
@@ -347,14 +349,23 @@ def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
 
             disconnect_time = time.time()
 
+            # ── Per-render lease: pool stays full while worker is blocked ────
+            # With option 2 (per-render lease), a worker that is blocked in a
+            # non-render call never borrows from the pool.  Assert this before
+            # disconnecting — the sentinel must still be in the pool at this point.
+            assert pool.qsize() == 1, (
+                "pool must be full while blocking worker is in stage 1 (non-render); "
+                "with per-render lease the pool is never held outside a render call"
+            )
+
             # Signal HTTP disconnect while the route is still streaming.
             disconnect_event.set()
 
             # Release the blocking worker so signal_task can eventually resolve
-            # and generate_question_stream's finally can reach renderer_pool.put.
+            # and generate_question_stream's inner finally can flush recorders.
             first_call_release.set()
 
-            # Poll up to 10 s for the sentinel to return to the pool.
+            # Poll up to 10 s for aclose to complete (pool stays at 1 throughout).
             deadline = time.monotonic() + 10.0
             while time.monotonic() < deadline:
                 if pool.qsize() == 1:

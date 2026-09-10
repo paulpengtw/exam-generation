@@ -284,16 +284,16 @@ def test_renderer_is_returned_to_pool_after_run_completes(tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_aborted_run_keeps_renderer_until_its_worker_exits(tmp_path: Path) -> None:
-    """Green characterisation of the #689 root cause.
+def test_aborted_run_does_not_hold_renderer_while_worker_is_blocked(tmp_path: Path) -> None:
+    """Per-render lease: a worker blocked in a non-render call never borrows the renderer.
 
-    The generator's finally block calls ``await signal_task`` before
-    ``renderer_pool.put(html_renderer)``.  signal_task waits for all workers to
-    finish.  A worker still inside a blocking call therefore holds the renderer
-    for the full duration of that call.
+    The pool stays FULL while the worker is stuck inside a blocking do_generate
+    call that never calls html_renderer.render().  This is the key improvement over
+    option 1 (stream-level hold), where the renderer was held for the entire duration
+    of the worker's blocking call (150–230 s in the staging gpt_image scenario).
 
-    Note: with the #683 cancel signal the worker exits at the next stage
-    boundary, so the hold is now bounded by one LLM/image call, not eliminated.
+    Replaces the old ``test_aborted_run_keeps_renderer_until_its_worker_exits``
+    test which documented the old (now-removed) stream-level hold behaviour.
     """
     first_call_started = threading.Event()
     first_call_release = threading.Event()
@@ -307,13 +307,15 @@ def test_aborted_run_keeps_renderer_until_its_worker_exits(tmp_path: Path) -> No
             api_key="x", output_dir=tmp_path, data_dir=Path("data"), creative_planning=False
         )
         params = GenerateParams(subject="fake", count=1, skip_verify=True)
+        # _make_blocking_spec's do_generate blocks but never calls html_renderer.render(),
+        # so the RendererLease never borrows from the pool.
         fake_spec = _make_blocking_spec(first_call_started, first_call_release)
 
         stream = generate_question_stream(
             params, config, app_state, subjects={"fake": fake_spec}
         )
 
-        # Consume until pipeline_start; by then the worker is submitted to the executor.
+        # Consume until pipeline_start; by then the worker is in the executor.
         async for evt in stream:
             if (
                 evt["event"] == "pipeline"
@@ -328,31 +330,35 @@ def test_aborted_run_keeps_renderer_until_its_worker_exits(tmp_path: Path) -> No
         )
         assert started_ok, "timed out waiting for worker to enter do_generate"
 
-        # Simulate a client disconnect: GeneratorExit is thrown at the `yield event`
-        # suspend point, entering the finally block which does `await signal_task`.
-        # signal_task cannot finish until the worker exits, so the pool stays empty.
-        aclose_task = asyncio.create_task(stream.aclose())
-
-        # Poll for 0.5 s, verifying the renderer stays held throughout.
-        deadline = asyncio.get_event_loop().time() + 0.5
-        all_checks_ok = True
-        while asyncio.get_event_loop().time() < deadline:
-            await asyncio.sleep(0.05)
-            if pool.qsize() != 0 or aclose_task.done():
-                all_checks_ok = False
-                break
-
-        assert all_checks_ok, (
-            "pool should stay empty and aclose_task should stay pending "
-            "while the blocking worker holds the renderer"
+        # The pool must be FULL while the worker is blocked — the per-render lease
+        # means a non-rendering worker never borrows from the pool.
+        assert pool.qsize() == 1, (
+            "pool should stay full while the blocking worker is not rendering; "
+            "with the per-render lease, a non-rendering worker never borrows from the pool"
         )
 
-        # Release the worker; the renderer is returned only after the worker exits.
+        # Simulate disconnect.
+        aclose_task = asyncio.create_task(stream.aclose())
+
+        # Poll for 0.5 s verifying the pool stays full throughout.
+        deadline = asyncio.get_event_loop().time() + 0.5
+        all_checks_full = True
+        while asyncio.get_event_loop().time() < deadline:
+            await asyncio.sleep(0.05)
+            if pool.qsize() != 1:
+                all_checks_full = False
+                break
+
+        assert all_checks_full, (
+            "pool should stay full while the blocking worker is not rendering"
+        )
+
+        # Release the worker; aclose completes without any renderer borrow.
         first_call_release.set()
         await aclose_task
 
-        assert pool.qsize() == 1, "renderer must be returned to pool after worker exits"
-        assert pool.get_nowait() is sentinel, "returned item must be the original sentinel"
+        assert pool.qsize() == 1, "pool must remain full after worker exits"
+        assert pool.get_nowait() is sentinel, "sentinel must be the same object"
 
     asyncio.run(run())
 
@@ -640,60 +646,101 @@ def test_pool_wait_timeout_logs_warning(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """When the renderer pool wait exceeds the threshold, exactly one WARNING is logged.
+    """When a per-render lease wait exceeds the threshold, exactly one WARNING is logged.
 
-    The module-level RENDERER_POOL_WAIT_WARN_THRESHOLD_S constant is monkeypatched
-    to a small value so the test does not have to wait seconds for the warning.
+    The warning now lives in server.generate.renderer_lease (per-render lease design),
+    but RENDERER_POOL_WAIT_WARN_THRESHOLD_S stays in server.generate.service and is
+    read lazily by RendererLease.render() at call time — monkeypatching the service
+    constant is sufficient.
+
+    A spec whose do_generate calls html_renderer.render() is used so the lease
+    actually waits for a pool item.
     """
     import server.generate.service as svc  # noqa: PLC0415
 
     threshold = 0.05  # seconds — monkeypatched well below the default
     monkeypatch.setattr(svc, "RENDERER_POOL_WAIT_WARN_THRESHOLD_S", threshold)
 
+    render_calls: list[str] = []
+
+    def _make_rendering_spec() -> SubjectSpec:
+        """Spec whose do_generate calls html_renderer.render() once."""
+
+        def coerce_overrides(params: Any, app_state: Any) -> dict:
+            return {}
+
+        def plan_all_batch_briefs(*a: Any, **kw: Any) -> list:
+            return []
+
+        def params_from_resolved_payload(payload: dict, overrides: dict) -> _FakeParams:
+            return _FakeParams()
+
+        def do_generate(rng_params: Any, overrides: dict, **kw: Any) -> _FakeQuestion:
+            hr = kw.get("html_renderer")
+            if hr is not None:
+                result = hr.render("<p>test</p>", tmp_path / "out.png")
+                render_calls.append(str(result))
+            return _FakeQuestion(id=kw["question_id"])
+
+        def extract_prior_scope(q: Any) -> None:
+            return None
+
+        def plan_core_questions(client: Any, topic: str, **kw: Any) -> list:  # pragma: no cover
+            return []
+
+        def load_planner_stage(cfg: Any, grade: Any) -> str:  # pragma: no cover
+            return "第四學習階段"
+
+        def build_schemas(cfg: Any, grade: Any) -> dict:  # pragma: no cover
+            return {}
+
+        return SubjectSpec(
+            key="fake",
+            question_id_prefix="fake_",
+            exam_question_cls=_FakeQuestion,
+            coerce_overrides=coerce_overrides,
+            plan_all_batch_briefs=plan_all_batch_briefs,
+            params_from_resolved_payload=params_from_resolved_payload,
+            do_generate=do_generate,
+            extract_prior_scope=extract_prior_scope,
+            patch_metadata=None,
+            plan_core_questions=plan_core_questions,
+            load_planner_stage=load_planner_stage,
+            build_schemas=build_schemas,
+        )
+
+    class _FakeRenderer:
+        """Fake renderer whose render() records calls and returns a sentinel path."""
+
+        def render(self, html: str, output_path: Any, width: int = 800) -> str:
+            return str(output_path)
+
     async def run() -> None:
-        sentinel = object()
         pool: asyncio.Queue = asyncio.Queue()  # starts empty
         app_state = SimpleNamespace(renderer_pool=pool)
         config = ServerConfig(
             api_key="x", output_dir=tmp_path, data_dir=Path("data"), creative_planning=False
         )
         params = GenerateParams(subject="fake", count=1, skip_verify=True)
-        stream = generate_question_stream(
-            params, config, app_state, subjects={"fake": _make_happy_spec()}
-        )
 
-        # Consume "started"
-        first = await stream.__anext__()
-        assert first["event"] == "started"
+        # Schedule putting a renderer in the pool after the threshold fires.
+        fake_renderer = _FakeRenderer()
 
-        # Consume "renderer/acquire/start" (emitted before pool.get())
-        second = await stream.__anext__()
-        assert second["event"] == "stage"
-        assert second["data"]["agent"] == "renderer"
-        assert second["data"]["status"] == "start"
-
-        # Schedule putting an item in the pool after the threshold fires
         async def put_after_threshold() -> None:
             await asyncio.sleep(threshold * 4)
-            await pool.put(sentinel)
+            await pool.put(fake_renderer)
 
         putter = asyncio.create_task(put_after_threshold())
 
-        # This __anext__() call runs renderer_pool.get() (blocks until pool has item).
-        # asyncio.wait_for inside the generator times out after `threshold`, logging
-        # the warning, then waits again; put_after_threshold unblocks it.
-        third = await stream.__anext__()
-        assert third["event"] == "stage"
-        assert third["data"]["agent"] == "renderer"
-        assert third["data"]["status"] == "end"
+        async for _ in generate_question_stream(
+            params, config, app_state,
+            subjects={"fake": _make_rendering_spec()},
+        ):
+            pass
 
         await putter
 
-        # Drain remaining events
-        async for _ in stream:
-            pass
-
-    with caplog.at_level(logging.WARNING, logger="server.generate.service"):
+    with caplog.at_level(logging.WARNING, logger="server.generate.renderer_lease"):
         asyncio.run(run())
 
     warning_records = [
@@ -705,6 +752,10 @@ def test_pool_wait_timeout_logs_warning(
         f"expected exactly 1 WARNING about renderer pool wait; got {len(warning_records)}: "
         + ", ".join(r.message for r in warning_records)
     )
+    # Confirm the render actually executed (lease acquired and returned the renderer).
+    assert len(render_calls) == 1, (
+        f"expected exactly 1 render call after acquiring the lease; got {render_calls}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -712,12 +763,15 @@ def test_pool_wait_timeout_logs_warning(
 # ---------------------------------------------------------------------------
 
 
-def test_aclose_after_acquire_end_returns_renderer_to_pool(tmp_path: Path) -> None:
-    """Calling aclose() after consume of acquire/end (but before pipeline_start)
-    must still return the renderer to the pool.
+def test_aclose_early_does_not_lose_renderer(tmp_path: Path) -> None:
+    """Calling aclose() at any point before pipeline_start must not lose a renderer.
 
-    Without the fix, GeneratorExit at the acquire/end yield exits the generator
-    before any finally that puts the renderer back, so the renderer leaks.
+    With the per-render lease design, there is no stream-level renderer hold, so
+    calling aclose() immediately after ``started`` or after any planning stage event
+    cannot leak the renderer — the pool always stays intact.
+
+    Replaces ``test_aclose_after_acquire_end_returns_renderer_to_pool`` which
+    assumed the old stream-level acquire/end stage event (removed in option 2).
     """
 
     async def run() -> None:
@@ -733,27 +787,25 @@ def test_aclose_after_acquire_end_returns_renderer_to_pool(tmp_path: Path) -> No
             params, config, app_state, subjects={"fake": _make_happy_spec()}
         )
 
-        # started
+        # started — pool is still full (no stream-level hold)
         e1 = await stream.__anext__()
         assert e1["event"] == "started"
+        assert pool.qsize() == 1, "pool must be full right after started (no stream-level hold)"
 
-        # renderer/acquire/start
+        # Next event is planner/batch_briefs/start (not renderer/acquire/start)
         e2 = await stream.__anext__()
         assert e2["event"] == "stage"
-        assert e2["data"]["agent"] == "renderer"
-        assert e2["data"]["status"] == "start"
+        assert e2["data"]["agent"] == "planner", (
+            f"first stage event after started must be planner; got {e2['data']['agent']!r}"
+        )
+        assert pool.qsize() == 1, "pool must stay full before planning (no stream-level hold)"
 
-        # renderer/acquire/end  (renderer is now held; pool is empty)
-        e3 = await stream.__anext__()
-        assert e3["event"] == "stage"
-        assert e3["data"]["agent"] == "renderer"
-        assert e3["data"]["status"] == "end"
-
-        # Client disconnects before pipeline_start
+        # Disconnect before pipeline_start — pool must stay intact
         await stream.aclose()
 
         assert pool.qsize() == 1, (
-            "renderer must be returned to pool after aclose() at acquire/end"
+            "pool must remain full after aclose() early — with per-render lease, "
+            "the stream never holds a renderer outside of an actual render call"
         )
         assert pool.get_nowait() is sentinel, "returned item must be the original sentinel"
 

@@ -228,6 +228,7 @@ def _build_run_context(
     queue: asyncio.Queue,
     html_renderer: Any,
     on_error: Callable[[str], None] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -289,7 +290,7 @@ def _build_run_context(
         next_order=_next_order,
         config=config,
         balanced_batch=balanced_batch,
-        cancel_event=threading.Event(),
+        cancel_event=cancel_event if cancel_event is not None else threading.Event(),
     )
 
 
@@ -473,178 +474,142 @@ async def generate_question_stream(
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     renderer_pool = getattr(app_state, "renderer_pool", None)
+
+    # Per-render lease: a renderer is borrowed only for the duration of one HTML
+    # render call, then returned immediately.  The pool is never held for the
+    # lifetime of the stream, so an aborted run releases its renderer within one
+    # render call, not when its worker thread exits (issue #700 option 2).
+    # The cancel_event is created here so it can be shared with the lease object
+    # before _build_run_context is called.
+    _cancel_event = threading.Event()
     if renderer_pool is not None:
-        yield {
-            "event": SSEEventName.STAGE,
-            "data": {
-                "type": "stage",
-                "agent": "renderer",
-                "stage": "acquire",
-                "status": "start",
-                "ts": time.time(),
-            },
-        }
-        try:
-            html_renderer = await asyncio.wait_for(
-                renderer_pool.get(),
-                timeout=RENDERER_POOL_WAIT_WARN_THRESHOLD_S,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "renderer pool wait exceeded %.1f s — pool may be exhausted (issue #700); "
-                "continuing to wait",
-                RENDERER_POOL_WAIT_WARN_THRESHOLD_S,
-            )
-            html_renderer = await renderer_pool.get()
+        from server.generate.renderer_lease import RendererLease  # noqa: PLC0415
+        html_renderer: Any = RendererLease(renderer_pool, loop, _cancel_event, queue)
     else:
         html_renderer = None
 
-    # Outer try/finally: guards renderer_pool.put from the moment of acquisition.
-    # Covers the acquire/end yield, all setup (ctx, planning, client_factory),
-    # and the event-loop.  The put is deferred until after signal_task resolves
-    # when workers exist; when signal_task was never created, the put is immediate.
-    # The shielded inner finally handles the case where workers are running.
     signal_task: asyncio.Task[None] | None = None
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    spec = _subjects[params.subject]
+
+    def _emit_sq_config_error(msg: str) -> None:
+        queue.put_nowait({
+            "event": SSEEventName.STAGE,
+            "data": {
+                "type": "stage",
+                "agent": "generator",
+                "stage": "subquestion_configs",
+                "status": "error",
+                "message": msg,
+                "ts": time.time(),
+            },
+        })
+
+    ctx = _build_run_context(
+        params, config, app_state,
+        spec=spec,
+        session_factory=_session_factory,
+        generation_log_id=generation_log_id,
+        loop=loop,
+        queue=queue,
+        html_renderer=html_renderer,
+        on_error=_emit_sq_config_error,
+        cancel_event=_cancel_event,
+    )
+
+    # Site 2 (creative-brief / coverage planning): delegated to spec.
+    # SS: plans briefs when creative_planning=True; returns [None]*count otherwise.
+    # Math / NS: always returns [] so the brief-application check is a no-op.
+    # Run in a worker thread so a synchronous LLM planning call (e.g. Opus for
+    # 社會領域 with creative_planning=True, ~14 s) does not block the event loop
+    # and freeze pings, /health, and other requests (issue #701).
+    yield {
+        "event": SSEEventName.STAGE,
+        "data": {
+            "type": "stage",
+            "agent": "planner",
+            "stage": "batch_briefs",
+            "status": "start",
+            "ts": time.time(),
+        },
+    }
+    batch_briefs = await asyncio.to_thread(
+        functools.partial(
+            spec.plan_all_batch_briefs,
+            params, ctx.count, ctx.base_seed, ctx.overrides, config,
+            config.creative_planning, ctx.decoded_subquestion_configs,
+            client_factory=_client_factory,
+        )
+    )
+    yield {
+        "event": SSEEventName.STAGE,
+        "data": {
+            "type": "stage",
+            "agent": "planner",
+            "stage": "batch_briefs",
+            "status": "end",
+            "ts": time.time(),
+        },
+    }
+
+    # Guard: if the request was cancelled while planning ran in its thread
+    # (e.g. the client disconnected), do not submit workers.  This is an extra
+    # safety net; CancelledError during the await above already prevents reaching
+    # this line in the normal asyncio cancellation path.
+    if ctx.cancel_event.is_set():
+        return
+
+    ctx.emit_pipeline("pipeline_start", total=ctx.count)
+    question_clients = [_client_factory(ctx.client_config) for _ in range(ctx.count)]
+    futures = [
+        loop.run_in_executor(
+            None, functools.partial(_worker_one, i, question_clients[i], ctx, batch_briefs),
+        )
+        for i in range(ctx.count)
+    ]
+
+    async def _wait_and_signal() -> None:
+        await asyncio.gather(*futures, return_exceptions=True)
+        # _direct=True: already on the event loop — call_soon_threadsafe would
+        # defer pipeline_end by one tick, placing it after done in the queue.
+        ctx.emit_pipeline("pipeline_end", total=ctx.count, _direct=True)
+        queue.put_nowait({"event": SSEEventName.DONE, "data": ""})
+
+    signal_task = asyncio.create_task(_wait_and_signal())
     try:
-        if renderer_pool is not None:
-            yield {
-                "event": SSEEventName.STAGE,
-                "data": {
-                    "type": "stage",
-                    "agent": "renderer",
-                    "stage": "acquire",
-                    "status": "end",
-                    "ts": time.time(),
-                },
-            }
-
-        config.output_dir.mkdir(parents=True, exist_ok=True)
-        spec = _subjects[params.subject]
-
-        def _emit_sq_config_error(msg: str) -> None:
-            queue.put_nowait({
-                "event": SSEEventName.STAGE,
-                "data": {
-                    "type": "stage",
-                    "agent": "generator",
-                    "stage": "subquestion_configs",
-                    "status": "error",
-                    "message": msg,
-                    "ts": time.time(),
-                },
-            })
-
-        ctx = _build_run_context(
-            params, config, app_state,
-            spec=spec,
-            session_factory=_session_factory,
-            generation_log_id=generation_log_id,
-            loop=loop,
-            queue=queue,
-            html_renderer=html_renderer,
-            on_error=_emit_sq_config_error,
-        )
-
-        # Site 2 (creative-brief / coverage planning): delegated to spec.
-        # SS: plans briefs when creative_planning=True; returns [None]*count otherwise.
-        # Math / NS: always returns [] so the brief-application check is a no-op.
-        # Run in a worker thread so a synchronous LLM planning call (e.g. Opus for
-        # 社會領域 with creative_planning=True, ~14 s) does not block the event loop
-        # and freeze pings, /health, and other requests (issue #701).
-        yield {
-            "event": SSEEventName.STAGE,
-            "data": {
-                "type": "stage",
-                "agent": "planner",
-                "stage": "batch_briefs",
-                "status": "start",
-                "ts": time.time(),
-            },
-        }
-        batch_briefs = await asyncio.to_thread(
-            functools.partial(
-                spec.plan_all_batch_briefs,
-                params, ctx.count, ctx.base_seed, ctx.overrides, config,
-                config.creative_planning, ctx.decoded_subquestion_configs,
-                client_factory=_client_factory,
-            )
-        )
-        yield {
-            "event": SSEEventName.STAGE,
-            "data": {
-                "type": "stage",
-                "agent": "planner",
-                "stage": "batch_briefs",
-                "status": "end",
-                "ts": time.time(),
-            },
-        }
-
-        # Guard: if the request was cancelled while planning ran in its thread
-        # (e.g. the client disconnected), do not submit workers.  This is an extra
-        # safety net; CancelledError during the await above already prevents reaching
-        # this line in the normal asyncio cancellation path.
-        if ctx.cancel_event.is_set():
-            return
-
-        ctx.emit_pipeline("pipeline_start", total=ctx.count)
-        question_clients = [_client_factory(ctx.client_config) for _ in range(ctx.count)]
-        futures = [
-            loop.run_in_executor(
-                None, functools.partial(_worker_one, i, question_clients[i], ctx, batch_briefs),
-            )
-            for i in range(ctx.count)
-        ]
-
-        async def _wait_and_signal() -> None:
-            await asyncio.gather(*futures, return_exceptions=True)
-            # _direct=True: already on the event loop — call_soon_threadsafe would
-            # defer pipeline_end by one tick, placing it after done in the queue.
-            ctx.emit_pipeline("pipeline_end", total=ctx.count, _direct=True)
-            queue.put_nowait({"event": SSEEventName.DONE, "data": ""})
-
-        signal_task = asyncio.create_task(_wait_and_signal())
-        try:
-            while True:
-                event = await queue.get()
-                if (
-                    event["event"] == SSEEventName.RESULT
-                    and user_id is not None
-                    and isinstance(event["data"], dict)
-                ):
-                    await persist_generation_record(
-                        user_id=user_id,
-                        generation_log_id=generation_log_id,
-                        subject=params.subject,
-                        params=params,
-                        payload=event["data"],
-                        session_factory=_session_factory,
-                        verification_trail_json=event.get("verification_trail"),
-                        figure_policy_trail_json=event.get("figure_policy_trail"),
-                        reference_example_record_json=event.get("reference_example_record"),
-                    )
-                yield event
-                if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):
-                    break
-        finally:
-            ctx.cancel_event.set()
-            # Shield the inner cleanup from anyio/asyncio cancellation so that a
-            # client disconnect cannot interrupt await signal_task.  Without the
-            # shield, CancelledError is raised there and the inner finally exits
-            # early, leaving the outer finally to put the renderer back — but
-            # then the workers might still be running (issue #700).
-            with anyio.CancelScope(shield=True):
-                try:
-                    await signal_task
-                finally:
-                    if ctx.figure_policy_recorder is not None:
-                        await ctx.figure_policy_recorder.flush()
-                    if ctx.reference_example_recorder is not None:
-                        await ctx.reference_example_recorder.flush()
+        while True:
+            event = await queue.get()
+            if (
+                event["event"] == SSEEventName.RESULT
+                and user_id is not None
+                and isinstance(event["data"], dict)
+            ):
+                await persist_generation_record(
+                    user_id=user_id,
+                    generation_log_id=generation_log_id,
+                    subject=params.subject,
+                    params=params,
+                    payload=event["data"],
+                    session_factory=_session_factory,
+                    verification_trail_json=event.get("verification_trail"),
+                    figure_policy_trail_json=event.get("figure_policy_trail"),
+                    reference_example_record_json=event.get("reference_example_record"),
+                )
+            yield event
+            if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):
+                break
     finally:
-        # Renderer is returned here — always, even if signal_task was never created.
-        # When signal_task existed, the inner finally ran first (shielded), so the
-        # put happens only after all workers have exited.
-        if renderer_pool is not None and html_renderer is not None:
-            with anyio.CancelScope(shield=True):
-                await renderer_pool.put(html_renderer)
+        ctx.cancel_event.set()
+        # Shield the inner cleanup from anyio/asyncio cancellation so that a
+        # client disconnect cannot interrupt await signal_task.  Without the
+        # shield, CancelledError is raised there and the inner finally exits
+        # early before flush() runs.  The renderer is no longer returned here
+        # (per-render lease; see RendererLease.render()).
+        with anyio.CancelScope(shield=True):
+            try:
+                await signal_task
+            finally:
+                if ctx.figure_policy_recorder is not None:
+                    await ctx.figure_policy_recorder.flush()
+                if ctx.reference_example_recorder is not None:
+                    await ctx.reference_example_recorder.flush()
