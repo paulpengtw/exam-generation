@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from unittest import mock
 
-from server.config import ServerConfig, _DEFAULT_MODELS_ALLOWED
+from server.config import _DEFAULT_MODELS_ALLOWED, ServerConfig
 
 
 def _base_env() -> dict[str, str]:

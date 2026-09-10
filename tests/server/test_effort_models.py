@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from server.generate.models import GenerateParams, PlanCoreQuestionsRequest
 
-
 # ---------------------------------------------------------------------------
 # 1. GenerateParams: optional fields, defaults None
 # ---------------------------------------------------------------------------

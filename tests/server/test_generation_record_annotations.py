@@ -4,6 +4,7 @@ import asyncio
 import uuid
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from sqlalchemy import select

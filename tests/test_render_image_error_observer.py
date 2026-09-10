@@ -1,6 +1,8 @@
 """render_image propagates exception text through on_error callback."""
 from __future__ import annotations
+
 import pathlib
+
 from src.renderer import render_image
 
 
