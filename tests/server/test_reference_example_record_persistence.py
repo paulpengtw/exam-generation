@@ -326,3 +326,95 @@ def test_make_reference_example_record_recorder_returns_none_when_log_id_is_none
         assert recorder is None
     finally:
         loop.close()
+
+
+def test_disabled_run_persists_reference_example_record_with_disabled_true(tmp_path) -> None:
+    """A recorder created with disabled=True writes disabled: True in the stored record."""
+    async def exercise() -> None:
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'ref-disabled.db'}")
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            session_factory = async_sessionmaker(
+                engine,
+                expire_on_commit=False,
+                class_=AsyncSession,
+            )
+            user_id = uuid.uuid4()
+            log_id = uuid.uuid4()
+            async with session_factory() as session:
+                session.add(User(id=user_id, email="ref-disabled@example.com"))
+                session.add(
+                    GenerationLog(
+                        id=log_id,
+                        user_id=user_id,
+                        params_json={"subject": "social_studies"},
+                        status="started",
+                    )
+                )
+                await session.commit()
+
+            recorder = make_reference_example_record_recorder(
+                generation_log_id=log_id,
+                loop=asyncio.get_running_loop(),
+                session_factory=session_factory,
+                disabled=True,
+            )
+            assert recorder is not None
+            await asyncio.to_thread(recorder, _EXAMPLE_ENTRY)
+
+            async with session_factory() as session:
+                log = await session.get(GenerationLog, log_id)
+                assert log is not None
+                expected = {"disabled": True, "entries": [_EXAMPLE_ENTRY]}
+                assert log.reference_example_record_json == expected
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())
+
+
+def test_enabled_run_persists_reference_example_record_with_disabled_false(tmp_path) -> None:
+    """A recorder created with disabled=False writes disabled: False in the stored record."""
+    async def exercise() -> None:
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'ref-enabled.db'}")
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            session_factory = async_sessionmaker(
+                engine,
+                expire_on_commit=False,
+                class_=AsyncSession,
+            )
+            user_id = uuid.uuid4()
+            log_id = uuid.uuid4()
+            async with session_factory() as session:
+                session.add(User(id=user_id, email="ref-enabled@example.com"))
+                session.add(
+                    GenerationLog(
+                        id=log_id,
+                        user_id=user_id,
+                        params_json={"subject": "social_studies"},
+                        status="started",
+                    )
+                )
+                await session.commit()
+
+            recorder = make_reference_example_record_recorder(
+                generation_log_id=log_id,
+                loop=asyncio.get_running_loop(),
+                session_factory=session_factory,
+                disabled=False,
+            )
+            assert recorder is not None
+            await asyncio.to_thread(recorder, _EXAMPLE_ENTRY)
+
+            async with session_factory() as session:
+                log = await session.get(GenerationLog, log_id)
+                assert log is not None
+                expected = {"disabled": False, "entries": [_EXAMPLE_ENTRY]}
+                assert log.reference_example_record_json == expected
+        finally:
+            await engine.dispose()
+
+    asyncio.run(exercise())

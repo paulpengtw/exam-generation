@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (s: { lang: string }) => unknown) =>
@@ -58,6 +58,10 @@ describe("ReferenceExampleRecordSection", () => {
     expect(
       screen.getByRole("region", { name: "Reference examples" }),
     ).toBeInTheDocument();
+    // Collapsed by default — click toggle to reveal entries
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show reference examples used during generation" }),
+    );
     expect(screen.getByText(/My test description/)).toBeInTheDocument();
   });
 
@@ -83,6 +87,10 @@ describe("ReferenceExampleRecordSection", () => {
     expect(
       screen.getByRole("region", { name: "Reference examples" }),
     ).toBeInTheDocument();
+    // Collapsed by default — click toggle to reveal entries
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show reference examples used during generation" }),
+    );
     expect(screen.getByText(/理解/)).toBeInTheDocument();
   });
 
@@ -100,6 +108,10 @@ describe("ReferenceExampleRecordSection", () => {
           ],
         }}
       />,
+    );
+    // Collapsed by default — click toggle to reveal entries
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show reference examples used during generation" }),
     );
     expect(screen.getByText(/#3/)).toBeInTheDocument();
   });
@@ -126,10 +138,29 @@ describe("ReferenceExampleRecordSection", () => {
         }}
       />,
     );
+    // Collapsed by default — click toggle to reveal entries
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show reference examples used during generation" }),
+    );
     // The second entry should show "Same as subquestion #1" badge
     expect(screen.getByText(/Same as subquestion #1/)).toBeInTheDocument();
     // The first entry should NOT have a duplicate badge
     const badges = screen.queryAllByLabelText("duplicate");
     expect(badges).toHaveLength(1);
+  });
+
+  it("does not count null-slot (text-stage) entries as a subquestion slot", () => {
+    render(
+      <ReferenceExampleRecordSection
+        record={{
+          entries: [
+            _entry({ slot: null, stage: "text_generator", description: "text stage example" }),
+            _entry({ slot: 1, stage: "subquestion_generator", description: "slot 1 example", timestamp: "2026-09-10T01:00:00Z" }),
+            _entry({ slot: 2, stage: "subquestion_generator", description: "slot 2 example", timestamp: "2026-09-10T02:00:00Z" }),
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("ref-record-counts")).toHaveTextContent("3 entries, 2 subquestions");
   });
 });

@@ -94,7 +94,6 @@ async def list_history(
             ),
             "verified": _verified(r.question_json or {}) if r.status == "completed" else False,
             "figure_policy_trail": r.figure_policy_trail_json,
-            "reference_example_record": r.reference_example_record_json,
         }
         for r in rows
     ]
