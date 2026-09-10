@@ -18,12 +18,31 @@ never explicitly returned), **one** :class:`logging.WARNING` is emitted to the
 LoggingIntegration` already configured in :mod:`server.observability` ships
 that record to Sentry, so no additional Sentry client call is needed.
 
+Origin-frame resolution (issue #585)
+-------------------------------------
+SQLAlchemy's async adapter dispatches pool checkout events inside a greenlet
+spawned by :func:`sqlalchemy.util.concurrency.greenlet_spawn`.  Inside that greenlet,
+:func:`traceback.extract_stack` and :meth:`asyncio.Task.get_stack` do NOT
+reach the coroutine that actually checked out the connection — they only
+see SQLAlchemy / asyncio infrastructure frames.
+
+To recover user frames on the production async path, :func:`_origin_frames`
+first walks the *parent* greenlet's frame chain
+(``greenlet.getcurrent().parent.gr_frame`` and upward via ``f_back``).
+This reaches the suspended coroutine frames that are waiting on the greenlet's
+result — including the nested coroutine that leaked the session.
+
+Frames whose filename starts with ``"<"`` (runtime-generated code) are skipped
+on all paths.  The existing synchronous-stack and asyncio-task-stack paths are
+kept as fallbacks for callers that are not inside a greenlet.
+
 Cost
 ----
 *Disabled* (default): zero — no listeners are registered.
-*Enabled* (staging flag on): one ``traceback.extract_stack()`` call per
-connection checkout.  That is cheap enough for staging traffic and adds no
-measurable overhead to production when the flag is unset.
+*Enabled* (staging flag on): one short frame walk per connection checkout —
+the parent-greenlet chain when inside a greenlet, else
+``traceback.extract_stack()``.  That is cheap enough for staging traffic and
+adds no measurable overhead to production when the flag is unset.
 """
 
 from __future__ import annotations
@@ -63,29 +82,80 @@ def _should_skip(filename: str) -> bool:
     return any(s in filename for s in _SKIP_SUBSTRINGS)
 
 
+def _should_skip_frame(filename: str) -> bool:
+    """Return True if *filename* should be excluded from the origin string.
+
+    Extends :func:`_should_skip` by also filtering runtime-generated filenames
+    (those whose name starts with ``"<"``, e.g. ``<string>``).
+    """
+    if filename.startswith("<"):
+        return True
+    return _should_skip(filename)
+
+
+# greenlet is an optional dependency; guard the import so sync-only
+# installations (no async engine) still work.
+try:
+    import greenlet as _greenlet
+except ImportError:
+    _greenlet = None  # type: ignore[assignment]
+
+
 def _origin_frames() -> str:
     """Return up to 5 caller frames outside SQLAlchemy / async internals.
 
-    Checks both the synchronous call stack (via :func:`traceback.extract_stack`)
-    and — when called inside an asyncio event loop — the coroutine frames of the
-    current task (:meth:`asyncio.Task.get_stack`).  The coroutine-stack fallback
-    is needed because SQLAlchemy's async adapter dispatches pool events inside a
-    greenlet, so the synchronous stack contains only asyncio / SQLAlchemy
-    internals with no user frames visible.
+    Three strategies are tried in order, stopping as soon as user frames are
+    found:
+
+    1. **Greenlet parent chain** — when the checkout event fires inside one of
+       SQLAlchemy's async-adapter greenlets, the parent greenlet's frame chain
+       (``greenlet.getcurrent().parent.gr_frame`` and upward via ``f_back``)
+       reaches the suspended coroutine frames including the nested coroutine
+       that leaked the session.  This is the correct path for the production
+       asyncpg / AsyncSession checkout (issue #585).
+
+    2. **Synchronous call stack** — :func:`traceback.extract_stack`.  Works for
+       direct sync-engine checkouts; useless inside a greenlet because the sync
+       stack only contains asyncio / SQLAlchemy infrastructure there.
+
+    3. **asyncio task coroutine stack** — :meth:`asyncio.Task.get_stack`.
+       Reaches the *outermost* currently-executing coroutine frame; useful when
+       the leaking code is that outermost coroutine (the original asyncpg test),
+       but cannot see nested helpers that are suspended mid-await below it.
+
+    Frames whose filename starts with ``"<"`` (runtime-generated code, such as
+    ``<string>``) or that match :func:`_should_skip` are excluded on all paths.
 
     Format: ``/abs/path.py:funcname:lineno <- …`` (most-recent first).
     """
     frames: list[str] = []
 
-    # --- synchronous stack --------------------------------------------------
-    for frame in reversed(traceback.extract_stack()):
-        if _should_skip(frame.filename):
-            continue
-        frames.append(f"{frame.filename}:{frame.name}:{frame.lineno}")
-        if len(frames) >= 5:
-            break
+    # --- 1. greenlet parent frame chain (production async path) --------------
+    if _greenlet is not None:
+        try:
+            g = _greenlet.getcurrent()
+            if g.parent is not None:
+                f = g.parent.gr_frame
+                while f is not None and len(frames) < 5:
+                    filename = f.f_code.co_filename
+                    if not _should_skip_frame(filename):
+                        name = f.f_code.co_name
+                        lineno = f.f_lineno
+                        frames.append(f"{filename}:{name}:{lineno}")
+                    f = f.f_back
+        except Exception:
+            pass
 
-    # --- asyncio task coroutine stack (fallback for async pool adapters) -----
+    # --- 2. synchronous call stack (sync engine direct checkout) -------------
+    if not frames:
+        for frame in reversed(traceback.extract_stack()):
+            if _should_skip_frame(frame.filename):
+                continue
+            frames.append(f"{frame.filename}:{frame.name}:{frame.lineno}")
+            if len(frames) >= 5:
+                break
+
+    # --- 3. asyncio task coroutine stack (outermost-coroutine fallback) ------
     if not frames:
         try:
             task = asyncio.current_task()
@@ -94,7 +164,7 @@ def _origin_frames() -> str:
                     filename = f.f_code.co_filename
                     name = f.f_code.co_name
                     lineno = f.f_lineno
-                    if _should_skip(filename):
+                    if _should_skip_frame(filename):
                         continue
                     frames.append(f"{filename}:{name}:{lineno}")
                     if len(frames) >= 5:
