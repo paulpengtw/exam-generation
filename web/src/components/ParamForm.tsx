@@ -1463,7 +1463,7 @@ export default function ParamForm({
       defaultsSnapshotRef.current === null ||
       (
         !hasInitialParams &&
-        jsonDeepEqual(formSnapshot, defaultsSnapshotRef.current)
+        (!hasUserEditedRef.current || jsonDeepEqual(formSnapshot, defaultsSnapshotRef.current))
       )
     ) {
       return;
