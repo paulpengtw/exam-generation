@@ -1,72 +1,95 @@
-# Research #651 — 計數式規準 Verifier Criterion Prototype
+# Research #651 — 計數式規準 Verifier Criterion Prototype (v2)
 
 **Issue:** https://github.com/paulpengtw/exam-generation/issues/651  
 **Parent map:** https://github.com/paulpengtw/exam-generation/issues/646  
 **Script:** `scripts/research/rubric_counting_prototype.py`  
 **Labelled set:** `docs/research/651-counting-rubric-prototype/labelled_set.json`  
 **Responses:** `docs/research/651-counting-rubric-prototype/responses.jsonl`  
-**Date:** 2026-09-10  
-**Model:** claude-sonnet-4-6 (LLM_MODEL_EXECUTE, effort=medium, LLM_TEMPERATURE=default)  
-**LLM calls:** 218 (all entries, first run; subsequent runs use the JSONL cache)
+**Date:** 2026-09-10 (v2 correction commit same day)  
+**Model:** claude-sonnet-4-6 (LLM_MODEL_EXECUTE, effort=medium, temperature=provider default)  
+**Total LLM calls:** 218 (first run) + 45 (v2 correction for newly-classified entries) = 263
 
 ---
 
 ## 1. Bucket Totals vs #648
 
+Loader fix: all three NS directories (Constructed-response/, Complex-multiple-choice/,
+Simple-multiple-choice/) are loaded; **OUT_OF_SCOPE_C3 is assigned by 題型, not directory**.
+Entries keyed by (file_stem, item_idx, 序號) to prevent seq-number collisions across items.
+
 | Bucket | Reconstructed | #648 expected | Match |
 |--------|---------------|---------------|-------|
-| CLEAR | **17** | 17 | OK |
-| BORDERLINE | **21** | 21 | OK |
-| CONFORMING | 137 | 149 | **MISMATCH −12** |
-| OUT_OF_SCOPE_C3 | 43 | 70 | **MISMATCH −27** |
-| **Total** | **218** | **257** | MISMATCH −39 |
+| CLEAR | **17** | 17 | **OK** |
+| BORDERLINE | **21** | 21 | **OK** |
+| CONFORMING | **149** | 149 | **OK** |
+| OUT_OF_SCOPE_C3 | **70** | 70 | **OK** |
+| **Total** | **257** | **257** | **OK** |
 
-**Why the totals differ.** The CLEAR and BORDERLINE counts match exactly, confirming the 38-entry test set is correct. The CONFORMING and OOS gaps arise from:
-
-- The CMC/SMC directories do not contain every file that the #648 audit enumerated. Files added or removed since September 9 (or files the audit counted from a different path) account for the gap. Specifically, the `Complex-multiple-choice` and `Simple-multiple-choice` directories in the worktree produced 43 entries; the audit counted 70.
-- Social-studies CSV: only 2 entries loaded (both CONFORMING), consistent with the audit.
-- The loading logic correctly excludes subquestions without a `評分規準` field, which may reduce the CONFORMING count relative to the audit's hand-count.
-
-These mismatches affect only the CONFORMING and OOS buckets—the two buckets used as the "expected pass" baseline. They do not affect the 38-entry core (CLEAR + BORDERLINE), which is the primary measurement surface.
+**v1 loader gap explained.** The original loader assigned OOS by directory and skipped
+CMC/SMC 題型 subquestions found inside the Constructed-response/ directory. This produced:
+- 39 CMC/SMC 小題 in Constructed-response/ dir were silently dropped
+- 12 Constructed-response 小題 in the CMC/SMC dirs were mis-labelled OOS
+- Net: 218 entries instead of 257 (−39 new OOS entries not loaded, +12 misclassified
+  CR→OOS). The 45 new calls in v2 cover the 39 newly-loaded OOS entries and re-run
+  the 12 CR entries previously seen in cache as OOS.
 
 ---
 
 ## 2. The 38 Relabels Under 規則 C
 
-**規則 C 判準 (from #649):** Does the 小題's 題目 or its declared 學習內容/科學能力 frame the complete component set in advance?
-- If YES → component-based levels are legal when [2] names each member.
-- If NO → levels may not be distinguished by quantity; [1] must describe a reasoning gap.
-- 【注意】: A stem count such as 「請寫兩個」 does NOT frame the set.
+**規則 C 判準:** The 小題's 題目 narration or declared 學習內容/科學能力 must frame the
+complete component set in advance. Permitted framing sources under the 判準:
+1. **題幹** — text of the question itself names the required components
+2. **學習內容/科學能力** — declared curricular codes determine the required components
+3. **科學概念必要環節** — the scientific concept is by nature composed of fixed necessary steps
 
-Of the 38 entries: **VIOLATES: 8, LEGAL: 30**
+**Not accepted:** framing by figure or table data alone (even when referenced in the stem).
+
+### Summary
+
+| Verdict | Count | Framing basis breakdown |
+|---------|-------|------------------------|
+| VIOLATES | **8** | 其他 (open stems) ×8 |
+| LEGAL — 題幹 | **20** | stem names components explicitly |
+| LEGAL — 科學概念必要環節 | **2** | H-W conditions; salt→temp→CO2 chain |
+| LEGAL — 圖表資料 (contestable) | **8** | figure/table frames the set |
+| **Total** | **38** | |
+
+**Contestable entries = 8** (all LEGAL, all framing basis = 圖表資料). Under the strict
+reading of 判準, these 8 revert to VIOLATES (图表 not in the accepted list).
 
 ### VIOLATES decisions (8 entries)
 
-| File | Seq | 648 label | Framing fragment that FAILS |
-|------|-----|-----------|----------------------------|
-| entomopathogenic-fungi | 3 | CLEAR | 題幹問「有什麼好處？」，好處集合開放，未事前框定 |
-| 生物防治2-1 | 1 | CLEAR | 「對本土生態環境的影響」未列出影響對象集合 |
-| fasting-method | 3 | BORDERLINE | 「兩個結論」指定個數未固定是哪兩個（【注意】條款） |
-| fasting-method | 4 | BORDERLINE | 「至少兩份圖表資訊」是數量要求，哪兩份未框定 |
-| hot-pack | 2 | BORDERLINE | 題目問「如何選擇暖暖包」未列出三個考量向度 |
-| hot-pack | 7 | BORDERLINE | 「兩項以上做法的可行性」未框定具體做法集合 |
-| washing-machine-physics | 5 | BORDERLINE | 「什麼影響因素？」集合開放，以個數（2點以上）分級 |
-| wind-corridor-effect | 1 | BORDERLINE | 「如何藉由實驗驗證」未框定具體實驗集合 |
+| File | Seq | 648 | Framing fragment that FAILS |
+|------|-----|-----|----------------------------|
+| entomopathogenic-fungi | 3 | CLEAR | 題幹問「有什麼好處？」，集合開放 |
+| 生物防治2-1 | 1 | CLEAR | 「對本土生態環境的影響」未列影響對象集合 |
+| fasting-method | 3 | BORDERLINE | 「兩個結論」指定個數未固定是哪兩個（【注意】） |
+| fasting-method | 4 | BORDERLINE | 「至少兩份圖表資訊」是數量要求，非集合框定 |
+| hot-pack | 2 | BORDERLINE | 未列出三個考量向度，集合未事前框定 |
+| hot-pack | 7 | BORDERLINE | 「多種做法的可行性」未框定具體集合 |
+| washing-machine-physics | 5 | BORDERLINE | 「什麼影響因素？」集合開放 |
+| wind-corridor-effect | 1 | BORDERLINE | 「如何藉由實驗驗證」未框定實驗集合 |
 
-### LEGAL decisions (selected, 30 entries)
+### Contestable LEGAL entries (8, framing by 圖表資料)
 
-| File | Seq | 648 label | Framing evidence |
-|------|-----|-----------|-----------------|
-| entomopathogenic-fungi | 2 | CLEAR | 題幹明寫「請從孢子粉比例與致死效果說明」 |
-| seawater-vertical-properties | 2 | CLEAR | 固定5個海水性質項目排序 |
-| 二氧化碳的產生與改變 | 1 | CLEAR | 附圖框定兩個變因（光強度、溫度） |
-| 拉塞福散射 | 2 | CLEAR | 「第一個及最後一個設置的投影幕位置」兩個答案固定 |
-| 果凍 | 5 | CLEAR | 參考資料明列「蛋白質」與「酵素」兩個關鍵字 |
-| 生物防治2-1 | 3 | CLEAR | 產卵歷程描述框定兩個機制 |
-| 生物防治2-1 | 5 | CLEAR | 「含羽化率及雌雄比」由題幹框定 |
-| 胡椒蛾的分子機制 | 3 | CLEAR | Hardy-Weinberg定律明定5個平衡條件 |
-| 蛙勒 | 2 | BORDERLINE | 「填寫表(一)（含：生殖方式、受精方式、類似動物、大量產卵的意義）」4項 |
-| washing-machine-physics is the canonical VIOLATES for prototype | (above) | | |
+| File | Seq | 648 | Framing evidence (data-based) |
+|------|-----|-----|-------------------------------|
+| 二氧化碳的產生與改變 | 1 | CLEAR | 附圖中固定兩個變因（光強度、溫度） |
+| 大氣能見度 | 1 | CLEAR | 附表框定兩個觀測項目（AQI、相對溼度） |
+| 大氣能見度 | 3 | CLEAR | 表格欄位固定（8格） |
+| 蛙勒 | 4 | CLEAR | 附圖框定各月蛙種數，最多種月份（4、5、6月） |
+| black-white-car-heat | 5 | BORDERLINE | 實驗表格框定兩個數據面向 |
+| entomopathogenic-fungi | 5 | BORDERLINE | 實驗設計框定兩個統計缺陷 |
+| entomopathogenic-fungi | 6 | BORDERLINE | 圖表資料結構框定兩個評估維度 |
+| typhoon-database | 3 | BORDERLINE | 颱風追蹤資料框定路徑序列 |
+
+### Non-contestable LEGAL (30 entries, framing by 題幹 or 科學概念)
+
+Representative entries: entomopathogenic-fungi Seq 2 (題幹明寫兩個面向),
+seawater-vertical-properties Seq 2 (給定5個固定項目), 拉塞福散射 Seq 2
+(題幹明寫「第一個及最後一個」), 胡椒蛾的分子機制 Seq 3 (H-W定律5條件),
+salt-soda Seq 4 (科學因果鏈必要環節), 蛙勒 Seq 2 (題幹明寫4項表格欄位).
 
 ---
 
@@ -87,217 +110,234 @@ Of the 38 entries: **VIOLATES: 8, LEGAL: 30**
   【判準】要分辨是「完整度」還是「數量」，看該小題自身的題目敘述與所宣告的
   學習內容／科學能力，能否在事前把「完整答案的成分集合」框定下來：
   - 能框定 → 依補齊幾個成分分級為合法，且 [2] 必須逐一指名該集合的成員。
+    （例：題目明寫「請從甲、乙兩個面向說明」；或該科學概念本身即由數個必要環節構成。）
   - 不能框定 → 不得依數量分級；[1] 必須以推理鏈條的缺口描述，
     不得寫成「僅提及其中之一」。
 
   【注意】題幹指定的「數量」不等於框定「集合」。「請寫兩個結論」只固定了個數，
   並未固定是哪兩個，因此屬於不能框定。
 
-  【具體性】評分規準說明必須指名本小題的內容——[2] 要寫出本題該答對什麼，
-  [1] 要寫出本題最可能出現的缺口。不得使用「完整正確回答／部分正確／錯誤」
-  這類可套用到任何題目的字樣。
+  【具體性】評分規準說明必須指名本小題的內容。不得使用「完整正確回答／部分正確／
+  錯誤」這類可套用到任何題目的字樣。
 
-注意：
-- 本規則僅適用於「Constructed response / 開放式建構反應題」。
-- Complex multiple-choice 與 Simple multiple-choice 不受此規則約束。
+注意：本規則僅適用於 Constructed response / 開放式建構反應題。
 ```
 
-### User prompt template
+### User prompt template (key fields)
 
-```
-請判斷以下小題的評分規準是否違反規則 C。
-
-題型：{question_type}
-題目（題幹）：{question_stem}
-學習內容：{learning_content}
-科學能力：{science_ability}
-評分規準各級距說明：{rubric_text}
-
-請嚴格依照規則 C 的【判準】邏輯逐步推理，然後以下列 JSON 格式輸出：
-
+```json
 {
-  "set_framed": <bool>,
-  "framing_evidence": "<str: 引用框定文字或說明無法框定（限50字）>",
-  "counting_violation": <bool>,
-  "specificity_violation": <bool>,
-  "verdict": "<pass 或 fail>",
-  "details": "<str: fail時以[評分規準檢核]開頭，指示corrector修正方向>"
+  "set_framed": "<bool>",
+  "framing_evidence": "<引用框定文字或說明無法框定，限50字>",
+  "counting_violation": "<bool: 依數量分級且集合未框定>",
+  "specificity_violation": "<bool: 使用完整正確回答等空泛語句>",
+  "verdict": "<pass|fail: 任一violation為true則fail>",
+  "details": "<fail時以[評分規準檢核]開頭，指示corrector修正方向>"
 }
 ```
 
-**Design note on `details`.** The `details` field is written so that the corrector—which has access to it via the `VerificationResult.details` field—receives actionable, positive instruction: it names what the rewritten rubric must include and how to distinguish [2] from [1] on quality grounds, never to "count less."
+**Design note on `details`.** The field gives the corrector positive instruction: what quality criterion to substitute, how to distinguish [2] from [1] by reasoning completeness—never "count less."
 
 ---
 
 ## 4. Per-Bucket Confusion Matrices
 
-Definitions:
-- **TP** = expected fail (rule_c_verdict=VIOLATES), predicted fail — correctly caught violation
-- **FN** = expected fail, predicted pass — missed violation
-- **FP** = expected pass, predicted fail — false alarm
-- **TN** = expected pass, predicted pass — correct pass
+Four matrix variants per bucket:
+- **Standard** = 8 VIOLATES as ground-truth fail (rule_c_verdict = VIOLATES)
+- **Strict** = 16 VIOLATES (adds the 8 contestable 圖表資料 entries)
+- **Combined** = verdict = counting_violation OR specificity_violation
+- **Counting-only** = verdict = counting_violation alone
+
+Key: TP FN FP TN | recall FPR precision
 
 ### CLEAR bucket (n=17)
 
-Ground truth: 2 VIOLATES (entomopathogenic-fungi Seq 3; 生物防治2-1 Seq 1), 15 LEGAL.
+Standard: VIOLATES={2}, LEGAL={15}  
+Strict: VIOLATES={6}, LEGAL={11}
 
-| | Predicted FAIL | Predicted PASS |
-|--|--|--|
-| **Ground truth FAIL** | TP = 0 | FN = 2 |
-| **Ground truth PASS** | FP = 4 | TN = 11 |
-
-- Recall = 0% (0/2)
-- FPR = 27% (4/15)
+| Scheme | TP | FN | FP | TN | recall | FPR |
+|--------|----|----|----|----|--------|-----|
+| standard, combined | 0 | 2 | 4 | 11 | 0% | 27% |
+| standard, counting-only | 0 | 2 | 1 | 14 | **0%** | **7%** |
+| strict, combined | 1 | 5 | 3 | 8 | 17% | 27% |
+| strict, counting-only | 0 | 6 | 1 | 10 | 0% | 9% |
 
 ### BORDERLINE bucket (n=21)
 
-Ground truth: 6 VIOLATES, 15 LEGAL.
+Standard: VIOLATES={6}, LEGAL={15}  
+Strict: VIOLATES={10}, LEGAL={11}
 
-| | Predicted FAIL | Predicted PASS |
-|--|--|--|
-| **Ground truth FAIL** | TP = 4 | FN = 2 |
-| **Ground truth PASS** | FP = 5 | TN = 10 |
+| Scheme | TP | FN | FP | TN | recall | FPR |
+|--------|----|----|----|----|--------|-----|
+| standard, combined | 4 | 2 | 5 | 10 | 67% | 33% |
+| standard, counting-only | 4 | 2 | 1 | 14 | **67%** | **7%** |
+| strict, combined | 6 | 4 | 3 | 8 | 60% | 27% |
+| strict, counting-only | 5 | 5 | 0 | 11 | 50% | **0%** |
 
-- Recall = 67% (4/6)
-- FPR = 33% (5/15)
+### CONFORMING bucket (n=149, all expected pass)
 
-### CONFORMING bucket (n=137)
+| Scheme | FP | TN | FPR |
+|--------|----|----|-----|
+| standard, combined | 41 | 108 | 28% |
+| standard, counting-only | **0** | 149 | **0%** |
+| strict, combined | 41 | 108 | 28% |
+| strict, counting-only | 0 | 149 | **0%** |
 
-Ground truth: all 137 expected pass.
+### OUT_OF_SCOPE_C3 bucket (n=70, all expected pass; informative only — hook skips by 題型)
 
-| | Predicted FAIL | Predicted PASS |
-|--|--|--|
-| **Ground truth PASS** | FP = 38 | TN = 99 |
+| Scheme | FP | TN | FPR |
+|--------|----|----|-----|
+| standard, combined | 1 | 69 | 1% |
+| standard, counting-only | 0 | 70 | **0%** |
+| strict, combined | 1 | 69 | 1% |
+| strict, counting-only | 0 | 70 | **0%** |
 
-- FPR = 28% (38/137)
-
-### OUT_OF_SCOPE_C3 bucket (n=43)
-
-Ground truth: all 43 expected pass (hook skips non-Constructed-response deterministically).
-
-| | Predicted FAIL | Predicted PASS |
-|--|--|--|
-| **Ground truth PASS** | FP = 4 | TN = 39 |
-
-- FPR = 9% (4/43)
+The single OOS FP (combined): jumping-bottle-cap Seq 6 (Complex multiple-choice) triggered
+by the 【具體性】 clause only. The counting-only check generates zero OOS false positives.
 
 ---
 
-## 5. False Negatives on CLEAR (Missed Violations)
+## 5. False Negatives on CLEAR (Missed Violations, Standard)
 
-Both CLEAR VIOLATES were missed (FN=2, recall=0%).
+Both CLEAR VIOLATES were missed (recall=0% on standard CLEAR):
 
 **1. entomopathogenic-fungi Seq 3**  
-Rule C verdict: VIOLATES — 題幹問「有什麼好處？」，成分集合未框定  
-Rubric: `[2] 同時提及保護行避免藥液污染，以及多區塊設計避免位置效應（兩個條件均提及）; [1] 僅提及兩個條件之一`  
-Model details: (empty — model passed)  
-Diagnosis: The model appears to have inferred the two design features (保護行, 多區塊) from the experimental context and treated them as a frameable set, even though the stem question "有什麼好處？" is open-ended.
+Rule C: VIOLATES — 題幹問「有什麼好處？」  
+Rubric: `[2] 同時提及保護行避免藥液污染，以及多區塊設計避免位置效應`  
+Model: passed (details empty). The model inferred the two design features from
+experimental context and treated them as a frameable set from scientific knowledge,
+bypassing the requirement that framing appear in the stem text.
 
 **2. 生物防治2-1 Seq 1**  
-Rule C verdict: VIOLATES — 「影響對象（作物、人）」未在題目中事前框定  
-Rubric: `[2] 同時從對作物與人的潛在危害說明; [1] 僅從作物或人的潛在危害說明`  
-Model details: (empty — model passed)  
-Diagnosis: The passage text probably mentions both 作物 and 人 explicitly, leading the model to treat the two targets as a framed set from context. The question hint "(1)影響對象；(2)如何影響" does not enumerate the targets.
+Rule C: VIOLATES — 影響對象未在題目中事前框定  
+Rubric: `[2] 同時從對作物與人的潛在危害說明`  
+Model: passed (details empty). The passage text likely names both 作物 and 人
+explicitly, leading the model to treat the two targets as a framed set from context.
 
-**Pattern.** Both FNs are cases where the model correctly recognises a scientific context and infers that the component set is "obvious from domain knowledge," but the 判準 requires the set to be frameable from the 題幹 or declared metadata, not from general knowledge. The rule text may need a clarifying example to close this gap.
+**Pattern.** Both FNs: model correctly recognises that the components are "scientifically
+obvious" from the passage, but 判準 requires framing in the 題幹 or declared metadata,
+not from general knowledge or passage inference. The criterion prompt needs a sharpening
+example: "if the stem does not name the components explicitly, framing cannot be inferred
+from general domain knowledge."
 
 ---
 
-## 6. False Positives on OUT_OF_SCOPE_C3
+## 6. False Positives on OUT_OF_SCOPE_C3 (Combined Verdict)
 
-4 FP entries (FPR=9%); all triggered by the 【具體性】 clause:
+1 entry (FPR=1%):
 
-**1. jumping-bottle-cap Seq 3** (Constructed response in CMC directory — data inconsistency)  
-Rubric: `[2] 完整正確回答; [1] 部分正確; [0] 錯誤或空白`  
-Model details: `[評分規準檢核] 請將各級距改寫為指名本題內容的說明…`
-
-**2. jumping-bottle-cap Seq 4** (Constructed response in CMC directory)  
-Same specificity pattern.
-
-**3. jumping-bottle-cap Seq 6** (Complex multiple-choice — correctly OOS)  
+**jumping-bottle-cap Seq 6** (Complex multiple-choice)  
 Rubric: `[2] 全對; [1] 部分正確; [0] 錯誤或空白`  
-Model flagged for specificity. This IS a genuine 【具體性】 violation but the hook would skip it (non-Constructed-response).
+Triggered by: 【具體性】 clause only (generic rubric language)  
+Model details: `[評分規準檢核] 評分規準使用「全對／部分正確／錯誤」等空泛語句…`
 
-**4. wheat-field-experiment Seq 2** (Constructed response in CMC directory)  
-Same specificity pattern.
-
-**Note.** Three of the four FPs are Constructed-response subquestions found in the Complex-multiple-choice directory — a data inconsistency, not a model error. The shipped hook determines in-scope by 題型 field, not by directory; these would NOT be skipped in production. The 9% OOS FPR is informative about the model's 【具體性】 detection precision, but the shipped hook's C3 gate is deterministic (check 題型 string) and eliminates the OOS bucket entirely.
+Counting-only check: zero OOS false positives.
 
 ---
 
-## 7. CONFORMING FP Analysis — The 【具體性】 Effect
+## 7. The 【具體性】 Clause — Separate Defect Class
 
-38 of 137 CONFORMING entries were flagged (FPR=28%). These are NOT false positives in the strict sense: they are entries that use generic "完整正確回答／部分正確／錯誤" wording, which genuinely violates the 【具體性】 clause of 規則 C. However, the #648 audit classified them as CONFORMING because they contain no counting language — the 【具體性】 clause was added after #648 ran.
+The 28% FPR on CONFORMING (combined) is driven entirely by the 【具體性】 clause.
+Counting-only FPR on CONFORMING = **0%** — the counting check produces zero false alarms
+on the 149 entries the audited corpus classified as conforming.
 
-This means the confusion matrix treats 【具體性】 flags on CONFORMING entries as "false positives" because the ground truth was set before the clause existed. The model is behaving correctly; the ground-truth label is outdated.
-
-Example (candle-burning.json Seq 1): `[2] 完整正確回答; [1] 部分正確; [0] 錯誤或空白` — flagged, correctly, because it violates 【具體性】.
-
----
-
-## 8. Spot-Check: Corrector Repair Feasibility
-
-Three VIOLATES entries were fed to the corrector system prompt (NS corrector.py shape) with the verifier's `details` string as the audit feedback.
-
-**fasting-method Seq 3**  
-Verifier: `[評分規準檢核] 請改為以推理鏈條的缺口描述各級距：[2] 應指名本題實驗設計中可比較的具體對照組合（如「飲食控制組vs對照組」、「運動組vs對照組」）…`  
-Corrector output: `[2] 正確寫出兩個有效結論，且分別對應不同操縱變因：一個結論須來自「飲食控制組vs對照組」的比較…[1] 僅針對其中一個操縱變因提出有效的組間比較並得出對應結論，但缺乏對另一變因的推論…`  
-Assessment: **Conforms** — the rewrite correctly identifies the specific comparison groups, removes counting language, and grounds [1] in reasoning quality.
-
-**hot-pack Seq 7**  
-Verifier: `[評分規準檢核] 題目的「做法集合」未在題幹中框定，不得以「兩項以上／一項」區分級距；應改以推理鏈條的完整性描述…`  
-Corrector output: `[2] 能指出做法對碰撞頻率或碰撞動能的影響，並連結至反應速率加快，完整說明可行性; [1] 能指出做法的方向（如升溫），但未能以碰撞學說具體說明機制`  
-Assessment: **Conforms** — the rewrite grounds the distinction in reasoning quality, not count.
-
-**washing-machine-physics Seq 5**  
-Verifier: `[評分規準檢核] 集合無法框定，不得以「回答幾點」區分級距；應改以推理品質描述分級，例如：[2] 能正確說明至少一組變因間的趨勢關聯…`  
-Corrector output: `[2] 能正確說明至少一組變因間的趨勢關聯（如轉速、水量、時間等與負重的方向關係）…[1] 能指出型號B與型號A之間的變化現象，但未說明變因間的趨勢方向或因果關聯`  
-Assessment: **Conforms** — the rewrite correctly pivots from counting to causal direction.
-
-**Conclusion:** The corrector, given the verifier's `details` wording, can plausibly repair a 計數式規準. All three rewrites removed counting language and grounded the distinction in reasoning quality.
+The 41 CONFORMING entries flagged for specificity are not false positives in the strict
+sense: they use "完整正確回答／部分正確／錯誤" language that genuinely violates the
+【具體性】 clause. However, #648 labelled them CONFORMING because they contain no counting
+language — the clause was added after the audit ran. They are a separate defect class
+(空泛規準) not measured by #648.
 
 ---
 
-## 9. Decisions
+## 8. Pooled Recall on All VIOLATES
+
+Standard labeling (8 VIOLATES total):
+
+| Verdict scheme | Caught | Total | Recall |
+|----------------|--------|-------|--------|
+| Combined (counting + specificity) | 4 | 8 | **50%** |
+| Counting-only | 4 | 8 | **50%** |
+
+Under standard labeling the two schemes catch the same 4 entries (washing-machine Seq 5,
+hot-pack Seq 7, fasting Seq 3, wind-corridor Seq 1). The 4 caught are all BORDERLINE;
+the 2 CLEAR VIOLATES are both FN.
+
+Under strict labeling (16 VIOLATES), combined catches 7/16 = 44%; counting-only catches 5/16 = 31%.
+
+---
+
+## 9. Spot-Check: Corrector Repair Feasibility
+
+Three VIOLATES entries fed to the corrector system prompt with verifier `details` as
+audit feedback. All three rewrites conformed to 規則 C:
+
+**fasting-method Seq 3** — corrector correctly identified the two experimental comparison
+groups (飲食控制組vs對照組, 運動組vs對照組), removed counting language, grounded [1]
+in reasoning quality.
+
+**hot-pack Seq 7** — corrector rewrote to quality-based (碰撞學說 mechanism), pivoting
+from "two or more methods" to reasoning completeness.
+
+**washing-machine-physics Seq 5** — corrector correctly replaced "2+ items" with
+"可正確說明趨勢關聯", providing specific examples.
+
+---
+
+## 10. Decisions
 
 ### (a) Is the criterion worth shipping?
 
-**Partially yes, but the 【具體性】 check should ship separately.**
+**Yes — ship the counting check; defer 【具體性】 to a later criterion.**
 
-Numbers: CLEAR recall=0%, BORDERLINE recall=67%. The counting check alone (ignoring 【具體性】) would show much lower FPR on CONFORMING entries. The BORDERLINE recall of 67% is acceptable for a first-pass verifier that catches the canonical cases (fasting-method Seq 3, hot-pack Seq 7, washing-machine-physics Seq 5, wind-corridor Seq 1). The CLEAR recall=0% reflects a genuine weakness: when domain knowledge makes the component set "obvious," the model defers to that knowledge rather than the stem framing. A follow-on clarification of the 判準 (e.g., adding an example that distinguishes "obvious from science" from "stated in the stem") could fix this.
-
-Decision: **ship the counting check as the hook**; defer 【具體性】 to a separate criterion (it flags a different defect class and its FPR characteristics deserve independent measurement).
+Evidence: counting-only check achieves **FPR=0% on CONFORMING** (0/149 false alarms)
+and **FPR=0% on OUT_OF_SCOPE_C3** (0/70). BORDERLINE recall is 67% (4/6 standard VIOLATES
+caught). The pooled recall across all 8 standard VIOLATES is 50% (4/8). These numbers are
+acceptable for a first-pass verifier that correctly filters the canonical cases (washing-machine,
+fasting Seq 3, hot-pack Seq 7, wind-corridor) with zero CONFORMING false alarms.
+The 【具體性】 clause causes 28% FPR on CONFORMING and should ship as a separate criterion
+after independent measurement.
 
 ### (b) Does borderline behaviour agree with 規則 C's text?
 
-**Partially — 4 of 6 BORDERLINE VIOLATES caught (67%), 2 missed.**
+**Partially — standard recall on BORDERLINE is 67% (4/6); 2 missed.**
 
-The 4 caught (fasting Seq 3, hot-pack Seq 7, washing-machine Seq 5, wind-corridor Seq 1) represent the clearest cases of open-ended stems with count-based rubrics. The 2 missed (fasting Seq 4: "至少兩份圖表"; hot-pack Seq 2: three evaluation criteria) are cases where the model inferred that the specific evidential targets or criteria were implicitly framed by the experimental context. The rule text's 【注意】 clause covers "個數不等於集合" well, but not the case where criteria are "scientifically self-evident." The text is correct; the model's inference ability slightly undercuts it at the margin.
+The 4 caught agree with 規則 C. The 2 missed (fasting Seq 4: "至少兩份圖表" inferred as
+framed; hot-pack Seq 2: three engineering criteria inferred as implicit set) show the model
+deferring to contextual knowledge when the 判準 requires explicit stem framing. The rule
+text is correct; the model's inference capability slightly undermines it at the margin.
+Mitigation: add a counter-example to the criterion prompt ("if the stem does not list the
+criteria explicitly, knowledge of which criteria apply is not framing").
 
 ### (c) Should detected 計數式規準 FAIL or ANNOTATE?
 
 **FAIL (passed=False → 修正 loop).**
 
-Evidence: all three spot-check corrector rewrites conformed to 規則 C. The `details` wording gives the corrector a positive instruction (what to include, how to distinguish [2] from [1] on quality grounds) rather than a vague "fix the rubric." The corrector does not need explicit knowledge of counting—it needs to know what quality criterion to substitute. The verifier supplies this. Since the corrector can repair the defect and 評分規準 is not frozen, a `passed=False` verdict triggers the repair loop productively.
+Evidence: corrector spot-check shows all three repaired rubrics conform to 規則 C. The
+verifier's `details` string gives the corrector actionable instruction (what quality
+criterion replaces counting). 評分規準 is writable by both correctors (NS ~line 63 and
+SS ~line 59 permit it; not in `FROZEN_SUBQUESTION_FIELDS`). Fail → repair is productive.
 
 ### (d) Yes/no on dedicated corrector repair path?
 
-**No.**
-
-The existing corrector seam already permits 評分規準 rewriting (NS corrector.py says "若問題在小題答案或評分規準，請只修改對應小題的 答案/答案解析/評分規準"; 評分規準 is absent from `FROZEN_SUBQUESTION_FIELDS`). The verifier's `details` string is the corrector's input via `VerificationResult.details`. No new pathway is needed; the hook plugs into `_NS_POST_VERIFY_HOOKS` and the existing loop handles the rest.
+**No.** The existing NS/SS corrector seams already handle 評分規準 rewriting. The
+verifier hook and the corrector communicate via `VerificationResult.details`. No new
+pathway is needed.
 
 ### (e) Production gate
 
-The hook **must skip subquestions whose 題型 is not "Constructed response" / "開放式建構反應題" deterministically** before making any LLM call. This is the C3 constraint. The OOS FPR of 9% in this prototype is informative only for the model's generalisation behaviour; the shipped hook never reaches OOS subquestions. The gate is one string check, not LLM inference:
+The hook must check 題型 deterministically before any LLM call:
 
 ```python
-if "Constructed" not in subquestion.題型 and "開放式" not in subquestion.題型:
-    return result  # skip without LLM call
+if "Constructed" not in sq.題型 and "開放式" not in sq.題型:
+    return result  # C3 gate — no LLM call
 ```
+
+The OOS FPR = 0% (counting-only) is informative about the model's generalization behaviour;
+the shipped hook never reaches OOS subquestions because the gate eliminates them.
 
 ---
 
-## 10. Proposed Hook Code Shape (Follow-up, Not Implemented Here)
+## 11. Proposed Hook Code Shape (Follow-up, Not Implemented Here)
 
 ```python
 def _ns_rubric_counting_check_hook(
@@ -306,31 +346,25 @@ def _ns_rubric_counting_check_hook(
     client: LLMClient,
 ) -> VerificationResult:
     """Detect 計數式規準 (Rule C counting violations) on Constructed-response
-    subquestions and append a corrector-actionable detail.
-
-    Mirrors _ss_rubric_scale_check_hook's signature and registration pattern.
+    subquestions.  Mirrors _ss_rubric_scale_check_hook's seam.
     Registered in _NS_POST_VERIFY_HOOKS.
     """
     issues: list[str] = []
-    for subquestion in question.subquestions:
+    for sq in question.subquestions:
         # C3 gate — deterministic, no LLM call for non-open-response
-        if (
-            "Constructed" not in (subquestion.題型 or "")
-            and "開放式" not in (subquestion.題型 or "")
-        ):
+        if "Constructed" not in (sq.題型 or "") and "開放式" not in (sq.題型 or ""):
             continue
-        rubric = subquestion.評分規準
-        if not rubric:
+        if not sq.評分規準:
             continue
-        # LLM criterion call
         response = client.generate_json(
             system=RUBRIC_COUNTING_SYSTEM,
-            user=_build_counting_user(subquestion),
+            user=_build_counting_user(sq),
             purpose="verify",
         )
-        if response.get("verdict") == "fail":
+        # Ship only the counting check; specificity is a separate criterion
+        if response.get("counting_violation"):
             issues.append(
-                f"第{subquestion.序號}題："
+                f"第{sq.序號}題："
                 + (response.get("details") or "[評分規準檢核] 請依規則 C 改寫評分規準")
             )
     if issues:
@@ -340,15 +374,17 @@ def _ns_rubric_counting_check_hook(
     return result
 ```
 
-This hook is registered by appending it to `_NS_POST_VERIFY_HOOKS` in `src/natural_sciences/verifier.py`. An equivalent hook is added to the SS post-verify hook list in `src/social_studies/verifier.py`, with the 認知歷程 field replacing 科學能力 in the user prompt.
+Registered in `_NS_POST_VERIFY_HOOKS`; SS equivalent in `src/social_studies/verifier.py`.
 
 ---
 
 ## Appendix: Method Notes
 
-- **Fixed ordering:** entries processed in `sorted(glob("*.json"))` order, then CMC/SMC, then SS CSV. Reproducible across runs.
-- **Rate limiting:** 0.3 s between calls (config default was 0; override applied in script).
-- **No temperature override:** provider default (equivalent to temperature=1 for claude-sonnet-4-6).
-- **Caching:** `responses.jsonl` — keyed by `{file_stem}|{seq}`. A re-run reads from cache and makes 0 new calls unless entries are added.
-- **Rubric schema handling:** both `{code, 規準說明}` and `{編碼, 說明}` schemas handled at load time.
-- **Total LLM calls:** 218 (all entries on first run).
+- **Loader:** all three NS directories loaded; OOS classified by 題型 not directory; keyed
+  by (file_stem, item_idx, seq); v1 cache keys (file_stem|seq) migrated to v2 (file_stem|0|seq).
+- **Fixed ordering:** `sorted(glob("*.json"))` per directory, then CMC, then SMC, then SS CSV.
+- **Rate limiting:** 0.3 s between calls.
+- **Caching:** `responses.jsonl` — v2 key format `{file_stem}|{item_idx}|{seq}`.
+- **Rubric schema:** both `{code, 規準說明}` and `{編碼, 說明}` handled.
+- **Total LLM calls:** 218 (v1) + 45 (v2 new entries) = 263.
+- **No temperature override; effort=medium.**
