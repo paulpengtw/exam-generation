@@ -2207,3 +2207,118 @@ def test_ns_generate_route_rejects_per_subquestion_text_word_limit() -> None:
     assert "subquestion_configs[0].text_word_limit" in json.dumps(
         response.json(), ensure_ascii=False
     )
+
+
+# Issue #686 — unknown 各小題配置 keys rejected at HTTP boundary (generic)
+def test_ss_generate_route_rejects_unknown_subquestion_config_key() -> None:
+    """Any unknown key in a per-小題 config row must produce HTTP 422 for SS (#686)."""
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+
+    params = _complete_query_params({"subject": "social_studies", "seed": 41})
+    configs = json.loads(params.get("subquestion_configs") or "[]")
+    if configs:
+        configs[0]["bogus_key"] = "should_not_be_here"
+    params["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)
+
+    limiter.reset()
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/api/generate", params=params)
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert "subquestion_configs[0].bogus_key" in json.dumps(
+        response.json(), ensure_ascii=False
+    )
+
+
+def test_ns_generate_route_rejects_unknown_subquestion_config_key() -> None:
+    """Any unknown key in a per-小題 config row must produce HTTP 422 for NS (#686)."""
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+
+    params = _complete_query_params({"subject": "natural_sciences", "seed": 41})
+    configs = json.loads(params.get("subquestion_configs") or "[]")
+    if configs:
+        configs[0]["bogus_key"] = "should_not_be_here"
+    params["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)
+
+    limiter.reset()
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/api/generate", params=params)
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert "subquestion_configs[0].bogus_key" in json.dumps(
+        response.json(), ensure_ascii=False
+    )
+
+
+def test_generate_route_rejects_multiple_unknown_subquestion_config_keys_in_one_response() -> None:
+    """Two unknown keys in different config rows both appear in the single 422 (#686)."""
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+
+    params = _complete_query_params({"subject": "social_studies", "seed": 41})
+    configs = json.loads(params.get("subquestion_configs") or "[]")
+    row_a, row_b = (0, 2) if len(configs) >= 3 else (0, 1) if len(configs) >= 2 else (0, 0)
+    if configs:
+        configs[row_a]["bogus_key_alpha"] = "bad"
+    if len(configs) > row_b and row_b != row_a:
+        configs[row_b]["bogus_key_beta"] = "also_bad"
+    params["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)
+
+    limiter.reset()
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get("/api/generate", params=params)
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    detail_str = json.dumps(response.json(), ensure_ascii=False)
+    assert f"subquestion_configs[{row_a}].bogus_key_alpha" in detail_str
+    if len(configs) > row_b and row_b != row_a:
+        assert f"subquestion_configs[{row_b}].bogus_key_beta" in detail_str
+
+
+def test_ss_known_subquestion_config_keys_are_not_rejected() -> None:
+    """Known per-小題 config keys must not trigger validation errors for SS (#686).
+
+    Uses GenerateParams.model_validate (no LLM provider needed).
+    """
+    from server.generate.models import GenerateParams
+
+    params = GenerateParams.model_validate(
+        _complete_query_params({"subject": "social_studies", "seed": 41})
+    )
+    assert params.subject == "social_studies"
+
+
+def test_ns_known_subquestion_config_keys_are_not_rejected() -> None:
+    """Known per-小題 config keys must not trigger validation errors for NS (#686).
+
+    Uses GenerateParams.model_validate (no LLM provider needed).
+    """
+    from server.generate.models import GenerateParams
+
+    params = GenerateParams.model_validate(
+        _complete_query_params({"subject": "natural_sciences", "seed": 41})
+    )
+    assert params.subject == "natural_sciences"
