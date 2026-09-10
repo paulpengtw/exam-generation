@@ -782,7 +782,7 @@ def test_download_excludes_the_persisted_verification_trail(tmp_path) -> None:
         asyncio.run(engine.dispose())
 
 
-def test_list_and_detail_return_the_persisted_reference_example_record(tmp_path) -> None:
+def test_detail_returns_the_persisted_reference_example_record_without_listing_it(tmp_path) -> None:
     app, _config, engine, SessionLocal, token, user_a, _ub = _setup(tmp_path)
     expected_record = {
         "disabled": False,
@@ -827,7 +827,7 @@ def test_list_and_detail_return_the_persisted_reference_example_record(tmp_path)
             )
 
         listed = next(item for item in list_response.json()["items"] if item["id"] == record_id)
-        assert listed["reference_example_record"] == expected_record
+        assert "reference_example_record" not in listed
         assert detail_response.status_code == 200
         assert detail_response.json()["reference_example_record"] == expected_record
     finally:
