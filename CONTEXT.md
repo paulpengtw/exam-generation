@@ -55,7 +55,7 @@ A free-text instruction attached to one 小題, telling the generator what that 
 _Avoid_: instruction, hint, guidance
 
 **文本出題指示**:
-A request-level free-text instruction attached to a 文本, asking every 題組's 文本生成器 to steer generation for the whole batch. It is a 建議值 and is distinct from the per-小題 出題指示.
+A free-text instruction to the 文本生成器 that steers text-stimulus generation for a 題組. A request-level value applies to all 題組 in a batch by default. Since issue #637, each 題組 on the 發送前確認 screen shows an editable textarea prefilled from the request-level value; a non-blank edit for one 題組 is 釘選 as `per_question_params[i].text_instruction` and routes to that 題組's 文本生成器 only, leaving sibling 題組 and all 子題產生器 prompts unchanged. Clearing the textarea reverts that 題組 to the request-level value rather than to empty. It is a 建議值 and is distinct from the per-小題 出題指示.
 _Avoid_: instruction, text prompt, passage prompt
 
 **出題模式**:

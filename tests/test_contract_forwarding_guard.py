@@ -584,9 +584,9 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("core_question", _MA): (_svc._worker_one, "ctx.params.core_question"),
     ("core_question", _SS): (_svc._worker_one, "ctx.params.core_question"),
     ("core_question", _NS): (_svc._worker_one, "ctx.params.core_question"),
-    # text_instruction — text-generator request pin for SS and NS (no resolver draw/default)
-    ("text_instruction", _SS): (_svc._worker_one, "ctx.params.text_instruction"),
-    ("text_instruction", _NS): (_svc._worker_one, "ctx.params.text_instruction"),
+    # text_instruction — routed via _per_question_text_instruction for per-row override (#637)
+    ("text_instruction", _SS): (_svc._worker_one, "_per_question_text_instruction"),
+    ("text_instruction", _NS): (_svc._worker_one, "_per_question_text_instruction"),
     # text_word_limit — forwarded in _worker_one (SS/NS) and into math's canonical sampler value
     ("text_word_limit", _MA): (
         _math_params_from_resolved_payload,

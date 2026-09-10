@@ -50,7 +50,6 @@ REQUEST_LEVEL_FIELDS: frozenset[str] = frozenset(
         "max_retries",
         "allow_duplicate_figure_kinds",
         "core_question_callback",
-        "text_instruction",
     }
 )
 # Backend-only request fields are valid on the API route but intentionally have
@@ -309,6 +308,8 @@ PER_QUESTION_FIELDS: frozenset[str] = frozenset(
         "core_competency",
         "math_thinking",
         "learning_content",
+        # #637: per-question text_instruction override for 確認頁修改
+        "text_instruction",
         "sub_question_count",
         "question_word_limit",
         "option_word_limit",
