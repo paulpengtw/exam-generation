@@ -32,6 +32,7 @@ from src.common.figure_policy_trail import (
     make_warning_entry,
 )
 from src.common.generation_core import generate_one_core, generate_with_corrections_core
+from src.common.image_spec_parsing import parse_image_spec
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
 from src.common.subquestion_forcing import force_grade
 from src.common.verification_trail import VerificationTrailEntry
@@ -498,13 +499,8 @@ def _parse_subquestion(
             for r in (sq_raw.get("評分規準") or sq_raw.get("評分標準") or [])
             if isinstance(r, dict)
         ]
-        sq_chart_spec = None
         raw_sq_spec = sq_raw.get("image_spec") or sq_raw.get("chart_spec")
-        if isinstance(raw_sq_spec, dict):
-            try:
-                sq_chart_spec = ImageSpec(**raw_sq_spec)
-            except Exception:
-                sq_chart_spec = None
+        sq_chart_spec = parse_image_spec(raw_sq_spec, ImageSpec) if raw_sq_spec else None
         raw_distractor = sq_raw.get("誘答分析", {})
         if isinstance(raw_distractor, dict):
             distractor = {str(k): str(v) for k, v in raw_distractor.items()}
@@ -564,30 +560,8 @@ def _parse_text_shell(
     model: str,
 ) -> ExamQuestion:
     """Parse 文本生成器 output into an ExamQuestion shell with subquestions=[]."""
-    chart_spec = None
     raw_spec = raw.get("image_spec") or raw.get("chart_spec")
-    if raw_spec:
-        try:
-            chart_spec = ImageSpec(**raw_spec)
-        except Exception:
-            if raw_spec.get("chart_type"):
-                chart_spec = ImageSpec(
-                    render_mode="chart",
-                    chart_type=raw_spec.get("chart_type"),
-                    figure_kind=raw_spec.get("figure_kind", ""),
-                    data=raw_spec.get("data", {}),
-                    labels=raw_spec.get("labels", {}),
-                    title=raw_spec.get("title", ""),
-                    description=raw_spec.get("description", ""),
-                )
-            else:
-                chart_spec = ImageSpec(
-                    render_mode="html",
-                    figure_kind=raw_spec.get("figure_kind", ""),
-                    description=raw_spec.get("description", raw_spec.get("title", "")),
-                    title=raw_spec.get("title", ""),
-                    data=raw_spec.get("data", {}),
-                )
+    chart_spec = parse_image_spec(raw_spec, ImageSpec) if raw_spec else None
 
     return ExamQuestion(
         id=question_id,
@@ -613,35 +587,7 @@ def _parse_text_shell(
 
 
 def _parse_image_spec(raw_spec: object) -> ImageSpec | None:
-    if not isinstance(raw_spec, dict):
-        return None
-    try:
-        return ImageSpec(**raw_spec)
-    except Exception:
-        if raw_spec.get("chart_type"):
-            try:
-                return ImageSpec(
-                    render_mode="chart",
-                    chart_type=raw_spec.get("chart_type"),
-                    figure_kind=raw_spec.get("figure_kind", ""),
-                    data=raw_spec.get("data", {}),
-                    labels=raw_spec.get("labels", {}),
-                    title=raw_spec.get("title", ""),
-                    description=raw_spec.get("description", ""),
-                )
-            except Exception:
-                return None
-        try:
-            return ImageSpec(
-                render_mode="html",
-                figure_kind=raw_spec.get("figure_kind", ""),
-                description=raw_spec.get("description", raw_spec.get("title", "")),
-                title=raw_spec.get("title", ""),
-                data=raw_spec.get("data", {}),
-                html=raw_spec.get("html", ""),
-            )
-        except Exception:
-            return None
+    return parse_image_spec(raw_spec, ImageSpec)
 
 
 def _declared_figure_kind(spec: ImageSpec | None) -> str:
