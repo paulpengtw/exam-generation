@@ -1,0 +1,441 @@
+"""Tests for issue #689: what can stall a stream between `started` and `pipeline_start`."""
+
+from __future__ import annotations
+
+import asyncio
+import threading
+import time
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+from pydantic import BaseModel
+
+pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
+
+from server.config import ServerConfig
+from server.generate.models import GenerateParams
+from server.generate.service import generate_question_stream
+from server.generate.subjects import SubjectSpec
+
+# ---------------------------------------------------------------------------
+# Shared fake model / params
+# ---------------------------------------------------------------------------
+
+
+class _FakeQuestion(BaseModel):
+    id: str
+    圖片: str | None = None
+
+
+class _FakeParams:
+    """Opaque stand-in for sampled params; fake do_generate ignores it."""
+
+
+# ---------------------------------------------------------------------------
+# Spec factories
+# ---------------------------------------------------------------------------
+
+
+def _make_happy_spec() -> SubjectSpec:
+    """Non-blocking fake spec: do_generate returns immediately."""
+
+    def coerce_overrides(params: Any, app_state: Any) -> dict:
+        return {}
+
+    def plan_all_batch_briefs(*a: Any, **kw: Any) -> list:
+        return []
+
+    def params_from_resolved_payload(payload: dict, overrides: dict) -> _FakeParams:
+        return _FakeParams()
+
+    def do_generate(rng_params: Any, overrides: dict, **kw: Any) -> _FakeQuestion:
+        return _FakeQuestion(id=kw["question_id"])
+
+    def extract_prior_scope(q: Any) -> None:
+        return None
+
+    def plan_core_questions(client: Any, topic: str, **kw: Any) -> list:  # pragma: no cover
+        return []
+
+    def load_planner_stage(cfg: Any, grade: Any) -> str:  # pragma: no cover
+        return "第四學習階段"
+
+    def build_schemas(cfg: Any, grade: Any) -> dict:  # pragma: no cover
+        return {}
+
+    return SubjectSpec(
+        key="fake",
+        question_id_prefix="fake_",
+        exam_question_cls=_FakeQuestion,
+        coerce_overrides=coerce_overrides,
+        plan_all_batch_briefs=plan_all_batch_briefs,
+        params_from_resolved_payload=params_from_resolved_payload,
+        do_generate=do_generate,
+        extract_prior_scope=extract_prior_scope,
+        patch_metadata=None,
+        plan_core_questions=plan_core_questions,
+        load_planner_stage=load_planner_stage,
+        build_schemas=build_schemas,
+    )
+
+
+def _make_blocking_spec(
+    first_call_started: threading.Event,
+    first_call_release: threading.Event,
+) -> SubjectSpec:
+    """Fake spec: do_generate blocks on first_call_release; does not check is_cancelled.
+
+    Used to model an aborted run whose worker is still inside a long LLM/image call.
+    The lack of a cancel check means the worker will hold the renderer for the full
+    duration of the blocking call, matching the #689 staging observation.
+    """
+
+    def coerce_overrides(params: Any, app_state: Any) -> dict:
+        return {}
+
+    def plan_all_batch_briefs(*a: Any, **kw: Any) -> list:
+        return []
+
+    def params_from_resolved_payload(payload: dict, overrides: dict) -> _FakeParams:
+        return _FakeParams()
+
+    def do_generate(rng_params: Any, overrides: dict, **kw: Any) -> _FakeQuestion:
+        first_call_started.set()
+        first_call_release.wait(timeout=30)
+        return _FakeQuestion(id=kw["question_id"])
+
+    def extract_prior_scope(q: Any) -> None:
+        return None
+
+    def plan_core_questions(client: Any, topic: str, **kw: Any) -> list:  # pragma: no cover
+        return []
+
+    def load_planner_stage(cfg: Any, grade: Any) -> str:  # pragma: no cover
+        return "第四學習階段"
+
+    def build_schemas(cfg: Any, grade: Any) -> dict:  # pragma: no cover
+        return {}
+
+    return SubjectSpec(
+        key="fake",
+        question_id_prefix="fake_",
+        exam_question_cls=_FakeQuestion,
+        coerce_overrides=coerce_overrides,
+        plan_all_batch_briefs=plan_all_batch_briefs,
+        params_from_resolved_payload=params_from_resolved_payload,
+        do_generate=do_generate,
+        extract_prior_scope=extract_prior_scope,
+        patch_metadata=None,
+        plan_core_questions=plan_core_questions,
+        load_planner_stage=load_planner_stage,
+        build_schemas=build_schemas,
+    )
+
+
+def _make_slow_plan_spec() -> SubjectSpec:
+    """plan_all_batch_briefs sleeps 0.6 s on the event loop (stand-in for a sync LLM call)."""
+
+    def coerce_overrides(params: Any, app_state: Any) -> dict:
+        return {}
+
+    def plan_all_batch_briefs(*a: Any, **kw: Any) -> list:
+        time.sleep(0.6)  # stand-in for a synchronous LLM planning call on the event loop
+        return []
+
+    def params_from_resolved_payload(payload: dict, overrides: dict) -> _FakeParams:
+        return _FakeParams()
+
+    def do_generate(rng_params: Any, overrides: dict, **kw: Any) -> _FakeQuestion:
+        return _FakeQuestion(id=kw["question_id"])
+
+    def extract_prior_scope(q: Any) -> None:
+        return None
+
+    def plan_core_questions(client: Any, topic: str, **kw: Any) -> list:  # pragma: no cover
+        return []
+
+    def load_planner_stage(cfg: Any, grade: Any) -> str:  # pragma: no cover
+        return "第四學習階段"
+
+    def build_schemas(cfg: Any, grade: Any) -> dict:  # pragma: no cover
+        return {}
+
+    return SubjectSpec(
+        key="fake",
+        question_id_prefix="fake_",
+        exam_question_cls=_FakeQuestion,
+        coerce_overrides=coerce_overrides,
+        plan_all_batch_briefs=plan_all_batch_briefs,
+        params_from_resolved_payload=params_from_resolved_payload,
+        do_generate=do_generate,
+        extract_prior_scope=extract_prior_scope,
+        patch_metadata=None,
+        plan_core_questions=plan_core_questions,
+        load_planner_stage=load_planner_stage,
+        build_schemas=build_schemas,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 1 — xfail: empty renderer pool stalls after `started`
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "#700: a run waiting for a Playwright renderer after `started` "
+        "emits nothing the client can see"
+    ),
+)
+def test_empty_renderer_pool_stalls_after_started_with_no_client_visible_event(
+    tmp_path: Path,
+) -> None:
+    """An empty renderer pool causes the stream to stall indefinitely after `started`.
+
+    Desired behaviour (after fix): a client-visible event must arrive within 1 s
+    even when no renderer is available.  Current behaviour: the generator blocks
+    at ``await renderer_pool.get()`` so only ``: ping`` comments reach the client.
+    The strict xfail captures the bug; remove the marker when the fix lands.
+    """
+
+    async def run() -> None:
+        # Pool created inside the running loop; empty — no renderer available.
+        pool: asyncio.Queue = asyncio.Queue()
+        app_state = SimpleNamespace(renderer_pool=pool)
+        config = ServerConfig(
+            api_key="x", output_dir=tmp_path, data_dir=Path("data"), creative_planning=False
+        )
+        params = GenerateParams(subject="fake", count=1, skip_verify=True)
+        stream = generate_question_stream(
+            params, config, app_state, subjects={"fake": _make_happy_spec()}
+        )
+
+        first = await stream.__anext__()
+        assert first["event"] == "started"
+
+        stalled = False
+        try:
+            await asyncio.wait_for(stream.__anext__(), timeout=1.0)
+        except asyncio.TimeoutError:
+            stalled = True
+        finally:
+            # aclose() here is before the generator's try/finally (the signal_task
+            # was never created because the generator stalled before it), so
+            # GeneratorExit propagates cleanly without hanging.
+            await stream.aclose()
+
+        # DESIRED: the next event should arrive within 1 s even with an empty pool.
+        assert not stalled, (
+            "expected a client-visible event within 1 s while the renderer pool is empty"
+        )
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Test 2 — green: renderer is returned to pool after a normal run
+# ---------------------------------------------------------------------------
+
+
+def test_renderer_is_returned_to_pool_after_run_completes(tmp_path: Path) -> None:
+    """Green characterisation: the renderer sentinel is put back after a normal run."""
+
+    async def run() -> tuple[list[dict], bool, bool]:
+        sentinel = object()
+        pool: asyncio.Queue = asyncio.Queue()
+        pool.put_nowait(sentinel)
+        app_state = SimpleNamespace(renderer_pool=pool)
+        config = ServerConfig(
+            api_key="x", output_dir=tmp_path, data_dir=Path("data"), creative_planning=False
+        )
+        params = GenerateParams(subject="fake", count=1, skip_verify=True)
+
+        events: list[dict] = []
+        async for evt in generate_question_stream(
+            params, config, app_state, subjects={"fake": _make_happy_spec()}
+        ):
+            events.append(evt)
+
+        pool_size_ok = pool.qsize() == 1
+        sentinel_ok = pool.get_nowait() is sentinel
+        return events, pool_size_ok, sentinel_ok
+
+    events, pool_size_ok, sentinel_ok = asyncio.run(run())
+
+    event_names = [e["event"] for e in events]
+    assert event_names[0] == "started", f"first event must be 'started'; got {event_names[0]!r}"
+    assert event_names[-1] == "done", f"last event must be 'done'; got {event_names[-1]!r}"
+
+    pipeline_start_events = [
+        e
+        for e in events
+        if e["event"] == "pipeline"
+        and isinstance(e.get("data"), dict)
+        and e["data"].get("event_name") == "pipeline_start"
+    ]
+    assert pipeline_start_events, "expected at least one pipeline_start event"
+
+    result_events = [e for e in events if e["event"] == "result"]
+    assert len(result_events) == 1, f"expected 1 result event; got {len(result_events)}"
+
+    assert pool_size_ok, "pool should hold exactly 1 item after the run"
+    assert sentinel_ok, "the returned item must be the same sentinel object"
+
+
+# ---------------------------------------------------------------------------
+# Test 3 — green: aborted run keeps renderer until its worker exits
+# ---------------------------------------------------------------------------
+
+
+def test_aborted_run_keeps_renderer_until_its_worker_exits(tmp_path: Path) -> None:
+    """Green characterisation of the #689 root cause.
+
+    The generator's finally block calls ``await signal_task`` before
+    ``renderer_pool.put(html_renderer)``.  signal_task waits for all workers to
+    finish.  A worker still inside a blocking call therefore holds the renderer
+    for the full duration of that call.
+
+    Note: with the #683 cancel signal the worker exits at the next stage
+    boundary, so the hold is now bounded by one LLM/image call, not eliminated.
+    """
+    first_call_started = threading.Event()
+    first_call_release = threading.Event()
+
+    async def run() -> None:
+        sentinel = object()
+        pool: asyncio.Queue = asyncio.Queue()
+        pool.put_nowait(sentinel)
+        app_state = SimpleNamespace(renderer_pool=pool)
+        config = ServerConfig(
+            api_key="x", output_dir=tmp_path, data_dir=Path("data"), creative_planning=False
+        )
+        params = GenerateParams(subject="fake", count=1, skip_verify=True)
+        fake_spec = _make_blocking_spec(first_call_started, first_call_release)
+
+        stream = generate_question_stream(
+            params, config, app_state, subjects={"fake": fake_spec}
+        )
+
+        # Consume until pipeline_start; by then the worker is submitted to the executor.
+        async for evt in stream:
+            if (
+                evt["event"] == "pipeline"
+                and isinstance(evt.get("data"), dict)
+                and evt["data"].get("event_name") == "pipeline_start"
+            ):
+                break
+
+        # Wait for the worker to actually start inside do_generate.
+        started_ok = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: first_call_started.wait(15.0)
+        )
+        assert started_ok, "timed out waiting for worker to enter do_generate"
+
+        # Simulate a client disconnect: GeneratorExit is thrown at the `yield event`
+        # suspend point, entering the finally block which does `await signal_task`.
+        # signal_task cannot finish until the worker exits, so the pool stays empty.
+        aclose_task = asyncio.create_task(stream.aclose())
+
+        # Poll for 0.5 s, verifying the renderer stays held throughout.
+        deadline = asyncio.get_event_loop().time() + 0.5
+        all_checks_ok = True
+        while asyncio.get_event_loop().time() < deadline:
+            await asyncio.sleep(0.05)
+            if pool.qsize() != 0 or aclose_task.done():
+                all_checks_ok = False
+                break
+
+        assert all_checks_ok, (
+            "pool should stay empty and aclose_task should stay pending "
+            "while the blocking worker holds the renderer"
+        )
+
+        # Release the worker; the renderer is returned only after the worker exits.
+        first_call_release.set()
+        await aclose_task
+
+        assert pool.qsize() == 1, "renderer must be returned to pool after worker exits"
+        assert pool.get_nowait() is sentinel, "returned item must be the original sentinel"
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Test 4 — xfail: plan_all_batch_briefs blocks the event loop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#701: plan_all_batch_briefs runs synchronously on the event loop",
+)
+def test_batch_brief_planning_does_not_block_event_loop(tmp_path: Path) -> None:
+    """plan_all_batch_briefs must not block the event loop (issue #689 candidate 1).
+
+    On current code the call runs directly on the event-loop thread.  For
+    social_studies with creative_planning=True it makes a synchronous LLM call;
+    the fake spec uses time.sleep(0.6) as a stand-in.
+
+    A heartbeat task increments a counter every 0.05 s.  If the loop is blocked
+    for 0.6 s, the counter barely advances between ``started`` and
+    ``pipeline_start``.  On current code the difference is ~0-1 ticks, so
+    ``assert … >= 5`` fails and the strict xfail passes.  After a fix (e.g. moving
+    the call to a thread), the loop stays free and >= 5 ticks accumulate.
+    """
+
+    async def run() -> None:
+        ticks = 0
+        ticks_at_started: int | None = None
+        ticks_at_pipeline_start: int | None = None
+
+        async def heartbeat() -> None:
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.05)
+                ticks += 1
+
+        config = ServerConfig(
+            api_key="x", output_dir=tmp_path, data_dir=Path("data"), creative_planning=False
+        )
+        params = GenerateParams(subject="fake", count=1, skip_verify=True)
+        # renderer_pool=None: pool acquisition is skipped, so only the planning
+        # call can block the loop between `started` and `pipeline_start`.
+        app_state = SimpleNamespace(renderer_pool=None)
+        stream = generate_question_stream(
+            params, config, app_state, subjects={"fake": _make_slow_plan_spec()}
+        )
+
+        hb = asyncio.create_task(heartbeat())
+        try:
+            async for evt in stream:
+                if evt["event"] == "started":
+                    ticks_at_started = ticks
+                elif (
+                    evt["event"] == "pipeline"
+                    and isinstance(evt.get("data"), dict)
+                    and evt["data"].get("event_name") == "pipeline_start"
+                ):
+                    ticks_at_pipeline_start = ticks
+                    break  # measurement complete; drain the rest below
+        finally:
+            hb.cancel()
+            try:
+                await hb
+            except asyncio.CancelledError:
+                pass
+            await stream.aclose()
+
+        assert ticks_at_started is not None, "did not see `started` event"
+        assert ticks_at_pipeline_start is not None, "did not see `pipeline_start` event"
+
+        diff = ticks_at_pipeline_start - ticks_at_started
+        assert diff >= 5, (
+            f"heartbeat only ticked {diff} time(s) between `started` and `pipeline_start`; "
+            f"expected >= 5 to indicate the event loop was not blocked. "
+            f"On current code plan_all_batch_briefs blocks the loop so ticks stay near 0."
+        )
+
+    asyncio.run(run())

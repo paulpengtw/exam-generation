@@ -1,0 +1,163 @@
+{
+  "run": "starve_A",
+  "request_start_epoch": 1789017292.4197001,
+  "request_start_iso": "2026-09-10T05:14:52Z",
+  "http_status": "200",
+  "http_version": null,
+  "seconds_to_first_byte": 0.353,
+  "seconds_to_started": 0.353,
+  "seconds_to_pipeline_start": 14.487,
+  "gap_started_to_pipeline_start": 14.134,
+  "total_duration_s": 123.267,
+  "ping_count": 7,
+  "max_ping_interval_s": 15.01,
+  "median_ping_interval_s": 15.0,
+  "longest_gap_s": 15.695,
+  "arrival_ts_delta_min": 0.084,
+  "arrival_ts_delta_median": 0.085,
+  "arrival_ts_delta_max": 0.09,
+  "top5_ts_deltas": [
+    {
+      "event": "pipeline",
+      "inner": "pipeline_start",
+      "arrival": 1789017306.9069426,
+      "ts": 1789017306.8171449,
+      "delta": 0.09
+    },
+    {
+      "event": "pipeline",
+      "inner": "question_start",
+      "arrival": 1789017306.9069889,
+      "ts": 1789017306.8186998,
+      "delta": 0.088
+    },
+    {
+      "event": "stage",
+      "inner": "generator:llm_generate:start",
+      "arrival": 1789017306.9070055,
+      "ts": 1789017306.82008,
+      "delta": 0.087
+    },
+    {
+      "event": "stage",
+      "inner": "image_agent:render_image:start",
+      "arrival": 1789017415.6859632,
+      "ts": 1789017415.599302,
+      "delta": 0.087
+    },
+    {
+      "event": "stage",
+      "inner": "generator:llm_generate:end",
+      "arrival": 1789017358.7446785,
+      "ts": 1789017358.6587224,
+      "delta": 0.086
+    }
+  ],
+  "first_15_events": [
+    {
+      "event": "started",
+      "inner": null,
+      "arrival_offset_s": 0.353
+    },
+    {
+      "event": "pipeline",
+      "inner": "pipeline_start",
+      "arrival_offset_s": 14.487
+    },
+    {
+      "event": "pipeline",
+      "inner": "question_start",
+      "arrival_offset_s": 14.487
+    },
+    {
+      "event": "stage",
+      "inner": null,
+      "arrival_offset_s": 14.487
+    },
+    {
+      "event": "llm_request",
+      "inner": null,
+      "arrival_offset_s": 30.456
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    },
+    {
+      "event": "llm_content",
+      "inner": null,
+      "arrival_offset_s": 30.457
+    }
+  ],
+  "pipeline_events": [
+    {
+      "event_name": "pipeline_start",
+      "arrival_offset_s": 14.487
+    },
+    {
+      "event_name": "question_start",
+      "arrival_offset_s": 14.487
+    }
+  ],
+  "event_counts": {
+    "started": 1,
+    "pipeline": 2,
+    "stage": 9,
+    "llm_request": 4,
+    "llm_content": 904,
+    "llm_response": 4,
+    "plan": 1,
+    "trail": 3,
+    "question_update": 1
+  },
+  "terminal": "aborted-by-script:stage:image_agent:render_image:start",
+  "curl_exit_code": -9,
+  "curl_stderr": "",
+  "max_health_latency_s": 0.0,
+  "max_health_latency_epoch": null,
+  "max_health_in_started_pipeline_window": false,
+  "clock_skew_s": -0.519,
+  "aborted_at": 1789017415.6859632,
+  "abort_trigger": "stage:image_agent:render_image:start"
+}

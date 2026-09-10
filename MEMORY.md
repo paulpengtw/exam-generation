@@ -33,3 +33,6 @@ Durable gotchas and decisions for all agents and developers working on this repo
    contains Constructed-response 小題.  Any corpus audit or rubric check must
    bucket by `subquestions[*].題型`, never by directory
    (found while building the #651 labelled set; the first pass dropped 39 of 257 entries).
+
+5. **Aborting a web generate stream leaks a Playwright renderer on staging; two aborts stop all generation until the backend restarts.**
+   `generate_question_stream` acquires one of the two pooled renderers right after emitting `started` and only returns it in its `finally` after awaiting the worker; on a real client disconnect that cleanup is interrupted, so the renderer is never put back. Symptoms: every later `GET /api/generate` shows `event: started` and then only `: ping` frames, `/health` stays fast, nothing else arrives. Recovery today is a backend redeploy/restart. Do not kill long staging streams mid-run during smoke tests unless you can restart the service afterwards. Diagnosed in issue #689 (2026-09-10); fix tracked in #700. Capture tooling: `scripts/capture_sse_689.py`.

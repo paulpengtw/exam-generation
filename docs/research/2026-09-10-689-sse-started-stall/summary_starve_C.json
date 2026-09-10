@@ -1,0 +1,40 @@
+{
+  "run": "starve_C",
+  "request_start_epoch": 1789017432.0831525,
+  "request_start_iso": "2026-09-10T05:17:12Z",
+  "http_status": "200",
+  "http_version": "2",
+  "seconds_to_first_byte": 0.436,
+  "seconds_to_started": 0.436,
+  "seconds_to_pipeline_start": null,
+  "gap_started_to_pipeline_start": null,
+  "total_duration_s": 900.306,
+  "ping_count": 59,
+  "max_ping_interval_s": 15.072,
+  "median_ping_interval_s": 15.0,
+  "longest_gap_s": 15.072,
+  "arrival_ts_delta_min": null,
+  "arrival_ts_delta_median": null,
+  "arrival_ts_delta_max": null,
+  "top5_ts_deltas": [],
+  "first_15_events": [
+    {
+      "event": "started",
+      "inner": null,
+      "arrival_offset_s": 0.436
+    }
+  ],
+  "pipeline_events": [],
+  "event_counts": {
+    "started": 1
+  },
+  "terminal": "disconnect",
+  "curl_exit_code": 92,
+  "curl_stderr": "curl: (92) HTTP/2 stream 1 was not closed cleanly: CANCEL (err 8)\n",
+  "max_health_latency_s": 0.783,
+  "max_health_latency_epoch": 1789017461.588238,
+  "max_health_in_started_pipeline_window": false,
+  "clock_skew_s": -0.519,
+  "aborted_at": null,
+  "abort_trigger": null
+}
