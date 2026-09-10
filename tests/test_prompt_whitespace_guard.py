@@ -29,24 +29,35 @@ from pathlib import Path
 
 import pytest
 
-# --- 社會領域 imports ---
-from src.social_studies.context_builder import (
-    build_subquestion_system_prompt as ss_build_subquestion_system_prompt,
-    build_subquestion_user_prompt as ss_build_subquestion_user_prompt,
-    build_text_system_prompt as ss_build_text_system_prompt,
-    build_text_user_prompt as ss_build_text_user_prompt,
-)
-from src.social_studies.sampler import sample_params as ss_sample_params
-
 # --- 自然科學 imports ---
 from src.natural_sciences.context_builder import (
     build_subquestion_system_prompt as ns_build_subquestion_system_prompt,
+)
+from src.natural_sciences.context_builder import (
     build_subquestion_user_prompt as ns_build_subquestion_user_prompt,
+)
+from src.natural_sciences.context_builder import (
     build_text_system_prompt as ns_build_text_system_prompt,
+)
+from src.natural_sciences.context_builder import (
     build_text_user_prompt as ns_build_text_user_prompt,
 )
 from src.natural_sciences.sampler import sample_params as ns_sample_params
 
+# --- 社會領域 imports ---
+from src.social_studies.context_builder import (
+    build_subquestion_system_prompt as ss_build_subquestion_system_prompt,
+)
+from src.social_studies.context_builder import (
+    build_subquestion_user_prompt as ss_build_subquestion_user_prompt,
+)
+from src.social_studies.context_builder import (
+    build_text_system_prompt as ss_build_text_system_prompt,
+)
+from src.social_studies.context_builder import (
+    build_text_user_prompt as ss_build_text_user_prompt,
+)
+from src.social_studies.sampler import sample_params as ss_sample_params
 
 # ---------------------------------------------------------------------------
 # Helper

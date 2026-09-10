@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 import pytest
+
 pytest.importorskip("sentry_sdk", reason="requires [web] extras: uv sync --extra web")
 
 

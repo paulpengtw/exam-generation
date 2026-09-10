@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient

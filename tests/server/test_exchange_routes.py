@@ -5,6 +5,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient

@@ -8,8 +8,8 @@ from src.social_studies.context_builder import (
     CONTENT_TYPE_INSTRUCTIONS as SS_CONTENT_TYPE_INSTRUCTIONS,
 )
 from src.social_studies.context_builder import (
-    build_subquestion_user_prompt,
     build_subquestion_system_prompt,
+    build_subquestion_user_prompt,
     build_text_system_prompt,
     build_text_user_prompt,
     build_user_prompt,

@@ -11,7 +11,6 @@ import pytest
 from src.config import Config
 from src.llm_client import LLMClient, _openai_usage_to_internal, _warned_effort_drops
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -287,7 +286,9 @@ def test_openai_high_effort_sends_reasoning_effort(reset_warned_effort_drops) ->
 def test_gemini_unsupported_effort_omits_reasoning_effort_and_warns_once(
     caplog, reset_warned_effort_drops
 ) -> None:
-    """effort='max' on gemini → no reasoning_effort, no extra_body; exactly 1 WARNING across 2 calls."""
+    """effort='max' on gemini → no reasoning_effort, no extra_body;
+    exactly 1 WARNING across 2 calls.
+    """
     client, fake = _make_compat_client_ex(
         model="gemini-3.1-pro-preview", effort_execute="max"
     )

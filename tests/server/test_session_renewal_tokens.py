@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from server.auth import tokens

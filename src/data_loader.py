@@ -46,7 +46,9 @@ def get_grade_content(curriculum: list[dict], grade: int) -> list[LearningConten
     return []
 
 
-def get_target_grade_content(curriculum: list[dict], grades: list[int] | None = None) -> list[LearningContentItem]:
+def get_target_grade_content(
+    curriculum: list[dict], grades: list[int] | None = None
+) -> list[LearningContentItem]:
     """Get all learning content for the configured target grades."""
     if grades is None:
         from src.schema_loader import load_grades, load_schemas

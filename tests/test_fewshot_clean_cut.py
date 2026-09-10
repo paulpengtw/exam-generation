@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.social_studies.context_builder import build_text_user_prompt
 from src.social_studies.data_loader import (
     _parse_few_shot_csv,
     load_few_shot_example_groups,
     load_few_shot_examples,
 )
-from src.social_studies.context_builder import build_text_user_prompt
 from src.social_studies.sampler import sample_params
 
 CONTENT_TYPES = ("純文字", "混合", "graphs/charts/tables")

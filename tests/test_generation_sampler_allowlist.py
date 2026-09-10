@@ -57,61 +57,71 @@ RNG_ALLOWLIST: tuple[RngAllowlistEntry, ...] = (
         "src/context_builder.py",
         "build_user_prompt",
         r"selected = rng\.sample\(flat_examples, sample_count\)",
-        "seeded prompt-only 參考範例 pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
     RngAllowlistEntry(
         "src/context_builder.py",
         "_math_group_few_shot_text",
         r"selected = rng\.sample\(flattened, min\(2, len\(flattened\)\)\)",
-        "seeded prompt-only 參考範例 pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
     RngAllowlistEntry(
         "src/social_studies/context_builder.py",
         "build_user_prompt",
         r"selected_groups = rng\.sample\(example_groups, sample_count\)",
-        "seeded prompt-only 參考範例 group pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 group pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
     RngAllowlistEntry(
         "src/social_studies/context_builder.py",
         "build_user_prompt",
         r"selected = \[rng\.choice\(group\) for group in selected_groups\]",
-        "seeded prompt-only 參考範例 pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
     RngAllowlistEntry(
         "src/social_studies/context_builder.py",
         "build_subquestion_user_prompt",
         r"ex = rng\.choice\(matching_examples or fallback_examples\)",
-        "seeded prompt-only 參考範例 pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
     RngAllowlistEntry(
         "src/social_studies/context_builder.py",
         "build_subquestion_user_prompt",
         r"rng\.choice\(process_exemplars\)",
-        "seeded prompt-only 參考範例 pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
     RngAllowlistEntry(
         "src/natural_sciences/context_builder.py",
         "build_user_prompt",
         r"selected_groups = rng\.sample\(example_groups, sample_count\)",
-        "seeded prompt-only 參考範例 group pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 group pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
     RngAllowlistEntry(
         "src/natural_sciences/context_builder.py",
         "build_user_prompt",
         r"selected = \[rng\.choice\(group\) for group in selected_groups\]",
-        "seeded prompt-only 參考範例 pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
     RngAllowlistEntry(
         "src/natural_sciences/context_builder.py",
         "build_subquestion_user_prompt",
         r"selected_group = rng\.choice\(example_groups\)",
-        "seeded prompt-only 參考範例 group pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 group pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
     RngAllowlistEntry(
         "src/natural_sciences/context_builder.py",
         "build_subquestion_user_prompt",
         r"ex = rng\.choice\(selected_group\)",
-        "seeded prompt-only 參考範例 pick; it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
+        "seeded prompt-only 參考範例 pick;"
+        " it is not an item parameter (ADR 0018); disclosed as 參考範例紀錄",
     ),
 )
 
