@@ -4,69 +4,102 @@ Written test-first per TDD convention: all tests must FAIL (red) before implemen
 After implementation all tests must pass (green).
 
 Run:
-    export PATH="$HOME/.local/bin:$PATH" && uv run pytest tests/test_model_tiers_verify_correct.py -v
+    export PATH="$HOME/.local/bin:$PATH" && \
+    uv run pytest tests/test_model_tiers_verify_correct.py -v
 
 Study tests/test_llm_effort.py and tests/test_llm_client_openai_compat.py for stubbing style.
 """
 from __future__ import annotations
 
 import dataclasses
-import logging
 import os
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-import pytest
+from server.config import ServerConfig  # noqa: E402
 
 # ── imports ───────────────────────────────────────────────────────────────────
-from src.config import Config, EFFORT_LEVELS, DEFAULT_EFFORT_LEVELS  # noqa: E402
-
+from src.config import DEFAULT_EFFORT_LEVELS, EFFORT_LEVELS, Config  # noqa: E402
+from src.corrector import correct_question as math_correct
 from src.llm_client import (  # noqa: E402
-    LLMClient,
-    _VERIFY_PURPOSES,
     _CORRECT_PURPOSES,
+    _VERIFY_PURPOSES,
+    LLMClient,
 )
-from server.config import ServerConfig  # noqa: E402
+from src.natural_sciences.corrector import correct_question as ns_correct
+from src.natural_sciences.schemas import (
+    ChartVerificationResult as NSChartVerif,
+)
+from src.natural_sciences.schemas import (
+    ExamQuestion as NSExamQuestion,
+)
+from src.natural_sciences.schemas import (
+    QuestionContext as NSCtx,
+)
+from src.natural_sciences.schemas import (
+    QuestionSetType as NSSetType,
+)
+from src.natural_sciences.schemas import (
+    QuestionSubContext as NSSubCtx,
+)
+from src.natural_sciences.schemas import (
+    QuestionType as NSQType,
+)
+from src.natural_sciences.schemas import (
+    SubQuestion as NSSubQuestion,
+)
+from src.natural_sciences.schemas import (
+    VerificationResult as NSVerifResult,
+)
+from src.natural_sciences.verifier import verify_question as ns_verify
+from src.schemas import (
+    ChartVerificationResult as MathChartVerif,
+)
+from src.schemas import (
+    ExamQuestion as MathExamQuestion,
+)
+from src.schemas import (
+    LearningContentItem,
+    MathThinking,
+)
+from src.schemas import (
+    QuestionContext as MathCtx,
+)
+from src.schemas import (
+    QuestionSetType as MathSetType,
+)
+from src.schemas import (
+    QuestionType as MathQType,
+)
+from src.schemas import (
+    VerificationResult as MathVerifResult,
+)
+from src.social_studies.corrector import correct_question as ss_correct
+from src.social_studies.schemas import (
+    ChartVerificationResult as SSChartVerif,
+)
+from src.social_studies.schemas import (
+    ExamQuestion as SSExamQuestion,
+)
+from src.social_studies.schemas import (
+    QuestionContext as SSCtx,
+)
+from src.social_studies.schemas import (
+    QuestionSetType as SSSetType,
+)
+from src.social_studies.schemas import (
+    QuestionType as SSQType,
+)
+from src.social_studies.schemas import (
+    SubQuestion as SSSubQuestion,
+)
+from src.social_studies.schemas import (
+    VerificationResult as SSVerifResult,
+)
+from src.social_studies.verifier import verify_question as ss_verify
 
 # ── pipeline-test subject imports ─────────────────────────────────────────────
 from src.verifier import verify_question as math_verify
-from src.corrector import correct_question as math_correct
-from src.schemas import (
-    ExamQuestion as MathExamQuestion,
-    LearningContentItem,
-    QuestionContext as MathCtx,
-    QuestionSetType as MathSetType,
-    QuestionType as MathQType,
-    MathThinking,
-    VerificationResult as MathVerifResult,
-    ChartVerificationResult as MathChartVerif,
-)
-
-from src.social_studies.verifier import verify_question as ss_verify
-from src.social_studies.corrector import correct_question as ss_correct
-from src.social_studies.schemas import (
-    ExamQuestion as SSExamQuestion,
-    SubQuestion as SSSubQuestion,
-    QuestionContext as SSCtx,
-    QuestionSetType as SSSetType,
-    QuestionType as SSQType,
-    VerificationResult as SSVerifResult,
-    ChartVerificationResult as SSChartVerif,
-)
-
-from src.natural_sciences.verifier import verify_question as ns_verify
-from src.natural_sciences.corrector import correct_question as ns_correct
-from src.natural_sciences.schemas import (
-    ExamQuestion as NSExamQuestion,
-    SubQuestion as NSSubQuestion,
-    QuestionContext as NSCtx,
-    QuestionSubContext as NSSubCtx,
-    QuestionSetType as NSSetType,
-    QuestionType as NSQType,
-    VerificationResult as NSVerifResult,
-    ChartVerificationResult as NSChartVerif,
-)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared helpers

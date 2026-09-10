@@ -22,7 +22,9 @@ class _CapturingLogger:
 def test_setup_chinese_font_all_fail_returns_none_warns_stderr_and_disables_unicode_minus(
     monkeypatch, capsys
 ) -> None:
-    """When every findfont call raises, _setup_chinese_font returns None, warns stderr, disables unicode_minus."""
+    """When every findfont call raises, _setup_chinese_font returns None,
+    warns stderr, disables unicode_minus.
+    """
 
     def always_raise(font_name, fallback_to_default=True):
         raise ValueError(f"No font found: {font_name}")
@@ -50,7 +52,9 @@ def test_setup_chinese_font_all_fail_returns_none_warns_stderr_and_disables_unic
 def test_setup_chinese_font_second_candidate_returns_name_no_warning(
     monkeypatch, capsys
 ) -> None:
-    """When findfont succeeds on the 2nd candidate, returns that font name with no stderr warning."""
+    """When findfont succeeds on the 2nd candidate,
+    returns that font name with no stderr warning.
+    """
     call_count = [0]
 
     def findfont_second_wins(font_name, fallback_to_default=True):

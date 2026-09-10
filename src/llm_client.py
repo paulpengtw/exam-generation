@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import sys
 import time
@@ -15,8 +16,6 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from src.config import Config
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -542,7 +541,10 @@ class LLMClient:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         usage: dict = {}
-        agent = agent_override if agent_override is not None else _PURPOSE_TO_AGENT.get(purpose, purpose)
+        agent = (
+            agent_override if agent_override is not None
+            else _PURPOSE_TO_AGENT.get(purpose, purpose)
+        )
 
         system_param = (
             [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
@@ -608,7 +610,10 @@ class LLMClient:
         agent_override: str | None = None,
     ) -> str:
         """Emit request event, dispatch to provider-specific call, emit response event."""
-        agent = agent_override if agent_override is not None else _PURPOSE_TO_AGENT.get(purpose, purpose)
+        agent = (
+            agent_override if agent_override is not None
+            else _PURPOSE_TO_AGENT.get(purpose, purpose)
+        )
 
         if self._observer:
             self._emit({
@@ -648,7 +653,9 @@ class LLMClient:
         ]
 
         if self._observer and self.config.llm_stream:
-            return self._generate_streaming(system, anthropic_messages, model, purpose, agent_override)
+            return self._generate_streaming(
+                system, anthropic_messages, model, purpose, agent_override
+            )
 
         system_param = (
             [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
@@ -689,7 +696,10 @@ class LLMClient:
         purpose: str,
         agent: str,
     ) -> str:
-        """Stream via OpenAI-compat surface, emitting deltas to observer. Returns assembled content."""
+        """Stream via OpenAI-compat surface, emitting deltas to observer.
+
+        Returns assembled content.
+        """
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         usage: dict = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
@@ -869,7 +879,10 @@ class LLMClient:
                     mime = "jpeg" if ext in ("jpg", "jpeg") else ext or "png"
                     b64 = base64.b64encode(Path(img_path).read_bytes()).decode("utf-8")
                     user_content.append(
-                        {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{b64}"}}
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/{mime};base64,{b64}"},
+                        }
                     )
             else:
                 user_content = current_user  # type: ignore[assignment]
@@ -992,7 +1005,11 @@ class LLMClient:
                 "agent": agent,
                 "model": call_model,
                 "messages": [{"role": "system", "content": system}, *messages],
-                "params": {"max_tokens": 8192, "temperature": self.config.temperature, "tools": tools},
+                "params": {
+                    "max_tokens": 8192,
+                    "temperature": self.config.temperature,
+                    "tools": tools,
+                },
             })
 
         for iteration in range(max_iterations):

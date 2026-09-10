@@ -8,6 +8,7 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 
 import pytest
+
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
 from fastapi.testclient import TestClient

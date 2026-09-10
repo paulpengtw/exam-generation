@@ -22,7 +22,6 @@ from src.social_studies.schemas import (
     SubQuestion,
 )
 
-
 # ── shared helpers ────────────────────────────────────────────────────────────
 
 
@@ -142,7 +141,9 @@ def test_anthropic_exec_model_proceeds_and_calls_generate() -> None:
 
 
 def test_client_without_config_attribute_proceeds() -> None:
-    """Case 3: no .config attribute → exec_model="" → resolve_provider returns 'anthropic' → proceeds."""
+    """Case 3: no .config attribute → exec_model="" → resolve_provider returns 'anthropic'
+    → proceeds.
+    """
     client = _NoConfigClient()
 
     result = fact_check_question(
