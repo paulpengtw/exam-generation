@@ -26,3 +26,10 @@ Durable gotchas and decisions for all agents and developers working on this repo
    that imports those packages will fail with `ModuleNotFoundError` at collection time.
    Always use `uv sync --all-extras --all-groups` (what `bash scripts/setup.sh` does),
    or match what CI runs: `uv sync --all-extras --all-groups`.
+
+4. **NS few-shot directories are named by the 題組's headline 題型, not each 小題's 題型.**
+   `data/natural_sciences/few_shot/Constructed-response/` contains 39
+   Simple/Complex multiple-choice 小題, and the Complex-multiple-choice folder
+   contains Constructed-response 小題.  Any corpus audit or rubric check must
+   bucket by `subquestions[*].題型`, never by directory
+   (found while building the #651 labelled set; the first pass dropped 39 of 257 entries).
