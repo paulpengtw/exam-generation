@@ -536,11 +536,44 @@ async def generate_question_stream(
         # Site 2 (creative-brief / coverage planning): delegated to spec.
         # SS: plans briefs when creative_planning=True; returns [None]*count otherwise.
         # Math / NS: always returns [] so the brief-application check is a no-op.
-        batch_briefs = spec.plan_all_batch_briefs(
-            params, ctx.count, ctx.base_seed, ctx.overrides, config,
-            config.creative_planning, ctx.decoded_subquestion_configs,
-            client_factory=_client_factory,
+        # Run in a worker thread so a synchronous LLM planning call (e.g. Opus for
+        # 社會領域 with creative_planning=True, ~14 s) does not block the event loop
+        # and freeze pings, /health, and other requests (issue #701).
+        yield {
+            "event": SSEEventName.STAGE,
+            "data": {
+                "type": "stage",
+                "agent": "planner",
+                "stage": "batch_briefs",
+                "status": "start",
+                "ts": time.time(),
+            },
+        }
+        batch_briefs = await asyncio.to_thread(
+            functools.partial(
+                spec.plan_all_batch_briefs,
+                params, ctx.count, ctx.base_seed, ctx.overrides, config,
+                config.creative_planning, ctx.decoded_subquestion_configs,
+                client_factory=_client_factory,
+            )
         )
+        yield {
+            "event": SSEEventName.STAGE,
+            "data": {
+                "type": "stage",
+                "agent": "planner",
+                "stage": "batch_briefs",
+                "status": "end",
+                "ts": time.time(),
+            },
+        }
+
+        # Guard: if the request was cancelled while planning ran in its thread
+        # (e.g. the client disconnected), do not submit workers.  This is an extra
+        # safety net; CancelledError during the await above already prevents reaching
+        # this line in the normal asyncio cancellation path.
+        if ctx.cancel_event.is_set():
+            return
 
         ctx.emit_pipeline("pipeline_start", total=ctx.count)
         question_clients = [_client_factory(ctx.client_config) for _ in range(ctx.count)]

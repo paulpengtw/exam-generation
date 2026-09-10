@@ -329,6 +329,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "stage.correct": "Correcting question",
     "stage.html_render": "Rendering HTML",
     "stage.acquire": "Waiting for renderer",
+    "stage.batch_briefs": "Planning batch briefs",
 
     "agent_panel.title": "Agent Status",
     "agent_panel.aggregate_label": "Aggregate · across {n} questions",
@@ -808,6 +809,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "stage.correct": "修正題目",
     "stage.html_render": "渲染 HTML",
     "stage.acquire": "等待渲染器",
+    "stage.batch_briefs": "規劃題組取材方向",
 
     "agent_panel.title": "多 Agent 狀態",
     "agent_panel.aggregate_label": "合計模式 · {n} 題彙總",
