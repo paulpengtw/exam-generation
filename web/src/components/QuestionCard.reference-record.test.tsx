@@ -61,7 +61,7 @@ describe("QuestionCard 參考範例紀錄 integration", () => {
     const record: ReferenceExampleRecordShape = {
       disabled: false,
       entries: [
-        _entry({ description: "First example", timestamp: "2026-09-10T00:00:00Z" }),
+        _entry({ description: "First example", slot: 1, timestamp: "2026-09-10T00:00:00Z" }),
         _entry({ description: "Second example", slot: 2, timestamp: "2026-09-10T00:01:00Z" }),
       ],
     };

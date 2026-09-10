@@ -148,4 +148,19 @@ describe("ReferenceExampleRecordSection", () => {
     const badges = screen.queryAllByLabelText("duplicate");
     expect(badges).toHaveLength(1);
   });
+
+  it("does not count null-slot (text-stage) entries as a subquestion slot", () => {
+    render(
+      <ReferenceExampleRecordSection
+        record={{
+          entries: [
+            _entry({ slot: null, stage: "text_generator", description: "text stage example" }),
+            _entry({ slot: 1, stage: "subquestion_generator", description: "slot 1 example", timestamp: "2026-09-10T01:00:00Z" }),
+            _entry({ slot: 2, stage: "subquestion_generator", description: "slot 2 example", timestamp: "2026-09-10T02:00:00Z" }),
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("ref-record-counts")).toHaveTextContent("3 entries, 2 subquestions");
+  });
 });

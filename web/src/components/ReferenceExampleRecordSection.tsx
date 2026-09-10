@@ -39,7 +39,7 @@ export default function ReferenceExampleRecordSection({
 
   // Compute total and slots for count summary
   const total = entries.length;
-  const slots = new Set(entries.map((e) => e.slot)).size;
+  const slots = new Set(entries.filter((e) => e.slot != null).map((e) => e.slot)).size;
 
   // Build a map from source → first slot that used it (for duplicate badge)
   const sourceToFirstSlot = new Map<string, number | null>();
