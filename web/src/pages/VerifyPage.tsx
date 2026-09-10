@@ -11,22 +11,18 @@ export default function VerifyPage() {
   const navigate = useNavigate();
   const { verifyToken } = useAuth();
   const t = useT();
-  const [status, setStatus] = useState<Status>("verifying");
+
+  const token = searchParams.get("token");
+  const email = searchParams.get("email");
+
+  const [status, setStatus] = useState<Status>(() => (token && email ? "verifying" : "error"));
   const [error, setError] = useState<string | null>(null);
   const ranRef = useRef(false);
 
   useEffect(() => {
+    if (!token || !email) return;
     if (ranRef.current) return;
     ranRef.current = true;
-
-    const token = searchParams.get("token");
-    const email = searchParams.get("email");
-
-    if (!token || !email) {
-      setError(t("verify.error_default"));
-      setStatus("error");
-      return;
-    }
 
     void (async () => {
       const result = await verifyToken(token, email);
@@ -38,7 +34,7 @@ export default function VerifyPage() {
         setStatus("error");
       }
     })();
-  }, [searchParams, verifyToken, navigate, t]);
+  }, [searchParams, verifyToken, navigate, t, token, email]);
 
   if (status === "verifying") {
     return (
