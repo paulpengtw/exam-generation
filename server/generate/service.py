@@ -236,6 +236,7 @@ def _build_run_context(
         generation_log_id=generation_log_id,
         loop=loop,
         session_factory=session_factory,
+        disabled=bool(params.disable_reference_fewshot),
     )
 
     def _next_order() -> int:
@@ -402,7 +403,7 @@ def _worker_one(
         if figure_policy_trail:
             result_event["figure_policy_trail"] = figure_policy_trail
         result_event["reference_example_record"] = {
-            "disabled": False,
+            "disabled": bool(ctx.params.disable_reference_fewshot),
             "entries": reference_example_entries,
         }
         ctx.loop.call_soon_threadsafe(

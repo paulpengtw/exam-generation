@@ -519,6 +519,7 @@ export function useGenerate(): UseGenerateReturn {
   const referenceExampleEntriesByQuestionRef = useRef(
     new Map<string, ReferenceExampleEntryShape[]>(),
   );
+  const paramsRef = useRef<GenerateParams | null>(null);
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
@@ -548,6 +549,7 @@ export function useGenerate(): UseGenerateReturn {
   }, []);
 
   const generate = useCallback((params: GenerateParams) => {
+    paramsRef.current = params;
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -683,6 +685,10 @@ export function useGenerate(): UseGenerateReturn {
             try {
               const parsed = JSON.parse(ev.data) as { index: number; phase: DraftPhase; question: ExamQuestion };
               const laneKey = questionKey(parsed.question, parsed.index);
+              const draftEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey) ?? [];
+              const draftRefRecord: ReferenceExampleRecordShape = draftEntries.length > 0
+                ? { disabled: false, entries: draftEntries }
+                : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] };
               setDisplayResults((prev) => upsertDisplayResult(prev, {
                 index: parsed.index,
                 question: parsed.question,
@@ -690,6 +696,7 @@ export function useGenerate(): UseGenerateReturn {
                 isFinal: false,
                 trail: trailByQuestionRef.current.get(laneKey) ?? [],
                 figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
+                referenceExampleRecord: draftRefRecord,
               }));
             } catch { /* ignore malformed draft updates */ }
             break;
@@ -749,7 +756,7 @@ export function useGenerate(): UseGenerateReturn {
                 figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
                 referenceExampleRecord: refEntries
                   ? { disabled: false, entries: refEntries }
-                  : undefined,
+                  : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
               }));
             } catch {
               setStatus("error");

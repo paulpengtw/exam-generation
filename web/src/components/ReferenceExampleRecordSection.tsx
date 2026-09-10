@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useT } from "../i18n/useT";
 
 export interface ReferenceExampleEntryShape {
@@ -21,28 +22,24 @@ export interface ReferenceExampleRecordShape {
 
 export interface ReferenceExampleRecordSectionProps {
   record?: ReferenceExampleRecordShape | null;
+  inProgress?: boolean;
 }
 
 export default function ReferenceExampleRecordSection({
   record,
+  inProgress = false,
 }: ReferenceExampleRecordSectionProps) {
   const t = useT();
+  const [expanded, setExpanded] = useState(false);
 
   if (record === undefined) return null;
 
-  if (record === null) {
-    return (
-      <section
-        aria-label={t("card.referenceExampleRecord")}
-        className="rounded border border-gray-200 bg-gray-50 p-3"
-      >
-        <h3 className="font-semibold text-gray-800">{t("card.referenceExampleRecord")}</h3>
-        <p className="mt-2 text-sm text-gray-500">{t("card.noReferenceExampleRecord")}</p>
-      </section>
-    );
-  }
+  const isDisabled = record?.disabled === true;
+  const entries = record?.entries ?? [];
 
-  const entries = record.entries ?? [];
+  // Compute total and slots for count summary
+  const total = entries.length;
+  const slots = new Set(entries.filter((e) => e.slot != null).map((e) => e.slot)).size;
 
   // Build a map from source → first slot that used it (for duplicate badge)
   const sourceToFirstSlot = new Map<string, number | null>();
@@ -52,15 +49,54 @@ export default function ReferenceExampleRecordSection({
     }
   }
 
+  // Interpolate count summary
+  const countSummary = t("card.referenceExampleRecordCountSummary")
+    .replace("{total}", String(total))
+    .replace("{slots}", String(slots));
+
   return (
     <section
       aria-label={t("card.referenceExampleRecord")}
       className="rounded border border-gray-200 bg-gray-50 p-3"
     >
-      <h3 className="font-semibold text-gray-800">{t("card.referenceExampleRecord")}</h3>
-      {entries.length === 0 ? (
-        <p className="mt-2 text-sm text-gray-500">{t("card.noReferenceExampleRecord")}</p>
-      ) : (
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-gray-800">{t("card.referenceExampleRecord")}</h3>
+          {total > 0 && !isDisabled && (
+            <span data-testid="ref-record-counts" className="text-xs text-gray-500">
+              {countSummary}
+            </span>
+          )}
+        </div>
+        {total > 0 && !isDisabled && (
+          <button
+            type="button"
+            aria-label={
+              expanded
+                ? t("card.hideReferenceExampleRecord")
+                : t("card.showReferenceExampleRecord")
+            }
+            onClick={() => setExpanded((prev) => !prev)}
+            className="rounded border border-gray-300 bg-white px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+          >
+            {expanded
+              ? t("card.hideReferenceExampleRecord")
+              : t("card.showReferenceExampleRecord")}
+          </button>
+        )}
+      </div>
+
+      {isDisabled ? (
+        <p className="mt-2 text-sm text-gray-500">
+          {t("card.referenceExampleRecordDisabled")}
+        </p>
+      ) : entries.length === 0 ? (
+        <p className="mt-2 text-sm text-gray-500">
+          {inProgress
+            ? t("card.referenceExampleRecordInProgress")
+            : t("card.noReferenceExampleRecord")}
+        </p>
+      ) : expanded ? (
         <ol className="mt-3 space-y-2">
           {entries.map((entry, index) => {
             const firstSlot = sourceToFirstSlot.get(entry.source);
@@ -103,7 +139,7 @@ export default function ReferenceExampleRecordSection({
             );
           })}
         </ol>
-      )}
+      ) : null}
     </section>
   );
 }
