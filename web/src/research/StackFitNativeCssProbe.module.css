@@ -1,0 +1,31 @@
+.dialog {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+  transition:
+    opacity var(--motion-duration, 200ms) var(--motion-ease, ease-out),
+    transform var(--motion-duration, 200ms) var(--motion-ease, ease-out),
+    display var(--motion-duration, 200ms) allow-discrete,
+    overlay var(--motion-duration, 200ms) allow-discrete;
+  transition-behavior: allow-discrete;
+}
+
+.dialog:open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@starting-style {
+  .dialog:open {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+.dialog::backdrop {
+  background-color: transparent;
+  transition: background-color var(--motion-duration, 200ms) var(--motion-ease, ease-out);
+}
+
+.dialog:open::backdrop {
+  background-color: rgb(0 0 0 / 40%);
+}
