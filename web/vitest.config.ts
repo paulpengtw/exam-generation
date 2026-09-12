@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
@@ -8,6 +9,9 @@ export default defineConfig({
     "process.env.NODE_ENV": JSON.stringify("development"),
   },
   resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
     dedupe: ["react", "react-dom"],
   },
   test: {
