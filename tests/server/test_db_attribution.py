@@ -6,10 +6,16 @@ Seam 1  abandoned connection  → one WARNING naming _abandon_connection + durat
 Seam 2  properly closed       → no WARNING
 Seam 3  enabled=False         → returns False, no listeners registered
 Seam 4  env parsing in db.py  → default off; "1" and "true" enable
+Seam 5  asyncpg + AsyncSession + nested coroutine → first frame names the nested
+         leaking function, not SQLAlchemy runtime-generated ``<string>`` code
+         (issue #585 follow-up: greenlet parent frame walk)
+Seam 6  Sentry delivery → abandoned connection warning reaches Sentry as its own
+         event with level "warning" and origin in db_attribution_origin extra
 
-The asyncpg test at the bottom runs only when pgserver and asyncpg are
-importable; it exercises the production pool class (AsyncAdaptedQueuePool /
-asyncpg.pool.PoolConnectionHolder) to confirm the attribution fires there too.
+The asyncpg tests at the bottom run only when pgserver and asyncpg are
+importable; they exercise the production pool class (AsyncAdaptedQueuePool /
+asyncpg.pool.PoolConnectionHolder) to confirm attribution fires and origins are
+meaningful there.
 """
 
 from __future__ import annotations
@@ -237,3 +243,175 @@ def test_asyncpg_abandoned_connection_emits_attribution_warning(
     assert "_abandon_connection" in msg, (
         f"Origin not found in asyncpg warning: {msg}"
     )
+
+# ---------------------------------------------------------------------------
+# Seam 5 — asyncpg + AsyncSession + nested coroutine names the leaking frame
+# ---------------------------------------------------------------------------
+#
+# The production checkout path uses AsyncSession (not engine.connect directly).
+# SQLAlchemy's async adapter dispatches the pool checkout event inside a
+# greenlet spawned by greenlet_spawn.  There, traceback.extract_stack() and
+# asyncio.current_task().get_stack() do NOT reach the nested coroutine that
+# actually leaked the session.  Walking greenlet.getcurrent().parent.gr_frame
+# is required to recover user frames.
+#
+# Expected RED (before fix): origin is "<string>:_connection_for_bind:2"
+# Expected GREEN (after fix): first frame names _nested_session_leaker
+
+import asyncio as _asyncio  # noqa: E402
+
+from sqlalchemy import text as _text  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession  # noqa: E402
+from sqlalchemy.ext.asyncio import (  # noqa: E402
+    async_sessionmaker as _async_sessionmaker,
+)
+
+from server.db import ASYNC_ENGINE_KWARGS  # noqa: E402
+
+
+async def _nested_session_leaker(session_factory) -> None:
+    """Nested coroutine that leaks an AsyncSession without closing it.
+
+    Named deliberately so the greenlet-parent-frame walk can cite this
+    function in the attribution origin (issue #585 follow-up).
+    """
+    s = session_factory()
+    await s.execute(_text("select 1"))
+    # Intentionally NOT closing — the reference is dropped here.
+
+
+async def _outer_session_coro(session_factory) -> None:
+    """Outer coroutine that awaits the nested leaking helper."""
+    await _nested_session_leaker(session_factory)
+
+
+def test_asyncpg_asyncsession_nested_coroutine_names_leaker(
+    postgres_server, caplog
+):
+    """Seam 5: greenlet parent walk names the nested leaking coroutine.
+
+    The session is abandoned inside *_nested_session_leaker*, which is called
+    from *_outer_session_coro*.  Without the greenlet parent frame walk, the
+    origin would be ``<string>:_connection_for_bind:2`` — useless.  After the
+    fix, the first frame must cite *_nested_session_leaker*.
+    """
+    database_url = make_url(postgres_server.get_uri()).set(
+        drivername="postgresql+asyncpg"
+    )
+    engine = create_async_engine(database_url, **ASYNC_ENGINE_KWARGS)
+    install_checkout_attribution(engine.sync_engine, enabled=True)
+
+    session_factory = _async_sessionmaker(
+        engine, expire_on_commit=False, class_=_AsyncSession
+    )
+
+    with caplog.at_level(logging.WARNING, logger="server.db_attribution"):
+        _asyncio.run(_outer_session_coro(session_factory))
+        gc.collect()
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) >= 1, (
+        "Expected at least one db_attribution WARNING for AsyncSession nested "
+        "leak; caplog:\n" + caplog.text
+    )
+    msg = warnings[0].message
+    # First frame (most-recent; text before first " <- ") must name the leaker.
+    first_frame = msg.split(" <- ")[0]
+    assert "_nested_session_leaker" in first_frame, (
+        f"Expected '_nested_session_leaker' as first frame; "
+        f"got full origin:\n{msg}"
+    )
+    # Must not contain SQLAlchemy runtime-generated frames.
+    assert "<string>" not in msg, (
+        f"Origin must not contain '<string>' (runtime-generated frame); "
+        f"got:\n{msg}"
+    )
+
+    _asyncio.run(engine.dispose())
+
+
+# ---------------------------------------------------------------------------
+# Seam 6 — attribution warning is delivered to Sentry as its own event
+# ---------------------------------------------------------------------------
+#
+# server.observability configures LoggingIntegration, which forwards WARNING+
+# log records to Sentry.  This seam confirms end-to-end delivery: after
+# abandoning a connection on an instrumented sync SQLite engine, a Sentry
+# event appears with level "warning", logger "server.db_attribution", and
+# origin naming _abandon_connection.
+#
+# This seam may be GREEN on first run (delivery was confirmed manually); it
+# is kept as a regression guard.
+
+import json as _json  # noqa: E402
+
+pytest.importorskip("sentry_sdk", reason="requires [web] extras: uv sync --extra web")
+import sentry_sdk  # noqa: E402
+import sentry_sdk.transport  # noqa: E402
+
+
+def test_attribution_warning_delivered_to_sentry(monkeypatch):
+    """Seam 6: abandoned connection warning reaches Sentry via LoggingIntegration."""
+    from server import observability
+
+    # Initialise Sentry through the real init_sentry() with a dummy DSN so
+    # LoggingIntegration is wired up exactly as in production.
+    monkeypatch.setenv("SENTRY_DSN", "https://public@example.com/1")
+    monkeypatch.setattr(observability, "_initialized", False)
+    observability.init_sentry()
+
+    # Replace active transport with an in-memory capturing transport so
+    # nothing leaves the process.
+    captured_envelopes: list = []
+
+    class _CaptureTransport(sentry_sdk.transport.Transport):
+        def capture_envelope(self, envelope) -> None:
+            captured_envelopes.append(envelope)
+
+    client = sentry_sdk.get_client()
+    original_transport = client.transport
+    client.transport = _CaptureTransport()
+
+    try:
+        # Abandon a connection on the existing sync SQLite helper — cheap,
+        # no pgserver needed for this seam.
+        engine = _make_sync_engine()
+        install_checkout_attribution(engine, enabled=True)
+        _abandon_connection(engine)
+        gc.collect()
+        sentry_sdk.flush()
+
+        # Collect attribution events from all captured envelopes.
+        attr_events: list[dict] = []
+        for env in captured_envelopes:
+            for item in env.items:
+                if item.type == "event":
+                    data = _json.loads(item.get_bytes())
+                    if data.get("logger") == "server.db_attribution":
+                        attr_events.append(data)
+
+        assert len(attr_events) >= 1, (
+            f"Expected at least one Sentry event from server.db_attribution; "
+            f"got {len(captured_envelopes)} envelopes total (0 matching)"
+        )
+        ev = attr_events[0]
+        assert ev["level"] == "warning", (
+            f"Expected Sentry event level 'warning'; got {ev['level']}"
+        )
+        extra = ev.get("extra", {})
+        origin = extra.get("db_attribution_origin", "")
+        assert "_abandon_connection" in origin, (
+            f"Expected '_abandon_connection' in db_attribution_origin extra; "
+            f"got: {origin!r}.  Full extra: {extra}"
+        )
+        assert "db_attribution_held_s" in extra, (
+            f"db_attribution_held_s missing from Sentry event extra; got: {extra}"
+        )
+    finally:
+        # Restore global Sentry state so no later test in the session runs with
+        # a live client.  Close flushes in-flight events; set_client(None) on
+        # the global scope unbinds the client, leaving a NonRecordingClient.
+        client.transport = original_transport
+        sentry_sdk.get_client().close()
+        sentry_sdk.get_global_scope().set_client(None)
+        monkeypatch.setattr(observability, "_initialized", False)

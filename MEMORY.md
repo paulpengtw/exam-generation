@@ -40,3 +40,15 @@ Durable gotchas and decisions for all agents and developers working on this repo
 
 6. **`plan_all_batch_briefs` runs off the event loop via `asyncio.to_thread`; fixed in #701.**
    Root cause: `spec.plan_all_batch_briefs(...)` was called synchronously on the event loop in `generate_question_stream`. For 社會領域 with `creative_planning=True`, this blocks the event loop for ~14 s (one synchronous Opus planning call), freezing pings, /health, and every other concurrent request. Fixed in #701 (2026-09-10) by wrapping the call in `await asyncio.to_thread(functools.partial(...))`. Two client-visible `stage` events (agent "planner", stage "batch_briefs", status "start"/"end") bracket the call. A `ctx.cancel_event.is_set()` guard before worker submission prevents workers from starting if the client disconnected during planning. The planner/batch_briefs stage keys are added to both locales in `web/src/i18n/messages.ts`.
+
+7. **Inside SQLAlchemy's async greenlet, traceback/task stacks do not reach the calling coroutine; read greenlet.getcurrent().parent.gr_frame instead (issue #585).**
+   On the production asyncpg + AsyncSession checkout path, SQLAlchemy dispatches
+   pool events inside a greenlet (`sqlalchemy.util.concurrency.greenlet_spawn`).
+   There, `traceback.extract_stack()` returns only SQLAlchemy runtime-generated
+   frames (`<string>:_connection_for_bind:2`), and `asyncio.current_task().get_stack()`
+   reaches only the outermost coroutine frame, not nested helpers that are suspended
+   mid-await below it.  Walking `greenlet.getcurrent().parent.gr_frame` (and upward
+   via `f_back`) recovers the suspended coroutine frames — including the nested
+   function that leaked the session.  Also skip filenames starting with `"<"` on
+   all stack-walk paths.
+   Fixed in `server/db_attribution.py` `_origin_frames()`.
