@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-TW" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE #726 — AI-working surfaces</title>
+<!--
+  PROTOTYPE — throwaway. Wayfinder map #720, ticket #726.
+  Question: how should the AI-working surfaces look while a run is 處理中?
+  Three structurally different variants on one page, switchable via ?variant=A|B|C
+  and the floating bar (← → keys). A simulated run drives every surface.
+  Sub-shape B was chosen because the real GeneratePage needs auth + a live SSE run;
+  the markup and zh-TW strings below are copied from the real components at ad3318f.
+-->
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root {
+    --motion-duration-quick: 150ms;
+    --motion-duration-standard: 320ms;
+    --motion-duration-slow: 560ms;
+    --motion-ease-signature: cubic-bezier(0.22, 1, 0.36, 1);
+    --motion-ease-exit: cubic-bezier(0.64, 0, 0.78, 0);
+    --motion-ease-loop: cubic-bezier(0.25, 0.1, 0.25, 1); /* AICSS shimmer curve */
+    --shimmer-base: #2563eb;   /* blue-600 */
+    --shimmer-hi: #93c5fd;     /* blue-300 */
+  }
+  /* AICSS label-shine, re-tokenised (source: thinking-state/ThinkingState.module.css) */
+  @keyframes label-shine { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .shimmer {
+    background: linear-gradient(90deg, var(--shimmer-base) 0%, var(--shimmer-base) 35%, var(--shimmer-hi) 50%, var(--shimmer-base) 65%, var(--shimmer-base) 100%);
+    background-size: 300% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: label-shine 2.25s var(--motion-ease-loop) infinite;
+  }
+  .shimmer.grey { --shimmer-base: #a1a1a1; --shimmer-hi: rgba(161,161,161,0.35); }
+  /* AICSS caret-blink (source: streaming-text/StreamingText.module.css) */
+  @keyframes caret-blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  .caret::after { content: "▍"; display: inline-block; margin-left: 1px; animation: caret-blink 1s step-end infinite; color: #2563eb; }
+  /* AICSS todo-item-in + tr-sentence-in, re-tokenised */
+  @keyframes rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .rise-in { animation: rise-in var(--motion-duration-standard) var(--motion-ease-signature) both; }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .sentence-in { animation: fade-in 420ms var(--motion-ease-signature) both; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes opacity-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+  .pie { --p: 0; background: conic-gradient(#1a1a1a calc(var(--p) * 1%), #e6e8ec 0); border-radius: 9999px; width: 14px; height: 14px; transition: --p 400ms ease; }
+
+  /* Reduced motion: transitions collapse, loops become an opacity pulse (per #725) */
+  html.reduced .shimmer, html[data-rm] .shimmer { animation: opacity-pulse 2.25s var(--motion-ease-loop) infinite; background: none; color: var(--shimmer-base); -webkit-text-fill-color: initial; }
+  html.reduced .spin { animation: opacity-pulse 1.5s var(--motion-ease-loop) infinite; }
+  html.reduced .caret::after { animation: none; }
+  html.reduced .rise-in, html.reduced .sentence-in { animation-duration: 1ms; }
+  @media (prefers-reduced-motion: reduce) {
+    .shimmer { animation: opacity-pulse 2.25s var(--motion-ease-loop) infinite; background: none; color: var(--shimmer-base); }
+    .spin { animation: opacity-pulse 1.5s var(--motion-ease-loop) infinite; }
+    .caret::after { animation: none; }
+    .rise-in, .sentence-in { animation-duration: 1ms; }
+  }
+  body { background: #f9fafb; }
+</style>
+</head>
+<body class="text-gray-900">
+<header class="border-b border-gray-200 bg-white">
+  <div class="mx-auto flex h-12 max-w-5xl items-center justify-between px-4 text-sm">
+    <span class="font-semibold">素養試題 AI Examgen</span>
+    <nav class="flex gap-4 text-gray-500"><span>生成</span><span>歷史</span><span>EN</span></nav>
+  </div>
+</header>
+
+<main class="mx-auto max-w-5xl space-y-6 px-4 pb-24 pt-6">
+  <!-- Form section, disabled while a run streams (ADR 0010) -->
+  <section class="rounded-lg border border-gray-200 bg-white p-4 opacity-60">
+    <h2 class="mb-2 text-sm font-semibold text-gray-700">出題參數</h2>
+    <div class="grid grid-cols-3 gap-3 text-sm text-gray-500">
+      <div><div class="text-xs">科目</div><div>社會領域</div></div>
+      <div><div class="text-xs">年級</div><div>8</div></div>
+      <div><div class="text-xs">題數</div><div id="form-count">1</div></div>
+    </div>
+    <button type="button" disabled class="mt-3 inline-flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+      <svg class="h-4 w-4 spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+      產生
+    </button>
+  </section>
+
+  <!-- Progress section -->
+  <section class="space-y-4">
+    <h2 class="text-sm font-semibold text-gray-700">進度</h2>
+    <div id="progress-log" class="space-y-2"></div>
+    <div id="agent-panel"></div>
+  </section>
+
+  <!-- Results -->
+  <section class="space-y-3">
+    <h2 class="text-sm font-semibold text-gray-700">結果</h2>
+    <div id="results" class="space-y-3"></div>
+  </section>
+</main>
+
+<!-- 生成進度列 (fixed bottom, h-12) -->
+<div aria-label="生成進度列" class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-300 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+  <div class="mx-auto flex h-12 max-w-5xl flex-nowrap items-center gap-2 whitespace-nowrap px-3 text-xs sm:px-4 sm:text-sm">
+    <div id="bar-status" class="flex min-w-0 items-center gap-2 text-blue-600"></div>
+    <div class="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+      <button class="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 sm:text-sm">表單</button>
+      <button class="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 sm:text-sm">進度</button>
+      <button class="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 opacity-50 sm:text-sm" disabled>結果</button>
+      <button class="rounded border border-blue-600 bg-white px-2 py-1 text-xs font-medium text-blue-600 sm:text-sm">回饋</button>
+    </div>
+  </div>
+</div>
+
+<!-- Floating prototype switcher: obviously not part of the design -->
+<div id="switcher" class="fixed bottom-16 left-1/2 z-50 -translate-x-1/2 rounded-full bg-gray-900 px-3 py-2 text-xs text-white shadow-lg ring-2 ring-yellow-400">
+  <div class="flex items-center gap-3">
+    <button id="prev" class="rounded px-2 py-0.5 hover:bg-gray-700" title="←">←</button>
+    <span id="variant-label" class="font-mono font-semibold"></span>
+    <button id="next" class="rounded px-2 py-0.5 hover:bg-gray-700" title="→">→</button>
+    <span class="text-gray-500">|</span>
+    <label class="flex items-center gap-1"><input id="rm" type="checkbox" /> 減少動態</label>
+    <label class="flex items-center gap-1"><input id="batch" type="checkbox" /> 批次 3 題</label>
+    <button id="replay" class="rounded bg-gray-700 px-2 py-0.5">重播</button>
+    <button id="pause" class="rounded bg-gray-700 px-2 py-0.5">暫停</button>
+    <span class="text-gray-500">|</span>
+    <span id="state-readout" class="font-mono text-yellow-300"></span>
+  </div>
+</div>
+
+<script>
+// ---------- Variants ----------
+const VARIANTS = {
+  A: { name: "文字閃光：閃光只在進度列，其餘用同一顆 spinner", nouns: ["文本","子題","圖片","審題","改題"] },
+  B: { name: "清單：AICSS 任務清單 + 逐句思考面板", nouns: ["文本","子題","圖片","驗證","修正"] },
+  C: { name: "極簡：不閃光，只有 spinner；進度列前置階段標籤", nouns: ["文本","子題","圖片","驗證","修正"] },
+};
+const KEYS = Object.keys(VARIANTS);
+const params = new URLSearchParams(location.search);
+let variant = KEYS.includes(params.get("variant")) ? params.get("variant") : "A";
+function setVariant(v) {
+  variant = v; params.set("variant", v);
+  history.replaceState(null, "", "?" + params.toString());
+  document.getElementById("variant-label").textContent = `${v} — ${VARIANTS[v].name}`;
+  render(true);
+}
+document.getElementById("prev").onclick = () => setVariant(KEYS[(KEYS.indexOf(variant) + KEYS.length - 1) % KEYS.length]);
+document.getElementById("next").onclick = () => setVariant(KEYS[(KEYS.indexOf(variant) + 1) % KEYS.length]);
+document.addEventListener("keydown", (e) => {
+  const t = e.target; if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  if (e.key === "ArrowLeft") document.getElementById("prev").click();
+  if (e.key === "ArrowRight") document.getElementById("next").click();
+});
+document.getElementById("rm").onchange = (e) => document.documentElement.classList.toggle("reduced", e.target.checked);
+document.getElementById("batch").onchange = (e) => { batch = e.target.checked; document.getElementById("form-count").textContent = batch ? 3 : 1; replay(); };
+document.getElementById("replay").onclick = () => replay();
+document.getElementById("pause").onclick = (e) => { paused = !paused; e.target.textContent = paused ? "繼續" : "暫停"; if (!paused) { startAt = Date.now() - pausedAt; } else { pausedAt = Date.now() - startAt; } };
+
+// ---------- Simulated run (pure function of elapsed ms) ----------
+// Per-question timeline (ms): 產生中 0-2000, 文本 2000-5000, 子題 5000-9000 (3 workers staggered), 圖片 9000-11000, 審題 11000-14000, 改題 14000-16000, done 16000
+const T = { text: 2000, sub: 5000, image: 9000, verify: 11000, correct: 14000, done: 16000 };
+const PHASES = ["產生中","文本生成中","子題生成中","圖片生成中","審題中","改題中","已完成"];
+const THINK = "先確認題組核心問題是否對應學習內容 歷Ka-Ⅳ-1……文本需呈現清領時期的土地開墾與族群互動，字數控制在 300 字內。接著檢查三個小題的題型分配：選擇題、封閉式建構反應題、開放式建構反應題。誘答選項需來自常見迷思概念，而非隨意編造。";
+const CONTENT = '{"核心問題":"清領時期臺灣的土地開墾如何影響漢人與原住民族的關係？","文本":"十八世紀中葉，來自閩粵的移民……","取材來源":["臺灣通史"],"小題計畫":[{"序號":1,"題型":"選擇題"},{"序號":2,"題型":"封閉式建構反應題"},{"序號":3,"題型":"開放式建構反應題"}]}';
+function slice(s, frac) { return s.slice(0, Math.floor(s.length * Math.max(0, Math.min(1, frac)))); }
+
+function questionState(t) {
+  const ph = t < T.text ? 0 : t < T.sub ? 1 : t < T.image ? 2 : t < T.verify ? 3 : t < T.correct ? 4 : t < T.done ? 5 : 6;
+  const lanes = [];
+  const lane = (agent, start, end, stage) => {
+    if (t < start) return;
+    const frac = (t - start) / (end - start);
+    lanes.push({ agent, stage, status: t < end ? "running" : "done", startedAt: start, frac,
+      thinking: t < end ? slice(THINK, frac * 2) : "", content: t < end && frac > 0.5 ? slice(CONTENT, (frac - 0.5) * 2) : "" });
+  };
+  lane("文本生成器", T.text, T.sub, "生成題目中");
+  [0, 400, 800].forEach((d, i) => lane(`子題產生器 #${i + 1}`, T.sub + d, T.sub + 3000 + d, "生成題目中"));
+  lane("圖片生成器", T.image, T.verify, "渲染圖片");
+  lane("答案驗證器", T.verify, T.correct, "驗證答案");
+  lane("修正器", T.correct, T.done, "修正題目");
+  const subDone = lanes.filter(l => l.agent.startsWith("子題") && l.status === "done").length;
+  const stepStates = [1,2,3,4,5].map(p => ph === p ? "live" : ph > p ? "complete" : "pending");
+  return { ph, phase: PHASES[ph], lanes, subDone, subTotal: 3, stepStates, done: ph === 6 };
+}
+const LOG_LINES = [[0,"[started] request accepted"],[0,"[pipeline_start] 社會領域 題組 · 8年級"],[2000,"[generator] llm_generate start"],[5000,"[generator] llm_generate end (3.0s)"],[5000,"[sub_generator#1] llm_generate start"],[5400,"[sub_generator#2] llm_generate start"],[5800,"[sub_generator#3] llm_generate start"],[8000,"[sub_generator#1] llm_generate end"],[8400,"[sub_generator#2] llm_generate end"],[8800,"[sub_generator#3] llm_generate end"],[9000,"[image_agent] render_image start"],[11000,"[image_agent] render_image end"],[11000,"[verifier] verify start"],[14000,"[verifier] verify end · passed=false"],[14000,"[corrector] correct start"],[16000,"[corrector] correct end"],[16000,"[pipeline_end] done"]];
+
+let batch = false, paused = false, pausedAt = 0, startAt = Date.now();
+function replay() { startAt = Date.now(); paused = false; pausedAt = 0; document.getElementById("pause").textContent = "暫停"; lastKey = ""; render(true); }
+function elapsed() { return paused ? pausedAt : Date.now() - startAt; }
+
+// ---------- Shared bits ----------
+const SPINNER = (cls = "h-3 w-3") => `<span class="inline-block ${cls} spin rounded-full border-2 border-gray-300 border-t-blue-500 flex-shrink-0" aria-hidden="true"></span>`;
+const DOT = (status) => status === "running" ? SPINNER("h-2.5 w-2.5") : status === "done" ? `<span class="inline-block h-2.5 w-2.5 rounded-full bg-green-500"></span>` : `<span class="inline-block h-2.5 w-2.5 rounded-full bg-gray-300"></span>`;
+const LIVE = { 1: "文本生成中", 2: "子題生成中", 3: "圖片生成中", 4: "審題中", 5: "改題中" };
+function liveLabel(q) { return q.ph === 2 ? `子題生成中 ${q.subDone}/${q.subTotal}` : LIVE[q.ph] || q.phase; }
+
+// ---------- Bar (生成進度列) ----------
+function breadcrumb(q, nouns, liveText, shimmerLive) {
+  return nouns.map((n, i) => {
+    const st = q.stepStates[i];
+    const cls = st === "live" ? "font-semibold text-blue-600" : st === "complete" ? "text-green-600" : "text-gray-400";
+    const label = st === "live" ? (liveText ? liveText(i) : n) : n;
+    const inner = st === "live" && shimmerLive ? `<span class="shimmer font-semibold">${label}</span>` : `<span class="${cls}">${label}</span>`;
+    return (i ? `<span class="text-gray-300"> › </span>` : "") + inner;
+  }).join("");
+}
+function renderBar(qs) {
+  const el = document.getElementById("bar-status");
+  const t = elapsed(); const secs = Math.floor(Math.min(t, T.done + 3000) / 1000);
+  const time = `<span class="shrink-0 tabular-nums">${secs >= 60 ? Math.floor(secs/60)+"分" : ""}${secs%60}秒</span>`;
+  const q = qs[0];
+  if (qs.every(x => x.done)) { el.className = "flex min-w-0 items-center gap-2 text-green-600"; el.innerHTML = `<span>✓ 完成 ${qs.length} 題 · ${Math.floor(T.done/1000)}秒</span>`; return; }
+  el.className = "flex min-w-0 items-center gap-2 text-blue-600";
+  const k = qs.filter(x => x.done).length;
+  let html;
+  if (batch) {
+    const text = `產生中 · 已完成 ${k} / ${qs.length}`;
+    html = variant === "A" ? `<span class="shimmer font-semibold">${text}</span>`
+         : variant === "B" ? `<span class="inline-block spin">◐</span> <span>生成中 · 已完成 ${k} / ${qs.length}</span>`
+         : `${SPINNER()} <span>${text}</span>`;
+  } else if (q.ph === 0) {
+    html = variant === "A" ? `<span class="shimmer font-semibold">產生中</span>`
+         : variant === "B" ? `<span class="inline-block spin">◐</span> <span>生成中</span>`
+         : `${SPINNER()} <span>產生中</span>`;
+  } else if (variant === "A") {
+    // (a) teacher nouns everywhere, live step gains 中 and shimmers; no ◐
+    html = breadcrumb(q, VARIANTS.A.nouns, () => liveLabel(q), true);
+  } else if (variant === "B") {
+    // (b) resting nouns 驗證/修正, live step reads 審題中/改題中; rotating ◐
+    html = `<span class="inline-block spin">◐</span> ` + breadcrumb(q, VARIANTS.B.nouns, () => liveLabel(q), false);
+  } else {
+    // (c) breadcrumb untouched, phase label prepended; shared spinner
+    html = `${SPINNER()} <span class="font-semibold">${liveLabel(q)}</span><span class="text-gray-300"> · </span>` + breadcrumb(q, VARIANTS.C.nouns, null, false);
+  }
+  el.innerHTML = `<span class="truncate">${html}</span>${time}`;
+}
+
+// ---------- ProgressLog ----------
+function renderProgressLog(qs) {
+  const q = qs[0]; const t = elapsed();
+  const lines = LOG_LINES.filter(([at]) => at <= t).map(([, l]) => l).join("\n");
+  let status;
+  if (qs.every(x => x.done)) status = `<span class="text-green-600 font-medium">完成</span>`;
+  else if (variant === "A") status = `${SPINNER()} <span class="text-gray-600">${batch ? `產生中 · 已完成 ${qs.filter(x=>x.done).length} / ${qs.length}` : liveLabel(q)}</span>`;
+  else if (variant === "B") status = taskList(q);
+  else status = ""; // C: dropped — the bar already says it
+  document.getElementById("progress-log").innerHTML = `
+    ${status ? `<div class="flex items-center gap-2 text-sm">${status}</div>` : ""}
+    <pre class="h-40 overflow-y-auto rounded bg-gray-900 p-3 font-mono text-xs text-gray-100 whitespace-pre-wrap">${lines}</pre>`;
+  const pre = document.querySelector("#progress-log pre"); if (pre) pre.scrollTop = pre.scrollHeight;
+}
+// AICSS TaskList-style checklist of 生成步驟 (variant B only)
+function taskList(q) {
+  const nouns = VARIANTS.B.nouns; const done = q.stepStates.filter(s => s === "complete").length;
+  const items = nouns.map((n, i) => {
+    const st = q.stepStates[i];
+    const icon = st === "complete" ? `<span class="text-[#15a06a]">✓</span>` : st === "live" ? `<span class="inline-block h-3 w-3 rounded-full border border-gray-400"></span>` : `<span class="inline-block h-3 w-3 rounded-full border border-gray-200"></span>`;
+    const label = st === "live" ? `<span class="shimmer grey">${i === 1 ? `子題 ${q.subDone}/${q.subTotal}` : LIVE[i+1]}</span>` : `<span class="${st === "complete" ? "text-gray-400 line-through" : "text-gray-400"}">${n}</span>`;
+    return `<li class="${animEnter ? "rise-in" : ""} flex items-center gap-2 text-sm" style="animation-delay:${i*40}ms">${icon}${label}</li>`;
+  }).join("");
+  return `<div class="w-64 rounded-lg border border-gray-200 bg-white p-3 shadow-sm"><div class="mb-2 flex items-center gap-2 text-xs text-gray-500"><span class="pie" style="--p:${Math.round(done/5*100)}"></span> 生成步驟 ${done}/5</div><ul class="space-y-1">${items}</ul></div>`;
+}
+
+// ---------- AgentStatusPanel ----------
+function renderLanes(qs) {
+  const el = document.getElementById("agent-panel");
+  const lanes = batch ? qs.flatMap(q => q.lanes) : qs[0].lanes;
+  if (lanes.length === 0) { el.innerHTML = ""; return; }
+  const aggregate = batch;
+  const running = lanes.filter(l => l.status === "running").length, doneN = lanes.filter(l => l.status === "done").length;
+  const cards = (aggregate ? dedupe(lanes) : lanes).map(l => {
+    const box = l.status === "running" ? "border-blue-300 bg-blue-50" : "border-green-200 bg-green-50";
+    const timer = l.status === "running" ? `<span class="ml-auto font-mono text-xs text-gray-400">${((elapsed() - l.startedAt)/1000).toFixed(1)}s</span>` : "";
+    let panes = "";
+    if (!aggregate && l.status === "running" && (l.thinking || l.content)) {
+      if (variant === "B") {
+        // ThinkingReasoning-style: grey shimmer label, sentences fading in, collapsible
+        const sentences = l.thinking.split(/(?<=[。！？])/).filter(Boolean);
+        panes = `<details open class="text-xs"><summary class="cursor-pointer select-none"><span class="shimmer grey text-[11px] font-medium">思考中</span></summary>
+          <div class="mt-1 max-h-24 overflow-y-auto space-y-0.5 text-[11px] text-gray-500">${sentences.map((s,i) => `<p class="${animEnter ? "sentence-in" : ""}">${s}</p>`).join("")}</div></details>` +
+          (l.content ? `<div><div class="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-green-600">回應</div><div class="max-h-24 overflow-y-auto rounded border border-green-200 bg-green-50 p-1.5 text-[11px] text-green-900 whitespace-pre-wrap">${l.content}<span class="caret"></span></div></div>` : "");
+      } else {
+        const caret = variant === "A" ? "caret" : "";
+        panes = (l.thinking ? `<div><div class="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-yellow-600">思考中</div><pre class="max-h-24 overflow-y-auto rounded border border-yellow-200 bg-yellow-50 p-1.5 font-mono text-[10px] text-yellow-900 whitespace-pre-wrap"><span class="${!l.content ? caret : ""}">${l.thinking}</span></pre></div>` : "") +
+                (l.content ? `<div><div class="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-green-600">回應</div><pre class="max-h-24 overflow-y-auto rounded border border-green-200 bg-green-50 p-1.5 font-mono text-[10px] text-green-900 whitespace-pre-wrap"><span class="${caret}">${l.content}</span></pre></div>` : "");
+      }
+    }
+    const header = aggregate
+      ? `${DOT(l.status)}<span class="text-sm font-semibold text-gray-800">${l.agent}</span><span class="text-xs text-gray-500">${l.running} 執行中 · ${l.done} 已完成</span>`
+      : `${DOT(l.status)}<span class="text-sm font-semibold text-gray-800">${l.agent}</span><span class="text-xs text-gray-500 truncate">${l.status === "running" ? l.stage : ""}</span>${timer}`;
+    const history = l.status === "done" ? `<details class="text-xs"><summary class="cursor-pointer select-none text-gray-400">歷史紀錄 (1)</summary><div class="mt-1 flex items-center gap-2 text-gray-500"><span class="text-green-500">✓</span><span>${l.stage}</span><span class="ml-auto font-mono">3000ms</span></div></details>` : "";
+    return `<div class="${animEnter ? "rise-in" : ""} rounded-lg border p-3 space-y-2 transition-colors ${box}"><div class="flex items-center gap-2">${header}</div>${panes}${history}</div>`;
+  }).join("");
+  el.innerHTML = `<div class="space-y-2"><div class="flex items-center gap-2"><h3 class="text-sm font-semibold text-gray-700">多 Agent 狀態</h3>${aggregate ? `<span class="text-xs text-gray-500">合計模式 · ${qs.length} 題彙總</span>` : ""}</div><div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">${cards}</div></div>`;
+}
+function dedupe(lanes) {
+  const m = new Map();
+  for (const l of lanes) { const k = l.agent.replace(/ #\d+$/, ""); const e = m.get(k) || { agent: k, running: 0, done: 0, status: "idle" }; e[l.status === "running" ? "running" : "done"]++; e.status = e.running ? "running" : "done"; m.set(k, e); }
+  return [...m.values()];
+}
+
+// ---------- QuestionCards (results) ----------
+function renderResults(qs) {
+  const el = document.getElementById("results");
+  const cards = qs.map((q, i) => {
+    if (!batch && !q.done) return "";
+    const chip = q.done ? `<span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">已修正草稿</span><span class="text-xs text-green-700">✓ 已驗證</span>`
+      : variant === "A" ? `<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">${SPINNER("h-2.5 w-2.5")}${liveLabel(q)}</span>`
+      : variant === "B" ? `<span class="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700"><span class="pie" style="--p:${Math.round(q.stepStates.filter(s=>s==="complete").length/5*100)}"></span><span class="shimmer grey">${liveLabel(q)}</span></span>`
+      : `<span class="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">${SPINNER("h-2.5 w-2.5")}處理中</span>`;
+    const body = q.done ? `<p class="text-sm text-gray-800">十八世紀中葉，來自閩粵的移民陸續進入臺灣西部平原開墾……</p><ol class="list-decimal pl-5 text-sm text-gray-700"><li>下列何者最能說明文中「番大租」的性質？</li><li>請寫出文本中提到的兩種土地取得方式。</li><li>你認為這種制度對原住民族是否公平？請說明理由。</li></ol>` : `<div class="space-y-2"><div class="h-3 w-3/4 rounded bg-gray-100"></div><div class="h-3 w-1/2 rounded bg-gray-100"></div></div>`;
+    return `<div class="${animEnter ? "rise-in" : ""} rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3"><div class="flex flex-wrap items-center gap-2"><span class="text-sm font-semibold">題組 ${i+1}</span>${chip}</div>${body}
+      <div class="flex flex-wrap gap-2 pt-1"><button class="rounded border border-gray-300 bg-white px-2 py-1 text-xs ${q.done ? "" : "opacity-50"}" ${q.done ? "" : "disabled"}>下載 JSON</button><button class="rounded border border-gray-300 bg-white px-2 py-1 text-xs ${q.done ? "" : "opacity-50"}" ${q.done ? "" : "disabled"}>下載 ODT</button></div></div>`;
+  }).join("");
+  el.innerHTML = cards || `<div class="text-sm italic text-gray-400">尚無結果</div>`;
+}
+
+// ---------- Render loop ----------
+let lastKey = "", animEnter = true;
+function render(force) {
+  const t = elapsed();
+  const qs = batch ? [0, 1500, 3000].map(d => questionState(Math.max(0, t - d))) : [questionState(t)];
+  const key = variant + batch + qs.map(q => q.ph + ":" + q.subDone + ":" + q.lanes.length + ":" + q.lanes.map(l => l.status).join("")).join("|");
+  const structural = force || key !== lastKey; lastKey = key; animEnter = structural;
+  renderBar(qs);
+  if (structural || variant !== "C") { renderProgressLog(qs); renderLanes(qs); }
+  if (structural) renderResults(qs);
+  document.getElementById("state-readout").textContent = `t=${(t/1000).toFixed(1)}s ph=${qs.map(q => q.phase).join(",")}`;
+}
+setVariant(variant);
+setInterval(() => render(false), 100);
+</script>
+</body>
+</html>
