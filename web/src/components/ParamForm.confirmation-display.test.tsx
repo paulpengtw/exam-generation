@@ -139,11 +139,30 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+const CORE_QUESTION_SUBJECTS = [
+  ["math", MATH_SCHEMA],
+  ["social_studies", SOCIAL_SCHEMA],
+  ["natural_sciences", SCIENCE_SCHEMA],
+] as const;
+
+const UNUSABLE_CORE_QUESTION_RESPONSES = [
+  ["short list", ["只有一個"]],
+  ["non-text value", ["有效候選", 42, "另一個候選"]],
+  ["duplicate strings", ["重複候選", "重複候選", "另一個候選"]],
+  ["blank values", ["有效候選", "   ", ""]],
+] as const;
+
+const INVALID_CORE_QUESTION_CASES = UNUSABLE_CORE_QUESTION_RESPONSES.flatMap(
+  ([responseName, candidates]) => CORE_QUESTION_SUBJECTS.map(
+    ([subject, schema]) => [responseName, subject, candidates, schema] as const,
+  ),
+);
+
 describe("ParamForm 發送前確認 display semantics", () => {
   beforeEach(() => {
     vi.clearAllMocks(); window.localStorage.clear(); getSchemasMock.mockResolvedValue(MATH_SCHEMA);
     getAvailableModelsMock.mockResolvedValue({ allowed: [], defaults: { plan: "", execute: "" } });
-    planCoreQuestionsMock.mockResolvedValue({ candidates: ["候選核心問題"] });
+    planCoreQuestionsMock.mockResolvedValue({ candidates: ["候選核心問題", "候選核心問題二", "候選核心問題三"] });
     previewGenerateMock.mockResolvedValue({ prompts: [] });
     resolveGenerateMock.mockReset();
     resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) =>
@@ -1509,97 +1528,177 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(perQuestion[0].learning_performance).not.toEqual(perQuestion[1].learning_performance);
   });
 
-  it("auto-selects a planned core question and renders it with the 預先產生 badge", async () => {
-    await openConfirmation("math", { topic: "分數" });
+  it.each(CORE_QUESTION_SUBJECTS)(
+    "%s displays the normalized planned core question with the 預先產生 badge",
+    async (subject, schema) => {
+      getSchemasMock.mockResolvedValue(schema);
+      planCoreQuestionsMock.mockResolvedValue({
+        candidates: ["  候選核心問題  ", "候選核心問題二", "候選核心問題三"],
+      });
+      await openConfirmation(subject, { topic: "分數" });
+      await screen.findByText("候選核心問題");
 
-    await screen.findByText("候選核心問題");
-    const row = confirmationRow("核心問題");
-    expect(row.getByText("候選核心問題")).toBeInTheDocument();
-    expect(row.getByText("預先產生")).toHaveClass("text-amber-700");
-  });
+      const row = confirmationRow("核心問題");
+      const displayed = row.getByText("候選核心問題");
+      expect(displayed).toBeInTheDocument();
+      expect(displayed.textContent).toMatch(/^候選核心問題(?:預先產生)?$/);
+      expect(row.getByText("預先產生")).toHaveClass("text-amber-700");
+    },
+  );
 
-  it("submits the pre-generated value as core_question", async () => {
-    const onSubmit = vi.fn();
-    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} initialParams={{ topic: "分數" }} />);
-    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
-    await screen.findByText("候選核心問題");
+  it.each(CORE_QUESTION_SUBJECTS)(
+    "%s submits the normalized planned core question at both request levels",
+    async (subject, schema) => {
+      getSchemasMock.mockResolvedValue(schema);
+      planCoreQuestionsMock.mockResolvedValue({
+        candidates: ["  候選核心問題  ", "候選核心問題二", "候選核心問題三"],
+      });
+      const onSubmit = vi.fn();
+      await openConfirmation(subject, { topic: "分數" }, onSubmit);
+      await screen.findByText("候選核心問題");
 
-    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+      fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
 
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ core_question: "候選核心問題" }));
-  });
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      expect(submitted.core_question).toBe("候選核心問題");
+      const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
+      expect(perQuestion).toHaveLength(1);
+      expect(perQuestion[0].core_question).toBe("候選核心問題");
+    },
+  );
 
-  it("preserves a user-supplied core question without calling the planner", async () => {
-    await openConfirmation("math", { topic: "分數", core_question: "使用者的核心問題" });
+  it.each(CORE_QUESTION_SUBJECTS)(
+    "%s preserves and submits a user-supplied core question without planning",
+    async (subject, schema) => {
+      getSchemasMock.mockResolvedValue(schema);
+      const supplied = `${subject} 使用者的核心問題`;
+      const onSubmit = vi.fn();
+      await openConfirmation(subject, { topic: "分數", count: 2, core_question: supplied }, onSubmit);
 
-    expect(confirmationRow("核心問題").getByText("使用者的核心問題")).toBeInTheDocument();
-    expect(confirmationRow("核心問題").queryByText("預先產生")).not.toBeInTheDocument();
-    expect(planCoreQuestionsMock).not.toHaveBeenCalled();
-  });
+      const row = confirmationRow("核心問題");
+      expect(row.getByText(supplied)).toBeInTheDocument();
+      expect(row.queryByText("預先產生")).not.toBeInTheDocument();
+      expect(planCoreQuestionsMock).not.toHaveBeenCalled();
 
-  it("discloses that generation will decide 核心問題 after planner failure and still submits", async () => {
-    planCoreQuestionsMock.mockRejectedValue(new Error("planner unavailable"));
-    const onSubmit = vi.fn();
-    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} initialParams={{ topic: "分數" }} />);
-    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+      fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
 
-    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalled());
-    expect(await confirmationRow("核心問題").findByText("將於生成時決定")).toBeInTheDocument();
-    const confirm = screen.getByRole("button", { name: "確定發送" });
-    expect(confirm).toBeEnabled();
-    fireEvent.click(confirm);
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      expect(submitted.core_question).toBe(supplied);
+      const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
+      expect(perQuestion).toHaveLength(2);
+      expect(perQuestion.map((item) => item.core_question)).toEqual([supplied, supplied]);
+    },
+  );
 
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ core_question: undefined }));
-  });
+  it.each(CORE_QUESTION_SUBJECTS)(
+    "%s discloses the generation fallback after planner failure and still submits",
+    async (subject, schema) => {
+      getSchemasMock.mockResolvedValue(schema);
+      planCoreQuestionsMock.mockRejectedValue(new Error("planner unavailable"));
+      const onSubmit = vi.fn();
+      await openConfirmation(subject, { topic: "分數", count: 2 }, onSubmit);
 
-  it("does not re-fire the planner when the same confirmation screen re-renders", async () => {
-    const onSubmit = vi.fn();
-    const { rerender } = render(
-      <ParamForm subject="math" onSubmit={onSubmit} disabled={false} initialParams={{ topic: "分數" }} />,
-    );
-    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
-    await screen.findByText("候選核心問題");
+      expect(await confirmationRow("核心問題").findByText("將於生成時決定")).toBeInTheDocument();
+      const confirm = screen.getByRole("button", { name: "確定發送" });
+      expect(confirm).toBeEnabled();
+      fireEvent.click(confirm);
 
-    rerender(<ParamForm subject="math" onSubmit={onSubmit} disabled initialParams={{ topic: "分數" }} />);
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      expect(submitted.core_question).toBeUndefined();
+      const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
+      expect(perQuestion).toHaveLength(2);
+      expect(perQuestion.every((item) => !Object.hasOwn(item, "core_question"))).toBe(true);
+    },
+  );
 
-    expect(screen.getByRole("heading", { name: "發送前確認設定" })).toBeInTheDocument();
-    expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1);
-  });
+  it.each(INVALID_CORE_QUESTION_CASES)(
+    "unusable %s response falls back on %s without submitting a candidate",
+    async (responseName, subject, candidates, schema) => {
+      getSchemasMock.mockResolvedValue(schema);
+      planCoreQuestionsMock.mockResolvedValue({ candidates });
+      const onSubmit = vi.fn();
 
-  it("ignores a stale 核心問題 planner response after returning and submitting again", async () => {
-    const first = deferred<{ candidates: string[] }>();
-    const second = deferred<{ candidates: string[] }>();
-    planCoreQuestionsMock
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise);
-    const onSubmit = vi.fn();
-    render(
-      <ParamForm
-        subject="math"
-        onSubmit={onSubmit}
-        disabled={false}
-        initialParams={{ topic: "分數" }}
-      />,
-    );
+      await openConfirmation(subject, { topic: "分數", count: 2 }, onSubmit);
 
-    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
-    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
-    fireEvent.click(screen.getByRole("button", { name: "產生" }));
-    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(2));
+      expect(await confirmationRow("核心問題").findByText("將於生成時決定")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
 
-    await act(async () => second.resolve({ candidates: ["最新核心問題"] }));
-    expect(await confirmationRow("核心問題").findByText("最新核心問題")).toBeInTheDocument();
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      const submitted = onSubmit.mock.calls[0][0] as Record<string, unknown>;
+      expect(submitted.core_question).toBeUndefined();
+      const perQuestion = JSON.parse(submitted.per_question_params as string) as Record<string, unknown>[];
+      expect(perQuestion).toHaveLength(2);
+      expect(perQuestion.every((item) => !Object.hasOwn(item, "core_question"))).toBe(true);
+    },
+  );
 
-    await act(async () => first.resolve({ candidates: ["過期核心問題"] }));
-    expect(screen.queryByText("過期核心問題")).not.toBeInTheDocument();
-    expect(confirmationRow("核心問題").getByText("最新核心問題")).toBeInTheDocument();
+  it.each(CORE_QUESTION_SUBJECTS)(
+    "%s does not re-fire the planner when the same confirmation screen re-renders",
+    async (subject, schema) => {
+      getSchemasMock.mockResolvedValue(schema);
+      const planning = deferred<{ candidates: string[] }>();
+      planCoreQuestionsMock.mockReturnValueOnce(planning.promise);
+      const onSubmit = vi.fn();
+      const { rerender } = render(
+        <ParamForm subject={subject} onSubmit={onSubmit} disabled={false} initialParams={{ topic: "分數" }} />,
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+      await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ core_question: "最新核心問題" }));
-    const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params);
-    expect(perQuestion[0].core_question).toBe("最新核心問題");
-  });
+      rerender(<ParamForm subject={subject} onSubmit={onSubmit} disabled initialParams={{ topic: "分數" }} />);
+
+      expect(screen.getByRole("heading", { name: "發送前確認設定" })).toBeInTheDocument();
+      expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1);
+      await act(async () => planning.resolve({
+        candidates: ["候選核心問題", "候選核心問題二", "候選核心問題三"],
+      }));
+      await screen.findByText("候選核心問題");
+      rerender(<ParamForm subject={subject} onSubmit={onSubmit} disabled={false} initialParams={{ topic: "分數" }} />);
+      expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(CORE_QUESTION_SUBJECTS)(
+    "%s ignores a stale 核心問題 planner response after returning and submitting again",
+    async (subject, schema) => {
+      getSchemasMock.mockResolvedValue(schema);
+      const first = deferred<{ candidates: string[] }>();
+      const second = deferred<{ candidates: string[] }>();
+      planCoreQuestionsMock
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise);
+      const onSubmit = vi.fn();
+      render(
+        <ParamForm
+          subject={subject}
+          onSubmit={onSubmit}
+          disabled={false}
+          initialParams={{ topic: "分數" }}
+        />,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+      await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+      fireEvent.click(screen.getByRole("button", { name: "產生" }));
+      await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(2));
+
+      await act(async () => second.resolve({ candidates: ["最新核心問題", "最新核心問題二", "最新核心問題三"] }));
+      expect(await confirmationRow("核心問題").findByText("最新核心問題")).toBeInTheDocument();
+
+      await act(async () => first.resolve({ candidates: ["過期核心問題", "過期核心問題二", "過期核心問題三"] }));
+      expect(screen.queryByText("過期核心問題")).not.toBeInTheDocument();
+      expect(confirmationRow("核心問題").getByText("最新核心問題")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ core_question: "最新核心問題" }));
+      const perQuestion = JSON.parse(onSubmit.mock.calls[0][0].per_question_params);
+      expect(perQuestion[0].core_question).toBe("最新核心問題");
+    },
+  );
 
   it.each([
     ["math", MATH_SCHEMA],

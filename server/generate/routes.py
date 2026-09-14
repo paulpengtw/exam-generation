@@ -563,7 +563,7 @@ async def plan_core_questions_endpoint(
     user: User = Depends(get_current_user),
     config: ServerConfig = Depends(get_config),
 ) -> PlanCoreQuestionsResponse:
-    """Return three candidate 核心問題 for a given topic (Opus single call)."""
+    """Return three candidate 核心問題 with at most one correction call."""
     _check_model_allowed(body.model_plan, config, "model_plan")
     _check_model_allowed(body.model_execute, config, "model_execute")
     # Validate effort_plan against the effective plan model's roster.
@@ -596,7 +596,19 @@ async def plan_core_questions_endpoint(
             learning_stage=learning_stage,
         )
     except ValueError as exc:
-        logger.warning("Planner returned malformed candidates: %s", exc)
+        from server.observability import PLANNER_DIAGNOSTIC_MARKER
+        from src.common.planner import CandidateValidationError
+
+        diagnostic = {PLANNER_DIAGNOSTIC_MARKER: True}
+        if isinstance(exc, CandidateValidationError):
+            diagnostic.update(
+                stage=exc.stage,
+                attempt=exc.attempt,
+                expected_count=exc.expected_count,
+                actual_count=exc.actual_count,
+                received_count=exc.received_count,
+            )
+        logger.warning("Planner returned malformed candidates: %s", exc, extra=diagnostic)
         raise HTTPException(
             status_code=502,
             detail="Planner upstream returned malformed candidates",

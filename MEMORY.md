@@ -52,3 +52,46 @@ Durable gotchas and decisions for all agents and developers working on this repo
    function that leaked the session.  Also skip filenames starting with `"<"` on
    all stack-walk paths.
    Fixed in `server/db_attribution.py` `_origin_frames()`.
+
+## 核心問題 planning diagnosis (#763, 2026-09-14)
+
+- The original provider response for the staging `2 candidates, expected 3`
+  incident is unavailable; the warning and HTTP 502 identify one rejection but
+  do not distinguish short provider output from parser loss. See
+  [the issue evidence](https://github.com/paulpengtw/exam-generation/issues/763#issuecomment-5659661585).
+- A controlled, sanitized response reproduces parser loss through the real
+  planning endpoint for all three subjects:
+  `1. 如何測量每天用水量？\n2. 如何比較不同節水方式？\n3.為何？`.
+  The old fallback discarded the third numbered line because its length was
+  five characters; the other two remained and both attempts ended in HTTP 502.
+  Actual two-entry JSON also reaches the count rejection, independently of
+  parsing. This confirms the controlled failure cause, not the original event's
+  unknown response shape.
+- The shared planner now accepts explicit numbered lists without a minimum
+  question length, strips numbering, and validates distinct nonblank strings.
+  It does not turn arbitrary prose, numbers, or objects into candidates. An
+  invalid first response gets stage/count correction instructions and at most
+  one more planning call. Exhaustion retains the controlled HTTP 502 fallback.
+  Regressions exercise
+  [the endpoint](https://github.com/paulpengtw/exam-generation/blob/fix/763-core-question-planning/tests/server/test_plan_core_questions_routes.py),
+  including successful recovery and exhaustion for all three subjects.
+- Staging check at **2026-09-14 07:29:13 UTC**, independently of generation:
+  `https://examgen-staging.cpeng.me/api/schemas?subject=natural_sciences` returned
+  HTTP 200; `POST /api/plan-core-questions` without credentials returned HTTP 401.
+  No authenticated staging session was available, so this is reachability/auth
+  evidence only, not a verdict on deployed planner behavior. No generation
+  request was made; the separate #762 transport result cannot mask this gap.
+- The exhausted-planner warning uses the explicit `planner_diagnostic` marker
+  on the `server.generate.routes` logger. Backend Sentry filters only that
+  warning event; the logging integration's breadcrumb remains on the chained
+  exception, and same-logger unmarked warnings plus unrelated errors remain
+  reportable. Safe breadcrumb metadata is stage, attempt, and expected/actual/
+  received candidate counts; raw provider messages and request identity stay
+  out of the event.
+- Follow-up review reproduced non-`ValueError` provider exceptions leaking into
+  the generic HTTP 500 traceback and a non-string response bypassing validation.
+  Provider exceptions now use content-free `provider_call` diagnostics without
+  retrying; a non-string response uses `response_shape` and the same two-attempt
+  validation budget. Focused endpoint/Sentry verification passed 38 tests;
+  confirmation coverage includes pending/completed rerenders, authoritative pins,
+  stale responses, and top-level/per-question submission across all subjects.

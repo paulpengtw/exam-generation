@@ -1217,6 +1217,25 @@ function isValidPromptPreviewResponse(
   );
 }
 
+/**
+ * The planner endpoint promises three distinct, non-empty textual
+ * candidates. Treat a malformed success body as a planning failure so the
+ * confirmation screen can keep its generation-decides fallback.
+ */
+function selectPlannedCoreQuestion(candidates: unknown): string | undefined {
+  if (!Array.isArray(candidates) || candidates.length !== 3) return undefined;
+  const normalised = candidates.map((candidate) =>
+    typeof candidate === "string" ? candidate.trim() : "",
+  );
+  if (
+    normalised.some((candidate) => candidate.length === 0) ||
+    new Set(normalised).size !== normalised.length
+  ) {
+    return undefined;
+  }
+  return normalised[0];
+}
+
 export default function ParamForm({
   subject = "math",
   onSubmit,
@@ -1616,11 +1635,11 @@ export default function ParamForm({
       grade: pendingParams.grade,
     }).then(({ candidates }) => {
       if (cancelled) return;
-      if (candidates.length === 0) {
+      const selected = selectPlannedCoreQuestion(candidates);
+      if (!selected) {
         setCoreQuestionResolution("failed");
         return;
       }
-      const selected = candidates[0];
       setPendingPerQuestionParams((current) =>
         current?.map((item) => ({ ...item, core_question: selected })) ?? current,
       );

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -63,6 +64,110 @@ def _make_app_and_token():
 
     token = create_jwt(user_id, "u@example.com", config=config)
     return app, token, engine
+
+
+@pytest.mark.parametrize("subject", ["math", "social_studies", "natural_sciences"])
+def test_planning_preserves_short_text_in_numbered_provider_response(monkeypatch, subject):
+    """Three supplied questions must not become two because one is short."""
+    app, token, engine = _make_app_and_token()
+    prompts = []
+
+    def provider_response(self, system, user, *, purpose):
+        prompts.append(user)
+        return "1. 如何測量每天用水量？\n2. 如何比較不同節水方式？\n3.為何？"
+
+    monkeypatch.setattr("src.llm_client.LLMClient.plan", provider_response)
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/plan-core-questions",
+                json={"topic": "節水", "subject": subject},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["candidates"] == [
+        "如何測量每天用水量？", "如何比較不同節水方式？", "為何？",
+    ]
+    assert len(prompts) == 1
+
+
+@pytest.mark.parametrize("first_response", [
+    None,
+    '["如何測量用水？", "如何比較節水方式？", "  "]',
+    '["如何測量用水？", "如何比較節水方式？", 42]',
+    '["如何測量用水？", "如何比較節水方式？", {"question": "為何？"}]',
+    '["如何測量用水？", "如何比較節水方式？", " 如何測量用水？ "]',
+    "這是一段說明文字而已\n目前還沒有產生問題\n請稍後再試一次看看",
+])
+def test_planning_retries_unusable_candidates_instead_of_claiming_success(
+    monkeypatch, first_response,
+):
+    app, token, engine = _make_app_and_token()
+    prompts = []
+
+    def provider_response(self, system, user, *, purpose):
+        prompts.append(user)
+        if len(prompts) == 1:
+            return first_response
+        return '["如何測量用水？", "如何比較節水方式？", "為何節水？"]'
+
+    monkeypatch.setattr("src.llm_client.LLMClient.plan", provider_response)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post(
+                "/api/plan-core-questions",
+                json={"topic": "節水", "subject": "natural_sciences"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 200
+    assert response.json()["candidates"] == ["如何測量用水？", "如何比較節水方式？", "為何節水？"]
+    assert len(prompts) == 2
+
+
+@pytest.mark.parametrize("subject", ["math", "social_studies", "natural_sciences"])
+@pytest.mark.parametrize("corrected", [True, False], ids=["recovered", "exhausted"])
+def test_planning_targets_short_response_correction_within_two_calls(
+    monkeypatch, subject, corrected,
+):
+    app, token, engine = _make_app_and_token()
+    prompts = []
+    candidates = ["如何測量用水？", "如何比較節水方式？", "為何節水？"]
+
+    def provider_response(self, system, user, *, purpose):
+        prompts.append(user)
+        return json.dumps(candidates if corrected and len(prompts) == 2 else candidates[:2])
+
+    monkeypatch.setattr("src.llm_client.LLMClient.plan", provider_response)
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/plan-core-questions",
+                json={"topic": "節水", "subject": subject},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert len(prompts) == 2
+    assert "階段=candidate_validation" in prompts[1]
+    assert "實際可用=2" in prompts[1]
+    assert "預期=3" in prompts[1]
+    assert "非空白" in prompts[1] and "互不重複" in prompts[1]
+    assert candidates[0] not in prompts[1]
+    assert response.status_code == (200 if corrected else 502)
+    if corrected:
+        assert response.json()["candidates"] == candidates
+    else:
+        assert response.json() == {"detail": "Planner upstream returned malformed candidates"}
 
 
 def test_plan_core_questions_math_happy_path(monkeypatch) -> None:
