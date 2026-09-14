@@ -1,0 +1,98 @@
+{
+  "task_space": 17,
+  "task_space_name": "790 core-question planning acceptance",
+  "environment": "staging frontend + staging API (examgen-staging.cpeng.me)",
+  "supervisor": "existing signed-in staging session (verify token supplied on the ticket)",
+  "release_under_test": {
+    "deployed_commit": "ad80b9bc0af2321ad22751dcbf3e8fcc4015d7ac",
+    "contains_pr_788_merge": "850c455f79b804d0cb84f8ef44efdfa8fde952f9",
+    "railway_deployment_id": 6434119125,
+    "deployment_success_utc": "2026-09-14T09:25:45Z",
+    "frontend_asset": "/assets/index-DSKsFHUB.js",
+    "frontend_embedded_sentry_release": "ad80b9bc0af2321ad22751dcbf3e8fcc4015d7ac",
+    "backend_release_tag": null,
+    "backend_build_note": "The API exposes no release tag. Its build is inferred from the single Railway deployment ref that also produced the fingerprinted frontend asset; this is not an independent backend fingerprint."
+  },
+  "window_utc": "2026-09-14T09:50Z to 2026-09-14T10:12Z",
+  "automatic_planning": [
+    {
+      "subject": "math",
+      "planning_calls": 1,
+      "http_status": 200,
+      "candidates": 3,
+      "candidates_distinct": 3,
+      "candidates_all_nonblank": true,
+      "displayed_value": "candidate[0], rendered once, badged 預先產生",
+      "other_candidates_rendered": 0,
+      "submitted_top_level_equals_displayed": true,
+      "submitted_per_question_rows": 1,
+      "submitted_per_question_all_equal": true
+    },
+    {
+      "subject": "social_studies",
+      "planning_calls": 1,
+      "http_status": 200,
+      "candidates": 3,
+      "candidates_distinct": 3,
+      "candidates_all_nonblank": true,
+      "displayed_value": "candidate[0], rendered once, badged 預先產生",
+      "other_candidates_rendered": 0,
+      "submitted_top_level_equals_displayed": true,
+      "submitted_per_question_rows": 2,
+      "submitted_per_question_all_equal": true
+    },
+    {
+      "subject": "natural_sciences",
+      "planning_calls": 1,
+      "http_status": 200,
+      "candidates": 3,
+      "candidates_distinct": 3,
+      "candidates_all_nonblank": true,
+      "displayed_value": "candidate[0], rendered once, badged 預先產生",
+      "other_candidates_rendered": 0,
+      "submitted_top_level_equals_displayed": true,
+      "submitted_per_question_rows": 2,
+      "submitted_per_question_all_equal": true
+    }
+  ],
+  "explicit_core_question": {
+    "subject": "math",
+    "supplied_via": "直接使用我的核心問題",
+    "new_planning_calls": 0,
+    "displayed_equals_supplied": true,
+    "submitted_top_level_equals_supplied": true,
+    "submitted_per_question_equals_supplied": true,
+    "pre_generated_badge_shown": false
+  },
+  "rerender_and_late_response": {
+    "rerender_while_pending_extra_calls": 0,
+    "rerender_after_completed_extra_calls": 0,
+    "dismissed_confirmation_late_response": {
+      "dismissed_while_pending": true,
+      "late_response_status": 200,
+      "late_candidate_rendered_on_new_confirmation": false,
+      "new_submission_retained_explicit_value": true
+    }
+  },
+  "exhausted_planning_ui": {
+    "evidence_boundary": "Browser-side response interception (HTTP 502 on /api/plan-core-questions). Proves confirmation UI behavior only; it is NOT evidence of backend retry counts or Sentry behavior.",
+    "subjects": {
+      "math":              {"shows_將於生成時決定": true, "確定發送_present": true, "確定發送_disabled": false, "core_question_key_in_submitted_body": false, "per_question_core_question": [null], "stale_pre_generated_badge": false},
+      "social_studies":    {"shows_將於生成時決定": true, "確定發送_present": true, "確定發送_disabled": false, "core_question_key_in_submitted_body": false, "per_question_core_question": [null, null], "stale_pre_generated_badge": false},
+      "natural_sciences":  {"shows_將於生成時決定": true, "確定發送_present": true, "確定發送_disabled": false, "core_question_key_in_submitted_body": false, "per_question_core_question": [null, null], "stale_pre_generated_badge": false}
+    }
+  },
+  "end_to_end_submission": {
+    "subject": "natural_sciences",
+    "admission": {"method": "POST", "path": "/api/generate", "http_status": 200, "request_uri_length": 13, "body_bytes": 3259, "http_414_risk": "none; the generate request is a POST body, not a GET query"},
+    "sse_and_completion": {"outcome": "completed", "elapsed": "3m56s", "subquestions": 4, "verification_passed": true},
+    "persisted_record": {
+      "id": "42deafc7-5303-4409-818e-1ddaf588bd98",
+      "question_id": "ns_20260914_100712_001",
+      "status": "completed",
+      "created_at_utc": "2026-09-14T10:11:53Z",
+      "params_json_core_question_equals_candidate0": true,
+      "question_json_核心問題_equals_candidate0": true
+    }
+  }
+}

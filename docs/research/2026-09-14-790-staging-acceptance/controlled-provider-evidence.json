@@ -1,0 +1,144 @@
+{
+ "planner_cases": [
+  {
+   "name": "recovery: insufficient then valid",
+   "expect": "success in exactly 2 calls, 3 short candidates verbatim",
+   "outcome": "success",
+   "candidates": [
+    "短問甲？",
+    "短問乙？",
+    "短問丙？"
+   ],
+   "calls": 2
+  },
+  {
+   "name": "exhaustion: invalid then invalid",
+   "expect": "controlled failure after exactly 2 calls",
+   "outcome": "controlled_failure",
+   "calls": 2,
+   "stage": "candidate_validation",
+   "attempt": 2,
+   "expected_count": 3,
+   "actual_count": 2,
+   "received_count": 2,
+   "message": "Planner validation failed: stage=candidate_validation attempt=2 expected_count=3 actual_count=2 received_count=2"
+  },
+  {
+   "name": "exhaustion: unparseable then unparseable",
+   "expect": "controlled failure after exactly 2 calls",
+   "outcome": "controlled_failure",
+   "calls": 2,
+   "stage": "response_parse",
+   "attempt": 2,
+   "expected_count": 3,
+   "actual_count": 0,
+   "received_count": 0,
+   "message": "Planner validation failed: stage=response_parse attempt=2 expected_count=3 actual_count=0 received_count=0"
+  },
+  {
+   "name": "short candidates on first call are preserved",
+   "expect": "success in 1 call, short candidates kept verbatim",
+   "outcome": "success",
+   "candidates": [
+    "短問甲？",
+    "短問乙？",
+    "短問丙？"
+   ],
+   "calls": 1
+  },
+  {
+   "name": "numbered plain-text list keeps all three (the #763 regression)",
+   "expect": "success in 1 call, three numbered questions preserved",
+   "outcome": "success",
+   "candidates": [
+    "短問甲？",
+    "短問乙？",
+    "短問丙？"
+   ],
+   "calls": 1
+  },
+  {
+   "name": "duplicates are not padded back to three",
+   "expect": "controlled failure; no placeholder or duplicate padding",
+   "outcome": "controlled_failure",
+   "calls": 2,
+   "stage": "candidate_validation",
+   "attempt": 2,
+   "expected_count": 3,
+   "actual_count": 1,
+   "received_count": 3,
+   "message": "Planner validation failed: stage=candidate_validation attempt=2 expected_count=3 actual_count=1 received_count=3"
+  },
+  {
+   "name": "non-text items are not coerced into candidates",
+   "expect": "controlled failure; 42 never becomes a candidate",
+   "outcome": "controlled_failure",
+   "calls": 2,
+   "stage": "candidate_validation",
+   "attempt": 2,
+   "expected_count": 3,
+   "actual_count": 2,
+   "received_count": 3,
+   "message": "Planner validation failed: stage=candidate_validation attempt=2 expected_count=3 actual_count=2 received_count=3"
+  },
+  {
+   "name": "recovery after an unparseable first output",
+   "expect": "success in exactly 2 calls",
+   "outcome": "success",
+   "candidates": [
+    "短問甲？",
+    "短問乙？",
+    "短問丙？"
+   ],
+   "calls": 2
+  }
+ ],
+ "http_cases": [
+  {
+   "name": "exhausted planning (insufficient twice)",
+   "http_status": 502,
+   "response_body": "{\"detail\":\"Planner upstream returned malformed candidates\"}",
+   "provider_calls": 2,
+   "total_sentry_events": 3,
+   "exception_events": 1,
+   "marked_warning_issue_events": 0,
+   "diagnostic_breadcrumbs": 1,
+   "breadcrumb_diagnostic_fields": {
+    "stage": "candidate_validation",
+    "attempt": 2,
+    "expected_count": 3,
+    "actual_count": 2,
+    "received_count": 2
+   },
+   "unrelated_warning_event_present": true,
+   "unrelated_error_event_present": true,
+   "leaks_found": {
+    "topic": false,
+    "candidate_text": false,
+    "auth_token": false,
+    "teacher_identity": false
+   },
+   "request_body_in_telemetry": false
+  },
+  {
+   "name": "successful recovery (insufficient then valid)",
+   "http_status": 200,
+   "response_body": "{\"candidates\":[\"短問甲？\",\"短問乙？\",\"短問丙？\"]}",
+   "provider_calls": 2,
+   "total_sentry_events": 0,
+   "exception_events": 0,
+   "marked_warning_issue_events": 0,
+   "diagnostic_breadcrumbs": 0,
+   "breadcrumb_diagnostic_fields": null,
+   "unrelated_warning_event_present": false,
+   "unrelated_error_event_present": false,
+   "leaks_found": {
+    "topic": false,
+    "candidate_text": false,
+    "auth_token": false,
+    "teacher_identity": false
+   },
+   "request_body_in_telemetry": false
+  }
+ ]
+}

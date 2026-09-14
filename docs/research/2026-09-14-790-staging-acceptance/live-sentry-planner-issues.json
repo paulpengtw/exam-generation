@@ -1,0 +1,62 @@
+{
+ "exam-generation-api-staging:Planner": [
+  {
+   "short_id": "EXAM-GENERATION-API-STAGING-8",
+   "title": "HTTPException: Planner upstream returned malformed candidates",
+   "level": "error",
+   "count": "9",
+   "first_seen": "2026-07-30T03:04:52.228662Z",
+   "last_seen": "2026-09-14T05:11:00.738475Z",
+   "permalink": "https://cpengme.sentry.io/issues/7641495852/"
+  },
+  {
+   "short_id": "EXAM-GENERATION-API-STAGING-7",
+   "title": "Planner returned malformed candidates: Planner returned 2 candidates, expected 3",
+   "level": "warning",
+   "count": "9",
+   "first_seen": "2026-07-30T03:04:52.221880Z",
+   "last_seen": "2026-09-14T05:11:00.730783Z",
+   "permalink": "https://cpengme.sentry.io/issues/7641495846/"
+  }
+ ],
+ "exam-generation-api-staging:plan-core-questions": [
+  {
+   "short_id": "EXAM-GENERATION-API-STAGING-8",
+   "title": "HTTPException: Planner upstream returned malformed candidates",
+   "level": "error",
+   "count": "9",
+   "first_seen": "2026-07-30T03:04:52.228662Z",
+   "last_seen": "2026-09-14T05:11:00.738475Z",
+   "permalink": "https://cpengme.sentry.io/issues/7641495852/"
+  },
+  {
+   "short_id": "EXAM-GENERATION-API-STAGING-7",
+   "title": "Planner returned malformed candidates: Planner returned 2 candidates, expected 3",
+   "level": "warning",
+   "count": "9",
+   "first_seen": "2026-07-30T03:04:52.221880Z",
+   "last_seen": "2026-09-14T05:11:00.730783Z",
+   "permalink": "https://cpengme.sentry.io/issues/7641495846/"
+  }
+ ],
+ "exam-generation-api-staging:malformed candidates": [
+  {
+   "short_id": "EXAM-GENERATION-API-STAGING-8",
+   "title": "HTTPException: Planner upstream returned malformed candidates",
+   "level": "error",
+   "count": "9",
+   "first_seen": "2026-07-30T03:04:52.228662Z",
+   "last_seen": "2026-09-14T05:11:00.738475Z",
+   "permalink": "https://cpengme.sentry.io/issues/7641495852/"
+  },
+  {
+   "short_id": "EXAM-GENERATION-API-STAGING-7",
+   "title": "Planner returned malformed candidates: Planner returned 2 candidates, expected 3",
+   "level": "warning",
+   "count": "9",
+   "first_seen": "2026-07-30T03:04:52.221880Z",
+   "last_seen": "2026-09-14T05:11:00.730783Z",
+   "permalink": "https://cpengme.sentry.io/issues/7641495846/"
+  }
+ ]
+}
