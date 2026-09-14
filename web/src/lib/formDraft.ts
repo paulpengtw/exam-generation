@@ -115,20 +115,47 @@ function isFormFields(value: unknown): value is FormFields {
     typeof value.modelExecute === "string" &&
     // modelVerify / modelCorrect were added in issue #376. Accept undefined so
     // drafts persisted by older builds (which lack these fields) still load;
-    // loadDraft normalises undefined → "" on hydration.
+    // parseFormFields normalises undefined → "" on hydration.
     (value.modelVerify === undefined || typeof value.modelVerify === "string") &&
     (value.modelCorrect === undefined || typeof value.modelCorrect === "string") &&
     typeof value.effortPlan === "string" &&
     typeof value.effortExecute === "string" &&
     // effortVerify / effortCorrect were added in issue #377. Accept undefined so
     // drafts persisted by older builds (which lack these fields) still load;
-    // loadDraft normalises undefined → "" (inherit) on hydration.
+    // parseFormFields normalises undefined → "" (inherit) on hydration.
     (value.effortVerify === undefined || typeof value.effortVerify === "string") &&
     (value.effortCorrect === undefined || typeof value.effortCorrect === "string") &&
     // allowDuplicateFigureKinds added in issue #450. Accept undefined so old drafts still load;
-    // loadDraft normalises undefined → false on hydration.
+    // parseFormFields normalises undefined → false on hydration.
     (value.allowDuplicateFigureKinds === undefined || typeof value.allowDuplicateFigureKinds === "boolean")
   );
+}
+
+export function parseFormFields(raw: unknown): FormFields | null {
+  if (!isFormFields(raw)) return null;
+
+  // Normalise fields that older builds may not have persisted. The guard accepts
+  // missing values; callers always receive the same complete fields as loadDraft.
+  const rawFields = raw as unknown as Record<string, unknown>;
+  return {
+    ...raw,
+    modelVerify: typeof rawFields.modelVerify === "string" ? rawFields.modelVerify : "",
+    modelCorrect: typeof rawFields.modelCorrect === "string" ? rawFields.modelCorrect : "",
+    effortVerify: typeof rawFields.effortVerify === "string" ? rawFields.effortVerify : "",
+    effortCorrect: typeof rawFields.effortCorrect === "string" ? rawFields.effortCorrect : "",
+    textInstruction:
+      typeof rawFields.textInstruction === "string" ? rawFields.textInstruction : "",
+    coreQuestionCallback:
+      typeof rawFields.coreQuestionCallback === "boolean"
+        ? rawFields.coreQuestionCallback
+        : true,
+    reportingScale: typeof rawFields.reportingScale === "string" ? rawFields.reportingScale : "",
+    // allowDuplicateFigureKinds added in issue #450; old drafts default to false.
+    allowDuplicateFigureKinds:
+      typeof rawFields.allowDuplicateFigureKinds === "boolean"
+        ? rawFields.allowDuplicateFigureKinds
+        : false,
+  };
 }
 
 export function saveDraft(userId: string, fields: FormFields): void {
@@ -161,40 +188,18 @@ export function loadDraft(userId: string): FormDraft | null {
     if (
       !isRecord(parsed) ||
       !Number.isFinite(savedAt) ||
-      !isFormFields(parsed.fields) ||
       Date.now() - savedAt > MAX_DRAFT_AGE_MS
     ) {
       clearDraft(userId);
       return null;
     }
 
-    // Normalise fields that older builds may not have persisted (e.g. modelVerify /
-    // modelCorrect added in issue #376; effortVerify / effortCorrect added in issue #377).
-    // The type guard accepts undefined for those fields so old drafts still pass;
-    // here we coerce them to "" so the returned FormFields always satisfies the required type.
-    const rawFields = parsed.fields as unknown as Record<string, unknown>;
-    return {
-      savedAt: parsed.savedAt as string,
-      fields: {
-        ...(parsed.fields as FormFields),
-        modelVerify: typeof rawFields.modelVerify === "string" ? rawFields.modelVerify : "",
-        modelCorrect: typeof rawFields.modelCorrect === "string" ? rawFields.modelCorrect : "",
-        effortVerify: typeof rawFields.effortVerify === "string" ? rawFields.effortVerify : "",
-        effortCorrect: typeof rawFields.effortCorrect === "string" ? rawFields.effortCorrect : "",
-        textInstruction:
-          typeof rawFields.textInstruction === "string" ? rawFields.textInstruction : "",
-        coreQuestionCallback:
-          typeof rawFields.coreQuestionCallback === "boolean"
-            ? rawFields.coreQuestionCallback
-            : true,
-        reportingScale: typeof rawFields.reportingScale === "string" ? rawFields.reportingScale : "",
-        // allowDuplicateFigureKinds added in issue #450; old drafts default to false.
-        allowDuplicateFigureKinds:
-          typeof rawFields.allowDuplicateFigureKinds === "boolean"
-            ? rawFields.allowDuplicateFigureKinds
-            : false,
-      },
-    };
+    const fields = parseFormFields(parsed.fields);
+    if (!fields) {
+      clearDraft(userId);
+      return null;
+    }
+    return { savedAt: parsed.savedAt as string, fields };
   } catch {
     clearDraft(userId);
     return null;
