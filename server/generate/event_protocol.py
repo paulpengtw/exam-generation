@@ -1,0 +1,145 @@
+"""Generation stream v2 event protocol — contract types and helpers."""
+
+from __future__ import annotations
+
+import copy
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+PROTOCOL_VERSION = 2
+SUPPORTED_STREAM_VERSIONS: tuple[int, ...] = (2,)
+CLIENT_UPDATE_REQUIRED_DETAIL = "介面版本已更新，請重新整理頁面後再生成。"
+
+
+def client_update_required_body() -> dict[str, Any]:
+    """Return the 426 response body dict."""
+    return {
+        "detail": CLIENT_UPDATE_REQUIRED_DETAIL,
+        "code": "CLIENT_UPDATE_REQUIRED",
+        "supported_stream_versions": list(SUPPORTED_STREAM_VERSIONS),
+    }
+
+
+class EventContext(BaseModel):
+    """Immutable context attached to every generated event envelope."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    run_id: str
+    event_seq: int
+    question_id: str | None = None
+    index: int | None = None
+    subquestion_index: int | None = None
+    operation_id: str | None = None
+    call_id: str | None = None
+    content_revision: int | None = None
+
+    @field_validator("event_seq")
+    @classmethod
+    def _seq_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("event_seq must be >= 1")
+        return v
+
+
+class SlotRef(BaseModel):
+    """Reference to a content slot (subquestion or image)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    kind: Literal["subquestion", "image"]
+    question_id: str
+    subquestion_id: str | None = None
+    reason: str | None = None
+
+
+class StartedPayload(BaseModel):
+    """Payload for the 'started' event."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    protocol_version: Literal[2]
+    total: int
+    questions: list[dict]
+
+    @model_validator(mode="after")
+    def _validate_questions(self) -> "StartedPayload":
+        total = self.total
+        questions = self.questions
+        if len(questions) != total:
+            raise ValueError(
+                f"questions length {len(questions)} does not match total {total}"
+            )
+        for i, q in enumerate(questions):
+            if q.get("index") != i:
+                raise ValueError(
+                    f"questions[{i}].index is {q.get('index')!r}, expected {i}"
+                )
+        ids = [q.get("question_id") for q in questions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("question_id values must be unique")
+        return self
+
+
+class QuestionTerminalPayload(BaseModel):
+    """Terminal evidence for one question's generation lifecycle."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    termination_reason: Literal["normal", "failed", "cancelled"]
+    has_final: bool
+    final_revision: int | None = None
+    delivery_status: Literal["complete", "partial", "none", "unknown"]
+    expected: list[SlotRef]
+    delivered: list[SlotRef]
+    missing: list[SlotRef]
+    review: dict
+    unknown_reason: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_terminal(self) -> "QuestionTerminalPayload":
+        if self.has_final:
+            if self.final_revision is None or self.final_revision < 1:
+                raise ValueError("has_final=True requires final_revision >= 1")
+        else:
+            if self.final_revision is not None:
+                raise ValueError("has_final=False requires final_revision=None")
+            if self.delivery_status not in ("none", "unknown"):
+                raise ValueError(
+                    "has_final=False requires delivery_status in ('none', 'unknown')"
+                )
+
+        if self.delivery_status == "complete" and self.missing:
+            raise ValueError("delivery_status='complete' requires missing == []")
+
+        if self.delivery_status == "partial":
+            if not self.has_final:
+                raise ValueError("delivery_status='partial' requires has_final=True")
+            if not self.missing:
+                raise ValueError("delivery_status='partial' requires missing non-empty")
+
+        if self.delivery_status == "unknown" and self.unknown_reason is None:
+            raise ValueError("delivery_status='unknown' requires unknown_reason")
+
+        review_status = self.review.get("status")
+        if review_status in ("passed", "failed", "skipped"):
+            if self.review.get("content_revision") != self.final_revision:
+                raise ValueError(
+                    f"review.content_revision must equal final_revision "
+                    f"({self.review.get('content_revision')!r} != {self.final_revision!r})"
+                )
+
+        return self
+
+
+def envelope_dict(context: EventContext, payload: Any) -> dict[str, Any]:
+    """Build an envelope dict with a deep-copied payload.
+
+    Returns {'context': {...}, 'payload': <deep copy of payload>}.
+    No envelope keys are inside the payload.
+    """
+    return {
+        "context": context.model_dump(exclude_none=True),
+        "payload": copy.deepcopy(payload),
+    }
