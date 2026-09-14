@@ -36,7 +36,32 @@ server {
     proxy_ssl_server_name on;
   }
 
+  # Artifact metadata — must never be cached (issue #770)
+  location = /release/policy.json {
+    try_files $uri =404;
+    add_header Cache-Control 'no-store';
+  }
+
+  location = /build-meta.json {
+    try_files $uri =404;
+    add_header Cache-Control 'no-store';
+  }
+
+  # Hashed static assets — immutable, 1-year cache (issue #770)
+  location /assets/ {
+    try_files $uri =404;
+    add_header Cache-Control 'public, max-age=31536000, immutable';
+  }
+
+  # SPA entry point — revalidate on every request (issue #770)
+  location = /index.html {
+    try_files $uri =404;
+    add_header Cache-Control 'no-cache';
+  }
+
+  # SPA fallback — serve index.html only for non-asset paths (issue #770)
   location / {
     try_files $uri $uri/ /index.html;
+    add_header Cache-Control 'no-cache';
   }
 }
