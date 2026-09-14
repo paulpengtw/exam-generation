@@ -1,6 +1,5 @@
 import { useAuthStore } from "../store/authStore";
 import {
-  buildQueryString,
   type FigurePolicyTrailEntry,
   type GenerateParams,
   type VerificationTrailEntry,
@@ -168,7 +167,11 @@ export interface PreviewGenerateResponse {
 }
 
 export async function previewGenerate(params: GenerateParams): Promise<PreviewGenerateResponse> {
-  const res = await apiFetch(`/api/generate/preview?${buildQueryString(params)}`);
+  const res = await apiFetch("/api/generate/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
   const body = await res.json() as unknown;
   if (
     !body ||
