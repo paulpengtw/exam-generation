@@ -14,6 +14,7 @@ import asyncio
 import logging
 import threading
 import uuid
+from concurrent.futures import CancelledError, Future
 from typing import Any
 
 from sqlalchemy import select, update
@@ -23,6 +24,9 @@ from server.generate.marshalling import extract_image_files, strip_image_base64
 from server.models import GenerationLog, GenerationRecord, LLMExchange
 
 logger = logging.getLogger(__name__)
+
+# Bound worker waiting without cancelling an exchange that may still commit.
+EXCHANGE_WRITE_TIMEOUT_SECONDS = 10.0
 
 
 class FigurePolicyTrailRecorder:
@@ -371,8 +375,8 @@ def make_exchange_recorder(
     matching the production disable logic.
 
     The write sink runs ``asyncio.run_coroutine_threadsafe`` so it is safe to
-    call from background ThreadPoolExecutor workers.  Write failures are logged
-    as warnings and never raised.
+    call from background ThreadPoolExecutor workers. A wait timeout leaves the
+    insert running and reports its eventual outcome. Failures never propagate.
     """
     if generation_log_id is None or retention_days <= 0:
         return None
@@ -383,10 +387,58 @@ def make_exchange_recorder(
             await sess.commit()
 
     def _write_row(row: dict[str, Any]) -> None:
-        future = asyncio.run_coroutine_threadsafe(_insert(row), loop)
+        metadata = {
+            "generation_log_id": str(generation_log_id),
+            "agent": row["agent"],
+            "exchange_order": row["exchange_order"],
+        }
+
+        def report(outcome: str, error: Exception | None = None) -> None:
+            # Exception strings/tracebacks can contain SQL parameters and exam content.
+            # Late success also needs WARNING: ADR 0004 forwards only WARNING+.
+            error_type = type(error).__name__ if error is not None else None
+            logger.warning(
+                "llm_exchanges insert %s (%s)", outcome, error_type,
+                extra={
+                    **metadata,
+                    "outcome": outcome,
+                    "error_type": error_type,
+                    "error_module": type(error).__module__ if error is not None else None,
+                },
+            )
+
+        def report_completion(completed: Future[None]) -> None:
+            try:
+                completed.result()
+            except CancelledError as exc:
+                report("cancelled", exc)
+            except Exception as exc:  # noqa: BLE001 — best-effort persistence
+                report("failed", exc)
+            else:
+                report("committed")
+
+        insertion = _insert(row)
         try:
-            future.result(timeout=10)
+            future = asyncio.run_coroutine_threadsafe(insertion, loop)
         except Exception as exc:  # noqa: BLE001 — best-effort persistence
-            logger.warning("llm_exchanges insert failed: %s", exc)
+            insertion.close()
+            report("not_scheduled", exc)
+            return
+        try:
+            future.result(timeout=EXCHANGE_WRITE_TIMEOUT_SECONDS)
+        except CancelledError as exc:
+            report("cancelled", exc)
+        except TimeoutError as exc:
+            if future.done():
+                # Commit/cancellation/failure may race with timeout handling.
+                # Also distinguishes a TimeoutError raised by the DB itself.
+                report_completion(future)
+            else:
+                report("pending", exc)
+                # Runs immediately if completion races with callback registration.
+                # Keep the insert alive; retain only non-content metadata here.
+                future.add_done_callback(report_completion)
+        except Exception as exc:  # noqa: BLE001 — best-effort persistence
+            report("failed", exc)
 
     return ExchangeRecorder(generation_log_id, _write_row, next_order=next_order)
