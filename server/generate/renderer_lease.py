@@ -92,11 +92,14 @@ class RendererLease:
         loop: asyncio.AbstractEventLoop,
         cancel_event: Any,  # threading.Event
         queue: asyncio.Queue,
+        drain_telemetry: Any = None,  # DrainTelemetry | _NoopDrainTelemetry
     ) -> None:
         self._pool = pool
         self._loop = loop
         self._cancel_event = cancel_event
         self._queue = queue
+        from server.generate.drain import NOOP_DRAIN  # noqa: PLC0415
+        self._drain = drain_telemetry if drain_telemetry is not None else NOOP_DRAIN
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -185,7 +188,9 @@ class RendererLease:
         if emitted_start:
             self._emit_stage("renderer", "acquire", "end")
 
+        self._drain._inc("_renderer_leases_held")
         try:
             return renderer.render(html, output_path, width)
         finally:
             loop.call_soon_threadsafe(pool.put_nowait, renderer)
+            self._drain._dec("_renderer_leases_held")

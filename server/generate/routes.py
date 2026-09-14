@@ -21,6 +21,7 @@ from sse_starlette.sse import EventSourceResponse
 from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
+from server.generate.drain import get_drain
 from server.generate.models import (
     ALLOWED_SUBJECTS,
     CoverageMode,
@@ -495,6 +496,8 @@ async def _generate(
                 session_factory=AsyncSessionLocal,
             )
 
+        _drain = get_drain(app_state)
+        _drain._inc("_open_streams")
         stream = generate_question_stream(
             params,
             config,
@@ -548,6 +551,7 @@ async def _generate(
                         )
                     )
                     await s.commit()
+            _drain._dec("_open_streams")
 
     return EventSourceResponse(
         event_generator(),

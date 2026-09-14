@@ -23,6 +23,7 @@ from server.auth.dependencies import get_config
 from server.auth.routes import router as auth_router
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
+from server.generate.drain import DrainTelemetry
 from server.generate.modification_routes import router as modification_router
 from server.generate.routes import router as generate_router
 from server.history.routes import router as history_router
@@ -151,6 +152,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             print(f"Warning: Playwright failed to start: {exc}", file=sys.stderr)
             break
     app.state.renderer_pool = renderer_pool if started_renderers else None
+    app.state.drain_telemetry = DrainTelemetry()
     app.state.html_renderer = None  # legacy; service.py uses renderer_pool
     if started_renderers:
         print(f"Playwright renderer pool started ({len(started_renderers)} instances)")

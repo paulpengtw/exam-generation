@@ -23,6 +23,7 @@ import anyio
 
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
+from server.generate.drain import get_drain
 from server.generate.marshalling import (
     SSEEventName,
     make_combined_observer,
@@ -214,6 +215,7 @@ class _RunContext:
     config: ServerConfig
     balanced_batch: bool
     cancel_event: threading.Event
+    drain_telemetry: Any  # DrainTelemetry or _NoopDrainTelemetry from drain.py
 
 
 def _build_run_context(
@@ -291,6 +293,7 @@ def _build_run_context(
         config=config,
         balanced_batch=balanced_batch,
         cancel_event=cancel_event if cancel_event is not None else threading.Event(),
+        drain_telemetry=get_drain(app_state),
     )
 
 
@@ -301,150 +304,151 @@ def _worker_one(
     batch_briefs: list,
 ) -> None:
     """Execute one question-generation worker; enqueues result/error events."""
-    worker_recorder = make_exchange_recorder(
-        generation_log_id=ctx.generation_log_id,
-        retention_days=ctx.retention_days,
-        loop=ctx.loop,
-        session_factory=ctx.session_factory,
-        next_order=ctx.next_order,
-    )
-    figure_policy_recorder = ctx.figure_policy_recorder
-    reference_example_recorder = ctx.reference_example_recorder
-    question_client.set_observer(
-        make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
-    )
-    emit_question_update = make_question_update_emitter(i, ctx.loop, ctx.queue, ctx.config)
-    emit_trail_entry = make_trail_emitter(ctx.loop, ctx.queue)
-    verification_trail: list[dict[str, Any]] = []
-    figure_policy_trail: list[dict[str, Any]] = []
-    reference_example_entries: list[dict[str, Any]] = []
-
-    def capture_trail_entry(entry: Any) -> None:
-        payload = (
-            entry.model_dump(mode="json")
-            if hasattr(entry, "model_dump")
-            else entry
+    with ctx.drain_telemetry.ctx_active_worker():
+        worker_recorder = make_exchange_recorder(
+            generation_log_id=ctx.generation_log_id,
+            retention_days=ctx.retention_days,
+            loop=ctx.loop,
+            session_factory=ctx.session_factory,
+            next_order=ctx.next_order,
         )
-        verification_trail.append(payload)
-        emit_trail_entry(entry)
-
-    def capture_figure_policy_entry(entry: Any) -> None:
-        payload = (
-            entry.model_dump(mode="json")
-            if hasattr(entry, "model_dump")
-            else entry
+        figure_policy_recorder = ctx.figure_policy_recorder
+        reference_example_recorder = ctx.reference_example_recorder
+        question_client.set_observer(
+            make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
         )
-        figure_policy_trail.append(payload)
-        emit_trail_entry(entry)
-        if figure_policy_recorder is not None:
-            figure_policy_recorder(entry)
+        emit_question_update = make_question_update_emitter(i, ctx.loop, ctx.queue, ctx.config)
+        emit_trail_entry = make_trail_emitter(ctx.loop, ctx.queue)
+        verification_trail: list[dict[str, Any]] = []
+        figure_policy_trail: list[dict[str, Any]] = []
+        reference_example_entries: list[dict[str, Any]] = []
 
-    def capture_reference_example_entry(entry: Any) -> None:
-        payload = (
-            entry.model_dump(mode="json")
-            if hasattr(entry, "model_dump")
-            else entry
-        )
-        reference_example_entries.append(payload)
-        emit_trail_entry(entry)
-        if reference_example_recorder is not None:
-            reference_example_recorder(entry)
+        def capture_trail_entry(entry: Any) -> None:
+            payload = (
+                entry.model_dump(mode="json")
+                if hasattr(entry, "model_dump")
+                else entry
+            )
+            verification_trail.append(payload)
+            emit_trail_entry(entry)
 
-    ctx.emit_pipeline("question_start", index=i, total=ctx.count)
-    with ctx.prior_scopes_lock:
-        prior_snapshot = list(ctx.prior_scopes)
-    try:
-        rng_params = _resolved_worker_params(
-            i,
-            ctx.params,
-            ctx.spec,
-            ctx.overrides,
-        )
+        def capture_figure_policy_entry(entry: Any) -> None:
+            payload = (
+                entry.model_dump(mode="json")
+                if hasattr(entry, "model_dump")
+                else entry
+            )
+            figure_policy_trail.append(payload)
+            emit_trail_entry(entry)
+            if figure_policy_recorder is not None:
+                figure_policy_recorder(entry)
 
-        # Site 2: apply creative brief when available (SS only in practice)
-        if i < len(batch_briefs) and batch_briefs[i] is not None:
-            rng_params = rng_params.model_copy(
-                update={"creative_brief": batch_briefs[i]},
+        def capture_reference_example_entry(entry: Any) -> None:
+            payload = (
+                entry.model_dump(mode="json")
+                if hasattr(entry, "model_dump")
+                else entry
+            )
+            reference_example_entries.append(payload)
+            emit_trail_entry(entry)
+            if reference_example_recorder is not None:
+                reference_example_recorder(entry)
+
+        ctx.emit_pipeline("question_start", index=i, total=ctx.count)
+        with ctx.prior_scopes_lock:
+            prior_snapshot = list(ctx.prior_scopes)
+        try:
+            rng_params = _resolved_worker_params(
+                i,
+                ctx.params,
+                ctx.spec,
+                ctx.overrides,
             )
 
-        # Site 3: generate via registry (replaces if/elif generate calls)
-        question_id = f"{ctx.spec.question_id_prefix}{ctx.timestamp}_{i+1:03d}"
-        question = ctx.spec.do_generate(
-            rng_params,
-            ctx.overrides,
-            config=ctx.client_config,
-            client=question_client,
-            question_id=question_id,
-            max_retries=ctx.max_retries,
-            skip_verify=ctx.params.skip_verify,
-            disable_reference_fewshot=ctx.params.disable_reference_fewshot,
-            html_renderer=ctx.html_renderer,
-            image_generation_mode=ctx.params.image_generation_mode,
-            user_passage=ctx.params.passage,
-            text_word_limit=ctx.params.text_word_limit,
-            user_options=ctx.params.options,
-            user_topic=ctx.params.topic,
-            user_core_question=ctx.params.core_question,
-            text_instruction=_per_question_text_instruction(i, ctx.params),
-            core_question_callback=ctx.params.core_question_callback,
-            on_question_update=emit_question_update,
-            on_trail_entry=None if ctx.params.skip_verify else capture_trail_entry,
-            on_figure_policy_entry=capture_figure_policy_entry,
-            on_reference_example_entry=capture_reference_example_entry,
-            prior_scopes=prior_snapshot,
-            balanced_batch=ctx.balanced_batch,
-            is_cancelled=ctx.cancel_event.is_set,
-        )
+            # Site 2: apply creative brief when available (SS only in practice)
+            if i < len(batch_briefs) and batch_briefs[i] is not None:
+                rng_params = rng_params.model_copy(
+                    update={"creative_brief": batch_briefs[i]},
+                )
 
-        # Site 4: metadata patching (SS only; other specs have patch_metadata=None)
-        if ctx.spec.patch_metadata is not None:
-            question = ctx.spec.patch_metadata(
-                question,
-                ctx.params.coverage_mode,
-                getattr(rng_params, "target_surface", None),
+            # Site 3: generate via registry (replaces if/elif generate calls)
+            question_id = f"{ctx.spec.question_id_prefix}{ctx.timestamp}_{i+1:03d}"
+            question = ctx.spec.do_generate(
+                rng_params,
+                ctx.overrides,
+                config=ctx.client_config,
+                client=question_client,
+                question_id=question_id,
+                max_retries=ctx.max_retries,
+                skip_verify=ctx.params.skip_verify,
+                disable_reference_fewshot=ctx.params.disable_reference_fewshot,
+                html_renderer=ctx.html_renderer,
+                image_generation_mode=ctx.params.image_generation_mode,
+                user_passage=ctx.params.passage,
+                text_word_limit=ctx.params.text_word_limit,
+                user_options=ctx.params.options,
+                user_topic=ctx.params.topic,
+                user_core_question=ctx.params.core_question,
+                text_instruction=_per_question_text_instruction(i, ctx.params),
+                core_question_callback=ctx.params.core_question_callback,
+                on_question_update=emit_question_update,
+                on_trail_entry=None if ctx.params.skip_verify else capture_trail_entry,
+                on_figure_policy_entry=capture_figure_policy_entry,
+                on_reference_example_entry=capture_reference_example_entry,
+                prior_scopes=prior_snapshot,
+                balanced_batch=ctx.balanced_batch,
+                is_cancelled=ctx.cancel_event.is_set,
             )
 
-        assert isinstance(question, ctx.spec.exam_question_cls)
+            # Site 4: metadata patching (SS only; other specs have patch_metadata=None)
+            if ctx.spec.patch_metadata is not None:
+                question = ctx.spec.patch_metadata(
+                    question,
+                    ctx.params.coverage_mode,
+                    getattr(rng_params, "target_surface", None),
+                )
 
-        # Site 5: prior-scope extraction via registry
-        new_scope = ctx.spec.extract_prior_scope(question)
-        if new_scope is not None:
-            with ctx.prior_scopes_lock:
-                ctx.prior_scopes.append(new_scope)
-        ctx.emit_pipeline("question_end", index=i, total=ctx.count)
-        record_generation_outcome(ctx.params.subject, "success")
-        result_event: dict[str, Any] = {
-            "event": SSEEventName.RESULT,
-            "data": question_to_event(question, ctx.config),
-        }
-        if verification_trail:
-            result_event["verification_trail"] = verification_trail
-        if figure_policy_trail:
-            result_event["figure_policy_trail"] = figure_policy_trail
-        result_event["reference_example_record"] = {
-            "disabled": bool(ctx.params.disable_reference_fewshot),
-            "entries": reference_example_entries,
-        }
-        ctx.loop.call_soon_threadsafe(
-            ctx.queue.put_nowait,
-            result_event,
-        )
-    except GenerationCancelled:
-        # Client disconnected; exit cleanly without emitting an error event.
-        pass
-    except Exception as exc:
-        record_generation_outcome(ctx.params.subject, "failure")
-        ctx.loop.call_soon_threadsafe(
-            ctx.queue.put_nowait,
-            {
-                "event": SSEEventName.ERROR,
-                "data": build_sse_error(
-                    "generation_failed",
-                    f"Question generation failed ({type(exc).__name__})",
-                ),
-            },
-        )
-        logger.exception("worker_one error (index=%d)", i)
+            assert isinstance(question, ctx.spec.exam_question_cls)
+
+            # Site 5: prior-scope extraction via registry
+            new_scope = ctx.spec.extract_prior_scope(question)
+            if new_scope is not None:
+                with ctx.prior_scopes_lock:
+                    ctx.prior_scopes.append(new_scope)
+            ctx.emit_pipeline("question_end", index=i, total=ctx.count)
+            record_generation_outcome(ctx.params.subject, "success")
+            result_event: dict[str, Any] = {
+                "event": SSEEventName.RESULT,
+                "data": question_to_event(question, ctx.config),
+            }
+            if verification_trail:
+                result_event["verification_trail"] = verification_trail
+            if figure_policy_trail:
+                result_event["figure_policy_trail"] = figure_policy_trail
+            result_event["reference_example_record"] = {
+                "disabled": bool(ctx.params.disable_reference_fewshot),
+                "entries": reference_example_entries,
+            }
+            ctx.loop.call_soon_threadsafe(
+                ctx.queue.put_nowait,
+                result_event,
+            )
+        except GenerationCancelled:
+            # Client disconnected; exit cleanly without emitting an error event.
+            pass
+        except Exception as exc:
+            record_generation_outcome(ctx.params.subject, "failure")
+            ctx.loop.call_soon_threadsafe(
+                ctx.queue.put_nowait,
+                {
+                    "event": SSEEventName.ERROR,
+                    "data": build_sse_error(
+                        "generation_failed",
+                        f"Question generation failed ({type(exc).__name__})",
+                    ),
+                },
+            )
+            logger.exception("worker_one error (index=%d)", i)
 
 
 async def generate_question_stream(
@@ -478,6 +482,9 @@ async def generate_question_stream(
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    _drain = get_drain(app_state)
+    _drain.register_queue(queue)
+    _drain._inc("_active_runs")
     renderer_pool = getattr(app_state, "renderer_pool", None)
 
     # Per-render lease: a renderer is borrowed only for the duration of one HTML
@@ -489,7 +496,7 @@ async def generate_question_stream(
     _cancel_event = threading.Event()
     if renderer_pool is not None:
         from server.generate.renderer_lease import RendererLease  # noqa: PLC0415
-        html_renderer: Any = RendererLease(renderer_pool, loop, _cancel_event, queue)
+        html_renderer: Any = RendererLease(renderer_pool, loop, _cancel_event, queue, _drain)
     else:
         html_renderer = None
 
@@ -709,3 +716,5 @@ async def generate_question_stream(
                     await ctx.figure_policy_recorder.flush()
                 if ctx.reference_example_recorder is not None:
                     await ctx.reference_example_recorder.flush()
+            _drain.unregister_queue(queue)
+            _drain._dec("_active_runs")
