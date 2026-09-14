@@ -1,0 +1,17 @@
+{
+  "verifiedAt": "2026-09-14T14:56:51.378Z",
+  "environment": "https://examgen-staging.cpeng.me",
+  "browser": "ego-browser",
+  "observedFrontendAsset": "index-uzHH95Bq.js",
+  "historyRecord": "f44343c7-2207-43e4-b50c-a4ea04fc8b82",
+  "historyGrade": 11,
+  "historyStatus": "completed",
+  "naturalSciencesHistoryRecords": 13,
+  "failedNaturalSciencesRecordsAvailable": 0,
+  "draftGrade": 11,
+  "generatedQuestions": 0,
+  "cleanup": {
+    "originalDraftExisted": false,
+    "draftRestoredToOriginal": true
+  }
+}

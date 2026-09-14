@@ -1,0 +1,37 @@
+{
+  "grade": 11,
+  "learning_performance": [
+    "pa-Ⅴa-1"
+  ],
+  "learning_content": [
+    "PKa-Ⅴa-1"
+  ],
+  "sub_question_count": 3,
+  "subquestion_configs": [
+    {
+      "learning_performance": [
+        "pa-Ⅴa-1"
+      ],
+      "learning_content": [
+        "PKa-Ⅴa-1"
+      ]
+    },
+    {
+      "learning_performance": [
+        "pa-Ⅴa-1"
+      ],
+      "learning_content": [
+        "PKa-Ⅴa-1"
+      ]
+    },
+    {
+      "learning_performance": [
+        "pa-Ⅴa-1"
+      ],
+      "learning_content": [
+        "PKa-Ⅴa-1"
+      ]
+    }
+  ],
+  "textInstruction": "#786 grade-11 草稿還原驗收"
+}

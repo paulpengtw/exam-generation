@@ -1,0 +1,23 @@
+{
+  "responses": [
+    {
+      "requestedGrade": null,
+      "status": 200,
+      "schemaMetaStageLabel": "第四學習階段",
+      "lpCount": 20,
+      "lcCount": 204,
+      "savedLpAdmitted": false,
+      "savedLcAdmitted": false
+    },
+    {
+      "requestedGrade": 11,
+      "status": 200,
+      "schemaMetaStageLabel": "第四學習階段",
+      "lpCount": 39,
+      "lcCount": 426,
+      "savedLpAdmitted": true,
+      "savedLcAdmitted": true
+    }
+  ],
+  "sharedLpCount": 0
+}
