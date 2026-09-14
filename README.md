@@ -14,7 +14,7 @@ graph TD
     A[Curriculum Data: 學習內容 + 學習表現] -->|full JSON injected| B(Sampler: random selection)
     B -->|grade / 題型 / 情境 / 學習內容| C{Context Builder}
     D[Few-shot Example DB] -->|matching examples| C
-    C -->|assembled prompt| E[LLM: claude-sonnet-4-6 via OpenAI endpoint]
+    C -->|assembled prompt| E["LLM: plan/verify claude-opus-4-6; execute gemini-3.1-pro-preview"]
     E -->|generated question JSON| F[Verifier: independent solve + correction loop]
     F -->|passed| G[Output: JSON + optional PNG]
     F -->|failed| H[Corrector: targeted fix]
@@ -38,7 +38,7 @@ Questions can include images, described by an `ImageSpec` on the generated quest
 | `render_mode` | Renderer | Method |
 |---|---|---|
 | `"chart"` | `src/renderer.py` `render_chart()` | Deterministic matplotlib — `histogram`, `boxplot`, `line_chart`, `pie_chart` |
-| `"html"` | `src/html_renderer.py` `PlaywrightRenderer` | Sonnet writes HTML/CSS/SVG → Playwright screenshots to PNG |
+| `"html"` | `src/html_renderer.py` `PlaywrightRenderer` | `gemini-3.1-pro-preview` writes HTML/CSS/SVG → Playwright screenshots to PNG |
 
 The `"html"` path handles geometry diagrams, coordinate planes, tables, and any non-statistical visual. Math and curriculum-subject generation accept an `image_generation_mode` parameter — set it to `gpt_image` to send the image spec to `IMAGE_MODEL` (default `gpt-image2`) and write the returned PNG directly, bypassing the Playwright and matplotlib paths. Social studies and natural sciences support both shared 題組 images (`question.chart_spec`) and per-小題 images (`subquestions[*].chart_spec`). The web UI exposes a main `圖片生成模式`; per-小題 rows can override it, or leave it blank to inherit the main mode. Generated `subquestions[*].image_generation_mode` is output metadata only and does not override the submitted renderer choice. The API/CLI default mode is `html`; the web form UI defaults to `gpt_image` (GPT 生圖). The entry point is `render_image()` in `src/renderer.py`, called from `generate_one()`.
 
@@ -47,8 +47,8 @@ The `"html"` path handles geometry diagrams, coordinate planes, tables, and any 
 - **No RAG.** All curriculum data and few-shot examples are injected directly as context.
 - **Randomness is script-side.** The program selects grade, question type, context, learning content — not the LLM.
 - **Two-stage generation (社會 / 自然).** For social studies and natural sciences, question generation runs a two-stage pipeline: a **文本生成器** call produces the shared 核心問題, 文本, and 取材來源 plus an N-entry 子題 plan; then N **子題產生器** calls each write one full 子題 concurrently (`ThreadPoolExecutor`, capped by `SUBGEN_MAX_CONCURRENCY`, default 6). A 子題產生器 call that raises or returns unparseable output is retried with a fresh LLM call for that slot only, up to `SUBGEN_RETRIES` times (default 1), before the slot is dropped. The assembled 題組 then flows through image rendering → verification → correction unchanged. Math generation stays a single flat call.
-- **Verify + correct loop.** Sonnet generates → Sonnet verifies → on failure, Sonnet applies a minimal targeted correction and re-verifies (up to `max_retries` times). Only the wrong field changes; classification, metadata, and correct fields are preserved.
-- **Per-request LLM provider dispatch.** The provider is resolved from the model id on each call: `claude-*` → Anthropic SDK (prompt caching, streaming, system param); `gemini-*` → Gemini via its OpenAI-compatible endpoint; `gpt-*/o-series` → OpenAI; unknown ids → Anthropic (proxy deployments). The default model for both planning and execution is `claude-sonnet-4-6`.
+- **Verify + correct loop.** `gemini-3.1-pro-preview` generates → `claude-opus-4-6` verifies → on failure, the 修正 tier (inheriting execute by default) applies a minimal targeted correction before another 驗證 pass (up to `max_retries` times). Only the wrong field changes; classification, metadata, and correct fields are preserved.
+- **Per-request LLM provider dispatch.** The provider is resolved from the model id on each call: `claude-*` → Anthropic SDK (prompt caching, streaming, system param); `gemini-*` → Gemini via its OpenAI-compatible endpoint; `gpt-*/o-series` → OpenAI; unknown ids → Anthropic (proxy deployments). The defaults are `claude-opus-4-6` for planning and 驗證 and `gemini-3.1-pro-preview` for execution, all at `high` effort; 修正 inherits execution. Both `LLM_API_KEY` and `GEMINI_API_KEY` are required for this configuration.
 
 ## Project Structure
 
@@ -187,7 +187,7 @@ cd exam-generation
 
 bash scripts/setup.sh   # installs all extras (fastapi, sqlalchemy, …) + Playwright Chromium binary
 cp .env.example .env
-# Edit .env — at minimum, set LLM_API_KEY
+# Edit .env — at minimum, set LLM_API_KEY and GEMINI_API_KEY
 
 uv run python -m src.cli generate
 ```
@@ -200,7 +200,7 @@ Use this if you want the browser UI locally. Brings up Postgres, the FastAPI bac
 # Prerequisites: Docker + docker-compose
 
 cp .env.example .env
-# Edit .env — set LLM_API_KEY, DB_PASSWORD, JWT_SECRET at minimum
+# Edit .env — set LLM_API_KEY, GEMINI_API_KEY, DB_PASSWORD, JWT_SECRET at minimum
 
 docker-compose up --build
 # Frontend: http://localhost:3000
@@ -220,14 +220,20 @@ Environment variables (set in `.env` or export directly):
 
 | Variable | Used by | Description | Default |
 |---|---|---|---|
-| `GEMINI_API_KEY` | CLI + server | API key for Gemini models — required when `model_plan`/`model_execute` resolves to a `gemini-*` model | — |
+| `GEMINI_API_KEY` | CLI + server | Required for the default configuration, together with `LLM_API_KEY`: Gemini API key for the execute tier | — |
 | `GEMINI_BASE_URL` | CLI + server | Base URL for the Gemini OpenAI-compatible endpoint | `https://generativelanguage.googleapis.com/v1beta/openai/` |
 | `OPENAI_API_KEY` | CLI + server | API key for OpenAI models — required when using a `gpt-*` or o-series model | — |
 | `OPENAI_BASE_URL` | CLI + server | Base URL for the OpenAI endpoint | `https://api.openai.com/v1` |
-| `LLM_API_KEY` | CLI + server | Anthropic API key — required when `model_plan`/`model_execute` resolves to a `claude-*` model, and for the web-search fact-check tool | — |
+| `LLM_API_KEY` | CLI + server | Required for the default configuration, together with `GEMINI_API_KEY`: Anthropic API key for the plan and 驗證 tiers, and for Anthropic web-search fact-check | — |
 | `LLM_BASE_URL` | CLI + server | Base URL for the Anthropic endpoint | `https://api.anthropic.com/v1` |
-| `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-sonnet-4-6` |
-| `LLM_MODEL_EXECUTE` | CLI + server | Model for generation & verification | `claude-sonnet-4-6` |
+| `LLM_MODEL_PLAN` | CLI + server | Model for planning tasks | `claude-opus-4-6` |
+| `LLM_MODEL_EXECUTE` | CLI + server | Model for generation | `gemini-3.1-pro-preview` |
+| `LLM_MODEL_VERIFY` | CLI + server | 驗證模型; explicitly empty = follow the execute model at call time | `claude-opus-4-6` |
+| `LLM_MODEL_CORRECT` | CLI + server | 修正模型; empty = follow the execute model at call time | (empty) |
+| `LLM_EFFORT_PLAN` | CLI + server | Planning effort | `high` |
+| `LLM_EFFORT_EXECUTE` | CLI + server | Execution effort | `high` |
+| `LLM_EFFORT_VERIFY` | CLI + server | 驗證 effort; explicitly empty = inherit execute effort at call time | `high` |
+| `LLM_EFFORT_CORRECT` | CLI + server | 修正 effort; empty = inherit execute effort at call time | (empty) |
 | `IMAGE_API_KEY` | CLI + server | API key for optional GPT image generation (used by math, social studies, and natural sciences when `image_generation_mode=gpt_image`) | — |
 | `IMAGE_BASE_URL` | CLI + server | Base URL for the image generation endpoint | `https://api.openai.com/v1` |
 | `IMAGE_MODEL` | CLI + server | Image generation model used when GPT image mode is selected | `gpt-image2` |
@@ -561,7 +567,7 @@ Questions can specify an image via `image_spec` (or legacy `chart_spec`) in the 
 | `line_chart` | Hardcoded matplotlib | Data points or function plot |
 | `pie_chart` | Hardcoded matplotlib | Pie with angle labels |
 
-**`render_mode: "html"`** — `_generate_html_via_llm()` in `src/renderer.py` asks Sonnet to write a self-contained HTML/CSS/SVG document from `description` + `data`; then `PlaywrightRenderer` in `src/html_renderer.py` screenshots it to PNG. Used for geometry diagrams, coordinate planes, tables, menus, and any non-statistical visual.
+**`render_mode: "html"`** — `_generate_html_via_llm()` in `src/renderer.py` asks `gemini-3.1-pro-preview` to write a self-contained HTML/CSS/SVG document from `description` + `data`; then `PlaywrightRenderer` in `src/html_renderer.py` screenshots it to PNG. Used for geometry diagrams, coordinate planes, tables, menus, and any non-statistical visual.
 
 ## Customizing Question Parameters
 
@@ -739,8 +745,8 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 **File: `src/config.py`**
 
 4. `Config.from_env()` reads `.env` file via `dotenv`, then pulls env vars (lines 22-36):
-   - `LLM_API_KEY`, `LLM_BASE_URL` (endpoint)
-   - `LLM_MODEL_PLAN` (default: `claude-sonnet-4-6`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
+   - `LLM_API_KEY`, `LLM_BASE_URL` (Anthropic); `GEMINI_API_KEY`, `GEMINI_BASE_URL` (Gemini); both keys required for the defaults
+   - `LLM_MODEL_PLAN` / `LLM_MODEL_VERIFY` (default: `claude-opus-4-6`), `LLM_MODEL_EXECUTE` (default: `gemini-3.1-pro-preview`); plan/execute/verify effort defaults to `high`. `LLM_MODEL_CORRECT` / `LLM_EFFORT_CORRECT` default to empty (inherit execute); explicitly empty verify model/effort also inherit execute at call time
    - `LLM_RATE_LIMIT_DELAY` (default: `0`) — seconds slept before every `generate()` call to avoid 429 errors
    - `OUTPUT_DIR` (default: `./output`), `DATA_DIR` (default: `./data`)
 5. `config.validate()` ensures `LLM_API_KEY` is set (line 227 -> config.py:38-41)
@@ -828,7 +834,7 @@ For each question `i` in `range(args.count)`:
 **File: `src/llm_client.py`**
 
 21. `client.generate_json(system_prompt, user_prompt)` (llm_client.py:70-73):
-    - Calls `generate()` (lines 26-40): `openai.chat.completions.create()` with `model=model_execute` (Sonnet), `temperature=0.7`, `max_tokens=8192`
+    - Calls `generate()` (lines 26-40): `openai.chat.completions.create()` with `model=model_execute` (`gemini-3.1-pro-preview`), `temperature=0.7`, `max_tokens=8192`
     - Messages: `[{"role": "system", ...}, {"role": "user", ...}]`
 22. `extract_json(raw)` (llm_client.py:76-93) parses LLM text response:
     - First tries: regex for ` ```json ... ``` ` code block (line 79-81)
@@ -876,7 +882,7 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 
 #### 5B. Correction loop (`src/cli.py` `generate_with_corrections()`, `src/corrector.py`)
 
-28. If `verification.passed=False` and retries remain, `correct_question(client, question, verification, chart_image_path)` (`src/corrector.py`) sends the failed question JSON + verifier's `details` (+ `my_answer`/`provided_answer` + optional `chart_verification`) back to Sonnet — multimodal if a PNG exists and chart verification failed. Returns a new `ExamQuestion` with only `題目`, `正確解題分析`, and `chart_spec` mutable; all classification and metadata fields are restored from the original.
+28. If `verification.passed=False` and retries remain, `correct_question(client, question, verification, chart_image_path)` (`src/corrector.py`) sends the failed question JSON + verifier's `details` (+ `my_answer`/`provided_answer` + optional `chart_verification`) back to `gemini-3.1-pro-preview` — multimodal if a PNG exists and chart verification failed. Returns a new `ExamQuestion` with only `題目`, `正確解題分析`, and `chart_spec` mutable; all classification and metadata fields are restored from the original.
 29. If `chart_spec` actually changed (`!=` compare), re-render the PNG. Otherwise reuse the existing PNG.
 30. Re-verify (**LLM call #3** again). Loop up to `max_retries` total correction passes (default 3, overridable via `--max-retries` / `LLM_MAX_RETRIES`).
 
@@ -903,8 +909,8 @@ Image rendering happens **before** verification inside `generate_one()` so the v
 |---|---|---|---|
 | 1 | Generate question JSON | `model_execute` | `src/llm_client.py` |
 | 2 | Generate HTML image (only when `render_mode="html"`) | `model_execute` | `src/renderer.py` |
-| 3 | Verify question + image (multimodal) | `model_execute` | `src/verifier.py` |
-| 4 | Correction (when verification fails; multimodal if chart was the issue) | `model_execute` | `src/corrector.py` |
+| 3 | Verify question + image (multimodal) | `model_verify` | `src/verifier.py` |
+| 4 | Correction (when verification fails; multimodal if chart was the issue) | `model_correct` (inherits execute) | `src/corrector.py` |
 
 > **Social studies & natural sciences only:** Call #1 is replaced by a two-stage pipeline — one **文本生成器** call (agent: `generator`) produces the shared passage and 子題 plan, followed by N concurrent **子題產生器** calls (agents: `sub_generator#1` … `sub_generator#N`, each writing one complete 子題). Calls #2–4 (image rendering, verification, correction) are unchanged and operate on the fully-assembled 題組.
 

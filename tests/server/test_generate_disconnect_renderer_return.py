@@ -182,6 +182,7 @@ def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
 
     config = ServerConfig(
         api_key="x",
+        gemini_api_key="x",
         jwt_secret="test-secret",
         output_dir=tmp_path,
         data_dir=Path("data"),

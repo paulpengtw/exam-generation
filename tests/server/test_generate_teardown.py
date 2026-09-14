@@ -141,6 +141,7 @@ async def _test_generate_stream_teardown_distinguishes_disconnect_from_generatio
 
     config = ServerConfig(
         api_key="test-key",
+        gemini_api_key="x",
         jwt_secret="test-secret",
         output_dir=tmp_path,
         data_dir=Path("data"),
@@ -265,6 +266,7 @@ async def _test_generate_disconnect_completes_generation_log_cleanup(
 
     config = ServerConfig(
         api_key="test-key",
+        gemini_api_key="x",
         jwt_secret="test-secret",
         output_dir=tmp_path,
         data_dir=Path("data"),

@@ -212,9 +212,9 @@ def _make_ns_question() -> NSExamQuestion:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_src_config_model_verify_default_empty() -> None:
-    """model_verify must default to '' (empty), not the execute model."""
-    assert Config().model_verify == ""
+def test_src_config_model_verify_default_is_opus_4_6() -> None:
+    """Unset verification uses the independent Opus tier (issue #759)."""
+    assert Config().model_verify == "claude-opus-4-6"
 
 
 def test_src_config_model_correct_default_empty() -> None:
@@ -244,10 +244,10 @@ def test_src_config_both_tier_models_from_env(monkeypatch) -> None:
     assert cfg.model_correct == "claude-fable-5"
 
 
-def test_server_config_model_verify_default_empty() -> None:
-    """ServerConfig also exposes model_verify with empty default."""
+def test_server_config_model_verify_default_is_opus_4_6() -> None:
+    """ServerConfig shares the independent Opus verification default."""
     cfg = ServerConfig(api_key="x", jwt_secret="s")
-    assert cfg.model_verify == ""
+    assert cfg.model_verify == "claude-opus-4-6"
 
 
 def test_server_config_model_correct_default_empty() -> None:
@@ -403,7 +403,7 @@ def test_verify_fallback_uses_overridden_execute_model_after_dataclasses_replace
 
     This is the per-request model-override path in server/generate/service.py
     (dataclasses.replace(cfg, model_execute=request_model) before LLMClient is built).
-    The default must be '' (not captured at Config init time) so the fallback
+    The explicit empty value must stay '' (not resolved at Config init time) so the fallback
     resolves at call time against the effective model_execute.
     """
     base_cfg = Config(

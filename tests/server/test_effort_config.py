@@ -62,14 +62,14 @@ def test_effort_levels_five_model_roster_all_have_low_medium_high() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_server_config_effort_plan_default_is_medium() -> None:
+def test_server_config_effort_plan_default_is_high() -> None:
     cfg = ServerConfig(api_key="x", jwt_secret="s")
-    assert cfg.effort_plan == "medium"
+    assert cfg.effort_plan == "high"
 
 
-def test_server_config_effort_execute_default_is_medium() -> None:
+def test_server_config_effort_execute_default_is_high() -> None:
     cfg = ServerConfig(api_key="x", jwt_secret="s")
-    assert cfg.effort_execute == "medium"
+    assert cfg.effort_execute == "high"
 
 
 # ---------------------------------------------------------------------------
@@ -104,12 +104,12 @@ def test_server_config_effort_both_from_env(tmp_path: Path) -> None:
     assert cfg.effort_execute == "max"
 
 
-def test_server_config_effort_unset_gives_medium(tmp_path: Path) -> None:
+def test_server_config_effort_unset_gives_high(tmp_path: Path) -> None:
     env = {"LLM_API_KEY": "x", "JWT_SECRET": "s"}
     with mock.patch.dict(os.environ, env, clear=True):
         cfg = ServerConfig.from_env(env_file=tmp_path / ".env.missing")
-    assert cfg.effort_plan == "medium"
-    assert cfg.effort_execute == "medium"
+    assert cfg.effort_plan == "high"
+    assert cfg.effort_execute == "high"
 
 
 # ---------------------------------------------------------------------------

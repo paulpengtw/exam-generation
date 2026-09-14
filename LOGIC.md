@@ -26,7 +26,7 @@ Complete execution trace of `uv run python -m src.cli generate`, from first inst
 
 4. `Config.from_env()` reads `.env` file via `dotenv`, then pulls env vars (lines 22-36):
    - `LLM_API_KEY`, `LLM_BASE_URL` (endpoint)
-   - `LLM_MODEL_PLAN` (default: `claude-sonnet-4-6`), `LLM_MODEL_EXECUTE` (default: `claude-sonnet-4-6`)
+   - `LLM_MODEL_PLAN` (default: `claude-opus-4-6`), `LLM_MODEL_EXECUTE` (default: `gemini-3.1-pro-preview`)
    - `LLM_RATE_LIMIT_DELAY` (default: `0`) — float seconds; if > 0, `llm_client.generate()` sleeps this long before every API call to avoid 429 rate-limit errors (llm_client.py:24-25)
    - `OUTPUT_DIR` (default: `./output`), `DATA_DIR` (default: `./data`)
 5. `config.validate()` ensures `LLM_API_KEY` is set (line 193 -> config.py:38-41)
@@ -117,7 +117,7 @@ For each question `i` in `range(args.count)`:
 **File: `src/llm_client.py`**
 
 21. `client.generate_json(system_prompt, user_prompt)` (llm_client.py:41-44):
-    - Calls `generate()` (lines 23-35): `openai.chat.completions.create()` with `model=model_execute` (Sonnet), `temperature=0.7`, `max_tokens=8192`
+    - Calls `generate()` (lines 23-35): `openai.chat.completions.create()` with `model=model_execute` (`gemini-3.1-pro-preview`), `temperature=0.7`, `max_tokens=8192`
     - Messages: `[{"role": "system", ...}, {"role": "user", ...}]`
 22. `extract_json(raw)` (llm_client.py:47-64) parses LLM text response:
     - First tries: regex for ````json ... ``` `` code block (line 50-52)
@@ -160,7 +160,7 @@ Chart rendering now happens **before** verification (both inside `generate_one()
 
 28. For `"geometry"`, `_render_geometry()` uses a 3-tier approach (lines 275-303):
     - **Tier 1 — Hardcoded patterns** (lines 282-287): checks `data` keys for `"rectangle"+"triangle"` or `"lamp_height"` -> calls `_render_geometry_courtyard()` or `_render_geometry_shadow()`
-    - **Tier 2 — LLM-assisted** (lines 290-293): `_render_geometry_via_llm()` (lines 405-464) sends geometry description to Sonnet, gets matplotlib code back, `exec()`s it — **this is the second LLM call (geometry only)**
+    - **Tier 2 — LLM-assisted** (lines 290-293): `_render_geometry_via_llm()` (lines 405-464) sends geometry description to `gemini-3.1-pro-preview`, gets matplotlib code back, `exec()`s it — **this is the second LLM call (geometry only)**
     - **Tier 3 — Text fallback** (lines 296-303): renders description as centered text on blank canvas
 
 29. All renderers save PNG via `fig.savefig(output_path, dpi=150)` and `plt.close(fig)`
@@ -200,9 +200,9 @@ Chart rendering now happens **before** verification (both inside `generate_one()
 
 | # | Purpose | Model | File | Line |
 |---|---|---|---|---|
-| 1 | Generate question JSON | Sonnet (`model_execute`) | llm_client.py | 26-35 |
-| 2 | Generate geometry matplotlib code (only if `chart_type="geometry"` and no hardcoded match) | Sonnet (`model_execute`) | renderer.py | 426-429 |
-| 3 | Verify question + chart image (multimodal when chart present) | Sonnet (`model_execute`) | verifier.py, `generate_with_image()` | — |
+| 1 | Generate question JSON | `gemini-3.1-pro-preview` (`model_execute`) | llm_client.py | 26-35 |
+| 2 | Generate geometry matplotlib code (only if `chart_type="geometry"` and no hardcoded match) | `gemini-3.1-pro-preview` (`model_execute`) | renderer.py | 426-429 |
+| 3 | Verify question + chart image (multimodal when chart present) | `claude-opus-4-6` (`model_verify`) | verifier.py, `generate_with_image()` | — |
 
 ## Summary: Randomness Points
 

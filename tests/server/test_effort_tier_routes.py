@@ -29,9 +29,9 @@ from server.config import ServerConfig
 from src.config import Config
 
 
-def test_src_config_effort_verify_default_empty() -> None:
-    """effort_verify must default to '' (empty), signalling 'inherit effort_execute'."""
-    assert Config().effort_verify == ""
+def test_src_config_effort_verify_default_is_high() -> None:
+    """Unset verification effort defaults to high (issue #759)."""
+    assert Config().effort_verify == "high"
 
 
 def test_src_config_effort_correct_default_empty() -> None:
@@ -53,10 +53,10 @@ def test_src_config_effort_correct_from_env(monkeypatch) -> None:
     assert cfg.effort_correct == "max"
 
 
-def test_server_config_effort_verify_default_empty() -> None:
-    """ServerConfig must also expose effort_verify with empty default."""
+def test_server_config_effort_verify_default_is_high() -> None:
+    """ServerConfig shares the high verification effort default."""
     cfg = ServerConfig(api_key="x", jwt_secret="s")
-    assert cfg.effort_verify == ""
+    assert cfg.effort_verify == "high"
 
 
 def test_server_config_effort_correct_default_empty() -> None:
@@ -245,7 +245,8 @@ def test_verify_effort_uses_overridden_execute_when_unset() -> None:
         llm_stream=False,
         model_execute="claude-opus-5",
         effort_execute="medium",
-        effort_verify="",  # unset — should chain to effective execute effort
+        model_verify="",  # This test uses the execute model's effort roster.
+        effort_verify="",  # explicitly empty — chain to effective execute effort
     )
     # Simulate the per-request override in service.py
     overridden_cfg = dataclasses.replace(base_cfg, effort_execute="xhigh")

@@ -505,8 +505,8 @@ def test_models_endpoint_returns_allowlist_and_defaults() -> None:
     assert body["defaults"]["plan"] == "claude-opus-4-6"
     assert body["defaults"]["execute"] == "claude-sonnet-4-6"
     # Effort defaults and roster are present (issue #254).
-    assert body["defaults"]["effort_plan"] == "medium"
-    assert body["defaults"]["effort_execute"] == "medium"
+    assert body["defaults"]["effort_plan"] == "high"
+    assert body["defaults"]["effort_execute"] == "high"
     assert "effort" in body
 
 
@@ -530,15 +530,15 @@ def test_models_endpoint_falls_back_to_defaults_only() -> None:
     assert body["defaults"]["execute"] == "claude-sonnet-4-6"
     assert body["allowed"] == ["claude-opus-4-6", "claude-sonnet-4-6"]
     # Effort defaults present (issue #254).
-    assert body["defaults"]["effort_plan"] == "medium"
-    assert body["defaults"]["effort_execute"] == "medium"
+    assert body["defaults"]["effort_plan"] == "high"
+    assert body["defaults"]["effort_execute"] == "high"
 
 
-def test_models_endpoint_fresh_env_returns_six_models_and_sonnet_default(
+def test_models_endpoint_fresh_env_returns_six_models_and_split_defaults(
     tmp_path: Path,
 ) -> None:
     """GET /api/models on a fresh (env-less) config must return the built-in
-    6-model roster and plan default of claude-sonnet-4-6 (issue #344, updated by #379)."""
+    6-model roster and split defaults (issue #344, updated by #759)."""
     env = {"LLM_API_KEY": "x", "JWT_SECRET": "test-secret"}
     with mock.patch.dict(os.environ, env, clear=True):
         cfg = ServerConfig.from_env(env_file=tmp_path / ".env.missing")
@@ -548,12 +548,12 @@ def test_models_endpoint_fresh_env_returns_six_models_and_sonnet_default(
         r = client.get("/api/models")
     assert r.status_code == 200
     body = r.json()
-    assert body["defaults"]["plan"] == "claude-sonnet-4-6"
-    assert body["defaults"]["execute"] == "claude-sonnet-4-6"
+    assert body["defaults"]["plan"] == "claude-opus-4-6"
+    assert body["defaults"]["execute"] == "gemini-3.1-pro-preview"
     assert body["allowed"] == list(_DEFAULT_MODELS_ALLOWED)
-    # Effort defaults are medium by default (issue #254).
-    assert body["defaults"]["effort_plan"] == "medium"
-    assert body["defaults"]["effort_execute"] == "medium"
+    # Effort defaults are high (issue #759).
+    assert body["defaults"]["effort_plan"] == "high"
+    assert body["defaults"]["effort_execute"] == "high"
 
 
 def test_schemas_rejects_unknown_subject_422(tmp_path: Path) -> None:

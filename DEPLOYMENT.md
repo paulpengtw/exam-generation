@@ -132,14 +132,14 @@ Each service needs configuration values called **environment variables**. Think 
 
 ### 8.1 Settings for the backend service
 
-Open the **backend** service, click the **Variables** tab, and add the following one by one. Click **+ New Variable** for each row.
+Open the **backend** service, click the **Variables** tab, and add the following one by one. Click **+ New Variable** for each row. Both `GEMINI_API_KEY` and `LLM_API_KEY` are needed for the default configuration.
 
 | Variable name | Value to type | What it is |
 |---|---|---|
-| `GEMINI_API_KEY` | The `AIzaSy...` key from Step 1 | Lets the backend call Gemini (required for the default model) |
-| `LLM_MODEL_PLAN` | `claude-sonnet-4-6` | Which model handles planning |
-| `LLM_MODEL_EXECUTE` | `claude-sonnet-4-6` | Which model generates questions |
-| `LLM_API_KEY` | An Anthropic `sk-ant-...` key *(optional)* | Required only if using a `claude-*` model or the web-search fact-check feature |
+| `GEMINI_API_KEY` | The `AIzaSy...` key from Step 1 | Required for the default 執行模型 (`gemini-3.1-pro-preview`) |
+| `LLM_MODEL_PLAN` | `claude-opus-4-6` | Which model handles planning |
+| `LLM_MODEL_EXECUTE` | `gemini-3.1-pro-preview` | Which model generates questions |
+| `LLM_API_KEY` | An Anthropic `sk-ant-...` key | Required for the default plan and 驗證 model (`claude-opus-4-6`) and for the web-search fact-check feature |
 | `LLM_BASE_URL` | `https://api.anthropic.com/v1` | Anthropic API endpoint (leave as default if setting `LLM_API_KEY`) |
 | `OPENAI_API_KEY` | An OpenAI `sk-...` key *(optional)* | Required only if using a `gpt-*` or o-series model |
 | `LLM_RATE_LIMIT_DELAY` | `2` | Wait 2 seconds between Claude calls (avoids rate-limit errors) |
@@ -441,7 +441,7 @@ If you suspect a key has leaked, rotate it at the provider (Google AI Studio for
 | What you see | Likely cause | What to do |
 |---|---|---|
 | Frontend loads but login fails | `FRONTEND_URL` on the backend doesn't match the actual frontend URL | Fix the value (Step 8.1) and let the backend redeploy |
-| "Invalid API key" / 422 when generating | The provider key for the selected model is wrong or unset | Check `GEMINI_API_KEY` (Gemini models), `LLM_API_KEY` (Claude models), or `OPENAI_API_KEY` (GPT/o-series models) in the backend Variables tab |
+| "Invalid API key" / 422 when generating | The provider key for the selected model is wrong or unset | Check the key named in the error in the backend Variables tab. Defaults require both `GEMINI_API_KEY` (execute) and `LLM_API_KEY` (plan/驗證); GPT/o-series overrides require `OPENAI_API_KEY` |
 | Backend deployment crashes on startup | Wrong `DATABASE_URL` format | Make sure the value starts with `postgresql+asyncpg://` (not `postgres://`) |
 | Generation fails with "Rate limit exceeded" / 429 | You're calling Claude too fast | Raise `LLM_RATE_LIMIT_DELAY` from `2` to `5` |
 | Magic link request returns `403 email not allowed` | `EMAIL_WHITELIST` is set and the address doesn't match any entry | Add the address (or `*@theirdomain`) to `EMAIL_WHITELIST` on the backend, then save and redeploy |
