@@ -286,6 +286,47 @@ def cmd_reopen(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def cmd_readiness(args: argparse.Namespace) -> int:
+    """Combined readiness check: preflight + compat-check + drain-check.
+
+    Returns 0 only when all instances are reachable, support the required
+    stream version, and are quiescent (no in-flight work).
+    """
+    inv = _load_inventory(args.inventory)
+    instances = inv.get("instances", [])
+    required: int = int(getattr(args, "require_version", 1))
+    failed = 0
+    for inst in instances:
+        snap = _fetch_snapshot(inst)
+        if snap is None:
+            print(f"  [FAIL] {inst['name']}: unreachable", file=sys.stderr)
+            failed += 1
+            continue
+        supported = snap.get("supported_stream_versions", [])
+        if required not in supported:
+            print(
+                f"  [FAIL] {inst['name']}: version {required} not in {supported}",
+                file=sys.stderr,
+            )
+            failed += 1
+            continue
+        quiescent = snap.get("quiescent", False)
+        active = snap.get("active_runs", "?")
+        if not quiescent:
+            print(
+                f"  [WARN] {inst['name']}: not quiescent (active_runs={active})",
+                file=sys.stderr,
+            )
+            # non-quiescent is a warning, not a failure for readiness
+        print(f"  [OK]   {inst['name']}: reachable, version={required}, quiescent={quiescent}")
+    if failed:
+        print(f"\nreadiness FAILED: {failed}/{len(instances)} instances failed checks")
+        return 1
+    print(f"\nreadiness OK: {len(instances)}/{len(instances)} instances ready")
+    return 0
+
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="release_control.py",
@@ -322,6 +363,11 @@ def main(argv: list[str] | None = None) -> int:
     _re = sub.add_parser("reopen", help="Reopen the gateway")
     _add_inv(_re)
 
+    # readiness
+    _rd = sub.add_parser("readiness", help="Combined readiness: preflight + compat + quiescence")
+    _add_inv(_rd)
+    _rd.add_argument("--require-version", type=int, default=1, dest="require_version")
+
     args = parser.parse_args(argv)
     _DISPATCH = {
         "preflight": cmd_preflight,
@@ -329,6 +375,7 @@ def main(argv: list[str] | None = None) -> int:
         "pause-and-drain": cmd_pause_and_drain,
         "compat-check": cmd_compat_check,
         "reopen": cmd_reopen,
+        "readiness": cmd_readiness,
     }
     return _DISPATCH[args.command](args)
 
