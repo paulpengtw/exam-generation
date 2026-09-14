@@ -1254,6 +1254,8 @@ export default function ParamForm({
   const t = useT();
   const lang = useLangStore((state) => state.lang);
   const [schemas, setSchemas] = useState<CurriculumPool | null>(null);
+  const curriculumRequestSeq = useRef(0);
+  const latestGradePoolSeq = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
@@ -1726,10 +1728,23 @@ export default function ParamForm({
       coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
     }));
     const initialGrade = typeof ip.grade === "number" ? ip.grade : undefined;
+    const seq = ++curriculumRequestSeq.current;
     fetchCurriculumPool(subject, initialGrade)
       .then((s) => {
         if (cancelled) return;
-        setSchemas(s);
+        if (s.poolGrade === null && latestGradePoolSeq.current > seq) {
+          // Keep the newer grade pool while applying grade-independent schema fields.
+          setSchemas((prev) => prev ? {
+            ...s,
+            學習表現: prev.學習表現,
+            學習內容: prev.學習內容,
+            科目: prev.科目,
+            poolGrade: prev.poolGrade,
+          } : s);
+        } else {
+          setSchemas(s);
+          if (s.poolGrade !== null) latestGradePoolSeq.current = seq;
+        }
         if (s.grades.length > 0 && ip.grade === undefined) setField("grade", s.grades[0]);
         if (
           subject === "natural_sciences" &&
@@ -2075,10 +2090,12 @@ export default function ParamForm({
   useEffect(() => {
     if (grade === "") return;
     let cancelled = false;
+    const seq = ++curriculumRequestSeq.current;
     fetchCurriculumPool(subject, grade)
       .then((s) => {
         if (cancelled) return;
-        setSchemas((prev) => prev ? { ...prev, 學習表現: s.學習表現, 學習內容: s.學習內容, 科目: s.科目, poolGrade: s.poolGrade } : prev);
+        setSchemas((prev) => prev ? { ...prev, 學習表現: s.學習表現, 學習內容: s.學習內容, 科目: s.科目, poolGrade: s.poolGrade } : s);
+        latestGradePoolSeq.current = seq;
       })
       .catch(() => {/* non-critical — keep existing list */});
     return () => { cancelled = true; };

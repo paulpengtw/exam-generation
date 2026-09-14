@@ -624,10 +624,10 @@ describe("GeneratePage history prefill across learning stages", () => {
     });
   });
 
-  async function expectReloadedCodes(gradeLessPool: typeof STAGE_IV_POOL) {
-    getSchemasMock.mockImplementation(async (_subject, grade) =>
-      grade == null ? gradeLessPool : later(STAGE_V_POOL, 30),
-    );
+  async function expectReloadedCodes(
+    getSchema: (subject: string, grade?: number) => Promise<typeof STAGE_IV_POOL>,
+  ) {
+    getSchemasMock.mockImplementation(getSchema);
     const { container } = renderPageWithHistoryState(STAGE_V_HISTORY_PARAMS);
 
     await waitFor(() => expect(screen.getByLabelText("年級")).toHaveValue("10"));
@@ -658,15 +658,27 @@ describe("GeneratePage history prefill across learning stages", () => {
     fireEvent.change(screen.getAllByPlaceholderText("搜尋學習表現...")[0], {
       target: { value: "-" },
     });
+    expect(screen.queryByRole("button", { name: /^tr-IV-1：/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^tr-Vc-2：/ })).toBeInTheDocument();
   }
 
   it("keeps 全域池 and 各小題配置 codes when the grade-less 第四 pool answers first", async () => {
-    await expectReloadedCodes(STAGE_IV_POOL);
+    await expectReloadedCodes(async (_subject, grade) =>
+      grade == null ? STAGE_IV_POOL : later(STAGE_V_POOL, 30),
+    );
+    expect(getSchemasMock).not.toHaveBeenCalledWith("natural_sciences");
+  });
+
+  it("keeps codes and offers no 第四 code when the grade-less pool answers last", async () => {
+    await expectReloadedCodes(async (_subject, grade) =>
+      grade == null ? later(STAGE_IV_POOL, 30) : STAGE_V_POOL,
+    );
     expect(getSchemasMock).not.toHaveBeenCalledWith("natural_sciences");
   });
 
   it("CONTROL: keeps codes when both schema requests return the 第五 pool", async () => {
-    await expectReloadedCodes(STAGE_V_POOL);
+    await expectReloadedCodes(async (_subject, grade) =>
+      grade == null ? STAGE_V_POOL : later(STAGE_V_POOL, 30),
+    );
   });
 });
