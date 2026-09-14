@@ -25,6 +25,7 @@ from server.db import AsyncSessionLocal, get_async_session
 from server.generate.event_protocol import SUPPORTED_STREAM_VERSIONS, client_update_required_body
 from server.generate.models import (
     ALLOWED_SUBJECTS,
+    SERVER_ONLY_GENERATE_FIELDS,
     CoverageMode,
     GenerateParams,
     ImageGenerationMode,
@@ -53,7 +54,14 @@ GenerateQuery = Annotated[GenerateParams, Query()]
 def _require_complete_generate_params(params: GenerateParams) -> GenerateParams:
     """Reject unresolved or incompatible payloads before any generation side effect."""
     try:
-        result = resolve(params.model_dump(mode="json", exclude_none=True))
+        # Exclude server-only fields (e.g. stream_version) from the resolver payload
+        # so they are never forwarded into per_question_params rows.
+        resolver_input = {
+            k: v
+            for k, v in params.model_dump(mode="json", exclude_none=True).items()
+            if k not in SERVER_ONLY_GENERATE_FIELDS
+        }
+        result = resolve(resolver_input)
     except ResolveConflictError as exc:
         raise HTTPException(status_code=422, detail=exc.errors) from exc
     except (TypeError, ValueError) as exc:

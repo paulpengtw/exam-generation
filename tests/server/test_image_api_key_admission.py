@@ -73,7 +73,7 @@ def test_subquestion_configs_gpt_image_empty_key_rejected() -> None:
     client = _make_client(image_api_key="")
     try:
         response = client.get(
-            f"/api/generate?subquestion_configs={configs}"
+            f"/api/generate?subquestion_configs={configs}&stream_version=2"
         )
     finally:
         limiter.reset()
