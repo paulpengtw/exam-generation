@@ -214,6 +214,9 @@ async def get_history_detail(
     row = await _load_latest_owned(row, user, session)
     return {
         "id": str(row.id),
+        "generation_log_id": (
+            str(row.generation_log_id) if row.generation_log_id is not None else None
+        ),
         "subject": row.subject,
         "question_id": row.question_id,
         "created_at": row.created_at.isoformat(),

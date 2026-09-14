@@ -673,6 +673,9 @@ def _ss_plan_all_batch_briefs(
         for i in range(count)
     ]
     planning_client = client_factory(config)
+    observer = kwargs.get("observer")
+    if observer is not None:
+        planning_client.set_observer(observer)
     return _ss_plan_batch_briefs(planning_client, config, pre_params_list)
 
 

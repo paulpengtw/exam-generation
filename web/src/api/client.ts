@@ -272,6 +272,7 @@ export interface HistoryDetail {
   created_at: string;
   status: HistoryRecordStatus;
   error: string | null;
+  generation_log_id: string | null;
   params_json: Record<string, unknown>;
   question_json: Record<string, unknown> | null;
   verification_trail: VerificationTrailEntry[] | null;

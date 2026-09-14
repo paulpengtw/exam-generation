@@ -532,6 +532,17 @@ class LLMClient:
             )
         return {}
 
+    def _provider_options(self, model: str, purpose: str, provider: str) -> dict:
+        """Resolve the provider options shared by dispatch and observation."""
+        options = (
+            _anthropic_output_kwargs(model)
+            if provider == "anthropic"
+            else _max_tokens_kwargs(provider)
+        )
+        options.update(self._temperature_kwargs(model))
+        options.update(self._effort_kwargs(purpose, provider))
+        return options
+
     def _openai_compat_client(self, provider: str) -> OpenAI:
         if provider in self._compat_clients:
             return self._compat_clients[provider]
@@ -550,6 +561,7 @@ class LLMClient:
         messages: list[dict],
         model: str,
         purpose: str,
+        options: dict,
         agent_override: str | None = None,
     ) -> str:
         """Stream via Anthropic SDK, emitting deltas to observer. Returns assembled content."""
@@ -567,9 +579,7 @@ class LLMClient:
         )
         with self.client.messages.stream(
             model=model,
-            **_anthropic_output_kwargs(model),
-            **self._temperature_kwargs(model),
-            **self._effort_kwargs(purpose),
+            **options,
             system=system_param,
             messages=messages,  # type: ignore[arg-type]
         ) as stream:
@@ -631,6 +641,12 @@ class LLMClient:
         )
 
         provider = resolve_provider(model)
+        options = self._provider_options(model, purpose, provider)
+        if provider != "anthropic" and self._observer and self.config.llm_stream:
+            options.update({
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            })
         if self._observer:
             self._emit({
                 "type": "llm_request",
@@ -638,24 +654,21 @@ class LLMClient:
                 "agent": agent,
                 "model": model,
                 "messages": self._summarize_for_observer(messages),
-                "params": {
-                    **(_anthropic_output_kwargs(model) if provider == "anthropic"
-                       else {"max_tokens": 8192}),
-                    "temperature": (
-                        None if model in _ADAPTIVE_THINKING_MODELS else self.config.temperature
-                    ),
-                },
+                "params": dict(options),
             })
 
         if provider == "anthropic":
-            return self._anthropic_call(messages, model, purpose, agent_override, agent)
-        return self._openai_compat_call(provider, messages, model, purpose, agent)
+            return self._anthropic_call(
+                messages, model, purpose, options, agent_override, agent
+            )
+        return self._openai_compat_call(provider, messages, model, purpose, options, agent)
 
     def _anthropic_call(
         self,
         messages: list[dict],
         model: str,
         purpose: str,
+        options: dict,
         agent_override: str | None,
         agent: str,
     ) -> str:
@@ -675,7 +688,7 @@ class LLMClient:
 
         if self._observer and self.config.llm_stream:
             return self._generate_streaming(
-                system, anthropic_messages, model, purpose, agent_override
+                system, anthropic_messages, model, purpose, options, agent_override
             )
 
         system_param = (
@@ -684,9 +697,7 @@ class LLMClient:
         )
         response = self.client.messages.create(
             model=model,
-            **_anthropic_output_kwargs(model),
-            **self._temperature_kwargs(model),
-            **self._effort_kwargs(purpose),
+            **options,
             system=system_param,
             messages=anthropic_messages,  # type: ignore[arg-type]
         )
@@ -728,11 +739,7 @@ class LLMClient:
         reasoning_parts: list[str] = []
         usage: dict = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
 
-        stream = oc.chat.completions.create(
-            **kwargs,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
+        stream = oc.chat.completions.create(**kwargs)
         for chunk in stream:
             chunk_usage = getattr(chunk, "usage", None)
             if chunk_usage is not None:
@@ -784,6 +791,7 @@ class LLMClient:
         messages: list[dict],
         model: str,
         purpose: str,
+        options: dict,
         agent: str,
     ) -> str:
         """Call through the OpenAI-compatible surface (gemini/openai providers).
@@ -796,9 +804,7 @@ class LLMClient:
         kwargs: dict = {
             "model": model,
             "messages": messages,  # type: ignore[arg-type]
-            **_max_tokens_kwargs(provider),
-            **self._temperature_kwargs(model),
-            **self._effort_kwargs(purpose, provider),
+            **options,
         }
 
         if self._observer and self.config.llm_stream:
@@ -1001,6 +1007,8 @@ class LLMClient:
             time.sleep(self.config.rate_limit_delay)
         call_model = model or self._model_for_purpose(purpose)
         agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
+        options = self._provider_options(call_model, purpose, "anthropic")
+        options["tools"] = tools
 
         system_param = (
             [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
@@ -1029,24 +1037,15 @@ class LLMClient:
                 "agent": agent,
                 "model": call_model,
                 "messages": [{"role": "system", "content": system}, *messages],
-                "params": {
-                    **_anthropic_output_kwargs(call_model),
-                    "temperature": (
-                        None if call_model in _ADAPTIVE_THINKING_MODELS else self.config.temperature
-                    ),
-                    "tools": tools,
-                },
+                "params": dict(options),
             })
 
         for iteration in range(max_iterations):
             response = self.client.messages.create(
                 model=call_model,
-                **_anthropic_output_kwargs(call_model),
-                **self._temperature_kwargs(call_model),
-                **self._effort_kwargs(purpose),
+                **options,
                 system=system_param,
                 messages=messages,  # type: ignore[arg-type]
-                tools=tools,  # type: ignore[arg-type]
             )
             assistant_blocks: list = list(response.content)
             for block in assistant_blocks:
@@ -1105,6 +1104,8 @@ class LLMClient:
             {"role": "user", "content": user},
         ]
         extra_body = {"tools": [{"google_search": {}}]}
+        options = self._provider_options(call_model, purpose, "gemini")
+        options["extra_body"] = extra_body
 
         if self._observer:
             self._emit({
@@ -1113,21 +1114,14 @@ class LLMClient:
                 "agent": agent,
                 "model": call_model,
                 "messages": messages,
-                "params": {
-                    "max_tokens": 8192,
-                    "temperature": self.config.temperature,
-                    "extra_body": extra_body,
-                },
+                "params": dict(options),
             })
 
         oc = self._openai_compat_client("gemini")
         response = oc.chat.completions.create(
             model=call_model,
             messages=messages,
-            **_max_tokens_kwargs("gemini"),
-            **self._temperature_kwargs(call_model),
-            **self._effort_kwargs(purpose, "gemini"),
-            extra_body=extra_body,
+            **options,
         )
         content = response.choices[0].message.content or ""
         citations = _extract_google_search_citations(response)

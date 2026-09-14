@@ -469,7 +469,12 @@ async def generate_question_stream(
     _session_factory = session_factory if session_factory is not None else AsyncSessionLocal
     _client_factory = client_factory if client_factory is not None else LLMClient
 
-    yield {"event": SSEEventName.STARTED, "data": ""}
+    yield {
+        "event": SSEEventName.STARTED,
+        "data": {
+            "generation_log_id": str(generation_log_id) if generation_log_id is not None else None,
+        },
+    }
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
@@ -533,14 +538,105 @@ async def generate_question_stream(
             "ts": time.time(),
         },
     }
-    batch_briefs = await asyncio.to_thread(
+
+    # The planner uses the same exchange order allocator as workers.  Its
+    # observer must be installed before the provider call so request,
+    # reasoning, content and response events are both streamed and paired for
+    # persistence.  A disabled retention policy returns None while leaving the
+    # SSE half of the combined observer active.
+    planner_recorder = make_exchange_recorder(
+        generation_log_id=ctx.generation_log_id,
+        retention_days=ctx.retention_days,
+        loop=ctx.loop,
+        session_factory=ctx.session_factory,
+        next_order=ctx.next_order,
+    )
+    planner_events_enabled = True
+    queue_observer = make_queue_observer(ctx.loop, ctx.queue)
+
+    def _planner_queue_observer(event: dict[str, Any]) -> None:
+        # Once the stream is cancelled/closed, preserve recorder callbacks for
+        # a late response but stop enqueueing events that no consumer can read.
+        if planner_events_enabled:
+            queue_observer(event)
+
+    planner_observer = make_combined_observer(
+        _planner_queue_observer, planner_recorder,
+    )
+    planning_task = asyncio.create_task(asyncio.to_thread(
         functools.partial(
             spec.plan_all_batch_briefs,
-            params, ctx.count, ctx.base_seed, ctx.overrides, config,
-            config.creative_planning, ctx.decoded_subquestion_configs,
+            params, ctx.count, ctx.base_seed, ctx.overrides, ctx.client_config,
+            ctx.client_config.creative_planning, ctx.decoded_subquestion_configs,
             client_factory=_client_factory,
+            observer=planner_observer,
         )
-    )
+    ))
+
+    async def _cleanup_planning() -> None:
+        nonlocal planner_events_enabled
+        planner_events_enabled = False
+        ctx.cancel_event.set()
+        # Cancelling asyncio.to_thread's wrapper does not stop a provider call
+        # already running in its executor thread.  It does release the stream
+        # immediately, while the still-live observer/recorder closure can pair
+        # and persist that provider's eventual response.
+        with anyio.CancelScope(shield=True):
+            planning_task.cancel()
+            await asyncio.gather(planning_task, return_exceptions=True)
+
+    try:
+        # Consume observer events while the synchronous planner remains in its
+        # worker thread.  The queue-get task is always cancelled and awaited
+        # when the planner wins the race, so a completed or cancelled stream
+        # never leaves an orphaned consumer behind.
+        while True:
+            queue_get_task = asyncio.create_task(queue.get())
+            try:
+                done, _pending = await asyncio.wait(
+                    {planning_task, queue_get_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            except BaseException:
+                queue_get_task.cancel()
+                await asyncio.gather(queue_get_task, return_exceptions=True)
+                raise
+
+            if queue_get_task in done:
+                yield queue_get_task.result()
+                continue
+
+            queue_get_task.cancel()
+            await asyncio.gather(queue_get_task, return_exceptions=True)
+            # Observer callbacks use call_soon_threadsafe.  Give those
+            # callbacks one event-loop turn after the thread reports done,
+            # then drain every planner event before the stage-end marker.
+            await asyncio.sleep(0)
+            while not queue.empty():
+                yield queue.get_nowait()
+            batch_briefs = await planning_task
+            break
+    except asyncio.CancelledError:
+        # Cancelling the asyncio wrapper around to_thread does not stop the
+        # provider thread.  Release the stream immediately; its still-live
+        # observer/recorder closure can pair and persist a late response, while
+        # the cancel flag prevents any worker submission after planning exits.
+        await _cleanup_planning()
+        raise
+    except GeneratorExit:
+        # ``aclose()`` injects GeneratorExit at the current yield.  Treat it as
+        # a clean stream close while the provider can finish recording.
+        await _cleanup_planning()
+        return
+    except BaseException:
+        await _cleanup_planning()
+        raise
+    finally:
+        # Success reaches this finally after the planner task and every queued
+        # planner event have been consumed; cancellation paths have already
+        # disabled the gate in _cleanup_planning().
+        planner_events_enabled = False
+
     yield {
         "event": SSEEventName.STAGE,
         "data": {

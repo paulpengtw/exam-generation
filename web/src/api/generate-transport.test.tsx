@@ -9,6 +9,7 @@ import socialBatch from "../../../tests/fixtures/transport-social-batch.json";
 import naturalBatch from "../../../tests/fixtures/transport-natural-batch.json";
 import { useAuthStore } from "../store/authStore";
 import { useGenerate } from "../hooks/useGenerate";
+import AgentStatusPanel from "../components/AgentStatusPanel";
 import { previewGenerate } from "./client";
 
 const originalFetch = globalThis.fetch;
@@ -18,6 +19,8 @@ let holdStream: boolean;
 let streamClosed: boolean;
 let rejectSubmission: boolean;
 let rejectionDetail: unknown;
+let startedLogId: string | null | undefined;
+let includePlannerEvents: boolean;
 const batches = [socialBatch, naturalBatch, {
   subject: "math", seed: 41, grade: 8, context: ["個人"], set_type: "單一題",
   q_type: ["選擇題"], style: ["text_only"], math_thinking: ["形成"],
@@ -32,6 +35,8 @@ beforeEach(async () => {
   holdStream = false;
   streamClosed = false;
   rejectSubmission = false;
+  startedLogId = undefined;
+  includePlannerEvents = false;
   rejectionDetail = [{
     field: "per_question_params[0].subquestion_configs[0].question_type", code: "unresolved",
   }];
@@ -54,12 +59,31 @@ beforeEach(async () => {
     }
     if (request.url === "/api/generate") {
       response.writeHead(200, { "Content-Type": "text/event-stream" });
+      const startedData = startedLogId === undefined
+        ? "{}"
+        : JSON.stringify({ generation_log_id: startedLogId });
+      response.write(`event: started\ndata: ${startedData}\n\n`);
+      if (includePlannerEvents) {
+        response.write([
+          `event: stage\ndata: ${JSON.stringify({
+            agent: "planner", stage: "batch_briefs", status: "start", ts: 1,
+          })}\n\n`,
+          `event: llm_request\ndata: ${JSON.stringify({
+            purpose: "plan_context_angles", model: "planner-model", messages: [],
+          })}\n\n`,
+          `event: llm_thinking\ndata: ${JSON.stringify({
+            purpose: "plan_context_angles", text: "planner thinking",
+          })}\n\n`,
+          `event: llm_content\ndata: ${JSON.stringify({
+            purpose: "plan_context_angles", text: "planner content",
+          })}\n\n`,
+        ].join(""));
+      }
       if (holdStream) {
-        response.write('event: started\ndata: {}\n\n');
         response.on("close", () => { streamClosed = true; });
         return;
       }
-      response.end('event: started\ndata: {}\n\nevent: result\ndata: {"id":"transport-result","題目":["完整題目"]}\n\nevent: done\ndata: {}\n\n');
+      response.end('event: result\ndata: {"id":"transport-result","題目":["完整題目"]}\n\nevent: done\ndata: {}\n\n');
       return;
     }
     response.writeHead(200, { "Content-Type": "application/json" });
@@ -111,6 +135,49 @@ it.each(batches)("submits a large complete $subject batch once and receives its 
     url: "/api/generate", method: "POST", body: payload,
     authorization: "Bearer test-token",
   }]);
+});
+
+it("routes live batch-planner thinking and content to the planner panel lane", async () => {
+  holdStream = true;
+  includePlannerEvents = true;
+  const { result } = renderHook(() => useGenerate());
+
+  act(() => result.current.generate(socialBatch));
+
+  await waitFor(() => {
+    const planner = result.current.agentLanes.find((lane) => lane.agent === "planner");
+    expect(planner?.status).toBe("running");
+    expect(planner?.streamingThinking).toBe("planner thinking");
+    expect(planner?.streamingContent).toBe("planner content");
+  });
+
+  render(
+    <AgentStatusPanel lanes={result.current.agentLanes} requestedTotal={2} />,
+  );
+
+  expect(screen.getByText("Planner")).toBeInTheDocument();
+  expect(screen.getByText("planner thinking")).toBeInTheDocument();
+  expect(screen.getByText("planner content")).toBeInTheDocument();
+  expect(screen.queryByText("Text Generator")).not.toBeInTheDocument();
+  expect(screen.getByTestId("agent-panel-aggregate-label")).toHaveTextContent("2");
+
+  act(() => result.current.reset());
+  await waitFor(() => expect(streamClosed).toBe(true));
+});
+
+it("retains the generation log ID from the started event at the real SSE boundary", async () => {
+  holdStream = true;
+  startedLogId = "transport-log-123";
+  const { result } = renderHook(() => useGenerate());
+
+  act(() => result.current.generate(socialBatch));
+
+  await waitFor(() => expect(result.current.generationLogId).toBe("transport-log-123"));
+  expect(result.current.status).toBe("generating");
+
+  act(() => result.current.reset());
+  await waitFor(() => expect(streamClosed).toBe(true));
+  expect(result.current.generationLogId).toBeNull();
 });
 
 it("cancels an active POST stream without starting another generation", async () => {

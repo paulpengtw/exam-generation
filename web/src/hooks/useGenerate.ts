@@ -255,6 +255,11 @@ export interface AgentLane {
   errorMessage?: string;
 }
 
+/** Payload announced before a generation stream starts doing model work. */
+export interface StartedEventPayload {
+  generation_log_id: string | null;
+}
+
 function purposeToAgent(purpose: string): string {
   const map: Record<string, string> = {
     generate: "generator",
@@ -263,6 +268,8 @@ function purposeToAgent(purpose: string): string {
     html_image: "image_agent",
     gpt_image: "image_agent",
     plan: "planner",
+    plan_core_questions: "planner",
+    plan_context_angles: "planner",
   };
   return map[purpose] ?? purpose;
 }
@@ -277,6 +284,7 @@ export interface UseGenerateReturn {
   errorMessage: string | null;
   startedAt: number | null;
   finishedAt: number | null;
+  generationLogId: string | null;
   subQuestionTotal: number | null;
   generate: (params: GenerateParams) => void;
   reset: () => void;
@@ -333,6 +341,22 @@ export function parseErrorEventData(raw: string): string {
     // not JSON — fall through
   }
   return raw;
+}
+
+/** Parse the typed started-event payload while accepting legacy empty payloads. */
+export function parseStartedEventData(raw: string): StartedEventPayload | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed === null || typeof parsed !== "object") return null;
+    const generationLogId = (parsed as Record<string, unknown>).generation_log_id;
+    if (typeof generationLogId === "string" || generationLogId === null) {
+      return { generation_log_id: generationLogId };
+    }
+  } catch {
+    // Legacy and third-party streams may send an empty or non-JSON payload.
+  }
+  return null;
 }
 
 function formatHttpErrorDetail(detail: unknown): string | null {
@@ -524,6 +548,7 @@ export function useGenerate(): UseGenerateReturn {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [finishedAt, setFinishedAt] = useState<number | null>(null);
+  const [generationLogId, setGenerationLogId] = useState<string | null>(null);
   const [subQuestionTotal, setSubQuestionTotal] = useState<number | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const nextFinalIndexRef = useRef(0);
@@ -555,6 +580,7 @@ export function useGenerate(): UseGenerateReturn {
     setErrorMessage(null);
     setStartedAt(null);
     setFinishedAt(null);
+    setGenerationLogId(null);
     setSubQuestionTotal(null);
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
@@ -585,6 +611,7 @@ export function useGenerate(): UseGenerateReturn {
     setErrorMessage(null);
     setStartedAt(streamContext.startedAt);
     setFinishedAt(null);
+    setGenerationLogId(null);
     setSubQuestionTotal(null);
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
@@ -601,6 +628,7 @@ export function useGenerate(): UseGenerateReturn {
       },
       openWhenHidden: true,
       async onopen(res) {
+        if (controllerRef.current !== controller) return;
         if (!res.ok) {
           if (res.status === 401) {
             useAuthStore.getState().logout();
@@ -622,18 +650,24 @@ export function useGenerate(): UseGenerateReturn {
           } catch {
             // non-JSON or unreadable body — keep the generic message
           }
+          if (controllerRef.current !== controller) return;
           setErrorMessage(msg);
           setFinishedAt(Date.now());
           throw new FatalStreamError(msg);
         }
       },
       onmessage(ev) {
+        if (controllerRef.current !== controller) return;
         streamContext.messageCount += 1;
         streamContext.lastEventType = ev.event || "none";
 
         switch (ev.event) {
           case "started":
             setStatus("generating");
+            {
+              const payload = parseStartedEventData(ev.data);
+              if (payload) setGenerationLogId(payload.generation_log_id);
+            }
             break;
           case "progress":
             setProgressLines((prev) => [...prev, ev.data]);
@@ -794,12 +828,14 @@ export function useGenerate(): UseGenerateReturn {
         }
       },
       onerror(err) {
+        if (controllerRef.current !== controller) return;
         setErrorMessage(err instanceof Error ? err.message : String(err));
         setStatus("error");
         setFinishedAt(Date.now());
         throw err instanceof Error ? err : new FatalStreamError(String(err));
       },
     }).catch((err: unknown) => {
+      if (controllerRef.current !== controller) return;
       if (err instanceof Error && err.name !== "AbortError" && isSentryEnabled()) {
         Sentry.captureException(err, {
           tags: {
@@ -829,6 +865,7 @@ export function useGenerate(): UseGenerateReturn {
     errorMessage,
     startedAt,
     finishedAt,
+    generationLogId,
     subQuestionTotal,
     generate,
     reset,

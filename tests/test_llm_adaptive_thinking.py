@@ -117,7 +117,7 @@ def test_adaptive_thinking_omits_incompatible_temperature(call_site: str, caplog
     assert "temperature" not in fake.calls[0]
     assert "LLM_TEMPERATURE ignored for claude-opus-4-6" in caplog.text
     request = next(event for event in events if event["type"] == "llm_request")
-    assert request["params"]["temperature"] is None
+    assert "temperature" not in request["params"]
 
 
 def test_proxy_outside_exact_thinking_roster_keeps_temperature() -> None:
