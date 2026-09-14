@@ -249,6 +249,8 @@ export type LlmCallEvent =
   | { type: "response"; purpose: string; agent: string; model: string; usage?: unknown }
   | { type: "stage"; agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
 
+export type StageEvent = Extract<LlmCallEvent, { type: "stage" }>;
+
 export type AgentStatus = "idle" | "running" | "done" | "error";
 
 export interface AgentLane {
