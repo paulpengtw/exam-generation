@@ -168,7 +168,7 @@ export function buildIdentityPlugin(): Plugin {
             release_revision: releaseRevision,
             released_build_id: resolvedBuildId,
             admission: "open",
-            supported_recovery_formats: [],
+            supported_recovery_formats: ["exam-generation.recovery/1"],
           },
           null,
           2,
