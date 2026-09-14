@@ -127,7 +127,7 @@ it.each(batches)("previews a complete large $subject batch over HTTP without sho
 it.each(batches)("submits a large complete $subject batch once and receives its SSE result", async (batch) => {
   const payload = { ...batch, text_instruction: "保留每個題組和小題的完整出題指示。".repeat(100) };
   const { result } = renderHook(() => useGenerate());
-  act(() => result.current.generate(payload));
+  act(() => { result.current.generate(payload); });
   await waitFor(() => expect(result.current.status).toBe("idle"));
   expect(result.current.errorMessage).toBeNull();
   expect(result.current.results).toEqual([{ id: "transport-result", 題目: ["完整題目"] }]);
@@ -142,7 +142,7 @@ it("routes live batch-planner thinking and content to the planner panel lane", a
   includePlannerEvents = true;
   const { result } = renderHook(() => useGenerate());
 
-  act(() => result.current.generate(socialBatch));
+  act(() => { result.current.generate(socialBatch); });
 
   await waitFor(() => {
     const planner = result.current.agentLanes.find((lane) => lane.agent === "planner");
@@ -170,7 +170,7 @@ it("retains the generation log ID from the started event at the real SSE boundar
   startedLogId = "transport-log-123";
   const { result } = renderHook(() => useGenerate());
 
-  act(() => result.current.generate(socialBatch));
+  act(() => { result.current.generate(socialBatch); });
 
   await waitFor(() => expect(result.current.generationLogId).toBe("transport-log-123"));
   expect(result.current.status).toBe("generating");
@@ -183,7 +183,7 @@ it("retains the generation log ID from the started event at the real SSE boundar
 it("cancels an active POST stream without starting another generation", async () => {
   holdStream = true;
   const { result } = renderHook(() => useGenerate());
-  act(() => result.current.generate(socialBatch));
+  act(() => { result.current.generate(socialBatch); });
   await waitFor(() => expect(received).toHaveLength(1));
   expect(result.current.status).toBe("generating");
   act(() => result.current.reset());
@@ -196,7 +196,7 @@ it("cancels an active POST stream without starting another generation", async ()
 it("reports a rejected POST with its field address and does not retry generation", async () => {
   rejectSubmission = true;
   const { result } = renderHook(() => useGenerate());
-  act(() => result.current.generate(naturalBatch));
+  act(() => { result.current.generate(naturalBatch); });
   await waitFor(() => expect(result.current.status).toBe("error"));
   expect(result.current.errorMessage).toContain("per_question_params[0].subquestion_configs[0].question_type");
   expect(result.current.results).toEqual([]);
@@ -218,7 +218,7 @@ it("shows the nested field and validation message when a malformed POST is rejec
     per_question_params: JSON.stringify([{ math_thinking: [] }]),
   };
   const { result } = renderHook(() => useGenerate());
-  act(() => result.current.generate(payload));
+  act(() => { result.current.generate(payload); });
   await waitFor(() => expect(result.current.status).toBe("error"));
   render(<div role="alert">{result.current.errorMessage}</div>);
   expect(screen.getByRole("alert")).toHaveTextContent(

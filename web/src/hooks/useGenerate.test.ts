@@ -905,3 +905,162 @@ describe("useGenerate — Sentry capture on fatal stream failure", () => {
     expect(captureExceptionMock).not.toHaveBeenCalled();
   });
 });
+
+// Workspace additions deliberately leave the existing stream characterization cases intact.
+import { resetWorkspaceStoreForTests, useWorkspaceStore } from "../lib/workspace/workspaceStore";
+import { exportResultsWorkspace, importResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
+import type { ResultsWorkspaceSnapshot } from "../lib/workspace/adapters/types";
+import type { AdmissionOutcome } from "./useGenerate";
+
+function sendWorkspaceEvent(event: string, data = "{}") {
+  act(() => { latestStreamOptions().onmessage?.({ id: "", event, data }); });
+}
+
+describe("admission", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("waits for started, rather than HTTP success, and resolves the admission promise", async () => {
+    const { result } = renderHook(() => useGenerate());
+    expect(result.current.admission).toBe("idle");
+    expect(result.current.admissionError).toBeNull();
+    let promise!: Promise<AdmissionOutcome>;
+    act(() => { promise = result.current.generate({ subject: "math" }); });
+    expect(result.current.admission).toBe("submitting");
+    expect(result.current.status).toBe("generating");
+    await act(async () => { await latestStreamOptions().onopen?.(new Response()); });
+    expect(result.current.admission).toBe("submitting");
+    sendWorkspaceEvent("started");
+    await expect(promise).resolves.toEqual({ outcome: "admitted" });
+    expect(result.current.admission).toBe("admitted");
+    sendWorkspaceEvent("error", "stream failed");
+    expect(result.current.admission).toBe("admitted");
+    expect(result.current.status).toBe("error");
+    sendWorkspaceEvent("done");
+    expect(result.current.admission).toBe("admitted");
+    act(() => { result.current.reset(); });
+    expect(result.current.admission).toBe("idle");
+    expect(result.current.admissionError).toBeNull();
+  });
+
+  it.each([
+    [401, "", "Session expired — please sign in again"],
+    [422, JSON.stringify({ detail: [{ field: "grade", code: "unresolved" }] }), "Incomplete request: grade (unresolved)"],
+    [500, "not JSON", "Stream open failed: HTTP 500"],
+  ])("rejects HTTP %s with the existing error message", async (status, body, reason) => {
+    const { result } = renderHook(() => useGenerate());
+    let promise!: Promise<AdmissionOutcome>;
+    act(() => { promise = result.current.generate({ subject: "math" }); });
+    await act(async () => {
+      await expect(latestStreamOptions().onopen?.(new Response(body, { status }))).rejects.toThrow(reason);
+    });
+    expect(result.current.admission).toBe("rejected");
+    expect(result.current.admissionError).toBe(result.current.errorMessage);
+    await expect(promise).resolves.toEqual({ outcome: "rejected", reason });
+    expect(result.current.finishedAt).not.toBeNull();
+  });
+
+  it.each([false, true])("handles transport failure with started=%s", async (started) => {
+    const { result } = renderHook(() => useGenerate());
+    let promise!: Promise<AdmissionOutcome>;
+    act(() => { promise = result.current.generate({ subject: "math" }); });
+    if (started) sendWorkspaceEvent("started");
+    act(() => { expect(() => latestStreamOptions().onerror?.(new Error("connection lost"))).toThrow("connection lost"); });
+    expect(result.current.admission).toBe(started ? "admitted" : "rejected");
+    expect(result.current.admissionError).toBe(started ? null : "connection lost");
+    await expect(promise).resolves.toEqual(started
+      ? { outcome: "admitted" } : { outcome: "rejected", reason: "connection lost" });
+  });
+
+  it("settles a superseded run and ignores its late callbacks", async () => {
+    const { result } = renderHook(() => useGenerate());
+    let first!: Promise<AdmissionOutcome>;
+    act(() => { first = result.current.generate({ subject: "math" }); });
+    const stale = latestStreamOptions();
+    act(() => { result.current.generate({ subject: "math" }); });
+    await expect(first).resolves.toEqual({ outcome: "rejected", reason: "superseded" });
+    act(() => { stale.onmessage?.({ id: "", event: "started", data: "{}" }); });
+    expect(result.current.admission).toBe("submitting");
+    expect(result.current.admissionError).toBeNull();
+  });
+
+  it("settles a pending admission on reset and unmount", async () => {
+    const { result, unmount } = renderHook(() => useGenerate());
+    let pending!: Promise<AdmissionOutcome>;
+    act(() => { pending = result.current.generate({ subject: "math" }); });
+    act(() => { result.current.reset(); });
+    await expect(pending).resolves.toEqual({ outcome: "rejected", reason: "reset" });
+    act(() => { pending = result.current.generate({ subject: "math" }); });
+    unmount();
+    await expect(pending).resolves.toEqual({ outcome: "rejected", reason: "aborted" });
+  });
+});
+
+describe("restoreResults", () => {
+  const question = { id: "restored", 情境: [], 題型種類: "single", 題型: "multiple_choice", 題目: ["saved"], 正確解題分析: ["answer"] };
+  const snapshot: ResultsWorkspaceSnapshot = {
+    kind: "results", version: 1, results: [question],
+    displayResults: [{ index: 0, question, isFinal: true }],
+    progressLines: ["saved progress"], errorMessage: "saved error", startedAt: 100, finishedAt: 200,
+    subQuestionTotal: 3, requestedTotal: 2, submittedSubQuestionCount: 3, completion: "settled",
+  };
+
+  it.each(["settled", "error", "unknown"] as const)("restores %s completion through the snapshot adapter", (completion) => {
+    const { result } = renderStartedRun();
+    sendWorkspaceEvent("started");
+    sendWorkspaceEvent("llm_request", JSON.stringify({ purpose: "generate", model: "model", messages: [] }));
+    expect(result.current.llmCalls).not.toHaveLength(0);
+    sendWorkspaceEvent("done");
+    const saved = importResultsWorkspace({ ...snapshot, completion })!;
+    act(() => { expect(result.current.restoreResults(saved)).toBe(true); });
+    expect(result.current).toMatchObject({
+      results: snapshot.results, displayResults: snapshot.displayResults, progressLines: ["saved progress"],
+      errorMessage: "saved error", startedAt: 100, finishedAt: 200, subQuestionTotal: 3,
+      status: completion === "error" ? "error" : "idle", admission: "idle", admissionError: null, llmCalls: [],
+    });
+    expect(exportResultsWorkspace({ ...result.current, requestedTotal: 2, submittedSubQuestionCount: 3 })).toMatchObject({
+      ...snapshot, completion: completion === "error" ? "error" : "settled",
+    });
+  });
+
+  it("refuses restoration during a live stream without changing state", () => {
+    const { result } = renderStartedRun();
+    const before = result.current;
+    act(() => { expect(result.current.restoreResults(snapshot)).toBe(false); });
+    expect(result.current).toBe(before);
+    expect(latestStreamOptions().signal?.aborted).toBe(false);
+  });
+});
+
+describe("workspace operation", () => {
+  const originalBeginOperation = useWorkspaceStore.getState().beginOperation;
+  beforeEach(() => { resetWorkspaceStoreForTests(); });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useWorkspaceStore.setState({ beginOperation: originalBeginOperation });
+  });
+
+  it.each([
+    ["done", "completed"], ["error", "failed"], ["onerror", "failed"],
+    ["onopen", "failed"], ["reset", "aborted"], ["unmount", "aborted"], ["superseded", "superseded"],
+  ] as const)("ends generation on %s as %s", async (event, outcome) => {
+    const begin = useWorkspaceStore.getState().beginOperation;
+    const end = vi.fn();
+    vi.spyOn(useWorkspaceStore.getState(), "beginOperation").mockImplementation((...args) => {
+      const handle = begin(...args);
+      return { id: handle.id, end: (value) => { end(value); handle.end(value); } };
+    });
+    const { result, unmount } = renderStartedRun();
+    expect(useWorkspaceStore.getState().operations).toEqual([
+      expect.objectContaining({ kind: "generation", surface: "generate.results" }),
+    ]);
+    if (event === "reset") act(() => { result.current.reset(); });
+    else if (event === "unmount") unmount();
+    else if (event === "superseded") act(() => { result.current.generate({ subject: "math" }); });
+    else if (event === "onerror") act(() => { expect(() => latestStreamOptions().onerror?.(new Error("lost"))).toThrow(); });
+    else if (event === "onopen") await act(async () => { await expect(latestStreamOptions().onopen?.(new Response("", { status: 500 }))).rejects.toThrow(); });
+    else sendWorkspaceEvent(event);
+    expect(end).toHaveBeenCalledWith(outcome);
+    expect(useWorkspaceStore.getState().operations).toHaveLength(event === "superseded" ? 1 : 0);
+    unmount();
+  });
+});
