@@ -155,6 +155,35 @@ def test_post_generation_rejects_an_unresolved_batch_before_saving_history(trans
     assert history.json()["total"] == 0
 
 
+def test_nested_body_validation_preserves_field_paths_without_stringifying_inputs(transport_client):
+    response = transport_client.post(
+        "/api/generate",
+        json={
+            "subject": "math",
+            "count": 1,
+            "per_question_params": json.dumps([{
+                "math_thinking": [],
+                "grade": "PRIVATE_INPUT_787",
+            }]),
+        },
+    )
+    assert response.status_code == 422
+    errors = response.json()["detail"]
+    assert {tuple(error["loc"]) for error in errors} == {
+        ("body", "per_question_params", 0, "math_thinking"),
+        ("body", "per_question_params", 0, "grade"),
+    }
+    assert any(
+        error["msg"] == "Value error, math_thinking must contain 1 to 3 values"
+        for error in errors
+    )
+    # These messages are displayed and reported by the frontend; input/ctx stay separate.
+    assert all("PRIVATE_INPUT_787" not in error["msg"] for error in errors)
+    assert all("input_value" not in error["msg"] for error in errors)
+    assert "event: started" not in response.text
+    assert transport_client.get("/api/history").json()["total"] == 0
+
+
 @pytest.mark.parametrize(("endpoint", "limit"), [("generate", 10), ("generate/preview", 30)])
 def test_switching_transport_cannot_double_the_request_allowance(transport_client, endpoint, limit):
     for index in range(limit):

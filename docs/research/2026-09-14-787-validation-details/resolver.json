@@ -1,0 +1,23 @@
+{
+  "text": [
+    "Incomplete request: per_question_params[0].數學思考 (unresolved)"
+  ],
+  "requests": [
+    {
+      "method": "POST",
+      "status": 422,
+      "contentType": "application/json",
+      "detail": [
+        {
+          "field": "per_question_params[0].數學思考",
+          "code": "unresolved"
+        }
+      ]
+    }
+  ],
+  "setupAdmissionErrors": [
+    "image_generation_mode: gpt_image requires IMAGE_API_KEY to be set on the server",
+    "model_execute: model 'gemini-3.1-pro-preview' requires GEMINI_API_KEY to be set on the server"
+  ],
+  "historyTotal": 0
+}

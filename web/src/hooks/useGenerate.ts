@@ -347,10 +347,25 @@ function formatHttpErrorDetail(detail: unknown): string | null {
       && typeof (item as Record<string, unknown>).code === "string"
     ),
   );
-  if (fieldErrors.length === 0) return null;
-  return `Incomplete request: ${fieldErrors
-    .map(({ field, code }) => `${field} (${code})`)
-    .join("; ")}`;
+  if (fieldErrors.length > 0) {
+    return `Incomplete request: ${fieldErrors
+      .map(({ field, code }) => `${field} (${code})`)
+      .join("; ")}`;
+  }
+
+  const validationErrors = detail.flatMap((item: unknown) => {
+    if (item === null || typeof item !== "object") return [];
+    const { loc, msg } = item as Record<string, unknown>;
+    if (!Array.isArray(loc) || typeof msg !== "string" || msg === "") return [];
+    if (!loc.every((part) => typeof part === "string" || Number.isInteger(part))) return [];
+    const path = loc[0] === "body" || loc[0] === "query" ? loc.slice(1) : loc;
+    const field = path.reduce<string>((address, part) => (
+      typeof part === "number" ? `${address}[${part}]` : `${address}${address ? "." : ""}${part}`
+    ), "");
+    // Only select location/message; input and ctx may contain submitted content.
+    return [field ? `${field}: ${msg}` : msg];
+  });
+  return validationErrors.length > 0 ? `Invalid request: ${validationErrors.join("; ")}` : null;
 }
 
 export function buildQueryString(params: GenerateParams): string {

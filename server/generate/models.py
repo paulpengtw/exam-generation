@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 ImageGenerationMode = Literal["html", "gpt_image"]
 CoverageMode = Literal["balanced", "random"]
@@ -237,9 +237,16 @@ class GenerateParams(BaseModel):
                     )
                 try:
                     type(self).model_validate({**base, **item})
-                except ValueError as exc:
-                    raise ValueError(
-                        f"per_question_params[{index}] is invalid: {exc}"
+                except ValidationError as exc:
+                    # Keep nested locations structured. Stringifying the exception
+                    # embeds input values in the message shown/reported by clients.
+                    raise ValidationError.from_exception_data(
+                        type(self).__name__,
+                        [
+                            {**error, "loc": ("per_question_params", index, *error["loc"])}
+                            for error in exc.errors(include_url=False)
+                        ],
+                        hide_input=True,
                     ) from exc
         return self
 
