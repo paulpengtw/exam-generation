@@ -42,6 +42,7 @@ from server.generate.persistence import (
     make_reference_example_record_recorder,
     persist_generation_record,
 )
+from server.generate.event_protocol import QuestionTerminalPayload, SlotRef
 from server.generate.publisher import GenerationPublisher
 from server.generate.snapshot_ledger import QuestionSnapshotLedger
 from server.generate.subjects import (
@@ -317,6 +318,128 @@ def _build_run_context(
     )
 
 
+def _build_question_terminal_payload(
+    *,
+    question_id: str,
+    termination_reason: str,
+    has_final: bool,
+    final_revision: int | None,
+    question: Any | None,
+    params: GenerateParams,
+    output_dir: Any,  # Path | None
+    unknown_reason: str | None = None,
+) -> dict[str, Any]:
+    """Build a QuestionTerminalPayload dict; validated before returning.
+
+    On any validation failure, returns a minimal 'unknown' delivery payload
+    so the worker never crashes.
+
+    Spec notes:
+    - grouped subjects (SS/NS) get expected=[] for now (fixed slots are #744).
+    - operation/call ids are #743; sibling-independent error handling is #747.
+    """
+    from pathlib import Path as _Path
+
+    # --- review ---
+    if not has_final:
+        review: dict[str, Any] = {
+            "status": "unknown",
+            "reason": unknown_reason or "no final content",
+        }
+    elif params.skip_verify:
+        review = {
+            "status": "skipped",
+            "content_revision": final_revision,
+        }
+    elif question is not None and getattr(question, "verification", None) is not None:
+        passed = question.verification.passed
+        review = {
+            "status": "passed" if passed else "failed",
+            "content_revision": final_revision,
+        }
+    else:
+        review = {
+            "status": "unknown",
+            "reason": "no verification evidence",
+            "content_revision": final_revision,
+        }
+
+    # --- image slots (flat math only; #744 will handle grouped slots) ---
+    expected: list[dict] = []
+    delivered: list[dict] = []
+    missing: list[dict] = []
+
+    if has_final and question is not None:
+        # An image slot exists when the pipeline adopted an image
+        # (i.e. chart_spec or image_spec is non-None on the final question)
+        has_image_spec = (
+            getattr(question, "chart_spec", None) is not None
+            or getattr(question, "image_spec", None) is not None
+        )
+        # Also check 圖片 field — it's set when pipeline wrote the PNG path
+        img_filename: str | None = getattr(question, "圖片", None)
+
+        if has_image_spec or img_filename:
+            slot = {"kind": "image", "question_id": question_id, "subquestion_id": None}
+            expected.append(slot)
+            if img_filename and output_dir is not None:
+                img_path = _Path(output_dir) / img_filename
+                if img_path.exists():
+                    delivered.append(slot)
+                else:
+                    missing.append(slot)
+            else:
+                missing.append(slot)
+
+    # --- delivery_status ---
+    if not has_final:
+        if termination_reason == "cancelled":
+            delivery_status = "unknown"
+        else:
+            delivery_status = "none"
+    elif missing:
+        delivery_status = "partial"
+    else:
+        delivery_status = "complete"
+
+    raw_payload: dict[str, Any] = {
+        "termination_reason": termination_reason,
+        "has_final": has_final,
+        "final_revision": final_revision,
+        "delivery_status": delivery_status,
+        "expected": expected,
+        "delivered": delivered,
+        "missing": missing,
+        "review": review,
+    }
+    if unknown_reason is not None:
+        raw_payload["unknown_reason"] = unknown_reason
+
+    try:
+        QuestionTerminalPayload.model_validate(raw_payload)
+        return raw_payload
+    except Exception as exc:  # ValidationError
+        logger.warning(
+            "question_terminal validation failed for %s (%s): %s",
+            question_id,
+            termination_reason,
+            exc,
+        )
+        # Fall back to a minimal unknown-delivery terminal
+        fallback: dict[str, Any] = {
+            "termination_reason": termination_reason,
+            "has_final": False,
+            "final_revision": None,
+            "delivery_status": "unknown",
+            "expected": [],
+            "delivered": [],
+            "missing": [],
+            "review": {"status": "unknown", "reason": "terminal evidence inconsistent"},
+            "unknown_reason": "terminal evidence inconsistent",
+        }
+        return fallback
+
+
 def _worker_one(
     i: int,
     question_client: LLMClient,
@@ -484,19 +607,40 @@ def _worker_one(
             payload=question_to_event(question, ctx.config),
             sidecars=sidecars,
         )
+        # Normal terminal – published AFTER the result event.
+        _terminal_payload = _build_question_terminal_payload(
+            question_id=question_id,
+            termination_reason="normal",
+            has_final=True,
+            final_revision=_final_revision,
+            question=question,
+            params=ctx.params,
+            output_dir=ctx.config.output_dir,
+        )
         ctx.publisher.publish(
             SSEEventName.QUESTION_TERMINAL,
             question_id=question_id,
             index=i,
-            payload={"delivery_status": "delivered"},
+            payload=_terminal_payload,
         )
     except GenerationCancelled:
         # Client disconnected; exit cleanly without emitting an error event.
+        _qid_cancel = ctx.manifest[i].question_id
+        _cancel_payload = _build_question_terminal_payload(
+            question_id=_qid_cancel,
+            termination_reason="cancelled",
+            has_final=False,
+            final_revision=None,
+            question=None,
+            params=ctx.params,
+            output_dir=ctx.config.output_dir,
+            unknown_reason="cancelled before completion",
+        )
         ctx.publisher.publish(
             SSEEventName.QUESTION_TERMINAL,
-            question_id=ctx.manifest[i].question_id,
+            question_id=_qid_cancel,
             index=i,
-            payload={"delivery_status": "cancelled"},
+            payload=_cancel_payload,
         )
     except Exception as exc:
         record_generation_outcome(ctx.params.subject, "failure")
@@ -510,11 +654,21 @@ def _worker_one(
             ),
         )
         logger.exception("worker_one error (index=%d)", i)
+        _failed_payload = _build_question_terminal_payload(
+            question_id=question_id,
+            termination_reason="failed",
+            has_final=False,
+            final_revision=None,
+            question=None,
+            params=ctx.params,
+            output_dir=ctx.config.output_dir,
+            unknown_reason="no final content",
+        )
         ctx.publisher.publish(
             SSEEventName.QUESTION_TERMINAL,
             question_id=question_id,
             index=i,
-            payload={"delivery_status": "failed"},
+            payload=_failed_payload,
         )
 
 
