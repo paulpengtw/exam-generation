@@ -2255,22 +2255,33 @@ export default function ParamForm({
     if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
-    setField("learningPerformance", (prev) => prev.filter((value) => allowed.has(value)));
-    setField("subquestionConfigs", (prev) =>
-      prev.map((cfg) =>
-        cfg.learning_performance?.length
-          ? { ...cfg, learning_performance: cfg.learning_performance.filter((v) => allowed.has(v)) }
-          : cfg,
-      ),
-    );
-  }, [availableLearningPerformance, grade, schemas, setField]);
+    restoreFormSnapshot((current) => {
+      // A draft restore can change the grade before this queued update runs.
+      if (schemas.poolGrade !== (current.grade === "" ? null : current.grade)) return current;
+      return {
+        ...current,
+        learningPerformance: current.learningPerformance.filter((value) => allowed.has(value)),
+        subquestionConfigs: current.subquestionConfigs.map((cfg) =>
+          cfg.learning_performance?.length
+            ? { ...cfg, learning_performance: cfg.learning_performance.filter((v) => allowed.has(v)) }
+            : cfg,
+        ),
+      };
+    });
+  }, [availableLearningPerformance, grade, schemas, restoreFormSnapshot]);
 
   useEffect(() => {
     if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
     const allowed = new Set(availableLearningContent.map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
-    setField("learningContent", (prev) => prev.filter((value) => allowed.has(value)));
-  }, [availableLearningContent, grade, schemas, setField]);
+    restoreFormSnapshot((current) => {
+      if (schemas.poolGrade !== (current.grade === "" ? null : current.grade)) return current;
+      return {
+        ...current,
+        learningContent: current.learningContent.filter((value) => allowed.has(value)),
+      };
+    });
+  }, [availableLearningContent, grade, schemas, restoreFormSnapshot]);
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {

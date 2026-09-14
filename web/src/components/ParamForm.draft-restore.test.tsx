@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   afterEach,
   beforeEach,
@@ -268,5 +268,214 @@ describe("ParamForm draft restoration", () => {
       setItemSpy.mock.calls.filter(([key]) => key === DRAFT_KEY),
     ).toHaveLength(0);
     expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  });
+});
+
+describe("ParamForm draft restoration across learning stages", () => {
+  const STAGE_BASE = {
+    grades: [7, 8, 9, 10, 11, 12],
+    情境: [{ value: "個人", instruction: "" }],
+    情境子類別: [{ value: "健康", parent: "個人", admitted_by: { 情境: ["個人"] }, instruction: "" }],
+    題型種類: [{ value: "題組題", instruction: "" }],
+    題型: [{ value: "Simple multiple-choice", instruction: "" }],
+    科學能力: [{ value: "證據推理", instruction: "" }],
+    題目內容類型: [{ value: "純文字", instruction: "" }],
+    科目: [{ value: "自然科學", instruction: "" }],
+  };
+  const STAGE_IV_POOL = {
+    ...STAGE_BASE,
+    學習階段: "第四學習階段",
+    學習表現: [{ value: "tr-IV-1", instruction: "IV lp", 科目: "自然科學" }],
+    學習內容: [{ value: "INc-IV-1", instruction: "IV lc", 科目: "自然科學" }],
+  };
+  const STAGE_V_POOL = {
+    ...STAGE_BASE,
+    學習階段: "第五學習階段",
+    學習表現: [
+      { value: "tr-Vc-1", instruction: "V lp", 科目: "自然科學" },
+      { value: "tr-Vc-2", instruction: "V lp 2", 科目: "自然科學" },
+    ],
+    學習內容: [
+      { value: "INc-Vc-1", instruction: "V lc", 科目: "自然科學" },
+      { value: "INc-Vc-2", instruction: "V lc 2", 科目: "自然科學" },
+    ],
+  };
+  const STAGE_V_DRAFT_FIELDS: FormFields = {
+    grade: 11,
+    style: "",
+    contentType: "純文字",
+    customContentType: "",
+    context: ["個人"],
+    setType: "題組題",
+    qType: ["Simple multiple-choice"],
+    count: 1,
+    coverageMode: "balanced",
+    skipVerify: false,
+    disableReferenceFewshot: false,
+    coreQuestionCallback: true,
+    imageGenerationMode: "gpt_image",
+    difficulty: "",
+    reportingScale: "",
+    subjectFilter: "",
+    passage: "500 字",
+    textWordLimit: null,
+    textInstruction: "",
+    options: ["50 字", "50 字", "50 字", "50 字"],
+    topic: "",
+    coreQuestion: null,
+    subContext: "健康",
+    scienceCompetency: ["證據推理"],
+    learningPerformance: ["tr-Vc-1"],
+    learningContent: ["INc-Vc-1"],
+    subQuestionCount: 2,
+    subquestionConfigs: [
+      {
+        question_type: "Simple multiple-choice",
+        learning_performance: ["tr-Vc-2"],
+        learning_content: ["INc-Vc-2"],
+      },
+      {
+        question_type: "Simple multiple-choice",
+        learning_performance: ["tr-Vc-1"],
+        learning_content: ["INc-Vc-1"],
+      },
+    ],
+    modelPlan: "",
+    modelExecute: "",
+    modelVerify: "",
+    modelCorrect: "",
+    effortPlan: "medium",
+    effortExecute: "medium",
+    effortVerify: "",
+    effortCorrect: "",
+    contentDomain: "",
+    targetSurface: "紙本",
+    allowDuplicateFigureKinds: false,
+  };
+  const later = <T,>(value: T, ms: number): Promise<T> =>
+    new Promise((resolve) => setTimeout(() => resolve(value), ms));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    useAuthStore.setState({ token: null, user: null });
+    useLangStore.setState({ lang: "zh-TW" });
+    signIn();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function expectRestoredCodes(
+    getSchema: (subject: string, grade?: number) => Promise<typeof STAGE_IV_POOL>,
+  ) {
+    getSchemasMock.mockImplementation(getSchema);
+    localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({ savedAt: SAVED_AT, fields: STAGE_V_DRAFT_FIELDS }),
+    );
+    const { container } = render(
+      <ParamForm subject="natural_sciences" onSubmit={() => {}} disabled={false} />,
+    );
+
+    await screen.findByText("找到未完成的出題表單。");
+    fireEvent.click(screen.getByRole("button", { name: "還原草稿" }));
+    await waitFor(() => expect(screen.getByLabelText("年級")).toHaveValue("11"));
+    await waitFor(() => expect(getSchemasMock).toHaveBeenCalledWith("natural_sciences", 11));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+
+    const subquestionSection = screen
+      .getByRole("heading", { name: "各小題配置", level: 4 })
+      .parentElement!;
+    // The chip selector also matches 各小題配置; assert 全域池 selections separately.
+    const selectedGlobalCodes = Array.from(container.querySelectorAll("span.bg-blue-50 > span.font-medium"))
+      .filter((element) => !subquestionSection.contains(element))
+      .map((element) => element.textContent);
+    expect(selectedGlobalCodes).toEqual(expect.arrayContaining(["tr-Vc-1", "INc-Vc-1"]));
+
+    const expectedRows = [
+      ["tr-Vc-2", "INc-Vc-2"],
+      ["tr-Vc-1", "INc-Vc-1"],
+    ];
+    for (const [index, [performance, content]] of expectedRows.entries()) {
+      const row = within(subquestionSection)
+        .getByText(`第${index + 1}小題`, { exact: true })
+        .closest("div.rounded")!;
+      expect(within(row).getByText(performance, { exact: true })).toBeInTheDocument();
+      expect(within(row).getByText(content, { exact: true })).toBeInTheDocument();
+    }
+
+    fireEvent.change(screen.getAllByPlaceholderText("搜尋學習表現...")[0], {
+      target: { value: "-" },
+    });
+    expect(screen.getByRole("button", { name: /^tr-Vc-2：/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^tr-IV-1：/ })).not.toBeInTheDocument();
+  }
+
+  it("restores grade 11 全域池 and 各小題配置 codes when the grade-less pool answers first", async () => {
+    await expectRestoredCodes(async (_subject, grade) =>
+      grade == null ? STAGE_IV_POOL : later(grade === 11 ? STAGE_V_POOL : STAGE_IV_POOL, 30),
+    );
+  });
+
+  it("restores grade 11 全域池 and 各小題配置 codes when the grade-less pool is delayed", async () => {
+    await expectRestoredCodes(async (_subject, grade) =>
+      grade == null ? later(STAGE_IV_POOL, 30) : grade === 11 ? STAGE_V_POOL : STAGE_IV_POOL,
+    );
+  });
+
+  it("keeps restored grade 11 codes when the previous pool still has pending reconciliation", async () => {
+    let resolveGrade7!: (pool: typeof STAGE_IV_POOL) => void;
+    const grade7Pool = new Promise<typeof STAGE_IV_POOL>((resolve) => {
+      resolveGrade7 = resolve;
+    });
+    getSchemasMock.mockImplementation(async (_subject, grade) => {
+      if (grade === 11) return STAGE_V_POOL;
+      if (grade != null) return grade7Pool;
+      // Show the draft prompt before the grade-specific pickers arrive.
+      return { ...STAGE_IV_POOL, 學習表現: [], 學習內容: [] };
+    });
+    localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({ savedAt: SAVED_AT, fields: STAGE_V_DRAFT_FIELDS }),
+    );
+    const { container } = render(
+      <ParamForm subject="natural_sciences" onSubmit={() => {}} disabled={false} />,
+    );
+    await screen.findByText("找到未完成的出題表單。");
+    const restoreButton = screen.getByRole("button", { name: "還原草稿" });
+
+    // Click in the commit's mutation microtask, before the old pool's passive
+    // effects run. An act-wrapped click would flush away this ordering.
+    const observer = new MutationObserver(() => {
+      if (!screen.queryByPlaceholderText("搜尋學習表現...")) return;
+      observer.disconnect();
+      restoreButton.click();
+    });
+    observer.observe(container, { childList: true, subtree: true });
+    try {
+      resolveGrade7(STAGE_IV_POOL);
+      await waitFor(() => expect(screen.getByLabelText("年級")).toHaveValue("11"));
+      await waitFor(() => expect(getSchemasMock).toHaveBeenCalledWith("natural_sciences", 11));
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+
+      const subquestionSection = screen
+        .getByRole("heading", { name: "各小題配置", level: 4 })
+        .parentElement!;
+      const selectedGlobalCodes = Array.from(container.querySelectorAll("span.bg-blue-50 > span.font-medium"))
+        .filter((element) => !subquestionSection.contains(element))
+        .map((element) => element.textContent);
+      expect(selectedGlobalCodes).toEqual(expect.arrayContaining(["tr-Vc-1", "INc-Vc-1"]));
+
+      const firstRow = within(subquestionSection)
+        .getByText("第1小題", { exact: true })
+        .closest("div.rounded")!;
+      expect(within(firstRow).getByText("tr-Vc-2", { exact: true })).toBeInTheDocument();
+      expect(within(firstRow).getByText("INc-Vc-2", { exact: true })).toBeInTheDocument();
+    } finally {
+      observer.disconnect();
+    }
   });
 });
