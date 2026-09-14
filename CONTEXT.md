@@ -203,9 +203,9 @@ The 操作回饋 state after an action succeeded, shown on the control until the
 _Avoid_: success state, done, 成功, 完成 (alone), confirmation
 
 **失敗**:
-The 操作回饋 state after an action did not complete: the control keeps its label and gains a red colour and a `!`, and an inline notice below the control's row gives the reason in one line and offers 重試 on idempotent actions. It clears on ×, on a successful retry, or on pressing the control again — not on an unrelated interaction. Contrast the 生成進度列, which narrates a run's failure.
+The 操作回饋 state after an action did not complete: the control keeps its label and gains a red colour and a `!`, and an inline notice below the control's row gives the reason in one line and offers 重試 on idempotent actions. It clears on ×, on a successful retry, or on pressing the control again — not on an unrelated interaction. 重抽 is the one exception: its reason and retry live in the resolver banner, the row's button is only marked, and pressing it again retries. Contrast the 生成進度列, which narrates a run's failure.
 _Avoid_: error state, error toast, 錯誤 (alone — the reason line may say 錯誤; the state is 失敗), 異常
 
 **Motion tokens**:
-The app's single palette of motion — durations quick 150 ms / standard 320 ms / loop-shimmer 2250 ms / loop-spinner 900 ms and easings signature / exit / loop — defined once in `web/src/motion/tokens.ts` and written onto `:root` before first render; every transition in the app, including the one ambient shimmer on the 生成進度列, uses them. Under `prefers-reduced-motion` the state still changes; only the travel is dropped.
+The app's single palette of motion — four durations (quick, standard, loop-shimmer, loop-spinner) and three easings (signature, exit, loop) — whose values are defined once in `web/src/motion/tokens.ts` (recorded in ADR 0029) and written onto `:root` before first render; every transition in the app, including the one ambient shimmer on the 生成進度列, uses them. Under `prefers-reduced-motion` the state still changes; only the travel is dropped.
 _Avoid_: animation settings, transition config, timing constants, 動畫參數, a literal `duration-300`
