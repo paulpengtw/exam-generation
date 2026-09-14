@@ -82,6 +82,23 @@ Each mounted surface declares its readiness, editable state, received results an
 Generation and 人工審題修正 expose 受理 beside their existing `status`, acknowledged by the SSE `started` event or a returned `run_id`, while guards and 發送前確認 timing remain unchanged.
 The store never receives an AbortController, promise or callback that can cancel work; see [ADR 0030](docs/adr/0030-workspace-participation-is-declared-by-each-surface.md) when extending participation, observed operations or admission for the updater.
 
+### Generation admission gateway (issue #740)
+
+`gateway/` is an independent ASGI reverse proxy that lets an operator pause all new `GET /api/generate` and `POST /api/generate` requests from a single control point, independent of the frontend and backend deployment units.
+
+State is file-backed (`admission.json` on a dedicated volume), fail-closed (missing or unreadable file = paused), and survives application rollbacks.  The proxy is transparent to every other route — preview, resolve, planning, modification stream, history, auth, health — only the two generation entry-points are gated.
+
+Key files:
+- `gateway/admission.py` — `is_generation_entry(method, path)`, `PAUSED_DETAIL`, `PAUSED_CODE`
+- `gateway/state.py` — `AdmissionState`, `read_state`, `pause`, `open_gate`
+- `gateway/app.py` — `create_app(*, backend_url, state_dir, control_token)` → Starlette app
+- `gateway/__main__.py` — uvicorn entry point (env: `GATEWAY_BACKEND_URL`, `GATEWAY_STATE_DIR`, `GATEWAY_CONTROL_TOKEN`, `PORT`)
+- `scripts/admission_gate.py` — CLI (`pause`, `open`, `status --require PAUSED|OPEN`)
+- `Dockerfile.gateway`, `docker-compose.yml` (gateway service)
+- `DEPLOYMENT.md` § "Generation admission gateway" for Compose and Railway instructions
+
+Drain evidence (#741) and stream-version/426 upgrade (#742) are not part of this implementation.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.

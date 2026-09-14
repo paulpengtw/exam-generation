@@ -288,6 +288,67 @@ Render's free tier puts services to sleep after 15 minutes of inactivity. The fi
 
 ---
 
+## Generation admission gateway (pause new generation)
+
+The **generation admission gateway** is a small ASGI reverse proxy that sits in front of the backend.  It lets an operator pause **all new generation requests** (`GET /api/generate` and `POST /api/generate`) from a single control point — completely independent of the frontend and backend deployment units — while established SSE streams keep delivering and result/history reads keep working.
+
+Key properties:
+
+- **Fail-closed on first install.** A fresh state directory (no `admission.json`) is treated as paused, so the gate is always safe to add even before it has been explicitly opened.
+- **State lives on its own volume.** The `admission.json` file is written atomically on a named Docker volume (`gate-state`) or a Railway volume.  Rolling the frontend or backend back to a previous image does not affect the gate state.
+- **Survives frontend/backend rollback.**  Because the state file is outside every application container, an operator can pause generation, roll back the backend, and the gate stays paused until explicitly opened again.
+
+### Compose usage
+
+After adding the gateway service (slice 5 of issue #740), the gateway is the only service that binds port 8000.  The backend becomes internal-only.
+
+```bash
+# Pause all new generation
+docker compose exec gateway python scripts/admission_gate.py pause --reason "v2 rollout in progress"
+
+# Open the gate again
+docker compose exec gateway python scripts/admission_gate.py open
+
+# Check current state (exits 3 if the gate does not match --require)
+docker compose exec gateway python scripts/admission_gate.py status
+docker compose exec gateway python scripts/admission_gate.py status --require OPEN
+```
+
+### Railway deployment steps
+
+1. Add a fourth service in your Railway project: name it **gateway**, set the source to your fork, and choose `Dockerfile.gateway` as the Dockerfile.
+2. Attach a **volume** to the gateway service at `/var/lib/examgen-gate`.  This is where the state file lives.
+3. Set the following environment variables on the gateway service:
+   - `GATEWAY_BACKEND_URL` → `http://backend.railway.internal:8000` (the backend's internal Railway hostname)
+   - `GATEWAY_CONTROL_TOKEN` → a long random secret of your choice (keep this safe)
+   - `PORT` → `8000` (Railway injects this automatically; no action needed)
+4. Give the gateway service a **public domain** (Railway → Settings → Networking → Generate Domain).
+5. Update the **frontend** service: change `BACKEND_HOST` from the backend's domain to the gateway's new domain.
+6. **Remove the backend's public domain** so nothing can bypass the gate.  The backend is now reachable only via the gateway.
+
+#### Control endpoint examples (curl)
+
+```bash
+# Pause
+curl -X POST https://<gateway-domain>/gateway/admission \
+  -H "X-Gateway-Control-Token: <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"state": "paused", "reason": "planned maintenance"}'
+
+# Open
+curl -X POST https://<gateway-domain>/gateway/admission \
+  -H "X-Gateway-Control-Token: <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"state": "open"}'
+
+# Health / current state
+curl https://<gateway-domain>/gateway/health
+```
+
+> **Note:** This work (issue #740) establishes the operational capability — the gateway is wired, the state is durable, and new generation can be paused instantly.  Drain evidence (confirming in-flight streams complete before a deployment) and the stream-version protocol upgrade are tracked separately in issues #741 and #742.
+
+---
+
 ## Error reporting (Sentry, optional)
 
 The web app has a bottom-right "?" button that lets users report problems.
