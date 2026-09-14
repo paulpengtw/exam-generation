@@ -132,6 +132,20 @@ _Avoid_: 難度 (wrong term for 自然科學), 報告等級
 The easy / medium / hard demand signal for 數學 and 社會領域. Not used for 自然科學, which uses Reporting Scale instead.
 _Avoid_: using 難度 for 自然科學
 
+### 更新 (Update)
+
+**工作區參與**:
+A surface's declaration of its readiness, editable state, received results and workspace export seam, so an updater can assess the work it holds.
+_Avoid_: surface participation, workspace registration, page activity
+
+**受理**:
+The moment the server accepts a submitted generation or 人工審題修正 request — the `started` event for generation, or a returned `run_id` for 人工審題修正. Sending the request alone does not establish 受理.
+_Avoid_: admission, submitted, accepted (without the server acknowledgement)
+
+**可觀察作業**:
+An in-flight generation, 人工審題修正, 核心問題 planning, 預抽, 提示詞預覽 or export operation that an updater can observe but cannot abort.
+_Avoid_: observed operation, cancellable task, background job
+
 ### 流程 (Pipeline)
 
 **文本生成器**:

@@ -47,7 +47,7 @@ export function useSurfaceParticipation(id: SurfaceId, participation: Omit<Surfa
 ```
 `WorkspaceSnapshot` is the union defined in Task 3 (`web/src/lib/workspace/adapters/types.ts`); Task 1 declares it as `import type { WorkspaceSnapshot } from "./adapters/types"` and Task 3 creates that file — to keep Task 1 compiling on its own, create `adapters/types.ts` in Task 1 with the four snapshot interfaces from Task 3's interface block (Task 3 then only adds adapters).
 
-- [ ] **Step 1: Write the failing store tests** (`workspaceStore.test.ts`)
+- [x] **Step 1: Write the failing store tests** (`workspaceStore.test.ts`)
 
 ```ts
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -131,9 +131,9 @@ describe("isRefreshSafe", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure** — `cd web && npx vitest run src/lib/workspace/workspaceStore.test.ts` → FAIL (module not found).
+- [x] **Step 2: Run to verify failure** — `cd web && npx vitest run src/lib/workspace/workspaceStore.test.ts` → FAIL (module not found).
 
-- [ ] **Step 3: Implement `workspaceStore.ts`**
+- [x] **Step 3: Implement `workspaceStore.ts`**
 
 ```ts
 import { create } from "zustand";
@@ -184,9 +184,9 @@ Note: the stale-unregister check compares the stored entry by identity, so `upda
 
 `isRefreshSafe` iterates `Object.values(state.surfaces)` in registration order (insertion order of the object), pushing `hydrating`/`restoring` (from `readiness`), then `editable`, then `results` per surface, then one `operation` blocker per active operation; `no_surface` when there are no surfaces. `resetWorkspaceStoreForTests` sets `{ surfaces: {}, operations: [] }` and clears the token map.
 
-- [ ] **Step 4: Run store tests** → PASS.
+- [x] **Step 4: Run store tests** → PASS.
 
-- [ ] **Step 5: Write the failing hook test** (`useSurfaceParticipation.test.tsx`)
+- [x] **Step 5: Write the failing hook test** (`useSurfaceParticipation.test.tsx`)
 
 ```tsx
 import { renderHook } from "@testing-library/react";
@@ -220,7 +220,7 @@ describe("useSurfaceParticipation", () => {
 });
 ```
 
-- [ ] **Step 6: Implement `useSurfaceParticipation.ts`**
+- [x] **Step 6: Implement `useSurfaceParticipation.ts`**
 
 ```ts
 import { useEffect } from "react";
@@ -240,8 +240,8 @@ export function useSurfaceParticipation(id: SurfaceId, participation: Omit<Surfa
 }
 ```
 
-- [ ] **Step 7: Run both test files, then `npx tsc -b --noEmit` and `npm run lint`** → all green.
-- [ ] **Step 8: Commit** — `git add web/src/lib/workspace && git commit -m "feat(769): workspace registry with refresh-safety selector and participation hook"`
+- [x] **Step 7: Run both test files, then `npx tsc -b --noEmit` and `npm run lint`** → all green.
+- [x] **Step 8: Commit** — `git add web/src/lib/workspace && git commit -m "feat(769): workspace registry with refresh-safety selector and participation hook"`
 
 ---
 
@@ -264,7 +264,7 @@ export function exportFormWorkspace(fields: FormFields): FormWorkspaceSnapshot;
 export function importFormWorkspace(raw: unknown): FormFields | null;
 ```
 
-- [ ] **Step 1: Write the failing adapter test**
+- [x] **Step 1: Write the failing adapter test**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -293,8 +293,8 @@ describe("form workspace adapter", () => {
 });
 ```
 
-- [ ] **Step 2: Run → FAIL.**
-- [ ] **Step 3: Implement.** In `formDraft.ts`, move the body of the `return { savedAt, fields: { ...normalisation } }` block into `parseFormFields(raw)`: it returns `null` unless `isFormFields(raw)`, otherwise the normalised `FormFields` object exactly as `loadDraft` builds today. `loadDraft` becomes: parse JSON, check `savedAt` finite and age, `const fields = parseFormFields(parsed.fields); if (!fields) { clearDraft; return null }`, return `{ savedAt, fields }`. In `formWorkspace.ts`:
+- [x] **Step 2: Run → FAIL.**
+- [x] **Step 3: Implement.** In `formDraft.ts`, move the body of the `return { savedAt, fields: { ...normalisation } }` block into `parseFormFields(raw)`: it returns `null` unless `isFormFields(raw)`, otherwise the normalised `FormFields` object exactly as `loadDraft` builds today. `loadDraft` becomes: parse JSON, check `savedAt` finite and age, `const fields = parseFormFields(parsed.fields); if (!fields) { clearDraft; return null }`, return `{ savedAt, fields }`. In `formWorkspace.ts`:
 
 ```ts
 import { parseFormFields } from "../../formDraft";
@@ -312,8 +312,8 @@ export function importFormWorkspace(raw: unknown): FormFields | null {
 }
 ```
 
-- [ ] **Step 4: Run `npx vitest run src/lib/formDraft.test.ts src/lib/workspace/adapters/formWorkspace.test.ts`** → PASS; tsc + lint clean.
-- [ ] **Step 5: Commit** — `git commit -m "refactor(769): extract parseFormFields and add the form workspace adapter"`
+- [x] **Step 4: Run `npx vitest run src/lib/formDraft.test.ts src/lib/workspace/adapters/formWorkspace.test.ts`** → PASS; tsc + lint clean.
+- [x] **Step 5: Commit** — `git commit -m "refactor(769): extract parseFormFields and add the form workspace adapter"`
 
 ---
 
@@ -351,9 +351,9 @@ export function importModificationWorkspace(raw: unknown): Omit<ModificationWork
 ```
 Validation rules (import returns `null` otherwise): `kind`/`version` exact; confirmation `pendingParams` is a non-null object with string `subject`; `pendingPerQuestionParams` null or array of non-null objects; `clearedPaths` string array; `redraws` object of finite numbers; `coreQuestionResolution` one of the four; `historyDraftChoice` one of the four. Results: `results` and `displayResults` arrays of non-null objects, `displayResults[i]` having integer `index`, object `question`, boolean `isFinal`; `progressLines` string array; numbers finite or null; `completion` one of three. Modification: `recordId`/`questionId` non-empty strings; each annotation `segments` an array of objects with string `path`, integer `start`/`end`, string `text` (mirror `ModificationSegmentRequest` fields exactly — read `api/client.ts` and copy its keys) and string `instruction`; `replacement` null or object with object `question`.
 
-- [ ] **Step 1: Write failing tests** — for each adapter: (a) round trip of a realistic fixture (`results` fixture from `useGenerate.test.ts`'s sample `ExamQuestion`; annotation fixture from `HistoryDetail.annotation.test.tsx`), (b) wrong `kind`, (c) wrong `version`, (d) one malformed nested field, (e) for results: `completion` mapping for the three `status`/`finishedAt` combinations.
-- [ ] **Step 2: Run → FAIL. Step 3: Implement with small `isRecord`/`isStringArray` helpers in a shared `adapters/guards.ts`. Step 4: Run adapter tests → PASS; tsc + lint clean.**
-- [ ] **Step 5: Commit** — `git commit -m "feat(769): confirmation, results and modification workspace adapters"`
+- [x] **Step 1: Write failing tests** — for each adapter: (a) round trip of a realistic fixture (`results` fixture from `useGenerate.test.ts`'s sample `ExamQuestion`; annotation fixture from `HistoryDetail.annotation.test.tsx`), (b) wrong `kind`, (c) wrong `version`, (d) one malformed nested field, (e) for results: `completion` mapping for the three `status`/`finishedAt` combinations.
+- [x] **Step 2: Run → FAIL. Step 3: Implement with small `isRecord`/`isStringArray` helpers in a shared `adapters/guards.ts`. Step 4: Run adapter tests → PASS; tsc + lint clean.**
+- [x] **Step 5: Commit** — `git commit -m "feat(769): confirmation, results and modification workspace adapters"`
 
 ---
 
@@ -374,7 +374,7 @@ generate: (params: GenerateParams) => Promise<AdmissionOutcome>;
 restoreResults: (snapshot: ResultsWorkspaceSnapshot) => boolean;
 ```
 
-- [ ] **Step 1: Write failing tests** using the file's existing `fetchEventSource` mock helpers (look at how existing tests drive `onopen`/`onmessage`/`onerror`; reuse the same helper names):
+- [x] **Step 1: Write failing tests** using the file's existing `fetchEventSource` mock helpers (look at how existing tests drive `onopen`/`onmessage`/`onerror`; reuse the same helper names):
   - `admission` is `"idle"` initially; `"submitting"` synchronously after `generate()`; `"admitted"` after the `started` event and the promise resolves `{ outcome: "admitted" }`.
   - 401, 422 (JSON detail), 500 at `onopen` → `"rejected"`, `admissionError` equals the existing `errorMessage`, promise resolves `{ outcome: "rejected", reason }`; existing `status`/`finishedAt` expectations unchanged.
   - `onerror` before `started` → `"rejected"`; `onerror` after `started` → still `"admitted"`.
@@ -382,8 +382,8 @@ restoreResults: (snapshot: ResultsWorkspaceSnapshot) => boolean;
   - a second `generate()` while the first is unsettled resolves the first promise `{ outcome: "rejected", reason: "superseded" }`.
   - operation: after `generate()`, `useWorkspaceStore.getState().operations` contains `{ kind: "generation", surface: "generate.results" }`; it is removed on `done`, on SSE `error`, on `onopen` rejection, on `reset()`, and on unmount.
   - `restoreResults`: returns false and changes nothing while `status === "generating"`; otherwise returns true, sets `results`/`displayResults`/`progressLines`/`errorMessage`/`startedAt`/`finishedAt`/`subQuestionTotal`, `status` `"error"` for completion `"error"` else `"idle"`, `admission` `"idle"`, `llmCalls` `[]`.
-- [ ] **Step 2: Run → FAIL.**
-- [ ] **Step 3: Implement.** Add `const [admission, setAdmission] = useState<AdmissionState>("idle")`, `const [admissionError, setAdmissionError] = useState<string | null>(null)`, `const admissionResolveRef = useRef<((o: AdmissionOutcome) => void) | null>(null)`, `const operationRef = useRef<OperationHandle | null>(null)`. Helper inside the hook:
+- [x] **Step 2: Run → FAIL.**
+- [x] **Step 3: Implement.** Add `const [admission, setAdmission] = useState<AdmissionState>("idle")`, `const [admissionError, setAdmissionError] = useState<string | null>(null)`, `const admissionResolveRef = useRef<((o: AdmissionOutcome) => void) | null>(null)`, `const operationRef = useRef<OperationHandle | null>(null)`. Helper inside the hook:
 ```ts
 const settleAdmission = (outcome: AdmissionOutcome) => {
   setAdmission(outcome.outcome);
@@ -394,8 +394,8 @@ const settleAdmission = (outcome: AdmissionOutcome) => {
 const endOperation = (outcome: OperationOutcome) => { operationRef.current?.end(outcome); operationRef.current = null; };
 ```
 In `generate`: first `admissionResolveRef.current?.({ outcome: "rejected", reason: "superseded" }); endOperation("superseded");` then existing abort/reset lines, `setAdmission("submitting"); setAdmissionError(null); operationRef.current = useWorkspaceStore.getState().beginOperation("generation", "generate.results");` and `const admissionPromise = new Promise<AdmissionOutcome>((resolve) => { admissionResolveRef.current = resolve; });`. In `onopen` non-ok branches, after the existing `setFinishedAt`: `settleAdmission({ outcome: "rejected", reason: msg }); endOperation("failed");`. In `case "started"`: `settleAdmission({ outcome: "admitted" })`. In `case "error"`: `endOperation("failed")`. In `case "done"`: `endOperation("completed")`. In `onerror`, before the throw: `if (admissionResolveRef.current) settleAdmission({ outcome: "rejected", reason: message }); endOperation("failed");` (compute `message` once and reuse for `setErrorMessage`). Return `admissionPromise` from `generate`. In `reset`: `admissionResolveRef.current?.({ outcome: "rejected", reason: "reset" }); admissionResolveRef.current = null; endOperation("aborted"); setAdmission("idle"); setAdmissionError(null);`. In the unmount effect: `endOperation("aborted")`. Add `restoreResults` with `useCallback` reading a `statusRef` (add `const statusRef = useRef(status); statusRef.current = status;` — or check `controllerRef.current !== null` which is non-null exactly while a stream is live; use the controller check to avoid a render-phase ref write).
-- [ ] **Step 4: Run `npx vitest run src/hooks/useGenerate.test.ts src/api/generate-transport.test.tsx`** → PASS; tsc + lint clean.
-- [ ] **Step 5: Commit** — `git commit -m "feat(769): expose admission outcome, observed operation and restoreResults on useGenerate"`
+- [x] **Step 4: Run `npx vitest run src/hooks/useGenerate.test.ts src/api/generate-transport.test.tsx`** → PASS; tsc + lint clean.
+- [x] **Step 5: Commit** — `git commit -m "feat(769): expose admission outcome, observed operation and restoreResults on useGenerate"`
 
 ---
 
@@ -407,10 +407,10 @@ In `generate`: first `admissionResolveRef.current?.({ outcome: "rejected", reaso
 
 **Interfaces (produced):** `admission: AdmissionState; admissionError: string | null` added to `UseModificationRunReturn` (import `AdmissionState` from `./useGenerate`).
 
-- [ ] **Step 1: Failing tests:** `"idle"` initially; `"submitting"` synchronously after `start()`; `"admitted"` once `submitModificationBatch` resolves with `run_id`; `"rejected"` with the thrown message when it rejects, and with `"Modification admission did not return a run id"` when `run_id` is missing (existing message — assert `error` unchanged too); stream `error` after admission keeps `"admitted"`; operation `{ kind: "modification", surface: "history.modification" }` present from `start()` until `done` (completed) / error (failed) / unmount (aborted); `start()` without a record id registers nothing.
-- [ ] **Step 2: Run → FAIL. Step 3: Implement** mirroring Task 4: `setAdmission("submitting")` beside `setStatus("running")`; after `admission.run_id` check passes → `setAdmission("admitted")`; in the `catch` and the missing-run-id path → if still submitting, `setAdmission("rejected"); setAdmissionError(message)`; operation begun after the `activeRecordId` guard, ended in `done` (completed), `error` event / `onerror` / catch (failed), unmount effect (aborted), and when a newer sequence supersedes (superseded). Guard every `set` with the existing `isCurrent()`.
-- [ ] **Step 4: Run the new test plus `HistoryDetail.annotation.test.tsx`, `QuestionCard.*.test.tsx`** → PASS; tsc + lint clean.
-- [ ] **Step 5: Commit** — `git commit -m "feat(769): expose admission outcome and observed operation on useModificationRun"`
+- [x] **Step 1: Failing tests:** `"idle"` initially; `"submitting"` synchronously after `start()`; `"admitted"` once `submitModificationBatch` resolves with `run_id`; `"rejected"` with the thrown message when it rejects, and with `"Modification admission did not return a run id"` when `run_id` is missing (existing message — assert `error` unchanged too); stream `error` after admission keeps `"admitted"`; operation `{ kind: "modification", surface: "history.modification" }` present from `start()` until `done` (completed) / error (failed) / unmount (aborted); `start()` without a record id registers nothing.
+- [x] **Step 2: Run → FAIL. Step 3: Implement** mirroring Task 4: `setAdmission("submitting")` beside `setStatus("running")`; after `admission.run_id` check passes → `setAdmission("admitted")`; in the `catch` and the missing-run-id path → if still submitting, `setAdmission("rejected"); setAdmissionError(message)`; operation begun after the `activeRecordId` guard, ended in `done` (completed), `error` event / `onerror` / catch (failed), unmount effect (aborted), and when a newer sequence supersedes (superseded). Guard every `set` with the existing `isCurrent()`.
+- [x] **Step 4: Run the new test plus `HistoryDetail.annotation.test.tsx`, `QuestionCard.*.test.tsx`** → PASS; tsc + lint clean.
+- [x] **Step 5: Commit** — `git commit -m "feat(769): expose admission outcome and observed operation on useModificationRun"`
 
 ---
 
@@ -420,14 +420,14 @@ In `generate`: first `admissionResolveRef.current?.({ outcome: "rejected", reaso
 - Modify: `web/src/pages/GeneratePage.tsx`, `web/src/pages/HistoryPage.tsx` (HistoryList), `web/src/pages/HistoryDetail.tsx`, `web/src/components/QuestionCard.tsx`
 - Test: `web/src/pages/GeneratePage.workspace.test.tsx` (new), `web/src/pages/HistoryPage.test.tsx` and `HistoryDetail.test.tsx` (append), `web/src/components/QuestionCard.workspace.test.tsx` (new)
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - GeneratePage (mock `ParamForm` and `useGenerate` the way `GeneratePage.resubmit-guard.test.tsx` does): `generate.results` registers ready with `hasReceivedResults === false`; becomes true when the mocked `displayResults` is non-empty; `exportWorkspace()` returns a `results` snapshot with `requestedTotal` from the last submit; `handleSubmit` (captured `onSubmit`) returns the mocked `generate` promise; clicking the JSON download button begins and ends an `export_json` operation (assert via a `beginOperation` spy on the store); the ODT button begins `export_odt` and ends `completed` after the mocked `buildExamOdt` resolves, `failed` when it rejects (and nothing else changes — no error UI).
   - HistoryList: `history.list` is `hydrating` until `listHistory` resolves or rejects, then `ready`.
   - HistoryDetail: `history.detail` is `hydrating` until `getHistoryDetail` resolves or rejects, then `ready`; `recordId` change goes back to `hydrating`.
   - QuestionCard with `recordId`: registers `history.modification`; `hasEditableState` false → true after a selection creates an annotation (reuse the selection-driving helper from `HistoryDetail.annotation.test.tsx`); `hasReceivedResults` true after a mocked completed run; `exportWorkspace()` returns a `modification` snapshot with the annotation's segments and instruction; without `recordId` nothing is registered; download buttons begin/end `export_json` / `export_image` / `export_odt`.
-- [ ] **Step 2: Run → FAIL. Step 3: Implement.** `useSurfaceParticipation` calls at the top level of each component (never conditional — for QuestionCard, wrap the participation in a tiny child component `ModificationParticipation` rendered only when `recordId` is set, so hook order stays stable). Memoise `exportWorkspace` with `useCallback` over the live values. Export operations: `const op = useWorkspaceStore.getState().beginOperation("export_odt", "generate.results"); buildExamOdt(...).then((blob) => { downloadBlob(...); op.end("completed"); }).catch(() => op.end("failed"));` — surfaces: GeneratePage → `generate.results`; QuestionCard → `history.modification` when `recordId` is set, else `generate.results`.
-- [ ] **Step 4: Run all `GeneratePage.*`, `HistoryPage.*`, `HistoryDetail.*`, `QuestionCard.*` tests** → PASS (the guard tests must pass unmodified); tsc + lint clean.
-- [ ] **Step 5: Commit** — `git commit -m "feat(769): register generate/history surfaces and observe export operations"`
+- [x] **Step 2: Run → FAIL. Step 3: Implement.** `useSurfaceParticipation` calls at the top level of each component (never conditional — for QuestionCard, wrap the participation in a tiny child component `ModificationParticipation` rendered only when `recordId` is set, so hook order stays stable). Memoise `exportWorkspace` with `useCallback` over the live values. Export operations: `const op = useWorkspaceStore.getState().beginOperation("export_odt", "generate.results"); buildExamOdt(...).then((blob) => { downloadBlob(...); op.end("completed"); }).catch(() => op.end("failed"));` — surfaces: GeneratePage → `generate.results`; QuestionCard → `history.modification` when `recordId` is set, else `generate.results`.
+- [x] **Step 4: Run all `GeneratePage.*`, `HistoryPage.*`, `HistoryDetail.*`, `QuestionCard.*` tests** → PASS (the guard tests must pass unmodified); tsc + lint clean.
+- [x] **Step 5: Commit** — `git commit -m "feat(769): register generate/history surfaces and observe export operations"`
 
 ---
 
@@ -437,14 +437,14 @@ In `generate`: first `admissionResolveRef.current?.({ outcome: "rejected", reaso
 - Modify: `web/src/components/ParamForm.tsx`
 - Test: `web/src/components/ParamForm.workspace.test.tsx` (new; copy the schema/models fetch mocks and the "open the confirmation screen" helper from `ParamForm.preview-refetch.test.tsx`)
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
   - `generate.form` registers `hydrating`; becomes `ready` once schemas, models and defaults resolve (drive the same mocks the preview-refetch test uses).
   - With a saved draft and default fields, readiness is `restoring` while the draft prompt shows; `ready` after 「還原草稿」/「重新開始」 (drive via the buttons `ParamForm.draft-restore.test.tsx` clicks); with a draft AND `initialParams`, `restoring` while the draft-vs-History choice shows.
   - `hasEditableState` false, then true after typing in a field (same interaction as `ParamForm.unsubmitted-input.test.tsx`).
   - Opening 發送前確認 registers `generate.confirmation` with `hasEditableState: true`; sending or cancelling unregisters it.
   - `generate.confirmation.exportWorkspace()` returns a `confirmation` snapshot whose `pendingParams` equals the resolved payload, `redraws` equals `{}` before any 重抽 and `{ [path]: 1 }` after one 重抽 click, `historyDraftChoice` mirrors the choice.
   - Operations: opening the confirmation begins `resolve` on `generate.confirmation` and ends when the mocked resolver resolves; a second resolve issued before the first settles ends the first as `superseded` (spy on `end` via a `beginOperation` wrapper spy); `core_question_planning` begins when the planning effect fires and ends `completed`/`failed`; `prompt_preview` begins for the initial preview and for the debounced refetch and ends `superseded` when a newer refetch is issued.
-- [ ] **Step 2: Run → FAIL. Step 3: Implement.**
+- [x] **Step 2: Run → FAIL. Step 3: Implement.**
   - State: add `const [hasUserEdited, setHasUserEdited] = useState(false)` and set it in `markUnsubmittedInput` (keep the ref; the state is only for participation). Reset to false where `hasUserEditedRef.current = false` is assigned today (draft restore / defaults handlers).
   - `const formReadiness: SurfaceReadiness = hasDraftHistoryConflict || showDraftPrompt ? "restoring" : schemas !== null && defaultsReady && modelsResolved ? "ready" : "hydrating";` placed after `showDraftPrompt` is computed.
   - `useSurfaceParticipation("generate.form", { readiness: formReadiness, hasEditableState: hasUserEdited, hasReceivedResults: false, exportWorkspace: exportForm })` where `exportForm = useCallback(() => exportFormWorkspace(formSnapshot), [formSnapshot])`.
@@ -455,8 +455,8 @@ In `generate`: first `admissionResolveRef.current?.({ outcome: "rejected", reaso
     - Initial preview effect: begin `prompt_preview` before `void previewGenerate(...)`, end `completed` in `.then`, `failed` in `.catch`, `superseded` in cleanup.
     - Debounced refetch effect: begin inside the timeout callback right before `void previewGenerate(fetchParams)`; end `completed`/`failed` in the handlers; in the `seq !== previewRefetchSeqRef.current` early-return branches end `superseded`; cleanup only clears the timeout (an operation begun inside the timeout is ended by its own handlers).
     - `retryPreviewFetch`: same begin/end pattern.
-- [ ] **Step 4: Run the new test plus every `ParamForm.*.test.tsx`** → PASS; tsc + lint clean (watch `react-hooks/refs` — read `redrawsRef.current` inside the `exportWorkspace` callback, not during render).
-- [ ] **Step 5: Commit** — `git commit -m "feat(769): ParamForm surface participation, confirmation export and observed 預抽/planning/preview operations"`
+- [x] **Step 4: Run the new test plus every `ParamForm.*.test.tsx`** → PASS; tsc + lint clean (watch `react-hooks/refs` — read `redrawsRef.current` inside the `exportWorkspace` callback, not during render).
+- [x] **Step 5: Commit** — `git commit -m "feat(769): ParamForm surface participation, confirmation export and observed 預抽/planning/preview operations"`
 
 ---
 
@@ -467,8 +467,8 @@ In `generate`: first `admissionResolveRef.current?.({ outcome: "rejected", reaso
 - Modify: `CONTEXT.md` (glossary), `CLAUDE.md` (Architecture Decisions)
 - Verify: `docs/superpowers/specs/2026-09-14-769-update-flow-prefactor-design.md`, `docs/superpowers/plans/2026-09-14-769-update-flow-prefactor.md`, `docs/research/2026-09-14-769-update-flow-prefactor-inventory.md` are committed
 
-- [ ] **Step 1: ADR 0030** in the style of `docs/adr/0010-*.md` (title line, one context paragraph, `## Considered Options`, `## Consequences`): decision = each surface declares its participation in `web/src/lib/workspace/workspaceStore.ts` (readiness, editable state, results, export seam) and operations are begun/ended at the call site; rejected = inferring activity from the router/DOM, and a wrapper that owns AbortControllers; consequences = zero surfaces is unsafe, `isRefreshSafe` reports every blocker, admission lives beside `status` and never replaces it, #770–#779 consume these seams.
-- [ ] **Step 2: CONTEXT.md** — add under 設定 (or a new `### 更新 (Update)` section if none fits) three entries in the existing `**term**: definition / _Avoid_:` format: 工作區參與 (a surface's declared readiness, editable state, received results and export seam), 受理 (the moment the server accepts a submitted generation or 人工審題修正 request — `started` event / `run_id` — as distinct from submitting), 可觀察作業 (an in-flight operation an updater can see but not abort).
-- [ ] **Step 3: CLAUDE.md** — add a `### Workspace registry (issue #769)` subsection after the "Web confirmation dialog pre-draw" section: four sentences on the store, participation, admission and the no-cancellation rule, pointing to ADR 0030.
-- [ ] **Step 4: Full verification from `web/`:** `npx tsc -b --noEmit && npm run lint && npm test` — all green; then `git status` shows only intended files.
-- [ ] **Step 5: Commit** — `git commit -m "docs(769): ADR 0030 workspace participation, glossary and architecture notes"`
+- [x] **Step 1: ADR 0030** in the style of `docs/adr/0010-*.md` (title line, one context paragraph, `## Considered Options`, `## Consequences`): decision = each surface declares its participation in `web/src/lib/workspace/workspaceStore.ts` (readiness, editable state, results, export seam) and operations are begun/ended at the call site; rejected = inferring activity from the router/DOM, and a wrapper that owns AbortControllers; consequences = zero surfaces is unsafe, `isRefreshSafe` reports every blocker, admission lives beside `status` and never replaces it, #770–#779 consume these seams.
+- [x] **Step 2: CONTEXT.md** — add under 設定 (or a new `### 更新 (Update)` section if none fits) three entries in the existing `**term**: definition / _Avoid_:` format: 工作區參與 (a surface's declared readiness, editable state, received results and export seam), 受理 (the moment the server accepts a submitted generation or 人工審題修正 request — `started` event / `run_id` — as distinct from submitting), 可觀察作業 (an in-flight operation an updater can see but not abort).
+- [x] **Step 3: CLAUDE.md** — add a `### Workspace registry (issue #769)` subsection after the "Web confirmation dialog pre-draw" section: four sentences on the store, participation, admission and the no-cancellation rule, pointing to ADR 0030.
+- [x] **Step 4: Full verification from `web/`:** `npx tsc -b --noEmit && npm run lint && npm test` — all green; then `git status` shows only intended files.
+- [x] **Step 5: Commit** — `git commit -m "docs(769): ADR 0030 workspace participation, glossary and architecture notes"`
