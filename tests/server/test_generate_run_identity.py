@@ -12,10 +12,20 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import re
+import uuid
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from server.generate.subjects import SUBJECTS
 from src.common.generation_events import QuestionContext, allocate_manifest, new_run_id
+from src.social_studies.schemas import (
+    ExamQuestion,
+    QuestionMetadata,
+    QuestionType,
+)
 from tests.server.generate_test_utils import resolved_generate_params
+from tests.server.generate_test_utils import resolved_generate_params as _rgp
 
 # ---------------------------------------------------------------------------
 # allocate_manifest correctness
@@ -132,3 +142,160 @@ def test_build_run_context_populates_manifest() -> None:
     assert ctx.manifest[0].run_id == ctx.run_id
     # question_id should use manifest format: q_<run_id>_001
     assert ctx.manifest[0].question_id == f"q_{ctx.run_id}_001"
+
+
+# ---------------------------------------------------------------------------
+# Slice 3 additions: v2 started event and run_id identity
+# ---------------------------------------------------------------------------
+
+
+def _fake_do_generate_s3(rng_params, overrides, **kwargs):
+    return ExamQuestion(
+        id=kwargs["question_id"],
+        情境=[c for c in rng_params.情境],
+        題型種類=rng_params.題型種類,
+        題型=rng_params.題型[0] if rng_params.題型 else QuestionType("選擇題"),
+        題目內容類型=rng_params.題目內容類型,
+        取材來源=list(rng_params.學習內容_pool),
+        metadata=QuestionMetadata(grade=rng_params.grade, model="test-model"),
+    )
+
+
+_fake_ss_s3 = dataclasses.replace(SUBJECTS["social_studies"], do_generate=_fake_do_generate_s3)
+
+
+def _ss_params(**kw):
+    return _rgp({"subject": "social_studies", "skip_verify": True, "count": 1, **kw})
+
+
+def _run_stream_s3(params, tmp_path, generation_log_id=None):
+    from server.config import ServerConfig
+    from server.generate.service import generate_question_stream
+    events = []
+    config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    app_state = SimpleNamespace(renderer_pool=None)
+
+    async def collect():
+        async for ev in generate_question_stream(
+            params, config, app_state,
+            subjects={"social_studies": _fake_ss_s3},
+            generation_log_id=generation_log_id,
+        ):
+            events.append(ev)
+
+    asyncio.run(collect())
+    return events
+
+
+def test_started_is_first_event(tmp_path) -> None:
+    """started must be the very first yielded event."""
+    params = _ss_params()
+    events = _run_stream_s3(params, tmp_path)
+    assert events, "stream produced no events"
+    assert events[0].get("event") == "started", (
+        f"first event was {events[0].get('event')!r}, expected 'started'"
+    )
+
+
+def test_started_has_context_with_run_id_and_event_seq_1(tmp_path) -> None:
+    """started context must have run_id and event_seq=1, no question_id/index/'event'."""
+    params = _ss_params()
+    events = _run_stream_s3(params, tmp_path)
+    started = events[0]
+    assert started.get("event") == "started"
+    ctx = started.get("context", {})
+    assert "run_id" in ctx, f"context missing run_id: {ctx}"
+    assert ctx.get("event_seq") == 1, f"expected event_seq=1, got {ctx.get('event_seq')}"
+    assert "question_id" not in ctx, f"started context must not have question_id: {ctx}"
+    assert "index" not in ctx, f"started context must not have index: {ctx}"
+    assert "event" not in ctx, f"context must not contain 'event' key: {ctx}"
+
+
+def test_started_payload_has_protocol_version_2(tmp_path) -> None:
+    """started payload must have protocol_version == 2."""
+    params = _ss_params()
+    events = _run_stream_s3(params, tmp_path)
+    started = events[0]
+    payload = started.get("payload", {})
+    assert payload.get("protocol_version") == 2, f"payload: {payload}"
+
+
+def test_started_payload_total_equals_count(tmp_path) -> None:
+    """started payload.total must equal request count."""
+    params = _ss_params()
+    events = _run_stream_s3(params, tmp_path)
+    started = events[0]
+    payload = started.get("payload", {})
+    assert payload.get("total") == 1, f"payload: {payload}"
+
+
+def test_started_payload_questions_list(tmp_path) -> None:
+    """started payload.questions must be [{index, question_id}] with correct format."""
+    params = _ss_params()
+    events = _run_stream_s3(params, tmp_path)
+    started = events[0]
+    payload = started.get("payload", {})
+    ctx = started.get("context", {})
+    run_id = ctx.get("run_id", "")
+    questions = payload.get("questions", [])
+    assert len(questions) == 1
+    q = questions[0]
+    assert q.get("index") == 0
+    assert run_id in q.get("question_id", ""), (
+        f"question_id {q.get('question_id')!r} must contain run_id {run_id!r}"
+    )
+    assert q.get("question_id", "").endswith("_001"), (
+        f"question_id must end with _001: {q.get('question_id')!r}"
+    )
+
+
+def test_run_id_uses_generation_log_id_when_provided(tmp_path) -> None:
+    """When generation_log_id is given, run_id must equal str(generation_log_id)."""
+    log_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    params = _ss_params()
+    events = _run_stream_s3(params, tmp_path, generation_log_id=log_id)
+    started = events[0]
+    ctx = started.get("context", {})
+    assert ctx.get("run_id") == str(log_id), (
+        f"run_id={ctx.get('run_id')!r}, expected {str(log_id)!r}"
+    )
+
+
+def test_run_id_is_fresh_uuid_when_none(tmp_path) -> None:
+    """When generation_log_id is None, run_id must be a fresh UUID hex string."""
+    params = _ss_params()
+    events = _run_stream_s3(params, tmp_path)
+    started = events[0]
+    ctx = started.get("context", {})
+    run_id = ctx.get("run_id", "")
+    assert re.match(r"^[0-9a-f]{32}$", run_id), (
+        f"run_id not a 32-hex uuid: {run_id!r}"
+    )
+
+
+def test_two_runs_with_identical_params_have_different_run_ids(tmp_path) -> None:
+    """Two runs with the same params must produce distinct run_ids."""
+    params = _ss_params()
+    events1 = _run_stream_s3(params, tmp_path)
+    events2 = _run_stream_s3(params, tmp_path)
+    rid1 = events1[0].get("context", {}).get("run_id")
+    rid2 = events2[0].get("context", {}).get("run_id")
+    assert rid1 != rid2, f"run_ids must differ between runs: {rid1}"
+
+
+def test_result_payload_id_equals_manifest_question_id(tmp_path) -> None:
+    """result payload 'id' must equal the manifest question_id for that worker."""
+    params = _ss_params()
+    events = _run_stream_s3(params, tmp_path)
+    started = events[0]
+    ctx = started.get("context", {})
+    run_id = ctx.get("run_id")
+    # payload may be in "data" (v1) or "payload" (v2)
+    results = [e for e in events if e.get("event") == "result"]
+    assert results, "no result events found"
+    result = results[0]
+    result_data = result.get("data", result.get("payload", {}))
+    result_id = result_data.get("id", "")
+    assert run_id in result_id, (
+        f"result id {result_id!r} must contain run_id {run_id!r}"
+    )

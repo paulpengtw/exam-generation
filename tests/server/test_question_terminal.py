@@ -71,9 +71,11 @@ def _drain_queue(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue) -> list[
 
 
 def _event_name(e: dict) -> str | None:
-    """Extract the event name from a v1 or v2-hybrid event dict."""
-    if "context" in e:
-        return e["context"].get("event")
+    """Extract the event name from a v1 or v2-hybrid event dict.
+
+    v2 envelopes carry a top-level 'event' key for v1 compatibility; the
+    context dict no longer has an 'event' key (removed in slice 3).
+    """
     return e.get("event")
 
 

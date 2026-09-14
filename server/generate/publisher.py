@@ -10,6 +10,7 @@ the asyncio event loop.
 from __future__ import annotations
 
 import asyncio
+import copy
 import itertools
 import threading
 from typing import Any
@@ -46,7 +47,11 @@ class GenerationPublisher:
         question_id: str | None = None,
         index: int | None = None,
         content_revision: int | None = None,
+        subquestion_index: int | None = None,
+        operation_id: str | None = None,
+        call_id: str | None = None,
         payload: dict[str, Any] | None = None,
+        sidecars: dict | None = None,
     ) -> None:
         """Enqueue a v2 ``{context, payload}`` envelope from any thread.
 
@@ -58,7 +63,6 @@ class GenerationPublisher:
         context: dict[str, Any] = {
             "run_id": self._run_id,
             "event_seq": seq,
-            "event": event_name,
         }
         if question_id is not None:
             context["question_id"] = question_id
@@ -66,11 +70,19 @@ class GenerationPublisher:
             context["index"] = index
         if content_revision is not None:
             context["content_revision"] = content_revision
+        if subquestion_index is not None:
+            context["subquestion_index"] = subquestion_index
+        if operation_id is not None:
+            context["operation_id"] = operation_id
+        if call_id is not None:
+            context["call_id"] = call_id
 
         envelope: dict[str, Any] = {
             "event": event_name,      # v1-compatible top-level key
             "context": context,        # v2 metadata
-            "payload": dict(payload) if payload is not None else {},
+            "payload": copy.deepcopy(payload) if payload is not None else {},
         }
+        if sidecars:
+            envelope.update(sidecars)
 
         self._loop.call_soon_threadsafe(self._queue.put_nowait, envelope)

@@ -253,7 +253,7 @@ def _build_run_context(
     order_counter = itertools.count(1)
     order_lock = threading.Lock()
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
-    _run_id = new_run_id()
+    _run_id = str(generation_log_id) if generation_log_id is not None else new_run_id()
     _manifest = allocate_manifest(spec.question_id_prefix, _run_id, max(1, params.count))
     _publisher = GenerationPublisher(run_id=_run_id, loop=loop, queue=queue)
     _snapshot_ledger = QuestionSnapshotLedger()
@@ -503,13 +503,6 @@ async def generate_question_stream(
     _session_factory = session_factory if session_factory is not None else AsyncSessionLocal
     _client_factory = client_factory if client_factory is not None else LLMClient
 
-    yield {
-        "event": SSEEventName.STARTED,
-        "data": {
-            "generation_log_id": str(generation_log_id) if generation_log_id is not None else None,
-        },
-    }
-
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     renderer_pool = getattr(app_state, "renderer_pool", None)
@@ -555,6 +548,21 @@ async def generate_question_stream(
         on_error=_emit_sq_config_error,
         cancel_event=_cancel_event,
     )
+
+    ctx.publisher.publish(
+        SSEEventName.STARTED,
+        payload={
+            "protocol_version": 2,
+            "total": ctx.count,
+            "questions": [
+                {"index": qc.index, "question_id": qc.question_id}
+                for qc in ctx.manifest
+            ],
+            "generation_log_id": str(generation_log_id) if generation_log_id is not None else None,
+        },
+    )
+    await asyncio.sleep(0)
+    yield queue.get_nowait()
 
     # Site 2 (creative-brief / coverage planning): delegated to spec.
     # SS: plans briefs when creative_planning=True; returns [None]*count otherwise.
