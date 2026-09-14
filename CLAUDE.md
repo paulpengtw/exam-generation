@@ -86,21 +86,33 @@ The store never receives an AbortController, promise or callback that can cancel
 
 `web/src/lib/runEvidence.ts` defines the `generate-legacy`, `modification`, and reserved `generate-v2` profiles. The shared status bar on GeneratePage and inside QuestionCard consumes a profile-tagged evidence object. `generationStream.ts` projects legacy stage events and the five generation card fields; `modificationStream.ts` projects modification steps and decodes its existing SSE events. Modification never requires a generation manifest. `generate-v2` is the generation-only entry point reserved for OpenSpec `per-question-live-progress` tasks 5.x/6.x and issue #742; it currently renders the existing aggregate line. HistoryDetail retains its stored-record card props.
 
-### Per-question live progress (issue #742)
+### Generation stream protocol v2 (issue #742, server side)
 
-The backend implements stream protocol v2 for per-question lifecycle events. Key components:
+The backend implements stream protocol v2. Clients **must** send `stream_version=2` on GET/POST `/api/generate`; missing or unsupported values return HTTP 426 with body `{code: "CLIENT_UPDATE_REQUIRED", supported_stream_versions: [2]}`. `stream_version` is a transport field: it is excluded from `params_json` and from the TypeScript contract (`SERVER_ONLY_GENERATE_FIELDS`). The frontend does not yet send `stream_version=2` (next slice).
 
-- **`src/common/generation_events.py`**: Immutable identity types. `RunContext(run_id)` and `QuestionContext(run_id, question_id, index)` are frozen dataclasses. `new_run_id()` returns a UUID4 hex string (32 chars). `allocate_manifest(prefix, run_id, count)` pre-allocates all question IDs before workers start (`{prefix}{run_id}_{i+1:03d}`).
+**Run identity.** `run_id` = `GenerationLog.id` when available, otherwise a fresh UUID4 hex string (32 chars, from `new_run_id()`). All question IDs are allocated before workers start: `allocate_manifest(prefix, run_id, count)` returns `{prefix}{run_id}_{i+1:03d}` for each question.
 
-- **`server/generate/event_protocol.py`**: Protocol constants and v2 types. `PROTOCOL_VERSION = 2`, `SUPPORTED_STREAM_VERSIONS = (2,)`. `client_update_required_body()` returns a 426 body with `code: "CLIENT_UPDATE_REQUIRED"`. `EventContext`, `StartedPayload`, `QuestionTerminalPayload`, and `envelope_dict()` define the v2 wire format.
+**Event sequence.** One `GenerationPublisher` per run assigns monotonic `event_seq` at the `publish()` call site (thread-safe). Every emitted event is a `{event, context, payload}` triple on the wire (`event` is kept for v1 compatibility).
 
-- **`server/generate/publisher.py`**: `GenerationPublisher(run_id, loop, queue)` provides thread-safe monotonic `event_seq` via `next_seq()` and enqueues `{event, context, payload}` dual-key envelopes via `loop.call_soon_threadsafe`. Each `_RunContext` holds one publisher shared across all workers.
+**question_update and result.** Both carry `context.content_revision` from the per-question `QuestionSnapshotLedger`. The ledger's `commit(question_dict, output_dir) -> (revision, snapshot)` increments the revision only when the effective content signature changes. Signature = stable JSON of the question with `verification/verification_trail/figure_policy_trail/reference_example_record/image_base64/metadata` stripped at any depth, plus sha256 of image files referenced by `圖片` / `subquestions[*].圖片`. Missing files contribute the literal `"missing"`. Snapshots are deep copies; the ledger is thread-safe.
 
-- **`server/generate/snapshot_ledger.py`**: `QuestionSnapshotLedger` tracks per-question content revisions (1-based, thread-safe). `record(question_id, content)` returns the revision number; `latest_revision(question_id)` returns current rev (0 if unseen).
+**question_terminal.** One validated `QuestionTerminalPayload` is published per question at every worker exit point:
+- Normal path (published AFTER the result): `termination_reason='normal'`, `has_final=True`, `final_revision` from the ledger commit on the final question. Image slots: one `{kind:'image', question_id, subquestion_id:None}` expected when the final question has `chart_spec` or `圖片`; slot appears in `delivered` if the PNG file exists under `output_dir`, else in `missing`. `delivery_status` = `'complete'` when `missing==[]`, `'partial'` otherwise. `review.status` = `'skipped'` when `params.skip_verify` is True; `'passed'`/`'failed'` from `question.verification.passed` when verification exists; `'unknown'` with a reason otherwise.
+- Exception path (published AFTER the error event): `termination_reason='failed'`, `has_final=False`, `delivery_status='none'`, `review.status='unknown'` with `reason='no final content'`.
+- GenerationCancelled path: `termination_reason='cancelled'`, `has_final=False`, `delivery_status='unknown'`, `unknown_reason='cancelled before completion'`.
+- On `QuestionTerminalPayload` validation failure: logs a WARNING and falls back to a minimal `delivery_status='unknown'` terminal (never crashes the worker).
+- Grouped subjects (SS/NS) currently get `expected=[]`; fixed 小題 slots are issue #744.
 
-- **HTTP 426 gate**: `GET /api/generate` and `POST /api/generate` return 426 when `stream_version` is absent or not in `SUPPORTED_STREAM_VERSIONS`. `stream_version` is in `SERVER_ONLY_GENERATE_FIELDS` and excluded from the TypeScript contract.
+**Current gaps (not in this branch).** Operation/call ids are issue #743. Sibling-independent error handling is issue #747. The frontend does not yet send `stream_version=2` (next slice).
 
-- **`question_terminal` event** (`SSEEventName.QUESTION_TERMINAL`): emitted by `_worker_one` at every exit point via `ctx.publisher.publish(...)` with `delivery_status` set to `delivered` (success), `failed` (exception), or `cancelled` (`GenerationCancelled`). The envelope is dual-key: top-level `event` for v1 compatibility plus `context`/`payload` for v2 clients.
+**Key files.**
+- `src/common/generation_events.py`: `RunContext`, `QuestionContext`, `new_run_id()`, `allocate_manifest()`.
+- `server/generate/event_protocol.py`: `PROTOCOL_VERSION=2`, `EventContext`, `StartedPayload`, `QuestionTerminalPayload`, `SlotRef`, `envelope_dict()`.
+- `server/generate/publisher.py`: `GenerationPublisher` — thread-safe monotonic `event_seq`, `loop.call_soon_threadsafe`.
+- `server/generate/snapshot_ledger.py`: `QuestionSnapshotLedger.commit(question_dict, output_dir)` → `(revision, snapshot)`.
+- `server/generate/service.py`: `_build_question_terminal_payload()`, `_worker_one` wiring.
+
+**Fixture.** `tests/fixtures/generation_v2/math_single_interleaved.jsonl` — a masked recording of a count=2 interleaved math run (run_id→'RUN', ts→0.0, generation_log_id→'LOG', ISO timestamps→'TS'). Regenerate with `GENERATE_V2_FIXTURE=1 uv run pytest tests/server/test_742_fixture.py::test_interleaved_fixture`.
 
 ### 出題模式 is a prompt-level hint
 
