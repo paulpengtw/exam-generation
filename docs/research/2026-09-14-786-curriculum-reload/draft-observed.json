@@ -1,0 +1,67 @@
+{
+  "grade": "11",
+  "restoredTextInstruction": "#786 grade-11 草稿還原驗收",
+  "schemaResponses": [
+    {
+      "path": "/api/schemas?subject=natural_sciences&grade=11",
+      "status": 200,
+      "lpCount": 39,
+      "lcCount": 426
+    }
+  ],
+  "schemaResourcePaths": [
+    "/api/schemas?subject=natural_sciences",
+    "/api/schemas?subject=natural_sciences&grade=7",
+    "/api/schemas?subject=natural_sciences&grade=11"
+  ],
+  "inputs": [
+    {
+      "placeholder": "搜尋學習表現...",
+      "selected": [
+        "pa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習內容...",
+      "selected": [
+        "PKa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習表現...",
+      "selected": [
+        "pa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習內容...",
+      "selected": [
+        "PKa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習表現...",
+      "selected": [
+        "pa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習內容...",
+      "selected": [
+        "PKa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習表現...",
+      "selected": [
+        "pa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習內容...",
+      "selected": [
+        "PKa-Ⅴa-1"
+      ]
+    }
+  ]
+}
