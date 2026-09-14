@@ -339,9 +339,27 @@ def _worker_one(
             worker_recorder,
         )
     )
-    emit_question_update = make_publisher_question_update_emitter(
-        ctx.publisher, ctx.manifest[i], ctx.config
-    )
+    # Wrap emit_question_update to commit to the snapshot ledger and carry
+    # content_revision in every question_update context (slice 5).
+    _revision_tracker: list[int] = [0]  # mutable container so the closure can write back
+
+    def emit_question_update(question: Any, phase: str) -> None:
+        q_dict = json.loads(question.model_dump_json(exclude_none=True))
+        rev, _ = ctx.snapshot_ledger.commit(q_dict, ctx.config.output_dir)
+        _revision_tracker[0] = rev
+        _upd_payload: dict[str, Any] = {
+            "index": ctx.manifest[i].index,
+            "phase": phase,
+            "question": question_to_event(question, ctx.config),
+        }
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_UPDATE,
+            question_id=ctx.manifest[i].question_id,
+            index=ctx.manifest[i].index,
+            content_revision=rev,
+            payload=_upd_payload,
+        )
+
     emit_trail_entry = make_publisher_trail_emitter(ctx.publisher, ctx.manifest[i])
     verification_trail: list[dict[str, Any]] = []
     figure_policy_trail: list[dict[str, Any]] = []
@@ -452,10 +470,17 @@ def _worker_one(
             sidecars["verification_trail"] = verification_trail
         if figure_policy_trail:
             sidecars["figure_policy_trail"] = figure_policy_trail
+        # Commit the final question to the ledger (unchanged content keeps revision).
+        _q_final_dict = json.loads(question.model_dump_json(exclude_none=True))
+        _final_revision, _ = ctx.snapshot_ledger.commit(
+            _q_final_dict, ctx.config.output_dir
+        )
+        _revision_tracker[0] = _final_revision
         ctx.publisher.publish(
             SSEEventName.RESULT,
             question_id=question_id,
             index=i,
+            content_revision=_final_revision,
             payload=question_to_event(question, ctx.config),
             sidecars=sidecars,
         )

@@ -299,3 +299,133 @@ def test_result_payload_id_equals_manifest_question_id(tmp_path) -> None:
     assert run_id in result_id, (
         f"result id {result_id!r} must contain run_id {run_id!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Slice 5 – content_revision wired via QuestionSnapshotLedger
+# ---------------------------------------------------------------------------
+
+
+def _build_math_question(question_id: str, 題目_text: str = "original question") -> Any:
+    """Build a minimal math ExamQuestion for service-level ledger tests."""
+    from src.schemas import ExamQuestion
+
+    return ExamQuestion(
+        id=question_id,
+        情境=["個人"],
+        題型種類="單一題",
+        題型="選擇題",
+        數學思考=["形成"],
+        學習內容=[{"編碼": "A-7-1", "說明": "test"}],
+        題目=[題目_text],
+        正確解題分析=["answer"],
+        核心素養=["數-J-A2"],
+        學習表現=[{"編碼": "s-IV-1", "說明": "test"}],
+    )
+
+
+def _run_stream_math(fake_do_generate, tmp_path) -> list[dict]:
+    """Run generate_question_stream for math with a fake do_generate."""
+    import asyncio
+    import dataclasses
+    from pathlib import Path
+
+    from server.config import ServerConfig
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
+    from tests.server.generate_test_utils import resolved_generate_params
+
+    params = resolved_generate_params({
+        "subject": "math",
+        "seed": 41,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "單一題",
+        "q_type": ["選擇題"],
+        "style": ["text_only"],
+        "math_thinking": ["形成"],
+        "learning_content": ["A-7-7"],
+        "learning_performance": ["s-IV-12"],
+        "core_competency": ["數-J-A2"],
+        "content_type": "純文字",
+        "count": 1,
+        "skip_verify": True,
+    })
+    spec = dataclasses.replace(SUBJECTS["math"], do_generate=fake_do_generate)
+    config = ServerConfig(api_key="x", gemini_api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    app_state = MagicMock()
+    app_state.renderer_pool = None
+    events = []
+
+    async def collect():
+        async for ev in generate_question_stream(
+            params, config, app_state,
+            subjects={"math": spec},
+        ):
+            events.append(ev)
+
+    asyncio.run(collect())
+    return events
+
+
+def test_content_revision_same_question_stays_at_1(tmp_path) -> None:
+    """question_update revisions [1,1] and result content_revision=1 when content unchanged."""
+    import unittest.mock as mock
+
+    captured_updates: list[dict] = []
+    captured_results: list[dict] = []
+
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        qid = kwargs["question_id"]
+        on_update = kwargs["on_question_update"]
+        q = _build_math_question(qid)
+        on_update(q, "draft")
+        on_update(q, "verified")
+        return q
+
+    with mock.patch("server.observability.record_generation_outcome"):
+        events = _run_stream_math(fake_do_generate, tmp_path)
+
+    updates = [e for e in events if e.get("event") == "question_update"]
+    results = [e for e in events if e.get("event") == "result"]
+
+    # Both question_updates should have content_revision=1 (same content)
+    update_revisions = [u["context"].get("content_revision") for u in updates]
+    assert update_revisions == [1, 1], f"expected [1,1] got {update_revisions}"
+
+    # Result should also have content_revision=1
+    assert results, "no result events"
+    result_ctx = results[0].get("context", {})
+    assert result_ctx.get("content_revision") == 1, (
+        f"result content_revision={result_ctx.get('content_revision')!r}"
+    )
+
+
+def test_content_revision_increments_on_mutation(tmp_path) -> None:
+    """question_update revisions [1,2] and result content_revision=2 when 題目 changes."""
+    import unittest.mock as mock
+
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        qid = kwargs["question_id"]
+        on_update = kwargs["on_question_update"]
+        q = _build_math_question(qid)
+        on_update(q, "draft")
+        # Mutate 題目 to simulate a correction pass
+        q.題目 = ["corrected question text"]
+        on_update(q, "corrected")
+        return q
+
+    with mock.patch("server.observability.record_generation_outcome"):
+        events = _run_stream_math(fake_do_generate, tmp_path)
+
+    updates = [e for e in events if e.get("event") == "question_update"]
+    results = [e for e in events if e.get("event") == "result"]
+
+    update_revisions = [u["context"].get("content_revision") for u in updates]
+    assert update_revisions == [1, 2], f"expected [1,2] got {update_revisions}"
+
+    assert results, "no result events"
+    result_ctx = results[0].get("context", {})
+    assert result_ctx.get("content_revision") == 2, (
+        f"result content_revision={result_ctx.get('content_revision')!r}"
+    )
