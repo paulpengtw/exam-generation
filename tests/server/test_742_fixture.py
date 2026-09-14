@@ -28,7 +28,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-
 # ---------------------------------------------------------------------------
 # All slice-level modules are importable (kept from the smoke version)
 # ---------------------------------------------------------------------------
@@ -251,14 +250,19 @@ def _run_interleaved_stream(
         client: _FakeClient = kwargs.get("client")
         is_b = qid.endswith("_002")
 
+        ts = time.time()
         # Emit stage start
-        client.emit({"type": "stage", "agent": "execute", "stage": "generate", "status": "start", "ts": time.time()})
+        client.emit(
+            {"type": "stage", "agent": "execute", "stage": "generate", "status": "start", "ts": ts}
+        )
         # Emit llm_request
-        client.emit({"type": "llm_request", "agent": "execute", "model": "test-model", "ts": time.time()})
+        client.emit({"type": "llm_request", "agent": "execute", "model": "test-model", "ts": ts})
         # Emit llm_response
-        client.emit({"type": "llm_response", "agent": "execute", "model": "test-model", "ts": time.time()})
+        client.emit({"type": "llm_response", "agent": "execute", "model": "test-model", "ts": ts})
         # Emit stage end
-        client.emit({"type": "stage", "agent": "execute", "stage": "generate", "status": "end", "ts": time.time()})
+        client.emit(
+            {"type": "stage", "agent": "execute", "stage": "generate", "status": "end", "ts": ts}
+        )
 
         label = "B" if is_b else "A"
         q = _make_question(qid, f"question for worker {label}: {qid}")
@@ -274,7 +278,9 @@ def _run_interleaved_stream(
         return q
 
     spec = dataclasses.replace(SUBJECTS["math"], do_generate=fake_do_generate)
-    config = ServerConfig(api_key="x", gemini_api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    config = ServerConfig(
+        api_key="x", gemini_api_key="x", output_dir=tmp_path, data_dir=Path("data")
+    )
     app_state = MagicMock()
     app_state.renderer_pool = None
 
@@ -328,9 +334,9 @@ def test_interleaved_fixture(tmp_path: Path) -> None:
         e for e in events
         if e.get("event") == "result" and e.get("context", {}).get("index") == 1
     )
-    assert result_b["context"]["event_seq"] < result_a["context"]["event_seq"], (
-        f"B result seq {result_b['context']['event_seq']} must be < A result seq {result_a['context']['event_seq']}"
-    )
+    b_seq = result_b["context"]["event_seq"]
+    a_seq = result_a["context"]["event_seq"]
+    assert b_seq < a_seq, f"B result seq {b_seq} must be < A result seq {a_seq}"
 
     # 3. Each terminal after its result
     for idx in (0, 1):
@@ -426,11 +432,14 @@ def test_interleaved_fixture(tmp_path: Path) -> None:
     for payload in result_payloads:
         # No envelope keys - the payload is the question dict, not an envelope
         for forbidden in ("context", "event_seq"):
+            keys = list(payload.keys())
             assert forbidden not in payload, (
-                f"result payload must not contain envelope key {forbidden!r}: {list(payload.keys())}"
+                f"result payload must not contain envelope key {forbidden!r}: {keys}"
             )
         # No image_base64 when no image was rendered
-        assert "image_base64" not in payload, "result payload must not contain image_base64 (no image rendered)"
+        assert "image_base64" not in payload, (
+            "result payload must not contain image_base64 (no image rendered)"
+        )
         # Should have the question id
         assert "id" in payload, f"result payload missing 'id': {list(payload.keys())}"
 

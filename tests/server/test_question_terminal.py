@@ -1,7 +1,8 @@
 """Slice 6 – question_terminal event tests (real QuestionTerminalPayload).
 
 Tests ensure _worker_one emits a validated question_terminal at every exit:
-- normal, passed verification → termination_reason='normal', delivery_status='complete', review={'status':'passed',…}
+- normal, passed verification → termination_reason='normal', delivery_status='complete',
+  review={'status':'passed',…}
 - normal, failed verification → review={'status':'failed',…}
 - skip_verify → review={'status':'skipped',…}
 - do_generate raising → termination_reason='failed', delivery_status='none', has_final=False
@@ -21,7 +22,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from src.common.generation_core import GenerationCancelled
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -404,6 +404,7 @@ def test_terminal_cancelled_on_generation_cancelled() -> None:
 def test_terminal_image_slot_delivered(tmp_path: Path) -> None:
     """Image file exists → image slot in delivered, delivery_status='complete'."""
     import json
+
     import server.observability as observability_mod
     from server.generate.service import _worker_one
 
@@ -448,6 +449,7 @@ def test_terminal_image_slot_delivered(tmp_path: Path) -> None:
 def test_terminal_image_slot_missing(tmp_path: Path) -> None:
     """Image spec present but no file → slot in missing, delivery_status='partial'."""
     import json
+
     import server.observability as observability_mod
     from server.generate.service import _worker_one
 
@@ -496,8 +498,8 @@ def test_terminal_image_slot_missing(tmp_path: Path) -> None:
 def test_terminal_verification_failed_review() -> None:
     """Verification.passed=False → review.status='failed'."""
     import json
+
     import server.observability as observability_mod
-    from src.schemas import VerificationResult
     from server.generate.service import _worker_one
 
     loop = asyncio.new_event_loop()
@@ -536,6 +538,7 @@ def test_terminal_verification_failed_review() -> None:
 def test_terminal_verification_passed_review() -> None:
     """Verification.passed=True → review.status='passed'."""
     import json
+
     import server.observability as observability_mod
     from server.generate.service import _worker_one
 

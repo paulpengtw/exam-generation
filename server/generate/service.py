@@ -23,12 +23,12 @@ import anyio
 
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
+from server.generate.event_protocol import QuestionTerminalPayload
 from server.generate.marshalling import (
     SSEEventName,
     make_combined_observer,
     make_publisher_observer,
     make_publisher_pipeline_emitter,
-    make_publisher_question_update_emitter,
     make_publisher_trail_emitter,
     question_to_event,
 )
@@ -42,7 +42,6 @@ from server.generate.persistence import (
     make_reference_example_record_recorder,
     persist_generation_record,
 )
-from server.generate.event_protocol import QuestionTerminalPayload, SlotRef
 from server.generate.publisher import GenerationPublisher
 from server.generate.snapshot_ledger import QuestionSnapshotLedger
 from server.generate.subjects import (

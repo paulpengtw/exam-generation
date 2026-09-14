@@ -15,6 +15,7 @@ import re
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 from server.generate.subjects import SUBJECTS
@@ -352,7 +353,9 @@ def _run_stream_math(fake_do_generate, tmp_path) -> list[dict]:
         "skip_verify": True,
     })
     spec = dataclasses.replace(SUBJECTS["math"], do_generate=fake_do_generate)
-    config = ServerConfig(api_key="x", gemini_api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    config = ServerConfig(
+        api_key="x", gemini_api_key="x", output_dir=tmp_path, data_dir=Path("data")
+    )
     app_state = MagicMock()
     app_state.renderer_pool = None
     events = []
@@ -371,9 +374,6 @@ def _run_stream_math(fake_do_generate, tmp_path) -> list[dict]:
 def test_content_revision_same_question_stays_at_1(tmp_path) -> None:
     """question_update revisions [1,1] and result content_revision=1 when content unchanged."""
     import unittest.mock as mock
-
-    captured_updates: list[dict] = []
-    captured_results: list[dict] = []
 
     def fake_do_generate(rng_params, overrides, **kwargs):
         qid = kwargs["question_id"]

@@ -11,10 +11,8 @@ API: commit(question_dict, output_dir) -> (revision: int, snapshot: dict)
 """
 from __future__ import annotations
 
-import hashlib
 import threading
 from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Basic revision behaviour
@@ -140,8 +138,10 @@ def test_two_threads_different_questions_independent(tmp_path: Path) -> None:
 
     t1 = threading.Thread(target=worker, args=("q_x_001",))
     t2 = threading.Thread(target=worker, args=("q_y_001",))
-    t1.start(); t2.start()
-    t1.join(); t2.join()
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
 
     assert not errors, f"thread errors: {errors}"
     # Each question stays at rev 1 (identical content)
