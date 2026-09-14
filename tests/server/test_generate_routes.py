@@ -822,11 +822,11 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
     results = [event for event in events if event["event"] == "result"]
 
     assert len(updates) == 1
-    assert updates[0]["data"]["index"] == 0
-    assert updates[0]["data"]["phase"] == "draft"
-    assert updates[0]["data"]["question"]["image_base64"] == "ZHJhZnQtcG5n"
+    assert updates[0]["payload"]["index"] == 0
+    assert updates[0]["payload"]["phase"] == "draft"
+    assert updates[0]["payload"]["question"]["image_base64"] == "ZHJhZnQtcG5n"
     assert len(results) == 1
-    assert results[0]["data"]["image_base64"] == "ZHJhZnQtcG5n"
+    assert results[0]["payload"]["image_base64"] == "ZHJhZnQtcG5n"
 
 
 def test_generate_route_accepts_difficulty_query_param() -> None:
@@ -1350,7 +1350,7 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
     assert len({entry["question_id"] for entry in log.figure_policy_trail_json}) == 2
     policy_events = [event for event in emitted_events if event["event"] == "trail"]
     assert len(policy_events) == 2
-    assert all(event["data"]["code"] == "figure_policy" for event in policy_events)
+    assert all(event["payload"]["code"] == "figure_policy" for event in policy_events)
 
 
 def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_path) -> None:
@@ -1755,8 +1755,8 @@ def test_service_worker_error_event_is_structured(tmp_path) -> None:
 
     error_events = [e for e in events if e["event"] == "error"]
     assert len(error_events) == 1, f"expected 1 error event, got: {error_events}"
-    data = error_events[0]["data"]
-    # data must be a dict with code and message
+    data = error_events[0]["payload"]
+    # payload must be a dict with code and message
     assert isinstance(data, dict), f"expected dict, got {type(data)}: {data!r}"
     assert data["code"] == "generation_failed"
     assert "message" in data
