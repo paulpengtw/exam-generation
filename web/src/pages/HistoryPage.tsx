@@ -10,6 +10,7 @@ import {
 } from "../api/client";
 import { useAuthStore } from "../store/authStore";
 import HistoryDetail from "./HistoryDetail";
+import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 
 const PAGE_SIZE = 20;
 
@@ -36,6 +37,12 @@ function HistoryList() {
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [subject, setSubject] = useState<string>("");
+
+  useSurfaceParticipation("history.list", {
+    readiness: data !== null || error !== null ? "ready" : "hydrating",
+    hasEditableState: false,
+    hasReceivedResults: false,
+  });
 
   const load = useCallback(async () => {
     setError(null);

@@ -5,8 +5,9 @@ import {
   submitModificationBatch,
   type ModificationBatchRequest,
 } from "../api/client";
-import type { ExamQuestion } from "./useGenerate";
+import type { AdmissionState, ExamQuestion } from "./useGenerate";
 import { useAuthStore } from "../store/authStore";
+import { useWorkspaceStore, type OperationHandle, type OperationOutcome } from "../lib/workspace/workspaceStore";
 
 export type ModificationRunStatus = "idle" | "running" | "completed" | "error";
 export type ModificationStageName = "modification" | "verify" | "correct";
@@ -33,6 +34,8 @@ export interface ModificationRunResult {
 
 export interface UseModificationRunReturn {
   status: ModificationRunStatus;
+  admission: AdmissionState;
+  admissionError: string | null;
   stageEvents: ModificationStageEvent[];
   result: ModificationRunResult | null;
   error: unknown | null;
@@ -106,6 +109,9 @@ function parseError(raw: string): Error {
 
 export function useModificationRun(recordId?: string): UseModificationRunReturn {
   const [status, setStatus] = useState<ModificationRunStatus>("idle");
+  const [admission, setAdmission] = useState<AdmissionState>("idle");
+  const [admissionError, setAdmissionError] = useState<string | null>(null);
+  const operationRef = useRef<OperationHandle | null>(null);
   const [stageEvents, setStageEvents] = useState<ModificationStageEvent[]>([]);
   const [result, setResult] = useState<ModificationRunResult | null>(null);
   const [error, setError] = useState<unknown | null>(null);
@@ -120,15 +126,24 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
     activeRecordIdRef.current = recordId;
   }, [recordId]);
 
+  const endOperation = useCallback((outcome: OperationOutcome) => {
+    operationRef.current?.end(outcome);
+    operationRef.current = null;
+  }, []);
+
   useEffect(() => () => {
+    endOperation("aborted");
     runSequenceRef.current += 1;
     controllerRef.current?.abort();
     controllerRef.current = null;
-  }, []);
+  }, [endOperation]);
 
   const start = useCallback(async (batch: ModificationBatchRequest) => {
     const activeRecordId = activeRecordIdRef.current;
     if (!activeRecordId) return;
+
+    endOperation("superseded");
+    operationRef.current = useWorkspaceStore.getState().beginOperation("modification", "history.modification");
 
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -136,8 +151,11 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
     const sequence = ++runSequenceRef.current;
     let terminalResult: ModificationRunResult | null = null;
     let streamFailed = false;
+    let admitted = false;
 
     setStatus("running");
+    setAdmission("submitting");
+    setAdmissionError(null);
     setStageEvents([]);
     setError(null);
 
@@ -149,6 +167,9 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
       if (!admission.run_id) {
         throw new Error("Modification admission did not return a run id");
       }
+
+      admitted = true;
+      setAdmission("admitted");
 
       const token = useAuthStore.getState().token;
       await fetchEventSource(
@@ -189,6 +210,7 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
               streamFailed = true;
               setError(parseError(event.data));
               setStatus("error");
+              endOperation("failed");
               return;
             }
             if (event.event === "done") {
@@ -197,6 +219,7 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
               if (doneResult === null) {
                 setError(new Error("Modification stream ended without a result"));
                 setStatus("error");
+                endOperation("failed");
                 return;
               }
               terminalResult = doneResult;
@@ -205,6 +228,7 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
               }
               setResult(doneResult);
               setStatus("completed");
+              endOperation("completed");
               controller.abort();
               controllerRef.current = null;
             }
@@ -214,6 +238,7 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
               streamFailed = true;
               setError(streamError);
               setStatus("error");
+              endOperation("failed");
             }
             throw streamError instanceof Error
               ? streamError
@@ -225,9 +250,14 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
       if (isCurrent() && !controller.signal.aborted) {
         setError(streamError);
         setStatus("error");
+        if (!admitted) {
+          setAdmission("rejected");
+          setAdmissionError(streamError instanceof Error ? streamError.message : String(streamError));
+        }
+        endOperation("failed");
       }
     }
-  }, []);
+  }, [endOperation]);
 
-  return { status, stageEvents, result, error, start };
+  return { status, admission, admissionError, stageEvents, result, error, start };
 }

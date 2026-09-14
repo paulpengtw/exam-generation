@@ -9,6 +9,10 @@ import {
   rebuildSubquestionSlots,
 } from "../lib/rebuildSubquestionSlots";
 import { renewSessionIfNeeded } from "../lib/sessionRenewal";
+import { exportFormWorkspace } from "../lib/workspace/adapters/formWorkspace";
+import { exportConfirmationWorkspace } from "../lib/workspace/adapters/confirmationWorkspace";
+import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
+import { useWorkspaceStore, type OperationHandle, type SurfaceParticipation, type SurfaceReadiness } from "../lib/workspace/workspaceStore";
 import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
 import {
@@ -1237,6 +1241,16 @@ function selectPlannedCoreQuestion(candidates: unknown): string | undefined {
   return normalised[0];
 }
 
+function ConfirmationParticipation({ exportWorkspace }: Pick<SurfaceParticipation, "exportWorkspace">) {
+  useSurfaceParticipation("generate.confirmation", {
+    readiness: "ready",
+    hasEditableState: true,
+    hasReceivedResults: false,
+    exportWorkspace,
+  });
+  return null;
+}
+
 export default function ParamForm({
   subject = "math",
   onSubmit,
@@ -1246,9 +1260,11 @@ export default function ParamForm({
 }: ParamFormProps) {
   const generationStartedRef = useRef(false);
   const hasUserEditedRef = useRef(false);
+  const [hasUserEdited, setHasUserEdited] = useState(false);
   const markUnsubmittedInput = () => {
     generationStartedRef.current = false;
     hasUserEditedRef.current = true;
+    setHasUserEdited(true);
     onUnsubmittedInput?.();
   };
   const t = useT();
@@ -1287,6 +1303,7 @@ export default function ParamForm({
     rebuildSubquestionSlots: boolean;
   } | null>(null);
   const resolveRequestSeqRef = useRef(0);
+  const resolveOperationRef = useRef<OperationHandle | null>(null);
   const redrawsRef = useRef<Record<string, number>>({});
   const pendingParamsRef = useRef<FormParams | null>(null);
   const pendingPerQuestionParamsRef = useRef<Record<string, unknown>[] | null>(null);
@@ -1524,6 +1541,26 @@ export default function ParamForm({
     hasDraftHistoryConflict &&
     defaultsReady;
 
+  const formReadiness: SurfaceReadiness = hasDraftHistoryConflict || showDraftPrompt
+    ? "restoring"
+    : schemas !== null && defaultsReady && modelsResolved ? "ready" : "hydrating";
+  const exportForm = useCallback(() => exportFormWorkspace(formSnapshot), [formSnapshot]);
+  useSurfaceParticipation("generate.form", {
+    readiness: formReadiness,
+    hasEditableState: hasUserEdited,
+    hasReceivedResults: false,
+    exportWorkspace: exportForm,
+  });
+  const exportConfirmation = useCallback(() => pendingParams === null ? null : exportConfirmationWorkspace({
+    pendingParams,
+    pendingPerQuestionParams,
+    clearedPaths,
+    redraws: redrawsRef.current,
+    hasPendingConfirmationEdits,
+    coreQuestionResolution,
+    historyDraftChoice,
+  }), [pendingParams, pendingPerQuestionParams, clearedPaths, hasPendingConfirmationEdits, coreQuestionResolution, historyDraftChoice]);
+
   function handleRestoreDraft() {
     if (!draftToRestore) return;
     const fields = draftToRestore.fields;
@@ -1541,6 +1578,7 @@ export default function ParamForm({
 
   function handleUseHistoryParams() {
     hasUserEditedRef.current = false;
+    setHasUserEdited(false);
     setHistoryDraftChoice("history");
     setDraftToRestore(null);
     if (defaultsSnapshotRef.current !== null) {
@@ -1551,6 +1589,7 @@ export default function ParamForm({
   function handleStartWithDefaults() {
     if (!schemas) return;
     hasUserEditedRef.current = false;
+    setHasUserEdited(false);
     setHistoryDraftChoice("defaults");
     setDraftToRestore(null);
     setPrefillNotice(null);
@@ -1569,15 +1608,17 @@ export default function ParamForm({
     if (!pendingParams || coreQuestionResolution === "loading" || previewRequestedRef.current) return;
     let cancelled = false;
     previewRequestedRef.current = true;
+    const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
     void previewGenerate(toGenerateParams(subject, pendingParams))
       .then(({ prompts }) => {
+        op.end("completed");
         if (cancelled) return;
         if (isValidPromptPreviewResponse(prompts)) {
           setPromptPreviews(prompts);
         }
       })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
+      .catch(() => op.end("failed"));
+    return () => { cancelled = true; op.end("superseded"); };
   }, [coreQuestionResolution, pendingParams, subject]);
 
   // Debounced re-fetch triggered by 確認頁修改 (#445).
@@ -1602,9 +1643,14 @@ export default function ParamForm({
         per_question_params: JSON.stringify(pendingPerQuestionParams),
       };
       const fetchParams = toGenerateParams(subject, formParams);
+      const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
       void previewGenerate(fetchParams)
         .then(({ prompts }) => {
-          if (seq !== previewRefetchSeqRef.current) return; // superseded
+          if (seq !== previewRefetchSeqRef.current) {
+            op.end("superseded");
+            return;
+          }
+          op.end("completed");
           if (isValidPromptPreviewResponse(prompts)) {
             setPromptPreviews(prompts);
           }
@@ -1613,7 +1659,11 @@ export default function ParamForm({
           setStalePreviewIndices(new Set());
         })
         .catch(() => {
-          if (seq !== previewRefetchSeqRef.current) return;
+          if (seq !== previewRefetchSeqRef.current) {
+            op.end("superseded");
+            return;
+          }
+          op.end("failed");
           setPreviewRefetchLoading(false);
           // #446: mark only the edited 題組 as stale
           setStalePreviewIndices((prev) => new Set([...prev, ...capturedEditedIndices]));
@@ -1631,14 +1681,16 @@ export default function ParamForm({
       : pendingParams.subject_filter
         ? [pendingParams.subject_filter]
         : undefined;
+    const op = useWorkspaceStore.getState().beginOperation("core_question_planning", "generate.confirmation");
     void planCoreQuestions({
       topic: pendingParams.topic ?? "",
       subject,
       subject_filter: pendingSubjectFilter,
       grade: pendingParams.grade,
     }).then(({ candidates }) => {
-      if (cancelled) return;
       const selected = selectPlannedCoreQuestion(candidates);
+      op.end(selected ? "completed" : "failed");
+      if (cancelled) return;
       if (!selected) {
         setCoreQuestionResolution("failed");
         return;
@@ -1678,10 +1730,11 @@ export default function ParamForm({
       }
       setCoreQuestionResolution("generated");
     }).catch(() => {
+      op.end("failed");
       if (cancelled) return;
       setCoreQuestionResolution("failed");
     });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; op.end("aborted"); };
   }, [coreQuestionResolution, pendingParams, subject]);
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
@@ -2352,6 +2405,9 @@ export default function ParamForm({
     rebuildSubquestionSlots = false,
   ) {
     const sequence = ++resolveRequestSeqRef.current;
+    resolveOperationRef.current?.end("superseded");
+    const op = useWorkspaceStore.getState().beginOperation("resolve", "generate.confirmation");
+    resolveOperationRef.current = op;
     resolveRequestRef.current = { payload, redraws, rebuildSubquestionSlots };
     setResolverLoading(true);
     setResolverError(null);
@@ -2373,8 +2429,12 @@ export default function ParamForm({
         },
         preserveConfirmationEdits,
       );
+      op.end("completed");
+      if (resolveOperationRef.current === op) resolveOperationRef.current = null;
     } catch (cause) {
       if (sequence !== resolveRequestSeqRef.current) return;
+      op.end("failed");
+      if (resolveOperationRef.current === op) resolveOperationRef.current = null;
       setResolverLoading(false);
       setResolverError(
         cause instanceof Error && cause.message
@@ -2565,6 +2625,8 @@ export default function ParamForm({
     }
     if (userId) clearDraft(userId);
     resolveRequestSeqRef.current += 1;
+    resolveOperationRef.current?.end("superseded");
+    resolveOperationRef.current = null;
     resolveRequestRef.current = null;
     pendingParamsRef.current = null;
     pendingPerQuestionParamsRef.current = null;
@@ -2934,9 +2996,14 @@ export default function ParamForm({
       per_question_params: JSON.stringify(pendingPerQuestionParams),
     };
     const fetchParams = toGenerateParams(subject, formParams);
+    const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
     void previewGenerate(fetchParams)
       .then(({ prompts }) => {
-        if (seq !== previewRefetchSeqRef.current) return;
+        if (seq !== previewRefetchSeqRef.current) {
+          op.end("superseded");
+          return;
+        }
+        op.end("completed");
         if (isValidPromptPreviewResponse(prompts)) {
           setPromptPreviews(prompts);
         }
@@ -2944,7 +3011,11 @@ export default function ParamForm({
         setStalePreviewIndices(new Set());
       })
       .catch(() => {
-        if (seq !== previewRefetchSeqRef.current) return;
+        if (seq !== previewRefetchSeqRef.current) {
+          op.end("superseded");
+          return;
+        }
+        op.end("failed");
         setPreviewRefetchLoading(false);
         // Leave stale badge in place so the user can retry again
       });
@@ -3075,6 +3146,7 @@ export default function ParamForm({
 
     return (
       <div className="space-y-4">
+        <ConfirmationParticipation exportWorkspace={exportConfirmation} />
         <div>
           <h2 className="text-base font-semibold">{t("form.confirm_title")}</h2>
           <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
@@ -3845,6 +3917,8 @@ export default function ParamForm({
               type="button"
               onClick={() => {
                 resolveRequestSeqRef.current += 1;
+                resolveOperationRef.current?.end("superseded");
+                resolveOperationRef.current = null;
                 resolveRequestRef.current = null;
                 pendingParamsRef.current = null;
                 pendingPerQuestionParamsRef.current = null;
