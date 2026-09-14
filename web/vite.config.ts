@@ -3,12 +3,14 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import { resolveSentryUpload } from './sentryUpload'
+import { buildIdentityPlugin } from './buildIdentity'
 
 // https://vite.dev/config/
 const sentryUpload = resolveSentryUpload(process.env)
 
 export default defineConfig({
   plugins: [
+    buildIdentityPlugin(),
     react(),
     tailwindcss(),
     // Issue #233: upload maps only when the release matches the SDK-stamped
