@@ -91,7 +91,8 @@ def test_two_backends_both_idle(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", fake_get):
         rc = release_control.main(
-            ["readiness", "--inventory", str(inv_path), "--require-version", "1"]
+            ["readiness", "--inventory", str(inv_path), "--require-version", "1",
+             "--max-age-seconds", "3600"]
         )
     assert rc == 0
 
@@ -135,7 +136,8 @@ def test_two_backends_one_busy_then_drained(tmp_path, monkeypatch):
          patch("release_control.time.sleep", lambda s: None):  # fast poll
         rc = release_control.main(
             ["drain-check", "--inventory", str(inv_path),
-             "--timeout", "5", "--poll-interval", "0.1"]
+             "--timeout", "5", "--poll-interval", "0.1",
+             "--max-age-seconds", "3600"]
         )
     t.join(timeout=2)
     assert rc == 0

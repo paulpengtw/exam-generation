@@ -58,13 +58,22 @@ def test_readiness_all_healthy(tmp_path, monkeypatch):
     monkeypatch.setenv("DRAIN_TOKEN_1", "tok1")
     monkeypatch.setenv("DRAIN_TOKEN_2", "tok2")
 
-    mock_get = MagicMock()
-    mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = _QUIESCENT_SNAP
+    # Use distinct instance_ids so the duplicate-identity check does not fire
+    snap1 = {**_QUIESCENT_SNAP, "instance_id": "inst-1"}
+    snap2 = {**_QUIESCENT_SNAP, "instance_id": "inst-2"}
 
-    with patch("release_control.httpx.get", mock_get):
+    call_count = [0]
+
+    def fake_get(url, **kwargs):
+        call_count[0] += 1
+        m = MagicMock()
+        m.status_code = 200
+        m.json.return_value = snap1 if call_count[0] % 2 == 1 else snap2
+        return m
+
+    with patch("release_control.httpx.get", fake_get):
         rc = release_control.main(
-            ["readiness", "--inventory", str(inv_path), "--require-version", "1"]
+            ["readiness", "--inventory", str(inv_path), "--require-version", "1", "--max-age-seconds", "3600"]
         )
     assert rc == 0
 
@@ -90,7 +99,7 @@ def test_readiness_one_unhealthy(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", fake_get):
         rc = release_control.main(
-            ["readiness", "--inventory", str(inv_path), "--require-version", "1"]
+            ["readiness", "--inventory", str(inv_path), "--require-version", "1", "--max-age-seconds", "3600"]
         )
     assert rc != 0
 
@@ -107,6 +116,6 @@ def test_readiness_version_mismatch(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(
-            ["readiness", "--inventory", str(inv_path), "--require-version", "2"]
+            ["readiness", "--inventory", str(inv_path), "--require-version", "2", "--max-age-seconds", "3600"]
         )
     assert rc != 0
