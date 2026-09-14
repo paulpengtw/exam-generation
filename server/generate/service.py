@@ -42,6 +42,7 @@ from server.generate.persistence import (
     make_reference_example_record_recorder,
     persist_generation_record,
 )
+from server.generate.publisher import GenerationPublisher
 from server.generate.subjects import (
     SUBJECTS,
     SubjectSpec,
@@ -217,6 +218,7 @@ class _RunContext:
     cancel_event: threading.Event
     run_id: str
     manifest: tuple[QuestionContext, ...]
+    publisher: GenerationPublisher
 
 
 def _build_run_context(
@@ -251,6 +253,7 @@ def _build_run_context(
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
     _run_id = new_run_id()
     _manifest = allocate_manifest(spec.question_id_prefix, _run_id, max(1, params.count))
+    _publisher = GenerationPublisher(run_id=_run_id, loop=loop, queue=queue)
     figure_policy_recorder = make_figure_policy_trail_recorder(
         generation_log_id=generation_log_id,
         loop=loop,
@@ -298,6 +301,7 @@ def _build_run_context(
         cancel_event=cancel_event if cancel_event is not None else threading.Event(),
         run_id=_run_id,
         manifest=_manifest,
+        publisher=_publisher,
     )
 
 

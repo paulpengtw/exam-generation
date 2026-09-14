@@ -58,6 +58,7 @@ class SSEEventName(str, Enum):
     STAGE = "stage"
     PLAN = "plan"
     TRAIL = "trail"
+    QUESTION_TERMINAL = "question_terminal"
 
 
 # Canonical set of event names the server actually emits at runtime.
@@ -78,6 +79,7 @@ EMITTED_EVENT_NAMES: frozenset[str] = frozenset({
     "stage",
     "plan",
     "trail",
+    "question_terminal",
 })
 
 

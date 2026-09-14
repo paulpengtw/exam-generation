@@ -97,8 +97,8 @@ def test_sse_event_name_declared_vocabulary_matches_canonical_sets() -> None:
     )
 
 
-def test_sse_event_name_has_exactly_fourteen_members() -> None:
-    assert len(SSEEventName) == 14
+def test_sse_event_name_has_exactly_fifteen_members() -> None:
+    assert len(SSEEventName) == 15
 
 
 def test_sse_event_name_values_are_strings() -> None:
