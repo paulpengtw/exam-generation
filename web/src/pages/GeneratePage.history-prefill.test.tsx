@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FormFields } from "../components/ParamForm";
@@ -531,5 +531,142 @@ describe("GeneratePage history prefill with a saved draft", () => {
         }),
       ]),
     );
+  });
+});
+
+describe("GeneratePage history prefill across learning stages", () => {
+  const STAGE_BASE = {
+    grades: [7, 8, 9, 10, 11, 12],
+    情境: [{ value: "個人", instruction: "" }],
+    情境子類別: [{ value: "健康", parent: "個人", admitted_by: { 情境: ["個人"] }, instruction: "" }],
+    題型種類: [{ value: "題組題", instruction: "" }],
+    題型: [{ value: "Simple multiple-choice", instruction: "" }],
+    科學能力: [{ value: "證據推理", instruction: "" }],
+    題目內容類型: [{ value: "純文字", instruction: "" }],
+    科目: [{ value: "自然科學", instruction: "" }],
+  };
+  const STAGE_IV_POOL = {
+    ...STAGE_BASE,
+    學習階段: "第四學習階段",
+    學習表現: [{ value: "tr-IV-1", instruction: "IV lp", 科目: "自然科學" }],
+    學習內容: [{ value: "INc-IV-1", instruction: "IV lc", 科目: "自然科學" }],
+  };
+  const STAGE_V_POOL = {
+    ...STAGE_BASE,
+    學習階段: "第五學習階段",
+    學習表現: [
+      { value: "tr-Vc-1", instruction: "V lp", 科目: "自然科學" },
+      { value: "tr-Vc-2", instruction: "V lp 2", 科目: "自然科學" },
+    ],
+    學習內容: [
+      { value: "INc-Vc-1", instruction: "V lc", 科目: "自然科學" },
+      { value: "INc-Vc-2", instruction: "V lc 2", 科目: "自然科學" },
+    ],
+  };
+  const STAGE_V_HISTORY_PARAMS = {
+    ...HISTORY_PARAMS,
+    grade: 10,
+    context: ["個人"],
+    sub_context: "健康",
+    q_type: ["Simple multiple-choice"],
+    science_competency: ["證據推理"],
+    content_type: "純文字",
+    learning_performance: ["tr-Vc-1"],
+    learning_content: ["INc-Vc-1"],
+    sub_question_count: 2,
+    subquestion_configs: JSON.stringify([
+      {
+        question_type: "Simple multiple-choice",
+        learning_performance: ["tr-Vc-2"],
+        learning_content: ["INc-Vc-2"],
+      },
+      {
+        question_type: "Simple multiple-choice",
+        learning_performance: ["tr-Vc-1"],
+        learning_content: ["INc-Vc-1"],
+      },
+    ]),
+    per_question_params: null,
+    topic: "高中生物實驗",
+    core_question: null,
+  };
+  const later = <T,>(value: T, ms: number): Promise<T> =>
+    new Promise((resolve) => setTimeout(() => resolve(value), ms));
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    useAuthStore.setState({ token: null, user: null });
+    useLangStore.setState({ lang: "zh-TW" });
+    useAuthStore.getState().login("history-route-token", {
+      id: "history-route-user",
+      email: "history-route@example.com",
+      created_at: "2026-01-01T00:00:00.000Z",
+    });
+    getAvailableModelsMock.mockResolvedValue({
+      allowed: ["history-plan", "history-execute", "history-verify", "history-correct"],
+      defaults: {
+        plan: "default-plan",
+        execute: "default-execute",
+        verify: "",
+        correct: "",
+        effort_plan: "medium",
+        effort_execute: "medium",
+        effort_verify: "",
+        effort_correct: "",
+      },
+      effort: {
+        "history-plan": ["low", "high"],
+        "history-execute": ["low", "high"],
+        "history-verify": ["low", "high"],
+        "history-correct": ["low", "high"],
+      },
+    });
+  });
+
+  async function expectReloadedCodes(gradeLessPool: typeof STAGE_IV_POOL) {
+    getSchemasMock.mockImplementation(async (_subject, grade) =>
+      grade == null ? gradeLessPool : later(STAGE_V_POOL, 30),
+    );
+    const { container } = renderPageWithHistoryState(STAGE_V_HISTORY_PARAMS);
+
+    await waitFor(() => expect(screen.getByLabelText("年級")).toHaveValue("10"));
+    await waitFor(() => expect(getSchemasMock).toHaveBeenCalledWith("natural_sciences", 10));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+
+    const subquestionSection = screen
+      .getByRole("heading", { name: "各小題配置", level: 4 })
+      .parentElement!;
+    // The chip selector also matches 各小題配置; keep the 全域池 assertion separate.
+    const selectedGlobalCodes = Array.from(container.querySelectorAll("span.bg-blue-50 > span.font-medium"))
+      .filter((element) => !subquestionSection.contains(element))
+      .map((element) => element.textContent);
+    expect(selectedGlobalCodes).toEqual(expect.arrayContaining(["tr-Vc-1", "INc-Vc-1"]));
+
+    const expectedRows = [
+      ["tr-Vc-2", "INc-Vc-2"],
+      ["tr-Vc-1", "INc-Vc-1"],
+    ];
+    for (const [index, [performance, content]] of expectedRows.entries()) {
+      const row = within(subquestionSection)
+        .getByText(`第${index + 1}小題`, { exact: true })
+        .closest("div.rounded")!;
+      expect(within(row).getByText(performance, { exact: true })).toBeInTheDocument();
+      expect(within(row).getByText(content, { exact: true })).toBeInTheDocument();
+    }
+
+    fireEvent.change(screen.getAllByPlaceholderText("搜尋學習表現...")[0], {
+      target: { value: "-" },
+    });
+    expect(screen.getByRole("button", { name: /^tr-Vc-2：/ })).toBeInTheDocument();
+  }
+
+  it("keeps 全域池 and 各小題配置 codes when the grade-less 第四 pool answers first", async () => {
+    await expectReloadedCodes(STAGE_IV_POOL);
+    expect(getSchemasMock).not.toHaveBeenCalledWith("natural_sciences");
+  });
+
+  it("CONTROL: keeps codes when both schema requests return the 第五 pool", async () => {
+    await expectReloadedCodes(STAGE_V_POOL);
   });
 });
