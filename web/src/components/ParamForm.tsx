@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
+import { getAvailableModels, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
 import { filterEntriesByAdmittedParent } from "../lib/admittedBy";
+import { fetchCurriculumPool, type CurriculumPool } from "../lib/curriculumPool";
 import {
   filterDrawnAfterSubquestionCountRedraw,
   rebuildSubquestionSlots,
@@ -1252,7 +1253,7 @@ export default function ParamForm({
   };
   const t = useT();
   const lang = useLangStore((state) => state.lang);
-  const [schemas, setSchemas] = useState<Schemas | null>(null);
+  const [schemas, setSchemas] = useState<CurriculumPool | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
@@ -1724,7 +1725,7 @@ export default function ParamForm({
       coreQuestion: fromInit<string | null>("core_question", null),
       coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
     }));
-    getSchemas(subject)
+    fetchCurriculumPool(subject)
       .then((s) => {
         if (cancelled) return;
         setSchemas(s);
@@ -2073,10 +2074,10 @@ export default function ParamForm({
   useEffect(() => {
     if (grade === "") return;
     let cancelled = false;
-    getSchemas(subject, grade)
+    fetchCurriculumPool(subject, grade)
       .then((s) => {
         if (cancelled) return;
-        setSchemas((prev) => prev ? { ...prev, 學習表現: s.學習表現, 學習內容: s.學習內容, 科目: s.科目 } : prev);
+        setSchemas((prev) => prev ? { ...prev, 學習表現: s.學習表現, 學習內容: s.學習內容, 科目: s.科目, poolGrade: s.poolGrade } : prev);
       })
       .catch(() => {/* non-critical — keep existing list */});
     return () => { cancelled = true; };
