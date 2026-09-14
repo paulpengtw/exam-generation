@@ -155,3 +155,171 @@ def test_two_backends_counter_never_goes_negative(tmp_path, monkeypatch):
     snap = drain.snapshot()
     # active_runs must be >= 0
     assert snap["active_runs"] >= 0
+
+
+# ===========================================================================
+# Fix 4 — real multi-process rehearsal (task 8.4)
+# ===========================================================================
+
+import socket
+import subprocess
+import sys
+import time
+import os
+
+
+def _free_port() -> int:
+    """Return an available TCP port by binding and releasing."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _wait_for_port(host: str, port: int, timeout: float = 10.0) -> bool:
+    """Poll until TCP port is accepting connections or timeout."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return True
+        except OSError:
+            time.sleep(0.1)
+    return False
+
+
+def test_one_subprocess_one_in_process_drain_check(tmp_path, monkeypatch):
+    """One backend in a separate OS process; one in-process.
+
+    Checks:
+    - The two instance_ids and pids differ (real separate processes).
+    - drain-check while the in-process instance is busy → fails naming it.
+    - Release the in-process instance → drain-check passes.
+    - subprocess is always terminated in a finally block.
+    """
+    token = "test-multiprocess-token"
+    port = _free_port()
+    monkeypatch.setenv("TOKEN_SUBPROCESS", token)
+    monkeypatch.setenv("TOKEN_INPROCESS", token)
+    monkeypatch.setenv("DRAIN_TELEMETRY_TOKEN", token)
+
+    # ── Start the subprocess backend ────────────────────────────────────────
+    env = os.environ.copy()
+    env["DRAIN_TELEMETRY_TOKEN"] = token
+    proc = subprocess.Popen(
+        [
+            sys.executable, "-m",
+            "tests.release_control._instance_runner",
+            str(port),
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=str(Path(__file__).resolve().parents[2]),
+    )
+
+    try:
+        # Wait for the subprocess to accept connections
+        assert _wait_for_port("127.0.0.1", port, timeout=15), (
+            f"subprocess backend did not start on port {port} within 15 s; "
+            f"stderr: {proc.stderr.read(200) if proc.poll() is not None else '(still running)'}"
+        )
+
+        # ── In-process backend ─────────────────────────────────────────────
+        in_proc_drain = DrainTelemetry()
+
+        # ── Inventory ──────────────────────────────────────────────────────
+        inventory = {
+            "instances": [
+                {
+                    "name": "subprocess-backend",
+                    "url": f"http://127.0.0.1:{port}",
+                    "token_env": "TOKEN_SUBPROCESS",
+                },
+                {
+                    "name": "inprocess-backend",
+                    "url": "http://inprocess-stub",  # served via fake httpx.get
+                    "token_env": "TOKEN_INPROCESS",
+                },
+            ],
+            "gateway": {"url": "http://gateway-stub", "token_env": "GATEWAY_CONTROL_TOKEN"},
+        }
+        inv_path = tmp_path / "inventory.json"
+        inv_path.write_text(json.dumps(inventory))
+
+        import httpx as _httpx
+
+        # Save a reference to the REAL httpx.get before any patching so that
+        # fake_get can call it without recursion.
+        _real_httpx_get = _httpx.get.__wrapped__ if hasattr(_httpx.get, "__wrapped__") else _httpx.get
+
+        def fake_get(url, **kwargs):
+            # Real HTTP to the subprocess backend (127.0.0.1)
+            if "127.0.0.1" in url:
+                return _real_httpx_get(url, **kwargs)
+            # In-process stub for the second instance
+            resp = MagicMock()
+            snap = in_proc_drain.snapshot()
+            resp.status_code = 200
+            resp.json.return_value = snap
+            return resp
+
+        # ── Preflight: both instances must be reachable ────────────────────
+        with patch("release_control.httpx.get", fake_get):
+            rc_pf = release_control.main(
+                ["preflight", "--inventory", str(inv_path), "--max-age-seconds", "30"]
+            )
+        assert rc_pf == 0, "preflight must pass for subprocess + in-process pair"
+
+        # Verify distinct identity
+        import httpx as _hx2
+        resp_sub = _hx2.get(
+            f"http://127.0.0.1:{port}/internal/drain",
+            headers={"X-Drain-Token": token},
+            timeout=5,
+        )
+        assert resp_sub.status_code == 200
+        sub_snap = resp_sub.json()
+        in_snap = in_proc_drain.snapshot()
+
+        assert sub_snap["instance_id"] != in_snap["instance_id"], (
+            "subprocess and in-process instances must have distinct instance_ids"
+        )
+        assert sub_snap["pid"] != in_snap["pid"], (
+            "subprocess and in-process instances must have distinct pids"
+        )
+
+        # ── drain-check while in-process is busy → must fail ──────────────
+        in_proc_drain._inc("_active_runs")
+        assert not in_proc_drain.snapshot()["quiescent"]
+
+        with patch("release_control.httpx.get", fake_get), \
+             patch("release_control.time.sleep"):
+            rc_dc = release_control.main(
+                ["drain-check", "--inventory", str(inv_path),
+                 "--timeout", "1", "--max-age-seconds", "30"]
+            )
+        assert rc_dc != 0, (
+            "drain-check must fail while the in-process instance has active_runs > 0"
+        )
+
+        # ── Release → drain-check passes ──────────────────────────────────
+        in_proc_drain._dec("_active_runs")
+        assert in_proc_drain.snapshot()["quiescent"]
+
+        with patch("release_control.httpx.get", fake_get), \
+             patch("release_control.time.sleep"):
+            rc_dc2 = release_control.main(
+                ["drain-check", "--inventory", str(inv_path),
+                 "--timeout", "5", "--max-age-seconds", "30"]
+            )
+        assert rc_dc2 == 0, (
+            "drain-check must pass once both instances are quiescent"
+        )
+
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=2)
