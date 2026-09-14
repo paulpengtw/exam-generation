@@ -561,8 +561,6 @@ export function useGenerate(): UseGenerateReturn {
     };
 
     const token = useAuthStore.getState().token;
-    const qs = buildQueryString(params);
-    const url = qs ? `/api/generate?${qs}` : "/api/generate";
 
     setStatus("generating");
     setProgressLines([]);
@@ -578,9 +576,14 @@ export function useGenerate(): UseGenerateReturn {
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
 
-    fetchEventSource(url, {
+    fetchEventSource("/api/generate", {
+      method: "POST",
+      body: JSON.stringify(params),
       signal: controller.signal,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       openWhenHidden: true,
       async onopen(res) {
         if (!res.ok) {

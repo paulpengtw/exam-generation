@@ -1,4 +1,4 @@
-"""Generate routes — GET /api/generate SSE endpoint."""
+"""Generate routes — JSON body and legacy GET transports for previews and SSE."""
 
 from __future__ import annotations
 
@@ -91,6 +91,23 @@ async def preview_generate_endpoint(
     params: GenerateQuery,
     _user: User = Depends(get_current_user),
     config: ServerConfig = Depends(get_config),
+) -> dict[str, Any]:
+    return _preview_generate(request, params, config)
+
+
+@router.post("/generate/preview")
+@limiter.limit("30/hour", key_func=jwt_user_key)
+async def preview_generate_body_endpoint(
+    request: Request,
+    params: GenerateParams,
+    _user: User = Depends(get_current_user),
+    config: ServerConfig = Depends(get_config),
+) -> dict[str, Any]:
+    return _preview_generate(request, params, config)
+
+
+def _preview_generate(
+    request: Request, params: GenerateParams, config: ServerConfig,
 ) -> dict[str, Any]:
     """Return exact first-stage prompts without invoking an LLM."""
     params = _require_complete_generate_params(params)
@@ -305,35 +322,10 @@ async def generate_endpoint(
     Logs the request to `generation_log` at start and updates the row to
     `completed` or `failed` when the stream ends.
     """
-    _check_model_allowed(model_plan, config, "model_plan")
-    _check_model_allowed(model_execute, config, "model_execute")
-    _check_model_allowed(model_verify, config, "model_verify")    # #375
-    _check_model_allowed(model_correct, config, "model_correct")  # #375
-    _check_subject_allowed(subject)
-    # Validate effort levels against the effective model's roster (BEFORE any LLM call).
-    effective_plan_model = model_plan or config.model_plan
-    effective_execute_model = model_execute or config.model_execute
-    # #375: tier model resolution — request param → env var → effective execute model.
-    # Note: chains off effective_execute_model (honours per-request model_execute override).
-    effective_verify_model = model_verify or config.model_verify or effective_execute_model
-    effective_correct_model = model_correct or config.model_correct or effective_execute_model
-    _check_effort_for_model(effort_plan, effective_plan_model, "effort_plan")
-    _check_effort_for_model(effort_execute, effective_execute_model, "effort_execute")
-    # #377: validate tier efforts against their effective model using the full inherited chain.
-    # Note: effective_execute_effort chains off the per-request override so that an unset
-    # tier effort inherits the per-request execute override (not the env-time default).
-    effective_execute_effort = effort_execute or config.effort_execute
-    effective_verify_effort = effort_verify or config.effort_verify or effective_execute_effort
-    _check_effort_for_model(effective_verify_effort, effective_verify_model, "effort_verify")
-    effective_correct_effort = effort_correct or config.effort_correct or effective_execute_effort
-    _check_effort_for_model(effective_correct_effort, effective_correct_model, "effort_correct")
-    _check_image_api_key(image_generation_mode, subquestion_configs, config)
-    _check_provider_key_for_model(effective_plan_model, config, "model_plan")
-    _check_provider_key_for_model(effective_execute_model, config, "model_execute")
-    _check_provider_key_for_model(effective_verify_model, config, "model_verify")    # #375
-    _check_provider_key_for_model(effective_correct_model, config, "model_correct")  # #375
     try:
-        params = GenerateParams(
+        # FastAPI has already type-checked the query fields. Keep configuration
+        # admission ahead of subject-specific validation, as on the legacy route.
+        params = GenerateParams.model_construct(
             subject=subject,
             grade=grade,
             style=style,
@@ -382,6 +374,8 @@ async def generate_endpoint(
             effort_correct=effort_correct,  # #377
             reporting_scale=reporting_scale,
         )
+        _check_generation_admission(params, config)
+        params = GenerateParams.model_validate(params.model_dump())
     except ValidationError as exc:
         # Emit a WARNING so Sentry (LoggingIntegration at WARNING level) captures
         # validation-rejection spikes without widening failed_request_status_codes.
@@ -393,6 +387,66 @@ async def generate_endpoint(
             [str(e["loc"]) for e in exc.errors()],
         )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await _generate(request, params, user, session, config)
+
+
+@router.post("/generate")
+@limiter.limit("10/hour", key_func=jwt_user_key)
+async def generate_body_endpoint(
+    request: Request,
+    params: GenerateParams,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+    config: ServerConfig = Depends(get_config),
+) -> EventSourceResponse:
+    _check_generation_admission(params, config)
+    return await _generate(request, params, user, session, config)
+
+
+def _check_generation_admission(params: GenerateParams, config: ServerConfig) -> None:
+    """Apply the same model, effort, image and provider rules to both transports."""
+    _check_model_allowed(params.model_plan, config, "model_plan")
+    _check_model_allowed(params.model_execute, config, "model_execute")
+    _check_model_allowed(params.model_verify, config, "model_verify")    # #375
+    _check_model_allowed(params.model_correct, config, "model_correct")  # #375
+    _check_subject_allowed(params.subject)
+    # Validate effort levels against the effective model's roster (BEFORE any LLM call).
+    effective_plan_model = params.model_plan or config.model_plan
+    effective_execute_model = params.model_execute or config.model_execute
+    # #375: tier model resolution — request param → env var → effective execute model.
+    # Note: chains off effective_execute_model (honours per-request model_execute override).
+    effective_verify_model = params.model_verify or config.model_verify or effective_execute_model
+    effective_correct_model = (
+        params.model_correct or config.model_correct or effective_execute_model
+    )
+    _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
+    _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
+    # #377: validate tier efforts against their effective model using the full inherited chain.
+    # Note: effective_execute_effort chains off the per-request override so that an unset
+    # tier effort inherits the per-request execute override (not the env-time default).
+    effective_execute_effort = params.effort_execute or config.effort_execute
+    effective_verify_effort = (
+        params.effort_verify or config.effort_verify or effective_execute_effort
+    )
+    _check_effort_for_model(effective_verify_effort, effective_verify_model, "effort_verify")
+    effective_correct_effort = (
+        params.effort_correct or config.effort_correct or effective_execute_effort
+    )
+    _check_effort_for_model(effective_correct_effort, effective_correct_model, "effort_correct")
+    _check_image_api_key(params.image_generation_mode, params.subquestion_configs, config)
+    _check_provider_key_for_model(effective_plan_model, config, "model_plan")
+    _check_provider_key_for_model(effective_execute_model, config, "model_execute")
+    _check_provider_key_for_model(effective_verify_model, config, "model_verify")    # #375
+    _check_provider_key_for_model(effective_correct_model, config, "model_correct")  # #375
+
+
+async def _generate(
+    request: Request,
+    params: GenerateParams,
+    user: User,
+    session: AsyncSession,
+    config: ServerConfig,
+) -> EventSourceResponse:
     params = _require_complete_generate_params(params)
     logger.info("generate request params=%s", params.model_dump(mode="json"))
 
