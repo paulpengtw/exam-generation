@@ -239,7 +239,7 @@ Environment variables (set in `.env` or export directly):
 | `IMAGE_MODEL` | CLI + server | Image generation model used when GPT image mode is selected | `gpt-image2` |
 | `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
 | `LLM_MAX_RETRIES` | CLI + server | Max correction attempts when verification fails | `3` |
-| `LLM_TEMPERATURE` | CLI + server | Sampling temperature forwarded to the API; unset = provider default; ignored for `claude-opus-4-6` because adaptive thinking is enabled, and for models that reject sampling params (claude-opus-5, claude-sonnet-5, claude-fable-5, claude-opus-4-7, claude-opus-4-8 and dated variants) | (unset) |
+| `LLM_TEMPERATURE` | CLI + server | Sampling temperature forwarded to the API; unset = provider default; ignored for `claude-opus-4-6` because adaptive thinking is enabled, and for models that reject sampling params (claude-opus-5, claude-sonnet-5, claude-fable-5, claude-opus-4-7, claude-opus-4-8 and dated variants, gemini-3.x, gpt-5.x, and o1/o3/o4) | (unset) |
 | `SUBGEN_MAX_CONCURRENCY` | CLI + server | Max concurrent 子題產生器 LLM calls per 題組 (SS/NS only) | `6` |
 | `SUBGEN_RETRIES` | CLI + server | Extra fresh-call attempts for a failed/unparseable 子題產生器 slot before that 子題 is dropped (SS/NS only; `0` = drop on first failure) | `1` |
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |
@@ -834,7 +834,7 @@ For each question `i` in `range(args.count)`:
 **File: `src/llm_client.py`**
 
 21. `client.generate_json(system_prompt, user_prompt)` (llm_client.py:70-73):
-    - Calls `generate()` (lines 26-40): `openai.chat.completions.create()` with `model=model_execute` (`gemini-3.1-pro-preview`), `temperature=0.7`, `max_tokens=8192`
+    - Calls `generate()` (lines 26-40): `openai.chat.completions.create()` with `model=model_execute` (`gemini-3.1-pro-preview`), `reasoning_effort="high"`, `max_tokens=8192`, and temperature omitted
     - Messages: `[{"role": "system", ...}, {"role": "user", ...}]`
 22. `extract_json(raw)` (llm_client.py:76-93) parses LLM text response:
     - First tries: regex for ` ```json ... ``` ` code block (line 79-81)

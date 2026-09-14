@@ -22,12 +22,13 @@ When you finish this guide:
 
 ## 2. What you will pay
 
-You are paying for two separate things:
+You are paying for hosting and model API usage:
 
 | Service | Cost | What it does |
 |---|---|---|
 | Railway (hosting) | About **US$5 per month** (Hobby plan) | Runs the website and the database |
-| Gemini API | **Pay-as-you-go** (see Google AI Studio pricing) | Each question generation makes 2-3 calls to the LLM |
+| Gemini API | **Pay-as-you-go** (see Google AI Studio pricing) | Generates questions and handles corrections |
+| Anthropic API | **Pay-as-you-go** (see Anthropic pricing) | Plans 核心問題 and verifies questions using Opus 4.6 with adaptive thinking |
 | Custom domain (optional) | About **US$10–15 per year** | A nicer URL like `examgen.yourschool.tw` |
 
 You can stop and delete everything at any time.
@@ -36,26 +37,27 @@ You can stop and delete everything at any time.
 
 ## 3. What you need before you start
 
-- A credit or debit card (for Railway and Anthropic billing).
+- A credit or debit card (for Railway, Google AI, and Anthropic billing).
 - An email address.
 - About **60 minutes** the first time.
 - A web browser. That's it.
 
 ---
 
-## 4. Step 1 — Get a Gemini API key
+## 4. Step 1 — Get Gemini and Anthropic API keys
 
-An **API key** is a password that lets your website talk to the AI that generates the questions. The default model is Gemini, so you need a Gemini API key to start.
+An **API key** is a password that lets your website talk to an AI provider. The defaults use Gemini for generation and Claude Opus 4.6 for planning and 驗證, so you need both keys to start.
 
 1. Open `https://aistudio.google.com/apikey` in your browser.
 2. Sign in with a Google account.
 3. Click **Create API key**.
 4. **Copy the key immediately** — it looks like `AIzaSy...`. Paste it into a safe place (Notes app, password manager).
+5. Open `https://console.anthropic.com` and create an Anthropic API key.
+6. Save that key separately — it looks like `sk-ant-...`. You will enter the Gemini key as `GEMINI_API_KEY` and the Anthropic key as `LLM_API_KEY` in Step 5.
 
-> ⚠️ Treat this key like a password. Anyone who has it can make calls charged to your Google AI billing account.
+> ⚠️ Treat both keys like passwords. Anyone who has them can make calls charged to the corresponding provider account.
 
-**Optional additions:**
-- **Anthropic key** (`sk-ant-...` from `https://console.anthropic.com`) — needed only if you change the model to a `claude-*` model, or if you enable the web-search fact-check feature (`WEB_SEARCH_PROVIDER=anthropic`).
+**Optional addition:**
 - **OpenAI key** (`sk-...` from `https://platform.openai.com/api-keys`) — needed only if you change the model to a `gpt-*` or o-series model.
 
 ---
@@ -139,6 +141,12 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `GEMINI_API_KEY` | The `AIzaSy...` key from Step 1 | Required for the default 執行模型 (`gemini-3.1-pro-preview`) |
 | `LLM_MODEL_PLAN` | `claude-opus-4-6` | Which model handles planning |
 | `LLM_MODEL_EXECUTE` | `gemini-3.1-pro-preview` | Which model generates questions |
+| `LLM_MODEL_VERIFY` | `claude-opus-4-6` | Which model handles 驗證; explicitly empty follows the execute model |
+| `LLM_MODEL_CORRECT` | *(leave blank)* | 修正 inherits the execute model unless overridden |
+| `LLM_EFFORT_PLAN` | `high` | Planning effort |
+| `LLM_EFFORT_EXECUTE` | `high` | Execution effort; Gemini supports `low`, `medium`, and `high` |
+| `LLM_EFFORT_VERIFY` | `high` | 驗證 effort; explicitly empty inherits execute effort |
+| `LLM_EFFORT_CORRECT` | *(leave blank)* | 修正 inherits execute effort unless overridden |
 | `LLM_API_KEY` | An Anthropic `sk-ant-...` key | Required for the default plan and 驗證 model (`claude-opus-4-6`) and for the web-search fact-check feature |
 | `LLM_BASE_URL` | `https://api.anthropic.com/v1` | Anthropic API endpoint (leave as default if setting `LLM_API_KEY`) |
 | `OPENAI_API_KEY` | An OpenAI `sk-...` key *(optional)* | Required only if using a `gpt-*` or o-series model |
@@ -152,6 +160,11 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |
 | `SENTRY_DSN` | *(leave blank, or paste the backend project's DSN)* | Sends backend errors and traces to Sentry. Leave it unset or blank to disable backend Sentry completely. |
 | `SENTRY_ENVIRONMENT` | `production` (or `staging`) | Tags backend Sentry data with the deployment environment. |
+
+The model and effort values above are the code defaults when their variables are
+unset. Opus 4.6 calls enable adaptive thinking with a 16,384-token output ceiling
+shared by thinking and the response; `LLM_TEMPERATURE` is ignored for this model.
+Planning and 驗證 therefore spend thinking tokens at Opus output rates.
 
 **How to generate `JWT_SECRET`:** open `https://passwordsgenerator.net` in a new tab, set length to 64, click **Generate**, and paste the result.
 

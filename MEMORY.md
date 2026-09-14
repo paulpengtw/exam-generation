@@ -153,3 +153,21 @@ Durable gotchas and decisions for all agents and developers working on this repo
   Repository-wide Python lint passed. A timeout racing with an already
   completed future is classified from that future's actual result, so a
   completed commit is not mislabeled as a failed insert.
+
+## Split model defaults: browser effort seeding (#757 / #760, 2026-09-14)
+
+- The backend split and Opus 4.6 adaptive-thinking policy already landed on
+  staging in [#767](https://github.com/paulpengtw/exam-generation/pull/767)
+  and [#765](https://github.com/paulpengtw/exam-generation/pull/765).
+- [ParamForm](https://github.com/paulpengtw/exam-generation/blob/fix/757-split-model-defaults/web/src/components/ParamForm.tsx)
+  now leaves an unselected plan/execute effort empty until model discovery
+  supplies the server defaults. Valid persisted browser choices and history
+  values retain precedence. Reconciliation also updates the default snapshot
+  used by draft restoration.
+- [The form regression tests](https://github.com/paulpengtw/exam-generation/blob/fix/757-split-model-defaults/web/src/components/ParamForm.effort-selection.test.tsx)
+  cover advertised effort values through rendered controls and confirmed
+  submission, saved `low` choices, and the split model labels and roster.
+- [The live acceptance check (#761)](https://github.com/paulpengtw/exam-generation/issues/761)
+  remains separate: it explicitly requires an ego-browser environment and
+  user-provided login credentials. This session had no ego-browser tool;
+  no live generation evidence has been collected.
