@@ -87,15 +87,16 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     hasReceivedResults: hasResults,
     exportWorkspace,
   });
-  const { navigationApproved, clearNavigationApproval } = useWorkspaceStore();
+  // Subscribe to navigationApproved so the blocker callback sees fresh state
+  // after save-and-update writes an approval. The value is read from getState()
+  // inside the callback to avoid a stale closure capturing the pre-approval value.
+  useWorkspaceStore((s) => s.navigationApproved);
   const blocker = useBlocker(
     ({ historyAction, nextLocation }) => {
-      // Approved navigation (e.g. from save-and-update) bypasses the guard once
-      if (
-        navigationApproved !== null &&
-        nextLocation.pathname === navigationApproved.target
-      ) {
-        clearNavigationApproval();
+      // Approved navigation (e.g. from save-and-update) bypasses the guard once.
+      const approved = useWorkspaceStore.getState().navigationApproved;
+      if (approved !== null && nextLocation.pathname === approved.target) {
+        useWorkspaceStore.getState().clearNavigationApproval();
         return false;
       }
       return (hasUnsubmittedInput || hasResults) && historyAction === "POP";
@@ -111,13 +112,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   useEffect(() => {
     if (!hasUnsubmittedInput && !hasResults) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      // Approved navigation bypasses beforeunload too
-      if (navigationApproved !== null) return;
+      // Approved navigation bypasses beforeunload too — read from store directly
+      if (useWorkspaceStore.getState().navigationApproved !== null) return;
       event.preventDefault();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [hasUnsubmittedInput, hasResults, navigationApproved]);
+  }, [hasUnsubmittedInput, hasResults]);
 
   const handleLogout = () => {
     logout();

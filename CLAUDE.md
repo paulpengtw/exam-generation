@@ -96,6 +96,26 @@ The store never calls `location.reload`, never touches workspace operations, and
 
 Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
 
+### Save draft and update (issue #772)
+
+`web/src/lib/recovery/format.ts` defines `RecoverySnapshotV1` (schema `exam-generation.recovery/1`) with `parseRecoverySnapshot` for strict validation (account, origin, environment, form shape).
+
+`web/src/lib/recovery/storage.ts` provides transactional localStorage/sessionStorage helpers: `saveSnapshotTransactionally` (write + read-back verify), `persistTabPointer`, `getOrCreateTabId`, `loadSnapshot`, `deleteSnapshot`, `clearTabPointer`.
+
+`web/src/lib/workspace/workspaceStore.ts` tracks `workspace_revision` (monotonically incremented on every surface/operation change), `navigationApproved: {target}|null`, and `freezeInput: boolean`. New methods: `approveNavigation`, `clearNavigationApproval`, `setFreezeInput`.
+
+`web/src/lib/recovery/saveAndUpdate.ts` exports `evaluateSaveAndUpdate(state)` which returns `{allowed:true}` only when all conditions are met (surface ready, no operations, no results, user signed in, update-required with known IDs, recovery format supported, form export seam present). Denied reasons are localised via `recovery.disabled.*` i18n keys.
+
+`web/src/lib/recovery/recoveryStore.ts` is a zustand store. Call `initRecoveryStore({currentRoute, origin, environment})` at app boot or after sign-in to attempt snapshot restore. Sets `pending` on success, `blocked:'wrong_account'` when account mismatches, or silently skips otherwise.
+
+`web/src/components/ReleaseNotice.tsx` renders a "儲存草稿並更新 / Save Draft & Update" button in `update-required` state, disabled with a localised tooltip when denied. `GeneratePage.tsx` `useBlocker` and `beforeunload` consult `navigationApproved` so an approved navigation bypasses the guard once.
+
+`web/buildIdentity.ts` now emits `supported_recovery_formats: ["exam-generation.recovery/1"]` in the policy fixture. `useReleaseStore` exposes `supportedRecoveryFormats` from the last parsed policy.
+
+`web/src/components/ParamForm.tsx` accepts a `recoveredForm?: FormWorkspaceSnapshot` prop and shows a restoration banner when present.
+
+See `docs/research/2026-09-15-772-save-draft-and-update.md`.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.

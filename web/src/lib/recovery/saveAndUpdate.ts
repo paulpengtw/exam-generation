@@ -116,6 +116,8 @@ export type RunResult =
  * Exported so callers can use it; real implementation will be fleshed out in S3.
  */
 export async function runSaveAndUpdate(
+  // opts will be used in the full implementation (placeholder for #772)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _opts: RunSaveAndUpdateOptions,
 ): Promise<RunResult> {
   return { ok: false, reason: "not_implemented" };
