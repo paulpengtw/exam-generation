@@ -1370,8 +1370,8 @@ export default function ParamForm({
     modelExecute: stringFromInit("model_execute", window.localStorage.getItem("model_execute") ?? ""),
     modelVerify: stringFromInit("model_verify", window.localStorage.getItem("model_verify") ?? ""),
     modelCorrect: stringFromInit("model_correct", window.localStorage.getItem("model_correct") ?? ""),
-    effortPlan: stringFromInit("effort_plan", window.localStorage.getItem("effort_plan") ?? "medium"),
-    effortExecute: stringFromInit("effort_execute", window.localStorage.getItem("effort_execute") ?? "medium"),
+    effortPlan: stringFromInit("effort_plan", window.localStorage.getItem("effort_plan") ?? ""),
+    effortExecute: stringFromInit("effort_execute", window.localStorage.getItem("effort_execute") ?? ""),
     effortVerify: stringFromInit("effort_verify", window.localStorage.getItem("effort_verify") ?? ""),
     effortCorrect: stringFromInit("effort_correct", window.localStorage.getItem("effort_correct") ?? ""),
     allowDuplicateFigureKinds: false,
@@ -1796,7 +1796,8 @@ export default function ParamForm({
         // side) must never be silently submitted.
         // Effort levels are also reconciled atomically: if the persisted
         // effort is not supported by the reconciled model, fall back to
-        // defaults.effort_plan / defaults.effort_execute ("medium").
+        // defaults.effort_plan / defaults.effort_execute. An unset effort
+        // also takes the advertised default once discovery resolves.
         const allowed = new Set(m.allowed);
         const reconcileEffortLevel = (
           effortValue: string,
@@ -1804,6 +1805,7 @@ export default function ParamForm({
           effortMap: Record<string, string[]> | undefined,
           defaultEffort: string,
         ): string => {
+          if (!effortValue) return defaultEffort;
           if (!effortMap || !modelId || !effortMap[modelId]) return effortValue;
           const levels = effortMap[modelId];
           return levels.includes(effortValue) ? effortValue : defaultEffort;

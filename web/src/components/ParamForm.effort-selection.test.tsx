@@ -52,6 +52,26 @@ const MODELS_WITH_EFFORT = {
   },
 };
 
+const SPLIT_DEFAULT_MODELS = {
+  allowed: ["gemini-3.1-pro-preview", "claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-5"],
+  effort: {
+    "gemini-3.1-pro-preview": ["low", "medium", "high"],
+    "claude-opus-4-6": ["low", "medium", "high", "max"],
+    "claude-sonnet-4-6": ["low", "medium", "high", "max"],
+    "claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
+  },
+  defaults: {
+    plan: "claude-opus-4-6",
+    execute: "gemini-3.1-pro-preview",
+    verify: "claude-opus-4-6",
+    correct: "",
+    effort_plan: "high",
+    effort_execute: "high",
+    effort_verify: "high",
+    effort_correct: "",
+  },
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -60,6 +80,61 @@ beforeEach(() => {
 });
 
 describe("ParamForm — effort-tier selection", () => {
+  it.each([
+    ["high", "high"],
+    ["low", "medium"],
+  ])("opens and submits untouched efforts from server defaults (%s, %s)", async (plan, execute) => {
+    getAvailableModelsMock.mockResolvedValue({
+      ...SPLIT_DEFAULT_MODELS,
+      defaults: { ...SPLIT_DEFAULT_MODELS.defaults, effort_plan: plan, effort_execute: execute },
+    });
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+
+    expect(await screen.findByLabelText("Planning effort")).toHaveValue(plan);
+    expect(screen.getByLabelText("Execution effort")).toHaveValue(execute);
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+    await user.click(await screen.findByRole("button", { name: /confirm/i }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ effort_plan: plan, effort_execute: execute });
+  });
+
+  it("keeps saved low efforts when the server advertises high", async () => {
+    window.localStorage.setItem("effort_plan", "low");
+    window.localStorage.setItem("effort_execute", "low");
+    getAvailableModelsMock.mockResolvedValue(SPLIT_DEFAULT_MODELS);
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+
+    expect(await screen.findByLabelText("Planning effort")).toHaveValue("low");
+    expect(screen.getByLabelText("Execution effort")).toHaveValue("low");
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+    await user.click(await screen.findByRole("button", { name: /confirm/i }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ effort_plan: "low", effort_execute: "low" });
+  });
+
+  it("shows the advertised split and roster in the default model options", async () => {
+    getAvailableModelsMock.mockResolvedValue(SPLIT_DEFAULT_MODELS);
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+
+    const plan = await screen.findByLabelText("Planner model") as HTMLSelectElement;
+    const execute = screen.getByLabelText("Execution model") as HTMLSelectElement;
+    const verify = screen.getByLabelText("Verification model") as HTMLSelectElement;
+    const verifyEffort = screen.getByLabelText("Verification effort") as HTMLSelectElement;
+    expect(plan.selectedOptions[0]).toHaveTextContent("(claude-opus-4-6)");
+    expect(execute.selectedOptions[0]).toHaveTextContent("(gemini-3.1-pro-preview)");
+    expect(verify.selectedOptions[0]).toHaveTextContent("(claude-opus-4-6)");
+    expect(verifyEffort.selectedOptions[0]).toHaveTextContent("(high)");
+    for (const select of [plan, execute, verify]) {
+      expect(Array.from(select.options).map((option) => option.value)).toEqual([
+        "", "gemini-3.1-pro-preview", "claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-5",
+      ]);
+    }
+  });
+
   describe("options filtered per model", () => {
     it("plan effort dropdown shows xhigh when plan model is claude-opus-4-6", async () => {
       const user = userEvent.setup();
