@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { LlmCallEvent } from "../hooks/useGenerate";
-import { projectGenerationEvidence } from "./generationStream";
+import type { GeneratedQuestion, LlmCallEvent } from "../hooks/useGenerate";
+import { projectGenerationCardEvidence, projectGenerationEvidence } from "./generationStream";
 
 describe("projectGenerationEvidence", () => {
   it("keeps only stage events in stream order and carries the subquestion count", () => {
@@ -31,5 +31,36 @@ describe("projectGenerationEvidence", () => {
       stageEvents: [],
       subQuestionCount: null,
     });
+  });
+});
+
+describe("projectGenerationCardEvidence", () => {
+  it("projects only the five card fields and defaults an absent figure policy trail", () => {
+    const item: GeneratedQuestion = {
+      index: 1,
+      question: { 情境: ["公共"], 題型種類: "單一題", 題型: "選擇題", 題目: ["question"], 正確解題分析: ["answer"] },
+      phase: "image",
+      isFinal: false,
+      trail: [{ code: "verification_trail", kind: "initial", question_id: "q1", timestamp: "2026-09-15T00:00:00Z", snapshot: { 題目: ["question"] } }],
+      referenceExampleRecord: {
+        entries: [{ code: "reference_example", kind: "example", question_id: "q1", stage: "generate", source: "example.json", timestamp: "2026-09-15T00:00:00Z" }],
+      },
+    };
+
+    const evidence = projectGenerationCardEvidence(item);
+
+    expect(evidence).toEqual({
+      phase: "image",
+      isFinal: false,
+      trail: [{ code: "verification_trail", kind: "initial", question_id: "q1", timestamp: "2026-09-15T00:00:00Z", snapshot: { 題目: ["question"] } }],
+      figurePolicyTrail: [],
+      referenceExampleRecord: {
+        entries: [{ code: "reference_example", kind: "example", question_id: "q1", stage: "generate", source: "example.json", timestamp: "2026-09-15T00:00:00Z" }],
+      },
+    });
+    expect(evidence.trail).toBe(item.trail);
+    expect(Object.keys(evidence)).toEqual([
+      "phase", "isFinal", "trail", "figurePolicyTrail", "referenceExampleRecord",
+    ]);
   });
 });

@@ -20,7 +20,7 @@ import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
-import { projectGenerationEvidence } from "../lib/generationStream";
+import { projectGenerationCardEvidence, projectGenerationEvidence } from "../lib/generationStream";
 
 export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
@@ -378,11 +378,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                 <QuestionCard
                   key={item.question.id ?? `q-${item.index}`}
                   question={item.question}
-                  phase={item.phase}
-                  isFinal={item.isFinal}
-                  trail={item.trail}
-                  figurePolicyTrail={item.figurePolicyTrail}
-                  referenceExampleRecord={item.referenceExampleRecord}
+                  {...projectGenerationCardEvidence(item)}
                 />
               ))}
             </div>
