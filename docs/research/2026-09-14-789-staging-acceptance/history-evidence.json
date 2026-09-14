@@ -1,0 +1,73 @@
+{
+  "at": "2026-09-14T09:13:55.471Z",
+  "status": 200,
+  "total": 55,
+  "items": [
+    {
+      "id": "070c80f1-751b-47f8-8a99-2eaeed274a48",
+      "subject": "social_studies",
+      "status": "aborted",
+      "question_id": "",
+      "created_at": "2026-09-14T09:12:03.663348+00:00",
+      "settings": {
+        "count": 2,
+        "sub_question_count": 3,
+        "skip_verify": false,
+        "text_word_limit": 200,
+        "content_type": "純文字",
+        "image_generation_mode": "html"
+      }
+    },
+    {
+      "id": "0dcfa99b-5fad-4dcb-bcb6-701c4202981a",
+      "subject": "social_studies",
+      "status": "completed",
+      "question_id": "ss_20260914_085648_002",
+      "created_at": "2026-09-14T09:03:41.653010+00:00",
+      "subquestion_count": 3,
+      "verification_passed": true,
+      "settings": {
+        "count": 2,
+        "sub_question_count": 3,
+        "skip_verify": false,
+        "text_word_limit": 200,
+        "content_type": "純文字",
+        "image_generation_mode": "html"
+      }
+    },
+    {
+      "id": "b9b285ca-2d06-4484-a93e-33d3612cd1be",
+      "subject": "natural_sciences",
+      "status": "completed",
+      "question_id": "ns_20260914_085648_002",
+      "created_at": "2026-09-14T09:00:47.531086+00:00",
+      "subquestion_count": 3,
+      "verification_passed": true,
+      "settings": {
+        "count": 2,
+        "sub_question_count": 3,
+        "skip_verify": false,
+        "text_word_limit": 200,
+        "content_type": "純文字",
+        "image_generation_mode": "html"
+      }
+    },
+    {
+      "id": "19cdcdf8-5d5d-49b9-a48a-8cdf56258e6c",
+      "subject": "natural_sciences",
+      "status": "completed",
+      "question_id": "ns_20260914_085648_001",
+      "created_at": "2026-09-14T09:00:02.536751+00:00",
+      "subquestion_count": 3,
+      "verification_passed": true,
+      "settings": {
+        "count": 2,
+        "sub_question_count": 3,
+        "skip_verify": false,
+        "text_word_limit": 200,
+        "content_type": "純文字",
+        "image_generation_mode": "html"
+      }
+    }
+  ]
+}

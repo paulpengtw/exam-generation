@@ -1,0 +1,118 @@
+s........................................................ss............. [  3%]
+........................................................................ [  6%]
+........................................................................ [  9%]
+........................................................................ [ 13%]
+........................................................................ [ 16%]
+........................................................................ [ 19%]
+........................................................................ [ 23%]
+........................................................................ [ 26%]
+........................................................................ [ 29%]
+........................................................................ [ 33%]
+........................................................................ [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 43%]
+........................................................................ [ 46%]
+........................................................................ [ 49%]
+........................................................................ [ 53%]
+........................................................................ [ 56%]
+...s...s................................................................ [ 59%]
+........................................................................ [ 63%]
+........................................................................ [ 66%]
+........................................................................ [ 69%]
+........................................................................ [ 73%]
+........................................................................ [ 76%]
+........................................................................ [ 79%]
+........................................................................ [ 83%]
+.......................................s.s.............................. [ 86%]
+........................................................................ [ 89%]
+........................................................................ [ 92%]
+.......................s................................................ [ 96%]
+........................................................................ [ 99%]
+........                                                                 [100%]
+=============================== warnings summary ===============================
+tests/server/test_db_attribution.py::test_attribution_warning_delivered_to_sentry
+tests/server/test_generate_body_transport.py::test_post_preview_keeps_request_and_prompt_content_out_of_sentry
+tests/server/test_planning_observability.py::test_exhausted_planning_request_reports_one_exception_with_warning_breadcrumb[short-list]
+tests/server/test_planning_observability.py::test_exhausted_planning_request_reports_one_exception_with_warning_breadcrumb[invalid-third-item]
+tests/server/test_planning_observability.py::test_exhausted_planning_request_reports_one_exception_with_warning_breadcrumb[malformed-json]
+tests/server/test_planning_observability.py::test_exhausted_planning_request_reports_one_exception_with_warning_breadcrumb[object-response]
+tests/server/test_planning_observability.py::test_provider_exception_diagnostic_does_not_send_raw_error[ValueError]
+tests/server/test_planning_observability.py::test_provider_exception_diagnostic_does_not_send_raw_error[RuntimeError]
+tests/server/test_planning_observability.py::test_provider_exception_diagnostic_does_not_send_raw_error[TimeoutError]
+  /private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/sentry_sdk/client.py:352: DeprecationWarning: `send_default_pii` is deprecated and ignored when `data_collection` is set.
+    rv["data_collection"] = _resolve_data_collection(rv)
+
+tests/server/test_math_curriculum_context_threading.py::test_server_math_path_passes_curriculum_context_to_generate_with_corrections
+tests/server/test_math_curriculum_context_threading.py::test_server_math_path_without_curriculum_context_attr_does_not_crash
+tests/test_batch_dedup.py::test_server_generate_stream_accumulates_prior_scopes_across_math_workers
+  /private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/pydantic/main.py:528: UserWarning: Pydantic serializer warnings:
+    PydanticSerializationUnexpectedValue(Expected `enum` - serialized value may not be as expected [field_name='題型種類', input_value='單一題', input_type=str])
+    PydanticSerializationUnexpectedValue(Expected `enum` - serialized value may not be as expected [field_name='題型', input_value='選擇題', input_type=str])
+    return self.__pydantic_serializer__.to_json(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+===================== Playwright browser precheck failure ======================
+Browser not available: Playwright Chromium browser is not available (Error: BrowserType.launch: Executable doesn't exist at /Users/lobster/Library/Caches/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell
+╔════════════════════════════════════════════════════════════╗
+║ Looks like Playwright was just installed or updated.       ║
+║ Please run the following command to download new browsers: ║
+║                                                            ║
+║     playwright install                                     ║
+║                                                            ║
+║ <3 Playwright Team                                         ║
+╚════════════════════════════════════════════════════════════╝). Fix: uv run playwright install chromium
+2160 passed, 8 skipped, 12 warnings in 127.68s (0:02:07)
+Exception ignored in atexit callback: <bound method PostgresServer._cleanup of <pgserver.postgres_server.PostgresServer object at 0x1150a1fd0>>
+Traceback (most recent call last):
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/pgserver/postgres_server.py", line 204, in _cleanup
+    with self._lock:
+         ^^^^^^^^^^
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 166, in __enter__
+    gotten = self.acquire()
+             ^^^^^^^^^^^^^^
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 144, in acquire
+    self._do_open()
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 106, in _do_open
+    made_basedir = _ensure_tree(basedir)
+                   ^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 43, in _ensure_tree
+    os.makedirs(path)
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [Errno 1] Operation not permitted: b'/Users/lobster/Library/Caches/TemporaryItems'
+Exception ignored in atexit callback: <bound method PostgresServer._cleanup of <pgserver.postgres_server.PostgresServer object at 0x1150a0d10>>
+Traceback (most recent call last):
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/pgserver/postgres_server.py", line 204, in _cleanup
+    with self._lock:
+         ^^^^^^^^^^
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 166, in __enter__
+    gotten = self.acquire()
+             ^^^^^^^^^^^^^^
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 144, in acquire
+    self._do_open()
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 106, in _do_open
+    made_basedir = _ensure_tree(basedir)
+                   ^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 43, in _ensure_tree
+    os.makedirs(path)
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [Errno 1] Operation not permitted: b'/Users/lobster/Library/Caches/TemporaryItems'
+Exception ignored in atexit callback: <bound method PostgresServer._cleanup of <pgserver.postgres_server.PostgresServer object at 0x113572720>>
+Traceback (most recent call last):
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/pgserver/postgres_server.py", line 204, in _cleanup
+    with self._lock:
+         ^^^^^^^^^^
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 166, in __enter__
+    gotten = self.acquire()
+             ^^^^^^^^^^^^^^
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 144, in acquire
+    self._do_open()
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 106, in _do_open
+    made_basedir = _ensure_tree(basedir)
+                   ^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/examgen-761-acceptance/.venv/lib/python3.12/site-packages/fasteners/process_lock.py", line 43, in _ensure_tree
+    os.makedirs(path)
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [Errno 1] Operation not permitted: b'/Users/lobster/Library/Caches/TemporaryItems'

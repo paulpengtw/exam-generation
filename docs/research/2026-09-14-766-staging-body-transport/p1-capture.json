@@ -1,0 +1,2033 @@
+{
+  "startedAt": "2026-09-14T07:23:43.303Z",
+  "phase": "final-history-check",
+  "requests": [
+    {
+      "phase": "ss-original",
+      "at": "2026-09-14T07:24:06.252Z",
+      "path": "/api/generate/resolve",
+      "method": "POST",
+      "targetBytes": 21,
+      "request": {
+        "subject": "social_studies",
+        "grade": 7,
+        "style": [],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "題組題",
+        "q_type": [],
+        "count": 2,
+        "skip_verify": false,
+        "disable_reference_fewshot": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "公民與社會"
+        ],
+        "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+        "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+        "sub_question_count": 3,
+        "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+        "per_question_params": "[{},{}]",
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "coverage_mode": "balanced",
+        "core_question_callback": true,
+        "text_word_limit": 300,
+        "redraws": {}
+      },
+      "bodyBytes": 2789,
+      "equivalentGetTargetBytes": 6488,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "payload": {
+          "subject": "social_studies",
+          "grade": 7,
+          "style": [],
+          "content_type": "純文字",
+          "context": [],
+          "set_type": "題組題",
+          "q_type": [],
+          "count": 2,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "image_generation_mode": "html",
+          "subject_filter": [
+            "公民與社會"
+          ],
+          "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+          "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+          "sub_question_count": 3,
+          "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+          "per_question_params": [
+            {
+              "grade": 7,
+              "style": [],
+              "content_type": "純文字",
+              "context": [
+                "教育",
+                "職業",
+                "公共",
+                "個人"
+              ],
+              "set_type": "題組題",
+              "q_type": [],
+              "skip_verify": false,
+              "disable_reference_fewshot": false,
+              "image_generation_mode": "html",
+              "subject_filter": [
+                "公民與社會"
+              ],
+              "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+              "sub_question_count": 3,
+              "subquestion_configs": [
+                {
+                  "question_type": "選擇題",
+                  "question_word_limit": 100,
+                  "option_word_limit": 25,
+                  "content_type": "純文字",
+                  "image_generation_mode": "html",
+                  "instruction": "驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。",
+                  "cognitive_process": "Reasoning and Applying–Relate or Integrate",
+                  "learning_content": [
+                    "公Dc-Ⅳ-2"
+                  ],
+                  "learning_performance": [
+                    "社2c-Ⅳ-1"
+                  ]
+                },
+                {
+                  "question_type": "選擇題",
+                  "question_word_limit": 100,
+                  "option_word_limit": 25,
+                  "content_type": "純文字",
+                  "image_generation_mode": "html",
+                  "instruction": "驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。",
+                  "cognitive_process": "Reasoning and Applying–Interpret information",
+                  "learning_content": [
+                    "公Dc-Ⅳ-2"
+                  ],
+                  "learning_performance": [
+                    "社2c-Ⅳ-2"
+                  ]
+                },
+                {
+                  "question_type": "選擇題",
+                  "question_word_limit": 100,
+                  "option_word_limit": 25,
+                  "content_type": "純文字",
+                  "image_generation_mode": "html",
+                  "instruction": "驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。",
+                  "cognitive_process": "Reasoning and Applying–Interpret information",
+                  "learning_content": [
+                    "公Dc-Ⅳ-2"
+                  ],
+                  "learning_performance": [
+                    "社2c-Ⅳ-2"
+                  ]
+                }
+              ],
+              "model_verify": "claude-sonnet-4-6",
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "coverage_mode": "balanced",
+              "text_word_limit": 300,
+              "seed": 1709320354,
+              "content_domain": "Civic Roles and Identities",
+              "core_competency": [
+                "社-J-B3",
+                "社-J-B2"
+              ],
+              "learning_content": [
+                "公Dc-Ⅳ-2"
+              ],
+              "learning_performance": [
+                "社2c-Ⅳ-1",
+                "社2c-Ⅳ-2"
+              ]
+            },
+            {
+              "grade": 7,
+              "style": [],
+              "content_type": "純文字",
+              "context": [
+                "個人",
+                "教育",
+                "職業",
+                "公共"
+              ],
+              "set_type": "題組題",
+              "q_type": [],
+              "skip_verify": false,
+              "disable_reference_fewshot": false,
+              "image_generation_mode": "html",
+              "subject_filter": [
+                "公民與社會"
+              ],
+              "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+              "sub_question_count": 3,
+              "subquestion_configs": [
+                {
+                  "question_type": "選擇題",
+                  "question_word_limit": 100,
+                  "option_word_limit": 25,
+                  "content_type": "純文字",
+                  "image_generation_mode": "html",
+                  "instruction": "驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。",
+                  "cognitive_process": "Reasoning and Applying–Relate or Integrate",
+                  "learning_content": [
+                    "公Cc-Ⅳ-3"
+                  ],
+                  "learning_performance": [
+                    "社2a-Ⅳ-3"
+                  ]
+                },
+                {
+                  "question_type": "選擇題",
+                  "question_word_limit": 100,
+                  "option_word_limit": 25,
+                  "content_type": "純文字",
+                  "image_generation_mode": "html",
+                  "instruction": "驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。",
+                  "cognitive_process": "Knowing–Defining and Describing",
+                  "learning_content": [
+                    "公Cc-Ⅳ-3"
+                  ],
+                  "learning_performance": [
+                    "社2a-Ⅳ-3"
+                  ]
+                },
+                {
+                  "question_type": "選擇題",
+                  "question_word_limit": 100,
+                  "option_word_limit": 25,
+                  "content_type": "純文字",
+                  "image_generation_mode": "html",
+                  "instruction": "驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。",
+                  "cognitive_process": "Reasoning and Applying–Relate or Integrate",
+                  "learning_content": [
+                    "公Cc-Ⅳ-3"
+                  ],
+                  "learning_performance": [
+                    "社2a-Ⅳ-3"
+                  ]
+                }
+              ],
+              "model_verify": "claude-sonnet-4-6",
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "coverage_mode": "balanced",
+              "text_word_limit": 300,
+              "seed": 1709320355,
+              "content_domain": "Civic Participation",
+              "core_competency": [
+                "社-J-A2",
+                "社-J-A1",
+                "社-J-B3"
+              ],
+              "learning_content": [
+                "公Cc-Ⅳ-3"
+              ],
+              "learning_performance": [
+                "社2a-Ⅳ-3"
+              ]
+            }
+          ],
+          "model_verify": "claude-sonnet-4-6",
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "coverage_mode": "balanced",
+          "core_question_callback": true,
+          "text_word_limit": 300,
+          "seed": 1709320354
+        },
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].內容領域",
+          "per_question_params[0].核心素養",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].subquestion_configs[0].認知歷程",
+          "per_question_params[0].subquestion_configs[1].認知歷程",
+          "per_question_params[0].subquestion_configs[2].認知歷程",
+          "per_question_params[0].subquestion_configs[0].learning_content",
+          "per_question_params[0].subquestion_configs[0].learning_performance",
+          "per_question_params[0].subquestion_configs[1].learning_content",
+          "per_question_params[0].subquestion_configs[1].learning_performance",
+          "per_question_params[0].subquestion_configs[2].learning_content",
+          "per_question_params[0].subquestion_configs[2].learning_performance",
+          "per_question_params[1].seed",
+          "per_question_params[1].情境",
+          "per_question_params[1].內容領域",
+          "per_question_params[1].核心素養",
+          "per_question_params[1].學習內容",
+          "per_question_params[1].學習表現",
+          "per_question_params[1].subquestion_configs[0].認知歷程",
+          "per_question_params[1].subquestion_configs[1].認知歷程",
+          "per_question_params[1].subquestion_configs[2].認知歷程",
+          "per_question_params[1].subquestion_configs[0].learning_content",
+          "per_question_params[1].subquestion_configs[0].learning_performance",
+          "per_question_params[1].subquestion_configs[1].learning_content",
+          "per_question_params[1].subquestion_configs[1].learning_performance",
+          "per_question_params[1].subquestion_configs[2].learning_content",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        "cleared": []
+      }
+    },
+    {
+      "phase": "ss-original",
+      "at": "2026-09-14T07:24:25.091Z",
+      "path": "/api/generate/preview",
+      "method": "POST",
+      "targetBytes": 21,
+      "request": {
+        "subject": "social_studies",
+        "grade": 7,
+        "style": [],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "題組題",
+        "q_type": [],
+        "count": 2,
+        "skip_verify": false,
+        "disable_reference_fewshot": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "公民與社會"
+        ],
+        "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+        "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+        "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+        "sub_question_count": 3,
+        "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+        "per_question_params": "[{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"教育\",\"職業\",\"公共\",\"個人\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"公民與社會\"],\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]}]\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"coverage_mode\":\"balanced\",\"text_word_limit\":300,\"seed\":1709320354,\"content_domain\":\"Civic Roles and Identities\",\"core_competency\":[\"社-J-B3\",\"社-J-B2\"],\"learning_content\":[\"公Dc-Ⅳ-2\"],\"learning_performance\":[\"社2c-Ⅳ-1\",\"社2c-Ⅳ-2\"],\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\"},{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"個人\",\"教育\",\"職業\",\"公共\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"公民與社會\"],\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Knowing–Defining and Describing\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]}]\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"coverage_mode\":\"balanced\",\"text_word_limit\":300,\"seed\":1709320355,\"content_domain\":\"Civic Participation\",\"core_competency\":[\"社-J-A2\",\"社-J-A1\",\"社-J-B3\"],\"learning_content\":[\"公Cc-Ⅳ-3\"],\"learning_performance\":[\"社2a-Ⅳ-3\"],\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\"}]",
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].內容領域",
+          "per_question_params[0].核心素養",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].subquestion_configs[0].認知歷程",
+          "per_question_params[0].subquestion_configs[1].認知歷程",
+          "per_question_params[0].subquestion_configs[2].認知歷程",
+          "per_question_params[0].subquestion_configs[0].learning_content",
+          "per_question_params[0].subquestion_configs[0].learning_performance",
+          "per_question_params[0].subquestion_configs[1].learning_content",
+          "per_question_params[0].subquestion_configs[1].learning_performance",
+          "per_question_params[0].subquestion_configs[2].learning_content",
+          "per_question_params[0].subquestion_configs[2].learning_performance",
+          "per_question_params[1].seed",
+          "per_question_params[1].情境",
+          "per_question_params[1].內容領域",
+          "per_question_params[1].核心素養",
+          "per_question_params[1].學習內容",
+          "per_question_params[1].學習表現",
+          "per_question_params[1].subquestion_configs[0].認知歷程",
+          "per_question_params[1].subquestion_configs[1].認知歷程",
+          "per_question_params[1].subquestion_configs[2].認知歷程",
+          "per_question_params[1].subquestion_configs[0].learning_content",
+          "per_question_params[1].subquestion_configs[0].learning_performance",
+          "per_question_params[1].subquestion_configs[1].learning_content",
+          "per_question_params[1].subquestion_configs[1].learning_performance",
+          "per_question_params[1].subquestion_configs[2].learning_content",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        "seed": 1709320354,
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "coverage_mode": "balanced",
+        "core_question_callback": true,
+        "text_word_limit": 300
+      },
+      "bodyBytes": 10222,
+      "equivalentGetTargetBytes": 20322,
+      "status": 200,
+      "contentType": "application/json",
+      "previewKeys": [
+        "prompts"
+      ]
+    },
+    {
+      "phase": "ss-original",
+      "at": "2026-09-14T07:24:54.646Z",
+      "path": "/api/generate",
+      "method": "POST",
+      "targetBytes": 13,
+      "request": {
+        "subject": "social_studies",
+        "grade": 7,
+        "style": [],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "題組題",
+        "q_type": [],
+        "count": 2,
+        "skip_verify": false,
+        "disable_reference_fewshot": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "公民與社會"
+        ],
+        "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+        "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+        "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+        "sub_question_count": 3,
+        "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+        "per_question_params": "[{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"教育\",\"職業\",\"公共\",\"個人\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"公民與社會\"],\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]}]\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"coverage_mode\":\"balanced\",\"text_word_limit\":300,\"seed\":1709320354,\"content_domain\":\"Civic Roles and Identities\",\"core_competency\":[\"社-J-B3\",\"社-J-B2\"],\"learning_content\":[\"公Dc-Ⅳ-2\"],\"learning_performance\":[\"社2c-Ⅳ-1\",\"社2c-Ⅳ-2\"],\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\"},{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"個人\",\"教育\",\"職業\",\"公共\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"公民與社會\"],\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Knowing–Defining and Describing\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]}]\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"coverage_mode\":\"balanced\",\"text_word_limit\":300,\"seed\":1709320355,\"content_domain\":\"Civic Participation\",\"core_competency\":[\"社-J-A2\",\"社-J-A1\",\"社-J-B3\"],\"learning_content\":[\"公Cc-Ⅳ-3\"],\"learning_performance\":[\"社2a-Ⅳ-3\"],\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\"}]",
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].內容領域",
+          "per_question_params[0].核心素養",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].subquestion_configs[0].認知歷程",
+          "per_question_params[0].subquestion_configs[1].認知歷程",
+          "per_question_params[0].subquestion_configs[2].認知歷程",
+          "per_question_params[0].subquestion_configs[0].learning_content",
+          "per_question_params[0].subquestion_configs[0].learning_performance",
+          "per_question_params[0].subquestion_configs[1].learning_content",
+          "per_question_params[0].subquestion_configs[1].learning_performance",
+          "per_question_params[0].subquestion_configs[2].learning_content",
+          "per_question_params[0].subquestion_configs[2].learning_performance",
+          "per_question_params[1].seed",
+          "per_question_params[1].情境",
+          "per_question_params[1].內容領域",
+          "per_question_params[1].核心素養",
+          "per_question_params[1].學習內容",
+          "per_question_params[1].學習表現",
+          "per_question_params[1].subquestion_configs[0].認知歷程",
+          "per_question_params[1].subquestion_configs[1].認知歷程",
+          "per_question_params[1].subquestion_configs[2].認知歷程",
+          "per_question_params[1].subquestion_configs[0].learning_content",
+          "per_question_params[1].subquestion_configs[0].learning_performance",
+          "per_question_params[1].subquestion_configs[1].learning_content",
+          "per_question_params[1].subquestion_configs[1].learning_performance",
+          "per_question_params[1].subquestion_configs[2].learning_content",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        "seed": 1709320354,
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "coverage_mode": "balanced",
+        "core_question_callback": true,
+        "text_word_limit": 300
+      },
+      "bodyBytes": 10222,
+      "equivalentGetTargetBytes": 20314,
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "events": [],
+      "eventCounts": {
+        "started": 1,
+        "stage": 46,
+        "pipeline": 6,
+        "trail": 32,
+        "llm_request": 22,
+        "llm_content": 14032,
+        "llm_response": 22,
+        "plan": 2,
+        "question_update": 16,
+        "result": 2,
+        "done": 1
+      },
+      "streamCaptureError": "AbortError"
+    },
+    {
+      "phase": "ss-original",
+      "at": "2026-09-14T07:33:45.398Z",
+      "path": "/api/history",
+      "method": "GET",
+      "targetBytes": 30,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "total": 46,
+        "items": [
+          {
+            "id": "cfe53c47-b73e-4dd0-bdc5-0c4bf5f7d2db",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_072455_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:33:14.827796+00:00"
+          },
+          {
+            "id": "46595a62-3163-4723-8fdb-0c437f95f1e0",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_072455_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:32:55.414420+00:00"
+          },
+          {
+            "id": "fb7fd9d6-bd56-413f-bc45-49ac6396d70e",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_072704_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:31:51.939910+00:00"
+          },
+          {
+            "id": "d00692d7-7ce5-475e-93ac-b4d7b8b35142",
+            "subject": "math",
+            "question_id": "q_20260914_072938_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:30:31.595715+00:00"
+          },
+          {
+            "id": "c2a0a542-c872-4b0f-884d-8c6e656b5c8b",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_072704_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:29:52.154330+00:00"
+          },
+          {
+            "id": "6d5b5d23-2b0f-43c5-9bf7-f2b905947fed",
+            "subject": "math",
+            "question_id": "q_20260914_061457_001",
+            "status": "completed",
+            "created_at": "2026-09-14T06:18:58.463491+00:00"
+          },
+          {
+            "id": "5a5ab383-62f8-4457-80ba-cf4783324280",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T05:12:31.620364+00:00"
+          },
+          {
+            "id": "75f85dcc-a549-4a8a-b32f-10c2c9f1e3c7",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T05:06:32.162940+00:00"
+          },
+          {
+            "id": "79621005-c844-42fe-a39b-b235473f96f8",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_042852_001",
+            "status": "completed",
+            "created_at": "2026-09-14T04:40:21.997932+00:00"
+          },
+          {
+            "id": "60ce2dd4-b377-4772-a95b-1ae2500c7130",
+            "subject": "social_studies",
+            "question_id": "ss_20260910_153845_001",
+            "status": "completed",
+            "created_at": "2026-09-10T15:45:13.389759+00:00"
+          },
+          {
+            "id": "9d43ed82-fd62-4560-b21a-29f1d9a46200",
+            "subject": "social_studies",
+            "question_id": "ss_20260910_153044_001",
+            "status": "completed",
+            "created_at": "2026-09-10T15:37:29.460625+00:00"
+          },
+          {
+            "id": "e782867e-02c4-4f02-a369-4f24b4205bdc",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T15:34:28.704073+00:00"
+          },
+          {
+            "id": "2d775005-e000-4c14-9f4e-e8de6616db96",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T15:34:09.864590+00:00"
+          },
+          {
+            "id": "0f771cf1-8e6e-4da2-95c7-70cd3332d737",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T15:27:02.227421+00:00"
+          },
+          {
+            "id": "dbb4ed22-2183-4ecb-a18e-b094aa420e24",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T13:04:34.344694+00:00"
+          },
+          {
+            "id": "f5ae388d-00f2-4af3-a0fc-525f34d02523",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T12:34:57.121379+00:00"
+          },
+          {
+            "id": "1429e763-9354-40a9-8760-7f1f29d3332f",
+            "subject": "social_studies",
+            "question_id": "ss_20260910_102102_001",
+            "status": "completed",
+            "created_at": "2026-09-10T10:28:55.818698+00:00"
+          },
+          {
+            "id": "53ed4663-7e7d-4027-aed7-298ed28ea37a",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T10:22:28.273358+00:00"
+          },
+          {
+            "id": "8a17c9d6-473e-45b4-bd90-bc347c747840",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T10:21:02.093189+00:00"
+          },
+          {
+            "id": "d1855c31-eb21-4007-bfbc-b41329cf2022",
+            "subject": "social_studies",
+            "question_id": "ss_20260910_072309_001",
+            "status": "completed",
+            "created_at": "2026-09-10T07:29:47.027630+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "ss-history",
+      "at": "2026-09-14T07:35:14.348Z",
+      "path": "/api/history/cfe53c47-b73e-4dd0-bdc5-0c4bf5f7d2db",
+      "method": "GET",
+      "targetBytes": 49,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "id": "cfe53c47-b73e-4dd0-bdc5-0c4bf5f7d2db",
+        "subject": "social_studies",
+        "question_id": "ss_20260914_072455_001",
+        "status": "completed",
+        "created_at": "2026-09-14T07:33:14.827796+00:00",
+        "params_json": {
+          "subject": "social_studies",
+          "grade": 7,
+          "style": [],
+          "context": [],
+          "set_type": "題組題",
+          "q_type": [],
+          "count": 2,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "seed": 1709320354,
+          "max_retries": 3,
+          "image_generation_mode": "html",
+          "difficulty": null,
+          "coverage_mode": "balanced",
+          "core_question_callback": true,
+          "subject_filter": [
+            "公民與社會"
+          ],
+          "content_type": "純文字",
+          "content_domain": null,
+          "target_surface": null,
+          "passage": null,
+          "options": null,
+          "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+          "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+          "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+          "sub_context": null,
+          "science_competency": null,
+          "learning_performance": null,
+          "core_competency": null,
+          "math_thinking": null,
+          "learning_content": null,
+          "sub_question_count": 3,
+          "question_word_limit": null,
+          "option_word_limit": null,
+          "text_word_limit": 300,
+          "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+          "allow_duplicate_figure_kinds": false,
+          "per_question_params": "[{\"grade\": 7, \"style\": [], \"context\": [\"教育\", \"職業\", \"公共\", \"個人\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1709320354, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"subject_filter\": [\"公民與社會\"], \"content_type\": \"純文字\", \"topic\": \"社區公共用水決策與公民參與（#766 傳輸驗收）\", \"core_question\": \"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\", \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"content_domain\": \"Civic Roles and Identities\", \"core_competency\": [\"社-J-B3\", \"社-J-B2\"], \"learning_content\": [\"公Dc-Ⅳ-2\"], \"learning_performance\": [\"社2c-Ⅳ-1\", \"社2c-Ⅳ-2\"]}, {\"grade\": 7, \"style\": [], \"context\": [\"個人\", \"教育\", \"職業\", \"公共\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1709320355, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"subject_filter\": [\"公民與社會\"], \"content_type\": \"純文字\", \"topic\": \"社區公共用水決策與公民參與（#766 傳輸驗收）\", \"core_question\": \"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\", \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Knowing–Defining and Describing\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"content_domain\": \"Civic Participation\", \"core_competency\": [\"社-J-A2\", \"社-J-A1\", \"社-J-B3\"], \"learning_content\": [\"公Cc-Ⅳ-3\"], \"learning_performance\": [\"社2a-Ⅳ-3\"]}]",
+          "drawn": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].情境",
+            "per_question_params[0].內容領域",
+            "per_question_params[0].核心素養",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].subquestion_configs[0].認知歷程",
+            "per_question_params[0].subquestion_configs[1].認知歷程",
+            "per_question_params[0].subquestion_configs[2].認知歷程",
+            "per_question_params[0].subquestion_configs[0].learning_content",
+            "per_question_params[0].subquestion_configs[0].learning_performance",
+            "per_question_params[0].subquestion_configs[1].learning_content",
+            "per_question_params[0].subquestion_configs[1].learning_performance",
+            "per_question_params[0].subquestion_configs[2].learning_content",
+            "per_question_params[0].subquestion_configs[2].learning_performance",
+            "per_question_params[1].seed",
+            "per_question_params[1].情境",
+            "per_question_params[1].內容領域",
+            "per_question_params[1].核心素養",
+            "per_question_params[1].學習內容",
+            "per_question_params[1].學習表現",
+            "per_question_params[1].subquestion_configs[0].認知歷程",
+            "per_question_params[1].subquestion_configs[1].認知歷程",
+            "per_question_params[1].subquestion_configs[2].認知歷程",
+            "per_question_params[1].subquestion_configs[0].learning_content",
+            "per_question_params[1].subquestion_configs[0].learning_performance",
+            "per_question_params[1].subquestion_configs[1].learning_content",
+            "per_question_params[1].subquestion_configs[1].learning_performance",
+            "per_question_params[1].subquestion_configs[2].learning_content",
+            "per_question_params[1].subquestion_configs[2].learning_performance"
+          ],
+          "model_plan": null,
+          "model_execute": null,
+          "model_verify": "claude-sonnet-4-6",
+          "model_correct": null,
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "effort_verify": null,
+          "effort_correct": null,
+          "reporting_scale": null
+        }
+      }
+    },
+    {
+      "phase": "ss-replay",
+      "at": "2026-09-14T07:35:15.576Z",
+      "path": "/api/generate/resolve",
+      "method": "POST",
+      "targetBytes": 21,
+      "request": {
+        "subject": "social_studies",
+        "grade": 7,
+        "style": [],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "題組題",
+        "q_type": [],
+        "count": 2,
+        "skip_verify": false,
+        "disable_reference_fewshot": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "公民與社會"
+        ],
+        "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+        "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+        "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+        "sub_question_count": 3,
+        "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+        "per_question_params": "[{\"grade\":7,\"style\":[],\"context\":[\"教育\",\"職業\",\"公共\",\"個人\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"seed\":1709320354,\"image_generation_mode\":\"html\",\"coverage_mode\":\"balanced\",\"subject_filter\":[\"公民與社會\"],\"content_type\":\"純文字\",\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\",\"sub_question_count\":3,\"text_word_limit\":300,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]}]\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"content_domain\":\"Civic Roles and Identities\",\"core_competency\":[\"社-J-B3\",\"社-J-B2\"],\"learning_content\":[\"公Dc-Ⅳ-2\"],\"learning_performance\":[\"社2c-Ⅳ-1\",\"社2c-Ⅳ-2\"]},{\"grade\":7,\"style\":[],\"context\":[\"個人\",\"教育\",\"職業\",\"公共\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"seed\":1709320355,\"image_generation_mode\":\"html\",\"coverage_mode\":\"balanced\",\"subject_filter\":[\"公民與社會\"],\"content_type\":\"純文字\",\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\",\"sub_question_count\":3,\"text_word_limit\":300,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Knowing–Defining and Describing\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]}]\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"content_domain\":\"Civic Participation\",\"core_competency\":[\"社-J-A2\",\"社-J-A1\",\"社-J-B3\"],\"learning_content\":[\"公Cc-Ⅳ-3\"],\"learning_performance\":[\"社2a-Ⅳ-3\"]}]",
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].內容領域",
+          "per_question_params[0].核心素養",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].subquestion_configs[0].認知歷程",
+          "per_question_params[0].subquestion_configs[1].認知歷程",
+          "per_question_params[0].subquestion_configs[2].認知歷程",
+          "per_question_params[0].subquestion_configs[0].learning_content",
+          "per_question_params[0].subquestion_configs[0].learning_performance",
+          "per_question_params[0].subquestion_configs[1].learning_content",
+          "per_question_params[0].subquestion_configs[1].learning_performance",
+          "per_question_params[0].subquestion_configs[2].learning_content",
+          "per_question_params[0].subquestion_configs[2].learning_performance",
+          "per_question_params[1].seed",
+          "per_question_params[1].情境",
+          "per_question_params[1].內容領域",
+          "per_question_params[1].核心素養",
+          "per_question_params[1].學習內容",
+          "per_question_params[1].學習表現",
+          "per_question_params[1].subquestion_configs[0].認知歷程",
+          "per_question_params[1].subquestion_configs[1].認知歷程",
+          "per_question_params[1].subquestion_configs[2].認知歷程",
+          "per_question_params[1].subquestion_configs[0].learning_content",
+          "per_question_params[1].subquestion_configs[0].learning_performance",
+          "per_question_params[1].subquestion_configs[1].learning_content",
+          "per_question_params[1].subquestion_configs[1].learning_performance",
+          "per_question_params[1].subquestion_configs[2].learning_content",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        "seed": 1709320354,
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "coverage_mode": "balanced",
+        "core_question_callback": true,
+        "text_word_limit": 300,
+        "redraws": {}
+      },
+      "bodyBytes": 10235,
+      "equivalentGetTargetBytes": 20350,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "payload": {
+          "subject": "social_studies",
+          "grade": 7,
+          "style": [],
+          "content_type": "純文字",
+          "context": [],
+          "set_type": "題組題",
+          "q_type": [],
+          "count": 2,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "image_generation_mode": "html",
+          "subject_filter": [
+            "公民與社會"
+          ],
+          "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+          "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+          "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+          "sub_question_count": 3,
+          "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+          "per_question_params": [
+            {
+              "grade": 7,
+              "style": [],
+              "content_type": "純文字",
+              "context": [
+                "教育",
+                "職業",
+                "公共",
+                "個人"
+              ],
+              "set_type": "題組題",
+              "q_type": [],
+              "skip_verify": false,
+              "disable_reference_fewshot": false,
+              "image_generation_mode": "html",
+              "subject_filter": [
+                "公民與社會"
+              ],
+              "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+              "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+              "sub_question_count": 3,
+              "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\",\"cognitive_process\":\"Reasoning and Applying–Relate or Integrate\",\"learning_content\":[\"公Dc-Ⅳ-2\"],\"learning_performance\":[\"社2c-Ⅳ-1\"]},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\",\"cognitive_process\":\"Reasoning and Applying–Interpret information\",\"learning_content\":[\"公Dc-Ⅳ-2\"],\"learning_performance\":[\"社2c-Ⅳ-2\"]},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\",\"cognitive_process\":\"Reasoning and Applying–Interpret information\",\"learning_content\":[\"公Dc-Ⅳ-2\"],\"learning_performance\":[\"社2c-Ⅳ-2\"]}]",
+              "seed": 1709320354,
+              "model_verify": "claude-sonnet-4-6",
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "coverage_mode": "balanced",
+              "text_word_limit": 300,
+              "content_domain": "Civic Roles and Identities",
+              "core_competency": [
+                "社-J-B3",
+                "社-J-B2"
+              ],
+              "learning_content": [
+                "公Dc-Ⅳ-2"
+              ],
+              "learning_performance": [
+                "社2c-Ⅳ-1",
+                "社2c-Ⅳ-2"
+              ]
+            },
+            {
+              "grade": 7,
+              "style": [],
+              "content_type": "純文字",
+              "context": [
+                "個人",
+                "教育",
+                "職業",
+                "公共"
+              ],
+              "set_type": "題組題",
+              "q_type": [],
+              "skip_verify": false,
+              "disable_reference_fewshot": false,
+              "image_generation_mode": "html",
+              "subject_filter": [
+                "公民與社會"
+              ],
+              "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+              "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+              "sub_question_count": 3,
+              "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\",\"cognitive_process\":\"Reasoning and Applying–Relate or Integrate\",\"learning_content\":[\"公Cc-Ⅳ-3\"],\"learning_performance\":[\"社2a-Ⅳ-3\"]},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\",\"cognitive_process\":\"Knowing–Defining and Describing\",\"learning_content\":[\"公Cc-Ⅳ-3\"],\"learning_performance\":[\"社2a-Ⅳ-3\"]},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\",\"cognitive_process\":\"Reasoning and Applying–Relate or Integrate\",\"learning_content\":[\"公Cc-Ⅳ-3\"],\"learning_performance\":[\"社2a-Ⅳ-3\"]}]",
+              "seed": 1709320355,
+              "model_verify": "claude-sonnet-4-6",
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "coverage_mode": "balanced",
+              "text_word_limit": 300,
+              "content_domain": "Civic Participation",
+              "core_competency": [
+                "社-J-A2",
+                "社-J-A1",
+                "社-J-B3"
+              ],
+              "learning_content": [
+                "公Cc-Ⅳ-3"
+              ],
+              "learning_performance": [
+                "社2a-Ⅳ-3"
+              ]
+            }
+          ],
+          "drawn": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].情境",
+            "per_question_params[0].內容領域",
+            "per_question_params[0].核心素養",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].subquestion_configs[0].認知歷程",
+            "per_question_params[0].subquestion_configs[1].認知歷程",
+            "per_question_params[0].subquestion_configs[2].認知歷程",
+            "per_question_params[0].subquestion_configs[0].learning_content",
+            "per_question_params[0].subquestion_configs[0].learning_performance",
+            "per_question_params[0].subquestion_configs[1].learning_content",
+            "per_question_params[0].subquestion_configs[1].learning_performance",
+            "per_question_params[0].subquestion_configs[2].learning_content",
+            "per_question_params[0].subquestion_configs[2].learning_performance",
+            "per_question_params[1].seed",
+            "per_question_params[1].情境",
+            "per_question_params[1].內容領域",
+            "per_question_params[1].核心素養",
+            "per_question_params[1].學習內容",
+            "per_question_params[1].學習表現",
+            "per_question_params[1].subquestion_configs[0].認知歷程",
+            "per_question_params[1].subquestion_configs[1].認知歷程",
+            "per_question_params[1].subquestion_configs[2].認知歷程",
+            "per_question_params[1].subquestion_configs[0].learning_content",
+            "per_question_params[1].subquestion_configs[0].learning_performance",
+            "per_question_params[1].subquestion_configs[1].learning_content",
+            "per_question_params[1].subquestion_configs[1].learning_performance",
+            "per_question_params[1].subquestion_configs[2].learning_content",
+            "per_question_params[1].subquestion_configs[2].learning_performance"
+          ],
+          "seed": 1709320354,
+          "model_verify": "claude-sonnet-4-6",
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "coverage_mode": "balanced",
+          "core_question_callback": true,
+          "text_word_limit": 300
+        },
+        "drawn": [],
+        "cleared": []
+      }
+    },
+    {
+      "phase": "ss-replay",
+      "at": "2026-09-14T07:35:15.853Z",
+      "path": "/api/generate/preview",
+      "method": "POST",
+      "targetBytes": 21,
+      "request": {
+        "subject": "social_studies",
+        "grade": 7,
+        "style": [],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "題組題",
+        "q_type": [],
+        "count": 2,
+        "skip_verify": false,
+        "disable_reference_fewshot": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "公民與社會"
+        ],
+        "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+        "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+        "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+        "sub_question_count": 3,
+        "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+        "per_question_params": "[{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"教育\",\"職業\",\"公共\",\"個人\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"公民與社會\"],\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]}]\",\"seed\":1709320354,\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"coverage_mode\":\"balanced\",\"text_word_limit\":300,\"content_domain\":\"Civic Roles and Identities\",\"core_competency\":[\"社-J-B3\",\"社-J-B2\"],\"learning_content\":[\"公Dc-Ⅳ-2\"],\"learning_performance\":[\"社2c-Ⅳ-1\",\"社2c-Ⅳ-2\"]},{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"個人\",\"教育\",\"職業\",\"公共\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"公民與社會\"],\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Knowing–Defining and Describing\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]}]\",\"seed\":1709320355,\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"coverage_mode\":\"balanced\",\"text_word_limit\":300,\"content_domain\":\"Civic Participation\",\"core_competency\":[\"社-J-A2\",\"社-J-A1\",\"社-J-B3\"],\"learning_content\":[\"公Cc-Ⅳ-3\"],\"learning_performance\":[\"社2a-Ⅳ-3\"]}]",
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].內容領域",
+          "per_question_params[0].核心素養",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].subquestion_configs[0].認知歷程",
+          "per_question_params[0].subquestion_configs[1].認知歷程",
+          "per_question_params[0].subquestion_configs[2].認知歷程",
+          "per_question_params[0].subquestion_configs[0].learning_content",
+          "per_question_params[0].subquestion_configs[0].learning_performance",
+          "per_question_params[0].subquestion_configs[1].learning_content",
+          "per_question_params[0].subquestion_configs[1].learning_performance",
+          "per_question_params[0].subquestion_configs[2].learning_content",
+          "per_question_params[0].subquestion_configs[2].learning_performance",
+          "per_question_params[1].seed",
+          "per_question_params[1].情境",
+          "per_question_params[1].內容領域",
+          "per_question_params[1].核心素養",
+          "per_question_params[1].學習內容",
+          "per_question_params[1].學習表現",
+          "per_question_params[1].subquestion_configs[0].認知歷程",
+          "per_question_params[1].subquestion_configs[1].認知歷程",
+          "per_question_params[1].subquestion_configs[2].認知歷程",
+          "per_question_params[1].subquestion_configs[0].learning_content",
+          "per_question_params[1].subquestion_configs[0].learning_performance",
+          "per_question_params[1].subquestion_configs[1].learning_content",
+          "per_question_params[1].subquestion_configs[1].learning_performance",
+          "per_question_params[1].subquestion_configs[2].learning_content",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        "seed": 1709320354,
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "coverage_mode": "balanced",
+        "core_question_callback": true,
+        "text_word_limit": 300
+      },
+      "bodyBytes": 10222,
+      "equivalentGetTargetBytes": 20322,
+      "status": 200,
+      "contentType": "application/json",
+      "previewKeys": [
+        "prompts"
+      ]
+    },
+    {
+      "phase": "ss-replay",
+      "at": "2026-09-14T07:35:46.958Z",
+      "path": "/api/generate",
+      "method": "POST",
+      "targetBytes": 13,
+      "request": {
+        "subject": "social_studies",
+        "grade": 7,
+        "style": [],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "題組題",
+        "q_type": [],
+        "count": 2,
+        "skip_verify": false,
+        "disable_reference_fewshot": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "公民與社會"
+        ],
+        "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+        "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+        "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+        "sub_question_count": 3,
+        "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+        "per_question_params": "[{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"教育\",\"職業\",\"公共\",\"個人\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"公民與社會\"],\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]}]\",\"seed\":1709320354,\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"coverage_mode\":\"balanced\",\"text_word_limit\":300,\"content_domain\":\"Civic Roles and Identities\",\"core_competency\":[\"社-J-B3\",\"社-J-B2\"],\"learning_content\":[\"公Dc-Ⅳ-2\"],\"learning_performance\":[\"社2c-Ⅳ-1\",\"社2c-Ⅳ-2\"]},{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"個人\",\"教育\",\"職業\",\"公共\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"公民與社會\"],\"topic\":\"社區公共用水決策與公民參與（#766 傳輸驗收）\",\"core_question\":\"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Knowing–Defining and Describing\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]}]\",\"seed\":1709320355,\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"coverage_mode\":\"balanced\",\"text_word_limit\":300,\"content_domain\":\"Civic Participation\",\"core_competency\":[\"社-J-A2\",\"社-J-A1\",\"社-J-B3\"],\"learning_content\":[\"公Cc-Ⅳ-3\"],\"learning_performance\":[\"社2a-Ⅳ-3\"]}]",
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].內容領域",
+          "per_question_params[0].核心素養",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].subquestion_configs[0].認知歷程",
+          "per_question_params[0].subquestion_configs[1].認知歷程",
+          "per_question_params[0].subquestion_configs[2].認知歷程",
+          "per_question_params[0].subquestion_configs[0].learning_content",
+          "per_question_params[0].subquestion_configs[0].learning_performance",
+          "per_question_params[0].subquestion_configs[1].learning_content",
+          "per_question_params[0].subquestion_configs[1].learning_performance",
+          "per_question_params[0].subquestion_configs[2].learning_content",
+          "per_question_params[0].subquestion_configs[2].learning_performance",
+          "per_question_params[1].seed",
+          "per_question_params[1].情境",
+          "per_question_params[1].內容領域",
+          "per_question_params[1].核心素養",
+          "per_question_params[1].學習內容",
+          "per_question_params[1].學習表現",
+          "per_question_params[1].subquestion_configs[0].認知歷程",
+          "per_question_params[1].subquestion_configs[1].認知歷程",
+          "per_question_params[1].subquestion_configs[2].認知歷程",
+          "per_question_params[1].subquestion_configs[0].learning_content",
+          "per_question_params[1].subquestion_configs[0].learning_performance",
+          "per_question_params[1].subquestion_configs[1].learning_content",
+          "per_question_params[1].subquestion_configs[1].learning_performance",
+          "per_question_params[1].subquestion_configs[2].learning_content",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        "seed": 1709320354,
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "coverage_mode": "balanced",
+        "core_question_callback": true,
+        "text_word_limit": 300
+      },
+      "bodyBytes": 10222,
+      "equivalentGetTargetBytes": 20314,
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "events": [],
+      "eventCounts": {
+        "started": 1,
+        "stage": 46,
+        "pipeline": 6,
+        "trail": 32,
+        "llm_request": 22,
+        "llm_content": 15235,
+        "llm_response": 22,
+        "plan": 2,
+        "question_update": 16,
+        "result": 2,
+        "done": 1
+      },
+      "streamCaptureError": "AbortError"
+    },
+    {
+      "phase": "ss-replay",
+      "at": "2026-09-14T07:49:39.254Z",
+      "path": "/api/history",
+      "method": "GET",
+      "targetBytes": 30,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "total": 51,
+        "items": [
+          {
+            "id": "8b5ec211-666f-4a11-ae33-1d3a7e2b2eca",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_073547_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:44:29.613298+00:00"
+          },
+          {
+            "id": "b96a683c-82ab-408a-95f6-c448e297455d",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_073547_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:44:17.479563+00:00"
+          },
+          {
+            "id": "f658a7ef-a6c8-4f4c-b60f-e0188e6efa69",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T07:40:06.854218+00:00"
+          },
+          {
+            "id": "d320e8c7-7da0-43d9-832a-ecb4417c815e",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_073236_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:37:45.671633+00:00"
+          },
+          {
+            "id": "1ab3c3ce-ca78-484c-96fb-684f990ad353",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_073236_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:35:37.444562+00:00"
+          },
+          {
+            "id": "cfe53c47-b73e-4dd0-bdc5-0c4bf5f7d2db",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_072455_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:33:14.827796+00:00"
+          },
+          {
+            "id": "46595a62-3163-4723-8fdb-0c437f95f1e0",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_072455_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:32:55.414420+00:00"
+          },
+          {
+            "id": "fb7fd9d6-bd56-413f-bc45-49ac6396d70e",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_072704_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:31:51.939910+00:00"
+          },
+          {
+            "id": "d00692d7-7ce5-475e-93ac-b4d7b8b35142",
+            "subject": "math",
+            "question_id": "q_20260914_072938_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:30:31.595715+00:00"
+          },
+          {
+            "id": "c2a0a542-c872-4b0f-884d-8c6e656b5c8b",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_072704_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:29:52.154330+00:00"
+          },
+          {
+            "id": "6d5b5d23-2b0f-43c5-9bf7-f2b905947fed",
+            "subject": "math",
+            "question_id": "q_20260914_061457_001",
+            "status": "completed",
+            "created_at": "2026-09-14T06:18:58.463491+00:00"
+          },
+          {
+            "id": "5a5ab383-62f8-4457-80ba-cf4783324280",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T05:12:31.620364+00:00"
+          },
+          {
+            "id": "75f85dcc-a549-4a8a-b32f-10c2c9f1e3c7",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T05:06:32.162940+00:00"
+          },
+          {
+            "id": "79621005-c844-42fe-a39b-b235473f96f8",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_042852_001",
+            "status": "completed",
+            "created_at": "2026-09-14T04:40:21.997932+00:00"
+          },
+          {
+            "id": "60ce2dd4-b377-4772-a95b-1ae2500c7130",
+            "subject": "social_studies",
+            "question_id": "ss_20260910_153845_001",
+            "status": "completed",
+            "created_at": "2026-09-10T15:45:13.389759+00:00"
+          },
+          {
+            "id": "9d43ed82-fd62-4560-b21a-29f1d9a46200",
+            "subject": "social_studies",
+            "question_id": "ss_20260910_153044_001",
+            "status": "completed",
+            "created_at": "2026-09-10T15:37:29.460625+00:00"
+          },
+          {
+            "id": "e782867e-02c4-4f02-a369-4f24b4205bdc",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T15:34:28.704073+00:00"
+          },
+          {
+            "id": "2d775005-e000-4c14-9f4e-e8de6616db96",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T15:34:09.864590+00:00"
+          },
+          {
+            "id": "0f771cf1-8e6e-4da2-95c7-70cd3332d737",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T15:27:02.227421+00:00"
+          },
+          {
+            "id": "dbb4ed22-2183-4ecb-a18e-b094aa420e24",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T13:04:34.344694+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "final-history-check",
+      "at": "2026-09-14T07:49:39.313Z",
+      "path": "/api/history",
+      "method": "GET",
+      "targetBytes": 21,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "total": 51,
+        "items": [
+          {
+            "id": "8b5ec211-666f-4a11-ae33-1d3a7e2b2eca",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_073547_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:44:29.613298+00:00"
+          },
+          {
+            "id": "b96a683c-82ab-408a-95f6-c448e297455d",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_073547_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:44:17.479563+00:00"
+          },
+          {
+            "id": "f658a7ef-a6c8-4f4c-b60f-e0188e6efa69",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T07:40:06.854218+00:00"
+          },
+          {
+            "id": "d320e8c7-7da0-43d9-832a-ecb4417c815e",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_073236_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:37:45.671633+00:00"
+          },
+          {
+            "id": "1ab3c3ce-ca78-484c-96fb-684f990ad353",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_073236_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:35:37.444562+00:00"
+          },
+          {
+            "id": "cfe53c47-b73e-4dd0-bdc5-0c4bf5f7d2db",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_072455_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:33:14.827796+00:00"
+          },
+          {
+            "id": "46595a62-3163-4723-8fdb-0c437f95f1e0",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_072455_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:32:55.414420+00:00"
+          },
+          {
+            "id": "fb7fd9d6-bd56-413f-bc45-49ac6396d70e",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_072704_002",
+            "status": "completed",
+            "created_at": "2026-09-14T07:31:51.939910+00:00"
+          },
+          {
+            "id": "d00692d7-7ce5-475e-93ac-b4d7b8b35142",
+            "subject": "math",
+            "question_id": "q_20260914_072938_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:30:31.595715+00:00"
+          },
+          {
+            "id": "c2a0a542-c872-4b0f-884d-8c6e656b5c8b",
+            "subject": "natural_sciences",
+            "question_id": "ns_20260914_072704_001",
+            "status": "completed",
+            "created_at": "2026-09-14T07:29:52.154330+00:00"
+          },
+          {
+            "id": "6d5b5d23-2b0f-43c5-9bf7-f2b905947fed",
+            "subject": "math",
+            "question_id": "q_20260914_061457_001",
+            "status": "completed",
+            "created_at": "2026-09-14T06:18:58.463491+00:00"
+          },
+          {
+            "id": "5a5ab383-62f8-4457-80ba-cf4783324280",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T05:12:31.620364+00:00"
+          },
+          {
+            "id": "75f85dcc-a549-4a8a-b32f-10c2c9f1e3c7",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T05:06:32.162940+00:00"
+          },
+          {
+            "id": "79621005-c844-42fe-a39b-b235473f96f8",
+            "subject": "social_studies",
+            "question_id": "ss_20260914_042852_001",
+            "status": "completed",
+            "created_at": "2026-09-14T04:40:21.997932+00:00"
+          },
+          {
+            "id": "60ce2dd4-b377-4772-a95b-1ae2500c7130",
+            "subject": "social_studies",
+            "question_id": "ss_20260910_153845_001",
+            "status": "completed",
+            "created_at": "2026-09-10T15:45:13.389759+00:00"
+          },
+          {
+            "id": "9d43ed82-fd62-4560-b21a-29f1d9a46200",
+            "subject": "social_studies",
+            "question_id": "ss_20260910_153044_001",
+            "status": "completed",
+            "created_at": "2026-09-10T15:37:29.460625+00:00"
+          },
+          {
+            "id": "e782867e-02c4-4f02-a369-4f24b4205bdc",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T15:34:28.704073+00:00"
+          },
+          {
+            "id": "2d775005-e000-4c14-9f4e-e8de6616db96",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T15:34:09.864590+00:00"
+          },
+          {
+            "id": "0f771cf1-8e6e-4da2-95c7-70cd3332d737",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T15:27:02.227421+00:00"
+          },
+          {
+            "id": "dbb4ed22-2183-4ecb-a18e-b094aa420e24",
+            "subject": "social_studies",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-10T13:04:34.344694+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "phase": "final-history-check",
+      "at": "2026-09-14T07:49:39.645Z",
+      "path": "/api/history/8b5ec211-666f-4a11-ae33-1d3a7e2b2eca",
+      "method": "GET",
+      "targetBytes": 49,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "id": "8b5ec211-666f-4a11-ae33-1d3a7e2b2eca",
+        "subject": "social_studies",
+        "question_id": "ss_20260914_073547_001",
+        "status": "completed",
+        "created_at": "2026-09-14T07:44:29.613298+00:00",
+        "params_json": {
+          "subject": "social_studies",
+          "grade": 7,
+          "style": [],
+          "context": [],
+          "set_type": "題組題",
+          "q_type": [],
+          "count": 2,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "seed": 1709320354,
+          "max_retries": 3,
+          "image_generation_mode": "html",
+          "difficulty": null,
+          "coverage_mode": "balanced",
+          "core_question_callback": true,
+          "subject_filter": [
+            "公民與社會"
+          ],
+          "content_type": "純文字",
+          "content_domain": null,
+          "target_surface": null,
+          "passage": null,
+          "options": null,
+          "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+          "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+          "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+          "sub_context": null,
+          "science_competency": null,
+          "learning_performance": null,
+          "core_competency": null,
+          "math_thinking": null,
+          "learning_content": null,
+          "sub_question_count": 3,
+          "question_word_limit": null,
+          "option_word_limit": null,
+          "text_word_limit": 300,
+          "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+          "allow_duplicate_figure_kinds": false,
+          "per_question_params": "[{\"grade\": 7, \"style\": [], \"context\": [\"教育\", \"職業\", \"公共\", \"個人\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1709320354, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"subject_filter\": [\"公民與社會\"], \"content_type\": \"純文字\", \"topic\": \"社區公共用水決策與公民參與（#766 傳輸驗收）\", \"core_question\": \"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\", \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"content_domain\": \"Civic Roles and Identities\", \"core_competency\": [\"社-J-B3\", \"社-J-B2\"], \"learning_content\": [\"公Dc-Ⅳ-2\"], \"learning_performance\": [\"社2c-Ⅳ-1\", \"社2c-Ⅳ-2\"]}, {\"grade\": 7, \"style\": [], \"context\": [\"個人\", \"教育\", \"職業\", \"公共\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1709320355, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"subject_filter\": [\"公民與社會\"], \"content_type\": \"純文字\", \"topic\": \"社區公共用水決策與公民參與（#766 傳輸驗收）\", \"core_question\": \"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\", \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Knowing–Defining and Describing\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"content_domain\": \"Civic Participation\", \"core_competency\": [\"社-J-A2\", \"社-J-A1\", \"社-J-B3\"], \"learning_content\": [\"公Cc-Ⅳ-3\"], \"learning_performance\": [\"社2a-Ⅳ-3\"]}]",
+          "drawn": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].情境",
+            "per_question_params[0].內容領域",
+            "per_question_params[0].核心素養",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].subquestion_configs[0].認知歷程",
+            "per_question_params[0].subquestion_configs[1].認知歷程",
+            "per_question_params[0].subquestion_configs[2].認知歷程",
+            "per_question_params[0].subquestion_configs[0].learning_content",
+            "per_question_params[0].subquestion_configs[0].learning_performance",
+            "per_question_params[0].subquestion_configs[1].learning_content",
+            "per_question_params[0].subquestion_configs[1].learning_performance",
+            "per_question_params[0].subquestion_configs[2].learning_content",
+            "per_question_params[0].subquestion_configs[2].learning_performance",
+            "per_question_params[1].seed",
+            "per_question_params[1].情境",
+            "per_question_params[1].內容領域",
+            "per_question_params[1].核心素養",
+            "per_question_params[1].學習內容",
+            "per_question_params[1].學習表現",
+            "per_question_params[1].subquestion_configs[0].認知歷程",
+            "per_question_params[1].subquestion_configs[1].認知歷程",
+            "per_question_params[1].subquestion_configs[2].認知歷程",
+            "per_question_params[1].subquestion_configs[0].learning_content",
+            "per_question_params[1].subquestion_configs[0].learning_performance",
+            "per_question_params[1].subquestion_configs[1].learning_content",
+            "per_question_params[1].subquestion_configs[1].learning_performance",
+            "per_question_params[1].subquestion_configs[2].learning_content",
+            "per_question_params[1].subquestion_configs[2].learning_performance"
+          ],
+          "model_plan": null,
+          "model_execute": null,
+          "model_verify": "claude-sonnet-4-6",
+          "model_correct": null,
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "effort_verify": null,
+          "effort_correct": null,
+          "reporting_scale": null
+        }
+      }
+    },
+    {
+      "phase": "final-history-check",
+      "at": "2026-09-14T07:49:39.919Z",
+      "path": "/api/history/b96a683c-82ab-408a-95f6-c448e297455d",
+      "method": "GET",
+      "targetBytes": 49,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "id": "b96a683c-82ab-408a-95f6-c448e297455d",
+        "subject": "social_studies",
+        "question_id": "ss_20260914_073547_002",
+        "status": "completed",
+        "created_at": "2026-09-14T07:44:17.479563+00:00",
+        "params_json": {
+          "subject": "social_studies",
+          "grade": 7,
+          "style": [],
+          "context": [],
+          "set_type": "題組題",
+          "q_type": [],
+          "count": 2,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "seed": 1709320354,
+          "max_retries": 3,
+          "image_generation_mode": "html",
+          "difficulty": null,
+          "coverage_mode": "balanced",
+          "core_question_callback": true,
+          "subject_filter": [
+            "公民與社會"
+          ],
+          "content_type": "純文字",
+          "content_domain": null,
+          "target_surface": null,
+          "passage": null,
+          "options": null,
+          "topic": "社區公共用水決策與公民參與（#766 傳輸驗收）",
+          "core_question": "為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？",
+          "text_instruction": "驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。驗收標記七六六：請以虛構社區的公共用水方案為材料，呈現居民、商家與地方政府的不同觀點。",
+          "sub_context": null,
+          "science_competency": null,
+          "learning_performance": null,
+          "core_competency": null,
+          "math_thinking": null,
+          "learning_content": null,
+          "sub_question_count": 3,
+          "question_word_limit": null,
+          "option_word_limit": null,
+          "text_word_limit": 300,
+          "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"},{\"question_type\":\"選擇題\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"instruction\":\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\"}]",
+          "allow_duplicate_figure_kinds": false,
+          "per_question_params": "[{\"grade\": 7, \"style\": [], \"context\": [\"教育\", \"職業\", \"公共\", \"個人\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1709320354, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"subject_filter\": [\"公民與社會\"], \"content_type\": \"純文字\", \"topic\": \"社區公共用水決策與公民參與（#766 傳輸驗收）\", \"core_question\": \"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\", \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Dc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2c-Ⅳ-2\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"content_domain\": \"Civic Roles and Identities\", \"core_competency\": [\"社-J-B3\", \"社-J-B2\"], \"learning_content\": [\"公Dc-Ⅳ-2\"], \"learning_performance\": [\"社2c-Ⅳ-1\", \"社2c-Ⅳ-2\"]}, {\"grade\": 7, \"style\": [], \"context\": [\"個人\", \"教育\", \"職業\", \"公共\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1709320355, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"subject_filter\": [\"公民與社會\"], \"content_type\": \"純文字\", \"topic\": \"社區公共用水決策與公民參與（#766 傳輸驗收）\", \"core_question\": \"為什麼不同時代的社區在面對水資源分配時，會發展出不同的共同決策規則與慣例？\", \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Knowing–Defining and Describing\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"instruction\\\":\\\"驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。驗收標記七六六：請比較不同居民的觀點，根據材料判斷公共決策的理由，避免僅凭常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Cc-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2a-Ⅳ-3\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"content_domain\": \"Civic Participation\", \"core_competency\": [\"社-J-A2\", \"社-J-A1\", \"社-J-B3\"], \"learning_content\": [\"公Cc-Ⅳ-3\"], \"learning_performance\": [\"社2a-Ⅳ-3\"]}]",
+          "drawn": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].情境",
+            "per_question_params[0].內容領域",
+            "per_question_params[0].核心素養",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].subquestion_configs[0].認知歷程",
+            "per_question_params[0].subquestion_configs[1].認知歷程",
+            "per_question_params[0].subquestion_configs[2].認知歷程",
+            "per_question_params[0].subquestion_configs[0].learning_content",
+            "per_question_params[0].subquestion_configs[0].learning_performance",
+            "per_question_params[0].subquestion_configs[1].learning_content",
+            "per_question_params[0].subquestion_configs[1].learning_performance",
+            "per_question_params[0].subquestion_configs[2].learning_content",
+            "per_question_params[0].subquestion_configs[2].learning_performance",
+            "per_question_params[1].seed",
+            "per_question_params[1].情境",
+            "per_question_params[1].內容領域",
+            "per_question_params[1].核心素養",
+            "per_question_params[1].學習內容",
+            "per_question_params[1].學習表現",
+            "per_question_params[1].subquestion_configs[0].認知歷程",
+            "per_question_params[1].subquestion_configs[1].認知歷程",
+            "per_question_params[1].subquestion_configs[2].認知歷程",
+            "per_question_params[1].subquestion_configs[0].learning_content",
+            "per_question_params[1].subquestion_configs[0].learning_performance",
+            "per_question_params[1].subquestion_configs[1].learning_content",
+            "per_question_params[1].subquestion_configs[1].learning_performance",
+            "per_question_params[1].subquestion_configs[2].learning_content",
+            "per_question_params[1].subquestion_configs[2].learning_performance"
+          ],
+          "model_plan": null,
+          "model_execute": null,
+          "model_verify": "claude-sonnet-4-6",
+          "model_correct": null,
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "effort_verify": null,
+          "effort_correct": null,
+          "reporting_scale": null
+        }
+      }
+    },
+    {
+      "phase": "final-history-check",
+      "at": "2026-09-14T07:49:40.222Z",
+      "path": "/api/history/f658a7ef-a6c8-4f4c-b60f-e0188e6efa69",
+      "method": "GET",
+      "targetBytes": 49,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "id": "f658a7ef-a6c8-4f4c-b60f-e0188e6efa69",
+        "subject": "math",
+        "question_id": "",
+        "status": "aborted",
+        "created_at": "2026-09-14T07:40:06.854218+00:00",
+        "params_json": {
+          "subject": "math",
+          "grade": 7,
+          "style": [
+            "text_only"
+          ],
+          "context": null,
+          "set_type": "單一題",
+          "q_type": null,
+          "count": 1,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "seed": 624204303,
+          "max_retries": 3,
+          "image_generation_mode": "html",
+          "difficulty": null,
+          "coverage_mode": "balanced",
+          "core_question_callback": true,
+          "subject_filter": [
+            "代數"
+          ],
+          "content_type": "純文字",
+          "content_domain": null,
+          "target_surface": null,
+          "passage": null,
+          "options": null,
+          "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+          "core_question": "當文具店推出組合優惠時，如何根據不同組合的總價資訊，利用一元一次方程式反推出每項文具的單價？",
+          "text_instruction": null,
+          "sub_context": null,
+          "science_competency": null,
+          "learning_performance": null,
+          "core_competency": null,
+          "math_thinking": null,
+          "learning_content": null,
+          "sub_question_count": null,
+          "question_word_limit": null,
+          "option_word_limit": null,
+          "text_word_limit": null,
+          "subquestion_configs": null,
+          "allow_duplicate_figure_kinds": false,
+          "per_question_params": "[{\"grade\": 7, \"style\": [\"text_only\"], \"set_type\": \"單一題\", \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 624204303, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"subject_filter\": [\"代數\"], \"content_type\": \"純文字\", \"topic\": \"文具單價的一元一次方程式（#766 傳輸驗收）\", \"core_question\": \"當文具店推出組合優惠時，如何根據不同組合的總價資訊，利用一元一次方程式反推出每項文具的單價？\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"context\": [\"科學\", \"個人\"], \"q_type\": [\"選擇題\"], \"math_thinking\": [\"詮釋評估\", \"運用\", \"形成\"], \"learning_content\": [\"A-7-8\", \"A-8-6\"], \"learning_performance\": [\"f-IV-2\", \"a-IV-4\", \"a-IV-3\"], \"core_competency\": [\"數-J-B1\", \"數-J-C2\"]}]",
+          "drawn": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].情境",
+            "per_question_params[0].題型",
+            "per_question_params[0].數學思考",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].核心素養"
+          ],
+          "model_plan": null,
+          "model_execute": null,
+          "model_verify": "claude-sonnet-4-6",
+          "model_correct": null,
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "effort_verify": null,
+          "effort_correct": null,
+          "reporting_scale": null
+        }
+      }
+    },
+    {
+      "phase": "final-history-check",
+      "at": "2026-09-14T07:49:40.486Z",
+      "path": "/api/history/d320e8c7-7da0-43d9-832a-ecb4417c815e",
+      "method": "GET",
+      "targetBytes": 49,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "id": "d320e8c7-7da0-43d9-832a-ecb4417c815e",
+        "subject": "natural_sciences",
+        "question_id": "ns_20260914_073236_002",
+        "status": "completed",
+        "created_at": "2026-09-14T07:37:45.671633+00:00",
+        "params_json": {
+          "subject": "natural_sciences",
+          "grade": 7,
+          "style": [],
+          "context": [
+            "Personal"
+          ],
+          "set_type": "題組題",
+          "q_type": [],
+          "count": 2,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "seed": 1212885928,
+          "max_retries": 3,
+          "image_generation_mode": "html",
+          "difficulty": null,
+          "coverage_mode": "balanced",
+          "core_question_callback": true,
+          "subject_filter": null,
+          "content_type": "純文字",
+          "content_domain": null,
+          "target_surface": null,
+          "passage": null,
+          "options": null,
+          "topic": "飲用水過濾與實驗證據（#766 傳輸驗收）",
+          "core_question": "為什麼自製簡易濾水器中不同過濾材料（如砂、礫石、活性碳）的排列順序會影響過濾後水質的澄清程度？",
+          "text_instruction": "驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。",
+          "sub_context": "Maintenance of health",
+          "science_competency": [
+            "能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據"
+          ],
+          "learning_performance": null,
+          "core_competency": null,
+          "math_thinking": null,
+          "learning_content": null,
+          "sub_question_count": 3,
+          "question_word_limit": null,
+          "option_word_limit": null,
+          "text_word_limit": 300,
+          "subquestion_configs": "[{\"question_type\":\"Simple multiple-choice\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"reporting_scale\":\"2\",\"instruction\":\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\"},{\"question_type\":\"Simple multiple-choice\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"reporting_scale\":\"3\",\"instruction\":\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\"},{\"question_type\":\"Simple multiple-choice\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"reporting_scale\":\"4\",\"instruction\":\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\"}]",
+          "allow_duplicate_figure_kinds": false,
+          "per_question_params": "[{\"grade\": 7, \"style\": [], \"context\": [\"Personal\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1212885928, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"content_type\": \"純文字\", \"topic\": \"飲用水過濾與實驗證據（#766 傳輸驗收）\", \"core_question\": \"為什麼自製簡易濾水器中不同過濾材料（如砂、礫石、活性碳）的排列順序會影響過濾後水質的澄清程度？\", \"sub_context\": \"Maintenance of health\", \"science_competency\": [\"能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據\"], \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"2\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\",\\\"Jc-Ⅳ-4\\\",\\\"Ka-Ⅳ-9\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"3\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\",\\\"Ka-Ⅳ-9\\\"],\\\"learning_performance\\\":[\\\"ti-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"4\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"Ka-Ⅳ-9\\\",\\\"La-Ⅳ-1\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\",\\\"ti-Ⅳ-1\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"reporting_scale\": \"3\", \"learning_content\": [\"La-Ⅳ-1\", \"Jc-Ⅳ-4\", \"Ka-Ⅳ-9\"], \"learning_performance\": [\"pa-Ⅳ-2\", \"ti-Ⅳ-1\"]}, {\"grade\": 7, \"style\": [], \"context\": [\"Personal\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1212885929, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"content_type\": \"純文字\", \"topic\": \"飲用水過濾與實驗證據（#766 傳輸驗收）\", \"core_question\": \"為什麼自製簡易濾水器中不同過濾材料（如砂、礫石、活性碳）的排列順序會影響過濾後水質的澄清程度？\", \"sub_context\": \"Maintenance of health\", \"science_competency\": [\"能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據\"], \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"2\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"3\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\",\\\"Kc-Ⅳ-8\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"4\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\",\\\"Kc-Ⅳ-8\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"reporting_scale\": \"3\", \"learning_content\": [\"Kc-Ⅳ-8\", \"La-Ⅳ-1\"], \"learning_performance\": [\"pa-Ⅳ-2\"]}]",
+          "drawn": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].subquestion_configs[0].learning_content",
+            "per_question_params[0].subquestion_configs[0].learning_performance",
+            "per_question_params[0].subquestion_configs[1].learning_content",
+            "per_question_params[0].subquestion_configs[1].learning_performance",
+            "per_question_params[0].subquestion_configs[2].learning_content",
+            "per_question_params[0].subquestion_configs[2].learning_performance",
+            "per_question_params[1].seed",
+            "per_question_params[1].學習表現",
+            "per_question_params[1].學習內容",
+            "per_question_params[1].subquestion_configs[0].learning_content",
+            "per_question_params[1].subquestion_configs[0].learning_performance",
+            "per_question_params[1].subquestion_configs[1].learning_content",
+            "per_question_params[1].subquestion_configs[1].learning_performance",
+            "per_question_params[1].subquestion_configs[2].learning_content",
+            "per_question_params[1].subquestion_configs[2].learning_performance"
+          ],
+          "model_plan": null,
+          "model_execute": null,
+          "model_verify": "claude-sonnet-4-6",
+          "model_correct": null,
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "effort_verify": null,
+          "effort_correct": null,
+          "reporting_scale": "3"
+        }
+      }
+    },
+    {
+      "phase": "final-history-check",
+      "at": "2026-09-14T07:49:40.775Z",
+      "path": "/api/history/1ab3c3ce-ca78-484c-96fb-684f990ad353",
+      "method": "GET",
+      "targetBytes": 49,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "id": "1ab3c3ce-ca78-484c-96fb-684f990ad353",
+        "subject": "natural_sciences",
+        "question_id": "ns_20260914_073236_001",
+        "status": "completed",
+        "created_at": "2026-09-14T07:35:37.444562+00:00",
+        "params_json": {
+          "subject": "natural_sciences",
+          "grade": 7,
+          "style": [],
+          "context": [
+            "Personal"
+          ],
+          "set_type": "題組題",
+          "q_type": [],
+          "count": 2,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "seed": 1212885928,
+          "max_retries": 3,
+          "image_generation_mode": "html",
+          "difficulty": null,
+          "coverage_mode": "balanced",
+          "core_question_callback": true,
+          "subject_filter": null,
+          "content_type": "純文字",
+          "content_domain": null,
+          "target_surface": null,
+          "passage": null,
+          "options": null,
+          "topic": "飲用水過濾與實驗證據（#766 傳輸驗收）",
+          "core_question": "為什麼自製簡易濾水器中不同過濾材料（如砂、礫石、活性碳）的排列順序會影響過濾後水質的澄清程度？",
+          "text_instruction": "驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。驗收標記七六六：請以虛構的飲用水過濾實驗為材料，呈現對照組、控制變因與測量結果，讓學生根據證據判斷。",
+          "sub_context": "Maintenance of health",
+          "science_competency": [
+            "能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據"
+          ],
+          "learning_performance": null,
+          "core_competency": null,
+          "math_thinking": null,
+          "learning_content": null,
+          "sub_question_count": 3,
+          "question_word_limit": null,
+          "option_word_limit": null,
+          "text_word_limit": 300,
+          "subquestion_configs": "[{\"question_type\":\"Simple multiple-choice\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"reporting_scale\":\"2\",\"instruction\":\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\"},{\"question_type\":\"Simple multiple-choice\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"reporting_scale\":\"3\",\"instruction\":\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\"},{\"question_type\":\"Simple multiple-choice\",\"question_word_limit\":100,\"option_word_limit\":25,\"content_type\":\"純文字\",\"image_generation_mode\":\"html\",\"reporting_scale\":\"4\",\"instruction\":\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\"}]",
+          "allow_duplicate_figure_kinds": false,
+          "per_question_params": "[{\"grade\": 7, \"style\": [], \"context\": [\"Personal\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1212885928, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"content_type\": \"純文字\", \"topic\": \"飲用水過濾與實驗證據（#766 傳輸驗收）\", \"core_question\": \"為什麼自製簡易濾水器中不同過濾材料（如砂、礫石、活性碳）的排列順序會影響過濾後水質的澄清程度？\", \"sub_context\": \"Maintenance of health\", \"science_competency\": [\"能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據\"], \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"2\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\",\\\"Jc-Ⅳ-4\\\",\\\"Ka-Ⅳ-9\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"3\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\",\\\"Ka-Ⅳ-9\\\"],\\\"learning_performance\\\":[\\\"ti-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"4\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"Ka-Ⅳ-9\\\",\\\"La-Ⅳ-1\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\",\\\"ti-Ⅳ-1\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"reporting_scale\": \"3\", \"learning_content\": [\"La-Ⅳ-1\", \"Jc-Ⅳ-4\", \"Ka-Ⅳ-9\"], \"learning_performance\": [\"pa-Ⅳ-2\", \"ti-Ⅳ-1\"]}, {\"grade\": 7, \"style\": [], \"context\": [\"Personal\"], \"set_type\": \"題組題\", \"q_type\": [], \"skip_verify\": false, \"disable_reference_fewshot\": false, \"seed\": 1212885929, \"image_generation_mode\": \"html\", \"coverage_mode\": \"balanced\", \"content_type\": \"純文字\", \"topic\": \"飲用水過濾與實驗證據（#766 傳輸驗收）\", \"core_question\": \"為什麼自製簡易濾水器中不同過濾材料（如砂、礫石、活性碳）的排列順序會影響過濾後水質的澄清程度？\", \"sub_context\": \"Maintenance of health\", \"science_competency\": [\"能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據\"], \"sub_question_count\": 3, \"text_word_limit\": 300, \"subquestion_configs\": \"[{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"2\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"3\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\",\\\"Kc-Ⅳ-8\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"question_word_limit\\\":100,\\\"option_word_limit\\\":25,\\\"content_type\\\":\\\"純文字\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"reporting_scale\\\":\\\"4\\\",\\\"instruction\\\":\\\"驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。驗收標記七六六：請根據實驗資料比較測量結果，辨認控制變因並解釋證據如何支持結論。\\\",\\\"learning_content\\\":[\\\"La-Ⅳ-1\\\",\\\"Kc-Ⅳ-8\\\"],\\\"learning_performance\\\":[\\\"pa-Ⅳ-2\\\"]}]\", \"model_verify\": \"claude-sonnet-4-6\", \"effort_plan\": \"medium\", \"effort_execute\": \"medium\", \"reporting_scale\": \"3\", \"learning_content\": [\"Kc-Ⅳ-8\", \"La-Ⅳ-1\"], \"learning_performance\": [\"pa-Ⅳ-2\"]}]",
+          "drawn": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].subquestion_configs[0].learning_content",
+            "per_question_params[0].subquestion_configs[0].learning_performance",
+            "per_question_params[0].subquestion_configs[1].learning_content",
+            "per_question_params[0].subquestion_configs[1].learning_performance",
+            "per_question_params[0].subquestion_configs[2].learning_content",
+            "per_question_params[0].subquestion_configs[2].learning_performance",
+            "per_question_params[1].seed",
+            "per_question_params[1].學習表現",
+            "per_question_params[1].學習內容",
+            "per_question_params[1].subquestion_configs[0].learning_content",
+            "per_question_params[1].subquestion_configs[0].learning_performance",
+            "per_question_params[1].subquestion_configs[1].learning_content",
+            "per_question_params[1].subquestion_configs[1].learning_performance",
+            "per_question_params[1].subquestion_configs[2].learning_content",
+            "per_question_params[1].subquestion_configs[2].learning_performance"
+          ],
+          "model_plan": null,
+          "model_execute": null,
+          "model_verify": "claude-sonnet-4-6",
+          "model_correct": null,
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "effort_verify": null,
+          "effort_correct": null,
+          "reporting_scale": "3"
+        }
+      }
+    }
+  ],
+  "sentry": [
+    {
+      "at": "2026-09-14T07:33:45.365Z",
+      "types": [
+        "session"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:33:45.365Z",
+      "types": [
+        "session"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:33:46.666Z",
+      "types": [
+        "transaction"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:35:14.344Z",
+      "types": [
+        "session"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:35:14.345Z",
+      "types": [
+        "session"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:35:14.953Z",
+      "types": [
+        "session"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:35:14.953Z",
+      "types": [
+        "session"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:35:14.954Z",
+      "types": [
+        "transaction"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:35:17.111Z",
+      "types": [
+        "transaction"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:35:47.502Z",
+      "types": [
+        "client_report"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:49:39.223Z",
+      "types": [
+        "session"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:49:39.223Z",
+      "types": [
+        "session"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:49:41.048Z",
+      "types": [
+        "transaction"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    }
+  ],
+  "sentryObserved": true,
+  "sentryOptions": {
+    "release": "8941814b7973428a485d39c1a5d2b90fd52ddcad",
+    "dataCollection": {
+      "userInfo": false,
+      "httpHeaders": {
+        "request": {
+          "allow": []
+        },
+        "response": {
+          "allow": []
+        }
+      },
+      "httpBodies": [],
+      "genAI": {
+        "inputs": false,
+        "outputs": false
+      },
+      "cookies": false,
+      "queryParams": {
+        "allow": []
+      }
+    }
+  },
+  "finalHistoryShapes": [
+    {
+      "id": "8b5ec211-666f-4a11-ae33-1d3a7e2b2eca",
+      "subject": "social_studies",
+      "status": "completed",
+      "question_id": "ss_20260914_073547_001",
+      "created_at": "2026-09-14T07:44:29.613298+00:00",
+      "subquestionCount": 3,
+      "verification": false
+    },
+    {
+      "id": "b96a683c-82ab-408a-95f6-c448e297455d",
+      "subject": "social_studies",
+      "status": "completed",
+      "question_id": "ss_20260914_073547_002",
+      "created_at": "2026-09-14T07:44:17.479563+00:00",
+      "subquestionCount": 3,
+      "verification": false
+    },
+    {
+      "id": "f658a7ef-a6c8-4f4c-b60f-e0188e6efa69",
+      "subject": "math",
+      "status": "aborted",
+      "question_id": "",
+      "created_at": "2026-09-14T07:40:06.854218+00:00"
+    },
+    {
+      "id": "d320e8c7-7da0-43d9-832a-ecb4417c815e",
+      "subject": "natural_sciences",
+      "status": "completed",
+      "question_id": "ns_20260914_073236_002",
+      "created_at": "2026-09-14T07:37:45.671633+00:00",
+      "subquestionCount": 3,
+      "reportingScales": [
+        "2",
+        "3",
+        "4"
+      ],
+      "verification": true
+    },
+    {
+      "id": "1ab3c3ce-ca78-484c-96fb-684f990ad353",
+      "subject": "natural_sciences",
+      "status": "completed",
+      "question_id": "ns_20260914_073236_001",
+      "created_at": "2026-09-14T07:35:37.444562+00:00",
+      "subquestionCount": 3,
+      "reportingScales": [
+        "2",
+        "3",
+        "4"
+      ],
+      "verification": true
+    }
+  ]
+}

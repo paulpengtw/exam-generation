@@ -1,0 +1,491 @@
+[
+  {
+    "shareId": "b06330758404488b8a5aadaa545cbd45",
+    "id": "7690729333",
+    "shortId": "EXAM-GENERATION-WEB-STAGING-A",
+    "title": "Error: Stream open failed: HTTP 414",
+    "culprit": "/generate/natural_sciences",
+    "project": "exam-generation-web-staging",
+    "eventID": "f7b7b608b9d14546b848df25d29c6343",
+    "dateCreated": "2026-09-14T05:11:05.764000Z",
+    "dateReceived": "2026-09-14T05:11:05.914758Z",
+    "platform": "javascript",
+    "entryKinds": [
+      {
+        "type": "exception",
+        "keys": [
+          "values",
+          "hasSystemFrames",
+          "excOmitted"
+        ]
+      },
+      {
+        "type": "debugmeta",
+        "keys": [
+          "images"
+        ]
+      }
+    ],
+    "exceptions": [
+      {
+        "type": "Error",
+        "value": "Stream open failed: HTTP 414",
+        "mechanism": {
+          "type": "generic",
+          "handled": true
+        },
+        "frames": [
+          {
+            "filename": "../src/hooks/useGenerate.ts",
+            "absPath": "https://examgen-staging.cpeng.me/src/hooks/useGenerate.ts",
+            "function": "<object>.onopen",
+            "lineNo": 609,
+            "colNo": 17,
+            "context": [
+              [
+                604,
+                "          } catch {"
+              ],
+              [
+                605,
+                "            // non-JSON or unreadable body — keep the generic message"
+              ],
+              [
+                606,
+                "          }"
+              ],
+              [
+                607,
+                "          setErrorMessage(msg);"
+              ],
+              [
+                608,
+                "          setFinishedAt(Date.now());"
+              ],
+              [
+                609,
+                "          throw new FatalStreamError(msg);"
+              ],
+              [
+                610,
+                "        }"
+              ],
+              [
+                611,
+                "      },"
+              ],
+              [
+                612,
+                "      onmessage(ev) {"
+              ],
+              [
+                613,
+                "        streamContext.messageCount += 1;"
+              ],
+              [
+                614,
+                "        streamContext.lastEventType = ev.event || \"none\";"
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "message": []
+  },
+  {
+    "shareId": "3166b8743d6f424d9baf44bef36fe510",
+    "id": "7641495852",
+    "shortId": "EXAM-GENERATION-API-STAGING-8",
+    "title": "HTTPException: Planner upstream returned malformed candidates",
+    "culprit": "/api/plan-core-questions",
+    "project": "exam-generation-api-staging",
+    "eventID": "b84809c95e204111b9932570b98ddfed",
+    "dateCreated": "2026-09-14T05:11:00.738000Z",
+    "dateReceived": "2026-09-14T05:11:00.793154Z",
+    "platform": "python",
+    "entryKinds": [
+      {
+        "type": "exception",
+        "keys": [
+          "values",
+          "hasSystemFrames",
+          "excOmitted"
+        ]
+      }
+    ],
+    "exceptions": [
+      {
+        "type": "ValueError",
+        "value": "Planner returned 2 candidates, expected 3",
+        "mechanism": {
+          "type": "starlette",
+          "handled": true
+        },
+        "frames": [
+          {
+            "filename": "server/generate/routes.py",
+            "absPath": "/app/server/generate/routes.py",
+            "function": "plan_core_questions_endpoint",
+            "lineNo": 537,
+            "colNo": null,
+            "context": [
+              [
+                532,
+                ""
+              ],
+              [
+                533,
+                "    # Site 6: planner dispatch via registry (replaces if/elif per-subject branches)"
+              ],
+              [
+                534,
+                "    spec = SUBJECTS[body.subject]"
+              ],
+              [
+                535,
+                "    learning_stage = spec.load_planner_stage(None, body.grade)"
+              ],
+              [
+                536,
+                "    try:"
+              ],
+              [
+                537,
+                "        candidates = spec.plan_core_questions("
+              ],
+              [
+                538,
+                "            client,"
+              ],
+              [
+                539,
+                "            body.topic,"
+              ],
+              [
+                540,
+                "            subject_filter=body.subject_filter,"
+              ],
+              [
+                541,
+                "            grade=body.grade,"
+              ],
+              [
+                542,
+                "            learning_stage=learning_stage,"
+              ]
+            ]
+          },
+          {
+            "filename": "server/generate/subjects.py",
+            "absPath": "/app/server/generate/subjects.py",
+            "function": "_ns_plan_core_questions",
+            "lineNo": 970,
+            "colNo": null,
+            "context": [
+              [
+                965,
+                ""
+              ],
+              [
+                966,
+                ""
+              ],
+              [
+                967,
+                "def _ns_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:"
+              ],
+              [
+                968,
+                "    # Lazy import so test monkeypatches on src.natural_sciences.planner are seen."
+              ],
+              [
+                969,
+                "    import src.natural_sciences.planner as _m  # noqa: PLC0415"
+              ],
+              [
+                970,
+                "    return _m.plan_core_questions(client, topic, **kwargs)"
+              ],
+              [
+                971,
+                ""
+              ],
+              [
+                972,
+                ""
+              ],
+              [
+                973,
+                "def _ns_load_planner_stage(config_server: Any, grade: int | None) -> str:"
+              ],
+              [
+                974,
+                "    schemas = ns_load_schemas()"
+              ],
+              [
+                975,
+                "    if grade is not None:"
+              ]
+            ]
+          },
+          {
+            "filename": "src/natural_sciences/planner.py",
+            "absPath": "/app/src/natural_sciences/planner.py",
+            "function": "plan_core_questions",
+            "lineNo": 41,
+            "colNo": null,
+            "context": [
+              [
+                36,
+                "    grade: int | None = None,"
+              ],
+              [
+                37,
+                "    n: int = 3,"
+              ],
+              [
+                38,
+                "    learning_stage: str = \"第四學習階段\","
+              ],
+              [
+                39,
+                ") -> list[str]:"
+              ],
+              [
+                40,
+                "    \"\"\"Call planning model, return n candidate 核心問題 for the given topic.\"\"\""
+              ],
+              [
+                41,
+                "    return _base_plan("
+              ],
+              [
+                42,
+                "        client,"
+              ],
+              [
+                43,
+                "        topic,"
+              ],
+              [
+                44,
+                "        system_prompt=_PLANNER_SYSTEM_PROMPT,"
+              ],
+              [
+                45,
+                "        user_prompt_template=_PLANNER_USER_TEMPLATE,"
+              ],
+              [
+                46,
+                "        n=n,"
+              ]
+            ]
+          },
+          {
+            "filename": "src/common/planner.py",
+            "absPath": "/app/src/common/planner.py",
+            "function": "plan_core_questions",
+            "lineNo": 47,
+            "colNo": null,
+            "context": [
+              [
+                42,
+                "    )"
+              ],
+              [
+                43,
+                ""
+              ],
+              [
+                44,
+                "    for attempt in range(2):"
+              ],
+              [
+                45,
+                "        raw = client.plan(system, user, purpose=\"plan_core_questions\")"
+              ],
+              [
+                46,
+                "        try:"
+              ],
+              [
+                47,
+                "            return _parse_candidates(raw, n)"
+              ],
+              [
+                48,
+                "        except ValueError:"
+              ],
+              [
+                49,
+                "            if attempt == 0:"
+              ],
+              [
+                50,
+                "                user += f\"\\n注意：請務必輸出剛好 {n} 個候選的 JSON 陣列。\""
+              ],
+              [
+                51,
+                "            else:"
+              ],
+              [
+                52,
+                "                raise"
+              ]
+            ]
+          },
+          {
+            "filename": "src/common/planner.py",
+            "absPath": "/app/src/common/planner.py",
+            "function": "_parse_candidates",
+            "lineNo": 75,
+            "colNo": null,
+            "context": [
+              [
+                70,
+                "    if not isinstance(result, list):"
+              ],
+              [
+                71,
+                "        raise ValueError(f\"Expected JSON array from planner, got: {type(result)}\")"
+              ],
+              [
+                72,
+                ""
+              ],
+              [
+                73,
+                "    candidates = [str(x) for x in result if x]"
+              ],
+              [
+                74,
+                "    if len(candidates) < n:"
+              ],
+              [
+                75,
+                "        raise ValueError(f\"Planner returned {len(candidates)} candidates, expected {n}\")"
+              ],
+              [
+                76,
+                ""
+              ],
+              [
+                77,
+                "    return candidates[:n]"
+              ],
+              [
+                78,
+                ""
+              ],
+              [
+                79,
+                ""
+              ],
+              [
+                80,
+                "def plan_context_angles("
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "type": "HTTPException",
+        "value": "Planner upstream returned malformed candidates",
+        "mechanism": {
+          "type": "starlette",
+          "handled": true
+        },
+        "frames": [
+          {
+            "filename": "server/generate/routes.py",
+            "absPath": "/app/server/generate/routes.py",
+            "function": "plan_core_questions_endpoint",
+            "lineNo": 546,
+            "colNo": null,
+            "context": [
+              [
+                541,
+                "            grade=body.grade,"
+              ],
+              [
+                542,
+                "            learning_stage=learning_stage,"
+              ],
+              [
+                543,
+                "        )"
+              ],
+              [
+                544,
+                "    except ValueError as exc:"
+              ],
+              [
+                545,
+                "        logger.warning(\"Planner returned malformed candidates: %s\", exc)"
+              ],
+              [
+                546,
+                "        raise HTTPException("
+              ],
+              [
+                547,
+                "            status_code=502,"
+              ],
+              [
+                548,
+                "            detail=\"Planner upstream returned malformed candidates\","
+              ],
+              [
+                549,
+                "        ) from exc"
+              ],
+              [
+                550,
+                "    return PlanCoreQuestionsResponse(candidates=candidates)"
+              ],
+              [
+                551,
+                ""
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "message": []
+  },
+  {
+    "shareId": "e7fd52273ad6458aad71a845e12789ea",
+    "id": "7641495846",
+    "shortId": "EXAM-GENERATION-API-STAGING-7",
+    "title": "Planner returned malformed candidates: Planner returned 2 candidates, expected 3",
+    "culprit": "/api/plan-core-questions",
+    "project": "exam-generation-api-staging",
+    "eventID": "3a6f5930eadd49bdbfbd6f59316fb462",
+    "dateCreated": "2026-09-14T05:11:00.730000Z",
+    "dateReceived": "2026-09-14T05:11:00.752713Z",
+    "platform": "python",
+    "entryKinds": [
+      {
+        "type": "message",
+        "keys": [
+          "message",
+          "formatted",
+          "params"
+        ]
+      }
+    ],
+    "exceptions": [],
+    "message": [
+      {
+        "message": "Planner returned malformed candidates: %s",
+        "formatted": "Planner returned malformed candidates: Planner returned 2 candidates, expected 3",
+        "params": [
+          "ValueError('Planner returned 2 candidates, expected 3')"
+        ]
+      }
+    ]
+  }
+]

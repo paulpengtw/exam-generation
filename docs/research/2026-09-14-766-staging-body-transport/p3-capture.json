@@ -1,0 +1,607 @@
+{
+  "startedAt": "2026-09-14T07:28:39.328Z",
+  "phase": "math-422-detail-probe",
+  "requests": [
+    {
+      "phase": "math-original",
+      "at": "2026-09-14T07:28:39.796Z",
+      "path": "/api/generate/resolve",
+      "method": "POST",
+      "targetBytes": 21,
+      "request": {
+        "subject": "math",
+        "grade": 7,
+        "style": [
+          "text_only"
+        ],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "單一題",
+        "q_type": [],
+        "count": 1,
+        "skip_verify": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "代數"
+        ],
+        "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+        "per_question_params": "[{}]",
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "redraws": {}
+      },
+      "bodyBytes": 410,
+      "equivalentGetTargetBytes": 532,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "payload": {
+          "subject": "math",
+          "grade": 7,
+          "style": [
+            "text_only"
+          ],
+          "content_type": "純文字",
+          "context": [],
+          "set_type": "單一題",
+          "q_type": [],
+          "count": 1,
+          "skip_verify": false,
+          "image_generation_mode": "html",
+          "subject_filter": [
+            "代數"
+          ],
+          "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+          "per_question_params": [
+            {
+              "grade": 7,
+              "style": [
+                "text_only"
+              ],
+              "content_type": "純文字",
+              "context": [
+                "科學",
+                "個人"
+              ],
+              "set_type": "單一題",
+              "q_type": [
+                "選擇題"
+              ],
+              "skip_verify": false,
+              "image_generation_mode": "html",
+              "subject_filter": [
+                "代數"
+              ],
+              "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+              "model_verify": "claude-sonnet-4-6",
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "seed": 624204303,
+              "math_thinking": [
+                "詮釋評估",
+                "運用",
+                "形成"
+              ],
+              "learning_content": [
+                "A-7-8",
+                "A-8-6"
+              ],
+              "learning_performance": [
+                "f-IV-2",
+                "a-IV-4",
+                "a-IV-3"
+              ],
+              "core_competency": [
+                "數-J-B1",
+                "數-J-C2"
+              ]
+            }
+          ],
+          "model_verify": "claude-sonnet-4-6",
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "seed": 624204303
+        },
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].題型",
+          "per_question_params[0].數學思考",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].核心素養"
+        ],
+        "cleared": []
+      }
+    },
+    {
+      "phase": "math-original",
+      "at": "2026-09-14T07:29:04.213Z",
+      "path": "/api/generate/preview",
+      "method": "POST",
+      "targetBytes": 21,
+      "request": {
+        "subject": "math",
+        "grade": 7,
+        "style": [
+          "text_only"
+        ],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "單一題",
+        "q_type": [],
+        "count": 1,
+        "skip_verify": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "代數"
+        ],
+        "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+        "core_question": "當文具店推出組合優惠時，如何根據不同組合的總價資訊，利用一元一次方程式反推出每項文具的單價？",
+        "per_question_params": "[{\"grade\":7,\"style\":[\"text_only\"],\"content_type\":\"純文字\",\"context\":[\"科學\",\"個人\"],\"set_type\":\"單一題\",\"q_type\":[\"選擇題\"],\"skip_verify\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"代數\"],\"topic\":\"文具單價的一元一次方程式（#766 傳輸驗收）\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"seed\":624204303,\"math_thinking\":[\"詮釋評估\",\"運用\",\"形成\"],\"learning_content\":[\"A-7-8\",\"A-8-6\"],\"learning_performance\":[\"f-IV-2\",\"a-IV-4\",\"a-IV-3\"],\"core_competency\":[\"數-J-B1\",\"數-J-C2\"],\"core_question\":\"當文具店推出組合優惠時，如何根據不同組合的總價資訊，利用一元一次方程式反推出每項文具的單價？\"}]",
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].題型",
+          "per_question_params[0].數學思考",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].核心素養"
+        ],
+        "seed": 624204303,
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium"
+      },
+      "bodyBytes": 1641,
+      "equivalentGetTargetBytes": 2928,
+      "status": 200,
+      "contentType": "application/json",
+      "previewKeys": [
+        "prompts"
+      ]
+    },
+    {
+      "phase": "math-original",
+      "at": "2026-09-14T07:29:38.042Z",
+      "path": "/api/generate",
+      "method": "POST",
+      "targetBytes": 13,
+      "request": {
+        "subject": "math",
+        "grade": 7,
+        "style": [
+          "text_only"
+        ],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "單一題",
+        "q_type": [],
+        "count": 1,
+        "skip_verify": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "代數"
+        ],
+        "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+        "core_question": "當文具店推出組合優惠時，如何根據不同組合的總價資訊，利用一元一次方程式反推出每項文具的單價？",
+        "per_question_params": "[{\"grade\":7,\"style\":[\"text_only\"],\"content_type\":\"純文字\",\"context\":[\"科學\",\"個人\"],\"set_type\":\"單一題\",\"q_type\":[\"選擇題\"],\"skip_verify\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"代數\"],\"topic\":\"文具單價的一元一次方程式（#766 傳輸驗收）\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"seed\":624204303,\"math_thinking\":[\"詮釋評估\",\"運用\",\"形成\"],\"learning_content\":[\"A-7-8\",\"A-8-6\"],\"learning_performance\":[\"f-IV-2\",\"a-IV-4\",\"a-IV-3\"],\"core_competency\":[\"數-J-B1\",\"數-J-C2\"],\"core_question\":\"當文具店推出組合優惠時，如何根據不同組合的總價資訊，利用一元一次方程式反推出每項文具的單價？\"}]",
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].題型",
+          "per_question_params[0].數學思考",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].核心素養"
+        ],
+        "seed": 624204303,
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium"
+      },
+      "bodyBytes": 1641,
+      "equivalentGetTargetBytes": 2920,
+      "status": 200,
+      "contentType": "text/event-stream; charset=utf-8",
+      "events": [
+        {
+          "at": "2026-09-14T07:29:38.344Z",
+          "event": "started",
+          "data": {}
+        },
+        {
+          "at": "2026-09-14T07:30:31.736Z",
+          "event": "result",
+          "data": {}
+        },
+        {
+          "at": "2026-09-14T07:30:31.736Z",
+          "event": "done",
+          "data": {}
+        }
+      ],
+      "eventCounts": {
+        "started": 1,
+        "stage": 6,
+        "pipeline": 4,
+        "llm_request": 2,
+        "llm_content": 529,
+        "llm_response": 2,
+        "question_update": 2,
+        "trail": 2,
+        "result": 1,
+        "done": 1
+      },
+      "streamCaptureError": "AbortError"
+    },
+    {
+      "phase": "math-original",
+      "at": "2026-09-14T07:34:19.547Z",
+      "path": "/api/generate/resolve",
+      "method": "POST",
+      "targetBytes": 21,
+      "request": {
+        "subject": "math",
+        "grade": 7,
+        "style": [
+          "text_only"
+        ],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "單一題",
+        "q_type": [],
+        "count": 1,
+        "skip_verify": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "代數"
+        ],
+        "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+        "per_question_params": "[{}]",
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "redraws": {}
+      },
+      "bodyBytes": 410,
+      "equivalentGetTargetBytes": 532,
+      "status": 200,
+      "contentType": "application/json",
+      "response": {
+        "payload": {
+          "subject": "math",
+          "grade": 7,
+          "style": [
+            "text_only"
+          ],
+          "content_type": "純文字",
+          "context": [],
+          "set_type": "單一題",
+          "q_type": [],
+          "count": 1,
+          "skip_verify": false,
+          "image_generation_mode": "html",
+          "subject_filter": [
+            "代數"
+          ],
+          "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+          "per_question_params": [
+            {
+              "grade": 7,
+              "style": [
+                "text_only"
+              ],
+              "content_type": "純文字",
+              "context": [
+                "社會時事",
+                "建築與藝術",
+                "個人"
+              ],
+              "set_type": "單一題",
+              "q_type": [
+                "選擇題"
+              ],
+              "skip_verify": false,
+              "image_generation_mode": "html",
+              "subject_filter": [
+                "代數"
+              ],
+              "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+              "model_verify": "claude-sonnet-4-6",
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "seed": 1622741546,
+              "math_thinking": [
+                "運用"
+              ],
+              "learning_content": [
+                "A-7-1",
+                "A-7-2",
+                "A-8-7"
+              ],
+              "learning_performance": [
+                "a-IV-4",
+                "a-IV-5"
+              ],
+              "core_competency": [
+                "數-J-A1",
+                "數-J-B2",
+                "數-J-B3"
+              ]
+            }
+          ],
+          "model_verify": "claude-sonnet-4-6",
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "seed": 1622741546
+        },
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].題型",
+          "per_question_params[0].數學思考",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].核心素養"
+        ],
+        "cleared": []
+      }
+    },
+    {
+      "phase": "math-422-ui",
+      "at": "2026-09-14T07:34:19.914Z",
+      "path": "/api/generate",
+      "method": "POST",
+      "targetBytes": 13,
+      "request": {
+        "subject": "math",
+        "grade": 7,
+        "style": [
+          "text_only"
+        ],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "單一題",
+        "q_type": [],
+        "count": 1,
+        "skip_verify": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "代數"
+        ],
+        "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+        "per_question_params": "[{\"grade\":7,\"style\":[\"text_only\"],\"content_type\":\"純文字\",\"context\":[\"社會時事\",\"建築與藝術\",\"個人\"],\"set_type\":\"單一題\",\"q_type\":[\"選擇題\"],\"skip_verify\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"代數\"],\"topic\":\"文具單價的一元一次方程式（#766 傳輸驗收）\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"seed\":1622741546,\"math_thinking\":[],\"learning_content\":[\"A-7-1\",\"A-7-2\",\"A-8-7\"],\"learning_performance\":[\"a-IV-4\",\"a-IV-5\"],\"core_competency\":[\"數-J-A1\",\"數-J-B2\",\"數-J-B3\"]}]",
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].題型",
+          "per_question_params[0].數學思考",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].核心素養"
+        ],
+        "seed": 1622741546,
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium"
+      },
+      "bodyBytes": 1325,
+      "equivalentGetTargetBytes": 2046,
+      "status": 422,
+      "contentType": "application/json",
+      "captureError": "AbortError"
+    },
+    {
+      "phase": "math-422-detail-probe",
+      "at": "2026-09-14T07:37:15.069Z",
+      "path": "/api/generate",
+      "method": "POST",
+      "targetBytes": 13,
+      "request": {
+        "subject": "math",
+        "grade": 7,
+        "style": [
+          "text_only"
+        ],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "單一題",
+        "q_type": [],
+        "count": 1,
+        "skip_verify": false,
+        "image_generation_mode": "html",
+        "subject_filter": [
+          "代數"
+        ],
+        "topic": "文具單價的一元一次方程式（#766 傳輸驗收）",
+        "per_question_params": "[{\"grade\":7,\"style\":[\"text_only\"],\"content_type\":\"純文字\",\"context\":[\"社會時事\",\"建築與藝術\",\"個人\"],\"set_type\":\"單一題\",\"q_type\":[\"選擇題\"],\"skip_verify\":false,\"image_generation_mode\":\"html\",\"subject_filter\":[\"代數\"],\"topic\":\"文具單價的一元一次方程式（#766 傳輸驗收）\",\"model_verify\":\"claude-sonnet-4-6\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"seed\":1622741546,\"math_thinking\":[],\"learning_content\":[\"A-7-1\",\"A-7-2\",\"A-8-7\"],\"learning_performance\":[\"a-IV-4\",\"a-IV-5\"],\"core_competency\":[\"數-J-A1\",\"數-J-B2\",\"數-J-B3\"]}]",
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].題型",
+          "per_question_params[0].數學思考",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].核心素養"
+        ],
+        "seed": 1622741546,
+        "model_verify": "claude-sonnet-4-6",
+        "effort_plan": "medium",
+        "effort_execute": "medium"
+      },
+      "bodyBytes": 1325,
+      "equivalentGetTargetBytes": 2046,
+      "status": 422,
+      "contentType": "application/json",
+      "rejection": {
+        "detail": [
+          {
+            "type": "value_error",
+            "loc": [
+              "body"
+            ],
+            "msg": "Value error, per_question_params[0] is invalid: 1 validation error for GenerateParams\nmath_thinking\n  Value error, math_thinking must contain 1 to 3 values [type=value_error, input_value=[], input_type=list]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+          }
+        ]
+      }
+    }
+  ],
+  "sentry": [
+    {
+      "at": "2026-09-14T07:29:38.475Z",
+      "types": [
+        "span"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:29:38.476Z",
+      "types": [
+        "client_report"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:34:43.975Z",
+      "types": [
+        "session"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:34:43.976Z",
+      "types": [
+        "event"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:34:44.045Z",
+      "types": [
+        "replay_event",
+        "replay_recording"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:34:44.120Z",
+      "types": [
+        "client_report"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:34:44.124Z",
+      "types": [
+        "replay_event",
+        "replay_recording"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:35:14.278Z",
+      "types": [
+        "replay_event",
+        "replay_recording"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:36:18.313Z",
+      "types": [
+        "replay_event",
+        "replay_recording"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:36:44.697Z",
+      "types": [
+        "replay_event",
+        "replay_recording"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:37:20.065Z",
+      "types": [
+        "replay_event",
+        "replay_recording"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:37:42.744Z",
+      "types": [
+        "replay_event",
+        "replay_recording"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    },
+    {
+      "at": "2026-09-14T07:37:42.745Z",
+      "types": [
+        "client_report"
+      ],
+      "containsInstructionMarker": false,
+      "requestBodyFields": 0
+    }
+  ],
+  "sentryObserved": true,
+  "sentryOptions": {
+    "release": "8941814b7973428a485d39c1a5d2b90fd52ddcad",
+    "dataCollection": {
+      "userInfo": false,
+      "httpHeaders": {
+        "request": {
+          "allow": []
+        },
+        "response": {
+          "allow": []
+        }
+      },
+      "httpBodies": [],
+      "genAI": {
+        "inputs": false,
+        "outputs": false
+      },
+      "cookies": false,
+      "queryParams": {
+        "allow": []
+      }
+    }
+  },
+  "uiRejectionEvidence": {
+    "status": 422,
+    "detail": [
+      {
+        "type": "value_error",
+        "loc": [
+          "body"
+        ],
+        "msg": "Value error, per_question_params[0] is invalid: 1 validation error for GenerateParams\nmath_thinking\n  Value error, math_thinking must contain 1 to 3 values [type=value_error, input_value=[], input_type=list]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+      }
+    ],
+    "uiText": "Stream open failed: HTTP 422"
+  }
+}

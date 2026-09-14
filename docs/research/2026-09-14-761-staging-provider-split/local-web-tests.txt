@@ -1,0 +1,15 @@
+
+> web@0.0.0 test
+> vitest run --maxWorkers=2
+
+
+ RUN  v4.1.10 /private/tmp/examgen-761-acceptance/web
+
+Not implemented: navigation to another Document
+Not implemented: navigation to another Document
+
+ Test Files  105 passed (105)
+      Tests  861 passed (861)
+   Start at  17:27:51
+   Duration  57.04s (transform 1.56s, setup 3.31s, import 8.21s, tests 49.96s, environment 38.29s)
+

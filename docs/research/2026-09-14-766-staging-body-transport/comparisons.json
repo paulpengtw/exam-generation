@@ -1,0 +1,1637 @@
+{
+  "runs": {
+    "ss-original": {
+      "at": "2026-09-14T07:24:54.646Z",
+      "method": "POST",
+      "status": 200,
+      "request_target_bytes": 13,
+      "json_body_bytes": 10222,
+      "equivalent_get_target_bytes": 20314,
+      "preview_status": 200,
+      "preview_method": "POST",
+      "preview_payload_equals_submission": true,
+      "history_ids": [
+        "cfe53c47-b73e-4dd0-bdc5-0c4bf5f7d2db",
+        "46595a62-3163-4723-8fdb-0c437f95f1e0"
+      ],
+      "event_counts": {
+        "started": 1,
+        "stage": 46,
+        "pipeline": 6,
+        "trail": 32,
+        "llm_request": 22,
+        "llm_content": 14032,
+        "llm_response": 22,
+        "plan": 2,
+        "question_update": 16,
+        "result": 2,
+        "done": 1
+      },
+      "post_done_capture_abort": "AbortError"
+    },
+    "ns-original": {
+      "at": "2026-09-14T07:27:04.565Z",
+      "method": "POST",
+      "status": 200,
+      "request_target_bytes": 13,
+      "json_body_bytes": 9882,
+      "equivalent_get_target_bytes": 19917,
+      "preview_status": 200,
+      "preview_method": "POST",
+      "preview_payload_equals_submission": true,
+      "history_ids": [
+        "fb7fd9d6-bd56-413f-bc45-49ac6396d70e",
+        "c2a0a542-c872-4b0f-884d-8c6e656b5c8b"
+      ],
+      "event_counts": {
+        "started": 1,
+        "stage": 26,
+        "pipeline": 6,
+        "trail": 16,
+        "llm_request": 12,
+        "llm_content": 7744,
+        "llm_response": 12,
+        "plan": 2,
+        "question_update": 6,
+        "result": 2,
+        "done": 1
+      },
+      "post_done_capture_abort": "AbortError"
+    },
+    "math-original": {
+      "at": "2026-09-14T07:29:38.042Z",
+      "method": "POST",
+      "status": 200,
+      "request_target_bytes": 13,
+      "json_body_bytes": 1641,
+      "equivalent_get_target_bytes": 2920,
+      "preview_status": 200,
+      "preview_method": "POST",
+      "preview_payload_equals_submission": true,
+      "history_ids": [
+        "d00692d7-7ce5-475e-93ac-b4d7b8b35142"
+      ],
+      "event_counts": {
+        "started": 1,
+        "stage": 6,
+        "pipeline": 4,
+        "llm_request": 2,
+        "llm_content": 529,
+        "llm_response": 2,
+        "question_update": 2,
+        "trail": 2,
+        "result": 1,
+        "done": 1
+      },
+      "post_done_capture_abort": "AbortError"
+    },
+    "ss-replay": {
+      "at": "2026-09-14T07:35:46.958Z",
+      "method": "POST",
+      "status": 200,
+      "request_target_bytes": 13,
+      "json_body_bytes": 10222,
+      "equivalent_get_target_bytes": 20314,
+      "preview_status": 200,
+      "preview_method": "POST",
+      "preview_payload_equals_submission": true,
+      "history_ids": [
+        "8b5ec211-666f-4a11-ae33-1d3a7e2b2eca",
+        "b96a683c-82ab-408a-95f6-c448e297455d"
+      ],
+      "event_counts": {
+        "started": 1,
+        "stage": 46,
+        "pipeline": 6,
+        "trail": 32,
+        "llm_request": 22,
+        "llm_content": 15235,
+        "llm_response": 22,
+        "plan": 2,
+        "question_update": 16,
+        "result": 2,
+        "done": 1
+      },
+      "post_done_capture_abort": "AbortError"
+    },
+    "ns-replay": {
+      "at": "2026-09-14T07:32:36.561Z",
+      "method": "POST",
+      "status": 200,
+      "request_target_bytes": 13,
+      "json_body_bytes": 9944,
+      "equivalent_get_target_bytes": 19995,
+      "preview_status": 200,
+      "preview_method": "POST",
+      "preview_payload_equals_submission": true,
+      "history_ids": [
+        "d320e8c7-7da0-43d9-832a-ecb4417c815e",
+        "1ab3c3ce-ca78-484c-96fb-684f990ad353"
+      ],
+      "event_counts": {
+        "started": 1,
+        "stage": 26,
+        "pipeline": 6,
+        "trail": 16,
+        "llm_request": 12,
+        "llm_content": 8194,
+        "llm_response": 12,
+        "plan": 2,
+        "question_update": 6,
+        "result": 2,
+        "done": 1
+      },
+      "post_done_capture_abort": "AbortError"
+    }
+  },
+  "histories": {
+    "cfe53c47-b73e-4dd0-bdc5-0c4bf5f7d2db": {
+      "phase": "ss-original",
+      "question_id": "ss_20260914_072455_001",
+      "status": "completed",
+      "submitted_value_changes": [],
+      "serialization_additions": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "added",
+          "actual": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.options",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.reporting_scale",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.science_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.sub_context",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "added",
+          "actual": null
+        }
+      ]
+    },
+    "46595a62-3163-4723-8fdb-0c437f95f1e0": {
+      "phase": "ss-original",
+      "question_id": "ss_20260914_072455_002",
+      "status": "completed",
+      "submitted_value_changes": [],
+      "serialization_additions": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "added",
+          "actual": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.options",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.reporting_scale",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.science_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.sub_context",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "added",
+          "actual": null
+        }
+      ]
+    },
+    "fb7fd9d6-bd56-413f-bc45-49ac6396d70e": {
+      "phase": "ns-original",
+      "question_id": "ns_20260914_072704_002",
+      "status": "completed",
+      "submitted_value_changes": [],
+      "serialization_additions": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "added",
+          "actual": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.options",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.per_question_params[0].coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.per_question_params[1].coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.subject_filter",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "added",
+          "actual": null
+        }
+      ]
+    },
+    "c2a0a542-c872-4b0f-884d-8c6e656b5c8b": {
+      "phase": "ns-original",
+      "question_id": "ns_20260914_072704_001",
+      "status": "completed",
+      "submitted_value_changes": [],
+      "serialization_additions": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "added",
+          "actual": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.options",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.per_question_params[0].coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.per_question_params[1].coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.subject_filter",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "added",
+          "actual": null
+        }
+      ]
+    },
+    "d00692d7-7ce5-475e-93ac-b4d7b8b35142": {
+      "phase": "math-original",
+      "question_id": "q_20260914_072938_001",
+      "status": "completed",
+      "submitted_value_changes": [],
+      "serialization_additions": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_question_callback",
+          "kind": "added",
+          "actual": true
+        },
+        {
+          "path": "$.coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.disable_reference_fewshot",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "added",
+          "actual": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.options",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.per_question_params[0].coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.per_question_params[0].disable_reference_fewshot",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.reporting_scale",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.science_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.sub_context",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.sub_question_count",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.subquestion_configs",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.text_instruction",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.text_word_limit",
+          "kind": "added",
+          "actual": null
+        }
+      ]
+    },
+    "8b5ec211-666f-4a11-ae33-1d3a7e2b2eca": {
+      "phase": "ss-replay",
+      "question_id": "ss_20260914_073547_001",
+      "status": "completed",
+      "submitted_value_changes": [],
+      "serialization_additions": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "added",
+          "actual": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.options",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.reporting_scale",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.science_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.sub_context",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "added",
+          "actual": null
+        }
+      ]
+    },
+    "b96a683c-82ab-408a-95f6-c448e297455d": {
+      "phase": "ss-replay",
+      "question_id": "ss_20260914_073547_002",
+      "status": "completed",
+      "submitted_value_changes": [],
+      "serialization_additions": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "added",
+          "actual": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.options",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.reporting_scale",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.science_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.sub_context",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "added",
+          "actual": null
+        }
+      ]
+    },
+    "d320e8c7-7da0-43d9-832a-ecb4417c815e": {
+      "phase": "ns-replay",
+      "question_id": "ns_20260914_073236_002",
+      "status": "completed",
+      "submitted_value_changes": [],
+      "serialization_additions": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "added",
+          "actual": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.options",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.subject_filter",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "added",
+          "actual": null
+        }
+      ]
+    },
+    "1ab3c3ce-ca78-484c-96fb-684f990ad353": {
+      "phase": "ns-replay",
+      "question_id": "ns_20260914_073236_001",
+      "status": "completed",
+      "submitted_value_changes": [],
+      "serialization_additions": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "added",
+          "actual": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.coverage_mode",
+          "kind": "added",
+          "actual": "balanced"
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "added",
+          "actual": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.options",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.subject_filter",
+          "kind": "added",
+          "actual": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "added",
+          "actual": null
+        }
+      ]
+    }
+  },
+  "replays": {
+    "ss": {
+      "fresh_drawn": [],
+      "cleared": [],
+      "complete_batch_differences": [],
+      "saved_record_differences": [],
+      "saved_to_resolve_envelope_differences": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "missing",
+          "expected": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "missing",
+          "expected": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.options",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.reporting_scale",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.science_competency",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.sub_context",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "missing",
+          "expected": null
+        }
+      ]
+    },
+    "ns": {
+      "fresh_drawn": [],
+      "cleared": [],
+      "complete_batch_differences": [],
+      "saved_record_differences": [],
+      "saved_to_resolve_envelope_differences": [
+        {
+          "path": "$.allow_duplicate_figure_kinds",
+          "kind": "missing",
+          "expected": false
+        },
+        {
+          "path": "$.content_domain",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.core_competency",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.coverage_mode",
+          "kind": "missing",
+          "expected": "balanced"
+        },
+        {
+          "path": "$.difficulty",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.effort_correct",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.effort_verify",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.learning_content",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.learning_performance",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.math_thinking",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.max_retries",
+          "kind": "missing",
+          "expected": 3
+        },
+        {
+          "path": "$.model_correct",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.model_execute",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.model_plan",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.option_word_limit",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.options",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.passage",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.question_word_limit",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.subject_filter",
+          "kind": "missing",
+          "expected": null
+        },
+        {
+          "path": "$.target_surface",
+          "kind": "missing",
+          "expected": null
+        }
+      ]
+    }
+  },
+  "sentry": {
+    "p1-capture": {
+      "options": {
+        "release": "8941814b7973428a485d39c1a5d2b90fd52ddcad",
+        "dataCollection": {
+          "userInfo": false,
+          "httpHeaders": {
+            "request": {
+              "allow": []
+            },
+            "response": {
+              "allow": []
+            }
+          },
+          "httpBodies": [],
+          "genAI": {
+            "inputs": false,
+            "outputs": false
+          },
+          "cookies": false,
+          "queryParams": {
+            "allow": []
+          }
+        }
+      },
+      "envelopes": 13,
+      "types": [
+        "client_report",
+        "session",
+        "transaction"
+      ]
+    },
+    "p2-capture": {
+      "options": {
+        "release": "8941814b7973428a485d39c1a5d2b90fd52ddcad",
+        "dataCollection": {
+          "userInfo": false,
+          "httpHeaders": {
+            "request": {
+              "allow": []
+            },
+            "response": {
+              "allow": []
+            }
+          },
+          "httpBodies": [],
+          "genAI": {
+            "inputs": false,
+            "outputs": false
+          },
+          "cookies": false,
+          "queryParams": {
+            "allow": []
+          }
+        }
+      },
+      "envelopes": 22,
+      "types": [
+        "client_report",
+        "event",
+        "replay_event",
+        "replay_recording",
+        "session",
+        "span",
+        "transaction"
+      ]
+    },
+    "p4-capture": {
+      "options": {
+        "release": "8941814b7973428a485d39c1a5d2b90fd52ddcad",
+        "dataCollection": {
+          "userInfo": false,
+          "httpHeaders": {
+            "request": {
+              "allow": []
+            },
+            "response": {
+              "allow": []
+            }
+          },
+          "httpBodies": [],
+          "genAI": {
+            "inputs": false,
+            "outputs": false
+          },
+          "cookies": false,
+          "queryParams": {
+            "allow": []
+          }
+        }
+      },
+      "envelopes": 22,
+      "types": [
+        "client_report",
+        "session",
+        "span",
+        "transaction"
+      ]
+    },
+    "p3-capture": {
+      "options": {
+        "release": "8941814b7973428a485d39c1a5d2b90fd52ddcad",
+        "dataCollection": {
+          "userInfo": false,
+          "httpHeaders": {
+            "request": {
+              "allow": []
+            },
+            "response": {
+              "allow": []
+            }
+          },
+          "httpBodies": [],
+          "genAI": {
+            "inputs": false,
+            "outputs": false
+          },
+          "cookies": false,
+          "queryParams": {
+            "allow": []
+          }
+        }
+      },
+      "envelopes": 13,
+      "types": [
+        "client_report",
+        "event",
+        "replay_event",
+        "replay_recording",
+        "session",
+        "span"
+      ]
+    }
+  },
+  "rejections": {
+    "authProbes": [
+      {
+        "path": "/api/generate/preview",
+        "status": 401,
+        "detail": "Missing Authorization header"
+      },
+      {
+        "path": "/api/generate",
+        "status": 401,
+        "detail": "Missing Authorization header"
+      }
+    ],
+    "incompleteProbes": [
+      {
+        "path": "/api/generate/preview",
+        "status": 422,
+        "detail": [
+          {
+            "field": "per_question_params[1].subquestion_configs[2].learning_content",
+            "code": "unresolved"
+          }
+        ],
+        "contentType": "application/json"
+      },
+      {
+        "path": "/api/generate",
+        "status": 422,
+        "detail": [
+          {
+            "field": "per_question_params[1].subquestion_configs[2].learning_content",
+            "code": "unresolved"
+          }
+        ],
+        "contentType": "application/json"
+      }
+    ],
+    "canonicalUiRejectionEvidence": {
+      "status": 422,
+      "uiText": "Incomplete request: per_question_params[0].數學思考 (unresolved)",
+      "uiRequestCount": 1
+    },
+    "uiRejectionEvidence": {
+      "status": 422,
+      "detail": [
+        {
+          "type": "value_error",
+          "loc": [
+            "body"
+          ],
+          "msg": "Value error, per_question_params[0] is invalid: 1 validation error for GenerateParams\nmath_thinking\n  Value error, math_thinking must contain 1 to 3 values [type=value_error, input_value=[], input_type=list]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+        }
+      ],
+      "uiText": "Stream open failed: HTTP 422"
+    }
+  },
+  "legacy_get_cancellation": {
+    "target_bytes": 3001,
+    "status": 200,
+    "event_counts": {
+      "started": 1,
+      "stage": 3,
+      "pipeline": 2,
+      "llm_request": 1,
+      "llm_content": 98
+    },
+    "history_id": "f658a7ef-a6c8-4f4c-b60f-e0188e6efa69",
+    "saved_status": "aborted"
+  }
+}

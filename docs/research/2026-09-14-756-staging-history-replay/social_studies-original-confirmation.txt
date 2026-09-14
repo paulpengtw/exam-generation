@@ -1,0 +1,734 @@
+[p2 "【測試機】素養試題 AI Examgen" | space "#756 staging History parameter replay"(9): 2 managed, 0 untracked — p1 "【測試機】素養試題 AI Examgen", p2* "【測試機】素養試題 AI Examgen"]
+root
+  text "⚠ 此為測試環境，運作可能不穩定。"
+  container
+    container
+      button [ref=1]
+        text "←"
+      heading
+        text "社會領域題目產生器"
+      button [ref=2]
+        text "English"
+      button [ref=3]
+        text "中文"
+      button [ref=4]
+        text "紀錄"
+      text "[test account]"
+      button [ref=5]
+        text "登出"
+    container
+      heading
+        text "發送前確認設定"
+      paragraph
+        text "請確認以下設定。確認無誤後點選「確定發送」，或點選「返回」調整。"
+      region "共同設定"
+        heading
+          text "共同設定"
+        unordered_list
+          list_item
+            text "主題"
+          list_item
+            text "未填寫"
+          list_item
+            text "文本出題指示"
+          list_item
+            text "請以簡短、可獨立閱讀的情境呈現，清楚區分資料與觀點。"
+          list_item
+            text "核心問題"
+          list_item
+            text "未填寫"
+          list_item
+            text "年級"
+          list_item
+            text "7"
+          list_item
+            text "難度"
+          list_item
+            text "easy"
+          list_item
+            text "科目"
+          list_item
+            text "由後端隨機抽取（每題不同）"
+          list_item
+            text "卷面"
+          list_item
+            text "紙本"
+          list_item
+            text "題數"
+          list_item
+            text "2"
+          list_item
+            text "出題模式"
+          list_item
+            text "balanced"
+          list_item
+            text "文本"
+          list_item
+            text "未填寫"
+          list_item
+            text "文本字數限制"
+          list_item
+            text "220"
+          list_item
+            text "規劃模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "出題模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "驗證模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "修正模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "規劃 Effort"
+          list_item
+            text "medium"
+          list_item
+            text "出題 Effort"
+          list_item
+            text "medium"
+          list_item
+            text "驗證 Effort"
+          list_item
+            text "未填寫"
+          list_item
+            text "修正 Effort"
+          list_item
+            text "未填寫"
+          list_item
+            text "圖片產生方式"
+          list_item
+            text "html"
+          list_item
+            text "略過驗證"
+          list_item
+            text "否"
+          list_item
+            text "關閉參考範例：是"
+          list_item
+            text "否"
+          list_item
+            text "末小題回扣核心問題"
+          list_item
+            text "是"
+          list_item
+            text "允許圖像種類重複"
+          list_item
+            text "未填寫"
+      container
+        region "第1題"
+          heading
+            text "第1題"
+          unordered_list
+            list_item
+              text "小題數"
+            list_item
+              text "3"
+              text "使用者選擇"
+          text "文本出題指示"
+          textbox "文本出題指示" [ref=71]
+            text "請以簡短、可獨立閱讀的情境呈現，清楚區分資料與觀點。"
+          unordered_list
+            list_item
+              text "種子"
+            list_item
+              text "1061985255"
+              text "預抽"
+            list_item
+              text "題目內容類型"
+            list_item
+              text "純文字"
+              text "使用者選擇"
+            list_item
+              text "情境"
+            list_item
+              text "公共, 職業, 個人, 教育"
+              text "隨機抽取"
+              button [ref=72]
+                text "編輯"
+              button [ref=73]
+                text "重抽"
+            list_item
+              text "題型種類"
+            list_item
+              text "題組題"
+              text "使用者選擇"
+            list_item
+              text "科目"
+            list_item
+              text "歷史"
+              text "隨機抽取"
+              button [ref=74]
+                text "編輯"
+              button [ref=75]
+                text "重抽"
+            text "內容領域"
+            text ":"
+            text "Civic Institutions and Systems"
+            text "隨機抽取"
+            button [ref=76]
+              text "編輯"
+            button [ref=77]
+              text "重抽"
+            list_item
+              text "核心素養"
+            list_item
+              text "社-J-A3、社-J-C2、社-J-B3"
+              text "隨機抽取"
+              button [ref=78]
+                text "編輯"
+              button [ref=79]
+                text "重抽"
+            list_item
+              text "學習表現"
+            list_item
+              paragraph
+                text "未手動選擇 — 已隨機抽取 1 項（將實際送出）："
+              unordered_list
+                list_item
+                  text "歷1c-Ⅳ-2"
+                  text "—"
+                  text "從多元觀點探究重要歷史事件與人物在歷史中的作用與意義。"
+              button [ref=80]
+                text "編輯"
+              button [ref=81]
+                text "重抽"
+            list_item
+              text "學習內容"
+            list_item
+              paragraph
+                text "未手動選擇 — 已隨機抽取 1 項（將實際送出）："
+              unordered_list
+                list_item
+                  text "歷Eb-Ⅳ-1"
+                  text "—"
+                  text "現代教育與文化啟蒙運動。"
+              button [ref=82]
+                text "編輯"
+              button [ref=83]
+                text "重抽"
+          container
+            heading
+              text "各小題配置"
+            ordered_list
+              list_item
+                heading
+                  text "第 1 小題"
+                text "認知歷程"
+                text ":"
+                text "Reasoning and Applying–Interpret information"
+                text "隨機抽取"
+                button [ref=84]
+                  text "編輯"
+                button [ref=85]
+                  text "重抽"
+                text "題型"
+                text "使用者選擇"
+                combobox [ref=86]
+                  text "選擇題"
+                text "出題指示"
+                text "使用者選擇"
+                textbox [ref=87]
+                  text "請根據表格中的資料判讀，避免只靠常識作答。"
+                text "題目內容類型"
+                text "使用者選擇"
+                combobox [ref=88]
+                  text "graphs/charts/tables"
+                text "圖片生成模式"
+                text "使用者選擇"
+                combobox [ref=89]
+                  text "HTML 渲染"
+                text "題目字數限制"
+                text "使用者選擇"
+                spinbutton [ref=90]
+                  text "90"
+                text "選項字數限制"
+                text "使用者選擇"
+                spinbutton [ref=91]
+                  text "20"
+                text "圖像種類:"
+                text "表格"
+                container
+                  text "學習內容"
+                  text "隨機抽取"
+                  container
+                    textbox [ref=92]
+                      text "搜尋學習內容..."
+                    container
+                      text "歷Eb-Ⅳ-1"
+                      text "："
+                      text "現代教育與文化啟蒙運動。"
+                      button [ref=93]
+                        text "×"
+                  button [ref=94]
+                    text "重抽"
+                container
+                  container
+                    text "學習表現"
+                    text "隨機抽取"
+                  container
+                    textbox [ref=95]
+                      text "搜尋學習表現..."
+                    container
+                      text "歷1c-Ⅳ-2"
+                      container
+                        text "："
+                        text "從多元觀點探究重要歷史事件與人物在歷史中…"
+                      button [ref=96]
+                        text "×"
+                  button [ref=97]
+                    text "重抽"
+              list_item
+                heading
+                  text "第 2 小題"
+                container
+                  container
+                    text "認知歷程"
+                    text ":"
+                    text "Reasoning and Applying–Relate or Integrate"
+                  text "隨機抽取"
+                  container
+                    button [ref=98]
+                      text "編輯"
+                    button [ref=99]
+                      text "重抽"
+                container
+                  container
+                    container
+                      text "題型"
+                      text "隨機抽取"
+                    combobox [ref=100]
+                      text "選擇題"
+                  button [ref=101]
+                    text "重抽"
+                container
+                  container
+                    text "出題指示"
+                    text "使用者選擇"
+                  textbox [ref=102]
+                    text "請指出推論所依據的文本證據。"
+                container
+                  container
+                    text "題目內容類型"
+                    text "沿用文本設定"
+                  combobox [ref=103]
+                    text "（沿用文本設定）"
+                container
+                  container
+                    text "圖片生成模式"
+                    text "沿用文本設定"
+                  combobox [ref=104]
+                    text "（沿用文本設定）"
+                container
+                  container
+                    text "題目字數限制"
+                    text "使用者選擇"
+                  spinbutton [ref=105]
+                    text "110"
+                container
+                  container
+                    text "選項字數限制"
+                    text "不限"
+                  spinbutton [ref=106]
+                    text "不限"
+                container
+                  container
+                    text "學習內容"
+                    text "隨機抽取"
+                  container
+                    textbox [ref=107]
+                      text "搜尋學習內容..."
+                    container
+                      text "歷Eb-Ⅳ-1"
+                      container
+                        text "："
+                        text "現代教育與文化啟蒙運動。"
+                      button [ref=108]
+                        text "×"
+                  button [ref=109]
+                    text "重抽"
+                container
+                  container
+                    text "學習表現"
+                    text "隨機抽取"
+                  container
+                    textbox [ref=110]
+                      text "搜尋學習表現..."
+                    container
+                      text "歷1c-Ⅳ-2"
+                      container
+                        text "："
+                        text "從多元觀點探究重要歷史事件與人物在歷史中…"
+                      button [ref=111]
+                        text "×"
+                  button [ref=112]
+                    text "重抽"
+              list_item
+                heading
+                  text "第 3 小題"
+                container
+                  container
+                    text "認知歷程"
+                    text ":"
+                    text "Reasoning and Applying–Relate or Integrate"
+                  text "隨機抽取"
+                  container
+                    button [ref=113]
+                      text "編輯"
+                    button [ref=114]
+                      text "重抽"
+                text "題型"
+                text "隨機抽取"
+                combobox [ref=115]
+                  text "選擇題"
+                button [ref=116]
+                  text "重抽"
+                text "出題指示"
+                text "隨機抽取"
+                textbox [ref=117]
+                  text "例如：請聚焦在資料判讀與因果推論"
+                text "題目內容類型"
+                text "沿用文本設定"
+                combobox [ref=118]
+                  text "（沿用文本設定）"
+                text "圖片生成模式"
+                text "沿用文本設定"
+                combobox [ref=119]
+                  text "（沿用文本設定）"
+                text "題目字數限制"
+                text "不限"
+                spinbutton [ref=120]
+                  text "不限"
+                text "選項字數限制"
+                text "不限"
+                spinbutton [ref=121]
+                  text "不限"
+                text "學習內容"
+                text "隨機抽取"
+                textbox [ref=122]
+                  text "搜尋學習內容..."
+                text "歷Eb-Ⅳ-1"
+                text "："
+                text "現代教育與文化啟蒙運動。"
+                button [ref=123]
+                  text "×"
+                button [ref=124]
+                  text "重抽"
+                text "學習表現"
+                text "隨機抽取"
+                textbox [ref=125]
+                  text "搜尋學習表現..."
+                text "歷1c-Ⅳ-2"
+                text "："
+                text "從多元觀點探究重要歷史事件與人物在歷史中…"
+                button [ref=126]
+                  text "×"
+                button [ref=127]
+                  text "重抽"
+        region "第2題"
+          heading
+            text "第2題"
+          unordered_list
+            list_item
+              text "小題數"
+            list_item
+              text "3"
+              text "使用者選擇"
+          text "文本出題指示"
+          textbox "文本出題指示" [ref=128]
+            text "請以簡短、可獨立閱讀的情境呈現，清楚區分資料與觀點。"
+          unordered_list
+            list_item
+              text "種子"
+            list_item
+              text "1061985256"
+              text "預抽"
+            list_item
+              text "題目內容類型"
+            list_item
+              text "純文字"
+              text "使用者選擇"
+            list_item
+              text "情境"
+            list_item
+              text "職業"
+              text "隨機抽取"
+              button [ref=129]
+                text "編輯"
+              button [ref=130]
+                text "重抽"
+            list_item
+              text "題型種類"
+            list_item
+              text "題組題"
+              text "使用者選擇"
+            list_item
+              text "科目"
+            list_item
+              text "公民與社會"
+              text "隨機抽取"
+              button [ref=131]
+                text "編輯"
+              button [ref=132]
+                text "重抽"
+            text "內容領域"
+            text ":"
+            text "Civic Principles"
+            text "隨機抽取"
+            button [ref=133]
+              text "編輯"
+            button [ref=134]
+              text "重抽"
+            list_item
+              text "核心素養"
+            list_item
+              text "社-J-C2、社-J-A2"
+              text "隨機抽取"
+              button [ref=135]
+                text "編輯"
+              button [ref=136]
+                text "重抽"
+            list_item
+              text "學習表現"
+            list_item
+              paragraph
+                text "未手動選擇 — 已隨機抽取 1 項（將實際送出）："
+              unordered_list
+                list_item
+                  text "社2b-Ⅳ-1"
+                  text "—"
+                  text "感受個人或不同群體在社會處境中的經歷與情緒，並了解其抉擇"
+              button [ref=137]
+                text "編輯"
+              button [ref=138]
+                text "重抽"
+            list_item
+              text "學習內容"
+            list_item
+              paragraph
+                text "未手動選擇 — 已隨機抽取 2 項（將實際送出）："
+              unordered_list
+                list_item
+                  text "公Ab-Ⅳ-2"
+                  text "—"
+                  text "學生們在校園中享有哪些權利？如何在校園生活中實踐公民德性？"
+                list_item
+                  text "公Db-Ⅳ-1"
+                  text "—"
+                  text "個人的基本生活受到保障，和人性尊嚴及選擇自由有什麼關聯？"
+              button [ref=139]
+                text "編輯"
+              button [ref=140]
+                text "重抽"
+          container
+            heading
+              text "各小題配置"
+            ordered_list
+              list_item
+                heading
+                  text "第 1 小題"
+                text "認知歷程"
+                text ":"
+                text "Knowing–Defining and Describing"
+                text "隨機抽取"
+                button [ref=141]
+                  text "編輯"
+                button [ref=142]
+                  text "重抽"
+                text "題型"
+                text "使用者選擇"
+                combobox [ref=143]
+                  text "選擇題"
+                text "出題指示"
+                text "使用者選擇"
+                textbox [ref=144]
+                  text "請根據表格中的資料判讀，避免只靠常識作答。"
+                text "題目內容類型"
+                text "使用者選擇"
+                combobox [ref=145]
+                  text "graphs/charts/tables"
+                text "圖片生成模式"
+                text "使用者選擇"
+                combobox [ref=146]
+                  text "HTML 渲染"
+                text "題目字數限制"
+                text "使用者選擇"
+                spinbutton [ref=147]
+                  text "90"
+                text "選項字數限制"
+                text "使用者選擇"
+                spinbutton [ref=148]
+                  text "20"
+                text "圖像種類:"
+                text "表格"
+                text "學習內容"
+                text "隨機抽取"
+                textbox [ref=149]
+                  text "搜尋學習內容..."
+                text "公Db-Ⅳ-1"
+                text "："
+                text "個人的基本生活受到保障，和人性尊嚴及選擇…"
+                button [ref=150]
+                  text "×"
+                text "公Ab-Ⅳ-2"
+                text "："
+                text "學生們在校園中享有哪些權利？如何在校園生…"
+                button [ref=151]
+                  text "×"
+                button [ref=152]
+                  text "重抽"
+                text "學習表現"
+                text "隨機抽取"
+                textbox [ref=153]
+                  text "搜尋學習表現..."
+                text "社2b-Ⅳ-1"
+                text "："
+                text "感受個人或不同群體在社會處境中的經歷與情…"
+                button [ref=154]
+                  text "×"
+                button [ref=155]
+                  text "重抽"
+              list_item
+                heading
+                  text "第 2 小題"
+                text "認知歷程"
+                text ":"
+                text "Reasoning and Applying–Relate or Integrate"
+                text "隨機抽取"
+                button [ref=156]
+                  text "編輯"
+                button [ref=157]
+                  text "重抽"
+                text "題型"
+                text "隨機抽取"
+                combobox [ref=158]
+                  text "選擇題"
+                button [ref=159]
+                  text "重抽"
+                text "出題指示"
+                text "使用者選擇"
+                textbox [ref=160]
+                  text "請指出推論所依據的文本證據。"
+                text "題目內容類型"
+                text "沿用文本設定"
+                combobox [ref=161]
+                  text "（沿用文本設定）"
+                text "圖片生成模式"
+                text "沿用文本設定"
+                combobox [ref=162]
+                  text "（沿用文本設定）"
+                text "題目字數限制"
+                text "使用者選擇"
+                spinbutton [ref=163]
+                  text "110"
+                text "選項字數限制"
+                text "不限"
+                spinbutton [ref=164]
+                  text "不限"
+                text "學習內容"
+                text "隨機抽取"
+                textbox [ref=165]
+                  text "搜尋學習內容..."
+                text "公Ab-Ⅳ-2"
+                text "："
+                text "學生們在校園中享有哪些權利？如何在校園生…"
+                button [ref=166]
+                  text "×"
+                button [ref=167]
+                  text "重抽"
+                text "學習表現"
+                text "隨機抽取"
+                textbox [ref=168]
+                  text "搜尋學習表現..."
+                text "社2b-Ⅳ-1"
+                text "："
+                text "感受個人或不同群體在社會處境中的經歷與情…"
+                button [ref=169]
+                  text "×"
+                button [ref=170]
+                  text "重抽"
+              list_item
+                heading
+                  text "第 3 小題"
+                text "認知歷程"
+                text ":"
+                text "Reasoning and Applying–Interpret information"
+                text "隨機抽取"
+                button [ref=171]
+                  text "編輯"
+                button [ref=172]
+                  text "重抽"
+                text "題型"
+                text "隨機抽取"
+                combobox [ref=173]
+                  text "選擇題"
+                button [ref=174]
+                  text "重抽"
+                text "出題指示"
+                text "隨機抽取"
+                textbox [ref=175]
+                  text "例如：請聚焦在資料判讀與因果推論"
+                text "題目內容類型"
+                text "沿用文本設定"
+                combobox [ref=176]
+                  text "（沿用文本設定）"
+                text "圖片生成模式"
+                text "沿用文本設定"
+                combobox [ref=177]
+                  text "（沿用文本設定）"
+                text "題目字數限制"
+                text "不限"
+                spinbutton [ref=178]
+                  text "不限"
+                text "選項字數限制"
+                text "不限"
+                spinbutton [ref=179]
+                  text "不限"
+                text "學習內容"
+                text "隨機抽取"
+                textbox [ref=180]
+                  text "搜尋學習內容..."
+                text "公Ab-Ⅳ-2"
+                text "："
+                text "學生們在校園中享有哪些權利？如何在校園生…"
+                button [ref=181]
+                  text "×"
+                text "公Db-Ⅳ-1"
+                text "："
+                text "個人的基本生活受到保障，和人性尊嚴及選擇…"
+                button [ref=182]
+                  text "×"
+                button [ref=183]
+                  text "重抽"
+                text "學習表現"
+                text "隨機抽取"
+                textbox [ref=184]
+                  text "搜尋學習表現..."
+                text "社2b-Ⅳ-1"
+                text "："
+                text "感受個人或不同群體在社會處境中的經歷與情…"
+                button [ref=185]
+                  text "×"
+                button [ref=186]
+                  text "重抽"
+      button [ref=187]
+        text "確定發送"
+      button [ref=188]
+        text "返回修改"
+    container "生成進度列"
+      text "尚未生成"
+      container
+        button [ref=37]
+          text "表單"
+        button [ref=38]
+          text "進度"
+        button [ref=39]
+          text "結果"
+        button [ref=40]
+          text "回饋"

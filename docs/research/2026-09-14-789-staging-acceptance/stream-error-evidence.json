@@ -1,0 +1,15 @@
+[
+  {
+    "event_id": "fa8f24e95fe24541b5f7718d3672e47f",
+    "created_at": "2026-09-14T09:11:03Z",
+    "message": "",
+    "release": null,
+    "exceptions": [
+      {
+        "type": "TypeError",
+        "value": "network error",
+        "frames": []
+      }
+    ]
+  }
+]

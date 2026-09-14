@@ -1,0 +1,734 @@
+[p3 "【測試機】素養試題 AI Examgen" | space "#756 staging History parameter replay"(9): 3 managed, 0 untracked — p1 "【測試機】素養試題 AI Examgen", p2 "【測試機】素養試題 AI Examgen", p3* "【測試機】素養試題 AI Examgen"]
+root
+  text "⚠ 此為測試環境，運作可能不穩定。"
+  container
+    container
+      button [ref=1]
+        text "←"
+      heading
+        text "自然科學題目產生器"
+      button [ref=2]
+        text "English"
+      button [ref=3]
+        text "中文"
+      button [ref=4]
+        text "紀錄"
+      text "[test account]"
+      button [ref=5]
+        text "登出"
+    container
+      heading
+        text "發送前確認設定"
+      paragraph
+        text "請確認以下設定。確認無誤後點選「確定發送」，或點選「返回」調整。"
+      region "共同設定"
+        heading
+          text "共同設定"
+        unordered_list
+          list_item
+            text "主題"
+          list_item
+            text "未填寫"
+          list_item
+            text "核心問題"
+          list_item
+            text "未填寫"
+          list_item
+            text "年級"
+          list_item
+            text "7"
+          list_item
+            text "題數"
+          list_item
+            text "2"
+          list_item
+            text "文本"
+          list_item
+            text "未填寫"
+          list_item
+            text "文本字數限制"
+          list_item
+            text "240"
+          list_item
+            text "規劃模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "出題模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "驗證模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "修正模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "規劃 Effort"
+          list_item
+            text "medium"
+          list_item
+            text "出題 Effort"
+          list_item
+            text "medium"
+          list_item
+            text "驗證 Effort"
+          list_item
+            text "未填寫"
+          list_item
+            text "修正 Effort"
+          list_item
+            text "未填寫"
+          list_item
+            text "圖片產生方式"
+          list_item
+            text "html"
+          list_item
+            text "略過驗證"
+          list_item
+            text "否"
+          list_item
+            text "關閉參考範例：是"
+          list_item
+            text "否"
+          list_item
+            text "末小題回扣核心問題"
+          list_item
+            text "是"
+          list_item
+            text "允許圖像種類重複"
+          list_item
+            text "未填寫"
+          list_item
+            text "Reporting Scale"
+          list_item
+            text "各小題分別抽取"
+            text "使用者選擇"
+      container
+        region "第1題"
+          heading
+            text "第1題"
+          unordered_list
+            list_item
+              text "小題數"
+            list_item
+              text "3"
+              text "使用者選擇"
+          text "文本出題指示"
+          textbox "文本出題指示" [ref=81]
+            text "請明確呈現觀察資料與科學解釋的差異，並使用簡短文本。"
+          unordered_list
+            list_item
+              text "種子"
+            list_item
+              text "1102086858"
+              text "預抽"
+            list_item
+              text "題目內容類型"
+            list_item
+              text "純文字"
+              text "使用者選擇"
+            list_item
+              text "情境"
+            list_item
+              text "Personal"
+              text "使用者選擇"
+            list_item
+              text "題型種類"
+            list_item
+              text "題組題"
+              text "使用者選擇"
+            list_item
+              text "題型"
+            list_item
+              text "未填寫"
+              text "使用者選擇"
+            list_item
+              text "情境子類別"
+            list_item
+              text "Maintenance of health"
+              text "使用者選擇"
+            list_item
+              text "科學能力"
+            list_item
+              text "環境能力一：解釋人類與地球系統的相互作用對環境的影響, 能力一：以科學的角度解釋現象"
+              text "隨機抽取"
+              button [ref=82]
+                text "編輯"
+              button [ref=83]
+                text "重抽"
+            list_item
+              text "學習表現"
+            list_item
+              paragraph
+                text "未手動選擇 — 已隨機抽取 1 項（將實際送出）："
+              unordered_list
+                list_item
+                  text "an-Ⅳ-3"
+                  text "—"
+                  text "體察到不同性別、背景、族群科學家們具有堅毅、嚴謹和講求邏輯的特質，也具有好奇心、求知慾和想像力。"
+              button [ref=84]
+                text "編輯"
+              button [ref=85]
+                text "重抽"
+            list_item
+              text "學習內容"
+            list_item
+              paragraph
+                text "未手動選擇 — 已隨機抽取 3 項（將實際送出）："
+              unordered_list
+                list_item
+                  text "Gc-Ⅳ-2"
+                  text "—"
+                  text "地球上有形形色色的生物，在生態系中擔任不同的角色，發揮不同的功能，有助於維持生態系的穩定。"
+                list_item
+                  text "Ka-Ⅳ-5"
+                  text "—"
+                  text "耳朵可以分辨不同的聲音，例如：大小、高低及音色，但人耳聽不到超聲波。"
+                list_item
+                  text "Na-Ⅳ-1"
+                  text "—"
+                  text "利用生物資源會影響生物間相互依存的關係。"
+              button [ref=86]
+                text "編輯"
+              button [ref=87]
+                text "重抽"
+          container
+            heading
+              text "各小題配置"
+            ordered_list
+              list_item
+                heading
+                  text "第 1 小題"
+                text "Reporting Scale"
+                text ":"
+                combobox "Reporting Scale" [ref=88]
+                  text "At level 2, students can identify an appropriate scientific explanation from a non-scientific explanation for everyday/common scientific phenomena in familiar personal, local or global contexts, by dr..."
+                text "使用者選擇"
+                text "題型"
+                text "使用者選擇"
+                combobox [ref=89]
+                  text "Simple multiple-choice"
+                text "出題指示"
+                text "使用者選擇"
+                textbox [ref=90]
+                  text "請根據圖中趨勢比較觀察結果，勿要求學生猜測未提供的數據。"
+                text "題目內容類型"
+                text "使用者選擇"
+                combobox [ref=91]
+                  text "graphs/charts/tables"
+                text "圖片生成模式"
+                text "使用者選擇"
+                combobox [ref=92]
+                  text "HTML 渲染"
+                text "題目字數限制"
+                text "使用者選擇"
+                spinbutton [ref=93]
+                  text "95"
+                text "選項字數限制"
+                text "使用者選擇"
+                spinbutton [ref=94]
+                  text "22"
+                text "圖像種類:"
+                text "折線圖"
+                text "學習內容"
+                text "隨機抽取"
+                textbox [ref=95]
+                  text "搜尋學習內容..."
+                text "Gc-Ⅳ-2"
+                text "："
+                text "地球上有形形色色的生物，在生態系中擔任不…"
+                button [ref=96]
+                  text "×"
+                text "Na-Ⅳ-1"
+                text "："
+                text "利用生物資源會影響生物間相互依存的關係。"
+                button [ref=97]
+                  text "×"
+                text "Ka-Ⅳ-5"
+                text "："
+                text "耳朵可以分辨不同的聲音，例如：大小、高低…"
+                button [ref=98]
+                  text "×"
+                button [ref=99]
+                  text "重抽"
+                text "學習表現"
+                text "隨機抽取"
+                textbox [ref=100]
+                  text "搜尋學習表現..."
+                text "an-Ⅳ-3"
+                text "："
+                text "體察到不同性別、背景、族群科學家們具有堅…"
+                button [ref=101]
+                  text "×"
+                button [ref=102]
+                  text "重抽"
+              list_item
+                heading
+                  text "第 2 小題"
+                text "Reporting Scale"
+                text ":"
+                combobox "Reporting Scale" [ref=103]
+                  text "At level 4, students can construct and evaluate scientific explanations of phenomena by drawing on a range of scientific principles and various representations of medium to high cognitive demand. Give..."
+                text "隨機抽取"
+                button [ref=104]
+                  text "編輯"
+                button [ref=105]
+                  text "重抽"
+                container
+                  text "題型"
+                  text "隨機抽取"
+                  combobox [ref=106]
+                    text "Complex multiple-choice"
+                  button [ref=107]
+                    text "重抽"
+                container
+                  container
+                    text "出題指示"
+                    text "使用者選擇"
+                  textbox [ref=108]
+                    text "請指出證據支持的結論，並說明理由。"
+                container
+                  container
+                    text "題目內容類型"
+                    text "沿用文本設定"
+                  combobox [ref=109]
+                    text "（沿用文本設定）"
+                container
+                  container
+                    text "圖片生成模式"
+                    text "沿用文本設定"
+                  combobox [ref=110]
+                    text "（沿用文本設定）"
+                container
+                  container
+                    text "題目字數限制"
+                    text "使用者選擇"
+                  spinbutton [ref=111]
+                    text "120"
+                container
+                  container
+                    text "選項字數限制"
+                    text "不限"
+                  spinbutton [ref=112]
+                    text "不限"
+                container
+                  container
+                    text "學習內容"
+                    text "隨機抽取"
+                  container
+                    textbox [ref=113]
+                      text "搜尋學習內容..."
+                    container
+                      container
+                        text "Ka-Ⅳ-5"
+                        container
+                          text "："
+                          text "耳朵可以分辨不同的聲音，例如：大小、高低…"
+                        button [ref=114]
+                          text "×"
+                      container
+                        text "Gc-Ⅳ-2"
+                        container
+                          text "："
+                          text "地球上有形形色色的生物，在生態系中擔任不…"
+                        button [ref=115]
+                          text "×"
+                  button [ref=116]
+                    text "重抽"
+                container
+                  container
+                    text "學習表現"
+                    text "隨機抽取"
+                  container
+                    textbox [ref=117]
+                      text "搜尋學習表現..."
+                    container
+                      text "an-Ⅳ-3"
+                      container
+                        text "："
+                        text "體察到不同性別、背景、族群科學家們具有堅…"
+                      button [ref=118]
+                        text "×"
+                  button [ref=119]
+                    text "重抽"
+              list_item
+                heading
+                  text "第 3 小題"
+                container
+                  container
+                    text "Reporting Scale"
+                    text ":"
+                  combobox "Reporting Scale" [ref=120]
+                    text "At level 3, students can construct or evaluate scientific explanations and models of phenomena with relevant cueing or support, by drawing on scientific principles and representations of medium cognit..."
+                  text "隨機抽取"
+                  container
+                    button [ref=121]
+                      text "編輯"
+                    button [ref=122]
+                      text "重抽"
+                container
+                  container
+                    container
+                      text "題型"
+                      text "隨機抽取"
+                    combobox [ref=123]
+                      text "Complex multiple-choice"
+                  button [ref=124]
+                    text "重抽"
+                container
+                  container
+                    text "出題指示"
+                    text "隨機抽取"
+                  textbox [ref=125]
+                    text "例如：請聚焦在資料判讀與因果推論"
+                container
+                  container
+                    text "題目內容類型"
+                    text "沿用文本設定"
+                  combobox [ref=126]
+                    text "（沿用文本設定）"
+                text "圖片生成模式"
+                text "沿用文本設定"
+                combobox [ref=127]
+                  text "（沿用文本設定）"
+                text "題目字數限制"
+                text "不限"
+                spinbutton [ref=128]
+                  text "不限"
+                text "選項字數限制"
+                text "不限"
+                spinbutton [ref=129]
+                  text "不限"
+                text "學習內容"
+                text "隨機抽取"
+                textbox [ref=130]
+                  text "搜尋學習內容..."
+                text "Gc-Ⅳ-2"
+                text "："
+                text "地球上有形形色色的生物，在生態系中擔任不…"
+                button [ref=131]
+                  text "×"
+                button [ref=132]
+                  text "重抽"
+                text "學習表現"
+                text "隨機抽取"
+                textbox [ref=133]
+                  text "搜尋學習表現..."
+                text "an-Ⅳ-3"
+                text "："
+                text "體察到不同性別、背景、族群科學家們具有堅…"
+                button [ref=134]
+                  text "×"
+                button [ref=135]
+                  text "重抽"
+        region "第2題"
+          heading
+            text "第2題"
+          unordered_list
+            list_item
+              text "小題數"
+            list_item
+              text "3"
+              text "使用者選擇"
+          text "文本出題指示"
+          textbox "文本出題指示" [ref=136]
+            text "請明確呈現觀察資料與科學解釋的差異，並使用簡短文本。"
+          unordered_list
+            list_item
+              text "種子"
+            list_item
+              text "1102086859"
+              text "預抽"
+            list_item
+              text "題目內容類型"
+            list_item
+              text "純文字"
+              text "使用者選擇"
+            list_item
+              text "情境"
+            list_item
+              text "Personal"
+              text "使用者選擇"
+            list_item
+              text "題型種類"
+            list_item
+              text "題組題"
+              text "使用者選擇"
+            list_item
+              text "題型"
+            list_item
+              text "未填寫"
+              text "使用者選擇"
+            list_item
+              text "情境子類別"
+            list_item
+              text "Maintenance of health"
+              text "使用者選擇"
+            list_item
+              text "科學能力"
+            list_item
+              text "環境能力三：抱持希望並尊重多元觀點以回應社會生態危機, 能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據"
+              text "隨機抽取"
+              button [ref=137]
+                text "編輯"
+              button [ref=138]
+                text "重抽"
+            list_item
+              text "學習表現"
+            list_item
+              paragraph
+                text "未手動選擇 — 已隨機抽取 2 項（將實際送出）："
+              unordered_list
+                list_item
+                  text "ai-Ⅳ-1"
+                  text "—"
+                  text "動手實作解決問題或驗證自己想法，而獲得成就感。"
+                list_item
+                  text "ah-Ⅳ-1"
+                  text "—"
+                  text "對於有關科學發現的報導，甚至權威的解釋（例如：報章雜誌的報導或書本上的解釋），能抱持懷疑的態度，評估其推論的證據是否充分且可信賴。"
+              button [ref=139]
+                text "編輯"
+              button [ref=140]
+                text "重抽"
+            list_item
+              text "學習內容"
+            list_item
+              paragraph
+                text "未手動選擇 — 已隨機抽取 2 項（將實際送出）："
+              unordered_list
+                list_item
+                  text "Id-Ⅳ-3"
+                  text "—"
+                  text "地球的四季主要是因為地球自轉軸傾斜於地球公轉軌道面而造成。"
+                list_item
+                  text "Kc-Ⅳ-4"
+                  text "—"
+                  text "電流會產生磁場，其方向分布可以由安培右手定則求得。"
+              button [ref=141]
+                text "編輯"
+              button [ref=142]
+                text "重抽"
+          container
+            heading
+              text "各小題配置"
+            ordered_list
+              list_item
+                heading
+                  text "第 1 小題"
+                text "Reporting Scale"
+                text ":"
+                combobox "Reporting Scale" [ref=143]
+                  text "At level 2, students can identify an appropriate scientific explanation from a non-scientific explanation for everyday/common scientific phenomena in familiar personal, local or global contexts, by dr..."
+                text "使用者選擇"
+                text "題型"
+                text "使用者選擇"
+                combobox [ref=144]
+                  text "Simple multiple-choice"
+                text "出題指示"
+                text "使用者選擇"
+                textbox [ref=145]
+                  text "請根據圖中趨勢比較觀察結果，勿要求學生猜測未提供的數據。"
+                text "題目內容類型"
+                text "使用者選擇"
+                combobox [ref=146]
+                  text "graphs/charts/tables"
+                text "圖片生成模式"
+                text "使用者選擇"
+                combobox [ref=147]
+                  text "HTML 渲染"
+                text "題目字數限制"
+                text "使用者選擇"
+                spinbutton [ref=148]
+                  text "95"
+                text "選項字數限制"
+                text "使用者選擇"
+                spinbutton [ref=149]
+                  text "22"
+                text "圖像種類:"
+                text "折線圖"
+                text "學習內容"
+                text "隨機抽取"
+                textbox [ref=150]
+                  text "搜尋學習內容..."
+                text "Kc-Ⅳ-4"
+                text "："
+                text "電流會產生磁場，其方向分布可以由安培右手…"
+                button [ref=151]
+                  text "×"
+                text "Id-Ⅳ-3"
+                text "："
+                text "地球的四季主要是因為地球自轉軸傾斜於地球…"
+                button [ref=152]
+                  text "×"
+                button [ref=153]
+                  text "重抽"
+                text "學習表現"
+                text "隨機抽取"
+                textbox [ref=154]
+                  text "搜尋學習表現..."
+                text "ah-Ⅳ-1"
+                text "："
+                text "對於有關科學發現的報導，甚至權威的解釋（…"
+                button [ref=155]
+                  text "×"
+                text "ai-Ⅳ-1"
+                text "："
+                text "動手實作解決問題或驗證自己想法，而獲得成…"
+                button [ref=156]
+                  text "×"
+                button [ref=157]
+                  text "重抽"
+              list_item
+                heading
+                  text "第 2 小題"
+                text "Reporting Scale"
+                text ":"
+                combobox "Reporting Scale" [ref=158]
+                  text "At Level 1b, in everyday personal, or local contexts, students can recognise a claim or explanation of a macroscopic phenomenon communicated in simple scientific language by recalling everyday scienti..."
+                text "隨機抽取"
+                button [ref=159]
+                  text "編輯"
+                button [ref=160]
+                  text "重抽"
+                text "題型"
+                text "隨機抽取"
+                combobox [ref=161]
+                  text "Constructed response"
+                button [ref=162]
+                  text "重抽"
+                text "出題指示"
+                text "使用者選擇"
+                textbox [ref=163]
+                  text "請指出證據支持的結論，並說明理由。"
+                text "題目內容類型"
+                text "沿用文本設定"
+                combobox [ref=164]
+                  text "（沿用文本設定）"
+                text "圖片生成模式"
+                text "沿用文本設定"
+                combobox [ref=165]
+                  text "（沿用文本設定）"
+                text "題目字數限制"
+                text "使用者選擇"
+                spinbutton [ref=166]
+                  text "120"
+                text "選項字數限制"
+                text "不限"
+                spinbutton [ref=167]
+                  text "不限"
+                text "學習內容"
+                text "隨機抽取"
+                textbox [ref=168]
+                  text "搜尋學習內容..."
+                text "Kc-Ⅳ-4"
+                text "："
+                text "電流會產生磁場，其方向分布可以由安培右手…"
+                button [ref=169]
+                  text "×"
+                button [ref=170]
+                  text "重抽"
+                text "學習表現"
+                text "隨機抽取"
+                textbox [ref=171]
+                  text "搜尋學習表現..."
+                text "ai-Ⅳ-1"
+                text "："
+                text "動手實作解決問題或驗證自己想法，而獲得成…"
+                button [ref=172]
+                  text "×"
+                text "ah-Ⅳ-1"
+                text "："
+                text "對於有關科學發現的報導，甚至權威的解釋（…"
+                button [ref=173]
+                  text "×"
+                button [ref=174]
+                  text "重抽"
+              list_item
+                heading
+                  text "第 3 小題"
+                text "Reporting Scale"
+                text ":"
+                combobox "Reporting Scale" [ref=175]
+                  text "At Level 1b, in everyday personal, or local contexts, students can recognise a claim or explanation of a macroscopic phenomenon communicated in simple scientific language by recalling everyday scienti..."
+                text "隨機抽取"
+                button [ref=176]
+                  text "編輯"
+                button [ref=177]
+                  text "重抽"
+                text "題型"
+                text "隨機抽取"
+                combobox [ref=178]
+                  text "Constructed response"
+                button [ref=179]
+                  text "重抽"
+                text "出題指示"
+                text "隨機抽取"
+                textbox [ref=180]
+                  text "例如：請聚焦在資料判讀與因果推論"
+                text "題目內容類型"
+                text "沿用文本設定"
+                combobox [ref=181]
+                  text "（沿用文本設定）"
+                text "圖片生成模式"
+                text "沿用文本設定"
+                combobox [ref=182]
+                  text "（沿用文本設定）"
+                text "題目字數限制"
+                text "不限"
+                spinbutton [ref=183]
+                  text "不限"
+                text "選項字數限制"
+                text "不限"
+                spinbutton [ref=184]
+                  text "不限"
+                text "學習內容"
+                text "隨機抽取"
+                textbox [ref=185]
+                  text "搜尋學習內容..."
+                text "Id-Ⅳ-3"
+                text "："
+                text "地球的四季主要是因為地球自轉軸傾斜於地球…"
+                button [ref=186]
+                  text "×"
+                text "Kc-Ⅳ-4"
+                text "："
+                text "電流會產生磁場，其方向分布可以由安培右手…"
+                button [ref=187]
+                  text "×"
+                button [ref=188]
+                  text "重抽"
+                text "學習表現"
+                text "隨機抽取"
+                textbox [ref=189]
+                  text "搜尋學習表現..."
+                text "ah-Ⅳ-1"
+                text "："
+                text "對於有關科學發現的報導，甚至權威的解釋（…"
+                button [ref=190]
+                  text "×"
+                text "ai-Ⅳ-1"
+                text "："
+                text "動手實作解決問題或驗證自己想法，而獲得成…"
+                button [ref=191]
+                  text "×"
+                button [ref=192]
+                  text "重抽"
+      button [ref=193]
+        text "確定發送"
+      button [ref=194]
+        text "返回修改"
+    container "生成進度列"
+      text "尚未生成"
+      container
+        button [ref=47]
+          text "表單"
+        button [ref=48]
+          text "進度"
+        button [ref=49]
+          text "結果"
+        button [ref=50]
+          text "回饋"

@@ -1,0 +1,395 @@
+{
+  "startedAt": "2026-09-14T08:55:19.183Z",
+  "requests": [
+    {
+      "at": "2026-09-14T08:56:03.212Z",
+      "method": "POST",
+      "counts": {
+        "started": 1,
+        "stage": 29,
+        "pipeline": 4,
+        "trail": 23,
+        "llm_request": 14,
+        "llm_content": 7330,
+        "llm_response": 13,
+        "plan": 2,
+        "question_update": 7,
+        "llm_thinking": 5975,
+        "result": 1
+      },
+      "events": [
+        {
+          "at": "2026-09-14T08:56:48.551Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "planner",
+          "stage": "batch_briefs"
+        },
+        {
+          "at": "2026-09-14T08:57:10.612Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "planner",
+          "stage": "batch_briefs"
+        },
+        {
+          "at": "2026-09-14T08:57:10.683Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "generator",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:10.683Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "generator",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:20.933Z",
+          "event": "llm_request",
+          "agent": "generator",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:57:20.955Z",
+          "event": "llm_request",
+          "agent": "generator",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:57:37.220Z",
+          "event": "llm_response",
+          "agent": "generator",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:57:37.255Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "generator",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:37.309Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "sub_generator#1",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:37.357Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "sub_generator#2",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:37.590Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "sub_generator#3",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:38.650Z",
+          "event": "llm_response",
+          "agent": "generator",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:57:38.692Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "generator",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:38.758Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "sub_generator#3",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:38.771Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "sub_generator#2",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:38.790Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "sub_generator#1",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:57:47.337Z",
+          "event": "llm_request",
+          "agent": "sub_generator#1",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:57:47.375Z",
+          "event": "llm_request",
+          "agent": "sub_generator#2",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:57:47.610Z",
+          "event": "llm_request",
+          "agent": "sub_generator#3",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:57:48.781Z",
+          "event": "llm_request",
+          "agent": "sub_generator#3",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:57:49.002Z",
+          "event": "llm_request",
+          "agent": "sub_generator#2",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:57:49.011Z",
+          "event": "llm_request",
+          "agent": "sub_generator#1",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:58:08.769Z",
+          "event": "llm_response",
+          "agent": "sub_generator#2",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:58:08.807Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "sub_generator#2",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:58:11.695Z",
+          "event": "llm_response",
+          "agent": "sub_generator#1",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:58:11.717Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "sub_generator#1",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:58:13.753Z",
+          "event": "llm_response",
+          "agent": "sub_generator#3",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:58:13.773Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "sub_generator#3",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:58:15.641Z",
+          "event": "llm_response",
+          "agent": "sub_generator#3",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:58:15.662Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "sub_generator#3",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:58:15.666Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "verifier",
+          "stage": "verify"
+        },
+        {
+          "at": "2026-09-14T08:58:21.483Z",
+          "event": "llm_response",
+          "agent": "sub_generator#2",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:58:21.492Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "sub_generator#2",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:58:21.811Z",
+          "event": "llm_response",
+          "agent": "sub_generator#1",
+          "purpose": "generate"
+        },
+        {
+          "at": "2026-09-14T08:58:21.832Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "sub_generator#1",
+          "stage": "llm_generate"
+        },
+        {
+          "at": "2026-09-14T08:58:21.835Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "verifier",
+          "stage": "verify"
+        },
+        {
+          "at": "2026-09-14T08:58:25.684Z",
+          "event": "llm_request",
+          "agent": "verifier",
+          "purpose": "verify"
+        },
+        {
+          "at": "2026-09-14T08:58:31.846Z",
+          "event": "llm_request",
+          "agent": "verifier",
+          "purpose": "verify"
+        },
+        {
+          "at": "2026-09-14T09:01:21.788Z",
+          "event": "llm_response",
+          "agent": "verifier",
+          "purpose": "verify"
+        },
+        {
+          "at": "2026-09-14T09:01:21.806Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "verifier",
+          "stage": "verify"
+        },
+        {
+          "at": "2026-09-14T09:01:21.806Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "corrector",
+          "stage": "correct"
+        },
+        {
+          "at": "2026-09-14T09:01:31.825Z",
+          "event": "llm_request",
+          "agent": "corrector",
+          "purpose": "correct"
+        },
+        {
+          "at": "2026-09-14T09:02:41.167Z",
+          "event": "llm_response",
+          "agent": "corrector",
+          "purpose": "correct"
+        },
+        {
+          "at": "2026-09-14T09:02:41.257Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "corrector",
+          "stage": "correct"
+        },
+        {
+          "at": "2026-09-14T09:02:41.258Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "verifier",
+          "stage": "verify"
+        },
+        {
+          "at": "2026-09-14T09:02:51.287Z",
+          "event": "llm_request",
+          "agent": "verifier",
+          "purpose": "verify"
+        },
+        {
+          "at": "2026-09-14T09:03:41.681Z",
+          "event": "llm_response",
+          "agent": "verifier",
+          "purpose": "verify"
+        },
+        {
+          "at": "2026-09-14T09:03:41.705Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "verifier",
+          "stage": "verify"
+        },
+        {
+          "at": "2026-09-14T09:03:41.727Z",
+          "event": "result"
+        },
+        {
+          "at": "2026-09-14T09:07:20.313Z",
+          "event": "llm_response",
+          "agent": "verifier",
+          "purpose": "verify"
+        },
+        {
+          "at": "2026-09-14T09:07:20.337Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "verifier",
+          "stage": "verify"
+        },
+        {
+          "at": "2026-09-14T09:07:20.337Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "corrector",
+          "stage": "correct"
+        },
+        {
+          "at": "2026-09-14T09:07:30.351Z",
+          "event": "llm_request",
+          "agent": "corrector",
+          "purpose": "correct"
+        },
+        {
+          "at": "2026-09-14T09:08:45.734Z",
+          "event": "llm_response",
+          "agent": "corrector",
+          "purpose": "correct"
+        },
+        {
+          "at": "2026-09-14T09:08:45.809Z",
+          "event": "stage",
+          "status": "end",
+          "agent": "corrector",
+          "stage": "correct"
+        },
+        {
+          "at": "2026-09-14T09:08:45.809Z",
+          "event": "stage",
+          "status": "start",
+          "agent": "verifier",
+          "stage": "verify"
+        },
+        {
+          "at": "2026-09-14T09:08:55.822Z",
+          "event": "llm_request",
+          "agent": "verifier",
+          "purpose": "verify"
+        }
+      ],
+      "status": 200,
+      "captureError": "TypeError"
+    }
+  ]
+}

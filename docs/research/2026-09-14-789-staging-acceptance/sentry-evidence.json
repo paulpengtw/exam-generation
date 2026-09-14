@@ -1,0 +1,51 @@
+[
+  {
+    "id": "7730828215",
+    "short_id": "EXAM-GENERATION-API-STAGING-J",
+    "count": "5",
+    "first_seen": "2026-09-14T07:28:54.161392Z",
+    "last_seen": "2026-09-14T07:34:42.382427Z",
+    "events": [
+      {
+        "event_id": "4cf246eab32d46639ab8d3450fd7bb7c",
+        "created_at": "2026-09-14T07:34:42Z",
+        "message": "llm_exchanges insert failed: ",
+        "metadata": {},
+        "has_exception": false,
+        "has_request_body": false
+      },
+      {
+        "event_id": "598928547d63433e9bc4bf50602fe632",
+        "created_at": "2026-09-14T07:34:42Z",
+        "message": "llm_exchanges insert failed: ",
+        "metadata": {},
+        "has_exception": false,
+        "has_request_body": false
+      },
+      {
+        "event_id": "47c0b7152f34417f9e8ef6f24933f171",
+        "created_at": "2026-09-14T07:29:02Z",
+        "message": "llm_exchanges insert failed: ",
+        "metadata": {},
+        "has_exception": false,
+        "has_request_body": false
+      },
+      {
+        "event_id": "bcafd8827ad44c4496069fdfc3963c4b",
+        "created_at": "2026-09-14T07:29:01Z",
+        "message": "llm_exchanges insert failed: ",
+        "metadata": {},
+        "has_exception": false,
+        "has_request_body": false
+      },
+      {
+        "event_id": "35fbfc7309874ed981caebc48c92aca3",
+        "created_at": "2026-09-14T07:28:54Z",
+        "message": "llm_exchanges insert failed: ",
+        "metadata": {},
+        "has_exception": false,
+        "has_request_body": false
+      }
+    ]
+  }
+]

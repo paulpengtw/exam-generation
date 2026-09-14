@@ -1,0 +1,209 @@
+[
+  {
+    "project": "exam-generation-api-staging",
+    "event_id": "598928547d63433e9bc4bf50602fe632",
+    "issue_id": "7730828215",
+    "created_at": "2026-09-14T07:34:42.382000Z",
+    "release": null,
+    "entry_types": [
+      "message",
+      "breadcrumbs",
+      "request"
+    ],
+    "contains_instruction_marker": false,
+    "contains_test_topic": false,
+    "request_summaries": [
+      {
+        "method": "POST",
+        "path": "/api/generate",
+        "body_present": false,
+        "headers_count": 0,
+        "cookies_present": false,
+        "query_present": false
+      }
+    ],
+    "exception_types": [],
+    "app_frames": [],
+    "safe_message": "llm_exchanges insert failed: "
+  },
+  {
+    "project": "exam-generation-api-staging",
+    "event_id": "4cf246eab32d46639ab8d3450fd7bb7c",
+    "issue_id": "7730828215",
+    "created_at": "2026-09-14T07:34:42.493000Z",
+    "release": null,
+    "entry_types": [
+      "message",
+      "breadcrumbs",
+      "request"
+    ],
+    "contains_instruction_marker": false,
+    "contains_test_topic": false,
+    "request_summaries": [
+      {
+        "method": "POST",
+        "path": "/api/generate",
+        "body_present": false,
+        "headers_count": 0,
+        "cookies_present": false,
+        "query_present": false
+      }
+    ],
+    "exception_types": [],
+    "app_frames": [],
+    "safe_message": "llm_exchanges insert failed: "
+  },
+  {
+    "project": "exam-generation-api-staging",
+    "event_id": "47c0b7152f34417f9e8ef6f24933f171",
+    "issue_id": "7730828215",
+    "created_at": "2026-09-14T07:29:02.063000Z",
+    "release": null,
+    "entry_types": [
+      "message",
+      "breadcrumbs",
+      "request"
+    ],
+    "contains_instruction_marker": false,
+    "contains_test_topic": false,
+    "request_summaries": [
+      {
+        "method": "POST",
+        "path": "/api/generate",
+        "body_present": false,
+        "headers_count": 0,
+        "cookies_present": false,
+        "query_present": false
+      }
+    ],
+    "exception_types": [],
+    "app_frames": [],
+    "safe_message": "llm_exchanges insert failed: "
+  },
+  {
+    "project": "exam-generation-api-staging",
+    "event_id": "bcafd8827ad44c4496069fdfc3963c4b",
+    "issue_id": "7730828215",
+    "created_at": "2026-09-14T07:29:01.694000Z",
+    "release": null,
+    "entry_types": [
+      "message",
+      "breadcrumbs",
+      "request"
+    ],
+    "contains_instruction_marker": false,
+    "contains_test_topic": false,
+    "request_summaries": [
+      {
+        "method": "POST",
+        "path": "/api/generate",
+        "body_present": false,
+        "headers_count": 0,
+        "cookies_present": false,
+        "query_present": false
+      }
+    ],
+    "exception_types": [],
+    "app_frames": [],
+    "safe_message": "llm_exchanges insert failed: "
+  },
+  {
+    "project": "exam-generation-api-staging",
+    "event_id": "35fbfc7309874ed981caebc48c92aca3",
+    "issue_id": "7730828215",
+    "created_at": "2026-09-14T07:28:54.161000Z",
+    "release": null,
+    "entry_types": [
+      "message",
+      "breadcrumbs",
+      "request"
+    ],
+    "contains_instruction_marker": false,
+    "contains_test_topic": false,
+    "request_summaries": [
+      {
+        "method": "POST",
+        "path": "/api/generate",
+        "body_present": false,
+        "headers_count": 0,
+        "cookies_present": false,
+        "query_present": false
+      }
+    ],
+    "exception_types": [],
+    "app_frames": [],
+    "safe_message": "llm_exchanges insert failed: "
+  },
+  {
+    "project": "exam-generation-web-staging",
+    "event_id": "413d1075dd2d4719b2cf5fe8607097c0",
+    "issue_id": "7690729333",
+    "created_at": "2026-09-14T07:38:11.423000Z",
+    "release": "8941814b7973428a485d39c1a5d2b90fd52ddcad",
+    "entry_types": [
+      "exception",
+      "breadcrumbs",
+      "request",
+      "debugmeta"
+    ],
+    "contains_instruction_marker": false,
+    "contains_test_topic": false,
+    "request_summaries": [
+      {
+        "method": null,
+        "path": "/generate/math",
+        "body_present": false,
+        "headers_count": 1,
+        "cookies_present": false,
+        "query_present": false
+      }
+    ],
+    "exception_types": [
+      "Error"
+    ],
+    "app_frames": [
+      {
+        "filename": "../src/hooks/useGenerate.ts",
+        "function": "<object>.onopen",
+        "line": 612
+      }
+    ],
+    "safe_message": null
+  },
+  {
+    "project": "exam-generation-web-staging",
+    "event_id": "9e4b0979911e4bc19a5a3ab3eccf41ec",
+    "issue_id": "7690729333",
+    "created_at": "2026-09-14T07:34:43.973000Z",
+    "release": "8941814b7973428a485d39c1a5d2b90fd52ddcad",
+    "entry_types": [
+      "exception",
+      "breadcrumbs",
+      "request",
+      "debugmeta"
+    ],
+    "contains_instruction_marker": false,
+    "contains_test_topic": false,
+    "request_summaries": [
+      {
+        "method": null,
+        "path": "/generate/math",
+        "body_present": false,
+        "headers_count": 1,
+        "cookies_present": false,
+        "query_present": false
+      }
+    ],
+    "exception_types": [
+      "Error"
+    ],
+    "app_frames": [
+      {
+        "filename": "../src/hooks/useGenerate.ts",
+        "function": "<object>.onopen",
+        "line": 612
+      }
+    ],
+    "safe_message": null
+  }
+]

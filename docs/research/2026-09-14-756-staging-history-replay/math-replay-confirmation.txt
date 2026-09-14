@@ -1,0 +1,363 @@
+[p1 "【測試機】素養試題 AI Examgen" | space "#756 staging History parameter replay"(9): 2 managed, 0 untracked — p1* "【測試機】素養試題 AI Examgen", p2 "【測試機】素養試題 AI Examgen"]
+root
+  text "⚠ 此為測試環境，運作可能不穩定。"
+  container
+    container
+      button [ref=151]
+        text "←"
+      heading
+        text "數學題目產生器"
+      button [ref=152]
+        text "English"
+      button [ref=153]
+        text "中文"
+      button [ref=154]
+        text "紀錄"
+      text "[test account]"
+      button [ref=155]
+        text "登出"
+    container
+      heading
+        text "發送前確認設定"
+      paragraph
+        text "請確認以下設定。確認無誤後點選「確定發送」，或點選「返回」調整。"
+      region "共同設定"
+        heading
+          text "共同設定"
+        unordered_list
+          list_item
+            text "主題"
+          list_item
+            text "未填寫"
+          list_item
+            text "核心問題"
+          list_item
+            text "如何利用未知數列式與求解，在固定預算下計算園遊會攤位的最大進貨量與合理售價，使收支達到平衡？"
+          list_item
+            text "年級"
+          list_item
+            text "7"
+          list_item
+            text "難度"
+          list_item
+            text "easy"
+          list_item
+            text "科目"
+          list_item
+            text "未填寫"
+          list_item
+            text "題數"
+          list_item
+            text "2"
+          list_item
+            text "文本"
+          list_item
+            text "未填寫"
+          list_item
+            text "選項"
+          list_item
+            text "25"
+          list_item
+            text "文本字數限制"
+          list_item
+            text "200"
+          list_item
+            text "規劃模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "出題模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "驗證模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "修正模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "規劃 Effort"
+          list_item
+            text "medium"
+          list_item
+            text "出題 Effort"
+          list_item
+            text "medium"
+          list_item
+            text "驗證 Effort"
+          list_item
+            text "未填寫"
+          list_item
+            text "修正 Effort"
+          list_item
+            text "未填寫"
+          list_item
+            text "圖片產生方式"
+          list_item
+            text "html"
+          list_item
+            text "略過驗證"
+          list_item
+            text "否"
+      container
+        region "第1題"
+          heading
+            text "第1題"
+          unordered_list
+            list_item
+              text "小題數"
+            list_item
+              text "3"
+              text "使用者選擇"
+          unordered_list
+            list_item
+              text "種子"
+            list_item
+              text "742848790"
+              text "預抽"
+            list_item
+              text "題目風格"
+            list_item
+              text "text_only"
+              text "使用者選擇"
+            list_item
+              text "題目內容類型"
+            list_item
+              text "純文字"
+              text "使用者選擇"
+            list_item
+              text "情境"
+            list_item
+              text "個人, 數學文字情境, 職業"
+              text "隨機抽取"
+              button [ref=225]
+                text "編輯"
+              button [ref=226]
+                text "重抽"
+            list_item
+              text "題型種類"
+            list_item
+              text "題組題"
+              text "使用者選擇"
+            list_item
+              text "題型"
+            list_item
+              text "開放式建構反應題"
+              text "隨機抽取"
+              button [ref=227]
+                text "編輯"
+              button [ref=228]
+                text "重抽"
+            list_item
+              text "核心素養"
+            list_item
+              text "數-J-C2、數-J-A3"
+              text "隨機抽取"
+              button [ref=229]
+                text "編輯"
+              button [ref=230]
+                text "重抽"
+            list_item
+              text "數學思考"
+            list_item
+              text "形成、詮釋評估"
+              text "隨機抽取"
+              button [ref=231]
+                text "編輯"
+              button [ref=232]
+                text "重抽"
+            list_item
+              text "學習表現"
+            list_item
+              paragraph
+                text "未手動選擇 — 已隨機抽取 3 項（將實際送出）："
+              unordered_list
+                list_item
+                  text "a-IV-4"
+                  text "—"
+                  text "理解二元一次聯立方程式及其解的意義，並能以代入消去法與加減消去法求解和驗算，以及能運用到日常生活的情境解決問題。"
+                list_item
+                  text "f-IV-1"
+                  text "—"
+                  text "理解常數函數和一次函數的意義，能描繪常數函數和一次函數的圖形，並能運用到日常生活的情境解決問題。"
+                list_item
+                  text "g-IV-1"
+                  text "—"
+                  text "認識直角坐標的意義與構成要素，並能報讀與標示坐標點，以及計算兩個坐標點的距離。"
+              button [ref=233]
+                text "編輯"
+              button [ref=234]
+                text "重抽"
+            container
+              list_item
+                text "學習內容"
+              list_item
+                container
+                  paragraph
+                    text "未手動選擇 — 已隨機抽取 3 項（將實際送出）："
+                  unordered_list
+                    list_item
+                      text "G-7-1"
+                      text "—"
+                      text "平面直角坐標系：以平面直角坐標系、方位距離標定位置；平面直角坐標系及其相關術語（縱軸、橫軸、象限）。"
+                    list_item
+                      text "S-9-6"
+                      text "—"
+                      text "圓的幾何性質：圓心角、圓周角與所對應弧的度數三者之間的關係；圓內接四邊形對角互補；切線段等長。"
+                    list_item
+                      text "S-9-7"
+                      container
+                        text "—"
+                        text "點、直線與圓的關係：點與圓的位置關係（內部、圓上、外部）；直線與圓的位置關係（不相交、相切、交於兩點）；圓心與切點的連線垂直此切線（�..."
+                container
+                  button [ref=235]
+                    text "編輯"
+                  button [ref=236]
+                    text "重抽"
+        region "第2題"
+          heading
+            text "第2題"
+          unordered_list
+            list_item
+              text "小題數"
+            list_item
+              text "3"
+              text "使用者選擇"
+          unordered_list
+            container
+              list_item
+                text "種子"
+              list_item
+                text "742848791"
+                text "預抽"
+            container
+              list_item
+                text "題目風格"
+              list_item
+                text "text_only"
+                text "使用者選擇"
+            container
+              list_item
+                text "題目內容類型"
+              list_item
+                text "純文字"
+                text "使用者選擇"
+            container
+              list_item
+                text "情境"
+              list_item
+                text "科學, 建築與藝術, 數學文字情境"
+                text "隨機抽取"
+                container
+                  button [ref=237]
+                    text "編輯"
+                  button [ref=238]
+                    text "重抽"
+            container
+              list_item
+                text "題型種類"
+              list_item
+                text "題組題"
+                text "使用者選擇"
+            container
+              list_item
+                text "題型"
+              list_item
+                text "選擇題"
+                text "隨機抽取"
+                container
+                  button [ref=239]
+                    text "編輯"
+                  button [ref=240]
+                    text "重抽"
+            container
+              list_item
+                text "核心素養"
+              list_item
+                text "數-J-C2"
+                text "隨機抽取"
+                container
+                  button [ref=241]
+                    text "編輯"
+                  button [ref=242]
+                    text "重抽"
+            container
+              list_item
+                text "數學思考"
+              list_item
+                text "形成、詮釋評估"
+                text "隨機抽取"
+                container
+                  button [ref=243]
+                    text "編輯"
+                  button [ref=244]
+                    text "重抽"
+            container
+              list_item
+                text "學習表現"
+              list_item
+                container
+                  paragraph
+                    text "未手動選擇 — 已隨機抽取 2 項（將實際送出）："
+                  unordered_list
+                    list_item
+                      text "a-IV-2"
+                      container
+                        text "—"
+                        text "理解一元一次方程式及其解的意義，能以等量公理與移項法則求解和驗算，並能運用到日常生活的情境解決問題。"
+                    list_item
+                      text "s-IV-2"
+                      container
+                        text "—"
+                        text "理解角的各種性質、三角形與凸多邊形的內角和外角的意義、三角形的外角和、與凸多邊形的內角和，並能應用於解決幾何與日常生活的問題。"
+                container
+                  button [ref=245]
+                    text "編輯"
+                  button [ref=246]
+                    text "重抽"
+            container
+              list_item
+                text "學習內容"
+              list_item
+                container
+                  paragraph
+                    text "未手動選擇 — 已隨機抽取 3 項（將實際送出）："
+                  unordered_list
+                    list_item
+                      text "A-7-2"
+                      container
+                        text "—"
+                        text "一元一次方程式的意義：一元一次方程式及其解的意義；具體情境中列出一元一次方程式。"
+                    list_item
+                      text "A-8-5"
+                      container
+                        text "—"
+                        text "因式分解的方法：提公因式法；利用乘法公式與十字交乘法因式分解。"
+                    list_item
+                      text "F-8-1"
+                      container
+                        text "—"
+                        text "一次函數：透過對應關係認識函數（不要出現 f(x) 的抽象型式）、常數函數（y=c）、一次函數（y=ax+b）。"
+                container
+                  button [ref=247]
+                    text "編輯"
+                  button [ref=248]
+                    text "重抽"
+      container
+        button [ref=249]
+          text "確定發送"
+        button [ref=250]
+          text "返回修改"
+    container "生成進度列"
+      text "尚未生成"
+      container
+        button [ref=221]
+          text "表單"
+        button [ref=222]
+          text "進度"
+        button [ref=223]
+          text "結果"
+        button [ref=224]
+          text "回饋"

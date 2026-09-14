@@ -1,0 +1,29 @@
+{
+  "transport": "in-memory; no telemetry sent",
+  "events": [
+    {
+      "metadata": {
+        "generation_log_id": "b0bbfb42-05c9-44b8-87fd-36d92d8cbe92",
+        "agent": "sub_generator#1",
+        "exchange_order": 7,
+        "outcome": "pending",
+        "error_type": "TimeoutError",
+        "error_module": "builtins"
+      },
+      "has_exception": false,
+      "contains_synthetic_content": false
+    },
+    {
+      "metadata": {
+        "generation_log_id": "b0bbfb42-05c9-44b8-87fd-36d92d8cbe92",
+        "agent": "sub_generator#1",
+        "exchange_order": 7,
+        "outcome": "committed",
+        "error_type": null,
+        "error_module": null
+      },
+      "has_exception": false,
+      "contains_synthetic_content": false
+    }
+  ]
+}

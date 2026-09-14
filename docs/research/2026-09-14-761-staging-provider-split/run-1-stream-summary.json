@@ -1,0 +1,821 @@
+{
+  "streams": [
+    {
+      "path": "/api/generate",
+      "started_at": "2026-09-14T09:30:04.343Z",
+      "done": false,
+      "error": "TypeError: network error"
+    }
+  ],
+  "event_counts": {
+    "stage": 36,
+    "pipeline": 2,
+    "llm_request": 19,
+    "llm_content": 1082,
+    "llm_response": 18,
+    "plan": 1,
+    "trail": 25,
+    "question_update": 4,
+    "llm_thinking": 1121
+  },
+  "network_duration_ms": 900136.6999998093,
+  "health_after_disconnect": {
+    "status": 200,
+    "body": {
+      "status": "ok"
+    }
+  },
+  "events": [
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "planner",
+        "stage": "batch_briefs",
+        "status": "start",
+        "ts": 1789378204.3264601
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "planner",
+        "stage": "batch_briefs",
+        "status": "end",
+        "ts": 1789378231.0369434
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "generator",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789378231.0401843
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "generator",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "generator",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 70998,
+        "output": 2650,
+        "cache_read": 0,
+        "cache_creation": 0
+      },
+      "content_chars": 4733,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "generator",
+        "stage": "llm_generate",
+        "status": "end",
+        "ts": 1789378310.9078832
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#1",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789378310.934909,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#5",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789378310.9497366,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#4",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789378310.9657936,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#2",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789378310.982986,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#3",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789378310.9972308,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#6",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789378311.012585,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#1",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#5",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#4",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#2",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#6",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "sub_generator#2",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 68928,
+        "output": 981,
+        "cache_read": 65511,
+        "cache_creation": 0
+      },
+      "content_chars": 1625,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#2",
+        "stage": "llm_generate",
+        "status": "end",
+        "ts": 1789378359.8339663,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#7",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789378359.8505185,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "sub_generator#5",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 68877,
+        "output": 882,
+        "cache_read": 0,
+        "cache_creation": 0
+      },
+      "content_chars": 1412,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#5",
+        "stage": "llm_generate",
+        "status": "end",
+        "ts": 1789378361.1548274,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "sub_generator#6",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 69044,
+        "output": 978,
+        "cache_read": 0,
+        "cache_creation": 0
+      },
+      "content_chars": 1664,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#6",
+        "stage": "llm_generate",
+        "status": "end",
+        "ts": 1789378365.2178023,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "sub_generator#1",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 68962,
+        "output": 962,
+        "cache_read": 0,
+        "cache_creation": 0
+      },
+      "content_chars": 1521,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#1",
+        "stage": "llm_generate",
+        "status": "end",
+        "ts": 1789378367.715912,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#7",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 68957,
+        "output": 982,
+        "cache_read": 0,
+        "cache_creation": 0
+      },
+      "content_chars": 1506,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#3",
+        "stage": "llm_generate",
+        "status": "end",
+        "ts": 1789378375.807536,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "sub_generator#7",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 69154,
+        "output": 1210,
+        "cache_read": 65511,
+        "cache_creation": 0
+      },
+      "content_chars": 2055,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#7",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789378409.5425038,
+        "attempt": 2
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "sub_generator#4",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 69004,
+        "output": 1138,
+        "cache_read": 0,
+        "cache_creation": 0
+      },
+      "content_chars": 1995,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#4",
+        "stage": "llm_generate",
+        "status": "end",
+        "ts": 1789378416.438277,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#7",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "sub_generator#7",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 69154,
+        "output": 1195,
+        "cache_read": 65511,
+        "cache_creation": 0
+      },
+      "content_chars": 2003,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#7",
+        "stage": "llm_generate",
+        "status": "end",
+        "ts": 1789378467.3182063,
+        "attempt": 2
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "start",
+        "ts": 1789378467.3198543
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "params": {
+        "size": "1024x1024",
+        "n": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "usage": null,
+      "content_chars": 33,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "end",
+        "ts": 1789378534.7221875
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "generator",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "generator",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 1133,
+        "output": 204,
+        "cache_read": 0,
+        "cache_creation": 0
+      },
+      "content_chars": 336,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "start",
+        "ts": 1789378555.033004
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "params": {
+        "size": "1024x1024",
+        "n": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "usage": null,
+      "content_chars": 37,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "end",
+        "ts": 1789378595.3780386
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "start",
+        "ts": 1789378595.378151
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "params": {
+        "size": "1024x1024",
+        "n": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "usage": null,
+      "content_chars": 37,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "end",
+        "ts": 1789378653.379646
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "start",
+        "ts": 1789378653.3799536
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "params": {
+        "size": "1024x1024",
+        "n": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "usage": null,
+      "content_chars": 37,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "end",
+        "ts": 1789378705.4087884
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "start",
+        "ts": 1789378705.4089
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "params": {
+        "size": "1024x1024",
+        "n": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "usage": null,
+      "content_chars": 37,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "end",
+        "ts": 1789378755.6968057
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "start",
+        "ts": 1789378755.697146
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "params": {
+        "size": "1024x1024",
+        "n": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "usage": null,
+      "content_chars": 37,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "end",
+        "ts": 1789378803.291031
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "start",
+        "ts": 1789378803.2913537
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "params": {
+        "size": "1024x1024",
+        "n": 1
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model": "gpt-image-2",
+      "usage": null,
+      "content_chars": 37,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "image_agent",
+        "stage": "render_image",
+        "status": "end",
+        "ts": 1789378838.1560054
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "verifier",
+        "stage": "verify",
+        "status": "start",
+        "ts": 1789378838.1673348
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "verifier",
+      "purpose": "verify",
+      "model": "claude-opus-4-6",
+      "params": {
+        "thinking": {
+          "type": "adaptive"
+        },
+        "max_tokens": 16384,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "verifier",
+      "purpose": "verify",
+      "model": "claude-opus-4-6",
+      "usage": {
+        "input": 6209,
+        "output": 10490,
+        "cache_read": 0,
+        "cache_creation": 66174
+      },
+      "content_chars": 1905,
+      "reasoning_chars": 14742,
+      "verdict": {
+        "passed": false,
+        "answer_match": true,
+        "details": "【認知歷程檢核──硬性失敗】\n第7題：指定 bucket 為「Reasoning and Applying–Interpret information」，但題目要求學生『結合不同歷史分期（17世紀、19世紀晚清開港、日治時期等），解釋不同政權與人群的接觸如何形塑出安平多元的文化面貌』，核心認知需求是從多個歷史時期的事件中抽取共同因果關聯，並將歷史探究方法與公民行動整合提出方案，這屬於『Relate or Integrate』（從多個事件或資料中發現關聯、因果與相互影響，或跨單元整合概念）。題目並未設計一份特定的資料來源（統計表、趨勢圖等）供學生解讀，而是要求學生跨越多個歷史分期進行綜合論述，因此與「Interpret information」（運用概念解讀特定資料並形成結論）不符。\n\n【其他提醒（不影響 pass/fail）】\n1. 開放式題目 Q2 與 Q7 僅提供參考答案與分析，未附正式評分指引（0–N 分數級距說明與各級距學生作答實例），建議補充以確保評分一致性與公平性。\n2. 題組共提及多張附圖（Q1 日治廠房照片、Q3 美援海報、Q4 出口產值長條圖、Q5 集章手冊、Q6 船隻國籍占比圖），但僅提供一張港區分佈圖供審核；若實際施測時各題圖片齊備且內容與題幹描述一致，則題目邏輯與答案均成立。\n3. Q2 題幹提及「圖中的甲：晚清洋行遺址」與「乙：日治海關舊址」，但所提供的港區地圖上並未見甲、乙標示，建議確認 Q2 是否另有專屬圖片，或在地圖上加標甲、乙。\n4. Q4 選項(A)的誘答設計良好（茶葉產值最高但主要由北部出口，非安平），能有效鑑別學生是否僅看圖表而忽略地理概念。\n5. Q1 選項(C)與(D)的誘答力略有差異：(C)時期正確但目的錯誤，誘答力較強；(D)時期錯誤，誘答力較弱，整體尚可。\n\n[內容領域主題檢視（僅供參考）] 題組以「青年代言人」徵選為情境，要求學生規劃歷史踏查、提出文化資產保存倡議、呼籲公眾參與在地公共事務，與 ICCS 2022「Civic Participation」領域中的社區參與、決策、影響三面向高度吻合，素材與核心問題與宣告內容領域連結緊密。"
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "verifier",
+        "stage": "verify",
+        "status": "end",
+        "ts": 1789379079.3807878
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "corrector",
+        "stage": "correct",
+        "status": "start",
+        "ts": 1789379079.503782,
+        "retry": 1
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "corrector",
+      "purpose": "correct",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    }
+  ]
+}

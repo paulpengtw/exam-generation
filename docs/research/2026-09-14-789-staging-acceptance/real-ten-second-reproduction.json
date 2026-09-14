@@ -1,0 +1,48 @@
+[
+  {
+    "revision": "before",
+    "elapsed_seconds": 10.072,
+    "eventual_rows": 1,
+    "diagnostics": [
+      {
+        "message": "llm_exchanges insert failed: ",
+        "metadata": {},
+        "has_exception": false,
+        "contains_synthetic_content": false
+      }
+    ]
+  },
+  {
+    "revision": "after",
+    "elapsed_seconds": 10.036,
+    "eventual_rows": 1,
+    "diagnostics": [
+      {
+        "message": "llm_exchanges insert pending (TimeoutError)",
+        "metadata": {
+          "generation_log_id": "8cc637e9-d2f6-4110-b883-63ecb337c5a6",
+          "agent": "sub_generator#1",
+          "exchange_order": 7,
+          "outcome": "pending",
+          "error_type": "TimeoutError",
+          "error_module": "builtins"
+        },
+        "has_exception": false,
+        "contains_synthetic_content": false
+      },
+      {
+        "message": "llm_exchanges insert committed (None)",
+        "metadata": {
+          "generation_log_id": "8cc637e9-d2f6-4110-b883-63ecb337c5a6",
+          "agent": "sub_generator#1",
+          "exchange_order": 7,
+          "outcome": "committed",
+          "error_type": null,
+          "error_module": null
+        },
+        "has_exception": false,
+        "contains_synthetic_content": false
+      }
+    ]
+  }
+]

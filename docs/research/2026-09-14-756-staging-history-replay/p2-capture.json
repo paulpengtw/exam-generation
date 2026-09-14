@@ -1,0 +1,531 @@
+{
+  "startedAt": "2026-09-14T05:05:55.258Z",
+  "phase": "social_studies-original",
+  "requests": [
+    {
+      "phase": "social_studies-original",
+      "at": "2026-09-14T05:06:49.958Z",
+      "path": "/api/generate/resolve",
+      "method": "POST",
+      "query": [],
+      "request": {
+        "subject": "social_studies",
+        "grade": 7,
+        "style": [],
+        "content_type": "純文字",
+        "context": [],
+        "set_type": "題組題",
+        "q_type": [],
+        "count": 2,
+        "skip_verify": false,
+        "disable_reference_fewshot": false,
+        "image_generation_mode": "html",
+        "text_instruction": "請以簡短、可獨立閱讀的情境呈現，清楚區分資料與觀點。",
+        "sub_question_count": 3,
+        "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":90,\"option_word_limit\":20,\"content_type\":\"graphs/charts/tables\",\"image_generation_mode\":\"html\",\"figure_kind\":\"表格\",\"instruction\":\"請根據表格中的資料判讀，避免只靠常識作答。\"},{\"question_word_limit\":110,\"instruction\":\"請指出推論所依據的文本證據。\"},{}]",
+        "per_question_params": "[{},{}]",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "difficulty": "easy",
+        "coverage_mode": "balanced",
+        "core_question_callback": true,
+        "text_word_limit": 220,
+        "redraws": {}
+      },
+      "status": 200,
+      "response": {
+        "payload": {
+          "subject": "social_studies",
+          "grade": 7,
+          "style": [],
+          "content_type": "純文字",
+          "context": [],
+          "set_type": "題組題",
+          "q_type": [],
+          "count": 2,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "image_generation_mode": "html",
+          "text_instruction": "請以簡短、可獨立閱讀的情境呈現，清楚區分資料與觀點。",
+          "sub_question_count": 3,
+          "subquestion_configs": "[{\"question_type\":\"選擇題\",\"question_word_limit\":90,\"option_word_limit\":20,\"content_type\":\"graphs/charts/tables\",\"image_generation_mode\":\"html\",\"figure_kind\":\"表格\",\"instruction\":\"請根據表格中的資料判讀，避免只靠常識作答。\"},{\"question_word_limit\":110,\"instruction\":\"請指出推論所依據的文本證據。\"},{}]",
+          "per_question_params": [
+            {
+              "grade": 7,
+              "style": [],
+              "content_type": "純文字",
+              "context": [
+                "公共",
+                "職業",
+                "個人",
+                "教育"
+              ],
+              "set_type": "題組題",
+              "q_type": [],
+              "skip_verify": false,
+              "disable_reference_fewshot": false,
+              "image_generation_mode": "html",
+              "sub_question_count": 3,
+              "subquestion_configs": [
+                {
+                  "question_type": "選擇題",
+                  "question_word_limit": 90,
+                  "option_word_limit": 20,
+                  "content_type": "graphs/charts/tables",
+                  "image_generation_mode": "html",
+                  "figure_kind": "表格",
+                  "instruction": "請根據表格中的資料判讀，避免只靠常識作答。",
+                  "cognitive_process": "Reasoning and Applying–Interpret information",
+                  "learning_content": [
+                    "歷Eb-Ⅳ-1"
+                  ],
+                  "learning_performance": [
+                    "歷1c-Ⅳ-2"
+                  ]
+                },
+                {
+                  "question_word_limit": 110,
+                  "instruction": "請指出推論所依據的文本證據。",
+                  "question_type": "選擇題",
+                  "cognitive_process": "Reasoning and Applying–Relate or Integrate",
+                  "learning_content": [
+                    "歷Eb-Ⅳ-1"
+                  ],
+                  "learning_performance": [
+                    "歷1c-Ⅳ-2"
+                  ]
+                },
+                {
+                  "question_type": "選擇題",
+                  "cognitive_process": "Reasoning and Applying–Relate or Integrate",
+                  "learning_content": [
+                    "歷Eb-Ⅳ-1"
+                  ],
+                  "learning_performance": [
+                    "歷1c-Ⅳ-2"
+                  ]
+                }
+              ],
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "difficulty": "easy",
+              "coverage_mode": "balanced",
+              "text_word_limit": 220,
+              "seed": 1061985255,
+              "subject_filter": [
+                "歷史"
+              ],
+              "content_domain": "Civic Institutions and Systems",
+              "core_competency": [
+                "社-J-A3",
+                "社-J-C2",
+                "社-J-B3"
+              ],
+              "learning_content": [
+                "歷Eb-Ⅳ-1"
+              ],
+              "learning_performance": [
+                "歷1c-Ⅳ-2"
+              ]
+            },
+            {
+              "grade": 7,
+              "style": [],
+              "content_type": "純文字",
+              "context": [
+                "職業"
+              ],
+              "set_type": "題組題",
+              "q_type": [],
+              "skip_verify": false,
+              "disable_reference_fewshot": false,
+              "image_generation_mode": "html",
+              "sub_question_count": 3,
+              "subquestion_configs": [
+                {
+                  "question_type": "選擇題",
+                  "question_word_limit": 90,
+                  "option_word_limit": 20,
+                  "content_type": "graphs/charts/tables",
+                  "image_generation_mode": "html",
+                  "figure_kind": "表格",
+                  "instruction": "請根據表格中的資料判讀，避免只靠常識作答。",
+                  "cognitive_process": "Knowing–Defining and Describing",
+                  "learning_content": [
+                    "公Db-Ⅳ-1",
+                    "公Ab-Ⅳ-2"
+                  ],
+                  "learning_performance": [
+                    "社2b-Ⅳ-1"
+                  ]
+                },
+                {
+                  "question_word_limit": 110,
+                  "instruction": "請指出推論所依據的文本證據。",
+                  "question_type": "選擇題",
+                  "cognitive_process": "Reasoning and Applying–Relate or Integrate",
+                  "learning_content": [
+                    "公Ab-Ⅳ-2"
+                  ],
+                  "learning_performance": [
+                    "社2b-Ⅳ-1"
+                  ]
+                },
+                {
+                  "question_type": "選擇題",
+                  "cognitive_process": "Reasoning and Applying–Interpret information",
+                  "learning_content": [
+                    "公Ab-Ⅳ-2",
+                    "公Db-Ⅳ-1"
+                  ],
+                  "learning_performance": [
+                    "社2b-Ⅳ-1"
+                  ]
+                }
+              ],
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "difficulty": "easy",
+              "coverage_mode": "balanced",
+              "text_word_limit": 220,
+              "seed": 1061985256,
+              "subject_filter": [
+                "公民與社會"
+              ],
+              "content_domain": "Civic Principles",
+              "core_competency": [
+                "社-J-C2",
+                "社-J-A2"
+              ],
+              "learning_content": [
+                "公Db-Ⅳ-1",
+                "公Ab-Ⅳ-2"
+              ],
+              "learning_performance": [
+                "社2b-Ⅳ-1"
+              ]
+            }
+          ],
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "difficulty": "easy",
+          "coverage_mode": "balanced",
+          "core_question_callback": true,
+          "text_word_limit": 220,
+          "seed": 1061985255
+        },
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].情境",
+          "per_question_params[0].科目",
+          "per_question_params[0].內容領域",
+          "per_question_params[0].核心素養",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].subquestion_configs[0].認知歷程",
+          "per_question_params[0].subquestion_configs[1].question_type",
+          "per_question_params[0].subquestion_configs[1].認知歷程",
+          "per_question_params[0].subquestion_configs[2].question_type",
+          "per_question_params[0].subquestion_configs[2].認知歷程",
+          "per_question_params[0].subquestion_configs[0].learning_content",
+          "per_question_params[0].subquestion_configs[0].learning_performance",
+          "per_question_params[0].subquestion_configs[1].learning_content",
+          "per_question_params[0].subquestion_configs[1].learning_performance",
+          "per_question_params[0].subquestion_configs[2].learning_content",
+          "per_question_params[0].subquestion_configs[2].learning_performance",
+          "per_question_params[1].seed",
+          "per_question_params[1].情境",
+          "per_question_params[1].科目",
+          "per_question_params[1].內容領域",
+          "per_question_params[1].核心素養",
+          "per_question_params[1].學習內容",
+          "per_question_params[1].學習表現",
+          "per_question_params[1].subquestion_configs[0].認知歷程",
+          "per_question_params[1].subquestion_configs[1].question_type",
+          "per_question_params[1].subquestion_configs[1].認知歷程",
+          "per_question_params[1].subquestion_configs[2].question_type",
+          "per_question_params[1].subquestion_configs[2].認知歷程",
+          "per_question_params[1].subquestion_configs[0].learning_content",
+          "per_question_params[1].subquestion_configs[0].learning_performance",
+          "per_question_params[1].subquestion_configs[1].learning_content",
+          "per_question_params[1].subquestion_configs[1].learning_performance",
+          "per_question_params[1].subquestion_configs[2].learning_content",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        "cleared": []
+      }
+    },
+    {
+      "phase": "social_studies-original",
+      "at": "2026-09-14T05:08:03.141Z",
+      "path": "/api/generate",
+      "method": "GET",
+      "query": [
+        [
+          "subject",
+          "social_studies"
+        ],
+        [
+          "grade",
+          "7"
+        ],
+        [
+          "content_type",
+          "純文字"
+        ],
+        [
+          "set_type",
+          "題組題"
+        ],
+        [
+          "count",
+          "2"
+        ],
+        [
+          "skip_verify",
+          "false"
+        ],
+        [
+          "disable_reference_fewshot",
+          "false"
+        ],
+        [
+          "seed",
+          "1061985255"
+        ],
+        [
+          "image_generation_mode",
+          "html"
+        ],
+        [
+          "text_instruction",
+          "請以簡短、可獨立閱讀的情境呈現，清楚區分資料與觀點。"
+        ],
+        [
+          "sub_question_count",
+          "3"
+        ],
+        [
+          "text_word_limit",
+          "220"
+        ],
+        [
+          "subquestion_configs",
+          "[{\"question_type\":\"選擇題\",\"question_word_limit\":90,\"option_word_limit\":20,\"content_type\":\"graphs/charts/tables\",\"image_generation_mode\":\"html\",\"figure_kind\":\"表格\",\"instruction\":\"請根據表格中的資料判讀，避免只靠常識作答。\"},{\"question_word_limit\":110,\"instruction\":\"請指出推論所依據的文本證據。\"},{}]"
+        ],
+        [
+          "per_question_params",
+          "[{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"公共\",\"職業\",\"個人\",\"教育\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":90,\\\"option_word_limit\\\":20,\\\"content_type\\\":\\\"graphs/charts/tables\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"figure_kind\\\":\\\"表格\\\",\\\"instruction\\\":\\\"請根據表格中的資料判讀，避免只靠常識作答。\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"歷Eb-Ⅳ-1\\\"],\\\"learning_performance\\\":[\\\"歷1c-Ⅳ-2\\\"]},{\\\"question_word_limit\\\":110,\\\"instruction\\\":\\\"請指出推論所依據的文本證據。\\\",\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"歷Eb-Ⅳ-1\\\"],\\\"learning_performance\\\":[\\\"歷1c-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"歷Eb-Ⅳ-1\\\"],\\\"learning_performance\\\":[\\\"歷1c-Ⅳ-2\\\"]}]\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"difficulty\":\"easy\",\"coverage_mode\":\"balanced\",\"text_word_limit\":220,\"seed\":1061985255,\"subject_filter\":[\"歷史\"],\"content_domain\":\"Civic Institutions and Systems\",\"core_competency\":[\"社-J-A3\",\"社-J-C2\",\"社-J-B3\"],\"learning_content\":[\"歷Eb-Ⅳ-1\"],\"learning_performance\":[\"歷1c-Ⅳ-2\"]},{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"職業\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"question_word_limit\\\":90,\\\"option_word_limit\\\":20,\\\"content_type\\\":\\\"graphs/charts/tables\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"figure_kind\\\":\\\"表格\\\",\\\"instruction\\\":\\\"請根據表格中的資料判讀，避免只靠常識作答。\\\",\\\"cognitive_process\\\":\\\"Knowing–Defining and Describing\\\",\\\"learning_content\\\":[\\\"公Db-Ⅳ-1\\\",\\\"公Ab-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2b-Ⅳ-1\\\"]},{\\\"question_word_limit\\\":110,\\\"instruction\\\":\\\"請指出推論所依據的文本證據。\\\",\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"公Ab-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"社2b-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"公Ab-Ⅳ-2\\\",\\\"公Db-Ⅳ-1\\\"],\\\"learning_performance\\\":[\\\"社2b-Ⅳ-1\\\"]}]\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"difficulty\":\"easy\",\"coverage_mode\":\"balanced\",\"text_word_limit\":220,\"seed\":1061985256,\"subject_filter\":[\"公民與社會\"],\"content_domain\":\"Civic Principles\",\"core_competency\":[\"社-J-C2\",\"社-J-A2\"],\"learning_content\":[\"公Db-Ⅳ-1\",\"公Ab-Ⅳ-2\"],\"learning_performance\":[\"社2b-Ⅳ-1\"]}]"
+        ],
+        [
+          "drawn",
+          "seed"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].seed"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].情境"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].科目"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].內容領域"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].核心素養"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].學習內容"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].學習表現"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[0].認知歷程"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[1].question_type"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[1].認知歷程"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[2].question_type"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[2].認知歷程"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[0].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[0].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[1].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[1].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[2].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[2].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].seed"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].情境"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].科目"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].內容領域"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].核心素養"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].學習內容"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].學習表現"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[0].認知歷程"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[1].question_type"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[1].認知歷程"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[2].question_type"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[2].認知歷程"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[0].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[0].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[1].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[1].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[2].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        [
+          "difficulty",
+          "easy"
+        ],
+        [
+          "effort_plan",
+          "medium"
+        ],
+        [
+          "effort_execute",
+          "medium"
+        ],
+        [
+          "coverage_mode",
+          "balanced"
+        ],
+        [
+          "core_question_callback",
+          "true"
+        ]
+      ],
+      "status": 414,
+      "streamEvents": [],
+      "streamEndedAt": "2026-09-14T05:08:03.332Z"
+    },
+    {
+      "phase": "social_studies-original",
+      "at": "2026-09-14T05:13:21.137Z",
+      "path": "/api/history",
+      "method": "GET",
+      "query": [
+        [
+          "limit",
+          "20"
+        ],
+        [
+          "offset",
+          "0"
+        ]
+      ],
+      "status": 200,
+      "response": {
+        "total": 40,
+        "items": [
+          {
+            "id": "5a5ab383-62f8-4457-80ba-cf4783324280",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T05:12:31.620364+00:00"
+          },
+          {
+            "id": "75f85dcc-a549-4a8a-b32f-10c2c9f1e3c7",
+            "subject": "math",
+            "question_id": "",
+            "status": "aborted",
+            "created_at": "2026-09-14T05:06:32.162940+00:00"
+          }
+        ]
+      }
+    }
+  ]
+}

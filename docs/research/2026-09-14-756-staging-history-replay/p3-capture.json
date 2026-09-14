@@ -1,0 +1,452 @@
+{
+  "startedAt": "2026-09-14T05:08:55.677Z",
+  "phase": "natural_sciences-original",
+  "requests": [
+    {
+      "phase": "natural_sciences-original",
+      "at": "2026-09-14T05:10:29.669Z",
+      "path": "/api/generate/resolve",
+      "method": "POST",
+      "query": [],
+      "request": {
+        "subject": "natural_sciences",
+        "grade": 7,
+        "style": [],
+        "content_type": "純文字",
+        "context": [
+          "Personal"
+        ],
+        "set_type": "題組題",
+        "q_type": [],
+        "count": 2,
+        "skip_verify": false,
+        "disable_reference_fewshot": false,
+        "image_generation_mode": "html",
+        "text_instruction": "請明確呈現觀察資料與科學解釋的差異，並使用簡短文本。",
+        "sub_context": "Maintenance of health",
+        "sub_question_count": 3,
+        "subquestion_configs": "[{\"question_type\":\"Simple multiple-choice\",\"reporting_scale\":\"2\",\"question_word_limit\":95,\"option_word_limit\":22,\"content_type\":\"graphs/charts/tables\",\"image_generation_mode\":\"html\",\"figure_kind\":\"折線圖\",\"instruction\":\"請根據圖中趨勢比較觀察結果，勿要求學生猜測未提供的數據。\"},{\"question_word_limit\":120,\"instruction\":\"請指出證據支持的結論，並說明理由。\"},{}]",
+        "per_question_params": "[{},{}]",
+        "effort_plan": "medium",
+        "effort_execute": "medium",
+        "core_question_callback": true,
+        "text_word_limit": 240,
+        "redraws": {}
+      },
+      "status": 200,
+      "response": {
+        "payload": {
+          "subject": "natural_sciences",
+          "grade": 7,
+          "style": [],
+          "content_type": "純文字",
+          "context": [
+            "Personal"
+          ],
+          "set_type": "題組題",
+          "q_type": [],
+          "count": 2,
+          "skip_verify": false,
+          "disable_reference_fewshot": false,
+          "image_generation_mode": "html",
+          "text_instruction": "請明確呈現觀察資料與科學解釋的差異，並使用簡短文本。",
+          "sub_context": "Maintenance of health",
+          "sub_question_count": 3,
+          "subquestion_configs": "[{\"question_type\":\"Simple multiple-choice\",\"reporting_scale\":\"2\",\"question_word_limit\":95,\"option_word_limit\":22,\"content_type\":\"graphs/charts/tables\",\"image_generation_mode\":\"html\",\"figure_kind\":\"折線圖\",\"instruction\":\"請根據圖中趨勢比較觀察結果，勿要求學生猜測未提供的數據。\"},{\"question_word_limit\":120,\"instruction\":\"請指出證據支持的結論，並說明理由。\"},{}]",
+          "per_question_params": [
+            {
+              "grade": 7,
+              "style": [],
+              "content_type": "純文字",
+              "context": [
+                "Personal"
+              ],
+              "set_type": "題組題",
+              "q_type": [],
+              "skip_verify": false,
+              "disable_reference_fewshot": false,
+              "image_generation_mode": "html",
+              "sub_context": "Maintenance of health",
+              "sub_question_count": 3,
+              "subquestion_configs": [
+                {
+                  "question_type": "Simple multiple-choice",
+                  "reporting_scale": "2",
+                  "question_word_limit": 95,
+                  "option_word_limit": 22,
+                  "content_type": "graphs/charts/tables",
+                  "image_generation_mode": "html",
+                  "figure_kind": "折線圖",
+                  "instruction": "請根據圖中趨勢比較觀察結果，勿要求學生猜測未提供的數據。",
+                  "learning_content": [
+                    "Gc-Ⅳ-2",
+                    "Na-Ⅳ-1",
+                    "Ka-Ⅳ-5"
+                  ],
+                  "learning_performance": [
+                    "an-Ⅳ-3"
+                  ]
+                },
+                {
+                  "question_word_limit": 120,
+                  "instruction": "請指出證據支持的結論，並說明理由。",
+                  "question_type": "Complex multiple-choice",
+                  "reporting_scale": "4",
+                  "learning_content": [
+                    "Ka-Ⅳ-5",
+                    "Gc-Ⅳ-2"
+                  ],
+                  "learning_performance": [
+                    "an-Ⅳ-3"
+                  ]
+                },
+                {
+                  "question_type": "Complex multiple-choice",
+                  "reporting_scale": "3",
+                  "learning_content": [
+                    "Gc-Ⅳ-2"
+                  ],
+                  "learning_performance": [
+                    "an-Ⅳ-3"
+                  ]
+                }
+              ],
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "text_word_limit": 240,
+              "seed": 1102086858,
+              "science_competency": [
+                "環境能力一：解釋人類與地球系統的相互作用對環境的影響",
+                "能力一：以科學的角度解釋現象"
+              ],
+              "learning_content": [
+                "Gc-Ⅳ-2",
+                "Na-Ⅳ-1",
+                "Ka-Ⅳ-5"
+              ],
+              "learning_performance": [
+                "an-Ⅳ-3"
+              ]
+            },
+            {
+              "grade": 7,
+              "style": [],
+              "content_type": "純文字",
+              "context": [
+                "Personal"
+              ],
+              "set_type": "題組題",
+              "q_type": [],
+              "skip_verify": false,
+              "disable_reference_fewshot": false,
+              "image_generation_mode": "html",
+              "sub_context": "Maintenance of health",
+              "sub_question_count": 3,
+              "subquestion_configs": [
+                {
+                  "question_type": "Simple multiple-choice",
+                  "reporting_scale": "2",
+                  "question_word_limit": 95,
+                  "option_word_limit": 22,
+                  "content_type": "graphs/charts/tables",
+                  "image_generation_mode": "html",
+                  "figure_kind": "折線圖",
+                  "instruction": "請根據圖中趨勢比較觀察結果，勿要求學生猜測未提供的數據。",
+                  "learning_content": [
+                    "Kc-Ⅳ-4",
+                    "Id-Ⅳ-3"
+                  ],
+                  "learning_performance": [
+                    "ah-Ⅳ-1",
+                    "ai-Ⅳ-1"
+                  ]
+                },
+                {
+                  "question_word_limit": 120,
+                  "instruction": "請指出證據支持的結論，並說明理由。",
+                  "question_type": "Constructed response",
+                  "reporting_scale": "1b",
+                  "learning_content": [
+                    "Kc-Ⅳ-4"
+                  ],
+                  "learning_performance": [
+                    "ai-Ⅳ-1",
+                    "ah-Ⅳ-1"
+                  ]
+                },
+                {
+                  "question_type": "Constructed response",
+                  "reporting_scale": "1b",
+                  "learning_content": [
+                    "Id-Ⅳ-3",
+                    "Kc-Ⅳ-4"
+                  ],
+                  "learning_performance": [
+                    "ah-Ⅳ-1",
+                    "ai-Ⅳ-1"
+                  ]
+                }
+              ],
+              "effort_plan": "medium",
+              "effort_execute": "medium",
+              "text_word_limit": 240,
+              "seed": 1102086859,
+              "science_competency": [
+                "環境能力三：抱持希望並尊重多元觀點以回應社會生態危機",
+                "能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據"
+              ],
+              "learning_content": [
+                "Kc-Ⅳ-4",
+                "Id-Ⅳ-3"
+              ],
+              "learning_performance": [
+                "ah-Ⅳ-1",
+                "ai-Ⅳ-1"
+              ]
+            }
+          ],
+          "effort_plan": "medium",
+          "effort_execute": "medium",
+          "core_question_callback": true,
+          "text_word_limit": 240,
+          "seed": 1102086858
+        },
+        "drawn": [
+          "seed",
+          "per_question_params[0].seed",
+          "per_question_params[0].科學能力",
+          "per_question_params[0].學習表現",
+          "per_question_params[0].學習內容",
+          "per_question_params[0].subquestion_configs[1].question_type",
+          "per_question_params[0].subquestion_configs[1].reporting_scale",
+          "per_question_params[0].subquestion_configs[2].question_type",
+          "per_question_params[0].subquestion_configs[2].reporting_scale",
+          "per_question_params[0].subquestion_configs[0].learning_content",
+          "per_question_params[0].subquestion_configs[0].learning_performance",
+          "per_question_params[0].subquestion_configs[1].learning_content",
+          "per_question_params[0].subquestion_configs[1].learning_performance",
+          "per_question_params[0].subquestion_configs[2].learning_content",
+          "per_question_params[0].subquestion_configs[2].learning_performance",
+          "per_question_params[1].seed",
+          "per_question_params[1].科學能力",
+          "per_question_params[1].學習表現",
+          "per_question_params[1].學習內容",
+          "per_question_params[1].subquestion_configs[1].question_type",
+          "per_question_params[1].subquestion_configs[1].reporting_scale",
+          "per_question_params[1].subquestion_configs[2].question_type",
+          "per_question_params[1].subquestion_configs[2].reporting_scale",
+          "per_question_params[1].subquestion_configs[0].learning_content",
+          "per_question_params[1].subquestion_configs[0].learning_performance",
+          "per_question_params[1].subquestion_configs[1].learning_content",
+          "per_question_params[1].subquestion_configs[1].learning_performance",
+          "per_question_params[1].subquestion_configs[2].learning_content",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        "cleared": []
+      }
+    },
+    {
+      "phase": "natural_sciences-original",
+      "at": "2026-09-14T05:11:05.566Z",
+      "path": "/api/generate",
+      "method": "GET",
+      "query": [
+        [
+          "subject",
+          "natural_sciences"
+        ],
+        [
+          "grade",
+          "7"
+        ],
+        [
+          "content_type",
+          "純文字"
+        ],
+        [
+          "set_type",
+          "題組題"
+        ],
+        [
+          "count",
+          "2"
+        ],
+        [
+          "skip_verify",
+          "false"
+        ],
+        [
+          "disable_reference_fewshot",
+          "false"
+        ],
+        [
+          "seed",
+          "1102086858"
+        ],
+        [
+          "image_generation_mode",
+          "html"
+        ],
+        [
+          "context",
+          "Personal"
+        ],
+        [
+          "text_instruction",
+          "請明確呈現觀察資料與科學解釋的差異，並使用簡短文本。"
+        ],
+        [
+          "sub_context",
+          "Maintenance of health"
+        ],
+        [
+          "sub_question_count",
+          "3"
+        ],
+        [
+          "text_word_limit",
+          "240"
+        ],
+        [
+          "subquestion_configs",
+          "[{\"question_type\":\"Simple multiple-choice\",\"reporting_scale\":\"2\",\"question_word_limit\":95,\"option_word_limit\":22,\"content_type\":\"graphs/charts/tables\",\"image_generation_mode\":\"html\",\"figure_kind\":\"折線圖\",\"instruction\":\"請根據圖中趨勢比較觀察結果，勿要求學生猜測未提供的數據。\"},{\"question_word_limit\":120,\"instruction\":\"請指出證據支持的結論，並說明理由。\"},{}]"
+        ],
+        [
+          "per_question_params",
+          "[{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"Personal\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"sub_context\":\"Maintenance of health\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"reporting_scale\\\":\\\"2\\\",\\\"question_word_limit\\\":95,\\\"option_word_limit\\\":22,\\\"content_type\\\":\\\"graphs/charts/tables\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"figure_kind\\\":\\\"折線圖\\\",\\\"instruction\\\":\\\"請根據圖中趨勢比較觀察結果，勿要求學生猜測未提供的數據。\\\",\\\"learning_content\\\":[\\\"Gc-Ⅳ-2\\\",\\\"Na-Ⅳ-1\\\",\\\"Ka-Ⅳ-5\\\"],\\\"learning_performance\\\":[\\\"an-Ⅳ-3\\\"]},{\\\"question_word_limit\\\":120,\\\"instruction\\\":\\\"請指出證據支持的結論，並說明理由。\\\",\\\"question_type\\\":\\\"Complex multiple-choice\\\",\\\"reporting_scale\\\":\\\"4\\\",\\\"learning_content\\\":[\\\"Ka-Ⅳ-5\\\",\\\"Gc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"an-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"Complex multiple-choice\\\",\\\"reporting_scale\\\":\\\"3\\\",\\\"learning_content\\\":[\\\"Gc-Ⅳ-2\\\"],\\\"learning_performance\\\":[\\\"an-Ⅳ-3\\\"]}]\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"text_word_limit\":240,\"seed\":1102086858,\"science_competency\":[\"環境能力一：解釋人類與地球系統的相互作用對環境的影響\",\"能力一：以科學的角度解釋現象\"],\"learning_content\":[\"Gc-Ⅳ-2\",\"Na-Ⅳ-1\",\"Ka-Ⅳ-5\"],\"learning_performance\":[\"an-Ⅳ-3\"]},{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"Personal\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"html\",\"sub_context\":\"Maintenance of health\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"Simple multiple-choice\\\",\\\"reporting_scale\\\":\\\"2\\\",\\\"question_word_limit\\\":95,\\\"option_word_limit\\\":22,\\\"content_type\\\":\\\"graphs/charts/tables\\\",\\\"image_generation_mode\\\":\\\"html\\\",\\\"figure_kind\\\":\\\"折線圖\\\",\\\"instruction\\\":\\\"請根據圖中趨勢比較觀察結果，勿要求學生猜測未提供的數據。\\\",\\\"learning_content\\\":[\\\"Kc-Ⅳ-4\\\",\\\"Id-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"ah-Ⅳ-1\\\",\\\"ai-Ⅳ-1\\\"]},{\\\"question_word_limit\\\":120,\\\"instruction\\\":\\\"請指出證據支持的結論，並說明理由。\\\",\\\"question_type\\\":\\\"Constructed response\\\",\\\"reporting_scale\\\":\\\"1b\\\",\\\"learning_content\\\":[\\\"Kc-Ⅳ-4\\\"],\\\"learning_performance\\\":[\\\"ai-Ⅳ-1\\\",\\\"ah-Ⅳ-1\\\"]},{\\\"question_type\\\":\\\"Constructed response\\\",\\\"reporting_scale\\\":\\\"1b\\\",\\\"learning_content\\\":[\\\"Id-Ⅳ-3\\\",\\\"Kc-Ⅳ-4\\\"],\\\"learning_performance\\\":[\\\"ah-Ⅳ-1\\\",\\\"ai-Ⅳ-1\\\"]}]\",\"effort_plan\":\"medium\",\"effort_execute\":\"medium\",\"text_word_limit\":240,\"seed\":1102086859,\"science_competency\":[\"環境能力三：抱持希望並尊重多元觀點以回應社會生態危機\",\"能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據\"],\"learning_content\":[\"Kc-Ⅳ-4\",\"Id-Ⅳ-3\"],\"learning_performance\":[\"ah-Ⅳ-1\",\"ai-Ⅳ-1\"]}]"
+        ],
+        [
+          "drawn",
+          "seed"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].seed"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].科學能力"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].學習表現"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].學習內容"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[1].question_type"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[1].reporting_scale"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[2].question_type"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[2].reporting_scale"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[0].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[0].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[1].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[1].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[2].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[0].subquestion_configs[2].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].seed"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].科學能力"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].學習表現"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].學習內容"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[1].question_type"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[1].reporting_scale"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[2].question_type"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[2].reporting_scale"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[0].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[0].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[1].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[1].learning_performance"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[2].learning_content"
+        ],
+        [
+          "drawn",
+          "per_question_params[1].subquestion_configs[2].learning_performance"
+        ],
+        [
+          "effort_plan",
+          "medium"
+        ],
+        [
+          "effort_execute",
+          "medium"
+        ],
+        [
+          "core_question_callback",
+          "true"
+        ]
+      ],
+      "status": 414,
+      "streamEvents": [],
+      "streamEndedAt": "2026-09-14T05:11:05.762Z"
+    }
+  ]
+}

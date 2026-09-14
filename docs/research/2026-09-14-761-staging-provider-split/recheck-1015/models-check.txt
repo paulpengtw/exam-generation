@@ -1,0 +1,2 @@
+#761 live model defaults: FAIL
+execute: expected 'gemini-3.1-pro-preview', received 'claude-sonnet-4-6'

@@ -1,0 +1,503 @@
+{
+  "acceptance": "blocked_by_reproduced_staging_failures",
+  "subjects": {
+    "math": {
+      "resolve_status": 200,
+      "generate_status": 200,
+      "resolve_at": "2026-09-14T05:04:17.537Z",
+      "generate_at": "2026-09-14T05:05:14.188Z",
+      "request_target_bytes": 4521,
+      "drawn": [
+        "seed",
+        "per_question_params[0].seed",
+        "per_question_params[0].情境",
+        "per_question_params[0].題型",
+        "per_question_params[0].數學思考",
+        "per_question_params[0].學習內容",
+        "per_question_params[0].學習表現",
+        "per_question_params[0].核心素養",
+        "per_question_params[1].seed",
+        "per_question_params[1].情境",
+        "per_question_params[1].題型",
+        "per_question_params[1].數學思考",
+        "per_question_params[1].學習內容",
+        "per_question_params[1].學習表現",
+        "per_question_params[1].核心素養"
+      ],
+      "seed": 742848790,
+      "row_seeds": [
+        742848790,
+        742848791
+      ],
+      "row_subquestion_counts": [
+        3,
+        3
+      ],
+      "resolve_to_submission_differences": [
+        {
+          "path": "$.context",
+          "kind": "missing",
+          "expected": []
+        },
+        {
+          "path": "$.core_question",
+          "kind": "added",
+          "actual": "如何利用未知數列式與求解，在固定預算下計算園遊會攤位的最大進貨量與合理售價，使收支達到平衡？"
+        },
+        {
+          "path": "$.drawn",
+          "kind": "added",
+          "actual": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].情境",
+            "per_question_params[0].題型",
+            "per_question_params[0].數學思考",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].核心素養",
+            "per_question_params[1].seed",
+            "per_question_params[1].情境",
+            "per_question_params[1].題型",
+            "per_question_params[1].數學思考",
+            "per_question_params[1].學習內容",
+            "per_question_params[1].學習表現",
+            "per_question_params[1].核心素養"
+          ]
+        },
+        {
+          "path": "$.per_question_params[0].core_question",
+          "kind": "added",
+          "actual": "如何利用未知數列式與求解，在固定預算下計算園遊會攤位的最大進貨量與合理售價，使收支達到平衡？"
+        },
+        {
+          "path": "$.per_question_params[1].core_question",
+          "kind": "added",
+          "actual": "如何利用未知數列式與求解，在固定預算下計算園遊會攤位的最大進貨量與合理售價，使收支達到平衡？"
+        },
+        {
+          "path": "$.q_type",
+          "kind": "missing",
+          "expected": []
+        }
+      ],
+      "resolved_row_value_changes": []
+    },
+    "social_studies": {
+      "resolve_status": 200,
+      "generate_status": 414,
+      "resolve_at": "2026-09-14T05:06:49.958Z",
+      "generate_at": "2026-09-14T05:08:03.141Z",
+      "request_target_bytes": 9489,
+      "drawn": [
+        "seed",
+        "per_question_params[0].seed",
+        "per_question_params[0].情境",
+        "per_question_params[0].科目",
+        "per_question_params[0].內容領域",
+        "per_question_params[0].核心素養",
+        "per_question_params[0].學習內容",
+        "per_question_params[0].學習表現",
+        "per_question_params[0].subquestion_configs[0].認知歷程",
+        "per_question_params[0].subquestion_configs[1].question_type",
+        "per_question_params[0].subquestion_configs[1].認知歷程",
+        "per_question_params[0].subquestion_configs[2].question_type",
+        "per_question_params[0].subquestion_configs[2].認知歷程",
+        "per_question_params[0].subquestion_configs[0].learning_content",
+        "per_question_params[0].subquestion_configs[0].learning_performance",
+        "per_question_params[0].subquestion_configs[1].learning_content",
+        "per_question_params[0].subquestion_configs[1].learning_performance",
+        "per_question_params[0].subquestion_configs[2].learning_content",
+        "per_question_params[0].subquestion_configs[2].learning_performance",
+        "per_question_params[1].seed",
+        "per_question_params[1].情境",
+        "per_question_params[1].科目",
+        "per_question_params[1].內容領域",
+        "per_question_params[1].核心素養",
+        "per_question_params[1].學習內容",
+        "per_question_params[1].學習表現",
+        "per_question_params[1].subquestion_configs[0].認知歷程",
+        "per_question_params[1].subquestion_configs[1].question_type",
+        "per_question_params[1].subquestion_configs[1].認知歷程",
+        "per_question_params[1].subquestion_configs[2].question_type",
+        "per_question_params[1].subquestion_configs[2].認知歷程",
+        "per_question_params[1].subquestion_configs[0].learning_content",
+        "per_question_params[1].subquestion_configs[0].learning_performance",
+        "per_question_params[1].subquestion_configs[1].learning_content",
+        "per_question_params[1].subquestion_configs[1].learning_performance",
+        "per_question_params[1].subquestion_configs[2].learning_content",
+        "per_question_params[1].subquestion_configs[2].learning_performance"
+      ],
+      "seed": 1061985255,
+      "row_seeds": [
+        1061985255,
+        1061985256
+      ],
+      "row_subquestion_counts": [
+        3,
+        3
+      ],
+      "resolve_to_submission_differences": [
+        {
+          "path": "$.context",
+          "kind": "missing",
+          "expected": []
+        },
+        {
+          "path": "$.drawn",
+          "kind": "added",
+          "actual": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].情境",
+            "per_question_params[0].科目",
+            "per_question_params[0].內容領域",
+            "per_question_params[0].核心素養",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].subquestion_configs[0].認知歷程",
+            "per_question_params[0].subquestion_configs[1].question_type",
+            "per_question_params[0].subquestion_configs[1].認知歷程",
+            "per_question_params[0].subquestion_configs[2].question_type",
+            "per_question_params[0].subquestion_configs[2].認知歷程",
+            "per_question_params[0].subquestion_configs[0].learning_content",
+            "per_question_params[0].subquestion_configs[0].learning_performance",
+            "per_question_params[0].subquestion_configs[1].learning_content",
+            "per_question_params[0].subquestion_configs[1].learning_performance",
+            "per_question_params[0].subquestion_configs[2].learning_content",
+            "per_question_params[0].subquestion_configs[2].learning_performance",
+            "per_question_params[1].seed",
+            "per_question_params[1].情境",
+            "per_question_params[1].科目",
+            "per_question_params[1].內容領域",
+            "per_question_params[1].核心素養",
+            "per_question_params[1].學習內容",
+            "per_question_params[1].學習表現",
+            "per_question_params[1].subquestion_configs[0].認知歷程",
+            "per_question_params[1].subquestion_configs[1].question_type",
+            "per_question_params[1].subquestion_configs[1].認知歷程",
+            "per_question_params[1].subquestion_configs[2].question_type",
+            "per_question_params[1].subquestion_configs[2].認知歷程",
+            "per_question_params[1].subquestion_configs[0].learning_content",
+            "per_question_params[1].subquestion_configs[0].learning_performance",
+            "per_question_params[1].subquestion_configs[1].learning_content",
+            "per_question_params[1].subquestion_configs[1].learning_performance",
+            "per_question_params[1].subquestion_configs[2].learning_content",
+            "per_question_params[1].subquestion_configs[2].learning_performance"
+          ]
+        },
+        {
+          "path": "$.q_type",
+          "kind": "missing",
+          "expected": []
+        },
+        {
+          "path": "$.style",
+          "kind": "missing",
+          "expected": []
+        }
+      ],
+      "resolved_row_value_changes": []
+    },
+    "natural_sciences": {
+      "resolve_status": 200,
+      "generate_status": 414,
+      "resolve_at": "2026-09-14T05:10:29.669Z",
+      "generate_at": "2026-09-14T05:11:05.566Z",
+      "request_target_bytes": 9354,
+      "drawn": [
+        "seed",
+        "per_question_params[0].seed",
+        "per_question_params[0].科學能力",
+        "per_question_params[0].學習表現",
+        "per_question_params[0].學習內容",
+        "per_question_params[0].subquestion_configs[1].question_type",
+        "per_question_params[0].subquestion_configs[1].reporting_scale",
+        "per_question_params[0].subquestion_configs[2].question_type",
+        "per_question_params[0].subquestion_configs[2].reporting_scale",
+        "per_question_params[0].subquestion_configs[0].learning_content",
+        "per_question_params[0].subquestion_configs[0].learning_performance",
+        "per_question_params[0].subquestion_configs[1].learning_content",
+        "per_question_params[0].subquestion_configs[1].learning_performance",
+        "per_question_params[0].subquestion_configs[2].learning_content",
+        "per_question_params[0].subquestion_configs[2].learning_performance",
+        "per_question_params[1].seed",
+        "per_question_params[1].科學能力",
+        "per_question_params[1].學習表現",
+        "per_question_params[1].學習內容",
+        "per_question_params[1].subquestion_configs[1].question_type",
+        "per_question_params[1].subquestion_configs[1].reporting_scale",
+        "per_question_params[1].subquestion_configs[2].question_type",
+        "per_question_params[1].subquestion_configs[2].reporting_scale",
+        "per_question_params[1].subquestion_configs[0].learning_content",
+        "per_question_params[1].subquestion_configs[0].learning_performance",
+        "per_question_params[1].subquestion_configs[1].learning_content",
+        "per_question_params[1].subquestion_configs[1].learning_performance",
+        "per_question_params[1].subquestion_configs[2].learning_content",
+        "per_question_params[1].subquestion_configs[2].learning_performance"
+      ],
+      "seed": 1102086858,
+      "row_seeds": [
+        1102086858,
+        1102086859
+      ],
+      "row_subquestion_counts": [
+        3,
+        3
+      ],
+      "resolve_to_submission_differences": [
+        {
+          "path": "$.drawn",
+          "kind": "added",
+          "actual": [
+            "seed",
+            "per_question_params[0].seed",
+            "per_question_params[0].科學能力",
+            "per_question_params[0].學習表現",
+            "per_question_params[0].學習內容",
+            "per_question_params[0].subquestion_configs[1].question_type",
+            "per_question_params[0].subquestion_configs[1].reporting_scale",
+            "per_question_params[0].subquestion_configs[2].question_type",
+            "per_question_params[0].subquestion_configs[2].reporting_scale",
+            "per_question_params[0].subquestion_configs[0].learning_content",
+            "per_question_params[0].subquestion_configs[0].learning_performance",
+            "per_question_params[0].subquestion_configs[1].learning_content",
+            "per_question_params[0].subquestion_configs[1].learning_performance",
+            "per_question_params[0].subquestion_configs[2].learning_content",
+            "per_question_params[0].subquestion_configs[2].learning_performance",
+            "per_question_params[1].seed",
+            "per_question_params[1].科學能力",
+            "per_question_params[1].學習表現",
+            "per_question_params[1].學習內容",
+            "per_question_params[1].subquestion_configs[1].question_type",
+            "per_question_params[1].subquestion_configs[1].reporting_scale",
+            "per_question_params[1].subquestion_configs[2].question_type",
+            "per_question_params[1].subquestion_configs[2].reporting_scale",
+            "per_question_params[1].subquestion_configs[0].learning_content",
+            "per_question_params[1].subquestion_configs[0].learning_performance",
+            "per_question_params[1].subquestion_configs[1].learning_content",
+            "per_question_params[1].subquestion_configs[1].learning_performance",
+            "per_question_params[1].subquestion_configs[2].learning_content",
+            "per_question_params[1].subquestion_configs[2].learning_performance"
+          ]
+        },
+        {
+          "path": "$.q_type",
+          "kind": "missing",
+          "expected": []
+        },
+        {
+          "path": "$.style",
+          "kind": "missing",
+          "expected": []
+        }
+      ],
+      "resolved_row_value_changes": []
+    }
+  },
+  "math_interrupted_record_replay": {
+    "original_record_id": "75f85dcc-a549-4a8a-b32f-10c2c9f1e3c7",
+    "replay_record_id": "5a5ab383-62f8-4457-80ba-cf4783324280",
+    "record_statuses": [
+      "aborted",
+      "aborted"
+    ],
+    "fresh_drawn": [],
+    "submitted_requests_diff": [
+      {
+        "path": "$.per_question_params[0].coverage_mode",
+        "kind": "added",
+        "actual": "balanced"
+      },
+      {
+        "path": "$.per_question_params[0].disable_reference_fewshot",
+        "kind": "added",
+        "actual": false
+      },
+      {
+        "path": "$.per_question_params[1].coverage_mode",
+        "kind": "added",
+        "actual": "balanced"
+      },
+      {
+        "path": "$.per_question_params[1].disable_reference_fewshot",
+        "kind": "added",
+        "actual": false
+      }
+    ],
+    "submitted_to_saved_rows_diff": [
+      {
+        "path": "$[0].coverage_mode",
+        "kind": "added",
+        "actual": "balanced"
+      },
+      {
+        "path": "$[0].disable_reference_fewshot",
+        "kind": "added",
+        "actual": false
+      },
+      {
+        "path": "$[1].coverage_mode",
+        "kind": "added",
+        "actual": "balanced"
+      },
+      {
+        "path": "$[1].disable_reference_fewshot",
+        "kind": "added",
+        "actual": false
+      }
+    ],
+    "saved_to_replay_resolve_rows_diff": [],
+    "saved_to_replay_resolve_envelope_diff": [
+      {
+        "path": "$.allow_duplicate_figure_kinds",
+        "kind": "missing",
+        "expected": false
+      },
+      {
+        "path": "$.content_domain",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.context",
+        "kind": "changed",
+        "expected": null,
+        "actual": []
+      },
+      {
+        "path": "$.core_competency",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.core_question_callback",
+        "kind": "missing",
+        "expected": true
+      },
+      {
+        "path": "$.coverage_mode",
+        "kind": "missing",
+        "expected": "balanced"
+      },
+      {
+        "path": "$.disable_reference_fewshot",
+        "kind": "missing",
+        "expected": false
+      },
+      {
+        "path": "$.effort_correct",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.effort_verify",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.learning_content",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.learning_performance",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.math_thinking",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.max_retries",
+        "kind": "missing",
+        "expected": 3
+      },
+      {
+        "path": "$.model_correct",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.model_execute",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.model_plan",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.model_verify",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.option_word_limit",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.passage",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.q_type",
+        "kind": "changed",
+        "expected": null,
+        "actual": []
+      },
+      {
+        "path": "$.question_word_limit",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.reporting_scale",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.science_competency",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.sub_context",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.subject_filter",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.subquestion_configs",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.target_surface",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.text_instruction",
+        "kind": "missing",
+        "expected": null
+      },
+      {
+        "path": "$.topic",
+        "kind": "missing",
+        "expected": null
+      }
+    ],
+    "saved_records_diff": [],
+    "raw_params_json_equal": true
+  }
+}

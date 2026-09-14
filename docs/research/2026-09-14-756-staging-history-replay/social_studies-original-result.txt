@@ -1,0 +1,254 @@
+[p2 "【測試機】素養試題 AI Examgen" | space "#756 staging History parameter replay"(9): 3 managed, 0 untracked — p1 "【測試機】素養試題 AI Examgen", p2* "【測試機】素養試題 AI Examgen", p3 "【測試機】素養試題 AI Examgen"]
+root
+  text "⚠ 此為測試環境，運作可能不穩定。"
+  container
+    container
+      button [ref=1]
+        text "←"
+      heading
+        text "社會領域題目產生器"
+      button [ref=2]
+        text "English"
+      button [ref=3]
+        text "中文"
+      button [ref=4]
+        text "紀錄"
+      text "[test account]"
+      button [ref=5]
+        text "登出"
+    container
+      form
+        text "主題 / 議題（選填）"
+        textbox [ref=189, loc=css:input[placeholder="例如：氣候變遷與都市規劃"]]
+          text "例如：氣候變遷與都市規劃"
+        text "年級"
+        combobox [ref=190]
+          text "7"
+        text "難度"
+        combobox [ref=191]
+          text "簡單"
+        text "科目"
+        combobox [ref=192]
+          text "全部（隨機）"
+        text "內容領域"
+        combobox [ref=193]
+          text "全部（隨機）"
+        text "卷面"
+        combobox [ref=194]
+          text "紙本"
+        text "學習表現"
+        button [ref=195]
+          text "切換勾選模式"
+        textbox [ref=196]
+          text "搜尋學習表現..."
+        text "文本素材類型"
+        combobox [ref=197]
+          text "純文字"
+        text "圖片生成模式"
+        combobox [ref=198]
+          text "HTML 渲染"
+        text "題型種類"
+        combobox [ref=199]
+          text "題組題"
+        text "學習內容"
+        button [ref=200]
+          text "切換勾選模式"
+        textbox [ref=201]
+          text "搜尋學習內容..."
+        text "題數"
+        spinbutton [ref=202]
+          text "2"
+        text "出題模式"
+        combobox "form.coverage_mode" [ref=203, loc=css:select[aria-label="form.coverage_mode"]]
+          text "均衡（提示模型平均分配）"
+        heading
+          text "子題設定"
+        text "小題數"
+        spinbutton [ref=204, loc=css:input[placeholder="自動 3-7"]]
+          text "3"
+        heading
+          text "各小題配置"
+        text "第"
+        text "1"
+        text "小題"
+        text "題型"
+        combobox [ref=205]
+          text "選擇題"
+        text "認知歷程"
+        combobox "認知歷程" [ref=206]
+          text "（隨機）"
+        text "題目字數限制"
+        spinbutton [ref=207]
+          text "90"
+        text "選項字數限制"
+        spinbutton [ref=208]
+          text "20"
+        text "題目內容類型"
+        combobox [ref=209]
+          text "graphs/charts/tables"
+        text "圖片生成模式"
+        combobox [ref=210]
+          text "HTML 渲染"
+        text "圖像種類"
+        textbox [ref=211]
+          text "表格"
+        text "出題指示"
+        textbox [ref=212]
+          text "請根據表格中的資料判讀，避免只靠常識作答。"
+        paragraph
+          text "留空 = 沿用全域設定"
+        paragraph
+          text "學習表現 (留空沿用全域)"
+        textbox [ref=213]
+          text "搜尋學習表現..."
+        paragraph
+          text "學習內容 (留空沿用全域)"
+        textbox [ref=214]
+          text "搜尋學習內容..."
+        text "第"
+        text "2"
+        text "小題"
+        text "題型"
+        combobox [ref=215]
+          text "（隨機）"
+        text "認知歷程"
+        combobox "認知歷程" [ref=216]
+          text "（隨機）"
+        text "題目字數限制"
+        spinbutton [ref=217]
+          text "110"
+        text "選項字數限制"
+        spinbutton [ref=218]
+          text "選擇題適用"
+        text "題目內容類型"
+        combobox [ref=219]
+          text "（沿用文本設定）"
+        text "圖片生成模式"
+        combobox [ref=220]
+          text "（沿用文本設定）"
+        text "圖像種類"
+        textbox [ref=221]
+          text "例如：直方圖"
+        text "出題指示"
+        textbox [ref=222]
+          text "請指出推論所依據的文本證據。"
+        paragraph
+          text "留空 = 沿用全域設定"
+        paragraph
+          text "學習表現 (留空沿用全域)"
+        textbox [ref=223]
+          text "搜尋學習表現..."
+        paragraph
+          text "學習內容 (留空沿用全域)"
+        textbox [ref=224]
+          text "搜尋學習內容..."
+        text "第"
+        text "3"
+        text "小題"
+        text "題型"
+        combobox [ref=225]
+          text "（隨機）"
+        text "認知歷程"
+        combobox "認知歷程" [ref=226]
+          text "（隨機）"
+        text "題目字數限制"
+        spinbutton [ref=227]
+          text "不限"
+        text "選項字數限制"
+        spinbutton [ref=228]
+          text "選擇題適用"
+        text "題目內容類型"
+        combobox [ref=229]
+          text "（沿用文本設定）"
+        text "圖片生成模式"
+        combobox [ref=230]
+          text "（沿用文本設定）"
+        text "圖像種類"
+        textbox [ref=231]
+          text "例如：直方圖"
+        text "出題指示"
+        textbox [ref=232]
+          text "例如：請聚焦在資料判讀與因果推論"
+        paragraph
+          text "留空 = 沿用全域設定"
+        paragraph
+          text "學習表現 (留空沿用全域)"
+        textbox [ref=233]
+          text "搜尋學習表現..."
+        paragraph
+          text "學習內容 (留空沿用全域)"
+        textbox [ref=234]
+          text "搜尋學習內容..."
+        text "文本字數限制"
+        spinbutton [ref=235]
+          text "220"
+        text "文本出題指示"
+        textbox [ref=236, loc=css:input[placeholder="請輸入希望文本生成器特別注意的方向…"]]
+          text "請以簡短、可獨立閱讀的情境呈現，清楚區分資料與觀點。"
+        container
+          checkbox [ref=237]
+          text "略過驗證"
+        container
+          checkbox [ref=238]
+          text "關閉參考範例"
+        container
+          checkbox [ref=239]
+          text "末小題回扣核心問題"
+        container
+          checkbox [ref=240]
+          text "允許圖像種類重複"
+        container
+          container
+            container
+              text "規劃模型"
+              combobox "規劃模型" [ref=241, loc=css:select[aria-label="規劃模型"]]
+                text "預設 (claude-opus-4-6)"
+            container
+              text "規劃 Effort"
+              combobox "規劃 Effort" [ref=242, loc=css:select[aria-label="規劃 Effort"]]
+                text "medium"
+          container
+            container
+              text "出題模型"
+              combobox "出題模型" [ref=243, loc=css:select[aria-label="出題模型"]]
+                text "預設 (claude-sonnet-4-6)"
+            container
+              text "出題 Effort"
+              combobox "出題 Effort" [ref=244, loc=css:select[aria-label="出題 Effort"]]
+                text "medium"
+          container
+            container
+              text "驗證模型"
+              combobox "驗證模型" [ref=245, loc=css:select[aria-label="驗證模型"]]
+                text "跟隨執行模型"
+            container
+              text "驗證 Effort"
+              combobox "驗證 Effort" [ref=246, loc=css:select[aria-label="驗證 Effort"]]
+                text "跟隨出題 Effort"
+          container
+            container
+              text "修正模型"
+              combobox "修正模型" [ref=247, loc=css:select[aria-label="修正模型"]]
+                text "跟隨執行模型"
+            container
+              text "修正 Effort"
+              combobox "修正 Effort" [ref=248, loc=css:select[aria-label="修正 Effort"]]
+                text "跟隨出題 Effort"
+        button [ref=249]
+          text "產生"
+      container
+        text "錯誤"
+        text "Stream open failed: HTTP 414"
+    container "生成進度列"
+      container
+        text "✕"
+        text "錯誤"
+      container
+        button [ref=37]
+          text "表單"
+        button [ref=38]
+          text "進度"
+        button [ref=39]
+          text "結果"
+        button [ref=40]
+          text "回饋"

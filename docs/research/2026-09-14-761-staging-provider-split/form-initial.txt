@@ -1,0 +1,144 @@
+[p1 "【測試機】素養試題 AI Examgen" | space "Issue 761 provider defaults acceptance"(16): 1 managed, 0 untracked — p1* "【測試機】素養試題 AI Examgen"]
+root
+  text "⚠ 此為測試環境，運作可能不穩定。"
+  container
+    container
+      container
+        button [ref=8]
+          text "←"
+        heading
+          text "社會領域題目產生器"
+      container
+        container
+          button [ref=9]
+            text "English"
+          button [ref=10]
+            text "中文"
+        button [ref=11]
+          text "紀錄"
+        text "[account email redacted]"
+        button [ref=12]
+          text "登出"
+    form
+      container
+        text "主題 / 議題（選填）"
+        textbox [ref=17, loc=css:input[placeholder="例如：氣候變遷與都市規劃"]]
+          text "例如：氣候變遷與都市規劃"
+      container
+        text "年級"
+        combobox [ref=18]
+          text "7"
+      container
+        text "難度"
+        combobox [ref=19]
+          text "預設（中等）"
+      container
+        text "科目"
+        combobox [ref=20]
+          text "全部（隨機）"
+      container
+        text "內容領域"
+        combobox [ref=21]
+          text "全部（隨機）"
+      container
+        text "卷面"
+        combobox [ref=22]
+          text "紙本"
+      container
+        container
+          text "學習表現"
+          button [ref=23]
+            text "切換勾選模式"
+        textbox [ref=24, loc=css:input[placeholder="搜尋學習表現..."]]
+          text "搜尋學習表現..."
+      container
+        text "文本素材類型"
+        combobox [ref=25]
+          text "含圖片"
+      container
+        text "圖片生成模式"
+        combobox [ref=26]
+          text "GPT 生圖"
+      container
+        text "題型種類"
+        combobox [ref=27]
+          text "題組題"
+      text "學習內容"
+      button [ref=28]
+        text "切換勾選模式"
+      textbox [ref=29, loc=css:input[placeholder="搜尋學習內容..."]]
+        text "搜尋學習內容..."
+      text "題數"
+      spinbutton [ref=30]
+        text "1"
+      text "出題模式"
+      combobox "form.coverage_mode" [ref=31, loc=css:select[aria-label="form.coverage_mode"]]
+        text "均衡（提示模型平均分配）"
+      heading
+        text "子題設定"
+      text "小題數"
+      spinbutton [ref=32, loc=css:input[placeholder="自動 3-7"]]
+        text "自動 3-7"
+      text "文本字數限制"
+      spinbutton [ref=33, loc=css:input[placeholder="不限"]]
+        text "不限"
+      text "文本出題指示"
+      textbox [ref=34, loc=css:input[placeholder="請輸入希望文本生成器特別注意的方向…"]]
+        text "請輸入希望文本生成器特別注意的方向…"
+      container
+        checkbox [ref=35]
+        text "略過驗證"
+      container
+        checkbox [ref=36]
+        text "關閉參考範例"
+      container
+        checkbox [ref=37]
+        text "末小題回扣核心問題"
+      container
+        checkbox [ref=38]
+        text "允許圖像種類重複"
+      container
+        text "規劃模型"
+        combobox "規劃模型" [ref=39, loc=css:select[aria-label="規劃模型"]]
+          text "預設 (claude-opus-4-6)"
+      container
+        text "規劃 Effort"
+        combobox "規劃 Effort" [ref=40, loc=css:select[aria-label="規劃 Effort"]]
+          text "medium"
+      container
+        text "出題模型"
+        combobox "出題模型" [ref=41, loc=css:select[aria-label="出題模型"]]
+          text "預設 (claude-sonnet-4-6)"
+      container
+        text "出題 Effort"
+        combobox "出題 Effort" [ref=42, loc=css:select[aria-label="出題 Effort"]]
+          text "medium"
+      container
+        text "驗證模型"
+        combobox "驗證模型" [ref=43, loc=css:select[aria-label="驗證模型"]]
+          text "跟隨執行模型 (claude-opus-4-6)"
+      container
+        text "驗證 Effort"
+        combobox "驗證 Effort" [ref=44, loc=css:select[aria-label="驗證 Effort"]]
+          text "跟隨出題 Effort (high)"
+      container
+        text "修正模型"
+        combobox "修正模型" [ref=45, loc=css:select[aria-label="修正模型"]]
+          text "跟隨執行模型"
+      container
+        text "修正 Effort"
+        combobox "修正 Effort" [ref=46, loc=css:select[aria-label="修正 Effort"]]
+          text "跟隨出題 Effort"
+      button [ref=47]
+        text "產生"
+    container "生成進度列"
+      text "尚未生成"
+      container
+        button [ref=13]
+          text "表單"
+        button [ref=14]
+          text "進度"
+        button [ref=15]
+          text "結果"
+        button [ref=16]
+          text "回饋"

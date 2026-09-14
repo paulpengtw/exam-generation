@@ -1,0 +1,276 @@
+{
+  "attribute_queries": {
+    "gen_ai": [
+      "gen_ai.conversation.id",
+      "gen_ai.operation.name",
+      "gen_ai.operation.type",
+      "gen_ai.request.reasoning.level",
+      "gen_ai.response.finish_reasons",
+      "gen_ai.tool.name",
+      "gen_ai.response.id",
+      "gen_ai.input.messages",
+      "gen_ai.request.model",
+      "gen_ai.provider.name",
+      "gen_ai.pipeline.name",
+      "gen_ai.system_instructions",
+      "gen_ai.response.model",
+      "gen_ai.output.messages",
+      "gen_ai.request.seed",
+      "gen_ai.tool.call.arguments",
+      "gen_ai.tool.call.result",
+      "gen_ai.prompt",
+      "gen_ai.request.available_tools",
+      "gen_ai.tool.definitions",
+      "gen_ai.response.finish_reason",
+      "gen_ai.system",
+      "gen_ai.system.message",
+      "gen_ai.tool.input",
+      "gen_ai.tool.message",
+      "gen_ai.tool.output",
+      "gen_ai.prompt.name",
+      "tags[gen_ai.context.utilization,number]",
+      "tags[gen_ai.context.window_size,number]",
+      "tags[gen_ai.cost.cache_creation.input_tokens,number]",
+      "tags[gen_ai.cost.cache_read.input_tokens,number]",
+      "tags[gen_ai.cost.reasoning.output_tokens,number]",
+      "tags[gen_ai.request.max_tokens,number]",
+      "tags[gen_ai.response.tokens_per_second,number]",
+      "gen_ai.usage.input_tokens",
+      "gen_ai.usage.input_tokens.cache_write",
+      "gen_ai.usage.input_tokens.cached",
+      "gen_ai.usage.output_tokens",
+      "gen_ai.usage.total_tokens",
+      "gen_ai.cost.input_tokens",
+      "gen_ai.cost.output_tokens",
+      "gen_ai.cost.total_tokens",
+      "gen_ai.usage.total_cost",
+      "gen_ai.request.frequency_penalty",
+      "gen_ai.request.presence_penalty",
+      "gen_ai.request.temperature",
+      "gen_ai.request.top_p",
+      "gen_ai.response.time_to_first_token",
+      "gen_ai.response.time_to_first_chunk",
+      "gen_ai.response.streaming"
+    ],
+    "body": [
+      "messaging.message.body.size",
+      "http.response.body.decoded_size",
+      "http.response.body.size"
+    ],
+    "request": [
+      "gen_ai.request.reasoning.level",
+      "request.url",
+      "request.method",
+      "gen_ai.request.model",
+      "gen_ai.request.seed",
+      "aws.lambda.aws_request_id",
+      "aws.request.extended_id",
+      "aws.extended_request_id",
+      "aws.request.id",
+      "aws.request_id",
+      "aws.request.url",
+      "gen_ai.request.available_tools",
+      "http.request.method",
+      "http.request_method",
+      "mcp.request.id",
+      "jsonrpc.request.id",
+      "tags[gen_ai.request.max_tokens,number]",
+      "measurements.ttfb.requesttime",
+      "gen_ai.request.frequency_penalty",
+      "gen_ai.request.presence_penalty",
+      "gen_ai.request.temperature",
+      "gen_ai.request.top_p",
+      "ttfb.requestTime",
+      "browser.web_vital.ttfb.request_time",
+      "http.request.same_origin"
+    ],
+    "response": [
+      "gen_ai.response.finish_reasons",
+      "gen_ai.response.id",
+      "ai.response.id",
+      "ai.response.model",
+      "gen_ai.response.model",
+      "ai.response.text",
+      "ai.response.toolCalls",
+      "rpc.response.status_code",
+      "gen_ai.response.finish_reason",
+      "http.response.status_text",
+      "tags[gen_ai.response.tokens_per_second,number]",
+      "http.response_status_code",
+      "http.decoded_response_content_length",
+      "http.response_content_length",
+      "http.response_transfer_size",
+      "gen_ai.response.time_to_first_token",
+      "gen_ai.response.time_to_first_chunk",
+      "http.response.body.decoded_size",
+      "http.response.body.size",
+      "http.response.size",
+      "gen_ai.response.streaming"
+    ]
+  },
+  "generations": [
+    {
+      "id": "a8979ed2f3f103aa",
+      "trace": "717d1f3ff9c24d8caa6d240e98b1407c",
+      "timestamp": "2026-09-14T07:24:54+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "83949f3eb7a65ab3",
+      "trace": "baec40ade7b146958f1b6f41c923e702",
+      "timestamp": "2026-09-14T07:27:04+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "a7d78181b9146b65",
+      "trace": "b8bbd0e073054caf8c3f5e33f72565ad",
+      "timestamp": "2026-09-14T07:29:38+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "8041790e65e32b8e",
+      "trace": "baec40ade7b146958f1b6f41c923e702",
+      "timestamp": "2026-09-14T07:30:01+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "9931523559342a23",
+      "trace": "baec40ade7b146958f1b6f41c923e702",
+      "timestamp": "2026-09-14T07:31:02+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "b4747d6b409f529d",
+      "trace": "f0c31738efeb42018855e5d6b3b4c229",
+      "timestamp": "2026-09-14T07:32:36+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "b51d9638ab7b09a0",
+      "trace": "b8bbd0e073054caf8c3f5e33f72565ad",
+      "timestamp": "2026-09-14T07:34:43+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "964a9e485e1aaa74",
+      "trace": "af79d1303a1b4a0695c08f884807bb48",
+      "timestamp": "2026-09-14T07:35:47+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "aa6d7604eab4d080",
+      "trace": "b8bbd0e073054caf8c3f5e33f72565ad",
+      "timestamp": "2026-09-14T07:37:15+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "bd350b3c2546f5c0",
+      "trace": "70ef694cfa15490096296914f48ba53c",
+      "timestamp": "2026-09-14T07:38:11+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    },
+    {
+      "id": "972858f1efa77600",
+      "trace": "ada4abdc4b0b4d92bab5b3cf055d461f",
+      "timestamp": "2026-09-14T07:39:28+00:00",
+      "transaction": "/api/generate",
+      "project.name": "exam-generation-api-staging"
+    }
+  ],
+  "generation_span_count": 11,
+  "trace_transactions": [
+    {
+      "transaction_id": "28ebc58b14204ecd8cb2620960338b3a",
+      "event_id": "b26056cae779e82f",
+      "transaction": "/api/generate/preview",
+      "op": "http.server",
+      "project_slug": "exam-generation-api-staging"
+    },
+    {
+      "transaction_id": "c752b3c95fb54991844590851a302c03",
+      "event_id": "a8979ed2f3f103aa",
+      "transaction": "/api/generate",
+      "op": "http.server",
+      "project_slug": "exam-generation-api-staging"
+    }
+  ],
+  "transaction_privacy": [
+    {
+      "event_id": "28ebc58b14204ecd8cb2620960338b3a",
+      "http_status": 404
+    },
+    {
+      "event_id": "c752b3c95fb54991844590851a302c03",
+      "http_status": 404
+    }
+  ],
+  "content_presence_queries": {
+    "all_spans": {
+      "query": "",
+      "data": [
+        {
+          "count()": 1725.0
+        }
+      ]
+    },
+    "model_metadata": {
+      "query": "has:gen_ai.request.model",
+      "data": [
+        {
+          "count()": 77.0
+        }
+      ]
+    },
+    "input_messages": {
+      "query": "has:gen_ai.input.messages",
+      "data": [
+        {
+          "count()": 0
+        }
+      ]
+    },
+    "output_messages": {
+      "query": "has:gen_ai.output.messages",
+      "data": [
+        {
+          "count()": 0
+        }
+      ]
+    },
+    "prompt": {
+      "query": "has:gen_ai.prompt",
+      "data": [
+        {
+          "count()": 0
+        }
+      ]
+    },
+    "system_instructions": {
+      "query": "has:gen_ai.system_instructions",
+      "data": [
+        {
+          "count()": 0
+        }
+      ]
+    },
+    "response_text": {
+      "query": "has:ai.response.text",
+      "data": [
+        {
+          "count()": 0
+        }
+      ]
+    }
+  },
+  "attribute_catalog_note": "Attribute listing includes built-in keys and does not prove values were collected; use the has: queries instead."
+}

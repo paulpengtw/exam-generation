@@ -1,0 +1,158 @@
+{
+  "streams": [
+    {
+      "path": "/api/generate",
+      "started_at": "2026-09-14T09:49:01.832Z",
+      "done": false,
+      "error": "TypeError: network error"
+    }
+  ],
+  "event_counts": {
+    "stage": 7,
+    "pipeline": 2,
+    "trail": 8,
+    "llm_request": 4,
+    "llm_content": 52,
+    "llm_response": 1,
+    "plan": 1
+  },
+  "final_observation": {
+    "at": "2026-09-14T10:04:40.402Z",
+    "ui_network_error": true,
+    "network_duration_ms": 900141.5,
+    "health": {
+      "status": 200,
+      "body": "{\"status\":\"ok\"}"
+    },
+    "new_matching_history_record_found": false
+  },
+  "events": [
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "planner",
+        "stage": "batch_briefs",
+        "status": "start",
+        "ts": 1789379341.82342
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "planner",
+        "stage": "batch_briefs",
+        "status": "end",
+        "ts": 1789379369.0512047
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "generator",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789379369.090544
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "generator",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_response",
+      "agent": "generator",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "usage": {
+        "input": 73288,
+        "output": 1251,
+        "cache_read": 0,
+        "cache_creation": 0
+      },
+      "content_chars": 2554,
+      "reasoning_chars": 0
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "generator",
+        "stage": "llm_generate",
+        "status": "end",
+        "ts": 1789379431.3455713
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#2",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789379431.491299,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#1",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789379431.5064478,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "stage",
+      "data": {
+        "type": "stage",
+        "agent": "sub_generator#3",
+        "stage": "llm_generate",
+        "status": "start",
+        "ts": 1789379431.5223024,
+        "attempt": 1
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#2",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#1",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    },
+    {
+      "event": "llm_request",
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model": "gemini-3.1-pro-preview",
+      "params": {
+        "max_tokens": 8192,
+        "temperature": null
+      }
+    }
+  ]
+}

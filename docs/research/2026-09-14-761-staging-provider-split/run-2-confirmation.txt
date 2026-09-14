@@ -1,0 +1,483 @@
+[p1 "【測試機】素養試題 AI Examgen" | space "Issue 761 provider defaults acceptance"(16): 1 managed, 0 untracked — p1* "【測試機】素養試題 AI Examgen"]
+root
+  text "⚠ 此為測試環境，運作可能不穩定。"
+  container
+    container
+      button [ref=310]
+        text "←"
+      heading
+        text "社會領域題目產生器"
+      button [ref=311]
+        text "English"
+      button [ref=312]
+        text "中文"
+      button [ref=313]
+        text "紀錄"
+      text "[account email redacted]"
+      button [ref=314]
+        text "登出"
+    container
+      heading
+        text "發送前確認設定"
+      paragraph
+        text "請確認以下設定。確認無誤後點選「確定發送」，或點選「返回」調整。"
+      region "共同設定"
+        heading
+          text "共同設定"
+        unordered_list
+          list_item
+            text "主題"
+          list_item
+            text "未填寫"
+          list_item
+            text "文本出題指示"
+          list_item
+            text "未填寫"
+          list_item
+            text "核心問題"
+          list_item
+            text "為什麼台灣在不同歷史時期會出現多元族群的遷移與互動，這些過程如何形塑今日台灣社會的文化面貌？"
+            text "預先產生"
+          list_item
+            text "年級"
+          list_item
+            text "7"
+          list_item
+            text "難度"
+          list_item
+            text "medium"
+          list_item
+            text "科目"
+          list_item
+            text "由後端隨機抽取（每題不同）"
+          list_item
+            text "卷面"
+          list_item
+            text "紙本"
+          list_item
+            text "題數"
+          list_item
+            text "1"
+          list_item
+            text "出題模式"
+          list_item
+            text "balanced"
+          list_item
+            text "文本"
+          list_item
+            text "未填寫"
+          list_item
+            text "文本字數限制"
+          list_item
+            text "不限"
+          list_item
+            text "規劃模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "出題模型"
+          list_item
+            text "gemini-3.1-pro-preview"
+          list_item
+            text "驗證模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "修正模型"
+          list_item
+            text "系統預設"
+          list_item
+            text "規劃 Effort"
+          list_item
+            text "high"
+          list_item
+            text "出題 Effort"
+          list_item
+            text "high"
+          list_item
+            text "驗證 Effort"
+          list_item
+            text "未填寫"
+          list_item
+            text "修正 Effort"
+          list_item
+            text "未填寫"
+          list_item
+            text "圖片產生方式"
+          list_item
+            text "gpt_image"
+          list_item
+            text "略過驗證"
+          list_item
+            text "否"
+          list_item
+            text "關閉參考範例：是"
+          list_item
+            text "否"
+          list_item
+            text "末小題回扣核心問題"
+          list_item
+            text "是"
+          list_item
+            text "允許圖像種類重複"
+          list_item
+            text "未填寫"
+      region "第1題"
+        heading
+          text "第1題"
+        unordered_list
+          list_item
+            text "小題數"
+          list_item
+            text "3"
+            text "使用者選擇"
+        text "文本出題指示"
+        textbox "文本出題指示" [ref=350, loc=css:textarea[placeholder="請輸入希望文本生成器特別注意的方向…"]]
+          text "請輸入希望文本生成器特別注意的方向…"
+        unordered_list
+          list_item
+            text "種子"
+          list_item
+            text "1996737474"
+            text "預抽"
+          list_item
+            text "題目內容類型"
+          list_item
+            text "純文字"
+            text "使用者選擇"
+          list_item
+            text "情境"
+          list_item
+            text "個人, 職業"
+            text "隨機抽取"
+            button [ref=351]
+              text "編輯"
+            button [ref=352]
+              text "重抽"
+          list_item
+            text "題型種類"
+          list_item
+            text "題組題"
+            text "使用者選擇"
+          list_item
+            text "科目"
+          list_item
+            text "地理"
+            text "隨機抽取"
+            button [ref=353]
+              text "編輯"
+            button [ref=354]
+              text "重抽"
+          text "內容領域"
+          text ":"
+          text "Civic Participation"
+          text "隨機抽取"
+          button [ref=355]
+            text "編輯"
+          button [ref=356]
+            text "重抽"
+          list_item
+            text "核心素養"
+          list_item
+            text "社-J-B3、社-J-C3、社-J-B1"
+            text "隨機抽取"
+            button [ref=357]
+              text "編輯"
+            button [ref=358]
+              text "重抽"
+          list_item
+            text "學習表現"
+          list_item
+            paragraph
+              text "未手動選擇 — 已隨機抽取 2 項（將實際送出）："
+            unordered_list
+              list_item
+                text "社2b-Ⅳ-3"
+                text "—"
+                text "重視環境倫理，並願意維護生態的多樣性。"
+              list_item
+                text "社3d-Ⅳ-2"
+                text "—"
+                text "提出保存文化資產、改善環境或維護社會正義等可能方案"
+            button [ref=359]
+              text "編輯"
+            button [ref=360]
+              text "重抽"
+          list_item
+            text "學習內容"
+          list_item
+            paragraph
+              text "未手動選擇 — 已隨機抽取 1 項（將實際送出）："
+            unordered_list
+              list_item
+                text "地Ca-Ⅳ-3"
+                text "—"
+                text "聚落地名的命名與環境、族群文化的關係。"
+            button [ref=361]
+              text "編輯"
+            button [ref=362]
+              text "重抽"
+        container
+          heading
+            text "各小題配置"
+          ordered_list
+            list_item
+              heading
+                text "第 1 小題"
+              text "認知歷程"
+              text ":"
+              text "Reasoning and Applying–Relate or Integrate"
+              text "隨機抽取"
+              button [ref=363]
+                text "編輯"
+              button [ref=364]
+                text "重抽"
+              text "題型"
+              text "隨機抽取"
+              combobox [ref=365]
+                text "選擇題"
+              button [ref=366]
+                text "重抽"
+              text "出題指示"
+              text "隨機抽取"
+              textbox [ref=367]
+                text "例如：請聚焦在資料判讀與因果推論"
+              text "題目內容類型"
+              text "沿用文本設定"
+              combobox [ref=368]
+                text "（沿用文本設定）"
+              text "圖片生成模式"
+              text "沿用文本設定"
+              combobox [ref=369]
+                text "（沿用文本設定）"
+              text "題目字數限制"
+              text "不限"
+              spinbutton [ref=370]
+                text "不限"
+              text "選項字數限制"
+              text "不限"
+              spinbutton [ref=371]
+                text "不限"
+              container
+                text "學習內容"
+                text "隨機抽取"
+                container
+                  textbox [ref=372]
+                    text "搜尋學習內容..."
+                  container
+                    text "地Ca-Ⅳ-3"
+                    container
+                      text "："
+                      text "聚落地名的命名與環境、族群文化的關係。"
+                    button [ref=373]
+                      text "×"
+                button [ref=374]
+                  text "重抽"
+              container
+                container
+                  text "學習表現"
+                  text "隨機抽取"
+                container
+                  textbox [ref=375]
+                    text "搜尋學習表現..."
+                  container
+                    text "社2b-Ⅳ-3"
+                    container
+                      text "："
+                      text "重視環境倫理，並願意維護生態的多樣性。"
+                    button [ref=376]
+                      text "×"
+                button [ref=377]
+                  text "重抽"
+            list_item
+              heading
+                text "第 2 小題"
+              container
+                container
+                  text "認知歷程"
+                  text ":"
+                  text "Reasoning and Applying–Interpret information"
+                text "隨機抽取"
+                container
+                  button [ref=378]
+                    text "編輯"
+                  button [ref=379]
+                    text "重抽"
+              container
+                container
+                  container
+                    text "題型"
+                    text "隨機抽取"
+                  combobox [ref=380]
+                    text "選擇題"
+                button [ref=381]
+                  text "重抽"
+              container
+                container
+                  text "出題指示"
+                  text "隨機抽取"
+                textbox [ref=382]
+                  text "例如：請聚焦在資料判讀與因果推論"
+              container
+                container
+                  text "題目內容類型"
+                  text "沿用文本設定"
+                combobox [ref=383]
+                  text "（沿用文本設定）"
+              container
+                container
+                  text "圖片生成模式"
+                  text "沿用文本設定"
+                combobox [ref=384]
+                  text "（沿用文本設定）"
+              container
+                container
+                  text "題目字數限制"
+                  text "不限"
+                spinbutton [ref=385]
+                  text "不限"
+              container
+                container
+                  text "選項字數限制"
+                  text "不限"
+                spinbutton [ref=386]
+                  text "不限"
+              container
+                container
+                  text "學習內容"
+                  text "隨機抽取"
+                container
+                  textbox [ref=387]
+                    text "搜尋學習內容..."
+                  container
+                    text "地Ca-Ⅳ-3"
+                    container
+                      text "："
+                      text "聚落地名的命名與環境、族群文化的關係。"
+                    button [ref=388]
+                      text "×"
+                button [ref=389]
+                  text "重抽"
+              container
+                container
+                  text "學習表現"
+                  text "隨機抽取"
+                container
+                  textbox [ref=390]
+                    text "搜尋學習表現..."
+                  container
+                    text "社3d-Ⅳ-2"
+                    container
+                      text "："
+                      text "提出保存文化資產、改善環境或維護社會正義…"
+                    button [ref=391]
+                      text "×"
+                button [ref=392]
+                  text "重抽"
+            list_item
+              heading
+                text "第 3 小題"
+              text "認知歷程"
+              text ":"
+              text "Reasoning and Applying–Interpret information"
+              text "隨機抽取"
+              button [ref=393]
+                text "編輯"
+              button [ref=394]
+                text "重抽"
+              text "題型"
+              text "隨機抽取"
+              combobox [ref=395]
+                text "選擇題"
+              button [ref=396]
+                text "重抽"
+              text "出題指示"
+              text "隨機抽取"
+              textbox [ref=397]
+                text "例如：請聚焦在資料判讀與因果推論"
+              text "題目內容類型"
+              text "沿用文本設定"
+              combobox [ref=398]
+                text "（沿用文本設定）"
+              text "圖片生成模式"
+              text "沿用文本設定"
+              combobox [ref=399]
+                text "（沿用文本設定）"
+              text "題目字數限制"
+              text "不限"
+              spinbutton [ref=400]
+                text "不限"
+              text "選項字數限制"
+              text "不限"
+              spinbutton [ref=401]
+                text "不限"
+              text "學習內容"
+              text "隨機抽取"
+              textbox [ref=402]
+                text "搜尋學習內容..."
+              text "地Ca-Ⅳ-3"
+              text "："
+              text "聚落地名的命名與環境、族群文化的關係。"
+              button [ref=403]
+                text "×"
+              button [ref=404]
+                text "重抽"
+              text "學習表現"
+              text "隨機抽取"
+              textbox [ref=405]
+                text "搜尋學習表現..."
+              text "社3d-Ⅳ-2"
+              text "："
+              text "提出保存文化資產、改善環境或維護社會正義…"
+              button [ref=406]
+                text "×"
+              text "社2b-Ⅳ-3"
+              text "："
+              text "重視環境倫理，並願意維護生態的多樣性。"
+              button [ref=407]
+                text "×"
+              button [ref=408]
+                text "重抽"
+        container [ref=411]
+          text "文本生成器將送出的提示詞"
+        container
+          text "系統提示詞"
+          text "你是一位資深的108課綱社會領域命題教師，專門為第四學習階段（7年級、8年級、9年級）設計「社會領域素養導向」考試題目。 本題庫根據國家教育研�..."
+          text "使用者提示詞"
+          text "請根據以下條件生成一道108課綱社會領域素養導向題組： ## 指定條件 - **年級重心**：7年級（第四學習階段） - **科目焦點**：地理 - **情境**：個人、職..."
+        container [ref=412]
+          text "子題產生器（第2小題）將送出的提示詞"
+        container
+          text "系統提示詞"
+          text "你是一位108課綱社會領域子題命題教師。你會收到一份共用閱讀素材，以及一道小題的出題規劃；請只根據該素材與規劃撰寫 exactly one SubQuestion JSON。 �..."
+          text "使用者提示詞"
+          text "請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題： ## 共用素材 - **核心問題**：{{核心問題：由前一階段產生}} - **文本**： ``` {{..."
+        container [ref=413]
+          text "子題產生器（第3小題）將送出的提示詞"
+        container
+          text "系統提示詞"
+          text "你是一位108課綱社會領域子題命題教師。你會收到一份共用閱讀素材，以及一道小題的出題規劃；請只根據該素材與規劃撰寫 exactly one SubQuestion JSON。 �..."
+          text "使用者提示詞"
+          text "請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題： ## 共用素材 - **核心問題**：{{核心問題：由前一階段產生}} - **文本**： ``` {{..."
+        container [ref=414]
+          text "子題產生器（第4小題）將送出的提示詞"
+        container
+          text "系統提示詞"
+          text "你是一位108課綱社會領域子題命題教師。你會收到一份共用閱讀素材，以及一道小題的出題規劃；請只根據該素材與規劃撰寫 exactly one SubQuestion JSON。 �..."
+          text "使用者提示詞"
+          text "請根據以下共用素材與小題規劃，生成一道108課綱社會領域素養導向小題： ## 共用素材 - **核心問題**：{{核心問題：由前一階段產生}} - **文本**： ``` {{..."
+      button [ref=409]
+        text "確定發送"
+      button [ref=410]
+        text "返回修改"
+    container "生成進度列"
+      text "尚未生成"
+      container
+        button [ref=346]
+          text "表單"
+        button [ref=347]
+          text "進度"
+        button [ref=348]
+          text "結果"
+        button [ref=349]
+          text "回饋"

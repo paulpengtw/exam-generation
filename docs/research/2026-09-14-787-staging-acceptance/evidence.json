@@ -1,0 +1,46 @@
+{
+  "mode": "resolver",
+  "requests": [
+    {
+      "mode": "pydantic",
+      "method": "POST",
+      "submittedAt": "2026-09-14T08:38:59.978Z",
+      "status": 422,
+      "contentType": "application/json",
+      "detail": [
+        {
+          "loc": [
+            "body",
+            "per_question_params",
+            0,
+            "math_thinking"
+          ],
+          "msg": "Value error, math_thinking must contain 1 to 3 values",
+          "type": "value_error"
+        }
+      ]
+    },
+    {
+      "mode": "resolver",
+      "method": "POST",
+      "submittedAt": "2026-09-14T08:39:01.062Z",
+      "status": 422,
+      "contentType": "application/json",
+      "detail": [
+        {
+          "field": "per_question_params[0].數學思考",
+          "code": "unresolved"
+        }
+      ]
+    }
+  ],
+  "telemetry": [],
+  "baselineHistoryTotal": 51,
+  "startedAt": "2026-09-14T08:38:25.585Z",
+  "asset": "https://examgen-staging.cpeng.me/assets/index-BnnhL0dA.js",
+  "release": "07fe50a3ccadffe49d29ad808266d7c778fa582e",
+  "pydanticText": "Invalid request: per_question_params[0].math_thinking: Value error, math_thinking must contain 1 to 3 values",
+  "resolverText": "Incomplete request: per_question_params[0].數學思考 (unresolved)",
+  "finalHistoryTotal": 51,
+  "checkedAt": "2026-09-14T08:40:03.545Z"
+}

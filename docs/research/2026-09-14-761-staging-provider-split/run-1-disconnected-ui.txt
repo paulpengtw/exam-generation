@@ -1,0 +1,652 @@
+[p1 "【測試機】素養試題 AI Examgen" | space "Issue 761 provider defaults acceptance"(16): 1 managed, 0 untracked — p1* "【測試機】素養試題 AI Examgen"]
+root
+  text "⚠ 此為測試環境，運作可能不穩定。"
+  container
+    container
+      button [ref=48]
+        text "←"
+      heading
+        text "社會領域題目產生器"
+      button [ref=49]
+        text "English"
+      button [ref=50]
+        text "中文"
+      button [ref=51]
+        text "紀錄"
+      text "[account email redacted]"
+      button [ref=52]
+        text "登出"
+    container
+      form
+        text "主題 / 議題（選填）"
+        textbox [ref=233, loc=css:input[placeholder="例如：氣候變遷與都市規劃"]]
+          text "例如：氣候變遷與都市規劃"
+        text "年級"
+        combobox [ref=234]
+          text "7"
+        text "難度"
+        combobox [ref=235]
+          text "預設（中等）"
+        text "科目"
+        combobox [ref=236]
+          text "全部（隨機）"
+        text "內容領域"
+        combobox [ref=237]
+          text "全部（隨機）"
+        text "卷面"
+        combobox [ref=238]
+          text "紙本"
+        text "學習表現"
+        button [ref=239]
+          text "切換勾選模式"
+        textbox [ref=240, loc=css:input[placeholder="搜尋學習表現..."]]
+          text "搜尋學習表現..."
+        text "文本素材類型"
+        combobox [ref=241]
+          text "含圖片"
+        text "圖片生成模式"
+        combobox [ref=242]
+          text "GPT 生圖"
+        text "題型種類"
+        combobox [ref=243]
+          text "題組題"
+        text "學習內容"
+        button [ref=244]
+          text "切換勾選模式"
+        textbox [ref=245, loc=css:input[placeholder="搜尋學習內容..."]]
+          text "搜尋學習內容..."
+        text "題數"
+        spinbutton [ref=246]
+          text "1"
+        text "出題模式"
+        combobox "form.coverage_mode" [ref=247, loc=css:select[aria-label="form.coverage_mode"]]
+          text "均衡（提示模型平均分配）"
+        heading
+          text "子題設定"
+        text "小題數"
+        spinbutton [ref=248, loc=css:input[placeholder="自動 3-7"]]
+          text "自動 3-7"
+        text "文本字數限制"
+        spinbutton [ref=249, loc=css:input[placeholder="不限"]]
+          text "不限"
+        text "文本出題指示"
+        textbox [ref=250, loc=css:input[placeholder="請輸入希望文本生成器特別注意的方向…"]]
+          text "請輸入希望文本生成器特別注意的方向…"
+        container
+          checkbox [ref=251]
+          text "略過驗證"
+        container
+          checkbox [ref=221]
+          text "關閉參考範例"
+        container
+          checkbox [ref=222]
+          text "末小題回扣核心問題"
+        container
+          checkbox [ref=223]
+          text "允許圖像種類重複"
+        container
+          container
+            container
+              text "規劃模型"
+              combobox "規劃模型" [ref=224, loc=css:select[aria-label="規劃模型"]]
+                text "預設 (claude-opus-4-6)"
+            container
+              text "規劃 Effort"
+              combobox "規劃 Effort" [ref=225, loc=css:select[aria-label="規劃 Effort"]]
+                text "high"
+          container
+            container
+              text "出題模型"
+              combobox "出題模型" [ref=226, loc=css:select[aria-label="出題模型"]]
+                text "gemini-3.1-pro-preview"
+            container
+              text "出題 Effort"
+              combobox "出題 Effort" [ref=227, loc=css:select[aria-label="出題 Effort"]]
+                text "high"
+          container
+            container
+              text "驗證模型"
+              combobox "驗證模型" [ref=228, loc=css:select[aria-label="驗證模型"]]
+                text "跟隨執行模型 (claude-opus-4-6)"
+            container
+              text "驗證 Effort"
+              combobox "驗證 Effort" [ref=229, loc=css:select[aria-label="驗證 Effort"]]
+                text "跟隨出題 Effort (high)"
+          container
+            container
+              text "修正模型"
+              combobox "修正模型" [ref=230, loc=css:select[aria-label="修正模型"]]
+                text "跟隨執行模型"
+            container
+              text "修正 Effort"
+              combobox "修正 Effort" [ref=231, loc=css:select[aria-label="修正 Effort"]]
+                text "跟隨出題 Effort"
+        button [ref=232]
+          text "產生"
+      container
+        heading
+          text "多 Agent 狀態"
+        container
+          container
+            text "文本生成器"
+            container
+              container [ref=252]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "生成題目中"
+                text "79868"
+                text "ms"
+          container
+            text "子題產生器 #1"
+            container
+              container [ref=253]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "生成題目中"
+                text "56781"
+                text "ms"
+          container
+            text "子題產生器 #2"
+            container
+              container [ref=254]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "生成題目中"
+                text "48851"
+                text "ms"
+          container
+            text "子題產生器 #3"
+            container
+              container [ref=255]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "生成題目中"
+                text "64810"
+                text "ms"
+          container
+            text "子題產生器 #4"
+            container
+              container [ref=256]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "生成題目中"
+                text "105472"
+                text "ms"
+          container
+            text "子題產生器 #5"
+            container
+              container [ref=257]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "生成題目中"
+                text "50205"
+                text "ms"
+          container
+            text "子題產生器 #6"
+            container
+              container [ref=258]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "生成題目中"
+                text "54205"
+                text "ms"
+          container
+            text "子題產生器 #7"
+            container
+              container [ref=259]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "生成題目中"
+                text "57776"
+                text "ms"
+          container
+            text "答案驗證器"
+            container
+              container [ref=260]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "驗證答案"
+                text "241213"
+                text "ms"
+          container
+            text "修正器"
+            text "修正題目"
+            text "106.1s"
+          container
+            text "圖片生成器"
+            container
+              container [ref=261]
+                text "歷史紀錄"
+                text "("
+                text "7"
+                text ")"
+              container
+                text "✓"
+                text "渲染圖片"
+                text "67402"
+                text "ms"
+                text "✓"
+                text "渲染圖片"
+                text "40345"
+                text "ms"
+                text "✓"
+                text "渲染圖片"
+                text "58001"
+                text "ms"
+                text "✓"
+                text "渲染圖片"
+                text "52029"
+                text "ms"
+                text "✓"
+                text "渲染圖片"
+                text "50288"
+                text "ms"
+                text "✓"
+                text "渲染圖片"
+                text "47594"
+                text "ms"
+                text "✓"
+                text "渲染圖片"
+                text "34865"
+                text "ms"
+          container
+            text "規劃器"
+            container
+              container [ref=262]
+                text "歷史紀錄"
+                text "("
+                text "1"
+                text ")"
+              container
+                text "✓"
+                text "規劃題組取材方向"
+                text "26710"
+                text "ms"
+      container
+        text "錯誤"
+        text "network error"
+        button [ref=263]
+          text "LLM 追蹤"
+          text "("
+          text "19"
+          text "次呼叫"
+          text ")"
+          text "▼"
+      container
+        heading
+          text "結果"
+          text "("
+          text "1"
+          text ")"
+        button [ref=264]
+          text "下載全部 JSON"
+        button [ref=265]
+          text "下載全部 ODT"
+        button [ref=266]
+          text "清除結果"
+        text "已驗證草稿"
+        text "7年級"
+        text "歷史"
+        text "社-J-C1"
+        text "社-J-C2"
+        text "歷G-Ⅳ-2"
+        text "歷M-Ⅳ-1"
+        text "歷Ib-Ⅳ-1"
+        text "社2c-Ⅳ-2"
+        text "歷1a-Ⅳ-1"
+        text "Civic Participation"
+        text "Reasoning and Applying–Interpret information"
+        text "Reasoning and Applying–Relate or Integrate"
+        text "Knowing–Defining and Describing"
+        text "? 未驗證"
+        image
+        text "核心問題"
+        text "為什麼歷史上不同政權的統治，會使台灣形成多元並存的文化面貌？"
+        text "文本"
+        text "臺南安平（舊稱大員）見證了臺灣歷史的更迭。近期，市立博物館舉辦「港灣記憶：從老地圖與商行看見多元臺灣」特展，並發起「青年代言人」徵選�..."
+        text "第"
+        text "1"
+        text "題"
+        text "7年級"
+        text "選擇題"
+        text "歷史"
+        text "社-J-C1"
+        text "歷G-Ⅳ-2"
+        text "社2c-Ⅳ-2"
+        text "歷1a-Ⅳ-1"
+        image
+        text "小明在「港灣記憶」特展中，看到一張安平舊廠房的歷史照片（如圖）。若小明想將這棟建築作為「青年代言人」的倡議保留對象，綜合圖片資訊與展�..."
+        button [ref=267]
+          text "隱藏答案"
+        text "答案"
+        text "："
+        text "A"
+        text "解析"
+        text "："
+        text "由圖片招牌中的「臺灣總督府」與「昭和十一年」等紀年與機構資訊，可判斷該建築屬於日治時期。小明依據展覽理念，發起「青年代言人」倡議保留�..."
+        button [ref=268]
+          text "顯示誘答分析"
+        text "第"
+        text "2"
+        text "題"
+        text "7年級"
+        text "開放式建構反應題"
+        text "歷史"
+        text "社-J-C1"
+        text "歷G-Ⅳ-2"
+        text "社2c-Ⅳ-2"
+        image
+        text "為了響應展覽「青年代言人」的徵選，請你從圖中的「甲：晚清洋行遺址」或「乙：日治海關舊址」擇一作為探究對象，寫出一項你可以實際執行的**歷..."
+        button [ref=269]
+          text "隱藏答案"
+        text "答案"
+        text "："
+        text "（參考答案）我選擇甲（晚清洋行遺址），踏查行動是「實地拍攝遺址現況並對比百年前的舊照片」。這項行動可以記錄歷史建築目前的受損或變遷情�..."
+        text "解析"
+        text "："
+        text "本題評量學生是否能結合歷史探究的方法（如實施踏查）與公民參與的態度（維護公共資產）。學生須提出具體可行的踏查方式（如拍照對比現況、訪�..."
+        text "評分規準"
+        button [ref=270]
+          text "顯示誘答分析"
+        text "第"
+        text "3"
+        text "題"
+        text "7年級"
+        text "選擇題"
+        text "歷史"
+        text "社-J-C1"
+        text "社-J-C2"
+        text "歷M-Ⅳ-1"
+        text "歷1a-Ⅳ-1"
+        text "社2c-Ⅳ-2"
+        image
+        text "青年代言人小華在安平港區的一處舊建築中，發現一張如附圖的歷史海報。海報上印有盾牌型的握手圖騰以及麵粉袋。小華計畫將這張海報納入他的「�..."
+        button [ref=271]
+          text "隱藏答案"
+        text "答案"
+        text "："
+        text "A"
+        text "解析"
+        text "："
+        text "正確答案為(A)。海報上的「握手圖騰」與「麵粉袋」是1950年代（冷戰時期）「中美合作」美援物資的典型標誌。這批援助對穩定臺灣戰後初期的民生與�..."
+        button [ref=272]
+          text "顯示誘答分析"
+        text "第"
+        text "4"
+        text "題"
+        text "7年級"
+        text "選擇題"
+        text "歷史"
+        text "社-J-C2"
+        text "歷M-Ⅳ-1"
+        text "歷Ib-Ⅳ-1"
+        text "歷G-Ⅳ-2"
+        text "社2c-Ⅳ-2"
+        image
+        text "小安與同學參加「青年代言人」徵選，他們除了參考展覽中的安平港區圖文資料，也運用了一張「晚清開港後臺灣三大出口商品產值長條圖」（如附圖�..."
+        button [ref=273]
+          text "隱藏答案"
+        text "答案"
+        text "："
+        text "B"
+        text "解析"
+        text "："
+        text "正確解題需要同時運用「圖表資料」與「歷史概念」。從圖表中可知開港後臺灣的三大商品出口產值皆呈成長趨勢，帶動了當時的貿易繁榮與外商來臺�..."
+        button [ref=274]
+          text "顯示誘答分析"
+        text "第"
+        text "5"
+        text "題"
+        text "7年級"
+        text "選擇題"
+        text "歷史"
+        text "社-J-C2"
+        text "歷G-Ⅳ-2"
+        text "社2c-Ⅳ-2"
+        text "歷1a-Ⅳ-1"
+        image
+        text "博物館為配合特展，發行了一份「安平歷史踏查集章手冊」（如下圖所示）。手冊的集章區依序標示了不同的紀年方式，並在最下方呼籲國中生報名「�..."
+        button [ref=275]
+          text "隱藏答案"
+        text "答案"
+        text "："
+        text "A"
+        text "解析"
+        text "："
+        text "手冊利用「1624年、同治、大正、民國」等不同的紀年方式，呈現出臺灣經歷不同政權更迭的歷史分期意義；同時透過招募「青年代言人」，鼓勵學生為�..."
+        button [ref=276]
+          text "顯示誘答分析"
+        text "第"
+        text "6"
+        text "題"
+        text "7年級"
+        text "選擇題"
+        text "歷史"
+        text "社-J-C1"
+        text "歷Ib-Ⅳ-1"
+        text "歷M-Ⅳ-1"
+        text "歷G-Ⅳ-2"
+        text "歷1a-Ⅳ-1"
+        text "社2c-Ⅳ-2"
+        image
+        text "為了宣傳「港灣記憶」特展，青年代言人展示了一張「19世紀後期安平港外商船隻國籍占比圖」（如下圖），並發表倡議：「這張圖表顯示了當時安平港..."
+        button [ref=277]
+          text "隱藏答案"
+        text "答案"
+        text "："
+        text "A"
+        text "解析"
+        text "："
+        text "題幹提及「19世紀後期」且圖表顯示英、德、美等多國商船活躍，可推論此為臺灣在晚清時期開港通商後，各國在安平設立洋行與發展貿易的歷史階段特..."
+        button [ref=278]
+          text "顯示誘答分析"
+        text "第"
+        text "7"
+        text "題"
+        text "7年級"
+        text "開放式建構反應題"
+        text "歷史"
+        text "社-J-C2"
+        text "歷Ib-Ⅳ-1"
+        text "歷M-Ⅳ-1"
+        text "歷G-Ⅳ-2"
+        text "社2c-Ⅳ-2"
+        text "歷1a-Ⅳ-1"
+        text "本次特展與題組的核心問題為：「為什麼歷史上不同政權的統治，會使臺灣形成多元並存的文化面貌？」 請根據文本，結合不同歷史分期（如17世紀、19..."
+        button [ref=279]
+          text "隱藏答案"
+        text "答案"
+        text "："
+        text "（1）成因：臺灣在不同歷史分期經歷了不同政權與外來勢力的影響。例如17世紀歐洲人建立貿易據點，帶來西方文化；19世紀晚清開港通商後，洋行林立..."
+        text "解析"
+        text "："
+        text "本題測驗學生能否綜合文本資訊與歷史分期概念，統整解釋「多元文化面貌」的成因（即不同時期政權交替與人群互動的累積），並結合現代公民參與�..."
+        text "評分規準"
+        button [ref=280]
+          text "顯示誘答分析"
+        container "Agent 自主驗證修正歷程"
+          heading
+            text "Agent 自主驗證修正歷程"
+          button [ref=281]
+            text "展開 Agent 自主驗證修正歷程"
+        container "圖像種類政策歷程"
+          heading
+            text "圖像種類政策歷程"
+          ordered_list
+            list_item
+              text "圖像種類：題幹"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "地圖"
+              text "2026-09-14T09:35:34.725679Z"
+            list_item
+              text "圖像種類：小題 1"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "歷史照片"
+              text "2026-09-14T09:35:34.794408Z"
+            list_item
+              text "圖像種類：小題 2"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "地圖"
+              text "2026-09-14T09:35:34.821808Z"
+            list_item
+              text "圖像種類：小題 3"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "歷史海報"
+              text "2026-09-14T09:35:34.845361Z"
+            list_item
+              text "圖像種類：小題 4"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "長條圖"
+              text "2026-09-14T09:35:34.859621Z"
+            list_item
+              text "圖像種類：小題 5"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "活動手冊版面"
+              text "2026-09-14T09:35:34.881784Z"
+            list_item
+              text "圖像種類：小題 6"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "圓餅圖"
+              text "2026-09-14T09:35:34.905825Z"
+            list_item
+              text "圖像種類碰撞"
+              paragraph
+                text "題幹"
+                text "×"
+                text "小題 2"
+                text "："
+                text "地圖"
+              text "2026-09-14T09:35:34.930351Z"
+            list_item
+              text "圖像種類修補嘗試"
+              paragraph
+                text "小題 2"
+                text "："
+                text "地圖"
+                text "→"
+                text "圖解"
+              text "2026-09-14T09:35:54.918908Z"
+            list_item
+              text "圖像種類：題幹"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "地圖"
+              text "2026-09-14T09:35:54.933242Z"
+            list_item
+              text "圖像種類：小題 1"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "歷史照片"
+              text "2026-09-14T09:35:54.947018Z"
+            list_item
+              text "圖像種類：小題 2"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "圖解"
+              text "2026-09-14T09:35:54.960653Z"
+            list_item
+              text "圖像種類：小題 3"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "歷史海報"
+              text "2026-09-14T09:35:54.974052Z"
+            list_item
+              text "圖像種類：小題 4"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "長條圖"
+              text "2026-09-14T09:35:54.987464Z"
+            list_item
+              text "圖像種類：小題 5"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "活動手冊版面"
+              text "2026-09-14T09:35:55.001108Z"
+            list_item
+              text "圖像種類：小題 6"
+              paragraph
+                text "有效圖像種類"
+                text "："
+                text "圓餅圖"
+              text "2026-09-14T09:35:55.015746Z"
+        container "參考範例紀錄"
+          heading
+            text "參考範例紀錄"
+          text "共 7 筆，7 小題"
+          button "展開參考範例紀錄" [ref=282, loc=css:button[aria-label="展開參考範例紀錄"]]
+            text "展開參考範例紀錄"
+        button [ref=283]
+          text "下載 JSON"
+        button [ref=284]
+          text "下載 PNG"
+        button [ref=285]
+          text "下載 ODT"
+    container "生成進度列"
+      container
+        text "✕"
+        text "錯誤"
+      container
+        button [ref=84]
+          text "表單"
+        button [ref=85]
+          text "進度"
+        button [ref=86]
+          text "結果"
+        button [ref=87]
+          text "回饋"

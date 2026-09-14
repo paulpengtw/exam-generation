@@ -1,0 +1,216 @@
+[
+  {
+    "path": "/api/models",
+    "method": "GET",
+    "at": "2026-09-14T09:48:08.468Z",
+    "status": 200,
+    "response": {
+      "allowed": [
+        "gemini-3.1-pro-preview",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-sonnet-5"
+      ],
+      "effort": {
+        "gemini-3.1-pro-preview": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "claude-opus-4-6": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ],
+        "claude-sonnet-4-6": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ],
+        "claude-opus-5": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "claude-fable-5": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "claude-sonnet-5": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "defaults": {
+        "plan": "claude-opus-4-6",
+        "execute": "claude-sonnet-4-6",
+        "verify": "claude-opus-4-6",
+        "correct": "",
+        "effort_plan": "high",
+        "effort_execute": "high",
+        "effort_verify": "high",
+        "effort_correct": ""
+      }
+    }
+  },
+  {
+    "path": "/api/generate/resolve",
+    "method": "POST",
+    "at": "2026-09-14T09:48:29.266Z",
+    "body": {
+      "subject": "social_studies",
+      "grade": 7,
+      "style": [],
+      "content_type": "純文字",
+      "context": [],
+      "set_type": "題組題",
+      "q_type": [],
+      "count": 1,
+      "skip_verify": false,
+      "disable_reference_fewshot": false,
+      "image_generation_mode": "gpt_image",
+      "sub_question_count": 3,
+      "subquestion_configs": "[{},{},{}]",
+      "per_question_params": "[{}]",
+      "model_execute": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "coverage_mode": "balanced",
+      "core_question_callback": true,
+      "redraws": {}
+    },
+    "status": 200
+  },
+  {
+    "path": "/api/plan-core-questions",
+    "method": "POST",
+    "at": "2026-09-14T09:48:29.578Z",
+    "body": {
+      "topic": "",
+      "subject": "social_studies",
+      "grade": 7
+    },
+    "status": 200,
+    "response": {
+      "candidates": [
+        "為什麼台灣在不同歷史時期會出現多元族群的遷移與互動，這些過程如何形塑今日台灣社會的文化面貌？",
+        "台灣各地的自然環境差異，如何影響不同族群的聚落分布與生活方式的選擇？",
+        "當不同文化背景的群體在同一社會中共同生活時，我們可以透過哪些社會規範與公民素養來促進彼此的尊重與合作？"
+      ]
+    }
+  },
+  {
+    "path": "/api/generate/preview",
+    "method": "POST",
+    "at": "2026-09-14T09:48:59.101Z",
+    "body": {
+      "subject": "social_studies",
+      "grade": 7,
+      "style": [],
+      "content_type": "純文字",
+      "context": [],
+      "set_type": "題組題",
+      "q_type": [],
+      "count": 1,
+      "skip_verify": false,
+      "disable_reference_fewshot": false,
+      "image_generation_mode": "gpt_image",
+      "core_question": "為什麼台灣在不同歷史時期會出現多元族群的遷移與互動，這些過程如何形塑今日台灣社會的文化面貌？",
+      "sub_question_count": 3,
+      "subquestion_configs": "[{},{},{}]",
+      "per_question_params": "[{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"個人\",\"職業\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"gpt_image\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"地Ca-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2b-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"地Ca-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社3d-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"地Ca-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社3d-Ⅳ-2\\\",\\\"社2b-Ⅳ-3\\\"]}]\",\"model_execute\":\"gemini-3.1-pro-preview\",\"effort_plan\":\"high\",\"effort_execute\":\"high\",\"coverage_mode\":\"balanced\",\"seed\":1996737474,\"subject_filter\":[\"地理\"],\"content_domain\":\"Civic Participation\",\"core_competency\":[\"社-J-B3\",\"社-J-C3\",\"社-J-B1\"],\"learning_content\":[\"地Ca-Ⅳ-3\"],\"learning_performance\":[\"社3d-Ⅳ-2\",\"社2b-Ⅳ-3\"],\"core_question\":\"為什麼台灣在不同歷史時期會出現多元族群的遷移與互動，這些過程如何形塑今日台灣社會的文化面貌？\"}]",
+      "drawn": [
+        "seed",
+        "per_question_params[0].seed",
+        "per_question_params[0].情境",
+        "per_question_params[0].科目",
+        "per_question_params[0].內容領域",
+        "per_question_params[0].核心素養",
+        "per_question_params[0].學習內容",
+        "per_question_params[0].學習表現",
+        "per_question_params[0].subquestion_configs[0].question_type",
+        "per_question_params[0].subquestion_configs[0].認知歷程",
+        "per_question_params[0].subquestion_configs[1].question_type",
+        "per_question_params[0].subquestion_configs[1].認知歷程",
+        "per_question_params[0].subquestion_configs[2].question_type",
+        "per_question_params[0].subquestion_configs[2].認知歷程",
+        "per_question_params[0].subquestion_configs[0].learning_content",
+        "per_question_params[0].subquestion_configs[0].learning_performance",
+        "per_question_params[0].subquestion_configs[1].learning_content",
+        "per_question_params[0].subquestion_configs[1].learning_performance",
+        "per_question_params[0].subquestion_configs[2].learning_content",
+        "per_question_params[0].subquestion_configs[2].learning_performance"
+      ],
+      "seed": 1996737474,
+      "model_execute": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "coverage_mode": "balanced",
+      "core_question_callback": true
+    },
+    "status": 200
+  },
+  {
+    "path": "/api/generate",
+    "method": "POST",
+    "at": "2026-09-14T09:49:01.510Z",
+    "body": {
+      "subject": "social_studies",
+      "grade": 7,
+      "style": [],
+      "content_type": "純文字",
+      "context": [],
+      "set_type": "題組題",
+      "q_type": [],
+      "count": 1,
+      "skip_verify": false,
+      "disable_reference_fewshot": false,
+      "image_generation_mode": "gpt_image",
+      "core_question": "為什麼台灣在不同歷史時期會出現多元族群的遷移與互動，這些過程如何形塑今日台灣社會的文化面貌？",
+      "sub_question_count": 3,
+      "subquestion_configs": "[{},{},{}]",
+      "per_question_params": "[{\"grade\":7,\"style\":[],\"content_type\":\"純文字\",\"context\":[\"個人\",\"職業\"],\"set_type\":\"題組題\",\"q_type\":[],\"skip_verify\":false,\"disable_reference_fewshot\":false,\"image_generation_mode\":\"gpt_image\",\"sub_question_count\":3,\"subquestion_configs\":\"[{\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Relate or Integrate\\\",\\\"learning_content\\\":[\\\"地Ca-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社2b-Ⅳ-3\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"地Ca-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社3d-Ⅳ-2\\\"]},{\\\"question_type\\\":\\\"選擇題\\\",\\\"cognitive_process\\\":\\\"Reasoning and Applying–Interpret information\\\",\\\"learning_content\\\":[\\\"地Ca-Ⅳ-3\\\"],\\\"learning_performance\\\":[\\\"社3d-Ⅳ-2\\\",\\\"社2b-Ⅳ-3\\\"]}]\",\"model_execute\":\"gemini-3.1-pro-preview\",\"effort_plan\":\"high\",\"effort_execute\":\"high\",\"coverage_mode\":\"balanced\",\"seed\":1996737474,\"subject_filter\":[\"地理\"],\"content_domain\":\"Civic Participation\",\"core_competency\":[\"社-J-B3\",\"社-J-C3\",\"社-J-B1\"],\"learning_content\":[\"地Ca-Ⅳ-3\"],\"learning_performance\":[\"社3d-Ⅳ-2\",\"社2b-Ⅳ-3\"],\"core_question\":\"為什麼台灣在不同歷史時期會出現多元族群的遷移與互動，這些過程如何形塑今日台灣社會的文化面貌？\"}]",
+      "drawn": [
+        "seed",
+        "per_question_params[0].seed",
+        "per_question_params[0].情境",
+        "per_question_params[0].科目",
+        "per_question_params[0].內容領域",
+        "per_question_params[0].核心素養",
+        "per_question_params[0].學習內容",
+        "per_question_params[0].學習表現",
+        "per_question_params[0].subquestion_configs[0].question_type",
+        "per_question_params[0].subquestion_configs[0].認知歷程",
+        "per_question_params[0].subquestion_configs[1].question_type",
+        "per_question_params[0].subquestion_configs[1].認知歷程",
+        "per_question_params[0].subquestion_configs[2].question_type",
+        "per_question_params[0].subquestion_configs[2].認知歷程",
+        "per_question_params[0].subquestion_configs[0].learning_content",
+        "per_question_params[0].subquestion_configs[0].learning_performance",
+        "per_question_params[0].subquestion_configs[1].learning_content",
+        "per_question_params[0].subquestion_configs[1].learning_performance",
+        "per_question_params[0].subquestion_configs[2].learning_content",
+        "per_question_params[0].subquestion_configs[2].learning_performance"
+      ],
+      "seed": 1996737474,
+      "model_execute": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "coverage_mode": "balanced",
+      "core_question_callback": true
+    },
+    "status": 200
+  }
+]

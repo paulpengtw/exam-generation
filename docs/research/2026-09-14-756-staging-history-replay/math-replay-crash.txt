@@ -1,0 +1,21 @@
+Unexpected Application Error!
+t is not a function or its return value is not iterable
+TypeError: t is not a function or its return value is not iterable
+    at tP (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:568:22241)
+    at https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:568:27155
+    at Object.useMemo (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:8:59942)
+    at e.useMemo (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:1:9098)
+    at aP (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:568:27148)
+    at _o (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:8:47554)
+    at cc (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:8:70116)
+    at Tc (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:8:80394)
+    at Mu (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:8:115963)
+    at ku (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:8:115010)
+    at Ou (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:8:114843)
+    at gu (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:8:111673)
+    at ld (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:8:123324)
+    at MessagePort.D (https://examgen-staging.cpeng.me/assets/index-Dh12gpdu.js:1:11029)
+
+💿 Hey developer 👋
+
+You can provide a way better UX than this when your app throws errors by providing your own ErrorBoundary or errorElement prop on your route.

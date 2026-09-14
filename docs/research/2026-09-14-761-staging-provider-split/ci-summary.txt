@@ -1,0 +1,6 @@
+Commit: ad80b9bc0af2321ad22751dcbf3e8fcc4015d7ac
+Run: https://github.com/paulpengtw/exam-generation/actions/runs/34827756113
+
+python	Python tests (includes TS contract drift guard)	2026-09-14T09:30:21.1982930Z 2167 passed, 1 skipped, 42 warnings in 318.32s (0:05:18)
+web	Web tests	2026-09-14T09:28:44.8496393Z ^[[2m Test Files ^[[22m ^[[1m^[[32m105 passed^[[39m^[[22m^[[90m (105)^[[39m
+web	Web tests	2026-09-14T09:28:44.8500274Z ^[[2m      Tests ^[[22m ^[[1m^[[32m861 passed^[[39m^[[22m^[[90m (861)^[[39m
