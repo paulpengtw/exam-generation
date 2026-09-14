@@ -87,9 +87,19 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     hasReceivedResults: hasResults,
     exportWorkspace,
   });
+  const { navigationApproved, clearNavigationApproval } = useWorkspaceStore();
   const blocker = useBlocker(
-    ({ historyAction }) =>
-      (hasUnsubmittedInput || hasResults) && historyAction === "POP",
+    ({ historyAction, nextLocation }) => {
+      // Approved navigation (e.g. from save-and-update) bypasses the guard once
+      if (
+        navigationApproved !== null &&
+        nextLocation.pathname === navigationApproved.target
+      ) {
+        clearNavigationApproval();
+        return false;
+      }
+      return (hasUnsubmittedInput || hasResults) && historyAction === "POP";
+    },
   );
 
   // Derive the effective pending action: explicit state takes priority; the
@@ -101,11 +111,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   useEffect(() => {
     if (!hasUnsubmittedInput && !hasResults) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      // Approved navigation bypasses beforeunload too
+      if (navigationApproved !== null) return;
       event.preventDefault();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [hasUnsubmittedInput, hasResults]);
+  }, [hasUnsubmittedInput, hasResults, navigationApproved]);
 
   const handleLogout = () => {
     logout();
