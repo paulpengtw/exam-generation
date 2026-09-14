@@ -53,7 +53,7 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
                 │       (data/few_shot/{style}/*.json sampled at random)
                 │
                 ├── 4. LLM call #1 — generate question  (src/llm_client.py:26-40)
-                │       model: claude-sonnet-4-6  temp: 0.7  max_tokens: 8192
+                │       model: gemini-3.1-pro-preview  temp: 0.7  max_tokens: 8192
                 │       → extract_json() → _parse_question() → ExamQuestion
                 │
                 ├── 5. [if chart_spec present] render_image()  (src/renderer.py:271)
@@ -124,7 +124,7 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
 | DB write finish | `server/generate/routes.py` | 97–107 | UPDATE `generation_logs {status, error, completed_at}` |
 | Parameter sampling | `src/sampler.py` | 21–77 | all RNG via `random.Random(seed)` |
 | Prompt assembly | `src/context_builder.py` | 131–230 | system + user prompts, few-shot injection |
-| LLM call #1 | `src/llm_client.py` | 26–40 | generate question (Sonnet, temp 0.7) |
+| LLM call #1 | `src/llm_client.py` | 26–40 | generate question (`gemini-3.1-pro-preview`, temp 0.7) |
 | JSON parse | `src/cli.py` | 145–212 | `_parse_question` → `ExamQuestion` |
 | Image render | `src/renderer.py` | 271 | entry point `render_image()`, dispatches by `render_mode` |
 | chart render | `src/renderer.py` | 50–71 | matplotlib — histogram/boxplot/line_chart/pie_chart |

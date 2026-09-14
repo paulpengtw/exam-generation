@@ -532,6 +532,7 @@ def test_preview_route_keeps_text_word_limit_only_on_text_generator(subject: str
     )
     app.dependency_overrides[get_config] = lambda: ServerConfig(
         api_key="x",
+        gemini_api_key="x",
         data_dir=Path("data"),
         creative_planning=False,
     )

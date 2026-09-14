@@ -15,6 +15,7 @@ def _base_env() -> dict[str, str]:
         "JWT_SECRET": "s",
         "LLM_MODEL_PLAN": "claude-opus-5",
         "LLM_MODEL_EXECUTE": "claude-sonnet-4-6",
+        "LLM_MODEL_VERIFY": "",  # These allowlist cases cover plan/execute appending.
     }
 
 
@@ -78,12 +79,12 @@ def test_allowlist_empty_string_falls_back_to_defaults(tmp_path: Path) -> None:
     assert cfg.llm_models_allowed == _DEFAULT_MODELS_ALLOWED
 
 
-def test_fresh_env_config_has_six_model_roster_and_sonnet_default(tmp_path: Path) -> None:
+def test_fresh_env_config_has_six_model_roster_and_split_defaults(tmp_path: Path) -> None:
     """With no LLM_MODELS_ALLOWED set, from_env() returns the built-in 6-model
-    roster and the new plan default (claude-sonnet-4-6, issue #379)."""
+    roster and split plan/execute defaults (issue #759)."""
     env = {"LLM_API_KEY": "x", "JWT_SECRET": "s"}
     with mock.patch.dict(os.environ, env, clear=True):
         cfg = ServerConfig.from_env(env_file=tmp_path / ".env.missing")
-    assert cfg.model_plan == "claude-sonnet-4-6"
-    assert cfg.model_execute == "claude-sonnet-4-6"
+    assert cfg.model_plan == "claude-opus-4-6"
+    assert cfg.model_execute == "gemini-3.1-pro-preview"
     assert cfg.llm_models_allowed == _DEFAULT_MODELS_ALLOWED

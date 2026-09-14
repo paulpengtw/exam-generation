@@ -9,6 +9,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.config import (
+    DEFAULT_EFFORT_CORRECT,
+    DEFAULT_EFFORT_EXECUTE,
+    DEFAULT_EFFORT_PLAN,
+    DEFAULT_EFFORT_VERIFY,
+    DEFAULT_MODEL_CORRECT,
+    DEFAULT_MODEL_EXECUTE,
+    DEFAULT_MODEL_PLAN,
+    DEFAULT_MODEL_VERIFY,
+    Config,
+)
+from src.config import (
     EFFORT_LEVELS as _EFFORT_LEVELS,  # noqa: F401  (re-export: server.generate.routes + tests import this name)
 )
 from src.config import (
@@ -20,21 +31,17 @@ from src.config import (
 from src.config import (
     THREE_EFFORT_LEVELS as _THREE_EFFORT_LEVELS,  # noqa: F401
 )
-from src.config import (
-    Config,
-)
 
-# Code-level allowlist shipped with the server.  When LLM_MODELS_ALLOWED is
-# unset or empty this roster is used as-is (plus any plan/execute model that
-# is not already in it).  When LLM_MODELS_ALLOWED is set it REPLACES this
-# roster entirely — no merge — and the plan/execute append still applies.
+# Built-in roster: execute default first, then plan/verify, then other models.
+# Unset/empty LLM_MODELS_ALLOWED uses this roster; a non-empty value replaces it.
+# Configured non-empty tier models are always appended if missing.
 _DEFAULT_MODELS_ALLOWED: tuple[str, ...] = (
-    "claude-sonnet-4-6",
     "gemini-3.1-pro-preview",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
     "claude-opus-5",
     "claude-fable-5",
     "claude-sonnet-5",
-    "claude-opus-4-6",
 )
 
 
@@ -65,15 +72,9 @@ class ServerConfig(Config):
     llm_models_allowed: tuple[str, ...] = ()
     llm_exchange_retention_days: int = 30
     creative_planning: bool = True
-    effort_plan: str = "medium"  # output_config.effort for plan calls (LLM_EFFORT_PLAN)
-    effort_execute: str = "medium"  # output_config.effort for execute calls (LLM_EFFORT_EXECUTE)
-    # Tier-specific model overrides (issue #374); inherited from Config but
-    # ServerConfig.from_env re-reads every env var independently.
-    # model_verify: str = ""   # inherited — declared in Config
-    # model_correct: str = ""  # inherited — declared in Config
-    # Tier-specific effort overrides (issue #377); inherited from Config.
-    # effort_verify: str = ""  # inherited — declared in Config
-    # effort_correct: str = "" # inherited — declared in Config
+    effort_plan: str = DEFAULT_EFFORT_PLAN  # Planning effort (LLM_EFFORT_PLAN)
+    effort_execute: str = DEFAULT_EFFORT_EXECUTE  # Execution effort (LLM_EFFORT_EXECUTE)
+    # Verify/correct model and effort fields inherit the shared defaults from Config.
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> ServerConfig:
@@ -86,10 +87,10 @@ class ServerConfig(Config):
         cfg = cls(
             api_key=os.environ.get("LLM_API_KEY", ""),
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
-            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-sonnet-4-6"),
-            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
-            model_verify=os.environ.get("LLM_MODEL_VERIFY", ""),
-            model_correct=os.environ.get("LLM_MODEL_CORRECT", ""),
+            model_plan=os.environ.get("LLM_MODEL_PLAN", DEFAULT_MODEL_PLAN),
+            model_execute=os.environ.get("LLM_MODEL_EXECUTE", DEFAULT_MODEL_EXECUTE),
+            model_verify=os.environ.get("LLM_MODEL_VERIFY", DEFAULT_MODEL_VERIFY),
+            model_correct=os.environ.get("LLM_MODEL_CORRECT", DEFAULT_MODEL_CORRECT),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
             image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),
@@ -161,10 +162,10 @@ class ServerConfig(Config):
             web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
             not in ("0", "false", "False", ""),
-            effort_plan=os.environ.get("LLM_EFFORT_PLAN", "medium"),
-            effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", "medium"),
-            effort_verify=os.environ.get("LLM_EFFORT_VERIFY", ""),
-            effort_correct=os.environ.get("LLM_EFFORT_CORRECT", ""),
+            effort_plan=os.environ.get("LLM_EFFORT_PLAN", DEFAULT_EFFORT_PLAN),
+            effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", DEFAULT_EFFORT_EXECUTE),
+            effort_verify=os.environ.get("LLM_EFFORT_VERIFY", DEFAULT_EFFORT_VERIFY),
+            effort_correct=os.environ.get("LLM_EFFORT_CORRECT", DEFAULT_EFFORT_CORRECT),
         )
         # When LLM_MODELS_ALLOWED is unset/empty fall back to the built-in
         # roster; when set it replaces the roster entirely (no merge).

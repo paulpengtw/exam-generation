@@ -17,12 +17,12 @@ from src.llm_client import LLMClient
 # ---------------------------------------------------------------------------
 
 
-def test_config_effort_plan_default_is_medium() -> None:
-    assert Config().effort_plan == "medium"
+def test_config_effort_plan_default_is_high() -> None:
+    assert Config().effort_plan == "high"
 
 
-def test_config_effort_execute_default_is_medium() -> None:
-    assert Config().effort_execute == "medium"
+def test_config_effort_execute_default_is_high() -> None:
+    assert Config().effort_execute == "high"
 
 
 def test_config_effort_plan_from_env(monkeypatch) -> None:
@@ -85,9 +85,11 @@ def _make_client(
         api_key="x",
         llm_stream=False,
         model_execute=model,
+        model_verify="",  # Verify uses the fixture's provider/model.
         model_plan=model,
         effort_plan=effort_plan,
         effort_execute=effort_execute,
+        effort_verify="",  # These call-site tests exercise execute-effort inheritance.
     )
     client = LLMClient(cfg)
     fake = _FakeMessagesAPI()

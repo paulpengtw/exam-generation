@@ -399,7 +399,7 @@ def test_plan_core_questions_rejects_effort_plan_xhigh_for_sonnet4_6() -> None:
 
 
 def test_plan_core_questions_absent_effort_uses_env_default(monkeypatch) -> None:
-    """Omitting effort_plan falls back to the env default (medium from SrcConfig.from_env)."""
+    """Omitting effort_plan falls back to the env default (high from SrcConfig.from_env)."""
     monkeypatch.delenv("LLM_EFFORT_PLAN", raising=False)
     app, token, engine, cfg = _make_app_and_token()
     captured: dict = {}
@@ -422,8 +422,8 @@ def test_plan_core_questions_absent_effort_uses_env_default(monkeypatch) -> None
         asyncio.run(engine.dispose())
 
     assert r.status_code == 200
-    # Absent effort_plan falls back to SrcConfig.from_env() default = "medium".
-    assert captured["effort_plan"] == "medium"
+    # Absent effort_plan falls back to SrcConfig.from_env() default = "high".
+    assert captured["effort_plan"] == "high"
 
 
 # ---------------------------------------------------------------------------

@@ -63,7 +63,7 @@ def test_generate_route_rejects_unresolved_top_level_field() -> None:
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
     limiter.reset()
 
     try:
@@ -99,7 +99,7 @@ def test_generate_route_rejects_unresolved_per_question_field() -> None:
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
     rows = [
         {
             "grade": 8,
@@ -153,7 +153,7 @@ def test_generate_route_rejects_unresolved_subquestion_field() -> None:
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
     configs = [
         {
             "reporting_scale": "1",
@@ -311,7 +311,7 @@ def test_generate_route_reports_incompatible_parent_with_resolver_shape() -> Non
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
     limiter.reset()
 
     try:
@@ -1364,6 +1364,7 @@ def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_
 
     config = ServerConfig(
         api_key="x",
+        gemini_api_key="x",
         jwt_secret="test-secret",
         output_dir=tmp_path,
         data_dir=Path("data"),
@@ -1839,7 +1840,8 @@ def test_generate_route_persists_one_failed_record_after_prior_success(tmp_path)
             yield session
 
     config = ServerConfig(
-        api_key="x", jwt_secret="test-secret", output_dir=tmp_path, data_dir=Path("data")
+        api_key="x", jwt_secret="test-secret", output_dir=tmp_path, data_dir=Path("data"),
+        gemini_api_key="x",
     )
     user_id = uuid.uuid4()
 
@@ -2145,7 +2147,7 @@ def test_ss_generate_route_rejects_per_subquestion_text_word_limit() -> None:
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
 
     # Start from a fully-resolved SS payload so the completeness gate passes.
     params = _complete_query_params({"subject": "social_studies", "seed": 41})
@@ -2183,7 +2185,7 @@ def test_ns_generate_route_rejects_per_subquestion_text_word_limit() -> None:
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
 
     # Start from a fully-resolved NS payload so the completeness gate passes.
     params = _complete_query_params({"subject": "natural_sciences", "seed": 41})
@@ -2217,7 +2219,7 @@ def test_ss_generate_route_rejects_unknown_subquestion_config_key() -> None:
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
 
     params = _complete_query_params({"subject": "social_studies", "seed": 41})
     configs = json.loads(params.get("subquestion_configs") or "[]")
@@ -2245,7 +2247,7 @@ def test_ns_generate_route_rejects_unknown_subquestion_config_key() -> None:
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
 
     params = _complete_query_params({"subject": "natural_sciences", "seed": 41})
     configs = json.loads(params.get("subquestion_configs") or "[]")
@@ -2273,7 +2275,7 @@ def test_generate_route_rejects_multiple_unknown_subquestion_config_keys_in_one_
         id=uuid.uuid4(), email="u@example.com"
     )
     app.dependency_overrides[get_async_session] = lambda: None
-    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x")
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
 
     params = _complete_query_params({"subject": "social_studies", "seed": 41})
     configs = json.loads(params.get("subquestion_configs") or "[]")

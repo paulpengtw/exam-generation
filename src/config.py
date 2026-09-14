@@ -8,6 +8,16 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Shared tier defaults for CLI and server configuration readers.
+DEFAULT_MODEL_PLAN = "claude-opus-4-6"
+DEFAULT_MODEL_EXECUTE = "gemini-3.1-pro-preview"
+DEFAULT_MODEL_VERIFY = "claude-opus-4-6"
+DEFAULT_MODEL_CORRECT = ""
+DEFAULT_EFFORT_PLAN = "high"
+DEFAULT_EFFORT_EXECUTE = "high"
+DEFAULT_EFFORT_VERIFY = "high"
+DEFAULT_EFFORT_CORRECT = ""
+
 # ---------------------------------------------------------------------------
 # Per-model effort level roster (moved here from server/config.py so that
 # src/ code can reference it without importing server/).
@@ -38,13 +48,13 @@ EFFORT_LEVELS: dict[str, list[str]] = {
 class Config:
     api_key: str = ""
     base_url: str = "https://api.anthropic.com/v1"
-    model_plan: str = "claude-sonnet-4-6"
-    model_execute: str = "claude-sonnet-4-6"
+    model_plan: str = DEFAULT_MODEL_PLAN
+    model_execute: str = DEFAULT_MODEL_EXECUTE
     # Tier-specific model overrides (empty = follow the effective execute model,
     # resolved at call time so per-request dataclasses.replace overrides land
     # correctly — see issue #374).
-    model_verify: str = ""   # 驗證模型; empty → effective execute model
-    model_correct: str = ""  # 修正模型; empty → effective execute model
+    model_verify: str = DEFAULT_MODEL_VERIFY   # 驗證模型; empty → effective execute model
+    model_correct: str = DEFAULT_MODEL_CORRECT  # 修正模型; empty → effective execute model
     image_api_key: str = ""
     image_base_url: str = "https://api.openai.com/v1"
     image_model: str = "gpt-image2"
@@ -65,11 +75,11 @@ class Config:
     # per-batch Opus 情境-題材 planning (SS only); env CREATIVE_PLANNING
     creative_planning: bool = True
     temperature: float | None = None  # sampling temperature; None = provider default
-    effort_plan: str = "medium"  # output_config.effort for plan calls (LLM_EFFORT_PLAN)
-    effort_execute: str = "medium"  # output_config.effort for execute calls (LLM_EFFORT_EXECUTE)
+    effort_plan: str = DEFAULT_EFFORT_PLAN  # Planning effort (LLM_EFFORT_PLAN)
+    effort_execute: str = DEFAULT_EFFORT_EXECUTE  # Execution effort (LLM_EFFORT_EXECUTE)
     # Tier-specific effort overrides (issue #377); empty = inherit effort_execute at call time.
-    effort_verify: str = ""   # empty → inherit effort_execute (LLM_EFFORT_VERIFY)
-    effort_correct: str = ""  # empty → inherit effort_execute (LLM_EFFORT_CORRECT)
+    effort_verify: str = DEFAULT_EFFORT_VERIFY   # empty → inherit effort_execute
+    effort_correct: str = DEFAULT_EFFORT_CORRECT  # empty → inherit effort_execute
     llm_timeout_seconds: int = 600   # HTTP timeout for LLM API calls (LLM_TIMEOUT_SECONDS)
     image_timeout_seconds: int = 300  # HTTP timeout for image API calls (IMAGE_TIMEOUT_SECONDS)
 
@@ -84,10 +94,10 @@ class Config:
         return cls(
             api_key=os.environ.get("LLM_API_KEY", ""),
             base_url=os.environ.get("LLM_BASE_URL", "https://api.anthropic.com/v1"),
-            model_plan=os.environ.get("LLM_MODEL_PLAN", "claude-sonnet-4-6"),
-            model_execute=os.environ.get("LLM_MODEL_EXECUTE", "claude-sonnet-4-6"),
-            model_verify=os.environ.get("LLM_MODEL_VERIFY", ""),
-            model_correct=os.environ.get("LLM_MODEL_CORRECT", ""),
+            model_plan=os.environ.get("LLM_MODEL_PLAN", DEFAULT_MODEL_PLAN),
+            model_execute=os.environ.get("LLM_MODEL_EXECUTE", DEFAULT_MODEL_EXECUTE),
+            model_verify=os.environ.get("LLM_MODEL_VERIFY", DEFAULT_MODEL_VERIFY),
+            model_correct=os.environ.get("LLM_MODEL_CORRECT", DEFAULT_MODEL_CORRECT),
             image_api_key=os.environ.get("IMAGE_API_KEY", ""),
             image_base_url=os.environ.get("IMAGE_BASE_URL", "https://api.openai.com/v1"),
             image_model=os.environ.get("IMAGE_MODEL", "gpt-image2"),
@@ -112,10 +122,10 @@ class Config:
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
             not in ("0", "false", "False", ""),
             temperature=float(t) if (t := os.environ.get("LLM_TEMPERATURE", "").strip()) else None,
-            effort_plan=os.environ.get("LLM_EFFORT_PLAN", "medium"),
-            effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", "medium"),
-            effort_verify=os.environ.get("LLM_EFFORT_VERIFY", ""),
-            effort_correct=os.environ.get("LLM_EFFORT_CORRECT", ""),
+            effort_plan=os.environ.get("LLM_EFFORT_PLAN", DEFAULT_EFFORT_PLAN),
+            effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", DEFAULT_EFFORT_EXECUTE),
+            effort_verify=os.environ.get("LLM_EFFORT_VERIFY", DEFAULT_EFFORT_VERIFY),
+            effort_correct=os.environ.get("LLM_EFFORT_CORRECT", DEFAULT_EFFORT_CORRECT),
             llm_timeout_seconds=int(os.environ.get("LLM_TIMEOUT_SECONDS", "600")),
             image_timeout_seconds=int(os.environ.get("IMAGE_TIMEOUT_SECONDS", "300")),
         )
