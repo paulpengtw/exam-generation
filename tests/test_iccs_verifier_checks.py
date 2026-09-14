@@ -218,10 +218,9 @@ def test_history_theme_assessment_is_advisory_and_does_not_change_pass() -> None
     assert "主題看似未連結" in result.details
 
 
-def test_corrector_freezes_iccs_axes_on_existing_and_added_subquestions() -> None:
+def test_corrector_freezes_iccs_axes_during_valid_correction() -> None:
     first_process = "Knowing–Defining and Describing"
     attempted_process = "Knowing–Illustrating with examples"
-    added_process = "Reasoning and Applying–Interpret information"
     question = _question(
         content_domain="Civic Participation",
         subjects_and_codes=[("公民與社會", ["公Ca-Ⅳ-2"])],
@@ -236,18 +235,11 @@ def test_corrector_freezes_iccs_axes_on_existing_and_added_subquestions() -> Non
                 "認知歷程": [attempted_process],
                 "subquestions": [
                     {
+                        "序號": 1,
                         "認知歷程": attempted_process,
                         "題型": "選擇題",
                         "題目": "修正後題目",
                         "答案": "A",
-                    },
-                    {
-                        "序號": 2,
-                        "科目": ["公民與社會"],
-                        "認知歷程": added_process,
-                        "題型": "選擇題",
-                        "題目": "模型新增題目",
-                        "答案": "B",
                     },
                 ],
             }
@@ -263,7 +255,8 @@ def test_corrector_freezes_iccs_axes_on_existing_and_added_subquestions() -> Non
     assert corrected.內容領域 == "Civic Participation"
     assert corrected.認知歷程 == [first_process]
     assert corrected.subquestions[0].認知歷程 == first_process
-    assert corrected.subquestions[1].認知歷程 is None
+    assert len(corrected.subquestions) == 1
+    assert corrected.subquestions[0].題目 == "修正後題目"
 
 
 def _interaction_question(

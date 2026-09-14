@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from src.common.corrector import correct_question_common, parse_rubric
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient
@@ -85,8 +87,8 @@ def _ss_rebuild_subquestion(
     ``學習表現``, ``出題概念``, ``出題指示``, ``認知歷程``, ``題型``, ``題目內容類型``,
     ``image_generation_mode``, ``圖片``, ``chart_spec``, ``interaction``.
 
-    A model-added subquestion has no original ICCS assignment, so any
-    LLM-supplied ``認知歷程`` is discarded rather than creating a new tag.
+    The shared acceptance guard supplies an existing original for every row;
+    added rows are rejected before reconstruction.
 
     The rubric is read tolerantly via :func:`parse_rubric`, accepting both
     ``評分規準`` and the alternate key ``評分標準``.
@@ -133,9 +135,7 @@ def _ss_rebuild_subquestion(
                 original.interaction if original else sq_raw.get("interaction")
             ),
             誘答分析=(
-                {str(k): str(v) for k, v in sq_raw.get("誘答分析", {}).items()}
-                if isinstance(sq_raw.get("誘答分析"), dict)
-                else (original.誘答分析 if original else {})
+                sq_raw.get("誘答分析", original.誘答分析 if original else {})
             ),
         )
         return sq
@@ -151,6 +151,7 @@ def correct_question(
     curriculum_context: CurriculumContext | None = None,
     annotations: str | None = None,
     editable_paths: set[str] | None = None,
+    on_rejected: Callable[[str], None] | None = None,
 ) -> ExamQuestion:
     if curriculum_context is not None:
         curriculum_prefix = build_curriculum_section(curriculum_context)
@@ -179,4 +180,5 @@ def correct_question(
         image_spec_cls=ImageSpec,
         annotations=annotations,
         editable_paths=editable_paths,
+        on_rejected=on_rejected,
     )

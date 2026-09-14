@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
-from src.common.corrector import build_annotations_block
+from pydantic import ValidationError
+
+from src.common.corrector import (
+    apply_correction,
+    build_annotations_block,
+    reject_correction,
+    validate_correction_structure,
+)
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ExamQuestion, ImageSpec, SubQuestion, VerificationResult
@@ -85,6 +93,9 @@ def _rebuild_math_subquestion(
         return None
     data = original.model_dump() if original is not None else {}
     data.update(raw)
+    if original is not None:
+        for field in FROZEN_SUBQUESTION_FIELDS:
+            data[field] = getattr(original, field)
     data.setdefault("id", f"subquestion-{index:02d}")
     data.setdefault("序號", index)
     try:
@@ -120,6 +131,7 @@ def correct_question(
     curriculum_context: CurriculumContext | None = None,
     annotations: str | None = None,
     editable_paths: set[str] | None = None,
+    on_rejected: Callable[[str], None] | None = None,
 ) -> ExamQuestion:
     """Apply verification feedback to produce a minimally corrected question.
 
@@ -133,6 +145,8 @@ def correct_question(
             to the system prompt so the corrector is grounded in the same corpus
             as the generator.  Pass ``None`` to omit the curriculum prefix.
         annotations: Optional user 修改指示 that the correction must preserve.
+        on_rejected: Receives the reason when the complete previous snapshot is
+            retained, so callers can distinguish a rejection from an accepted edit.
     """
     # Serialize without ephemeral fields so the corrector sees clean source
     question_data = json.loads(
@@ -185,32 +199,43 @@ def correct_question(
         else:
             corrected_data = client.generate_json(system, user_prompt, purpose="correct")
     except Exception:
-        return question  # fall back to original on any LLM/parse error
+        return reject_correction(
+            client, question, "correction response could not be read", on_rejected,
+        )
+
+    try:
+        validate_correction_structure(corrected_data, question.subquestions)
+    except ValueError as exc:
+        return reject_correction(client, question, str(exc), on_rejected)
 
     # Safely merge: only update fields the corrector is allowed to change
     update: dict = {}
 
-    if "題目" in corrected_data and isinstance(corrected_data["題目"], list):
+    if "題目" in corrected_data:
         update["題目"] = corrected_data["題目"]
 
-    if "正確解題分析" in corrected_data and isinstance(corrected_data["正確解題分析"], list):
+    if "正確解題分析" in corrected_data:
         update["正確解題分析"] = corrected_data["正確解題分析"]
 
-    raw_spec = corrected_data.get("image_spec") or corrected_data.get("chart_spec")
-    if raw_spec and isinstance(raw_spec, dict):
-        try:
-            update["chart_spec"] = ImageSpec(**raw_spec)
-        except Exception:
-            pass  # keep original chart_spec on parse failure
+    for key in ("chart_spec", "image_spec"):
+        raw_spec = corrected_data.get(key)
+        if raw_spec is not None:
+            try:
+                update["chart_spec"] = ImageSpec.model_validate(raw_spec)
+            except ValidationError:
+                return reject_correction(
+                    client, question, f"{key} contains invalid data", on_rejected,
+                )
 
-    raw_distractor = corrected_data.get("誘答分析")
-    if isinstance(raw_distractor, dict):
-        update["誘答分析"] = {str(k): str(v) for k, v in raw_distractor.items()}
+    if "誘答分析" in corrected_data:
+        update["誘答分析"] = corrected_data["誘答分析"]
 
     corrected_subquestions = _parse_corrected_math_subquestions(
         corrected_data,
         question.subquestions,
     )
+    if corrected_subquestions is None and question.subquestions:
+        return reject_correction(client, question, "小題 contains invalid row data", on_rejected)
     if corrected_subquestions is not None:
         update["subquestions"] = corrected_subquestions
 
@@ -220,4 +245,4 @@ def correct_question(
     # Difficulty is frozen — force the original metadata (and thus difficulty) through.
     update["metadata"] = question.metadata
 
-    return question.model_copy(update=update)
+    return apply_correction(client, question, update, on_rejected)

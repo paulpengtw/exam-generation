@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from src.common.corrector import correct_question_common, parse_rubric
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient
@@ -90,11 +92,8 @@ def _ns_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> 
     ``學習內容``, ``學習表現``, ``出題概念``, ``題型``, ``題目內容類型``,
     ``image_generation_mode``, ``圖片`` and ``chart_spec``.
 
-    For LLM-added rows (``original is None``): ``學習內容`` and
-    ``學習表現`` codes are canonicalized via ``repair_lc/lp_refs``
-    (valid codes normalized, unknown codes dropped; no sampled pool here
-    so unknown codes end up as an empty list and will be caught by the
-    verifier's deterministic check on re-verify).
+    The shared acceptance guard supplies an existing original for every row;
+    added rows are rejected before reconstruction.
 
     The rubric is read tolerantly via :func:`parse_rubric`, accepting both
     ``評分規準`` and the alternate key ``評分標準`` (AC3 fix).
@@ -147,9 +146,7 @@ def _ns_rebuild_subquestion(sq_raw: dict, original: object | None, idx: int) -> 
             答案解析=sq_raw.get("答案解析", original.答案解析 if original else ""),
             評分規準=rubric if rubric else (original.評分規準 if original else []),
             誘答分析=(
-                {str(k): str(v) for k, v in sq_raw.get("誘答分析", {}).items()}
-                if isinstance(sq_raw.get("誘答分析"), dict)
-                else (original.誘答分析 if original else {})
+                sq_raw.get("誘答分析", original.誘答分析 if original else {})
             ),
             題目內容類型=(
                 original.題目內容類型 if original else sq_raw.get("題目內容類型")
@@ -174,6 +171,7 @@ def correct_question(
     curriculum_context: CurriculumContext | None = None,
     annotations: str | None = None,
     editable_paths: set[str] | None = None,
+    on_rejected: Callable[[str], None] | None = None,
 ) -> ExamQuestion:
     if curriculum_context is not None:
         curriculum_prefix = build_curriculum_section(curriculum_context)
@@ -194,4 +192,5 @@ def correct_question(
         image_spec_cls=ImageSpec,
         annotations=annotations,
         editable_paths=editable_paths,
+        on_rejected=on_rejected,
     )

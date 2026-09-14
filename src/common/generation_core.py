@@ -569,11 +569,24 @@ def generate_with_corrections_core(
                 chart_image_path = str(p)
 
         emit_stage(obs, "corrector", "correct", "start", retry=attempt + 1)
-        question = spec.correct_fn(
+        rejections: list[str] = []
+
+        def on_rejected(reason: str) -> None:
+            rejections.append(reason)
+            emit_stage(
+                obs, "corrector", "correct", "error", retry=attempt + 1,
+                code="correction_rejected", message=reason,
+            )
+
+        corrected = spec.correct_fn(
             client, question, question.verification,
             chart_image_path=chart_image_path,
             curriculum_context=curriculum_context,
+            on_rejected=on_rejected,
         )
+        if rejections:
+            continue
+        question = corrected
         emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
         _emit_update(on_question_update, question, "corrected")
 
