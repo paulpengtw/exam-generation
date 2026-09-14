@@ -530,7 +530,9 @@ async def generate_question_stream(
     _cancel_event = threading.Event()
     if renderer_pool is not None:
         from server.generate.renderer_lease import RendererLease  # noqa: PLC0415
-        html_renderer: Any = RendererLease(renderer_pool, loop, _cancel_event, queue, publisher=_publisher)
+        html_renderer: Any = RendererLease(
+            renderer_pool, loop, _cancel_event, queue, publisher=_publisher
+        )
     else:
         html_renderer = None
 

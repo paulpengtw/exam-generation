@@ -167,7 +167,8 @@ def test_advertised_log_is_readable_before_results_and_survives_disconnect(
                     while True:
                         name, data = await asyncio.wait_for(events.get(), timeout=5)
                         seen.append(name)
-                        if name == "llm_request" and data.get("payload", data).get("agent") == "verifier":
+                        agent = data.get("payload", data).get("agent")
+                        if name == "llm_request" and agent == "verifier":
                             break
                     assert "result" not in seen
                     assert not release.is_set()
