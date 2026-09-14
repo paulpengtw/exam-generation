@@ -624,12 +624,7 @@ describe("GeneratePage history prefill across learning stages", () => {
     });
   });
 
-  async function expectReloadedCodes(
-    getSchema: (subject: string, grade?: number) => Promise<typeof STAGE_IV_POOL>,
-  ) {
-    getSchemasMock.mockImplementation(getSchema);
-    const { container } = renderPageWithHistoryState(STAGE_V_HISTORY_PARAMS);
-
+  async function settledStageVCodes(container: HTMLElement) {
     await waitFor(() => expect(screen.getByLabelText("年級")).toHaveValue("10"));
     await waitFor(() => expect(getSchemasMock).toHaveBeenCalledWith("natural_sciences", 10));
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
@@ -641,7 +636,18 @@ describe("GeneratePage history prefill across learning stages", () => {
     const selectedGlobalCodes = Array.from(container.querySelectorAll("span.bg-blue-50 > span.font-medium"))
       .filter((element) => !subquestionSection.contains(element))
       .map((element) => element.textContent);
+    return { subquestionSection, selectedGlobalCodes };
+  }
+
+  async function expectReloadedCodes(
+    getSchema: (subject: string, grade?: number) => Promise<typeof STAGE_IV_POOL>,
+  ) {
+    getSchemasMock.mockImplementation(getSchema);
+    const { container } = renderPageWithHistoryState(STAGE_V_HISTORY_PARAMS);
+    const { subquestionSection, selectedGlobalCodes } = await settledStageVCodes(container);
     expect(selectedGlobalCodes).toEqual(expect.arrayContaining(["tr-Vc-1", "INc-Vc-1"]));
+    expect(screen.queryByText(/以下代碼不在本年級/)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/學習表現: /);
 
     const expectedRows = [
       ["tr-Vc-2", "INc-Vc-2"],
@@ -661,6 +667,38 @@ describe("GeneratePage history prefill across learning stages", () => {
     expect(screen.queryByRole("button", { name: /^tr-IV-1：/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^tr-Vc-2：/ })).toBeInTheDocument();
   }
+
+  it("names dropped 學習表現/學習內容 codes once and deselects them after the grade's pool loads", async () => {
+    const rows = JSON.parse(STAGE_V_HISTORY_PARAMS.subquestion_configs);
+    rows[0].learning_performance.push("tr-IV-9");
+    const record = {
+      ...STAGE_V_HISTORY_PARAMS,
+      learning_performance: ["tr-Vc-1", "tr-IV-9"],
+      learning_content: ["INc-Vc-1", "INc-IV-9"],
+      subquestion_configs: JSON.stringify(rows),
+    };
+    getSchemasMock.mockImplementation(async (_subject, grade) =>
+      grade == null ? STAGE_IV_POOL : later(STAGE_V_POOL, 30),
+    );
+    const { container } = renderPageWithHistoryState(record);
+    expect(screen.queryByText(/以下代碼不在本年級/)).not.toBeInTheDocument();
+
+    const { subquestionSection, selectedGlobalCodes } = await settledStageVCodes(container);
+    expect(selectedGlobalCodes).not.toContain("tr-IV-9");
+    expect(selectedGlobalCodes).not.toContain("INc-IV-9");
+    expect(selectedGlobalCodes).toEqual(expect.arrayContaining(["tr-Vc-1", "INc-Vc-1"]));
+    const firstRow = within(subquestionSection)
+      .getByText("第1小題", { exact: true })
+      .closest("div.rounded")!;
+    expect(within(firstRow).queryByText("tr-IV-9", { exact: true })).not.toBeInTheDocument();
+    expect(within(firstRow).getByText("tr-Vc-2", { exact: true })).toBeInTheDocument();
+
+    const notice = screen.getByText(/以下代碼不在本年級的學習階段題庫中，已取消選取：/);
+    expect(notice).toHaveTextContent("學習表現: tr-IV-9");
+    expect(notice).toHaveTextContent("學習內容: INc-IV-9");
+    expect(notice.textContent?.match(/學習表現: tr-IV-9/g)).toHaveLength(1);
+    expect(notice.textContent?.match(/學習內容: INc-IV-9/g)).toHaveLength(1);
+  });
 
   it("keeps 全域池 and 各小題配置 codes when the grade-less 第四 pool answers first", async () => {
     await expectReloadedCodes(async (_subject, grade) =>

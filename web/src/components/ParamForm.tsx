@@ -2012,80 +2012,6 @@ export default function ParamForm({
     window.localStorage.setItem("effort_correct", effortCorrect);
   }, [effortCorrect]);
 
-  useEffect(() => {
-    if (!schemas || !initialParams) return;
-    const missing: string[] = [];
-    const arr = (key: string): string[] => {
-      const raw = ip[key];
-      return Array.isArray(raw)
-        ? raw.filter((value): value is string => typeof value === "string")
-        : [];
-    };
-    const single = (key: string): string | undefined => {
-      const raw = ip[key];
-      return typeof raw === "string" ? raw : undefined;
-    };
-    const check = (
-      key: string,
-      values: string[],
-      allowed: string[] | undefined,
-    ): void => {
-      if (!allowed) return;
-      for (const v of values) if (!allowed.includes(v)) missing.push(`${key}: ${v}`);
-    };
-    check("情境", arr("context"), schemas.情境?.map((s) => s.value));
-    check("題型", arr("q_type"), schemas.題型?.map((s) => s.value));
-    const st = single("set_type");
-    if (st !== undefined) {
-      check("題型種類", [st], schemas.題型種類?.map((s) => s.value));
-    }
-    check(
-      "科目",
-      arr("subject_filter"),
-      schemas.科目?.map((s) => s.value),
-    );
-    const domain = single("content_domain");
-    if (domain !== undefined) {
-      check("內容領域", [domain], schemas.內容領域?.map((s) => s.value));
-    }
-    if (missing.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciling initialParams against freshly-loaded schemas, matches existing HistoryPage/VerifyPage pattern
-      setPrefillNotice([
-        normalisedHistoryPrefill.retiredItems.length > 0
-          ? t("form.history_prefill_retired_notice").replace(
-              "{items}",
-              normalisedHistoryPrefill.retiredItems.join("、"),
-            )
-          : null,
-        t("history.prefill_notice"),
-      ].filter((message): message is string => message !== null).join(" "));
-      // Drop the missing entries so the form submits a clean payload.
-      const allowedCtx = new Set(schemas.情境?.map((s) => s.value));
-      setField("context", (prev) => {
-        const next = prev.filter((v) => allowedCtx.has(v));
-        return next.length === prev.length ? prev : next;
-      });
-      const allowedQT = new Set(schemas.題型?.map((s) => s.value));
-      setField("qType", (prev) => {
-        const next = prev.filter((v) => allowedQT.has(v));
-        return next.length === prev.length ? prev : next;
-      });
-      const allowedST = new Set(schemas.題型種類?.map((s) => s.value));
-      setField("setType", (prev) => (allowedST.has(prev) ? prev : ""));
-      const allowedDomains = new Set(schemas.內容領域?.map((s) => s.value));
-      setField("contentDomain", (prev) => (prev && allowedDomains.has(prev) ? prev : ""));
-    } else {
-      setPrefillNotice(
-        normalisedHistoryPrefill.retiredItems.length > 0
-          ? t("form.history_prefill_retired_notice").replace(
-              "{items}",
-              normalisedHistoryPrefill.retiredItems.join("、"),
-            )
-          : null,
-      );
-    }
-  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField]);
-
   // Re-fetch grade-dependent fields when grade changes so the correct learning stage is used.
   useEffect(() => {
     if (grade === "") return;
@@ -2166,6 +2092,92 @@ export default function ParamForm({
     }
     return entries;
   }, [schemas, subjectFilter, subject]);
+
+  useEffect(() => {
+    if (!schemas || !initialParams) return;
+    const missing: string[] = [];
+    const arr = (key: string): string[] => {
+      const raw = ip[key];
+      return Array.isArray(raw)
+        ? raw.filter((value): value is string => typeof value === "string")
+        : [];
+    };
+    const single = (key: string): string | undefined => {
+      const raw = ip[key];
+      return typeof raw === "string" ? raw : undefined;
+    };
+    const check = (
+      key: string,
+      values: string[],
+      allowed: string[] | undefined,
+    ): void => {
+      if (!allowed) return;
+      for (const v of values) if (!allowed.includes(v)) missing.push(`${key}: ${v}`);
+    };
+    check("情境", arr("context"), schemas.情境?.map((s) => s.value));
+    check("題型", arr("q_type"), schemas.題型?.map((s) => s.value));
+    const st = single("set_type");
+    if (st !== undefined) {
+      check("題型種類", [st], schemas.題型種類?.map((s) => s.value));
+    }
+    check(
+      "科目",
+      arr("subject_filter"),
+      schemas.科目?.map((s) => s.value),
+    );
+    const domain = single("content_domain");
+    if (domain !== undefined) {
+      check("內容領域", [domain], schemas.內容領域?.map((s) => s.value));
+    }
+    const dropped: string[] = [];
+    const poolMatchesGrade = schemas.poolGrade === (grade === "" ? null : grade);
+    if (poolMatchesGrade) {
+      const configs = parseSubquestionConfigs(ip.subquestion_configs);
+      // Report the selections removed by the curriculum reconciliation effects below.
+      for (const [label, values, entries] of [
+        ["學習表現", [
+          ...arr("learning_performance"),
+          ...configs.flatMap((cfg) => cfg.learning_performance ?? []),
+        ], availableLearningPerformance],
+        ["學習內容", arr("learning_content"), availableLearningContent],
+      ] as const) {
+        const allowed = new Set(entries.map((entry) => entry.value));
+        for (const code of new Set(values)) {
+          if (!allowed.has(code)) dropped.push(`${label}: ${code}`);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile the notice with initialParams and the freshly-loaded schemas
+    setPrefillNotice([
+      normalisedHistoryPrefill.retiredItems.length > 0
+        ? t("form.history_prefill_retired_notice").replace(
+            "{items}",
+            normalisedHistoryPrefill.retiredItems.join("、"),
+          )
+        : null,
+      missing.length > 0 ? t("history.prefill_notice") : null,
+      dropped.length > 0
+        ? t("history.prefill_dropped_codes").replace("{items}", dropped.join("、"))
+        : null,
+    ].filter((message): message is string => message !== null).join(" ") || null);
+    if (missing.length > 0) {
+      // Drop the missing entries so the form submits a clean payload.
+      const allowedCtx = new Set(schemas.情境?.map((s) => s.value));
+      setField("context", (prev) => {
+        const next = prev.filter((v) => allowedCtx.has(v));
+        return next.length === prev.length ? prev : next;
+      });
+      const allowedQT = new Set(schemas.題型?.map((s) => s.value));
+      setField("qType", (prev) => {
+        const next = prev.filter((v) => allowedQT.has(v));
+        return next.length === prev.length ? prev : next;
+      });
+      const allowedST = new Set(schemas.題型種類?.map((s) => s.value));
+      setField("setType", (prev) => (allowedST.has(prev) ? prev : ""));
+      const allowedDomains = new Set(schemas.內容領域?.map((s) => s.value));
+      setField("contentDomain", (prev) => (prev && allowedDomains.has(prev) ? prev : ""));
+    }
+  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade, availableLearningPerformance, availableLearningContent]);
 
   const iccsDomainMappedCodes = useMemo(() => {
     if (

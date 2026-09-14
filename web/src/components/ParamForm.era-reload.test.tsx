@@ -156,7 +156,8 @@ describe("ParamForm era-aware history reload", () => {
     expect(within(secondRow).queryByRole("option", { name: "封閉式建構反應題" })).not.toBeInTheDocument();
 
     expect(await screen.findByText(
-      "以下設定已停用，未帶入：閱讀歷程（擷取訊息）、文本形式（連續文本）、question_style（PISA風格）、題型（封閉式建構反應題）、題型（封閉式建構反應題，第2小題）",
+      "以下設定已停用，未帶入：閱讀歷程（擷取訊息）、文本形式（連續文本）、question_style（PISA風格）、題型（封閉式建構反應題）、題型（封閉式建構反應題，第2小題）" +
+      " 以下代碼不在本年級的學習階段題庫中，已取消選取：學習內容: 歷Ka-Ⅳ-1",
     )).toBeInTheDocument();
 
     await submitForm();
