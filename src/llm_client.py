@@ -27,6 +27,17 @@ _warned_emit_stage_observers: set[int] = set()
 # parameter dropped" warning — avoids log spam on repeated calls.
 _warned_effort_drops: set[tuple[str, str]] = set()
 
+# Exact model ids: proxy ids and models that already think by default are untouched.
+_ADAPTIVE_THINKING_MODELS: frozenset[str] = frozenset({"claude-opus-4-6"})
+
+
+def _anthropic_output_kwargs(model: str) -> dict:
+    """Reserve output room for both adaptive thinking and the stage's JSON."""
+    if model in _ADAPTIVE_THINKING_MODELS:
+        return {"thinking": {"type": "adaptive"}, "max_tokens": 16384}
+    return {"max_tokens": 8192}
+
+
 _SAMPLING_REJECT_PREFIXES: tuple[str, ...] = (
     "claude-opus-5",
     "claude-sonnet-5",
@@ -44,6 +55,10 @@ _SAMPLING_REJECT_PREFIXES: tuple[str, ...] = (
 
 def _accepts_sampling(model: str) -> bool:
     """Return False for models known to reject sampling parameters."""
+    # Opus 4.6 rejects temperature while adaptive thinking is enabled.
+    # Use the exact thinking roster so unrecognised proxy ids stay untouched.
+    if model in _ADAPTIVE_THINKING_MODELS:
+        return False
     for prefix in _SAMPLING_REJECT_PREFIXES:
         if model == prefix or model.startswith(prefix + "-") or model.startswith(prefix + "."):
             return False
@@ -552,7 +567,7 @@ class LLMClient:
         )
         with self.client.messages.stream(
             model=model,
-            max_tokens=8192,
+            **_anthropic_output_kwargs(model),
             **self._temperature_kwargs(model),
             **self._effort_kwargs(purpose),
             system=system_param,
@@ -615,6 +630,7 @@ class LLMClient:
             else _PURPOSE_TO_AGENT.get(purpose, purpose)
         )
 
+        provider = resolve_provider(model)
         if self._observer:
             self._emit({
                 "type": "llm_request",
@@ -622,10 +638,15 @@ class LLMClient:
                 "agent": agent,
                 "model": model,
                 "messages": self._summarize_for_observer(messages),
-                "params": {"max_tokens": 8192, "temperature": self.config.temperature},
+                "params": {
+                    **(_anthropic_output_kwargs(model) if provider == "anthropic"
+                       else {"max_tokens": 8192}),
+                    "temperature": (
+                        None if model in _ADAPTIVE_THINKING_MODELS else self.config.temperature
+                    ),
+                },
             })
 
-        provider = resolve_provider(model)
         if provider == "anthropic":
             return self._anthropic_call(messages, model, purpose, agent_override, agent)
         return self._openai_compat_call(provider, messages, model, purpose, agent)
@@ -663,13 +684,14 @@ class LLMClient:
         )
         response = self.client.messages.create(
             model=model,
-            max_tokens=8192,
+            **_anthropic_output_kwargs(model),
             **self._temperature_kwargs(model),
             **self._effort_kwargs(purpose),
             system=system_param,
             messages=anthropic_messages,  # type: ignore[arg-type]
         )
-        content = response.content[0].text
+        # Thinking (including redacted blocks) can precede the text response.
+        content = "".join(getattr(block, "text", "") for block in response.content)
         if self._observer:
             u = response.usage
             self._emit({
@@ -678,7 +700,9 @@ class LLMClient:
                 "agent": agent,
                 "model": model,
                 "content": content,
-                "reasoning": None,
+                "reasoning": "".join(
+                    getattr(block, "thinking", "") for block in response.content
+                ) or None,
                 "usage": {
                     "input": u.input_tokens,
                     "output": u.output_tokens,
@@ -1006,8 +1030,10 @@ class LLMClient:
                 "model": call_model,
                 "messages": [{"role": "system", "content": system}, *messages],
                 "params": {
-                    "max_tokens": 8192,
-                    "temperature": self.config.temperature,
+                    **_anthropic_output_kwargs(call_model),
+                    "temperature": (
+                        None if call_model in _ADAPTIVE_THINKING_MODELS else self.config.temperature
+                    ),
                     "tools": tools,
                 },
             })
@@ -1015,7 +1041,7 @@ class LLMClient:
         for iteration in range(max_iterations):
             response = self.client.messages.create(
                 model=call_model,
-                max_tokens=8192,
+                **_anthropic_output_kwargs(call_model),
                 **self._temperature_kwargs(call_model),
                 **self._effort_kwargs(purpose),
                 system=system_param,

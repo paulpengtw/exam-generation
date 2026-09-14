@@ -47,6 +47,7 @@ def test_config_temperature_from_env_07(monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("model", [
+    "claude-opus-4-6",                # adaptive thinking is enabled (issue #758)
     "claude-opus-5",
     "claude-opus-5-20250901",          # dated variant
     "claude-sonnet-5",
@@ -69,6 +70,7 @@ def test_accepts_sampling_false_for_rejected_models(model: str) -> None:
 
 
 @pytest.mark.parametrize("model", [
+    "claude-opus-4-6-proxy",          # outside the exact adaptive-thinking roster
     "claude-sonnet-4-6",
     "claude-sonnet-4-6-20250401",
     "claude-opus-4-5",
