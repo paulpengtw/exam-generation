@@ -1,0 +1,26 @@
+{
+  "text": [
+    "Invalid request: per_question_params[0].math_thinking: Value error, math_thinking must contain 1 to 3 values"
+  ],
+  "requests": [
+    {
+      "mode": "pydantic",
+      "method": "POST",
+      "status": 422,
+      "contentType": "application/json",
+      "detail": [
+        {
+          "loc": [
+            "body",
+            "per_question_params",
+            0,
+            "math_thinking"
+          ],
+          "msg": "Value error, math_thinking must contain 1 to 3 values",
+          "type": "value_error"
+        }
+      ]
+    }
+  ],
+  "historyTotal": 0
+}

@@ -1,6 +1,9 @@
 import { createServer, type Server } from "node:http";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+const captureException = vi.hoisted(() => vi.fn());
+vi.mock("@sentry/react", () => ({ captureException }));
 
 import socialBatch from "../../../tests/fixtures/transport-social-batch.json";
 import naturalBatch from "../../../tests/fixtures/transport-natural-batch.json";
@@ -14,6 +17,7 @@ let received: { url?: string; method?: string; body: unknown; authorization?: st
 let holdStream: boolean;
 let streamClosed: boolean;
 let rejectSubmission: boolean;
+let rejectionDetail: unknown;
 const batches = [socialBatch, naturalBatch, {
   subject: "math", seed: 41, grade: 8, context: ["個人"], set_type: "單一題",
   q_type: ["選擇題"], style: ["text_only"], math_thinking: ["形成"],
@@ -22,10 +26,15 @@ const batches = [socialBatch, naturalBatch, {
 }];
 
 beforeEach(async () => {
+  captureException.mockClear();
+  vi.stubEnv("VITE_SENTRY_DSN", "https://public@example.com/1");
   received = [];
   holdStream = false;
   streamClosed = false;
   rejectSubmission = false;
+  rejectionDetail = [{
+    field: "per_question_params[0].subquestion_configs[0].question_type", code: "unresolved",
+  }];
   server = createServer({ maxHeaderSize: 1_000_000 }, async (request, response) => {
     // Reproduce the deployed proxy's request-line limit at the HTTP boundary.
     if ((request.url?.length ?? 0) > 8192) {
@@ -40,9 +49,7 @@ beforeEach(async () => {
     });
     if (rejectSubmission) {
       response.writeHead(422, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ detail: [{
-        field: "per_question_params[0].subquestion_configs[0].question_type", code: "unresolved",
-      }] }));
+      response.end(JSON.stringify({ detail: rejectionDetail }));
       return;
     }
     if (request.url === "/api/generate") {
@@ -73,6 +80,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   useAuthStore.getState().logout();
   server.closeAllConnections();
@@ -126,4 +134,47 @@ it("reports a rejected POST with its field address and does not retry generation
   expect(result.current.errorMessage).toContain("per_question_params[0].subquestion_configs[0].question_type");
   expect(result.current.results).toEqual([]);
   expect(received).toHaveLength(1);
+});
+
+it("shows the nested field and validation message when a malformed POST is rejected", async () => {
+  rejectSubmission = true;
+  rejectionDetail = [{
+    type: "value_error",
+    loc: ["body", "per_question_params", 0, "math_thinking"],
+    msg: "Value error, math_thinking must contain 1 to 3 values",
+    input: { private: "PRIVATE_INPUT_787" },
+    ctx: { error: "PRIVATE_CONTEXT_787" },
+  }];
+  const payload = {
+    subject: "math",
+    count: 1,
+    per_question_params: JSON.stringify([{ math_thinking: [] }]),
+  };
+  const { result } = renderHook(() => useGenerate());
+  act(() => result.current.generate(payload));
+  await waitFor(() => expect(result.current.status).toBe("error"));
+  render(<div role="alert">{result.current.errorMessage}</div>);
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Invalid request: per_question_params[0].math_thinking: Value error, math_thinking must contain 1 to 3 values",
+  );
+  expect(screen.getByRole("alert")).not.toHaveTextContent("PRIVATE_");
+  expect(result.current.results).toEqual([]);
+  expect(result.current.llmCalls).toEqual([]);
+  expect(captureException).toHaveBeenCalledExactlyOnceWith(
+    new Error("Invalid request: per_question_params[0].math_thinking: Value error, math_thinking must contain 1 to 3 values"),
+    {
+      tags: {
+        source: "fetchEventSource", last_event_type: "none", navigator_online: "true",
+      },
+      contexts: { stream: { elapsed_ms: expect.any(Number), message_count: 0 } },
+    },
+  );
+  const [error, context] = captureException.mock.calls[0];
+  expect(`${error.message} ${JSON.stringify(error)} ${JSON.stringify(context)}`).not.toContain("PRIVATE_");
+  // fetch-event-source retries after 1s unless the HTTP rejection is fatal.
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  expect(received).toEqual([{
+    url: "/api/generate", method: "POST", body: payload,
+    authorization: "Bearer test-token",
+  }]);
 });
