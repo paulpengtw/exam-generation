@@ -496,3 +496,40 @@ def test_h_backend_down_returns_502(tmp_path):
         assert isinstance(body["detail"], str), "detail must be a plain string"
     finally:
         gw.stop()
+
+
+# ---------------------------------------------------------------------------
+# Test: /internal/ paths are blocked by gateway (never proxied)
+# ---------------------------------------------------------------------------
+
+
+def test_internal_paths_not_proxied_by_gateway(gateway_server, backend_server):
+    """/internal/* paths must return 404 from the gateway; backend records zero requests."""
+    srv, state_dir = gateway_server
+    bapp = backend_server.app  # type: ignore[attr-defined]
+
+    # Ensure the gateway is open so the block isn't because of paused state
+    import httpx
+    r_open = httpx.post(
+        f"{srv.base_url}/gateway/admission",
+        json={"state": "open"},
+        headers={"X-Gateway-Control-Token": "secret"},
+    )
+    assert r_open.status_code == 200
+
+    before_hits = len(bapp.state.requests_log)
+
+    # Try various /internal/ paths
+    for path in ["/internal/drain", "/internal/anything", "/internal/status"]:
+        r = httpx.get(
+            f"{srv.base_url}{path}",
+            headers={"X-Drain-Token": "any-token"},
+        )
+        assert r.status_code == 404, f"Expected 404 for {path}, got {r.status_code}"
+        body = r.json()
+        assert "detail" in body
+
+    # Backend should have recorded zero /internal/ requests
+    new_hits = bapp.state.requests_log[before_hits:]
+    internal_hits = [(m, p) for m, p in new_hits if p.startswith("/internal")]
+    assert internal_hits == [], f"Backend got /internal requests: {internal_hits}"

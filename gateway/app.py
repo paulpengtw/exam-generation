@@ -10,7 +10,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
-from gateway.admission import PAUSED_CODE, PAUSED_DETAIL, is_generation_entry
+from gateway.admission import PAUSED_CODE, PAUSED_DETAIL, is_generation_entry, is_private_path
 from gateway.state import open_gate, pause, read_state
 
 # Headers that must not be forwarded between hops
@@ -115,6 +115,10 @@ def create_app(
 
         # Re-read state on every request — no caching
         state = read_state(state_dir)
+
+        # /internal/* paths are NEVER proxied to the backend (privacy guard)
+        if is_private_path(path):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
 
         if state.state == "paused" and is_generation_entry(method, path):
             return JSONResponse(

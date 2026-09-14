@@ -46,3 +46,25 @@ def test_paused_contract():
 
     assert PAUSED_DETAIL == "目前暫停受理新的出題請求，請稍後再試。"
     assert PAUSED_CODE == "GENERATION_ADMISSION_PAUSED"
+
+
+# ---------------------------------------------------------------------------
+# is_private_path tests
+# ---------------------------------------------------------------------------
+
+
+def test_is_private_path_internal():
+    from gateway.admission import is_private_path
+
+    assert is_private_path("/internal/drain")
+    assert is_private_path("/internal/anything")
+    assert is_private_path("/internal")
+
+
+def test_is_private_path_non_internal():
+    from gateway.admission import is_private_path
+
+    assert not is_private_path("/api/generate")
+    assert not is_private_path("/health")
+    assert not is_private_path("/api/internal/foo")  # only /internal/* prefix
+    assert not is_private_path("/api/history")
