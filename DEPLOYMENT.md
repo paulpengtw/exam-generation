@@ -434,6 +434,20 @@ If something looks broken:
 
 If you suspect a key has leaked, rotate it at the provider (Google AI Studio for `GEMINI_API_KEY`, `console.anthropic.com` for `LLM_API_KEY`, `platform.openai.com` for `OPENAI_API_KEY`): disable the old key, create a new one, then update the matching variable in Railway → backend service → **Variables** → **Save**. The backend redeploys with the new key.
 
+### The 15-minute limit on a single generation
+
+Railway closes any single web request after 15 minutes, even while progress updates or messages to keep the connection open are still arriving. This is a fixed platform rule and cannot be raised in Railway settings, on any plan. See the [Railway request limits](https://docs.railway.com/networking/public-networking/specs-and-limits).
+
+The exam generator sends live progress over one long web request. If a generation is still running at the 15-minute mark, that request closes and the browser shows an error.
+
+Questions that finished before the cutoff are already saved in **出題紀錄** (history); only the questions still in progress are lost. Open **出題紀錄** to find the finished questions, then run a new generation for the missing ones.
+
+The slowest single question determines how long a run takes: repeated checks and corrections (verification retries), together with image generation, can push it past the limit. Questions are generated side by side, so their times do not add up with the number of questions in a batch.
+
+If you hit the limit repeatedly, use fewer verification retries or a faster model for that subject, or generate items with many images in smaller runs.
+
+Tracked in [GitHub issue #702](https://github.com/paulpengtw/exam-generation/issues/702).
+
 ---
 
 ## 15. Troubleshooting
@@ -453,6 +467,7 @@ If you suspect a key has leaked, rotate it at the provider (Google AI Studio for
 | Build log shows `Railpack` / `Detected Python` / `No start command detected` | Builder is still set to Railpack, not Dockerfile | Service → **Settings → Build** → set **Builder = Dockerfile** and **Dockerfile Path** = `Dockerfile.backend` (backend) or `web/Dockerfile` (frontend). Click **Save** and redeploy. |
 | Frontend URL times out / shows "Application failed to respond" but nginx logs look healthy | Generated domain points at wrong port | Frontend → **Settings → Networking** → click the pencil icon next to your domain → set target port to `80`. |
 | Clicking **Send magic link** shows `Request failed with status 508` | The frontend is forwarding API calls back to itself, usually because `BACKEND_HOST` is wrong or the frontend was not redeployed after changing it | Frontend → **Variables** → set `BACKEND_HOST` to the backend hostname only, such as `backend-production-xxxx.up.railway.app` — no `https://`, no trailing slash, and not the frontend hostname. Keep `BACKEND_SCHEME=https`, then redeploy the frontend. |
+| Generation stops with an error after exactly 15 minutes even though progress was still moving. | Railway's fixed 15-minute limit on a single request. | See "The 15-minute limit on a single generation" in section 14; finished questions are already in 出題紀錄. |
 
 ---
 
