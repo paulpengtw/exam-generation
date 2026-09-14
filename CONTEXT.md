@@ -101,7 +101,7 @@ Editing any resolved 預抽 value on the confirmation screen — a 題組-level 
 _Avoid_: final modification, confirmation edit, last-minute tweak
 
 **重抽**:
-Clearing a resolved value on the confirmation screen, causing an immediate new 預抽 from the 全域池 for that field only. Sibling fields and the seed are untouched.
+Clearing a resolved value on the confirmation screen, causing an immediate new 預抽 from the 全域池 for that field only. Sibling fields and the seed are untouched. While the draw is in flight the row dims and its button reads 重抽中…; on return the row flashes once even when the value came back unchanged, and a hint then says so. A failed draw leaves the previous value in place.
 _Avoid_: re-roll, re-draw, re-randomise
 
 **圈選**:
@@ -179,9 +179,33 @@ The literal system and user prompt text displayed on 發送前確認, assembled 
 _Avoid_: prompt preview, dry run, payload preview
 
 **生成進度列**:
-The bar fixed to the bottom of 生成頁面, stating which 生成步驟 a run has reached.
+The bar fixed to the bottom of 生成頁面, stating which 生成步驟 a run has reached. While a run is 處理中 the live step reads with 中 — 產生中 before the first event, then 文本生成中 › 子題生成中 › 圖片生成中 › 審題中 › 改題中 (a batch reads 產生中 · 已完成 k / n) — and shimmers, the only ambient motion in the app; done steps are green, pending steps grey. Pressing 確定發送 hands attention off to the bar in one short motion: the confirmation exits, the form returns, the bar pulses once.
 _Avoid_: sticky bottom bar, navbar, progress bar, 進度條
 
 **生成步驟**:
-One unit of a question's generation pipeline — 文本, 子題, 圖片, 驗證, 修正. Per-question, coarser than the per-agent stage events.
+One unit of a question's generation pipeline — 文本, 子題, 圖片, 驗證, 修正. Per-question, coarser than the per-agent stage events. On screen the 驗證 and 修正 steps read 審題 / 改題 (審題中 / 改題中 while running); code, tests and ADRs keep 驗證 / 修正.
 _Avoid_: phase, stage, 階段, 生成階段
+
+**操作回饋**:
+The visible acknowledgement a control gives for the action it started, moving through 待命 → 處理中 → 已完成 | 失敗. 處理中 and 已完成 render on the control itself; 失敗 renders as an inline notice directly below the control's row, never as a toast. For a generation run, 處理中 names the 生成步驟 under way — 產生中 (before the first event) → 文本生成中 → 子題生成中 → 圖片生成中 → 審題中 → 改題中; a 人工審題修正 run reads 修改中 → 審題中 → 改題中. 審題中 and 改題中 are the on-screen labels of the 驗證 and 修正 生成步驟 (resting nouns 審題 / 改題); they are not a third stage and not 人工審題修正. Local toggles (show answer, disclosures, language switch) are outside 操作回饋: their content change is the acknowledgement. Contrast the Sentry problem-report button, which is the user's feedback to us.
+_Avoid_: loading state, busy indicator, toast, notification, snackbar, 通知, 提示訊息, feedback (alone — collides with the Sentry report button), 回饋 (alone)
+
+**待命**:
+The resting state of a control in 操作回饋: nothing in flight, no outcome shown. Every control returns to it.
+_Avoid_: idle, ready, default state, 閒置, 預設狀態
+
+**處理中**:
+The 操作回饋 state between pressing a control and its outcome: the control is disabled, shows the shared spinner and a verb-specific label (下載中…, 重抽中…, 載入中…), and cannot be pressed again; a run's 處理中 names the 生成步驟 under way. Every 處理中 ends in 已完成 or 失敗, never silently.
+_Avoid_: loading, pending, in progress, busy, 進行中, 載入中 (as the state name; it is one of the labels)
+
+**已完成**:
+The 操作回饋 state after an action succeeded, shown on the control until the next press of any control or a route change — for an export, 已下載 with a check, a green tint and the produced file's name. Pressing a control that shows 已完成 starts a fresh 處理中. A stream starter never reaches it: the run surface tells the outcome.
+_Avoid_: success state, done, 成功, 完成 (alone), confirmation
+
+**失敗**:
+The 操作回饋 state after an action did not complete: the control keeps its label and gains a red colour and a `!`, and an inline notice below the control's row gives the reason in one line and offers 重試 on idempotent actions. It clears on ×, on a successful retry, or on pressing the control again — not on an unrelated interaction. Contrast the 生成進度列, which narrates a run's failure.
+_Avoid_: error state, error toast, 錯誤 (alone — the reason line may say 錯誤; the state is 失敗), 異常
+
+**Motion tokens**:
+The app's single palette of motion — durations quick 150 ms / standard 320 ms / loop-shimmer 2250 ms / loop-spinner 900 ms and easings signature / exit / loop — defined once in `web/src/motion/tokens.ts` and written onto `:root` before first render; every transition in the app, including the one ambient shimmer on the 生成進度列, uses them. Under `prefers-reduced-motion` the state still changes; only the travel is dropped.
+_Avoid_: animation settings, transition config, timing constants, 動畫參數, a literal `duration-300`
