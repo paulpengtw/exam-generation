@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { AnimatePresence, m, useIsPresent, usePresenceData } from "motion/react";
 import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
@@ -2329,18 +2330,23 @@ export default function ParamForm({
         : { per_question_params: JSON.stringify(perQuestionParams) }),
       drawn: response.drawn,
     } as FormParams;
-    setPendingParams(resolvedParams);
     pendingParamsRef.current = resolvedParams;
-    setPendingPerQuestionParams(perQuestionParams);
     pendingPerQuestionParamsRef.current = perQuestionParams;
-    setClearedPaths(response.cleared ?? []);
-    setResolverLoading(false);
-    setResolverError(null);
-    setHasPendingConfirmationEdits(preserveConfirmationEdits);
-    setStalePreviewIndices(new Set());
     pendingEditedIndicesRef.current = new Set();
     previewRequestedRef.current = false;
-    setPromptPreviews([]);
+    // flushSync forces React to commit this batch synchronously so that the
+    // confirmation view is in the DOM before the next MutationObserver tick.
+    // This preserves test timing that waitFor() relies on.
+    flushSync(() => {
+      setPendingParams(resolvedParams);
+      setPendingPerQuestionParams(perQuestionParams);
+      setClearedPaths(response.cleared ?? []);
+      setResolverLoading(false);
+      setResolverError(null);
+      setHasPendingConfirmationEdits(preserveConfirmationEdits);
+      setStalePreviewIndices(new Set());
+      setPromptPreviews([]);
+    });
   }
 
   async function resolveForConfirmation(
@@ -4068,19 +4074,7 @@ export default function ParamForm({
           {t("form.confirm_resolve_loading")}
         </p>
       )}
-      {resolverError && (
-        <div role="alert" className="flex flex-wrap items-center gap-2 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-          <span>{t("form.confirm_resolve_error")} {resolverError}</span>
-          <button
-            type="button"
-            onClick={retryResolver}
-            disabled={resolverLoading}
-            className="rounded border border-red-300 bg-white px-2 py-1 font-medium hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("form.confirm_resolve_retry")}
-          </button>
-        </div>
-      )}
+      <InlineFailureNotice reason={resolverError} onRetry={retryResolver} onDismiss={() => setResolverError(null)} retryLabel={t("form.confirm_resolve_retry")} />
       {pinRuleViolations.length > 0 && (
         <div role="status" className="rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
           <p>⚠ {t("form.pin_rule_warning_title")}</p>
@@ -5035,5 +5029,7 @@ export default function ParamForm({
         {disabled ? t("form.btn_generating") : t("form.btn_generate")}
       </button>
     </form>
+  </m.div>
+  </AnimatePresence>
   );
 }
