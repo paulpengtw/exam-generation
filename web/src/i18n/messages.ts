@@ -36,6 +36,13 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
 
     "staging.banner": "⚠ Staging environment — data may be reset at any time.",
 
+    "release.checking": "Checking for updates…",
+    "release.current": "App is up to date.",
+    "release.update_required": "An update is available. Your current work is kept.",
+    "release.paused": "App update in progress. Please wait.",
+    "release.unavailable": "Cannot check for updates.",
+    "release.check_again": "Check again",
+
     "feedback.button_aria": "Report a problem",
     "feedback.form_title": "Report a problem",
     "feedback.name_label": "Name",
@@ -514,6 +521,13 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "app.title_staging": "【測試機】素養試題 AI Examgen",
 
     "staging.banner": "⚠ 此為測試環境，運作可能不穩定。",
+
+    "release.checking": "正在檢查更新…",
+    "release.current": "應用程式已是最新版本。",
+    "release.update_required": "有可用的更新。您目前的工作將保留。",
+    "release.paused": "應用程式更新中，請稍候。",
+    "release.unavailable": "無法檢查更新。",
+    "release.check_again": "重新檢查",
 
     "feedback.button_aria": "回報問題",
     "feedback.form_title": "回報問題",
