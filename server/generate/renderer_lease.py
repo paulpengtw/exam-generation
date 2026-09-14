@@ -30,7 +30,10 @@ import concurrent.futures
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from server.generate.publisher import GenerationPublisher
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +87,12 @@ class RendererLease:
     queue:
         ``asyncio.Queue`` used by the stream to emit SSE events.  Stage events
         are put here via ``loop.call_soon_threadsafe`` from the worker thread.
+    publisher:
+        Optional :class:`~server.generate.publisher.GenerationPublisher`.  When
+        provided, stage events are emitted as v2 envelopes via the publisher
+        (batch-scoped, no ``question_id``).  When ``None``, the legacy v1 dict
+        is enqueued directly onto *queue* (backward-compat for callers that do
+        not yet supply a publisher).
     """
 
     def __init__(
@@ -92,33 +101,49 @@ class RendererLease:
         loop: asyncio.AbstractEventLoop,
         cancel_event: Any,  # threading.Event
         queue: asyncio.Queue,
+        *,
+        publisher: GenerationPublisher | None = None,
     ) -> None:
         self._pool = pool
         self._loop = loop
         self._cancel_event = cancel_event
         self._queue = queue
+        self._publisher = publisher
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     def _emit_stage(self, agent: str, stage: str, status: str) -> None:
-        """Thread-safe: enqueue a stage event onto the stream's SSE queue."""
+        """Thread-safe: enqueue a stage event onto the stream's SSE queue.
+
+        When a publisher is available the event is emitted as a v2 envelope
+        (batch-scoped, monotonic ``event_seq``).  Otherwise falls back to the
+        legacy v1 ``{'event': STAGE, 'data': {...}}`` dict.
+        """
         from server.generate.marshalling import SSEEventName  # noqa: PLC0415
 
-        self._loop.call_soon_threadsafe(
-            self._queue.put_nowait,
-            {
-                "event": SSEEventName.STAGE,
-                "data": {
-                    "type": "stage",
-                    "agent": agent,
-                    "stage": stage,
-                    "status": status,
-                    "ts": time.time(),
+        payload = {
+            "type": "stage",
+            "agent": agent,
+            "stage": stage,
+            "status": status,
+            "ts": time.time(),
+        }
+
+        if self._publisher is not None:
+            # v2 path: route through publisher for monotonic event_seq.
+            # publish() calls loop.call_soon_threadsafe internally.
+            self._publisher.publish(SSEEventName.STAGE, payload=payload)
+        else:
+            # Legacy v1 path: enqueue directly (no publisher available).
+            self._loop.call_soon_threadsafe(
+                self._queue.put_nowait,
+                {
+                    "event": SSEEventName.STAGE,
+                    "data": payload,
                 },
-            },
-        )
+            )
 
     # ------------------------------------------------------------------
     # Public interface

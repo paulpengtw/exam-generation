@@ -236,6 +236,7 @@ def _build_run_context(
     html_renderer: Any,
     on_error: Callable[[str], None] | None = None,
     cancel_event: threading.Event | None = None,
+    publisher: GenerationPublisher | None = None,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -255,7 +256,9 @@ def _build_run_context(
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
     _run_id = str(generation_log_id) if generation_log_id is not None else new_run_id()
     _manifest = allocate_manifest(spec.question_id_prefix, _run_id, max(1, params.count))
-    _publisher = GenerationPublisher(run_id=_run_id, loop=loop, queue=queue)
+    _publisher = publisher if publisher is not None else GenerationPublisher(
+        run_id=_run_id, loop=loop, queue=queue
+    )
     _snapshot_ledger = QuestionSnapshotLedger()
     figure_policy_recorder = make_figure_policy_trail_recorder(
         generation_log_id=generation_log_id,
@@ -500,10 +503,12 @@ async def generate_question_stream(
     # render call, not when its worker thread exits (issue #700 option 2).
     # The cancel_event is created here so it can be shared with the lease object
     # before _build_run_context is called.
+    _run_id = str(generation_log_id) if generation_log_id is not None else new_run_id()
+    _publisher = GenerationPublisher(run_id=_run_id, loop=loop, queue=queue)
     _cancel_event = threading.Event()
     if renderer_pool is not None:
         from server.generate.renderer_lease import RendererLease  # noqa: PLC0415
-        html_renderer: Any = RendererLease(renderer_pool, loop, _cancel_event, queue)
+        html_renderer: Any = RendererLease(renderer_pool, loop, _cancel_event, queue, publisher=_publisher)
     else:
         html_renderer = None
 
@@ -526,6 +531,7 @@ async def generate_question_stream(
         html_renderer=html_renderer,
         on_error=_collect_sq_config_error,
         cancel_event=_cancel_event,
+        publisher=_publisher,
     )
 
     ctx.publisher.publish(
