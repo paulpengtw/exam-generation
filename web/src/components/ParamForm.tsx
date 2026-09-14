@@ -1725,7 +1725,8 @@ export default function ParamForm({
       coreQuestion: fromInit<string | null>("core_question", null),
       coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
     }));
-    fetchCurriculumPool(subject)
+    const initialGrade = typeof ip.grade === "number" ? ip.grade : undefined;
+    fetchCurriculumPool(subject, initialGrade)
       .then((s) => {
         if (cancelled) return;
         setSchemas(s);
@@ -2234,7 +2235,7 @@ export default function ParamForm({
   }, [availableSubContexts, schemas, subContext, subject, setField]);
 
   useEffect(() => {
-    if (!schemas) return;
+    if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
     const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     setField("learningPerformance", (prev) => prev.filter((value) => allowed.has(value)));
@@ -2245,14 +2246,14 @@ export default function ParamForm({
           : cfg,
       ),
     );
-  }, [availableLearningPerformance, schemas, setField]);
+  }, [availableLearningPerformance, grade, schemas, setField]);
 
   useEffect(() => {
-    if (!schemas) return;
+    if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
     const allowed = new Set(availableLearningContent.map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     setField("learningContent", (prev) => prev.filter((value) => allowed.has(value)));
-  }, [availableLearningContent, schemas, setField]);
+  }, [availableLearningContent, grade, schemas, setField]);
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
