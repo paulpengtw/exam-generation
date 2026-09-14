@@ -9,14 +9,14 @@ vi.mock("../store/langStore", () => ({
 import GenerationStatusBar, {
   type GenerationStatusBarProps,
 } from "./GenerationStatusBar";
-import type { LlmCallEvent } from "../hooks/useGenerate";
+import type { StageEvent } from "../hooks/useGenerate";
 
 function stageEvent(
   agent: string,
   stage: string,
   status: "start" | "end",
   ts: number,
-): LlmCallEvent {
+): StageEvent {
   return { type: "stage", agent, stage, status, ts };
 }
 
@@ -25,14 +25,74 @@ const BASE_PROPS: GenerationStatusBarProps = {
   completedCount: 0,
   requestedTotal: 0,
   subject: "math",
-  stageEvents: [],
-  subQuestionCount: null,
+  evidence: { profile: "generate-legacy", stageEvents: [], subQuestionCount: null },
   startedAt: null,
   finishedAt: null,
   availableTargets: ["form"],
   onJump: vi.fn(),
   onFeedback: null,
 };
+
+describe("GenerationStatusBar — evidence profiles", () => {
+  it("renders the modification breadcrumb from modification evidence", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        evidence={{
+          profile: "modification",
+          steps: [
+            { type: "stage", agent: "modifier", stage: "modification", step: "modify", status: "start", ts: 1 },
+            { type: "stage", agent: "modifier", stage: "modification", step: "modify", status: "end", ts: 2 },
+            { type: "stage", agent: "verifier", stage: "verify", step: "verify", status: "start", ts: 3 },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("modification-step-breadcrumb")).toHaveTextContent("修改 › 驗證");
+    expect(screen.getByTestId("modification-step-0")).toHaveAttribute("data-state", "complete");
+    expect(screen.getByTestId("modification-step-1")).toHaveAttribute("data-state", "live");
+    expect(screen.queryByTestId("generation-step-breadcrumb")).not.toBeInTheDocument();
+  });
+
+  it("keeps the reserved generate-v2 entry point on the aggregate running line", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        evidence={{ profile: "generate-v2" }}
+      />,
+    );
+
+    expect(screen.getByTestId("statusbar-status")).toHaveTextContent("◐ 生成中 · 已完成 0 / 1");
+    expect(screen.queryByTestId("generation-step-breadcrumb")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("modification-step-breadcrumb")).not.toBeInTheDocument();
+  });
+
+  it("renders the generation breadcrumb from generate-legacy evidence", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        evidence={{
+          profile: "generate-legacy",
+          stageEvents: [
+            { type: "stage", agent: "verifier", stage: "verify", status: "start", ts: 1 },
+          ],
+          subQuestionCount: null,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("generation-step-breadcrumb")).toHaveTextContent("生成 › 圖片 › 驗證 › 修正");
+    expect(screen.getByTestId("generation-step-verify")).toHaveAttribute("data-state", "live");
+    expect(screen.queryByTestId("modification-step-breadcrumb")).not.toBeInTheDocument();
+  });
+});
 
 describe("GenerationStatusBar — 生成步驟", () => {
   it("shows the four-step math skeleton with 生成 live when generation starts", () => {
@@ -42,9 +102,9 @@ describe("GenerationStatusBar — 生成步驟", () => {
         runState="running"
         requestedTotal={1}
         startedAt={1_000}
-        stageEvents={[
+        evidence={{ profile: "generate-legacy", subQuestionCount: null, stageEvents: [
           stageEvent("generator", "llm_generate", "start", 1_000),
-        ]}
+        ] }}
       />,
     );
 
@@ -66,9 +126,9 @@ describe("GenerationStatusBar — 生成步驟", () => {
           runState="running"
           requestedTotal={1}
           startedAt={1_000}
-          stageEvents={[
+          evidence={{ profile: "generate-legacy", subQuestionCount: null, stageEvents: [
             stageEvent("generator", "llm_generate", "start", 1_000),
-          ]}
+          ] }}
         />,
       );
 
@@ -88,11 +148,11 @@ describe("GenerationStatusBar — 生成步驟", () => {
         runState="running"
         requestedTotal={1}
         startedAt={1_000}
-        stageEvents={[
+        evidence={{ profile: "generate-legacy", subQuestionCount: null, stageEvents: [
           stageEvent("generator", "llm_generate", "start", 1_000),
           stageEvent("generator", "llm_generate", "end", 2_000),
           stageEvent("verifier", "verify", "start", 3_000),
-        ]}
+        ] }}
       />,
     );
 
@@ -113,9 +173,9 @@ describe("GenerationStatusBar — 生成步驟", () => {
         runState="running"
         requestedTotal={1}
         startedAt={1_000}
-        stageEvents={[
+        evidence={{ profile: "generate-legacy", subQuestionCount: null, stageEvents: [
           stageEvent("generator", "llm_generate", "start", 1_000),
-        ]}
+        ] }}
       />,
     );
 
@@ -134,11 +194,11 @@ describe("GenerationStatusBar — 生成步驟", () => {
         runState="running"
         requestedTotal={1}
         startedAt={1_000}
-        stageEvents={[
+        evidence={{ profile: "generate-legacy", subQuestionCount: null, stageEvents: [
           stageEvent("generator", "llm_generate", "start", 1_000),
           stageEvent("generator", "llm_generate", "end", 2_000),
           stageEvent("image_agent", "render_image", "start", 3_000),
-        ]}
+        ] }}
       />,
     );
 
@@ -159,11 +219,11 @@ describe("GenerationStatusBar — 生成步驟", () => {
         runState="running"
         requestedTotal={1}
         startedAt={1_000}
-        stageEvents={[
+        evidence={{ profile: "generate-legacy", subQuestionCount: null, stageEvents: [
           stageEvent("generator", "llm_generate", "start", 1_000),
           stageEvent("generator", "llm_generate", "end", 2_000),
           stageEvent("verifier", "verify", "start", 3_000),
-        ]}
+        ] }}
       />,
     );
 
@@ -193,9 +253,8 @@ describe("GenerationStatusBar — 生成步驟", () => {
         subject="social_studies"
         runState="running"
         requestedTotal={1}
-        subQuestionCount={5}
         startedAt={1_000}
-        stageEvents={subQuestionEvents}
+        evidence={{ profile: "generate-legacy", stageEvents: subQuestionEvents, subQuestionCount: 5 }}
       />,
     );
 
@@ -209,9 +268,8 @@ describe("GenerationStatusBar — 生成步驟", () => {
         subject="social_studies"
         runState="running"
         requestedTotal={1}
-        subQuestionCount={null}
         startedAt={1_000}
-        stageEvents={subQuestionEvents}
+        evidence={{ profile: "generate-legacy", stageEvents: subQuestionEvents, subQuestionCount: null }}
       />,
     );
 
@@ -231,9 +289,9 @@ describe("GenerationStatusBar — 生成步驟", () => {
         completedCount={1}
         requestedTotal={2}
         startedAt={1_000}
-        stageEvents={[
+        evidence={{ profile: "generate-legacy", subQuestionCount: null, stageEvents: [
           stageEvent("generator", "llm_generate", "start", 1_000),
-        ]}
+        ] }}
       />,
     );
 
@@ -250,11 +308,11 @@ describe("GenerationStatusBar — 生成步驟", () => {
         runState="running"
         requestedTotal={1}
         startedAt={1_000}
-        stageEvents={[
+        evidence={{ profile: "generate-legacy", subQuestionCount: null, stageEvents: [
           stageEvent("generator", "llm_generate", "start", 1_000),
           stageEvent("generator", "llm_generate", "end", 2_000),
           stageEvent("verifier", "verify", "start", 3_000),
-        ]}
+        ] }}
       />,
     );
 

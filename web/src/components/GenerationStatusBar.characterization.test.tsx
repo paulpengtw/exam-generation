@@ -15,8 +15,7 @@ const BASE_PROPS: GenerationStatusBarProps = {
   completedCount: 0,
   requestedTotal: 1,
   subject: "social_studies",
-  stageEvents: [],
-  subQuestionCount: null,
+  evidence: { profile: "generate-legacy", stageEvents: [], subQuestionCount: null },
   startedAt: null,
   finishedAt: null,
   availableTargets: [],
@@ -29,14 +28,13 @@ describe("GenerationStatusBar — before/after characterization (#739)", () => {
     render(
       <GenerationStatusBar
         {...BASE_PROPS}
-        subQuestionCount={3}
-        stageEvents={[
+        evidence={{ profile: "generate-legacy", subQuestionCount: 3, stageEvents: [
           { type: "stage", agent: "generator", stage: "llm_generate", status: "start", ts: 1 },
           { type: "stage", agent: "generator", stage: "llm_generate", status: "end", ts: 2 },
           { type: "stage", agent: "sub_generator#1", stage: "llm_generate", status: "start", ts: 3 },
           { type: "stage", agent: "sub_generator#2", stage: "llm_generate", status: "start", ts: 4 },
           { type: "stage", agent: "sub_generator#2", stage: "llm_generate", status: "end", ts: 5 },
-        ]}
+        ] }}
       />,
     );
 
@@ -62,15 +60,14 @@ describe("GenerationStatusBar — before/after characterization (#739)", () => {
     render(
       <GenerationStatusBar
         {...BASE_PROPS}
-        mode="modification"
-        modificationStageEvents={[
+        evidence={{ profile: "modification", steps: [
           { type: "stage", agent: "modifier", stage: "modification", step: "modify", status: "start", ts: 1 },
           { type: "stage", agent: "modifier", stage: "modification", step: "modify", status: "end", ts: 2 },
           { type: "stage", agent: "verifier", stage: "verify", step: "verify", status: "start", ts: 3 },
           { type: "stage", agent: "verifier", stage: "verify", step: "verify", status: "end", ts: 4 },
           { type: "stage", agent: "corrector", stage: "correct", step: "correct", status: "start", ts: 5 },
           { type: "stage", agent: "verifier", stage: "verify", step: "verify", status: "start", ts: 6 },
-        ]}
+        ] }}
       />,
     );
 

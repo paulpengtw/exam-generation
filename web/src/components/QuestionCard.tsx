@@ -11,6 +11,7 @@ import type {
   ReferenceExampleRecordShape,
 } from "../hooks/useGenerate";
 import { useModificationRun } from "../hooks/useModificationRun";
+import { projectModificationEvidence } from "../lib/modificationStream";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportModificationWorkspace } from "../lib/workspace/adapters/modificationWorkspace";
@@ -634,16 +635,12 @@ export default function QuestionCard({
           runState="running"
           completedCount={0}
           requestedTotal={1}
-          subject="math"
-          stageEvents={[]}
-          subQuestionCount={null}
+          evidence={projectModificationEvidence(modificationRun.stageEvents)}
           startedAt={null}
           finishedAt={null}
           availableTargets={[]}
           onJump={() => {}}
           onFeedback={null}
-          mode="modification"
-          modificationStageEvents={modificationRun.stageEvents}
         />
       )}
 

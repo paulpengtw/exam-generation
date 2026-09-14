@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
-import type { LlmCallEvent } from "../hooks/useGenerate";
+import type { StageEvent } from "../hooks/useGenerate";
 import type { ModificationStageEvent } from "../hooks/useModificationRun";
+import type { GenerationLegacyEvidence, ModificationEvidence, RunEvidence } from "../lib/runEvidence";
 
 function formatDuration(
   durationMs: number,
@@ -44,7 +45,6 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
 export type RunState = "idle" | "running" | "done" | "error";
 export type JumpTarget = "form" | "progress" | "results";
 type Subject = "math" | "social_studies" | "natural_sciences";
-type StageEvent = Extract<LlmCallEvent, { type: "stage" }>;
 type StepState = "complete" | "live" | "pending";
 
 interface GenerationStep {
@@ -150,17 +150,13 @@ function completedSubQuestionWorkers(events: readonly StageEvent[]): number {
 
 function GenerationStepBreadcrumb({
   subject,
-  stageEvents,
-  subQuestionCount,
+  evidence,
 }: {
   subject: Subject;
-  stageEvents: readonly LlmCallEvent[];
-  subQuestionCount: number | null;
+  evidence: GenerationLegacyEvidence;
 }) {
   const t = useT();
-  const events = stageEvents.filter(
-    (event): event is StageEvent => event.type === "stage",
-  );
+  const { stageEvents: events, subQuestionCount } = evidence;
   const steps = subject === "math" ? MATH_STEPS : GROUPED_SUBJECT_STEPS;
   const relevantEvents = events.filter((event) =>
     steps.some((step) => step.matches(event)),
@@ -233,12 +229,12 @@ function visibleModificationSteps(
 }
 
 function ModificationStepBreadcrumb({
-  stageEvents,
+  evidence,
 }: {
-  stageEvents: readonly ModificationStageEvent[];
+  evidence: ModificationEvidence;
 }) {
   const t = useT();
-  const steps = visibleModificationSteps(stageEvents);
+  const steps = visibleModificationSteps(evidence.steps);
   const labels: Record<ModificationStageEvent["stage"], string> = {
     modification: t("statusbar.step_modify"),
     verify: t("statusbar.step_verify"),
@@ -283,16 +279,13 @@ export interface GenerationStatusBarProps {
   runState: RunState;
   completedCount: number;
   requestedTotal: number;
-  subject: Subject;
-  stageEvents: LlmCallEvent[];
-  subQuestionCount: number | null;
+  subject?: Subject;
+  evidence: RunEvidence;
   startedAt: number | null;
   finishedAt: number | null;
   availableTargets: readonly JumpTarget[];
   onJump: (target: JumpTarget) => void;
   onFeedback: (() => void) | null;
-  mode?: "generation" | "modification";
-  modificationStageEvents?: readonly ModificationStageEvent[];
 }
 
 export default function GenerationStatusBar({
@@ -300,20 +293,17 @@ export default function GenerationStatusBar({
   completedCount,
   requestedTotal,
   subject = "math",
-  stageEvents = [],
-  subQuestionCount = null,
+  evidence,
   startedAt,
   finishedAt,
   availableTargets,
   onJump,
   onFeedback,
-  mode = "generation",
-  modificationStageEvents = [],
 }: GenerationStatusBarProps) {
   const t = useT();
   const showGenerationSteps =
-    mode === "generation" && runState === "running" && requestedTotal === 1;
-  const showModificationSteps = mode === "modification" && runState === "running";
+    evidence.profile === "generate-legacy" && runState === "running" && requestedTotal === 1;
+  const showModificationSteps = evidence.profile === "modification" && runState === "running";
 
   return (
     <div
@@ -340,12 +330,11 @@ export default function GenerationStatusBar({
             ) : null}
             {runState === "running" ? (
               showModificationSteps ? (
-                <ModificationStepBreadcrumb stageEvents={modificationStageEvents} />
+                <ModificationStepBreadcrumb evidence={evidence} />
               ) : showGenerationSteps ? (
                 <GenerationStepBreadcrumb
                   subject={subject}
-                  stageEvents={stageEvents}
-                  subQuestionCount={subQuestionCount}
+                  evidence={evidence}
                 />
               ) : (
                 <>

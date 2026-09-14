@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
@@ -20,6 +20,7 @@ import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
+import { projectGenerationEvidence } from "../lib/generationStream";
 
 export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
@@ -73,6 +74,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [requestedTotal, setRequestedTotal] = useState(0);
   const [submittedSubQuestionCount, setSubmittedSubQuestionCount] =
     useState<number | null>(null);
+  const evidence = useMemo(
+    () => projectGenerationEvidence(llmCalls, submittedSubQuestionCount ?? subQuestionTotal),
+    [llmCalls, submittedSubQuestionCount, subQuestionTotal],
+  );
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const hasResults = displayResults.length > 0;
@@ -397,8 +402,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         completedCount={results.length}
         requestedTotal={requestedTotal}
         subject={subject}
-        stageEvents={llmCalls}
-        subQuestionCount={submittedSubQuestionCount ?? subQuestionTotal}
+        evidence={evidence}
         startedAt={startedAt}
         finishedAt={finishedAt}
         availableTargets={availableTargets}
