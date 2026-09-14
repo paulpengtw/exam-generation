@@ -43,6 +43,7 @@ from server.generate.persistence import (
     persist_generation_record,
 )
 from server.generate.publisher import GenerationPublisher
+from server.generate.snapshot_ledger import QuestionSnapshotLedger
 from server.generate.subjects import (
     SUBJECTS,
     SubjectSpec,
@@ -219,6 +220,7 @@ class _RunContext:
     run_id: str
     manifest: tuple[QuestionContext, ...]
     publisher: GenerationPublisher
+    snapshot_ledger: QuestionSnapshotLedger
 
 
 def _build_run_context(
@@ -254,6 +256,7 @@ def _build_run_context(
     _run_id = new_run_id()
     _manifest = allocate_manifest(spec.question_id_prefix, _run_id, max(1, params.count))
     _publisher = GenerationPublisher(run_id=_run_id, loop=loop, queue=queue)
+    _snapshot_ledger = QuestionSnapshotLedger()
     figure_policy_recorder = make_figure_policy_trail_recorder(
         generation_log_id=generation_log_id,
         loop=loop,
@@ -302,6 +305,7 @@ def _build_run_context(
         run_id=_run_id,
         manifest=_manifest,
         publisher=_publisher,
+        snapshot_ledger=_snapshot_ledger,
     )
 
 
