@@ -95,3 +95,61 @@ Durable gotchas and decisions for all agents and developers working on this repo
   validation budget. Focused endpoint/Sentry verification passed 38 tests;
   confirmation coverage includes pending/completed rerenders, authoritative pins,
   stale responses, and top-level/per-question submission across all subjects.
+
+## LLM exchange persistence diagnostics (#789, 2026-09-14)
+
+- The original warning does **not** prove an exchange was lost. A controlled
+  reproduction on staging commit `850c455f79b804d0cb84f8ef44efdfa8fde952f9`
+  held a real database commit open beyond the real ten-second
+  `concurrent.futures.Future.result()` wait. The recorder returned with exactly
+  `llm_exchanges insert failed:` (empty exception text); after releasing the
+  commit, the authenticated exchanges API returned the row. The reproduced
+  error is `builtins.TimeoutError`, and the reproduced outcome is a delayed
+  commit. This does not establish the cause of the five historical events in
+  [#789](https://github.com/paulpengtw/exam-generation/issues/789).
+- Historical access check: the Sentry issue API and staging `/api/history`
+  both returned HTTP 401 without credentials. This session has no Sentry,
+  database, or staging-auth environment variables. The issue contains event
+  IDs but no generation-log UUIDs or exception classes, and has no comments.
+  GitHub deployment `6432290186` was successful at 07:19:59 UTC for frontend
+  SHA `8941814b7973428a485d39c1a5d2b90fd52ddcad`; that temporal association does
+  not identify the backend revision or the eventual state of any exchange.
+  Classifying those five events still needs authenticated, content-free
+  correlation evidence; do not label them confirmed lost or delayed rows.
+- [The recorder's persistence adapter](https://github.com/paulpengtw/exam-generation/blob/fix/789-exchange-persistence-diagnostics/server/generate/persistence.py)
+  keeps the ten-second production wait and never cancels or retries an insert
+  merely because that wait expires. A `pending` warning receives a follow-up
+  `committed`, `failed`, or `cancelled` outcome when the scheduled future
+  finishes. Scheduling rejection is `not_scheduled`; ordinary successful
+  inserts remain quiet. An exception alone is not proof of row absence,
+  particularly when a connection fails during commit acknowledgement.
+- Diagnostics carry `generation_log_id`, `agent`, `exchange_order`,
+  `outcome`, `error_type`, and `error_module`. The module distinguishes
+  `builtins.TimeoutError` from `sqlalchemy.exc.TimeoutError`. These identifiers
+  use the existing record/event contract; they do not implement the operation
+  and call identities planned in
+  [#743](https://github.com/paulpengtw/exam-generation/issues/743).
+  Exception strings, reprs, tracebacks, and SQL parameters must stay out of
+  these logs under
+  [ADR 0004](https://github.com/paulpengtw/exam-generation/blob/staging/docs/adr/0004-what-sentry-is-allowed-to-collect.md).
+- Regressions exercise real thread-to-event-loop scheduling, gated SQLite
+  commits, real database rejection, and authenticated API read-back in
+  [the persistence integration tests](https://github.com/paulpengtw/exam-generation/blob/fix/789-exchange-persistence-diagnostics/tests/server/test_exchange_persistence_integration.py).
+  Only the wait budget is shortened after the original ten-second reproduction;
+  the tests do not fabricate a timeout future. Run with
+  `choom -n 500 -- uv run pytest tests/server/test_exchange_persistence_integration.py -q`.
+- [Concurrent stream acceptance](https://github.com/paulpengtw/exam-generation/blob/fix/789-exchange-persistence-diagnostics/tests/server/test_exchange_persistence_stream.py)
+  uses two concurrent SS/NS requests, two workers per request, and three
+  parallel agent slots per worker. The real LLM client emits observer events;
+  only the external provider SDK response is stubbed. All four results and
+  History records are available while twelve exchange commits remain gated.
+  Releasing the gate either commits all twelve exchanges (six per log) or
+  produces twelve real `IntegrityError` outcomes with no exchange rows, when
+  a database trigger rejects the inserts. Log correlation and content exclusion
+  are checked in both cases.
+- Verification: the broader Python run passed **2,164 tests, one skipped**;
+  the final focused run, including the subsequently added concurrent-stream
+  acceptance cases and final timeout-race correction, passed **33 tests**.
+  Repository-wide Python lint passed. A timeout racing with an already
+  completed future is classified from that future's actual result, so a
+  completed commit is not mislabeled as a failed insert.
