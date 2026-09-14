@@ -347,3 +347,32 @@ def test_pending_persistence_counter():
     # Should not go negative
     drain.dec_pending_persistence()
     assert drain.snapshot()["pending_persistence"] == 0
+
+
+# ---------------------------------------------------------------------------
+# (g) integrity_errors — Fix 2 (task 8.2)
+# ---------------------------------------------------------------------------
+
+
+def test_extra_dec_produces_integrity_error():
+    """An unmatched _dec increments integrity_errors and makes quiescent False."""
+    drain = DrainTelemetry()
+    drain._inc("_active_runs")
+    drain._dec("_active_runs")  # matched
+    drain._dec("_active_runs")  # UNMATCHED — should produce integrity_errors=1
+    snap = drain.snapshot()
+    assert snap["integrity_errors"] == 1, (
+        f"expected integrity_errors=1, got {snap['integrity_errors']}"
+    )
+    assert snap["quiescent"] is False, (
+        "quiescent must be False when integrity_errors > 0"
+    )
+    assert snap["active_runs"] == 0, "counter must not go negative"
+
+
+def test_all_zero_integrity_errors_zero_is_quiescent():
+    """A snapshot with all counters zero and integrity_errors 0 is quiescent."""
+    drain = DrainTelemetry()
+    snap = drain.snapshot()
+    assert snap["integrity_errors"] == 0
+    assert snap["quiescent"] is True

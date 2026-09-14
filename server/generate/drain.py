@@ -7,6 +7,7 @@ thread-safe; snapshot() may be called from any thread or coroutine.
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import threading
@@ -15,6 +16,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 
 def _app_version() -> str | None:
@@ -44,6 +47,7 @@ class DrainTelemetry:
         self._open_streams = 0
         self._renderer_leases_held = 0
         self._pending_persistence = 0
+        self._integrity_errors = 0
 
         # Registered asyncio.Queue objects for pending_deliveries sampling
         self._queues: list[Any] = []
@@ -68,6 +72,8 @@ class DrainTelemetry:
         with self._lock:
             new = getattr(self, attr) - 1
             if new < 0:
+                self._integrity_errors += 1
+                _log.warning("DrainTelemetry underflow: %s", attr)
                 new = 0
             setattr(self, attr, new)
 
@@ -122,7 +128,11 @@ class DrainTelemetry:
     def dec_pending_persistence(self) -> None:
         with self._lock:
             new = self._pending_persistence - 1
-            self._pending_persistence = max(0, new)
+            if new < 0:
+                self._integrity_errors += 1
+                _log.warning("DrainTelemetry underflow: _pending_persistence")
+                new = 0
+            self._pending_persistence = new
 
     # ------------------------------------------------------------------
     # Queue registry for pending_deliveries sampling
@@ -154,6 +164,7 @@ class DrainTelemetry:
             open_streams = self._open_streams
             renderer_leases_held = self._renderer_leases_held
             pending_persistence = self._pending_persistence
+            integrity_errors = self._integrity_errors
 
         quiescent = (
             active_runs == 0
@@ -162,6 +173,7 @@ class DrainTelemetry:
             and renderer_leases_held == 0
             and pending_persistence == 0
             and pending_deliveries == 0
+            and integrity_errors == 0
         )
 
         return {
@@ -178,6 +190,7 @@ class DrainTelemetry:
             "pending_deliveries": pending_deliveries,
             "pending_persistence": pending_persistence,
             "renderer_leases_held": renderer_leases_held,
+            "integrity_errors": integrity_errors,
             "quiescent": quiescent,
         }
 
