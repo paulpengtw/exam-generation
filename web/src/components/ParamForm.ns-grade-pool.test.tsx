@@ -217,6 +217,55 @@ describe("NS grade pool: grade-11 submission carries stage-5 codes", () => {
 // ── Case 3: Out-of-order responses don't restore the stale stage-4 pool ──
 
 describe("NS grade pool: out-of-order schema responses are discarded", () => {
+  it("keeps the grade pool when a late grade-less response adds context options after a subject switch", async () => {
+    const mathSchema = {
+      grades: [7, 8, 9],
+      情境: [{ value: "個人", instruction: "" }],
+      題型種類: [{ value: "單一題", instruction: "" }],
+      題型: [{ value: "選擇題", instruction: "" }],
+      題目內容類型: [{ value: "純文字", instruction: "" }],
+    };
+    const grade7Schema = {
+      ...NS_SCHEMA_ALL_GRADES,
+      情境: [{ value: "個人", instruction: "" }],
+      學習表現: [STAGE4_LP[0]],
+      學習內容: [STAGE4_LC[0]],
+    };
+    const gradeLessSchema = {
+      ...grade7Schema,
+      情境: [{ value: "個人", instruction: "" }, { value: "海洋", instruction: "" }],
+      學習表現: [{ value: "tr-IV-9", instruction: "", 科目: "自然科學" }],
+      學習內容: [{ value: "INc-IV-9", instruction: "", 科目: "自然科學" }],
+    };
+    getSchemasMock.mockImplementation(async (subject: string, grade?: number) => {
+      if (subject === "math") return mathSchema;
+      if (subject === "natural_sciences" && grade === undefined) {
+        return new Promise((resolve) => setTimeout(() => resolve(gradeLessSchema), 30));
+      }
+      if (subject === "natural_sciences" && grade === 7) return grade7Schema;
+      throw new Error(`Unexpected curriculum request: ${subject}, ${grade}`);
+    });
+
+    const { rerender } = render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+    await waitFor(() => expect(gradeSelect()).toHaveValue("7"));
+
+    rerender(<ParamForm subject="natural_sciences" onSubmit={() => {}} disabled={false} />);
+    await waitFor(() => {
+      expect(getSchemasMock).toHaveBeenCalledWith("natural_sciences", 7);
+      expect(getSchemasMock).toHaveBeenCalledWith("natural_sciences");
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 100)); });
+
+    fireEvent.change(screen.getByPlaceholderText("搜尋學習表現..."), { target: { value: "-" } });
+    expect(screen.queryByRole("button", { name: "tr-IV-9" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "tr-IV-1" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("搜尋學習內容..."), { target: { value: "-" } });
+    expect(screen.queryByRole("button", { name: "INc-IV-9" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "INc-IV-1" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "海洋" })).toBeInTheDocument();
+  });
+
   it(
     "a stale grade-7 response arriving after a grade-11 response does not restore stage-4 pool",
     async () => {
