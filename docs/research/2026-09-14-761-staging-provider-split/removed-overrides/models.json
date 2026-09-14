@@ -1,0 +1,64 @@
+{
+  "at": "2026-09-14T10:30:51.755Z",
+  "status": 200,
+  "body": {
+    "allowed": [
+      "gemini-3.1-pro-preview",
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
+      "claude-opus-5",
+      "claude-fable-5",
+      "claude-sonnet-5"
+    ],
+    "effort": {
+      "gemini-3.1-pro-preview": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "claude-opus-4-6": [
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "claude-sonnet-4-6": [
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "claude-opus-5": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "claude-fable-5": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "claude-sonnet-5": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ]
+    },
+    "defaults": {
+      "plan": "claude-opus-4-6",
+      "execute": "gemini-3.1-pro-preview",
+      "verify": "claude-opus-4-6",
+      "correct": "",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "effort_verify": "high",
+      "effort_correct": ""
+    }
+  }
+}
