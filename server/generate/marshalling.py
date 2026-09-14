@@ -222,6 +222,32 @@ def make_combined_observer(
     return observer
 
 
+def make_publisher_observer(
+    publisher: Any,
+    question_context: Any | None,
+) -> LLMObserver:
+    """Return an LLMObserver that publishes through *publisher* using v2 envelopes.
+
+    When *question_context* (a QuestionContext) is given, every event carries
+    question_id and index (question scope).  When None, events are batch-scope.
+    """
+    def observer(event: dict) -> None:
+        sse_event = _OBSERVER_TYPE_MAP.get(event.get("type", ""))
+        if not sse_event:
+            return
+        if question_context is not None:
+            publisher.publish(
+                sse_event,
+                question_id=question_context.question_id,
+                index=question_context.index,
+                payload=dict(event),
+            )
+        else:
+            publisher.publish(sse_event, payload=dict(event))
+
+    return observer
+
+
 # ---------------------------------------------------------------------------
 # Queue-write helpers
 # ---------------------------------------------------------------------------
