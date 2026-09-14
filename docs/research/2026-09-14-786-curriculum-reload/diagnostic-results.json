@@ -1,0 +1,38 @@
+{
+  "baseline_param_form": "e6805ddb76db84fe84e97fccce7c7d06657e31c5",
+  "integrated_revision": "6c3ce98b5c18beb9b10191fb1ac970b1d6afc591",
+  "red": {
+    "exit_code": 1,
+    "cases": [
+      {
+        "name": "keeps 全域池 and 各小題配置 codes when the grade-less 第四 pool answers first",
+        "status": "failed"
+      },
+      {
+        "name": "keeps codes and offers no 第四 code when the grade-less pool answers last",
+        "status": "failed"
+      },
+      {
+        "name": "CONTROL: keeps codes when both schema requests return the 第五 pool",
+        "status": "passed"
+      }
+    ]
+  },
+  "green": {
+    "exit_code": 0,
+    "cases": [
+      {
+        "name": "keeps 全域池 and 各小題配置 codes when the grade-less 第四 pool answers first",
+        "status": "passed"
+      },
+      {
+        "name": "keeps codes and offers no 第四 code when the grade-less pool answers last",
+        "status": "passed"
+      },
+      {
+        "name": "CONTROL: keeps codes when both schema requests return the 第五 pool",
+        "status": "passed"
+      }
+    ]
+  }
+}

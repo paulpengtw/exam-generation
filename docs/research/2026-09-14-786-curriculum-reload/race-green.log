@@ -1,0 +1,17 @@
+
+ RUN  v4.1.10 <web>
+
+ ↓ src/pages/GeneratePage.history-prefill.test.tsx > GeneratePage history prefill with a saved draft > restores route-state history values after choosing history over the saved draft
+ ↓ src/pages/GeneratePage.history-prefill.test.tsx > GeneratePage history prefill with a saved draft > reloads a complete aborted-run payload with 題幹 values and every 各小題配置 row
+ ↓ src/pages/GeneratePage.history-prefill.test.tsx > GeneratePage history prefill with a saved draft > shows the existing prefill notice and keeps 題幹 values for a partial aborted payload
+ ↓ src/pages/GeneratePage.history-prefill.test.tsx > GeneratePage history prefill across learning stages > names dropped 學習表現/學習內容 codes once and deselects them after the grade's pool loads
+ ✓ src/pages/GeneratePage.history-prefill.test.tsx > GeneratePage history prefill across learning stages > keeps 全域池 and 各小題配置 codes when the grade-less 第四 pool answers first 329ms
+ ✓ src/pages/GeneratePage.history-prefill.test.tsx > GeneratePage history prefill across learning stages > keeps codes and offers no 第四 code when the grade-less pool answers last 231ms
+ ✓ src/pages/GeneratePage.history-prefill.test.tsx > GeneratePage history prefill across learning stages > CONTROL: keeps codes when both schema requests return the 第五 pool 272ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 4 skipped (7)
+   Start at  23:00:15
+   Duration  1.52s (transform 172ms, setup 41ms, import 218ms, tests 832ms, environment 310ms)
+
+JSON report written to <temporary-reports>/green.json

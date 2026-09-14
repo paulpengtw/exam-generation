@@ -1,0 +1,23 @@
+npm run lint — exit 0
+
+> web@0.0.0 lint
+> eslint .
+
+
+npx tsc -b — exit 0
+
+npm test -- --maxWorkers=2 — exit 0
+
+> web@0.0.0 test
+> vitest run --maxWorkers=2
+
+
+ RUN  v4.1.10 <web>
+
+Not implemented: navigation to another Document
+Not implemented: navigation to another Document
+
+ Test Files  107 passed (107)
+      Tests  884 passed (884)
+   Start at  22:45:34
+   Duration  55.62s (transform 1.73s, setup 2.99s, import 7.68s, tests 51.09s, environment 35.62s)

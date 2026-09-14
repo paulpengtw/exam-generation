@@ -1,0 +1,98 @@
+{
+  "url": "/generate/natural_sciences",
+  "assets": [
+    "https://examgen-staging.cpeng.me/assets/index-uzHH95Bq.js"
+  ],
+  "schemaResponses": [
+    {
+      "path": "/api/schemas?subject=natural_sciences&grade=11",
+      "status": 200,
+      "stage": "第四學習階段",
+      "lpCount": 39,
+      "lcCount": 426
+    },
+    {
+      "path": "/api/schemas?subject=natural_sciences&grade=11",
+      "status": 200,
+      "stage": "第四學習階段",
+      "lpCount": 39,
+      "lcCount": 426
+    }
+  ],
+  "inputs": [
+    {
+      "placeholder": "搜尋學習表現...",
+      "parentTag": "DIV",
+      "parentClass": "relative",
+      "selected": [
+        "pa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習內容...",
+      "parentTag": "DIV",
+      "parentClass": "relative",
+      "selected": [
+        "PKa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習表現...",
+      "parentTag": "DIV",
+      "parentClass": "relative",
+      "selected": [
+        "pa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習內容...",
+      "parentTag": "DIV",
+      "parentClass": "relative",
+      "selected": [
+        "PKa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習表現...",
+      "parentTag": "DIV",
+      "parentClass": "relative",
+      "selected": [
+        "pa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習內容...",
+      "parentTag": "DIV",
+      "parentClass": "relative",
+      "selected": [
+        "PKa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習表現...",
+      "parentTag": "DIV",
+      "parentClass": "relative",
+      "selected": [
+        "pa-Ⅴa-1"
+      ]
+    },
+    {
+      "placeholder": "搜尋學習內容...",
+      "parentTag": "DIV",
+      "parentClass": "relative",
+      "selected": [
+        "PKa-Ⅴa-1"
+      ]
+    }
+  ],
+  "selectedCodes": [
+    "pa-Ⅴa-1",
+    "PKa-Ⅴa-1",
+    "pa-Ⅴa-1",
+    "PKa-Ⅴa-1",
+    "pa-Ⅴa-1",
+    "PKa-Ⅴa-1",
+    "pa-Ⅴa-1",
+    "PKa-Ⅴa-1"
+  ]
+}
