@@ -534,7 +534,8 @@ async def _generate(
             async for event in stream:
                 if event.get("event") == "error":
                     status = "failed"
-                    data = event.get("data", "")
+                    # v2 envelopes use "payload"; fall back to v1 "data" for compat.
+                    data = event.get("payload", event.get("data", ""))
                     error_msg = (
                         data.get("message", str(data)) if isinstance(data, dict) else str(data)
                     )

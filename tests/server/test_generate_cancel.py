@@ -206,8 +206,8 @@ def test_a1_cancel_stops_worker_before_next_stage(tmp_path: Path) -> None:
         async for event in stream:
             if (
                 event["event"] == "pipeline"
-                and isinstance(event.get("data"), dict)
-                and event["data"].get("event_name") == "pipeline_start"
+                and isinstance(event.get("payload", event.get("data")), dict)
+                and event.get("payload", event.get("data", {})).get("event_name") == "pipeline_start"  # noqa: E501
             ):
                 break
 
@@ -325,8 +325,8 @@ def test_a3_aborted_run_emits_no_error_event(tmp_path: Path) -> None:
             collected_events.append(event)
             if (
                 event["event"] == "pipeline"
-                and isinstance(event.get("data"), dict)
-                and event["data"].get("event_name") == "pipeline_start"
+                and isinstance(event.get("payload", event.get("data")), dict)
+                and event.get("payload", event.get("data", {})).get("event_name") == "pipeline_start"  # noqa: E501
             ):
                 break
 

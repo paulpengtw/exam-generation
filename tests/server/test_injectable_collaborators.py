@@ -249,7 +249,7 @@ def test_fake_subject_sse_event_ordering(tmp_path: Path) -> None:
     result_events = [e for e in events if e["event"] == "result"]
     assert len(result_events) == 1, f"Expected 1 result, got {len(result_events)}: {types}"
 
-    result_payload = result_events[0]["data"]
+    result_payload = result_events[0].get("payload", result_events[0].get("data", {}))
     assert isinstance(result_payload, dict)
     assert result_payload.get("id", "").startswith("fake_"), (
         f"result.data.id should start with 'fake_'; got {result_payload.get('id')!r}"
@@ -262,7 +262,7 @@ def test_fake_subject_sse_event_ordering(tmp_path: Path) -> None:
 
     # ── Pipeline sub-events exist and are in the right order ─────────────────
     pipeline_events = [e for e in events if e["event"] == "pipeline"]
-    pipeline_names = [e["data"]["event_name"] for e in pipeline_events]
+    pipeline_names = [e.get("payload", e.get("data", {}))["event_name"] for e in pipeline_events]
 
     for required in ("pipeline_start", "question_start", "question_end", "pipeline_end"):
         assert required in pipeline_names, (
@@ -284,15 +284,15 @@ def test_fake_subject_sse_event_ordering(tmp_path: Path) -> None:
     )
 
     # ── question_start / question_end carry correct metadata ─────────────────
-    qs_event = next(e for e in pipeline_events if e["data"]["event_name"] == "question_start")
-    qe_event = next(e for e in pipeline_events if e["data"]["event_name"] == "question_end")
-    assert qs_event["data"]["index"] == 0
-    assert qs_event["data"]["total"] == 1
-    assert qe_event["data"]["index"] == 0
-    assert qe_event["data"]["total"] == 1
+    qs_event = next(e for e in pipeline_events if e.get("payload", e.get("data", {})).get("event_name") == "question_start")  # noqa: E501
+    qe_event = next(e for e in pipeline_events if e.get("payload", e.get("data", {})).get("event_name") == "question_end")  # noqa: E501
+    assert qs_event.get("payload", qs_event.get("data", {}))["index"] == 0
+    assert qs_event.get("payload", qs_event.get("data", {}))["total"] == 1
+    assert qe_event.get("payload", qe_event.get("data", {}))["index"] == 0
+    assert qe_event.get("payload", qe_event.get("data", {}))["total"] == 1
 
     # ── pipeline_start / pipeline_end carry total=1 ──────────────────────────
-    ps_event = next(e for e in pipeline_events if e["data"]["event_name"] == "pipeline_start")
-    pe_event = next(e for e in pipeline_events if e["data"]["event_name"] == "pipeline_end")
-    assert ps_event["data"]["total"] == 1
-    assert pe_event["data"]["total"] == 1
+    ps_event = next(e for e in pipeline_events if e.get("payload", e.get("data", {})).get("event_name") == "pipeline_start")  # noqa: E501
+    pe_event = next(e for e in pipeline_events if e.get("payload", e.get("data", {})).get("event_name") == "pipeline_end")  # noqa: E501
+    assert ps_event.get("payload", ps_event.get("data", {}))["total"] == 1
+    assert pe_event.get("payload", pe_event.get("data", {}))["total"] == 1

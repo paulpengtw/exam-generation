@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import threading
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -239,3 +241,335 @@ def test_publisher_sidecars_attached_to_envelope() -> None:
     loop.close()
     assert "verification_trail" in envelope, f"sidecar missing from envelope: {envelope}"
     assert envelope["verification_trail"] == [1, 2, 3]
+
+
+# ---------------------------------------------------------------------------
+# Slice 4b: RED tests — all generation events through publisher
+# ---------------------------------------------------------------------------
+
+
+
+def _make_s4b_fake_spec():
+    """Fake social-studies spec for slice 4b tests."""
+    import threading
+
+    barrier = threading.Barrier(2)
+    returned_questions: list = []
+
+    def _fake_do_generate(rng_params, overrides, **kwargs):
+        question_id = kwargs["question_id"]
+        client = kwargs["client"]
+        observer = client.get_observer()
+
+        # (1) Call observer with stage/llm events carrying 'marker' = question_id
+        if observer:
+            for ev in [
+                {
+                    "type": "stage",
+                    "agent": "generator",
+                    "stage": "llm_generate",
+                    "status": "start",
+                    "ts": 1.0,
+                    "marker": question_id,
+                },
+                {
+                    "type": "llm_request",
+                    "purpose": "generate",
+                    "agent": "generator",
+                    "messages": [],
+                    "marker": question_id,
+                },
+                {
+                    "type": "llm_response",
+                    "purpose": "generate",
+                    "agent": "generator",
+                    "content": "x",
+                    "marker": question_id,
+                },
+                {
+                    "type": "stage",
+                    "agent": "generator",
+                    "stage": "llm_generate",
+                    "status": "end",
+                    "ts": 2.0,
+                    "marker": question_id,
+                },
+            ]:
+                observer(ev)
+
+        question = ExamQuestion(
+            id=question_id,
+            情境=[c for c in rng_params.情境],
+            題型種類=rng_params.題型種類,
+            題型=rng_params.題型[0] if rng_params.題型 else QuestionType("選擇題"),
+            取材來源=[question_id],
+            metadata=QuestionMetadata(grade=rng_params.grade, model="test-model"),
+        )
+
+        # (2) Emit draft update
+        kwargs["on_question_update"](question, "draft")
+        # (3) Barrier ensures concurrent workers
+        try:
+            barrier.wait(timeout=10)
+        except threading.BrokenBarrierError:
+            pass
+        # (4) Emit verified update
+        kwargs["on_question_update"](question, "verified")
+        # (5) Keep reference for mutation test
+        returned_questions.append(question)
+        return question
+
+    return dataclasses.replace(
+        SUBJECTS["social_studies"], do_generate=_fake_do_generate
+    ), returned_questions
+
+
+def test_slice4b_full_stream_all_v2_envelopes(tmp_path, monkeypatch) -> None:  # noqa: PLR0912,PLR0915
+    """Slice 4b: every yielded event must be a v2 {event, context, payload} envelope."""
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from server.config import ServerConfig
+    from server.generate.service import generate_question_stream
+    from tests.server.generate_test_utils import resolved_generate_params
+
+    fake_spec, returned_questions = _make_s4b_fake_spec()
+    params = resolved_generate_params(
+        {"subject": "social_studies", "skip_verify": True, "count": 2}
+    )
+    config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    app_state = SimpleNamespace(renderer_pool=None)
+    test_user_id = uuid.uuid4()
+
+    persist_payloads: list[dict] = []
+
+    async def _fake_persist(
+        *,
+        user_id,
+        generation_log_id,
+        subject,
+        params,
+        payload,
+        session_factory,
+        **_kwargs,
+    ):
+        persist_payloads.append(payload)
+
+    monkeypatch.setattr(
+        "server.generate.service.persist_generation_record", _fake_persist
+    )
+
+    events: list[dict] = []
+
+    async def collect() -> None:
+        async for ev in generate_question_stream(
+            params,
+            config,
+            app_state,
+            user_id=test_user_id,
+            subjects={"social_studies": fake_spec},
+        ):
+            events.append(ev)
+
+    asyncio.run(collect())
+
+    # (a) Every item has event, context, payload; NO data key.
+    for i, item in enumerate(events):
+        assert "event" in item, f"item {i} missing 'event': {list(item.keys())}"
+        assert "context" in item, f"item {i} missing 'context': {item}"
+        assert "payload" in item, f"item {i} missing 'payload': {item}"
+        assert "data" not in item, f"item {i} still has old 'data' key: {list(item.keys())}"
+
+    # (b) item 0 is started with exactly {run_id, event_seq: 1}
+    assert events[0]["event"] == "started", f"first event must be 'started'; got {events[0]['event']}"  # noqa: E501
+    started_ctx = events[0]["context"]
+    run_id = started_ctx["run_id"]
+    assert started_ctx == {"run_id": run_id, "event_seq": 1}, (
+        f"started context must be exactly {{run_id, event_seq: 1}}; got {started_ctx}"
+    )
+
+    # (c) event_seq is exactly 1..N in send order, no gaps or duplicates
+    seqs = [e["context"]["event_seq"] for e in events]
+    assert seqs == list(range(1, len(events) + 1)), (
+        f"event_seqs must be 1..{len(events)}, no gaps or duplicates; got {seqs}"
+    )
+
+    # (d) marker events: context question_id == payload marker, index matches manifest
+    manifest_map = {
+        q["question_id"]: q["index"]
+        for q in events[0]["payload"]["questions"]
+    }
+    marker_events = [e for e in events if "marker" in e.get("payload", {})]
+    assert marker_events, "no marker events found (observer events not reaching publisher)"
+    for e in marker_events:
+        marker = e["payload"]["marker"]
+        ctx = e["context"]
+        assert "question_id" in ctx, f"marker event missing question_id in context: {ctx}"
+        assert ctx["question_id"] == marker, (
+            f"context question_id {ctx['question_id']!r} != marker {marker!r}"
+        )
+        assert "index" in ctx, f"marker event missing index in context: {ctx}"
+        assert ctx["index"] == manifest_map[marker], (
+            f"context index {ctx['index']} != manifest index {manifest_map[marker]}"
+        )
+
+    # (e) question_update events have correct context and payload shape
+    update_events = [e for e in events if e["event"] == "question_update"]
+    assert update_events, "no question_update events found"
+    for e in update_events:
+        ctx = e["context"]
+        assert "question_id" in ctx, f"question_update missing question_id: {ctx}"
+        assert "index" in ctx, f"question_update missing index: {ctx}"
+        p = e["payload"]
+        assert p["question"]["id"] == ctx["question_id"], (
+            f"question.id {p['question']['id']!r} != context question_id {ctx['question_id']!r}"
+        )
+        assert p["phase"] in ("draft", "verified"), f"unexpected phase: {p['phase']!r}"
+
+    # (f) pipeline events: question_start/end have question scope; pipeline_start/end have batch scope  # noqa: E501
+    pipeline_events = [e for e in events if e["event"] == "pipeline"]
+    for e in pipeline_events:
+        ename = e["payload"].get("event_name", "")
+        ctx = e["context"]
+        if ename in ("question_start", "question_end"):
+            assert "question_id" in ctx, f"{ename} missing question_id: {ctx}"
+            assert "index" in ctx, f"{ename} missing index: {ctx}"
+            assert e["payload"]["index"] == ctx["index"], (
+                f"{ename} payload['index'] {e['payload']['index']} != context['index'] {ctx['index']}"  # noqa: E501
+            )
+        elif ename in ("pipeline_start", "pipeline_end"):
+            assert "question_id" not in ctx, f"{ename} should not have question_id: {ctx}"
+            assert "index" not in ctx, f"{ename} should not have index: {ctx}"
+
+    # (g) result events: context question_id/index, payload['id'] matches, no transport keys
+    result_events = [e for e in events if e["event"] == "result"]
+    assert len(result_events) == 2, f"expected 2 result events; got {len(result_events)}"
+    for e in result_events:
+        ctx = e["context"]
+        assert "question_id" in ctx
+        assert "index" in ctx
+        p = e["payload"]
+        assert p.get("id") == ctx["question_id"], (
+            f"result payload['id'] {p.get('id')!r} != context question_id {ctx['question_id']!r}"
+        )
+        for transport_key in ("context", "payload", "event_seq", "run_id"):
+            assert transport_key not in p, (
+                f"result payload must not contain transport key {transport_key!r}"
+            )
+
+    # (h) last item is done with batch scope and empty payload
+    last = events[-1]
+    assert last["event"] == "done", f"last event must be 'done'; got {last['event']}"
+    assert "question_id" not in last["context"], "done must be batch scope (no question_id)"
+    assert "index" not in last["context"], "done must be batch scope (no index)"
+    assert last["payload"] == {}, f"done payload must be empty; got {last['payload']}"
+
+    # (i) persist received payload == bare question dict (no transport envelope keys)
+    assert len(persist_payloads) == 2, (
+        f"expected 2 persist calls; got {len(persist_payloads)}"
+    )
+    for pp in persist_payloads:
+        assert "id" in pp, f"persist payload missing 'id': {list(pp.keys())}"
+        for transport_key in ("context", "payload", "event_seq", "run_id", "event"):
+            assert transport_key not in pp, (
+                f"persist payload must not contain transport key {transport_key!r}"
+            )
+
+    # (j) mutating returned question does not change collected result payload
+    for q in returned_questions:
+        q.取材來源 = ["MUTATED_BY_TEST"]
+    for e in result_events:
+        assert e["payload"].get("取材來源") != ["MUTATED_BY_TEST"], (
+            "publisher deepcopy failed: mutation of returned question changed collected result"
+        )
+
+
+def test_slice4b_error_event_has_v2_context(tmp_path) -> None:
+    """One failing worker produces a v2 error envelope with question_id/index."""
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from server.config import ServerConfig
+    from server.generate.service import generate_question_stream
+    from tests.server.generate_test_utils import resolved_generate_params
+
+    def _fake_do_generate(rng_params, overrides, **kwargs):
+        # Index 1 is _002; raise there
+        if kwargs["question_id"].endswith("_002"):
+            raise RuntimeError("boom")
+        return ExamQuestion(
+            id=kwargs["question_id"],
+            情境=[c for c in rng_params.情境],
+            題型種類=rng_params.題型種類,
+            題型=rng_params.題型[0] if rng_params.題型 else QuestionType("選擇題"),
+            取材來源=[],
+            metadata=QuestionMetadata(grade=rng_params.grade, model="test-model"),
+        )
+
+    fake_spec = dataclasses.replace(
+        SUBJECTS["social_studies"], do_generate=_fake_do_generate
+    )
+    params = resolved_generate_params(
+        {"subject": "social_studies", "skip_verify": True, "count": 2}
+    )
+    config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=Path("data"))
+    app_state = SimpleNamespace(renderer_pool=None)
+
+    events: list[dict] = []
+
+    async def collect() -> None:
+        async for ev in generate_question_stream(
+            params, config, app_state,
+            subjects={"social_studies": fake_spec},
+        ):
+            events.append(ev)
+
+    asyncio.run(collect())
+
+    error_events = [e for e in events if e["event"] == "error"]
+    assert error_events, "expected at least one error event"
+    err = error_events[0]
+
+    # Error envelope must be v2
+    assert "context" in err, f"error event missing 'context': {list(err.keys())}"
+    assert "payload" in err, f"error event missing 'payload': {list(err.keys())}"
+    assert "data" not in err, f"error event still has 'data': {list(err.keys())}"
+
+    ctx = err["context"]
+    assert "question_id" in ctx, f"error event missing question_id in context: {ctx}"
+    assert "index" in ctx, f"error event missing index in context: {ctx}"
+
+    # Failing worker is index 1 (question ending _002)
+    manifest_questions = events[0]["payload"]["questions"]
+    index_1_qid = manifest_questions[1]["question_id"]
+    assert index_1_qid.endswith("_002"), f"unexpected manifest question_id: {index_1_qid}"
+    assert ctx["question_id"] == index_1_qid, (
+        f"error context question_id {ctx['question_id']!r} != {index_1_qid!r}"
+    )
+    assert ctx["index"] == 1, f"error context index must be 1; got {ctx['index']}"
+
+    p = err["payload"]
+    assert p.get("code") == "generation_failed", f"error code must be 'generation_failed'; got {p.get('code')!r}"  # noqa: E501
+    assert "message" in p, f"error payload must have 'message': {p}"
+
+    # Stream still ends (break on error behavior unchanged)
+    assert events[-1]["event"] in ("done", "error"), (
+        f"stream must end with done or error; last event: {events[-1]['event']}"
+    )
+
+
+def test_slice4b_routes_sse_wire_started_has_context_and_payload() -> None:
+    """SSE wire 'data' for v2 started envelope parses to exactly {context, payload}."""
+    from server.generate.routes import _serialize_event
+
+    envelope = {
+        "event": "started",
+        "context": {"run_id": "test_run_42", "event_seq": 1},
+        "payload": {"protocol_version": 2, "total": 1, "questions": []},
+    }
+    result = _serialize_event(envelope)
+    assert result["event"] == "started", f"SSE event name must be 'started'; got {result['event']!r}"  # noqa: E501
+    wire_data = json.loads(result["data"])
+    assert set(wire_data.keys()) == {"context", "payload"}, (
+        f"SSE wire data must have exactly {{context, payload}} keys; got {set(wire_data.keys())}"
+    )

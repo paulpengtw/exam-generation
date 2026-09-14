@@ -26,10 +26,10 @@ from server.db import AsyncSessionLocal
 from server.generate.marshalling import (
     SSEEventName,
     make_combined_observer,
-    make_pipeline_emitter,
-    make_question_update_emitter,
-    make_queue_observer,
-    make_trail_emitter,
+    make_publisher_observer,
+    make_publisher_pipeline_emitter,
+    make_publisher_question_update_emitter,
+    make_publisher_trail_emitter,
     question_to_event,
 )
 from server.generate.models import (
@@ -292,7 +292,7 @@ def _build_run_context(
         queue=queue,
         prior_scopes=[],
         prior_scopes_lock=threading.Lock(),
-        emit_pipeline=make_pipeline_emitter(loop, queue),
+        emit_pipeline=make_publisher_pipeline_emitter(_publisher, _manifest),
         generation_log_id=generation_log_id,
         figure_policy_recorder=figure_policy_recorder,
         reference_example_recorder=reference_example_recorder,
@@ -326,10 +326,15 @@ def _worker_one(
     figure_policy_recorder = ctx.figure_policy_recorder
     reference_example_recorder = ctx.reference_example_recorder
     question_client.set_observer(
-        make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
+        make_combined_observer(
+            make_publisher_observer(ctx.publisher, ctx.manifest[i]),
+            worker_recorder,
+        )
     )
-    emit_question_update = make_question_update_emitter(i, ctx.loop, ctx.queue, ctx.config)
-    emit_trail_entry = make_trail_emitter(ctx.loop, ctx.queue)
+    emit_question_update = make_publisher_question_update_emitter(
+        ctx.publisher, ctx.manifest[i], ctx.config
+    )
+    emit_trail_entry = make_publisher_trail_emitter(ctx.publisher, ctx.manifest[i])
     verification_trail: list[dict[str, Any]] = []
     figure_policy_trail: list[dict[str, Any]] = []
     reference_example_entries: list[dict[str, Any]] = []
@@ -429,56 +434,38 @@ def _worker_one(
                 ctx.prior_scopes.append(new_scope)
         ctx.emit_pipeline("question_end", index=i, total=ctx.count)
         record_generation_outcome(ctx.params.subject, "success")
-        result_event: dict[str, Any] = {
-            "event": SSEEventName.RESULT,
-            "data": question_to_event(question, ctx.config),
+        sidecars: dict[str, Any] = {
+            "reference_example_record": {
+                "disabled": bool(ctx.params.disable_reference_fewshot),
+                "entries": reference_example_entries,
+            },
         }
         if verification_trail:
-            result_event["verification_trail"] = verification_trail
+            sidecars["verification_trail"] = verification_trail
         if figure_policy_trail:
-            result_event["figure_policy_trail"] = figure_policy_trail
-        result_event["reference_example_record"] = {
-            "disabled": bool(ctx.params.disable_reference_fewshot),
-            "entries": reference_example_entries,
-        }
-        ctx.loop.call_soon_threadsafe(
-            ctx.queue.put_nowait,
-            result_event,
-        )
-        _terminal_status = "delivered"
+            sidecars["figure_policy_trail"] = figure_policy_trail
         ctx.publisher.publish(
-            SSEEventName.QUESTION_TERMINAL,
+            SSEEventName.RESULT,
             question_id=question_id,
             index=i,
-            payload={"delivery_status": _terminal_status},
+            payload=question_to_event(question, ctx.config),
+            sidecars=sidecars,
         )
     except GenerationCancelled:
         # Client disconnected; exit cleanly without emitting an error event.
-        ctx.publisher.publish(
-            SSEEventName.QUESTION_TERMINAL,
-            question_id=ctx.manifest[i].question_id,
-            index=i,
-            payload={"delivery_status": "cancelled"},
-        )
+        pass
     except Exception as exc:
         record_generation_outcome(ctx.params.subject, "failure")
-        ctx.loop.call_soon_threadsafe(
-            ctx.queue.put_nowait,
-            {
-                "event": SSEEventName.ERROR,
-                "data": build_sse_error(
-                    "generation_failed",
-                    f"Question generation failed ({type(exc).__name__})",
-                ),
-            },
+        ctx.publisher.publish(
+            SSEEventName.ERROR,
+            question_id=question_id,
+            index=i,
+            payload=build_sse_error(
+                "generation_failed",
+                f"Question generation failed ({type(exc).__name__})",
+            ),
         )
         logger.exception("worker_one error (index=%d)", i)
-        ctx.publisher.publish(
-            SSEEventName.QUESTION_TERMINAL,
-            question_id=ctx.manifest[i].question_id,
-            index=i,
-            payload={"delivery_status": "failed"},
-        )
 
 
 async def generate_question_stream(
@@ -524,18 +511,10 @@ async def generate_question_stream(
     config.output_dir.mkdir(parents=True, exist_ok=True)
     spec = _subjects[params.subject]
 
-    def _emit_sq_config_error(msg: str) -> None:
-        queue.put_nowait({
-            "event": SSEEventName.STAGE,
-            "data": {
-                "type": "stage",
-                "agent": "generator",
-                "stage": "subquestion_configs",
-                "status": "error",
-                "message": msg,
-                "ts": time.time(),
-            },
-        })
+    _sq_config_error_msgs: list[str] = []
+
+    def _collect_sq_config_error(msg: str) -> None:
+        _sq_config_error_msgs.append(msg)
 
     ctx = _build_run_context(
         params, config, app_state,
@@ -545,7 +524,7 @@ async def generate_question_stream(
         loop=loop,
         queue=queue,
         html_renderer=html_renderer,
-        on_error=_emit_sq_config_error,
+        on_error=_collect_sq_config_error,
         cancel_event=_cancel_event,
     )
 
@@ -564,22 +543,36 @@ async def generate_question_stream(
     await asyncio.sleep(0)
     yield queue.get_nowait()
 
+    # Emit any deferred sq_config errors (collected during _build_run_context) via publisher.
+    for _sq_msg in _sq_config_error_msgs:
+        ctx.publisher.publish(
+            SSEEventName.STAGE,
+            payload={
+                "type": "stage",
+                "agent": "generator",
+                "stage": "subquestion_configs",
+                "status": "error",
+                "message": _sq_msg,
+                "ts": time.time(),
+            },
+        )
+
     # Site 2 (creative-brief / coverage planning): delegated to spec.
     # SS: plans briefs when creative_planning=True; returns [None]*count otherwise.
     # Math / NS: always returns [] so the brief-application check is a no-op.
     # Run in a worker thread so a synchronous LLM planning call (e.g. Opus for
     # 社會領域 with creative_planning=True, ~14 s) does not block the event loop
     # and freeze pings, /health, and other requests (issue #701).
-    yield {
-        "event": SSEEventName.STAGE,
-        "data": {
+    ctx.publisher.publish(
+        SSEEventName.STAGE,
+        payload={
             "type": "stage",
             "agent": "planner",
             "stage": "batch_briefs",
             "status": "start",
             "ts": time.time(),
         },
-    }
+    )
 
     # The planner uses the same exchange order allocator as workers.  Its
     # observer must be installed before the provider call so request,
@@ -594,13 +587,13 @@ async def generate_question_stream(
         next_order=ctx.next_order,
     )
     planner_events_enabled = True
-    queue_observer = make_queue_observer(ctx.loop, ctx.queue)
+    _planner_publisher_observer = make_publisher_observer(ctx.publisher, None)
 
     def _planner_queue_observer(event: dict[str, Any]) -> None:
         # Once the stream is cancelled/closed, preserve recorder callbacks for
         # a late response but stop enqueueing events that no consumer can read.
         if planner_events_enabled:
-            queue_observer(event)
+            _planner_publisher_observer(event)
 
     planner_observer = make_combined_observer(
         _planner_queue_observer, planner_recorder,
@@ -679,16 +672,16 @@ async def generate_question_stream(
         # disabled the gate in _cleanup_planning().
         planner_events_enabled = False
 
-    yield {
-        "event": SSEEventName.STAGE,
-        "data": {
+    ctx.publisher.publish(
+        SSEEventName.STAGE,
+        payload={
             "type": "stage",
             "agent": "planner",
             "stage": "batch_briefs",
             "status": "end",
             "ts": time.time(),
         },
-    }
+    )
 
     # Guard: if the request was cancelled while planning ran in its thread
     # (e.g. the client disconnected), do not submit workers.  This is an extra
@@ -708,10 +701,8 @@ async def generate_question_stream(
 
     async def _wait_and_signal() -> None:
         await asyncio.gather(*futures, return_exceptions=True)
-        # _direct=True: already on the event loop — call_soon_threadsafe would
-        # defer pipeline_end by one tick, placing it after done in the queue.
-        ctx.emit_pipeline("pipeline_end", total=ctx.count, _direct=True)
-        queue.put_nowait({"event": SSEEventName.DONE, "data": ""})
+        ctx.emit_pipeline("pipeline_end", total=ctx.count)
+        ctx.publisher.publish(SSEEventName.DONE, payload={})
 
     signal_task = asyncio.create_task(_wait_and_signal())
     try:
@@ -724,14 +715,14 @@ async def generate_question_stream(
             if (
                 event_name == SSEEventName.RESULT
                 and user_id is not None
-                and isinstance(event.get("data"), dict)
+                and isinstance(event.get("payload"), dict)
             ):
                 await persist_generation_record(
                     user_id=user_id,
                     generation_log_id=generation_log_id,
                     subject=params.subject,
                     params=params,
-                    payload=event["data"],
+                    payload=event["payload"],
                     session_factory=_session_factory,
                     verification_trail_json=event.get("verification_trail"),
                     figure_policy_trail_json=event.get("figure_policy_trail"),

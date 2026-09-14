@@ -110,12 +110,12 @@ def test_malformed_json_emits_stage_error_event(tmp_path: Path) -> None:
     stage_errors = [
         e for e in events
         if e.get("event") == "stage"
-        and isinstance(e.get("data"), dict)
-        and e["data"].get("status") == "error"
-        and e["data"].get("stage") == "subquestion_configs"
+        and isinstance(e.get("payload", e.get("data")), dict)
+        and e.get("payload", e.get("data", {})).get("status") == "error"
+        and e.get("payload", e.get("data", {})).get("stage") == "subquestion_configs"
     ]
     assert len(stage_errors) == 1, f"Expected 1 stage error, got: {stage_errors}"
-    msg = stage_errors[0]["data"].get("message", "")
+    msg = stage_errors[0].get("payload", stage_errors[0].get("data", {})).get("message", "")
     assert "subquestion_configs" in msg.lower() or "parse" in msg.lower() or "JSON" in msg, \
         f"Error message not informative: {msg!r}"
 
@@ -147,8 +147,8 @@ def test_generation_proceeds_despite_malformed_configs(tmp_path: Path) -> None:
     stage_errors = [
         e for e in events
         if e.get("event") == "stage"
-        and isinstance(e.get("data"), dict)
-        and e["data"].get("status") == "error"
-        and e["data"].get("stage") == "subquestion_configs"
+        and isinstance(e.get("payload", e.get("data")), dict)
+        and e.get("payload", e.get("data", {})).get("status") == "error"
+        and e.get("payload", e.get("data", {})).get("stage") == "subquestion_configs"
     ]
     assert len(stage_errors) == 1
