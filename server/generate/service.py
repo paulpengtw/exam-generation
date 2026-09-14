@@ -49,6 +49,7 @@ from server.generate.subjects import (
 )
 from server.observability import record_generation_outcome
 from src.common.generation_core import GenerationCancelled
+from src.common.generation_events import QuestionContext, allocate_manifest, new_run_id
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -214,6 +215,8 @@ class _RunContext:
     config: ServerConfig
     balanced_batch: bool
     cancel_event: threading.Event
+    run_id: str
+    manifest: tuple[QuestionContext, ...]
 
 
 def _build_run_context(
@@ -246,6 +249,8 @@ def _build_run_context(
     order_counter = itertools.count(1)
     order_lock = threading.Lock()
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
+    _run_id = new_run_id()
+    _manifest = allocate_manifest(spec.question_id_prefix, _run_id, max(1, params.count))
     figure_policy_recorder = make_figure_policy_trail_recorder(
         generation_log_id=generation_log_id,
         loop=loop,
@@ -291,6 +296,8 @@ def _build_run_context(
         config=config,
         balanced_batch=balanced_batch,
         cancel_event=cancel_event if cancel_event is not None else threading.Event(),
+        run_id=_run_id,
+        manifest=_manifest,
     )
 
 
@@ -368,7 +375,7 @@ def _worker_one(
             )
 
         # Site 3: generate via registry (replaces if/elif generate calls)
-        question_id = f"{ctx.spec.question_id_prefix}{ctx.timestamp}_{i+1:03d}"
+        question_id = ctx.manifest[i].question_id
         question = ctx.spec.do_generate(
             rng_params,
             ctx.overrides,
