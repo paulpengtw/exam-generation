@@ -14,6 +14,25 @@ from src.llm_client import LLMClient
 logger = logging.getLogger(__name__)
 
 
+class CandidateValidationError(ValueError):
+    """Content-free diagnostics safe for the correction prompt and telemetry."""
+
+    def __init__(
+        self, stage: str, *, expected_count: int, actual_count: int = 0,
+        received_count: int = 0, attempt: int = 1,
+    ):
+        self.stage = stage
+        self.expected_count = expected_count
+        self.actual_count = actual_count
+        self.received_count = received_count
+        self.attempt = attempt
+        super().__init__(
+            f"Planner validation failed: stage={stage} attempt={attempt} "
+            f"expected_count={expected_count} actual_count={actual_count} "
+            f"received_count={received_count}"
+        )
+
+
 def plan_core_questions(
     client: LLMClient,
     topic: str,
@@ -42,18 +61,34 @@ def plan_core_questions(
     )
 
     for attempt in range(2):
-        raw = client.plan(system, user, purpose="plan_core_questions")
         try:
-            return _parse_candidates(raw, n)
-        except ValueError:
+            raw = client.plan(system, user, purpose="plan_core_questions")
+        except Exception:
+            # Provider error messages can contain the request or response.
+            # Preserve the failing boundary, never its raw message or chain.
+            raise CandidateValidationError(
+                "provider_call", expected_count=n, attempt=attempt + 1,
+            ) from None
+        try:
+            return _parse_candidates(raw, n, attempt=attempt + 1)
+        except CandidateValidationError as exc:
             if attempt == 0:
-                user += f"\n注意：請務必輸出剛好 {n} 個候選的 JSON 陣列。"
+                user += (
+                    f"\n上次回覆驗證失敗：階段={exc.stage}；"
+                    f"實際可用={exc.actual_count}；預期={n}；收到項目={exc.received_count}。"
+                    f"\n注意：請務必輸出剛好 {n} 個候選的 JSON 陣列。"
+                    "每項必須是非空白且互不重複的核心問題字串；"
+                    "不得用數字、物件、重複問題或佔位文字補足數量。只輸出完整陣列。"
+                )
             else:
                 raise
 
 
-def _parse_candidates(raw: str, n: int) -> list[str]:
+def _parse_candidates(raw: str, n: int, *, attempt: int = 1) -> list[str]:
     """Extract list[str] from LLM output; retry-tolerant."""
+    if not isinstance(raw, str):
+        raise CandidateValidationError("response_shape", expected_count=n, attempt=attempt)
+
     code_block = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", raw, re.DOTALL)
     text = code_block.group(1).strip() if code_block else raw.strip()
 
@@ -64,15 +99,26 @@ def _parse_candidates(raw: str, n: int) -> list[str]:
     try:
         result = json.loads(text)
     except json.JSONDecodeError:
-        lines = [line.strip().strip('",') for line in raw.splitlines() if line.strip().strip('",')]
-        result = [line for line in lines if len(line) > 5][:n]
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        numbered = [re.fullmatch(r"\d+[.)、]\s*(.+)", line) for line in lines]
+        if lines and all(numbered):
+            result = [match.group(1).strip() for match in numbered]
+        else:
+            raise CandidateValidationError(
+                "response_parse", expected_count=n, attempt=attempt,
+            ) from None
 
     if not isinstance(result, list):
-        raise ValueError(f"Expected JSON array from planner, got: {type(result)}")
+        raise CandidateValidationError("response_shape", expected_count=n, attempt=attempt)
 
-    candidates = [str(x) for x in result if x]
+    candidates = list(dict.fromkeys(
+        item.strip() for item in result if isinstance(item, str) and item.strip()
+    ))
     if len(candidates) < n:
-        raise ValueError(f"Planner returned {len(candidates)} candidates, expected {n}")
+        raise CandidateValidationError(
+            "candidate_validation", expected_count=n, actual_count=len(candidates),
+            received_count=len(result), attempt=attempt,
+        )
 
     return candidates[:n]
 

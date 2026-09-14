@@ -14,6 +14,26 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 
 _initialized = False
 
+PLANNER_DIAGNOSTIC_MARKER = "planner_diagnostic"
+PLANNER_LOGGER_NAME = "server.generate.routes"
+
+
+def _before_send(event: dict, hint: dict) -> dict | None:
+    """Drop the planner's duplicate warning issue while keeping its breadcrumb.
+
+    The logging integration records the warning as a breadcrumb alongside its
+    warning event.  Filtering only the explicitly marked warning therefore
+    leaves the diagnostic available on the chained exception event while
+    preserving unrelated warning and error events.
+    """
+    if (
+        event.get("level") == "warning"
+        and event.get("logger") == PLANNER_LOGGER_NAME
+        and (event.get("extra") or {}).get(PLANNER_DIAGNOSTIC_MARKER) is True
+    ):
+        return None
+    return event
+
 
 def record_generation_outcome(subject: str, outcome: str) -> None:
     """Record one completed generation outcome."""
@@ -57,6 +77,7 @@ def init_sentry() -> bool:
     sentry_sdk.init(
         dsn=dsn,
         environment=os.environ.get("SENTRY_ENVIRONMENT") or "production",
+        before_send=_before_send,
         traces_sample_rate=1.0,
         send_default_pii=False,
         max_request_body_size="never",
