@@ -131,3 +131,23 @@ _Avoid_: sticky bottom bar, navbar, progress bar, 進度條
 **生成步驟**:
 One unit of a question's generation pipeline — 文本, 子題, 圖片, 驗證, 修正. Per-question, coarser than the per-agent stage events.
 _Avoid_: phase, stage, 階段, 生成階段
+
+**處理狀態**:
+What is known about the generation work on one 題目 or 題組, including whether that work is waiting, ongoing or ended. It does not establish 交付完整性 or 審題結果.
+_Avoid_: 完成狀態 (when it conflates work ending with a complete or verified question)
+
+**草稿**:
+A provisional version of a generated 題目 or 題組, available for inspection while a final result is not yet available. It may contain only part of the intended content and remains a draft when exported or when generation ends without a final result.
+_Avoid_: 最終結果, 已交付題目 (when referring to provisional content)
+
+**終止原因**:
+Why generation work on one 題目 or 題組 has definitively ended: it ended normally, failed or was cancelled. The reason is separate from 交付完整性 and 審題結果.
+_Avoid_: 審題結果, 交付完整性 (when used to explain why generation work ended)
+
+**交付完整性**:
+The extent to which the final question prepared for the teacher contains its expected 小題 and required visual materials. It is separate from whether generation has ended, whether the question passed verification and whether the teacher has received its content.
+_Avoid_: 題目品質, 審題通過 (when used to mean that every expected part was delivered)
+
+**審題結果**:
+The independent verification assessment of a particular version of the generated question. A verdict for earlier content does not establish the verdict for revised content; receiving content or reaching the end of generation does not by itself establish that the question passed verification.
+_Avoid_: 生成成功, 已完成 (when used as a substitute for a verification verdict)
