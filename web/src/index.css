@@ -1,1 +1,205 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "./motion/aicss.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --duration-quick: var(--motion-duration-quick);
+    --duration-standard: var(--motion-duration-standard);
+    --duration-slow: var(--motion-duration-slow);
+    --duration-loop: var(--motion-duration-loop);
+    --ease-signature: var(--motion-ease-signature);
+    --ease-exit: var(--motion-ease-exit);
+    --ease-loop: var(--motion-ease-loop);
+    --font-heading: var(--font-sans);
+    --font-sans: ui-sans-serif, system-ui, sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: var(--color-blue-600);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
+
+/* App-owned motion; no other ambient decoration. */
+.feedback-spinner { animation: feedback-spin var(--motion-duration-loop) linear infinite; }
+@keyframes feedback-spin { to { transform: rotate(360deg); } }
+@keyframes feedback-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+.action-button.action-done { background: var(--color-green-50); border-color: var(--color-green-500); color: var(--color-green-700); }
+.action-button > span { animation-duration: var(--motion-duration-standard); animation-timing-function: var(--motion-ease-signature); }
+.redraw-flash { animation: redraw-flash var(--motion-duration-standard) var(--motion-ease-signature) 1; }
+@keyframes redraw-flash { from { background-color: var(--color-amber-100); } to { background-color: transparent; } }
+.handoff-highlight { animation: handoff-highlight var(--motion-duration-standard) var(--motion-ease-signature) var(--motion-handoff-delay) 1; }
+@keyframes handoff-highlight { 0%, 100% { background-color: white; } 35% { background-color: var(--color-blue-100); } }
+.handoff-highlight [data-testid="statusbar-status"] { animation: handoff-indicator 1ms linear var(--motion-handoff-delay) backwards; }
+@keyframes handoff-indicator { from { opacity: 0; } to { opacity: 1; } }
+
+.destructive-dialog {
+  margin: auto;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity var(--motion-duration-quick) var(--motion-ease-exit),
+    transform var(--motion-duration-quick) var(--motion-ease-exit),
+    display var(--motion-duration-quick) allow-discrete,
+    overlay var(--motion-duration-quick) allow-discrete;
+  transition-behavior: allow-discrete;
+}
+.destructive-dialog:open {
+  opacity: 1;
+  transform: translateY(0);
+  transition-duration: var(--motion-duration-standard);
+  transition-timing-function: var(--motion-ease-signature);
+}
+.destructive-dialog::backdrop {
+  background-color: rgb(0 0 0 / 0);
+  transition: background-color var(--motion-duration-quick) var(--motion-ease-exit),
+    display var(--motion-duration-quick) allow-discrete,
+    overlay var(--motion-duration-quick) allow-discrete;
+  transition-behavior: allow-discrete;
+}
+.destructive-dialog:open::backdrop {
+  background-color: rgb(0 0 0 / .4);
+  transition-duration: var(--motion-duration-standard);
+  transition-timing-function: var(--motion-ease-signature);
+}
+@starting-style {
+  .destructive-dialog:open { opacity: 0; transform: translateY(8px); }
+  .destructive-dialog:open::backdrop { background-color: rgb(0 0 0 / 0); }
+}
+::view-transition-old(root) { animation: route-out var(--motion-duration-standard) var(--motion-ease-exit) both; }
+::view-transition-new(root) { animation: route-in var(--motion-duration-slow) var(--motion-ease-signature) both; }
+@keyframes route-out { to { opacity: 0; } }
+@keyframes route-in { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+
+  *, *::before, *::after { transition-duration: 1ms !important; animation-duration: 1ms !important; animation-delay: 0ms !important; }
+  .feedback-spinner, .status-shimmer { animation: feedback-pulse var(--motion-duration-loop) var(--motion-ease-loop) infinite !important; transform: none !important; }
+  .status-shimmer { color: var(--color-blue-600); -webkit-text-fill-color: currentColor; background: none; }
+  .streaming-caret { animation: none !important; opacity: 1; }
+  .destructive-dialog { transform: none !important; }
+}
+
+:root[data-motion="reduced"] {
+
+  *, *::before, *::after { transition-duration: 1ms !important; animation-duration: 1ms !important; animation-delay: 0ms !important; }
+  .feedback-spinner, .status-shimmer { animation: feedback-pulse var(--motion-duration-loop) var(--motion-ease-loop) infinite !important; transform: none !important; }
+  .status-shimmer { color: var(--color-blue-600); -webkit-text-fill-color: currentColor; background: none; }
+  .streaming-caret { animation: none !important; opacity: 1; }
+  .destructive-dialog { transform: none !important; }
+}

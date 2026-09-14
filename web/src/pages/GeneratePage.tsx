@@ -1,3 +1,10 @@
+import { AnimatePresence, m } from "motion/react";
+import { ActionButton, ExportConfirmation, InlineFailureNotice, useActionFeedback } from "../motion/actionFeedback";
+import { choreography, canViewTransition } from "../motion/tokens";
+import { useMotionTiming } from "../motion/useMotionTiming";
+import { prototypeEnabled, prototypeFailure } from "../motion/prototypeSettings";
+import { selectRunPhase, runPhaseLabel } from "../motion/runPhase";
+import { ApiError } from "../api/client";
 import { useEffect, useRef, useState } from "react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 
@@ -42,6 +49,7 @@ function downloadBlob(blob: Blob, filename: string): void {
 
 export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const navigate = useNavigate();
+  const timing = useMotionTiming();
   const location = useLocation();
   const prefillParams =
     (location.state as { prefillParams?: Record<string, unknown> } | null)
@@ -51,6 +59,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const logout = useAuthStore((s) => s.logout);
   const {
     status,
+    requestPending,
     progressLines,
     results,
     displayResults,
@@ -136,12 +145,18 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     downloadBlob(blob, `batch_${ts}.json`);
   };
 
-  const handleDownloadAllOdt = () => {
+  const allOdt = useActionFeedback(async () => {
     const ts = formatTimestamp();
-    buildExamOdt(`exam_${ts}`, results).then((blob) => {
-      downloadBlob(blob, `exam_${ts}.odt`);
-    });
-  };
+    // Client-side JSZip failure probe: reject before saving any file.
+    if (prototypeEnabled) await new Promise((resolve) => window.setTimeout(resolve, 600));
+    if (prototypeFailure() && results.length > 1) {
+      throw new ApiError(500, `題組 #2（${results[1].id ?? "2"}）：無法產生 ODT 檔案（原型強制失敗）`);
+    }
+    const blob = await buildExamOdt(`exam_${ts}`, results);
+    const filename = `exam_${ts}.odt`;
+    downloadBlob(blob, filename);
+    return filename;
+  }, t("action.download_odt_failed"));
 
   const showProgress = !(progressLines.length === 0 && status === "idle");
   const runState: RunState =
@@ -157,7 +172,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   if (hasResults) availableTargets.push("results");
   const handleNavigation = (target: string) => {
     if (!hasUnsubmittedInput && !hasResults) {
-      navigate(target);
+      navigate(`${target}${prototypeEnabled ? location.search : ""}`, { viewTransition: canViewTransition() });
       return;
     }
 
@@ -188,7 +203,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           confirmKey: "confirm.navigate_away_confirm",
           onConfirm: () => {
             setPendingAction(null);
-            navigate(target);
+            navigate(`${target}${prototypeEnabled ? location.search : ""}`, { viewTransition: canViewTransition() });
           },
           onCancel: () => setPendingAction(null),
         };
@@ -300,6 +315,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             subject={subject}
             onSubmit={handleSubmit}
             disabled={status === "generating"}
+            sendPending={requestPending}
             initialParams={prefillParams ?? undefined}
             onUnsubmittedInput={() => setHasUnsubmittedInput(true)}
           />
@@ -316,7 +332,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
         {showProgress && (
           <section ref={progressRef} className="rounded-lg border bg-white p-4 shadow-sm">
-            <ProgressLog lines={progressLines} status={status} errorMessage={errorMessage} llmCalls={llmCalls} />
+            <ProgressLog lines={progressLines} status={status} errorMessage={errorMessage} llmCalls={llmCalls} subject={subject} subQuestionCount={submittedSubQuestionCount ?? subQuestionTotal} requestedTotal={requestedTotal} completedCount={results.length} />
           </section>
         )}
 
@@ -333,14 +349,16 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                 >
                   {t("generate.btn_download_all")}
                 </button>
-                <button
+                <ActionButton
+                  state={allOdt.state}
+                  label={t("generate.btn_download_all_odt")}
+                  pendingLabel={t("action.downloading")}
+                  exportAction
                   type="button"
-                  onClick={handleDownloadAllOdt}
+                  onClick={() => void allOdt.execute()}
                   disabled={results.length === 0}
                   className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {t("generate.btn_download_all_odt")}
-                </button>
+                />
                 <button
                   type="button"
                   onClick={() => setPendingAction({ kind: "clearResults" })}
@@ -350,10 +368,22 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                 </button>
               </div>
             </div>
+            <InlineFailureNotice reason={allOdt.reason} onRetry={() => void allOdt.retry()} onDismiss={allOdt.reset} />
+            <ExportConfirmation feedback={allOdt} />
             <div className="space-y-3">
-              {displayResults.map((item) => (
+              <AnimatePresence>
+              {displayResults.map((item, order) => (
+                <m.div key={item.question.id ?? `q-${item.index}`}
+                  initial={{ opacity: 0, y: timing.reduced ? 0 : choreography.travel }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, transition: timing.transition("quick", "exit") }}
+                  transition={{ ...timing.transition(), delay: timing.reduced ? 0 : Math.min(order * choreography.stagger, choreography.staggerCap) * timing.scale / 1000 }}>
                 <QuestionCard
-                  key={item.question.id ?? `q-${item.index}`}
+                  recordId={typeof item.question.record_id === "string" ? item.question.record_id : undefined}
+                  livePhaseLabel={!item.isFinal && status === "generating" ? runPhaseLabel(selectRunPhase({
+                    events: llmCalls.filter((event) => event.type === "stage" && event.index === item.index),
+                    subject, subQuestionCount: submittedSubQuestionCount ?? subQuestionTotal, draftPhase: item.phase,
+                  }), t) : undefined}
                   question={item.question}
                   phase={item.phase}
                   isFinal={item.isFinal}
@@ -361,7 +391,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                   figurePolicyTrail={item.figurePolicyTrail}
                   referenceExampleRecord={item.referenceExampleRecord}
                 />
+                </m.div>
               ))}
+              </AnimatePresence>
             </div>
           </section>
         )}
@@ -375,6 +407,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         onCancel={dialogProps.onCancel}
       />
       <GenerationStatusBar
+        key={startedAt ?? "idle"}
+        handoff={status === "generating"}
         runState={runState}
         completedCount={results.length}
         requestedTotal={requestedTotal}

@@ -1,3 +1,4 @@
+import { prototypeApiPath } from "../motion/prototypeSettings";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import * as Sentry from "@sentry/react";
@@ -241,7 +242,7 @@ export type LlmCallEvent =
   | { type: "thinking"; purpose: string; agent: string; text: string }
   | { type: "content"; purpose: string; agent: string; text: string }
   | { type: "response"; purpose: string; agent: string; model: string; usage?: unknown }
-  | { type: "stage"; agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
+  | { type: "stage"; index?: number; agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
 
 export type AgentStatus = "idle" | "running" | "done" | "error";
 
@@ -268,6 +269,7 @@ function purposeToAgent(purpose: string): string {
 }
 
 export interface UseGenerateReturn {
+  requestPending: boolean;
   status: GenerateStatus;
   progressLines: string[];
   results: ExamQuestion[];
@@ -501,6 +503,7 @@ function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
 }
 
 export function useGenerate(): UseGenerateReturn {
+  const [requestPending, setRequestPending] = useState(false);
   const [status, setStatus] = useState<GenerateStatus>("idle");
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [results, setResults] = useState<ExamQuestion[]>([]);
@@ -531,6 +534,7 @@ export function useGenerate(): UseGenerateReturn {
   }, []);
 
   const reset = useCallback(() => {
+    setRequestPending(false);
     controllerRef.current?.abort();
     controllerRef.current = null;
     setProgressLines([]);
@@ -549,6 +553,7 @@ export function useGenerate(): UseGenerateReturn {
   }, []);
 
   const generate = useCallback((params: GenerateParams) => {
+    setRequestPending(true);
     paramsRef.current = params;
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -557,6 +562,7 @@ export function useGenerate(): UseGenerateReturn {
     const streamContext = {
       startedAt: Date.now(),
       messageCount: 0,
+      terminal: false,
       lastEventType: "none",
     };
 
@@ -576,7 +582,7 @@ export function useGenerate(): UseGenerateReturn {
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
 
-    fetchEventSource("/api/generate", {
+    fetchEventSource(prototypeApiPath("/api/generate"), {
       method: "POST",
       body: JSON.stringify(params),
       signal: controller.signal,
@@ -613,6 +619,7 @@ export function useGenerate(): UseGenerateReturn {
         }
       },
       onmessage(ev) {
+        if (streamContext.messageCount === 0) setRequestPending(false);
         streamContext.messageCount += 1;
         streamContext.lastEventType = ev.event || "none";
 
@@ -669,8 +676,8 @@ export function useGenerate(): UseGenerateReturn {
           }
           case "stage": {
             try {
-              const d = JSON.parse(ev.data) as { agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
-              setLlmCalls((prev) => [...prev, { type: "stage", agent: d.agent, stage: d.stage, status: d.status, ts: d.ts, retry: d.retry, message: d.message }]);
+              const d = JSON.parse(ev.data) as { index?: number; agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
+              setLlmCalls((prev) => [...prev, { type: "stage", index: d.index, agent: d.agent, stage: d.stage, status: d.status, ts: d.ts, retry: d.retry, message: d.message }]);
             } catch { /* ignore */ }
             break;
           }
@@ -766,11 +773,13 @@ export function useGenerate(): UseGenerateReturn {
             }
             break;
           case "error":
+            streamContext.terminal = true;
             setErrorMessage(parseErrorEventData(ev.data ?? ""));
             setStatus("error");
             setFinishedAt(Date.now());
             break;
           case "done":
+            streamContext.terminal = true;
             setStatus("idle");
             setFinishedAt(Date.now());
             controller.abort();
@@ -778,13 +787,23 @@ export function useGenerate(): UseGenerateReturn {
             break;
         }
       },
+      onclose() {
+        setRequestPending(false);
+        if (!streamContext.terminal && !controller.signal.aborted) {
+          setErrorMessage("Generation stream ended before completion");
+          setStatus("error");
+          setFinishedAt(Date.now());
+        }
+      },
       onerror(err) {
+        setRequestPending(false);
         setErrorMessage(err instanceof Error ? err.message : String(err));
         setStatus("error");
         setFinishedAt(Date.now());
         throw err instanceof Error ? err : new FatalStreamError(String(err));
       },
     }).catch((err: unknown) => {
+      setRequestPending(false);
       if (err instanceof Error && err.name !== "AbortError" && isSentryEnabled()) {
         Sentry.captureException(err, {
           tags: {
@@ -805,6 +824,7 @@ export function useGenerate(): UseGenerateReturn {
   }, []);
 
   return {
+    requestPending,
     status,
     progressLines,
     results,

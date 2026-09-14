@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
 import type { LlmCallEvent } from "../hooks/useGenerate";
 import type { ModificationStageEvent } from "../hooks/useModificationRun";
+import { Shimmer, Spinner } from "../motion/Indicators";
+import { selectRunPhase, type RunPhaseSelection } from "../motion/runPhase";
 
 function formatDuration(
   durationMs: number,
@@ -44,224 +46,51 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
 export type RunState = "idle" | "running" | "done" | "error";
 export type JumpTarget = "form" | "progress" | "results";
 type Subject = "math" | "social_studies" | "natural_sciences";
-type StageEvent = Extract<LlmCallEvent, { type: "stage" }>;
-type StepState = "complete" | "live" | "pending";
-
-interface GenerationStep {
-  id: string;
-  labelKey: string;
-  conditional?: boolean;
-  matches: (event: StageEvent) => boolean;
-}
-
-const MATH_STEPS: readonly GenerationStep[] = [
-  {
-    id: "generate",
-    labelKey: "statusbar.step_generate",
-    matches: (event) =>
-      event.agent === "generator" && event.stage === "llm_generate",
-  },
-  {
-    id: "image",
-    labelKey: "statusbar.step_image",
-    conditional: true,
-    matches: (event) =>
-      event.agent === "image_agent" && event.stage === "render_image",
-  },
-  {
-    id: "verify",
-    labelKey: "statusbar.step_verify",
-    matches: (event) =>
-      event.agent === "verifier" && event.stage === "verify",
-  },
-  {
-    id: "correct",
-    labelKey: "statusbar.step_correct",
-    conditional: true,
-    matches: (event) =>
-      event.agent === "corrector" && event.stage === "correct",
-  },
-];
-
-const GROUPED_SUBJECT_STEPS: readonly GenerationStep[] = [
-  {
-    id: "text",
-    labelKey: "statusbar.step_text",
-    matches: (event) =>
-      event.agent === "generator" && event.stage === "llm_generate",
-  },
-  {
-    id: "subquestions",
-    labelKey: "statusbar.step_subquestions",
-    matches: (event) =>
-      /^sub_generator#[1-9]\d*$/.test(event.agent) &&
-      event.stage === "llm_generate",
-  },
-  ...MATH_STEPS.slice(1),
-];
-
-function currentStageEvent(events: readonly StageEvent[]): StageEvent | null {
-  const activeByAgentAndStage = new Map<string, StageEvent>();
-
-  for (const event of events) {
-    const key = `${event.agent}\u0000${event.stage}`;
-    if (event.status === "start") {
-      activeByAgentAndStage.set(key, event);
-    } else {
-      activeByAgentAndStage.delete(key);
-    }
-  }
-
-  return (
-    events.findLast((event) => {
-      const key = `${event.agent}\u0000${event.stage}`;
-      return activeByAgentAndStage.get(key) === event;
-    }) ?? null
-  );
-}
-
-function stepState(
-  step: GenerationStep,
-  events: readonly StageEvent[],
-  currentEvent: StageEvent | null,
-): StepState {
-  if (currentEvent !== null && step.matches(currentEvent)) return "live";
-
-  const latestStepEvent = events.findLast(step.matches);
-  return latestStepEvent?.status === "end" ? "complete" : "pending";
-}
-
-function completedSubQuestionWorkers(events: readonly StageEvent[]): number {
-  const latestByAgent = new Map<string, StageEvent>();
-
-  for (const event of events) {
-    if (
-      /^sub_generator#[1-9]\d*$/.test(event.agent) &&
-      event.stage === "llm_generate"
-    ) {
-      latestByAgent.set(event.agent, event);
-    }
-  }
-
-  return Array.from(latestByAgent.values()).filter(
-    (event) => event.status === "end",
-  ).length;
-}
-
-function GenerationStepBreadcrumb({
-  subject,
-  stageEvents,
-  subQuestionCount,
-}: {
-  subject: Subject;
-  stageEvents: readonly LlmCallEvent[];
-  subQuestionCount: number | null;
+function PhaseBreadcrumb({ phase, modification }: {
+  phase: RunPhaseSelection;
+  modification: boolean;
 }) {
   const t = useT();
-  const events = stageEvents.filter(
-    (event): event is StageEvent => event.type === "stage",
-  );
-  const steps = subject === "math" ? MATH_STEPS : GROUPED_SUBJECT_STEPS;
-  const relevantEvents = events.filter((event) =>
-    steps.some((step) => step.matches(event)),
-  );
-  const currentEvent = currentStageEvent(relevantEvents);
-  const completedSubQuestions = completedSubQuestionWorkers(relevantEvents);
-
-  return (
-    <span data-testid="generation-step-breadcrumb" className="sentry-unmask">
-      {steps.map((step, index) => {
-        const state = stepState(step, relevantEvents, currentEvent);
-        const isDim =
-          step.conditional === true && !relevantEvents.some(step.matches);
-        const stateClass =
-          state === "live"
-            ? "font-semibold text-blue-600"
-            : state === "complete"
-              ? "text-green-600"
-              : isDim
-                ? "text-gray-300"
-                : "text-gray-400";
-        return (
-          <span key={step.id}>
-            {index > 0 ? (
-              <span className="hidden text-gray-300 sm:inline"> › </span>
-            ) : null}
-            <span
-              data-testid={`generation-step-${step.id}`}
-              data-state={state}
-              data-dim={isDim}
-              className={`${stateClass}${
-                state === "live" ? "" : " hidden sm:inline"
-              }`}
-            >
-              {t(step.labelKey)}
-              {step.id === "subquestions" && state === "live"
-                ? ` ${completedSubQuestions}${
-                    subQuestionCount === null ? "" : `/${subQuestionCount}`
-                  }`
-                : null}
-            </span>
-          </span>
-        );
-      })}
-    </span>
-  );
-}
-
-type ModificationStepState = "complete" | "live" | "error";
-
-function visibleModificationSteps(
-  events: readonly ModificationStageEvent[],
-): Array<{ event: ModificationStageEvent; state: ModificationStepState }> {
-  const steps: Array<{
-    event: ModificationStageEvent;
-    state: ModificationStepState;
-  }> = [];
-
-  for (const event of events) {
-    if (event.status === "start") {
-      steps.push({ event, state: "live" });
-      continue;
-    }
-    const openStep = [...steps]
-      .reverse()
-      .find((step) => step.event.stage === event.stage && step.state === "live");
-    if (openStep) openStep.state = event.status === "error" ? "error" : "complete";
+  if (phase.batch) {
+    return (
+      <Shimmer>
+        <span className="sentry-unmask">
+          {t("statusbar.running")} · {t("statusbar.completed_prefix")}
+        </span>{" "}
+        {phase.batch.completed} / {phase.batch.total}
+      </Shimmer>
+    );
   }
-  return steps;
-}
-
-function ModificationStepBreadcrumb({
-  stageEvents,
-}: {
-  stageEvents: readonly ModificationStageEvent[];
-}) {
-  const t = useT();
-  const steps = visibleModificationSteps(stageEvents);
-  const labels: Record<ModificationStageEvent["stage"], string> = {
-    modification: t("statusbar.step_modify"),
-    verify: t("statusbar.step_verify"),
-    correct: t("statusbar.step_correct"),
-  };
-
+  if (phase.steps.length === 0) {
+    return <Shimmer className="sentry-unmask">{t("statusbar.running")}</Shimmer>;
+  }
   return (
-    <span data-testid="modification-step-breadcrumb" className="sentry-unmask">
-      {steps.map(({ event, state }, index) => {
-        const stateClass = state === "live"
+    <span data-testid={modification ? "modification-step-breadcrumb" : "generation-step-breadcrumb"}>
+      {phase.steps.map((step, index) => {
+        const stateClass = step.state === "live"
           ? "font-semibold text-blue-600"
-          : state === "error"
-            ? "font-semibold text-red-600"
-            : "text-green-600";
+          : step.state === "complete"
+            ? "text-green-600"
+            : step.state === "error"
+              ? "text-red-600"
+              : step.dim ? "text-gray-300" : "text-gray-400";
         return (
-          <span key={`${event.stage}-${event.ts}-${index}`}>
-            {index > 0 ? <span className="hidden text-gray-300 sm:inline"> › </span> : null}
+          <span key={`${step.id}-${index}`}>
+            {index > 0 && <span className="hidden text-gray-300 sm:inline"> › </span>}
             <span
-              data-testid={`modification-step-${index}`}
-              data-state={state}
-              className={stateClass}
+              data-testid={modification ? `modification-step-${index}` : `generation-step-${step.id}`}
+              data-state={step.state}
+              data-dim={step.dim}
+              className={`${stateClass}${step.state === "live" ? "" : " hidden sm:inline"}`}
             >
-              {labels[event.stage]}
+              {step.state === "live" ? (
+                <Shimmer>
+                  <span className="sentry-unmask">{t(step.liveLabelKey)}</span>
+                  {step.id === "subquestions" && ` ${phase.completedSubQuestions}${phase.subQuestionCount === null ? "" : `/${phase.subQuestionCount}`}`}
+                </Shimmer>
+              ) : (
+                <span className="sentry-unmask">{t(step.labelKey)}</span>
+              )}
             </span>
           </span>
         );
@@ -293,6 +122,7 @@ export interface GenerationStatusBarProps {
   onFeedback: (() => void) | null;
   mode?: "generation" | "modification";
   modificationStageEvents?: readonly ModificationStageEvent[];
+  handoff?: boolean;
 }
 
 export default function GenerationStatusBar({
@@ -309,16 +139,23 @@ export default function GenerationStatusBar({
   onFeedback,
   mode = "generation",
   modificationStageEvents = [],
+  handoff = false,
 }: GenerationStatusBarProps) {
   const t = useT();
-  const showGenerationSteps =
-    mode === "generation" && runState === "running" && requestedTotal === 1;
-  const showModificationSteps = mode === "modification" && runState === "running";
+  const phase = selectRunPhase({
+    events: stageEvents,
+    subject,
+    mode,
+    modificationStageEvents,
+    subQuestionCount,
+    requestedTotal,
+    completedCount,
+  });
 
   return (
     <div
       aria-label={t("statusbar.aria")}
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-300 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)]"
+      className={`fixed inset-x-0 bottom-0 z-40 border-t border-gray-300 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)]${handoff ? " handoff-highlight" : ""}`}
     >
       <div className="mx-auto flex h-12 max-w-5xl flex-nowrap items-center gap-2 whitespace-nowrap px-3 text-xs sm:px-4 sm:text-sm">
         <div
@@ -332,31 +169,16 @@ export default function GenerationStatusBar({
                   : "text-gray-500"
           }`}
         >
-          <span data-testid="statusbar-status" className="truncate">
+          {runState === "running" && <Spinner className="statusbar-running-indicator h-3 w-3 shrink-0" />}
+          <span data-testid="statusbar-status" className="truncate" role="status">
             {runState === "idle" ? (
               <span className="sentry-unmask">
                 {t("statusbar.not_started")}
               </span>
             ) : null}
-            {runState === "running" ? (
-              showModificationSteps ? (
-                <ModificationStepBreadcrumb stageEvents={modificationStageEvents} />
-              ) : showGenerationSteps ? (
-                <GenerationStepBreadcrumb
-                  subject={subject}
-                  stageEvents={stageEvents}
-                  subQuestionCount={subQuestionCount}
-                />
-              ) : (
-                <>
-                  <span className="sentry-unmask">
-                    ◐ {t("statusbar.running")} ·{" "}
-                    {t("statusbar.completed_prefix")}
-                  </span>{" "}
-                  {completedCount} / {requestedTotal}
-                </>
-              )
-            ) : null}
+            {runState === "running" && (
+              <PhaseBreadcrumb phase={phase} modification={mode === "modification"} />
+            )}
             {runState === "done" &&
             startedAt !== null &&
             finishedAt !== null ? (

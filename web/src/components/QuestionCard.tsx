@@ -1,3 +1,8 @@
+import { AnimatePresence, m } from "motion/react";
+import { ActionButton, ExportConfirmation, InlineFailureNotice, useActionFeedback } from "../motion/actionFeedback";
+import { Spinner } from "../motion/Indicators";
+import { useMotionTiming } from "../motion/useMotionTiming";
+import { prototypeEnabled } from "../motion/prototypeSettings";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError } from "../api/client";
@@ -29,6 +34,7 @@ export interface QuestionCardProps {
   question: ExamQuestion;
   recordId?: string;
   phase?: DraftPhase;
+  livePhaseLabel?: string;
   isFinal?: boolean;
   trail?: VerificationTrailEntry[] | null;
   figurePolicyTrail?: FigurePolicyTrailEntry[] | null;
@@ -284,6 +290,7 @@ function SubQuestionBlock({
 }) {
   const t = useT();
   const [showAnswer, setShowAnswer] = useState(showAnswersByDefault);
+  const timing = useMotionTiming();
 
   return (
     <div className="rounded border border-gray-100 bg-gray-50 p-3 space-y-2">
@@ -354,8 +361,12 @@ function SubQuestionBlock({
         >
           {showAnswer ? t("card.hide_answer") : t("card.show_answer")}
         </button>
+        <AnimatePresence initial={false}>
         {showAnswer && (
-          <div className="mt-2 rounded bg-white border border-gray-200 p-3 space-y-2 text-sm">
+          <m.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0, transition: timing.transition("quick", "exit") }}
+            transition={timing.transition()}
+            className="mt-2 overflow-hidden rounded bg-white border border-gray-200 p-3 space-y-2 text-sm">
             {sub.答案 && (
               <div>
                 <span className="font-medium text-gray-700">{t("card.answer")}：</span>
@@ -408,8 +419,9 @@ function SubQuestionBlock({
                 fieldPathPrefix={`subquestions[${index}].誘答分析`}
               />
             )}
-          </div>
+          </m.div>
         )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -419,6 +431,7 @@ export default function QuestionCard({
   question: initialQuestion,
   recordId,
   phase = "verified",
+  livePhaseLabel,
   isFinal = true,
   trail = [],
   figurePolicyTrail = [],
@@ -519,12 +532,14 @@ export default function QuestionCard({
     downloadBlob(blob, `${questionId}.png`);
   };
 
-  const handleDownloadOdt = () => {
+  const odt = useActionFeedback(async () => {
     const ts = formatTimestamp();
-    buildExamOdt(`exam_${ts}`, [question]).then((blob) => {
-      downloadBlob(blob, `exam_${ts}.odt`);
-    });
-  };
+    if (prototypeEnabled) await new Promise((resolve) => window.setTimeout(resolve, 600));
+    const blob = await buildExamOdt(`exam_${ts}`, [question]);
+    const filename = `exam_${ts}.odt`;
+    downloadBlob(blob, filename);
+    return filename;
+  }, t("action.download_odt_failed"));
 
   const handleSelectionMouseUp = useCallback(() => {
     if (!selectionEnabled || isRunInFlight || !cardRef.current) return;
@@ -641,9 +656,11 @@ export default function QuestionCard({
       {/* Header chips */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
-          {!isFinal && (
-            <Chip label={phaseLabel} tone="orange" />
-          )}
+          {livePhaseLabel ? (
+            <span role="status" className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+              <Spinner /><span className="sentry-unmask">{livePhaseLabel}</span>
+            </span>
+          ) : !isFinal && <Chip label={phaseLabel} tone="orange" />}
           {isSocialStudies ? (
             <>
               {ssGrades.map((g) => (
@@ -951,15 +968,19 @@ export default function QuestionCard({
             {t("card.download_png")}
           </button>
         )}
-        <button
+        <ActionButton
+          state={odt.state}
+          label={t("card.download_odt")}
+          pendingLabel={t("action.downloading")}
+          exportAction
           type="button"
-          onClick={handleDownloadOdt}
+          onClick={() => void odt.execute()}
           disabled={!isFinal}
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {t("card.download_odt")}
-        </button>
+        />
       </div>
+      <InlineFailureNotice reason={odt.reason} onRetry={() => void odt.retry()} onDismiss={odt.reset} />
+      <ExportConfirmation feedback={odt} />
     </div>
   );
 }

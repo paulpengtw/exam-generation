@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, m, useIsPresent, usePresenceData } from "motion/react";
 import { getAvailableModels, getSchemas, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
@@ -21,6 +22,9 @@ import SubquestionConfigCards, { type ResolvedSubQuestionConfig } from "./Subque
 import DrawnValueRows from "./DrawnValueRows";
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
 import { toGenerateParams } from "../utils/toGenerateParams";
+import { ActionButton, InlineFailureNotice, type ActionState } from "../motion/actionFeedback";
+import { prototypeEnabled, usePrototypeSettings } from "../motion/prototypeSettings";
+import { useMotionTiming } from "../motion/useMotionTiming";
 
 export interface SubQuestionConfig {
   question_type?: string;
@@ -350,6 +354,7 @@ export interface ParamFormProps {
   subject?: string;
   onSubmit: (params: FormParams) => void;
   disabled: boolean;
+  sendPending?: boolean;
   initialParams?: Partial<FormParams> & { [key: string]: unknown };
   onUnsubmittedInput?: () => void;
 }
@@ -457,20 +462,26 @@ function ConfirmationRowActions({
   onRedraw,
   editLabel,
   redrawLabel,
+  feedbackState,
+  disabled = false,
 }: {
   isRandom: boolean;
   editor?: () => ReactNode;
   onRedraw?: () => void;
   editLabel: ReactNode;
   redrawLabel: ReactNode;
+  feedbackState?: ActionState;
+  disabled?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const t = useT();
   if (!isRandom || (editor === undefined && onRedraw === undefined)) return null;
   return (
     <span className="ml-3 inline-flex flex-wrap items-center gap-1">
       {editor !== undefined && !editing && (
         <button
           type="button"
+          disabled={disabled || feedbackState === "pending"}
           onClick={() => setEditing(true)}
           className="rounded border border-gray-300 bg-white px-2 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
         >
@@ -478,19 +489,44 @@ function ConfirmationRowActions({
         </button>
       )}
       {onRedraw !== undefined && (
-        <button
+        <ActionButton
           type="button"
+          state={feedbackState ?? "idle"}
+          label={redrawLabel}
+          pendingLabel={t("action.redrawing")}
+          doneLabel={redrawLabel}
+          disabled={disabled}
           onClick={() => {
             setEditing(false);
             onRedraw();
           }}
-          className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-        >
-          {redrawLabel}
-        </button>
+          className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+        />
       )}
       {editing && editor?.()}
     </span>
+  );
+}
+
+function ConfirmationSendButton({ onClick, disabled, sendPending }: {
+  onClick: () => void;
+  disabled: boolean;
+  sendPending: boolean;
+}) {
+  const t = useT();
+  const isPresent = useIsPresent();
+  // Presence data keeps the retained exit snapshot in sync with the first SSE acknowledgement.
+  const leavingPending = usePresenceData() === true;
+  return (
+    <ActionButton
+      type="button"
+      onClick={onClick}
+      disabled={disabled || !isPresent}
+      state={(isPresent ? sendPending : leavingPending) ? "pending" : "idle"}
+      label={t("form.btn_confirm_send")}
+      pendingLabel={t("action.send_pending")}
+      className="rounded bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+    />
   );
 }
 
@@ -1221,6 +1257,7 @@ export default function ParamForm({
   subject = "math",
   onSubmit,
   disabled,
+  sendPending = false,
   initialParams,
   onUnsubmittedInput,
 }: ParamFormProps) {
@@ -1232,6 +1269,9 @@ export default function ParamForm({
     onUnsubmittedInput?.();
   };
   const t = useT();
+  const timing = useMotionTiming();
+  const { batch } = usePrototypeSettings();
+  const previousBatchRef = useRef<boolean | null>(null);
   const lang = useLangStore((state) => state.lang);
   const [schemas, setSchemas] = useState<Schemas | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1244,6 +1284,15 @@ export default function ParamForm({
   const [hasPendingConfirmationEdits, setHasPendingConfirmationEdits] = useState(false);
   const [resolverLoading, setResolverLoading] = useState(false);
   const [resolverError, setResolverError] = useState<string | null>(null);
+  const resolverPendingRef = useRef(false);
+  const confirmSendingRef = useRef(false);
+  const redrawTargetRef = useRef<{ path: string; previous: unknown } | null>(null);
+  const [contextRedraw, setContextRedraw] = useState<{
+    state: ActionState;
+    previous: unknown;
+    same: boolean;
+    completion: number;
+  }>({ state: "idle", previous: undefined, same: false, completion: 0 });
   // Generic gate: keyed by "${questionIndex}-${subquestionIndex}-${field}". Any truthy entry disables 確認送出.
   const [confirmInvalidFields, setConfirmInvalidFields] = useState<Map<string, true>>(new Map());
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
@@ -1269,6 +1318,9 @@ export default function ParamForm({
   const pendingParamsRef = useRef<FormParams | null>(null);
   const pendingPerQuestionParamsRef = useRef<Record<string, unknown>[] | null>(null);
   const userId = useAuthStore((state) => state.user?.id ?? null);
+  useEffect(() => {
+    if (!disabled && !sendPending) confirmSendingRef.current = false;
+  }, [disabled, sendPending]);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
   const [draftToRestore, setDraftToRestore] = useState<FormDraft | null>(() =>
@@ -1374,6 +1426,15 @@ export default function ParamForm({
     },
     [restoreFormSnapshot],
   );
+  useEffect(() => {
+    if (!prototypeEnabled || disabled || pendingParams || previousBatchRef.current === batch) return;
+    const changed = previousBatchRef.current !== null;
+    previousBatchRef.current = batch;
+    if (batch || changed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- prototype switcher explicitly changes the form's count
+      setField("count", batch ? 3 : 1);
+    }
+  }, [batch, disabled, pendingParams, setField]);
   const {
     grade,
     style,
@@ -2289,6 +2350,11 @@ export default function ParamForm({
     rebuildSubquestionSlots = false,
   ) {
     const sequence = ++resolveRequestSeqRef.current;
+    const redrawTarget = redrawTargetRef.current;
+    resolverPendingRef.current = true;
+    if (redrawTarget) {
+      setContextRedraw((current) => ({ ...current, state: "pending", same: false }));
+    }
     resolveRequestRef.current = { payload, redraws, rebuildSubquestionSlots };
     setResolverLoading(true);
     setResolverError(null);
@@ -2310,6 +2376,20 @@ export default function ParamForm({
         },
         preserveConfirmationEdits,
       );
+      if (redrawTarget) {
+        const nextValue = readConfirmationPathValue(
+          redrawTarget.path,
+          response.payload as Record<string, unknown>,
+          parsePerQuestionParams(response.payload.per_question_params),
+        );
+        setContextRedraw((current) => ({
+          ...current,
+          state: "done",
+          same: jsonDeepEqual(redrawTarget.previous, nextValue),
+          completion: current.completion + 1,
+        }));
+        redrawTargetRef.current = null;
+      }
     } catch (cause) {
       if (sequence !== resolveRequestSeqRef.current) return;
       setResolverLoading(false);
@@ -2318,12 +2398,15 @@ export default function ParamForm({
           ? cause.message
           : t("form.confirm_resolve_error"),
       );
+      if (redrawTarget) setContextRedraw((current) => ({ ...current, state: "failed", same: false }));
+    } finally {
+      if (sequence === resolveRequestSeqRef.current) resolverPendingRef.current = false;
     }
   }
 
   function retryResolver() {
     const request = resolveRequestRef.current;
-    if (!request || resolverLoading) return;
+    if (!request || resolverLoading || resolverPendingRef.current || disabled) return;
     void resolveForConfirmation(
       request.payload,
       request.redraws,
@@ -2334,6 +2417,9 @@ export default function ParamForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (disabled || sendPending || resolverPendingRef.current || confirmSendingRef.current) return;
+    redrawTargetRef.current = null;
+    setContextRedraw({ state: "idle", previous: undefined, same: false, completion: 0 });
     previewRequestedRef.current = false;
     setPromptPreviews([]);
     setPendingParams(null);
@@ -2487,7 +2573,9 @@ export default function ParamForm({
   }
 
   function handleConfirmSend() {
-    if (!pendingParams) return;
+    if (!pendingParams || disabled || sendPending || resolverPendingRef.current ||
+      resolverError !== null || confirmInvalidFields.size > 0 || confirmSendingRef.current) return;
+    confirmSendingRef.current = true;
     const submittedParams = pendingPerQuestionParams
       ? { ...pendingParams, per_question_params: JSON.stringify(pendingPerQuestionParams) }
       : pendingParams;
@@ -2520,6 +2608,7 @@ export default function ParamForm({
     value: unknown,
     redraw = false,
   ) {
+    if (disabled || sendPending || resolverPendingRef.current) return;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
@@ -2528,6 +2617,16 @@ export default function ParamForm({
 
     const canonical = RESOLVER_FIELD_ALIASES[field] ?? field;
     const path = `per_question_params[${questionIndex}].${canonical}`;
+    if (questionIndex === 0 && field === "context" && redraw) {
+      const previous = contextRedraw.state === "failed"
+        ? contextRedraw.previous
+        : questionParams[field];
+      redrawTargetRef.current = { path, previous };
+      setContextRedraw((current) => ({ ...current, state: "pending", previous, same: false }));
+    } else {
+      redrawTargetRef.current = null;
+      setContextRedraw((current) => ({ ...current, state: "idle", same: false }));
+    }
     const parentChildren = CONFIRMATION_PARENT_CHILDREN[canonical];
     const aliases = new Set([
       path,
@@ -3011,7 +3110,14 @@ export default function ParamForm({
     );
 
     return (
-      <div className="space-y-4">
+      <AnimatePresence initial={false} mode="wait" custom={sendPending}>
+      <m.div
+        key="confirmation"
+        className="space-y-4"
+        initial={{ opacity: 0, y: timing.reduced ? 0 : 8 }}
+        animate={{ opacity: 1, y: 0, transition: timing.transition() }}
+        exit={{ opacity: 0, y: timing.reduced ? 0 : 8, transition: timing.transition("quick", "exit") }}
+      >
         <div>
           <h2 className="text-base font-semibold">{t("form.confirm_title")}</h2>
           <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
@@ -3433,25 +3539,37 @@ export default function ParamForm({
                 )}
                 <dl className="space-y-2">
                   {perQuestionRows.map(({ key, label }) => {
-                      const value = questionParams[key];
+                      const feedbackRow = index === 0 && key === "context";
+                      const feedbackActive = feedbackRow && contextRedraw.state !== "idle";
+                      const value = feedbackRow && contextRedraw.state === "pending"
+                        ? contextRedraw.previous
+                        : questionParams[key];
                       const displayValue = Array.isArray(value)
                         ? value.join(", ")
                         : value === undefined
                           ? undefined
                           : String(value);
-                      const isRandom = resolverDrewField(drawnPaths, index, key);
+                      const isRandom = feedbackActive || resolverDrewField(drawnPaths, index, key);
                       const isPredrawnSeed = key === "seed" && isRandom;
                       const rowPath = `${questionPathPrefix}${RESOLVER_FIELD_ALIASES[key] ?? key}`;
                       const editor = key === "seed"
                         ? undefined
                         : () => renderConfirmationEditor(key, value);
                       return (
-                        <div key={key} className="flex gap-3 text-sm" data-drawn-value-path={rowPath}>
+                        <div
+                          key={feedbackRow ? `${key}-${contextRedraw.completion}` : key}
+                          className={`flex gap-3 rounded text-sm ${feedbackRow && contextRedraw.state === "done" ? "redraw-flash" : ""}`}
+                          data-drawn-value-path={rowPath}
+                          data-action-state={feedbackRow ? contextRedraw.state : undefined}
+                          aria-busy={feedbackRow ? contextRedraw.state === "pending" : undefined}
+                        >
                           <dt className="w-40 shrink-0 font-medium text-gray-600">
                             {label}
                           </dt>
                           <dd className="min-w-0 break-words text-gray-900">
-                            <span>{resolveConfirmationValue(displayValue, "absent", t)}</span>
+                            <span className={`transition-opacity duration-quick ease-signature ${feedbackRow && contextRedraw.state === "pending" ? "opacity-45" : "opacity-100"}`}>
+                              {resolveConfirmationValue(displayValue, "absent", t)}
+                            </span>
                             <span className={`ml-2 text-xs font-medium ${isRandom ? "text-amber-700" : "text-green-700"}`}>
                               {isPredrawnSeed
                                 ? t("form.confirm_seed_predrawn")
@@ -3470,7 +3588,14 @@ export default function ParamForm({
                                 : () => updatePendingConfirmationField(index, key, undefined, true)}
                               editLabel={t("form.confirm_edit")}
                               redrawLabel={t("form.confirm_redraw")}
+                              feedbackState={feedbackRow ? contextRedraw.state : undefined}
+                              disabled={feedbackRow && (resolverLoading || disabled)}
                             />
+                            {feedbackRow && contextRedraw.state === "done" && contextRedraw.same && (
+                              <span role="status" className="ml-2 text-xs text-amber-700 sentry-unmask">
+                                {t("action.same_draw")}
+                              </span>
+                            )}
                           </dd>
                         </div>
                       );
@@ -3769,19 +3894,19 @@ export default function ParamForm({
           })}
         </div>
         <div className="flex flex-wrap gap-3 pt-1">
-          <button
-            type="button"
+          <ConfirmationSendButton
             onClick={handleConfirmSend}
             disabled={disabled || resolverLoading || resolverError !== null || confirmInvalidFields.size > 0}
-            className="inline-flex items-center gap-2 rounded bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("form.btn_confirm_send")}
-          </button>
+            sendPending={sendPending}
+          />
           <div className="flex flex-col items-start">
             <button
               type="button"
               onClick={() => {
                 resolveRequestSeqRef.current += 1;
+                resolverPendingRef.current = false;
+                redrawTargetRef.current = null;
+                setContextRedraw({ state: "idle", previous: undefined, same: false, completion: 0 });
                 resolveRequestRef.current = null;
                 pendingParamsRef.current = null;
                 pendingPerQuestionParamsRef.current = null;
@@ -3807,7 +3932,8 @@ export default function ParamForm({
             )}
           </div>
         </div>
-      </div>
+      </m.div>
+      </AnimatePresence>
     );
   }
 
@@ -3844,6 +3970,13 @@ export default function ParamForm({
   }
 
   return (
+    <AnimatePresence initial={false} mode="wait" custom={sendPending}>
+    <m.div
+      key="form"
+      initial={{ opacity: 0, y: timing.reduced ? 0 : 8 }}
+      animate={{ opacity: 1, y: 0, transition: timing.transition() }}
+      exit={{ opacity: 0, transition: { duration: 0.001 } }}
+    >
     <form onSubmit={handleSubmit} onChange={markUnsubmittedInput} className="space-y-4">
       {draftToRestore && (showDraftPrompt || showDraftHistoryChoice) && (
         <section

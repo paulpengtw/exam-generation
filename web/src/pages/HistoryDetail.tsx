@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import QuestionCard from "../components/QuestionCard";
 import FigurePolicyTrailTimeline from "../components/FigurePolicyTrailTimeline";
@@ -7,6 +7,13 @@ import ReferenceExampleRecordSection from "../components/ReferenceExampleRecordS
 import type { ExamQuestion } from "../hooks/useGenerate";
 import type { ReferenceExampleRecordShape } from "../components/ReferenceExampleRecordSection";
 import { useT } from "../i18n/useT";
+import {
+  ActionButton,
+  ExportConfirmation,
+  InlineFailureNotice,
+  useActionFeedback,
+} from "../motion/actionFeedback";
+import { canViewTransition } from "../motion/tokens";
 import {
   downloadHistoryJson,
   getHistoryDetail,
@@ -31,6 +38,7 @@ export interface HistoryDetailProps {
 export default function HistoryDetail({ recordId }: HistoryDetailProps) {
   const t = useT();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const [detail, setDetail] = useState<HistoryDetailPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,57 +71,73 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
   const canDownload = detail != null && !isInterrupted;
   const showDownload = detail == null || canDownload;
 
-  const handleDownload = async () => {
+  const download = useActionFeedback(async () => {
     if (!detail || !canDownload) return;
     const blob = await downloadHistoryJson(detail.id);
-    saveBlob(blob, `${detail.question_id || detail.id}.json`);
-  };
+    const filename = `${detail.question_id || detail.id}.json`;
+    saveBlob(blob, filename);
+    return filename;
+  }, t("action.download_json_failed"));
 
   const handleRegenerate = () => {
     if (!detail) return;
-    navigate(`/generate/${detail.subject}`, {
+    navigate(`/generate/${detail.subject}${search}`, {
       state: { prefillParams: detail.params_json },
+      viewTransition: canViewTransition(),
     });
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => navigate("/history")}
-              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
-            >
-              ← {t("history.btn_back_list")}
-            </button>
-            {hasFigurePolicyDegradation && (
-              <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                {t("history.figure_policy_degraded_badge")}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {showDownload && (
+        <div className="mx-auto max-w-5xl space-y-2 px-3 py-3 sm:px-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigate(`/history${search}`, {
+                  viewTransition: canViewTransition(),
+                })}
+                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                ← {t("history.btn_back_list")}
+              </button>
+              {hasFigurePolicyDegradation && (
+                <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  {t("history.figure_policy_degraded_badge")}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {showDownload && (
+                <ActionButton
+                  type="button"
+                  disabled={!detail}
+                  state={download.state}
+                  label={t("history.btn_download_json")}
+                  pendingLabel={t("action.downloading")}
+                  doneLabel={t("action.downloaded")}
+                  exportAction
+                  onClick={download.execute}
+                  className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                />
+              )}
               <button
                 type="button"
                 disabled={!detail}
-                onClick={handleDownload}
-                className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                onClick={handleRegenerate}
+                className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-50"
               >
-                {t("history.btn_download_json")}
+                {t("history.btn_regenerate")}
               </button>
-            )}
-            <button
-              type="button"
-              disabled={!detail}
-              onClick={handleRegenerate}
-              className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-50"
-            >
-              {t("history.btn_regenerate")}
-            </button>
+            </div>
           </div>
+          <InlineFailureNotice
+            reason={download.reason}
+            onRetry={download.retry}
+            onDismiss={download.reset}
+          />
+          <ExportConfirmation feedback={download} />
         </div>
       </header>
 

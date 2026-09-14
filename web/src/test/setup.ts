@@ -1,3 +1,4 @@
+import { writeMotionTokens } from "../motion/tokens";
 import "@testing-library/jest-dom";
 
 // Node 26+ ships an experimental global `localStorage` that shadows jsdom's
@@ -78,3 +79,5 @@ document.addEventListener("keydown", (event) => {
     dialog.close();
   }
 });
+
+writeMotionTokens();

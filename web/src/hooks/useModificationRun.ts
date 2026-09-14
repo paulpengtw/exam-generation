@@ -1,3 +1,4 @@
+import { prototypeApiPath } from "../motion/prototypeSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 
@@ -152,7 +153,7 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
 
       const token = useAuthStore.getState().token;
       await fetchEventSource(
-        `/api/generation-records/${encodeURIComponent(activeRecordId)}/modifications/${encodeURIComponent(admission.run_id)}/stream`,
+        prototypeApiPath(`/api/generation-records/${encodeURIComponent(activeRecordId)}/modifications/${encodeURIComponent(admission.run_id)}/stream`),
         {
           signal: controller.signal,
           headers: token ? { Authorization: `Bearer ${token}` } : {},

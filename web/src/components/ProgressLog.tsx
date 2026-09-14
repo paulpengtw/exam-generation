@@ -1,16 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/useT";
 import type { LlmCallEvent } from "../hooks/useGenerate";
+import { Spinner } from "../motion/Indicators";
+import { runPhaseLabel, selectRunPhase, type RunPhaseInput } from "../motion/runPhase";
 
-export interface ProgressLogProps {
+export interface ProgressLogProps extends Omit<RunPhaseInput, "events"> {
   lines: string[];
   status: "idle" | "generating" | "error";
   errorMessage?: string | null;
   llmCalls?: LlmCallEvent[];
 }
 
-export default function ProgressLog({ lines, status, errorMessage, llmCalls = [] }: ProgressLogProps) {
+export default function ProgressLog({ lines, status, errorMessage, llmCalls = [], ...phaseInput }: ProgressLogProps) {
   const t = useT();
+  const phase = selectRunPhase({ events: llmCalls, ...phaseInput });
+  const fixedPhaseLabel = phase.batch
+    ? `${t("statusbar.running")} · ${t("statusbar.completed_prefix")}`
+    : t(phase.labelKey);
+  const phaseSuffix = runPhaseLabel(phase, t).slice(fixedPhaseLabel.length);
   const preRef = useRef<HTMLPreElement>(null);
   const traceRef = useRef<HTMLDivElement>(null);
   const [showTrace, setShowTrace] = useState(false);
@@ -60,14 +67,13 @@ export default function ProgressLog({ lines, status, errorMessage, llmCalls = []
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-2 text-sm" role="status">
         {status === "generating" && (
           <>
-            <span
-              className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500"
-              aria-label={t("progress.generating")}
-            />
-            <span className="text-gray-600">{t("progress.generating")}</span>
+            <Spinner className="h-3 w-3" />
+            <span className="text-gray-600">
+              <span className="sentry-unmask">{fixedPhaseLabel}</span>{phaseSuffix}
+            </span>
           </>
         )}
         {status === "idle" && lines.length > 0 && (

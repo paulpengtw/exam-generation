@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useT } from "../i18n/useT";
@@ -9,6 +9,12 @@ import {
   type HistoryListResponse,
 } from "../api/client";
 import { useAuthStore } from "../store/authStore";
+import {
+  ActionButton,
+  InlineFailureNotice,
+  useActionFeedback,
+} from "../motion/actionFeedback";
+import { canViewTransition } from "../motion/tokens";
 import HistoryDetail from "./HistoryDetail";
 
 const PAGE_SIZE = 20;
@@ -30,31 +36,42 @@ export default function HistoryPage() {
 
 function HistoryList() {
   const navigate = useNavigate();
+  const { search } = useLocation();
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const [data, setData] = useState<HistoryListResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [subject, setSubject] = useState<string>("");
+  const requestedPage = useRef({ offset: 0, subject: "" });
+  const requesting = useRef(false);
 
   const load = useCallback(async () => {
-    setError(null);
-    try {
-      const res = await listHistory({
-        limit: PAGE_SIZE,
-        offset,
-        subject: subject || undefined,
-      });
-      setData(res);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "error");
-    }
-  }, [offset, subject]);
+    const request = requestedPage.current;
+    const res = await listHistory({
+      limit: PAGE_SIZE,
+      offset: request.offset,
+      subject: request.subject || undefined,
+    });
+    setData(res);
+    setOffset(request.offset);
+    setSubject(request.subject);
+  }, []);
+  const paging = useActionFeedback(load, t("action.history_failed"));
+  const { execute } = paging;
+  const isPaging = paging.state === "pending";
+
+  const requestPage = (nextOffset: number, nextSubject = subject) => {
+    if (isPaging || requesting.current) return;
+    requestedPage.current = { offset: nextOffset, subject: nextSubject };
+    requesting.current = true;
+    void execute().finally(() => {
+      requesting.current = false;
+    });
+  };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount/param change, matches existing VerifyPage/ParamForm pattern
-    void load();
-  }, [load]);
+    void execute();
+  }, [execute]);
 
   const items: HistoryListItem[] = useMemo(() => data?.items ?? [], [data]);
   const total = data?.total ?? 0;
@@ -68,7 +85,9 @@ function HistoryList() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => navigate("/generate")}
+              onClick={() => navigate(`/generate${search}`, {
+                viewTransition: canViewTransition(),
+              })}
               className="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
             >
               ←
@@ -93,11 +112,9 @@ function HistoryList() {
           <label className="text-sm text-gray-700">
             <select
               value={subject}
-              onChange={(e) => {
-                setSubject(e.target.value);
-                setOffset(0);
-              }}
-              className="ml-2 rounded border border-gray-300 bg-white px-2 py-1 text-sm"
+              disabled={isPaging}
+              onChange={(e) => requestPage(0, e.target.value)}
+              className="ml-2 rounded border border-gray-300 bg-white px-2 py-1 text-sm disabled:opacity-50"
             >
               <option value="">{t("history.filter_subject_all")}</option>
               <option value="math">{t("history.subject_math")}</option>
@@ -107,19 +124,16 @@ function HistoryList() {
           </label>
         </div>
 
-        {error && (
-          <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        {data && items.length === 0 && !error && (
+        {data && items.length === 0 && paging.state !== "failed" && (
           <div className="rounded border bg-white p-6 text-center text-sm text-gray-600 shadow-sm">
             {t("history.empty")}
           </div>
         )}
 
-        <ul className="space-y-2">
+        <ul
+          aria-busy={isPaging}
+          className={`space-y-2 transition-opacity duration-quick ease-signature ${isPaging ? "opacity-45" : "opacity-100"}`}
+        >
           {items.map((item) => {
             const hasFigurePolicyDegradation = item.figure_policy_trail?.some(
               (entry) =>
@@ -130,7 +144,8 @@ function HistoryList() {
             return (
               <li key={item.id}>
               <Link
-                to={`/history/${item.id}`}
+                to={`/history/${item.id}${search}`}
+                viewTransition={canViewTransition()}
                 className="flex flex-col gap-1 rounded border bg-white p-3 shadow-sm hover:border-blue-400"
               >
                 <div className="flex items-center justify-between text-xs text-gray-500">
@@ -179,23 +194,32 @@ function HistoryList() {
           })}
         </ul>
 
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            disabled={!hasPrev}
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("history.prev_page")}
-          </button>
-          <button
-            type="button"
-            disabled={!hasNext}
-            onClick={() => setOffset(offset + PAGE_SIZE)}
-            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("history.next_page")}
-          </button>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <ActionButton
+              type="button"
+              state={paging.state === "done" ? "idle" : paging.state}
+              label={t("history.prev_page")}
+              pendingLabel={t("action.paging")}
+              disabled={!hasPrev || isPaging}
+              onClick={() => requestPage(Math.max(0, offset - PAGE_SIZE))}
+              className="min-w-28 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+            <ActionButton
+              type="button"
+              state={paging.state === "done" ? "idle" : paging.state}
+              label={t("history.next_page")}
+              pendingLabel={t("action.paging")}
+              disabled={!hasNext || isPaging}
+              onClick={() => requestPage(offset + PAGE_SIZE)}
+              className="min-w-28 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+          <InlineFailureNotice
+            reason={paging.reason}
+            onRetry={paging.retry}
+            onDismiss={paging.reset}
+          />
         </div>
       </main>
     </div>

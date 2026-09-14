@@ -1,3 +1,4 @@
+import { prototypeApiPath } from "../motion/prototypeSettings";
 import { useAuthStore } from "../store/authStore";
 import {
   type FigurePolicyTrailEntry,
@@ -95,7 +96,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-  const res = await fetch(path, { ...options, headers });
+  const res = await fetch(prototypeApiPath(path), { ...options, headers });
   if (!res.ok) {
     if (res.status === 401) {
       useAuthStore.getState().logout();

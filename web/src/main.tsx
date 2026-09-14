@@ -1,3 +1,4 @@
+import { writeMotionTokens } from './motion/tokens';
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
@@ -7,6 +8,9 @@ import { useLangStore } from './store/langStore.ts'
 import { initSentry } from './sentry.ts'
 
 initSentry();
+
+writeMotionTokens();
+document.documentElement.dataset.theme = 'light';
 
 // Keep <html lang> in sync with persisted language choice
 useLangStore.subscribe((state) => {

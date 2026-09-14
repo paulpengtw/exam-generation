@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
   plugins: [react()],
@@ -8,6 +9,7 @@ export default defineConfig({
     "process.env.NODE_ENV": JSON.stringify("development"),
   },
   resolve: {
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     dedupe: ["react", "react-dom"],
   },
   test: {

@@ -39,10 +39,9 @@ export default function DestructiveConfirm({
       ref={dialogRef}
       aria-labelledby={titleId}
       onCancel={onCancel}
-      className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-lg backdrop:bg-black/40"
+      className="destructive-dialog w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-lg backdrop:bg-black/40"
     >
-      {open && (
-        <>
+      <>
           <h2 id={titleId} className="text-lg font-semibold text-gray-900">
             {t(titleKey)}
           </h2>
@@ -67,8 +66,7 @@ export default function DestructiveConfirm({
               {t(confirmKey)}
             </button>
           </div>
-        </>
-      )}
+      </>
     </dialog>
   );
 }

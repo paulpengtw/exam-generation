@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useT } from "../i18n/useT";
 import type { AgentLane, AgentStatus } from "../hooks/useGenerate";
+import { Spinner } from "../motion/Indicators";
 
 interface Props {
   lanes: AgentLane[];
@@ -10,7 +11,7 @@ interface Props {
 function StatusDot({ status }: { status: AgentStatus }) {
   if (status === "running") {
     return (
-      <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500 flex-shrink-0" />
+      <Spinner className="h-2.5 w-2.5 shrink-0" />
     );
   }
   if (status === "done") {
@@ -45,12 +46,12 @@ interface LaneCardProps {
 
 function LaneCard({ lane, aggregateMode }: LaneCardProps) {
   const t = useT();
+  const thinkingRef = useRef<HTMLPreElement>(null);
   const contentRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
-    if (contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight;
-    }
+    const pane = lane.streamingContent ? contentRef.current : thinkingRef.current;
+    if (pane) pane.scrollTop = pane.scrollHeight;
   }, [lane.streamingThinking, lane.streamingContent]);
 
   const [baseAgent, instanceIdx] = lane.agent.split("#");
@@ -77,7 +78,7 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
   const effectiveStatus = aggregateMode ? aggregateStatus : lane.status;
 
   return (
-    <div className={`rounded-lg border p-3 space-y-2 transition-colors ${
+    <div className={`rounded-lg border p-3 space-y-2 transition-colors duration-standard ease-signature ${
       effectiveStatus === "running"
         ? "border-blue-300 bg-blue-50"
         : effectiveStatus === "done"
@@ -122,10 +123,11 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
                 {t("agent_panel.thinking")}
               </div>
               <pre
-                ref={contentRef}
+                ref={thinkingRef}
                 className="max-h-24 overflow-y-auto rounded bg-yellow-50 border border-yellow-200 p-1.5 font-mono text-[10px] text-yellow-900 whitespace-pre-wrap"
               >
                 {lane.streamingThinking}
+                {!lane.streamingContent && <span className="streaming-caret" aria-hidden="true" />}
               </pre>
             </div>
           )}
@@ -139,6 +141,7 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
                 className="max-h-24 overflow-y-auto rounded bg-green-50 border border-green-200 p-1.5 font-mono text-[10px] text-green-900 whitespace-pre-wrap"
               >
                 {lane.streamingContent}
+                <span className="streaming-caret" aria-hidden="true" />
               </pre>
             </div>
           )}
