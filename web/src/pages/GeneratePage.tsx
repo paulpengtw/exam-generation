@@ -172,7 +172,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   if (hasResults) availableTargets.push("results");
   const handleNavigation = (target: string) => {
     if (!hasUnsubmittedInput && !hasResults) {
-      navigate(`${target}${prototypeEnabled ? location.search : ""}`, { viewTransition: canViewTransition() });
+      const dest = `${target}${prototypeEnabled ? location.search : ""}`;
+      if (canViewTransition()) navigate(dest, { viewTransition: true });
+      else navigate(dest);
       return;
     }
 
@@ -203,7 +205,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
           confirmKey: "confirm.navigate_away_confirm",
           onConfirm: () => {
             setPendingAction(null);
-            navigate(`${target}${prototypeEnabled ? location.search : ""}`, { viewTransition: canViewTransition() });
+            const dest = `${target}${prototypeEnabled ? location.search : ""}`;
+            if (canViewTransition()) navigate(dest, { viewTransition: true });
+            else navigate(dest);
           },
           onCancel: () => setPendingAction(null),
         };

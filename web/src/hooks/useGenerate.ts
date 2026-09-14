@@ -68,6 +68,7 @@ export interface SubQuestion {
 
 export interface ExamQuestion {
   id?: string;
+  record_id?: string;
   情境: string[];
   題型種類: string;
   題型: string;
