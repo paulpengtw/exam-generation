@@ -82,6 +82,10 @@ Each mounted surface declares its readiness, editable state, received results an
 Generation and 人工審題修正 expose 受理 beside their existing `status`, acknowledged by the SSE `started` event or a returned `run_id`, while guards and 發送前確認 timing remain unchanged.
 The store never receives an AbortController, promise or callback that can cancel work; see [ADR 0030](docs/adr/0030-workspace-participation-is-declared-by-each-surface.md) when extending participation, observed operations or admission for the updater.
 
+### Evidence profiles (issue #739)
+
+`web/src/lib/runEvidence.ts` defines the `generate-legacy`, `modification`, and reserved `generate-v2` profiles. The shared status bar on GeneratePage and inside QuestionCard consumes a profile-tagged evidence object. `generationStream.ts` projects legacy stage events and the five generation card fields; `modificationStream.ts` projects modification steps and decodes its existing SSE events. Modification never requires a generation manifest. `generate-v2` is the generation-only entry point reserved for OpenSpec `per-question-live-progress` tasks 5.x/6.x and issue #742; it currently renders the existing aggregate line. HistoryDetail retains its stored-record card props.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.
