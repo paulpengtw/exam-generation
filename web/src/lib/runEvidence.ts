@@ -1,5 +1,5 @@
 import type { StageEvent } from "../hooks/useGenerate";
-import type { ModificationStageEvent } from "../hooks/useModificationRun";
+import type { ModificationStageEvent } from "./modificationStream";
 
 export type EvidenceProfile = "generate-v2" | "generate-legacy" | "modification";
 
