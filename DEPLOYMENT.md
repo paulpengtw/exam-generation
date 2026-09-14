@@ -300,7 +300,7 @@ Key properties:
 
 ### Compose usage
 
-After adding the gateway service (slice 5 of issue #740), the gateway is the only service that binds port 8000.  The backend becomes internal-only.
+With the gateway service in docker-compose.yml, the gateway is the only service that binds host port 8000.  The backend becomes internal-only.
 
 ```bash
 # Pause all new generation

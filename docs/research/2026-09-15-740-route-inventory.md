@@ -1,7 +1,6 @@
 # Route inventory for the generation admission gateway (issue #740)
 
 **Date:** 2026-09-15
-**Author:** phwu@mail.naer.edu.tw
 
 ---
 
