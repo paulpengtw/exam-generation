@@ -171,3 +171,26 @@ Durable gotchas and decisions for all agents and developers working on this repo
   remains separate: it explicitly requires an ego-browser environment and
   user-provided login credentials. This session had no ego-browser tool;
   no live generation evidence has been collected.
+
+## Generation exchange observability (#801–#803, 2026-09-14)
+
+- [Text provider dispatch](https://github.com/paulpengtw/exam-generation/blob/fix/801-803-exchange-observability/src/llm_client.py)
+  builds one effective options dictionary for SDK calls and request events,
+  including effort, withheld temperature, provider-specific token limits,
+  streaming options, tools and grounding. Image generation keeps its existing path.
+- [Batch planning](https://github.com/paulpengtw/exam-generation/blob/fix/801-803-exchange-observability/server/generate/service.py)
+  uses request-resolved configuration and streams its observer queue while the
+  provider thread runs. Closing the stream cancels the thread's asyncio wrapper
+  promptly; the already-running provider can still finish recording. Keep the
+  recorder alive while suppressing late SSE events, and do not start workers
+  after cancellation.
+- The initial `started` event exposes `generation_log_id` before model work.
+  [History detail](https://github.com/paulpengtw/exam-generation/blob/fix/801-803-exchange-observability/server/history/routes.py)
+  returns the log belonging to the actual returned descendant, or null for legacy
+  records. The browser retains the ID across completion/errors and clears it on
+  reset/new run; asynchronous callbacks must recheck run ownership after awaits.
+- [Live API tests](https://github.com/paulpengtw/exam-generation/blob/fix/801-803-exchange-observability/tests/server/test_generation_log_discovery.py)
+  drive the real ASGI stream because ordinary TestClient responses buffer SSE.
+  Provider barriers establish pre-completion visibility, and authenticated API
+  readback verifies persisted exchanges. Live provider acceptance remains
+  [#761](https://github.com/paulpengtw/exam-generation/issues/761).

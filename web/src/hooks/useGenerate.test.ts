@@ -238,6 +238,116 @@ describe("useGenerate — run timestamps", () => {
   });
 });
 
+describe("useGenerate — generation log identity", () => {
+  beforeEach(() => {
+    fetchEventSourceMock.mockClear();
+  });
+
+  it("stores the ID announced by the started event and retains it through done", () => {
+    const { result } = renderStartedRun();
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({ generation_log_id: "log-123" }),
+      });
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "done",
+        data: "{}",
+      });
+    });
+
+    expect(result.current.generationLogId).toBe("log-123");
+  });
+
+  it("retains the ID when the server reports an error or the network disconnects", () => {
+    const { result } = renderStartedRun();
+    const stream = latestStreamOptions();
+
+    act(() => {
+      stream.onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({ generation_log_id: "log-failed" }),
+      });
+      stream.onmessage?.({
+        id: "",
+        event: "error",
+        data: "generation failed",
+      });
+    });
+
+    expect(result.current.generationLogId).toBe("log-failed");
+
+    act(() => {
+      try {
+        stream.onerror?.(new Error("connection lost"));
+      } catch {
+        // fetch-event-source uses the thrown error to stop retrying.
+      }
+    });
+
+    expect(result.current.generationLogId).toBe("log-failed");
+  });
+
+  it("clears the ID on reset and ignores a late started event from the old run", () => {
+    const { result } = renderStartedRun();
+    const oldStream = latestStreamOptions();
+
+    act(() => {
+      oldStream.onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({ generation_log_id: "old-log" }),
+      });
+    });
+    expect(result.current.generationLogId).toBe("old-log");
+
+    act(() => {
+      result.current.generate({ subject: "social_studies", count: 1 });
+    });
+    expect(result.current.generationLogId).toBeNull();
+
+    act(() => {
+      oldStream.onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({ generation_log_id: "stale-log" }),
+      });
+    });
+    expect(result.current.generationLogId).toBeNull();
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({ generation_log_id: "new-log" }),
+      });
+    });
+    expect(result.current.generationLogId).toBe("new-log");
+
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.generationLogId).toBeNull();
+  });
+
+  it.each(["", "{}"]) (
+    "keeps a legacy started payload nullable (%j)",
+    (data) => {
+      const { result } = renderStartedRun();
+
+      act(() => {
+        latestStreamOptions().onmessage?.({ id: "", event: "started", data });
+      });
+
+      expect(result.current.generationLogId).toBeNull();
+    },
+  );
+});
+
 describe("useGenerate — resolved sub-question total", () => {
   beforeEach(() => {
     fetchEventSourceMock.mockClear();
@@ -558,6 +668,44 @@ describe("useGenerate — stream open error detail", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
+
+  it.each(["new run", "reset"] as const)(
+    "does not let a stale non-2xx open response update state after %s",
+    async (transition) => {
+      const { result } = renderStartedRun();
+      let resolveBody!: (body: unknown) => void;
+      const bodyPromise = new Promise<unknown>((resolve) => {
+        resolveBody = resolve;
+      });
+      const oldStream = latestStreamOptions();
+      const pendingOpen = oldStream.onopen?.({
+        ok: false,
+        status: 422,
+        json: () => bodyPromise,
+      } as Response);
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      act(() => {
+        if (transition === "new run") {
+          result.current.generate({ subject: "social_studies", count: 1 });
+        } else {
+          result.current.reset();
+        }
+      });
+
+      await act(async () => {
+        resolveBody({ detail: "old run failed" });
+        await pendingOpen;
+      });
+
+      expect(result.current.errorMessage).toBeNull();
+      expect(result.current.finishedAt).toBeNull();
+      expect(result.current.status).toBe(transition === "new run" ? "generating" : "idle");
+    },
+  );
 
   it("surfaces the JSON detail field from the response body on a non-2xx open", async () => {
     const { result } = renderStartedRun();

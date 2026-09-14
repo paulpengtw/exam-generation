@@ -36,6 +36,7 @@ describe("history api client", () => {
           subject: "social_studies",
           question_id: "ss_1",
           created_at: "2026-07-15T00:00:00Z",
+          generation_log_id: "log-abc",
           params_json: {},
           question_json: {},
         }),
@@ -44,6 +45,28 @@ describe("history api client", () => {
     );
     const detail = await getHistoryDetail("abc");
     expect(detail.subject).toBe("social_studies");
+    expect(detail.generation_log_id).toBe("log-abc");
+  });
+
+  it("keeps legacy history details readable when no generation log is linked", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "legacy",
+          subject: "math",
+          question_id: "math-1",
+          created_at: "2026-07-15T00:00:00Z",
+          generation_log_id: null,
+          params_json: {},
+          question_json: null,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const detail = await getHistoryDetail("legacy");
+
+    expect(detail.generation_log_id).toBeNull();
   });
 
   it("downloadHistoryJson returns a Blob", async () => {

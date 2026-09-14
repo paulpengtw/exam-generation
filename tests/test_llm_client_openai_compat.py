@@ -119,7 +119,7 @@ def test_generate_with_image_image_url_block_untouched(tmp_path) -> None:
 
 # ---------------------------------------------------------------------------
 # 3. Observer + llm_stream=False → correct usage, reasoning=None,
-#    llm_request params == {"max_tokens": 8192, "temperature": None}
+#    llm_request params match the effective Gemini SDK options
 # ---------------------------------------------------------------------------
 
 def test_observer_receives_correct_usage_and_reasoning() -> None:
@@ -137,7 +137,7 @@ def test_observer_receives_correct_usage_and_reasoning() -> None:
     assert len(response_events) == 1
 
     req = request_events[0]
-    assert req["params"] == {"max_tokens": 8192, "temperature": None}
+    assert req["params"] == {"max_tokens": 8192, "reasoning_effort": "high"}
 
     resp = response_events[0]
     assert resp["usage"] == {"input": 10, "output": 5, "cache_read": 3, "cache_creation": 0}
