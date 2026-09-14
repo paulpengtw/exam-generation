@@ -63,7 +63,7 @@ export function useReleaseStatus() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       clearInterval(interval);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // mount-only: triggers and interval manage their own deps
 
   return store;
 }

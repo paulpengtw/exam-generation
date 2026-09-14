@@ -38,7 +38,8 @@ describe("parseReleasePolicy", () => {
   });
 
   it("rejects a document with missing required fields", () => {
-    const { release_revision: _omit, ...missing } = VALID_POLICY;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { release_revision: _unusedField, ...missing } = VALID_POLICY;
     const result = parseReleasePolicy(missing, "production");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("malformed");

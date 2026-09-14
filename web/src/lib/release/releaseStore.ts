@@ -35,6 +35,12 @@ export interface ReleaseState {
   checkNow(): Promise<void>;
 }
 
+interface SuccessResult {
+  status: ReleaseStatus;
+  requiredBuildId: string | null;
+  releaseRevision: number;
+}
+
 const POLICY_URL = "/release/policy.json";
 const TIMEOUT_MS = 5000;
 
@@ -52,7 +58,7 @@ export function resetReleaseDetector(): void {
   _inFlight = null;
 }
 
-export const useReleaseStore = create<ReleaseState>((set, get) => ({
+export const useReleaseStore = create<ReleaseState>((_set, get) => ({
   status: "checking",
   requiredBuildId: null,
   releaseRevision: null,
@@ -77,9 +83,7 @@ async function _doCheck(getState: () => ReleaseState): Promise<void> {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   let failureReason: FailureReason | null = null;
-  let newStatus: ReleaseStatus | null = null;
-  let newRequiredBuildId: string | null = null;
-  let newReleaseRevision: number | null = null;
+  let successResult: SuccessResult | undefined;
 
   try {
     const response = await fetch(POLICY_URL, {
@@ -108,19 +112,20 @@ async function _doCheck(getState: () => ReleaseState): Promise<void> {
     const { policy } = parseResult;
 
     if (isAdmissionPaused(policy)) {
-      newStatus = "paused";
-      newRequiredBuildId = getState().requiredBuildId;
+      successResult = {
+        status: "paused",
+        requiredBuildId: getState().requiredBuildId,
+        releaseRevision: policy.release_revision,
+      };
     } else {
       const cmp = compareArtifact(__BUILD_ID__, policy);
-      if (cmp === "update-required") {
-        newStatus = "update-required";
-        newRequiredBuildId = policy.released_build_id;
-      } else {
-        newStatus = "current";
-        newRequiredBuildId = null;
-      }
+      successResult = {
+        status: cmp === "update-required" ? "update-required" : "current",
+        requiredBuildId:
+          cmp === "update-required" ? policy.released_build_id : null,
+        releaseRevision: policy.release_revision,
+      };
     }
-    newReleaseRevision = policy.release_revision;
   } catch (err) {
     if (thisSeq !== _requestSeq) return; // stale
 
@@ -146,12 +151,12 @@ async function _doCheck(getState: () => ReleaseState): Promise<void> {
     clearTimeout(timer);
   }
 
-  if (thisSeq !== _requestSeq) return;
+  if (thisSeq !== _requestSeq || successResult === undefined) return;
 
   useReleaseStore.setState({
-    status: newStatus!,
-    requiredBuildId: newRequiredBuildId,
-    releaseRevision: newReleaseRevision,
+    status: successResult.status,
+    requiredBuildId: successResult.requiredBuildId,
+    releaseRevision: successResult.releaseRevision,
     lastCheckedAt: Date.now(),
     lastFailure: null,
   });
