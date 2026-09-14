@@ -357,6 +357,8 @@ export interface ParamFormProps {
   disabled: boolean;
   initialParams?: Partial<FormParams> & { [key: string]: unknown };
   onUnsubmittedInput?: () => void;
+  /** When present, takes precedence over loadDraft and history prefill (issue #772). */
+  recoveredForm?: import("../lib/workspace/adapters/types").FormWorkspaceSnapshot;
 }
 
 /**
@@ -1257,10 +1259,14 @@ export default function ParamForm({
   disabled,
   initialParams,
   onUnsubmittedInput,
+  recoveredForm,
 }: ParamFormProps) {
   const generationStartedRef = useRef(false);
   const hasUserEditedRef = useRef(false);
   const [hasUserEdited, setHasUserEdited] = useState(false);
+  // Recovery banner state (issue #772)
+  const [recoveryBannerDismissed, setRecoveryBannerDismissed] = useState(false);
+  const showRecoveryBanner = recoveredForm !== undefined && !recoveryBannerDismissed;
   const markUnsubmittedInput = () => {
     generationStartedRef.current = false;
     hasUserEditedRef.current = true;
@@ -3982,6 +3988,30 @@ export default function ParamForm({
 
   return (
     <form onSubmit={handleSubmit} onChange={markUnsubmittedInput} className="space-y-4">
+      {showRecoveryBanner && (
+        <section
+          role="status"
+          className="sentry-unmask rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
+        >
+          <p className="font-medium">{t("recovery.banner.title")}</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setRecoveryBannerDismissed(true)}
+              className="underline cursor-pointer"
+            >
+              {t("recovery.banner.acknowledge")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setRecoveryBannerDismissed(true)}
+              className="underline cursor-pointer"
+            >
+              {t("recovery.banner.discard")}
+            </button>
+          </div>
+        </section>
+      )}
       {draftToRestore && (showDraftPrompt || showDraftHistoryChoice) && (
         <section
           role={showDraftHistoryChoice ? "dialog" : "status"}
