@@ -108,8 +108,10 @@ def test_publisher_publish_enqueues_v2_envelope() -> None:
     envelope = loop.run_until_complete(_drain())
     loop.close()
 
+    assert "event" in envelope, "envelope must have top-level 'event' key for v1 compat"
     assert "context" in envelope, "envelope must have 'context' key"
     assert "payload" in envelope, "envelope must have 'payload' key"
+    assert envelope["event"] == "question_terminal"
     ctx = envelope["context"]
     assert ctx["run_id"] == "myrun"
     assert isinstance(ctx["event_seq"], int)

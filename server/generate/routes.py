@@ -170,7 +170,19 @@ async def resolve_generate_endpoint(
 
 
 def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
-    """Convert internal event dict to sse_starlette ServerSentEvent fields."""
+    """Convert internal event dict to sse_starlette ServerSentEvent fields.
+
+    Supports both v1 events ({event, data}) and v2 envelopes (dual-key: top-level
+    "event" plus {context, payload}).  V2 envelopes serialize the full envelope as
+    JSON in the data field so the client receives the context+payload structure.
+    """
+    if "context" in event:
+        # v2 envelope: includes both top-level "event" and context/payload structure.
+        event_name = event.get("event") or event["context"].get("event", "unknown")
+        # Serialize full envelope (context + payload) so client gets v2 metadata.
+        envelope_for_wire = {"context": event["context"], "payload": event.get("payload", {})}
+        data = json.dumps(envelope_for_wire, ensure_ascii=False)
+        return {"event": event_name, "data": data}
     data = event.get("data", "")
     if not isinstance(data, str):
         data = json.dumps(data, ensure_ascii=False)
@@ -512,7 +524,7 @@ async def _generate(
         )
         try:
             async for event in stream:
-                if event["event"] == "error":
+                if event.get("event") == "error":
                     status = "failed"
                     data = event.get("data", "")
                     error_msg = (

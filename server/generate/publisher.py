@@ -68,7 +68,8 @@ class GenerationPublisher:
             context["content_revision"] = content_revision
 
         envelope: dict[str, Any] = {
-            "context": context,
+            "event": event_name,      # v1-compatible top-level key
+            "context": context,        # v2 metadata
             "payload": dict(payload) if payload is not None else {},
         }
 

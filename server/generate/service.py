@@ -368,6 +368,7 @@ def _worker_one(
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
+    _terminal_status = "failed"  # updated before each exit
     try:
         rng_params = _resolved_worker_params(
             i,
@@ -444,9 +445,21 @@ def _worker_one(
             ctx.queue.put_nowait,
             result_event,
         )
+        _terminal_status = "delivered"
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_TERMINAL,
+            question_id=question_id,
+            index=i,
+            payload={"delivery_status": _terminal_status},
+        )
     except GenerationCancelled:
         # Client disconnected; exit cleanly without emitting an error event.
-        pass
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_TERMINAL,
+            question_id=ctx.manifest[i].question_id,
+            index=i,
+            payload={"delivery_status": "cancelled"},
+        )
     except Exception as exc:
         record_generation_outcome(ctx.params.subject, "failure")
         ctx.loop.call_soon_threadsafe(
@@ -460,6 +473,12 @@ def _worker_one(
             },
         )
         logger.exception("worker_one error (index=%d)", i)
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_TERMINAL,
+            question_id=ctx.manifest[i].question_id,
+            index=i,
+            payload={"delivery_status": "failed"},
+        )
 
 
 async def generate_question_stream(
@@ -690,10 +709,14 @@ async def generate_question_stream(
     try:
         while True:
             event = await queue.get()
+            # v2 envelopes use {context, payload} shape — no top-level "event" key.
+            # Route them through unchanged; persistence and stop-sentinel checks
+            # operate only on v1 events.
+            event_name = event.get("event")
             if (
-                event["event"] == SSEEventName.RESULT
+                event_name == SSEEventName.RESULT
                 and user_id is not None
-                and isinstance(event["data"], dict)
+                and isinstance(event.get("data"), dict)
             ):
                 await persist_generation_record(
                     user_id=user_id,
@@ -707,7 +730,7 @@ async def generate_question_stream(
                     reference_example_record_json=event.get("reference_example_record"),
                 )
             yield event
-            if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):
+            if event_name in (SSEEventName.DONE, SSEEventName.ERROR):
                 break
     finally:
         ctx.cancel_event.set()
