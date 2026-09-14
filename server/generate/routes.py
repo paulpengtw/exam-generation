@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import Field, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,7 @@ from sse_starlette.sse import EventSourceResponse
 from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
+from server.generate.event_protocol import SUPPORTED_STREAM_VERSIONS, client_update_required_body
 from server.generate.models import (
     ALLOWED_SUBJECTS,
     CoverageMode,
@@ -313,6 +315,7 @@ async def generate_endpoint(
     effort_verify: str | None = Query(default=None),   # #377: per-request tier effort override
     effort_correct: str | None = Query(default=None),  # #377: per-request tier effort override
     reporting_scale: str | None = Query(default=None),
+    stream_version: int | None = Query(default=None),  # #742: stream protocol version gate
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -374,6 +377,8 @@ async def generate_endpoint(
             effort_correct=effort_correct,  # #377
             reporting_scale=reporting_scale,
         )
+        if stream_version is None or stream_version not in SUPPORTED_STREAM_VERSIONS:
+            return JSONResponse(status_code=426, content=client_update_required_body())
         _check_generation_admission(params, config)
         params = GenerateParams.model_validate(params.model_dump())
     except ValidationError as exc:
@@ -399,6 +404,8 @@ async def generate_body_endpoint(
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
 ) -> EventSourceResponse:
+    if params.stream_version is None or params.stream_version not in SUPPORTED_STREAM_VERSIONS:
+        return JSONResponse(status_code=426, content=client_update_required_body())
     _check_generation_admission(params, config)
     return await _generate(request, params, user, session, config)
 

@@ -56,7 +56,7 @@ REQUEST_LEVEL_FIELDS: frozenset[str] = frozenset(
 # no web form control or generated client forwarding.
 # Note: allow_duplicate_figure_kinds was here before issue #450 exposed it in the
 # web UI; it is now forwarded by the frontend and appears in the generated contract.
-SERVER_ONLY_GENERATE_FIELDS: frozenset[str] = frozenset()
+SERVER_ONLY_GENERATE_FIELDS: frozenset[str] = frozenset({"stream_version"})
 
 
 def decode_per_question_params(raw: str | None) -> list[dict[str, Any]] | None:
@@ -158,6 +158,8 @@ class GenerateParams(BaseModel):
     effort_correct: str | None = None
     # #279: 題組-level Reporting Scale (natural_sciences only; other subjects accept and ignore).
     reporting_scale: str | None = None
+    # #742: stream version gate — server-only, excluded from TS contract
+    stream_version: int | None = Field(default=None)
 
     @field_validator(
         "set_type",
