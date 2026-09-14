@@ -27,6 +27,8 @@ _MATH_FIXTURE: dict[str, Any] = {
 def _wire_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Encode resolver lists that the GET route models keep as JSON strings."""
     completed = dict(payload)
+    # Stream v2 gate: inject stream_version=2 if not already present (#742)
+    completed.setdefault("stream_version", 2)
     rows = completed.get("per_question_params")
     if isinstance(rows, list):
         for row in rows:

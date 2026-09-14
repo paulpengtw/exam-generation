@@ -86,6 +86,22 @@ The store never receives an AbortController, promise or callback that can cancel
 
 `web/src/lib/runEvidence.ts` defines the `generate-legacy`, `modification`, and reserved `generate-v2` profiles. The shared status bar on GeneratePage and inside QuestionCard consumes a profile-tagged evidence object. `generationStream.ts` projects legacy stage events and the five generation card fields; `modificationStream.ts` projects modification steps and decodes its existing SSE events. Modification never requires a generation manifest. `generate-v2` is the generation-only entry point reserved for OpenSpec `per-question-live-progress` tasks 5.x/6.x and issue #742; it currently renders the existing aggregate line. HistoryDetail retains its stored-record card props.
 
+### Per-question live progress (issue #742)
+
+The backend implements stream protocol v2 for per-question lifecycle events. Key components:
+
+- **`src/common/generation_events.py`**: Immutable identity types. `RunContext(run_id)` and `QuestionContext(run_id, question_id, index)` are frozen dataclasses. `new_run_id()` returns a UUID4 hex string (32 chars). `allocate_manifest(prefix, run_id, count)` pre-allocates all question IDs before workers start (`{prefix}{run_id}_{i+1:03d}`).
+
+- **`server/generate/event_protocol.py`**: Protocol constants and v2 types. `PROTOCOL_VERSION = 2`, `SUPPORTED_STREAM_VERSIONS = (2,)`. `client_update_required_body()` returns a 426 body with `code: "CLIENT_UPDATE_REQUIRED"`. `EventContext`, `StartedPayload`, `QuestionTerminalPayload`, and `envelope_dict()` define the v2 wire format.
+
+- **`server/generate/publisher.py`**: `GenerationPublisher(run_id, loop, queue)` provides thread-safe monotonic `event_seq` via `next_seq()` and enqueues `{event, context, payload}` dual-key envelopes via `loop.call_soon_threadsafe`. Each `_RunContext` holds one publisher shared across all workers.
+
+- **`server/generate/snapshot_ledger.py`**: `QuestionSnapshotLedger` tracks per-question content revisions (1-based, thread-safe). `record(question_id, content)` returns the revision number; `latest_revision(question_id)` returns current rev (0 if unseen).
+
+- **HTTP 426 gate**: `GET /api/generate` and `POST /api/generate` return 426 when `stream_version` is absent or not in `SUPPORTED_STREAM_VERSIONS`. `stream_version` is in `SERVER_ONLY_GENERATE_FIELDS` and excluded from the TypeScript contract.
+
+- **`question_terminal` event** (`SSEEventName.QUESTION_TERMINAL`): emitted by `_worker_one` at every exit point via `ctx.publisher.publish(...)` with `delivery_status` set to `delivered` (success), `failed` (exception), or `cancelled` (`GenerationCancelled`). The envelope is dual-key: top-level `event` for v1 compatibility plus `context`/`payload` for v2 clients.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.

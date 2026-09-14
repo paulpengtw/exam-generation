@@ -4,12 +4,19 @@ Tests ensure _worker_one emits a question_terminal event at each exit:
 - success: after the result event, with delivery_status="delivered"
 - error:   after the error event, with delivery_status="failed"
 - cancel:  when GenerationCancelled, with delivery_status="cancelled"
+
+Note: these tests patch spec methods (via spec.do_generate) and observability
+functions (via their own module), not server.generate.service attributes,
+per the injectable-collaborators contract enforced by
+test_injectable_collaborators.py.
 """
 from __future__ import annotations
 
 import asyncio
 from typing import Any
 from unittest.mock import MagicMock, patch
+
+from src.common.generation_core import GenerationCancelled
 
 
 def _build_ctx(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue) -> Any:
@@ -63,6 +70,13 @@ def _drain_queue(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue) -> list[
     return loop.run_until_complete(_collect())
 
 
+def _event_name(e: dict) -> str | None:
+    """Extract the event name from a v1 or v2-hybrid event dict."""
+    if "context" in e:
+        return e["context"].get("event")
+    return e.get("event")
+
+
 # ---------------------------------------------------------------------------
 # question_terminal on success
 # ---------------------------------------------------------------------------
@@ -70,32 +84,29 @@ def _drain_queue(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue) -> list[
 
 def test_question_terminal_emitted_on_success() -> None:
     """question_terminal with delivery_status=delivered must appear after result."""
+    import server.observability as observability_mod
     from server.generate.service import _worker_one
-    from src.schemas import ExamQuestion
 
     loop = asyncio.new_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
     ctx = _build_ctx(loop, queue)
 
-    fake_question = MagicMock(spec=ExamQuestion)
+    fake_question = MagicMock(spec=ctx.spec.exam_question_cls)
     fake_question.__class__ = ctx.spec.exam_question_cls
+    fake_question.model_dump_json.return_value = '{}'
+    fake_question.圖片 = None
+    fake_question.subquestions = []
 
     with (
         patch.object(ctx.spec, "do_generate", return_value=fake_question),
         patch.object(ctx.spec, "extract_prior_scope", return_value=None),
-        patch("server.generate.service.question_to_event", return_value={"fake": True}),
-        patch("server.generate.service.record_generation_outcome"),
+        patch.object(observability_mod, "record_generation_outcome"),
     ):
         _worker_one(0, MagicMock(), ctx, [])
 
     events = _drain_queue(loop, queue)
     loop.close()
 
-    # Events may be v1 {event: ...} or v2 {context: {event: ...}, payload: {...}}
-    def _event_name(e: dict) -> str | None:
-        if "context" in e:
-            return e["context"].get("event")
-        return e.get("event")
     event_names = [_event_name(e) for e in events]
     assert "question_terminal" in event_names, f"missing question_terminal; got {event_names}"
 
@@ -111,6 +122,7 @@ def test_question_terminal_emitted_on_success() -> None:
 
 def test_question_terminal_emitted_on_error() -> None:
     """question_terminal with delivery_status=failed must appear after error."""
+    import server.observability as observability_mod
     from server.generate.service import _worker_one
 
     loop = asyncio.new_event_loop()
@@ -119,18 +131,13 @@ def test_question_terminal_emitted_on_error() -> None:
 
     with (
         patch.object(ctx.spec, "do_generate", side_effect=RuntimeError("boom")),
-        patch("server.generate.service.record_generation_outcome"),
+        patch.object(observability_mod, "record_generation_outcome"),
     ):
         _worker_one(0, MagicMock(), ctx, [])
 
     events = _drain_queue(loop, queue)
     loop.close()
 
-    # Events may be v1 {event: ...} or v2 {context: {event: ...}, payload: {...}}
-    def _event_name(e: dict) -> str | None:
-        if "context" in e:
-            return e["context"].get("event")
-        return e.get("event")
     event_names = [_event_name(e) for e in events]
     assert "question_terminal" in event_names, f"missing question_terminal; got {event_names}"
 
@@ -146,8 +153,8 @@ def test_question_terminal_emitted_on_error() -> None:
 
 def test_question_terminal_emitted_on_cancel() -> None:
     """question_terminal with delivery_status=cancelled must appear on GenerationCancelled."""
+    import server.observability as observability_mod
     from server.generate.service import _worker_one
-    from src.common.generation_core import GenerationCancelled
 
     loop = asyncio.new_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -155,18 +162,13 @@ def test_question_terminal_emitted_on_cancel() -> None:
 
     with (
         patch.object(ctx.spec, "do_generate", side_effect=GenerationCancelled()),
-        patch("server.generate.service.record_generation_outcome"),
+        patch.object(observability_mod, "record_generation_outcome"),
     ):
         _worker_one(0, MagicMock(), ctx, [])
 
     events = _drain_queue(loop, queue)
     loop.close()
 
-    # Events may be v1 {event: ...} or v2 {context: {event: ...}, payload: {...}}
-    def _event_name(e: dict) -> str | None:
-        if "context" in e:
-            return e["context"].get("event")
-        return e.get("event")
     event_names = [_event_name(e) for e in events]
     assert "question_terminal" in event_names, f"missing question_terminal; got {event_names}"
 

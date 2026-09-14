@@ -504,6 +504,7 @@ def test_a4_route_seam_cancel_stops_worker(tmp_path: Path) -> None:
     }
     resolved = _resolve(partial).payload
     wire: dict[str, Any] = {k: v for k, v in resolved.items() if v is not None}
+    wire["stream_version"] = 2  # #742: stream_version gate
     qs_bytes = urllib.parse.urlencode(wire, doseq=True).encode()
 
     original_stream = _gen_routes.generate_question_stream

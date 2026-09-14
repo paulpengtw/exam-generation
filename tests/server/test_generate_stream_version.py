@@ -35,6 +35,7 @@ def test_get_without_stream_version_returns_426():
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             params = complete_math_query_params(count=1, skip_verify=True)
+            params.pop("stream_version", None)  # ensure no stream_version
             resp = client.get("/api/generate", params=params)
     finally:
         limiter.reset()
@@ -50,6 +51,7 @@ def test_post_without_stream_version_returns_426():
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             params = complete_math_query_params(count=1, skip_verify=True)
+            params.pop("stream_version", None)  # ensure no stream_version
             resp = client.post("/api/generate", json=params)
     finally:
         limiter.reset()
@@ -77,6 +79,7 @@ def test_unauthenticated_with_missing_version_returns_401():
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             params = complete_math_query_params(count=1, skip_verify=True)
+            params.pop("stream_version", None)  # ensure no stream_version
             resp = client.get("/api/generate", params=params)
     finally:
         limiter.reset()

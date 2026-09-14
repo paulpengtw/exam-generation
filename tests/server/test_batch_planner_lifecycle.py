@@ -100,7 +100,7 @@ def planner_case(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
     payload = json.loads(
         (Path(__file__).parents[1] / "fixtures/transport-social-batch.json").read_text(),
     )
-    payload.update(model_plan="claude-opus-4-6", effort_plan="max")
+    payload.update(model_plan="claude-opus-4-6", effort_plan="max", stream_version=2)
     try:
         yield client, probe, payload
     finally:
