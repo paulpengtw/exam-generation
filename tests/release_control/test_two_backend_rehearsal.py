@@ -11,8 +11,12 @@ thread-safe and snapshot() is synchronous.
 from __future__ import annotations
 
 import json
+import os
+import socket
+import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -161,12 +165,6 @@ def test_two_backends_counter_never_goes_negative(tmp_path, monkeypatch):
 # Fix 4 — real multi-process rehearsal (task 8.4)
 # ===========================================================================
 
-import socket
-import subprocess
-import sys
-import time
-import os
-
 
 def _free_port() -> int:
     """Return an available TCP port by binding and releasing."""
@@ -250,7 +248,9 @@ def test_one_subprocess_one_in_process_drain_check(tmp_path, monkeypatch):
 
         # Save a reference to the REAL httpx.get before any patching so that
         # fake_get can call it without recursion.
-        _real_httpx_get = _httpx.get.__wrapped__ if hasattr(_httpx.get, "__wrapped__") else _httpx.get
+        _real_httpx_get = (
+            _httpx.get.__wrapped__ if hasattr(_httpx.get, "__wrapped__") else _httpx.get
+        )
 
         def fake_get(url, **kwargs):
             # Real HTTP to the subprocess backend (127.0.0.1)

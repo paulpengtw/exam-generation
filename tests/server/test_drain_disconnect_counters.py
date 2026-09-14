@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -183,8 +184,6 @@ def test_counters_never_negative(tmp_path: Path) -> None:
 # Fix 3 — disconnect and cleanup-exception evidence (task 4.4)
 # ===========================================================================
 
-import uuid
-
 
 # ---------------------------------------------------------------------------
 # (a) disconnect while worker blocked → active_workers stays >= 1 until release
@@ -202,8 +201,6 @@ def test_disconnect_while_worker_blocked_keeps_active_workers_nonzero(
     finishes and only then does the finally complete and decrement active_runs.
     A truly drained instance has both counters at zero.
     """
-    import logging as _logging
-
     worker_entered = threading.Event()
     worker_release = threading.Event()
     stream_entered_count = [0]
@@ -340,11 +337,8 @@ def test_recorder_flush_raises_in_finally_releases_active_runs(tmp_path: Path) -
     persistence layer is fail-open, so active_runs must still reach 0.
     """
     drain = DrainTelemetry()
-    spec = _make_blocking_spec(threading.Event(), threading.Event())
-    # Use a pre-released worker so the stream completes immediately
-    spec_fast = _make_blocking_spec(threading.Event(), threading.Event())
 
-    # Rebuild a fast spec (release event already set)
+    # Build a fast spec whose worker completes immediately
     release = threading.Event()
     release.set()
     entered = threading.Event()
@@ -402,7 +396,7 @@ def test_no_cancel_success_events_on_disconnect(tmp_path: Path, caplog) -> None:
 
     Also verifies generate_question_stream was entered exactly once.
     """
-    import logging as _logging
+    import logging
 
     worker_entered = threading.Event()
     worker_release = threading.Event()
@@ -438,7 +432,7 @@ def test_no_cancel_success_events_on_disconnect(tmp_path: Path, caplog) -> None:
         worker_release.set()
         await aclose_task
 
-    with caplog.at_level(_logging.DEBUG, logger="server"):
+    with caplog.at_level(logging.DEBUG, logger="server"):
         asyncio.run(run())
 
     # No event claims "cancel" + "success"

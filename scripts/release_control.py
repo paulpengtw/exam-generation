@@ -4,13 +4,18 @@ Usage
 -----
 ::
 
-    python scripts/release_control.py preflight      --inventory inventory.json [--max-age-seconds 15]
-    python scripts/release_control.py drain-check    --inventory inventory.json [--timeout 120] [--max-age-seconds 15]
+    python scripts/release_control.py preflight
+        --inventory inventory.json [--max-age-seconds 15]
+    python scripts/release_control.py drain-check
+        --inventory inventory.json [--timeout 120] [--max-age-seconds 15]
     python scripts/release_control.py pause-and-drain --inventory inventory.json
         [--timeout 120] [--reason "..."] [--max-age-seconds 15]
-    python scripts/release_control.py compat-check   --inventory inventory.json --require-version 1 [--max-age-seconds 15]
-    python scripts/release_control.py reopen         --inventory inventory.json [--require-version 1] [--max-age-seconds 15]
-    python scripts/release_control.py readiness      --inventory inventory.json [--require-version 1] [--max-age-seconds 15]
+    python scripts/release_control.py compat-check
+        --inventory inventory.json --require-version 1 [--max-age-seconds 15]
+    python scripts/release_control.py reopen
+        --inventory inventory.json [--require-version 1] [--max-age-seconds 15]
+    python scripts/release_control.py readiness
+        --inventory inventory.json [--require-version 1] [--max-age-seconds 15]
 
 Inventory JSON format
 ---------------------
@@ -354,7 +359,7 @@ def cmd_drain_check(args: argparse.Namespace) -> int:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             print(
-                f"drain NOT established (timeout is not evidence); gate remains paused"
+                "drain NOT established (timeout is not evidence); gate remains paused"
             )
             return 3
 

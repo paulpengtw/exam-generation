@@ -73,7 +73,8 @@ def test_readiness_all_healthy(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", fake_get):
         rc = release_control.main(
-            ["readiness", "--inventory", str(inv_path), "--require-version", "1", "--max-age-seconds", "3600"]
+            ["readiness", "--inventory", str(inv_path),
+             "--require-version", "1", "--max-age-seconds", "3600"]
         )
     assert rc == 0
 
@@ -99,7 +100,8 @@ def test_readiness_one_unhealthy(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", fake_get):
         rc = release_control.main(
-            ["readiness", "--inventory", str(inv_path), "--require-version", "1", "--max-age-seconds", "3600"]
+            ["readiness", "--inventory", str(inv_path),
+             "--require-version", "1", "--max-age-seconds", "3600"]
         )
     assert rc != 0
 
@@ -116,6 +118,7 @@ def test_readiness_version_mismatch(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(
-            ["readiness", "--inventory", str(inv_path), "--require-version", "2", "--max-age-seconds", "3600"]
+            ["readiness", "--inventory", str(inv_path),
+             "--require-version", "2", "--max-age-seconds", "3600"]
         )
     assert rc != 0

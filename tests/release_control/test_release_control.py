@@ -6,6 +6,7 @@ required.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ from unittest.mock import MagicMock, patch
 # Add scripts/ to path so we can import release_control
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
+import httpx  # noqa: E402  (after sys.path patch)
 import release_control  # noqa: E402  (after sys.path patch)
 
 # ---------------------------------------------------------------------------
@@ -77,9 +79,7 @@ def test_preflight_unreachable_instance(tmp_path, monkeypatch):
     inv_path = _write_inventory(tmp_path, _INVENTORY)
     monkeypatch.setenv("DRAIN_TOKEN_1", "tok1")
 
-    import httpx as req_mod
-
-    mock_get = MagicMock(side_effect=req_mod.ConnectError("refused"))
+    mock_get = MagicMock(side_effect=httpx.ConnectError("refused"))
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(["preflight", "--inventory", str(inv_path)])
     assert rc != 0
@@ -161,9 +161,7 @@ def test_pause_and_drain_gateway_fail(tmp_path, monkeypatch):
     monkeypatch.setenv("DRAIN_TOKEN_1", "tok1")
     monkeypatch.setenv("GATEWAY_CONTROL_TOKEN", "gw-tok")
 
-    import httpx as req_mod
-
-    mock_post = MagicMock(side_effect=req_mod.ConnectError("refused"))
+    mock_post = MagicMock(side_effect=httpx.ConnectError("refused"))
     with patch("release_control.httpx.post", mock_post):
         rc = release_control.main(
             ["pause-and-drain", "--inventory", str(inv_path), "--timeout", "5"]
@@ -254,19 +252,16 @@ def test_reopen_gateway_fail(tmp_path, monkeypatch):
     monkeypatch.setenv("DRAIN_TOKEN_1", "tok1")
     monkeypatch.setenv("GATEWAY_CONTROL_TOKEN", "gw-tok")
 
-    import datetime as _dtt
-    import httpx as req_mod
-
     fresh_snap = {
         **_QUIESCENT_SNAP,
-        "captured_at": _dtt.datetime.now(_dtt.timezone.utc).isoformat(),
+        "captured_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
     }
 
     mock_get = MagicMock()
     mock_get.return_value.status_code = 200
     mock_get.return_value.json.return_value = fresh_snap
 
-    mock_post = MagicMock(side_effect=req_mod.ConnectError("refused"))
+    mock_post = MagicMock(side_effect=httpx.ConnectError("refused"))
     with patch("release_control.httpx.get", mock_get), \
          patch("release_control.httpx.post", mock_post):
         rc = release_control.main(
@@ -278,8 +273,6 @@ def test_reopen_gateway_fail(tmp_path, monkeypatch):
 # ===========================================================================
 # Fix 1 evidence rules (task 8.3) — additional tests
 # ===========================================================================
-
-import datetime as _dt
 
 
 def _fresh_snap(**overrides) -> dict:
