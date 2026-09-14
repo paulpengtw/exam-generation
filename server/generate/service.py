@@ -237,6 +237,7 @@ def _build_run_context(
     on_error: Callable[[str], None] | None = None,
     cancel_event: threading.Event | None = None,
     publisher: GenerationPublisher | None = None,
+    run_id: str | None = None,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -254,7 +255,11 @@ def _build_run_context(
     order_counter = itertools.count(1)
     order_lock = threading.Lock()
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
-    _run_id = str(generation_log_id) if generation_log_id is not None else new_run_id()
+    _run_id = (
+        run_id
+        if run_id is not None
+        else (str(generation_log_id) if generation_log_id is not None else new_run_id())
+    )
     _manifest = allocate_manifest(spec.question_id_prefix, _run_id, max(1, params.count))
     _publisher = publisher if publisher is not None else GenerationPublisher(
         run_id=_run_id, loop=loop, queue=queue
@@ -454,9 +459,20 @@ def _worker_one(
             payload=question_to_event(question, ctx.config),
             sidecars=sidecars,
         )
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_TERMINAL,
+            question_id=question_id,
+            index=i,
+            payload={"delivery_status": "delivered"},
+        )
     except GenerationCancelled:
         # Client disconnected; exit cleanly without emitting an error event.
-        pass
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_TERMINAL,
+            question_id=ctx.manifest[i].question_id,
+            index=i,
+            payload={"delivery_status": "cancelled"},
+        )
     except Exception as exc:
         record_generation_outcome(ctx.params.subject, "failure")
         ctx.publisher.publish(
@@ -469,6 +485,12 @@ def _worker_one(
             ),
         )
         logger.exception("worker_one error (index=%d)", i)
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_TERMINAL,
+            question_id=question_id,
+            index=i,
+            payload={"delivery_status": "failed"},
+        )
 
 
 async def generate_question_stream(
@@ -532,6 +554,7 @@ async def generate_question_stream(
         on_error=_collect_sq_config_error,
         cancel_event=_cancel_event,
         publisher=_publisher,
+        run_id=_run_id,
     )
 
     ctx.publisher.publish(
