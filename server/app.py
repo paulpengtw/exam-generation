@@ -27,6 +27,7 @@ from server.generate.drain import DrainTelemetry
 from server.generate.modification_routes import router as modification_router
 from server.generate.routes import router as generate_router
 from server.history.routes import router as history_router
+from server.internal.routes import router as internal_router
 from server.models import GenerationRecord, LLMExchange
 from server.observability import init_sentry
 from server.rate_limit import limiter
@@ -215,6 +216,7 @@ def create_app() -> FastAPI:
     app.include_router(generate_router)
     app.include_router(modification_router)
     app.include_router(history_router)
+    app.include_router(internal_router)
     app.include_router(utility_router)
     return app
 

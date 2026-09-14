@@ -24,6 +24,22 @@ from server.generate.subjects import SubjectSpec
 from server.models import Base, User
 from server.rate_limit import limiter
 
+
+@pytest.fixture(autouse=True)
+def _fresh_event_loop():
+    """Restore a running event loop before each test.
+
+    TestClient uses asyncio.get_event_loop() internally.  Tests that call
+    asyncio.run() (including tests in other modules run in the same session)
+    leave the loop closed.  This fixture creates a new loop before each test
+    and tears it down afterwards, isolating TestClient from that side-effect.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield
+    loop.close()
+    asyncio.set_event_loop(None)
+
 # ---------------------------------------------------------------------------
 # Minimal fake spec for content-free assertions
 # ---------------------------------------------------------------------------

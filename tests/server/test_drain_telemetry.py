@@ -11,7 +11,6 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
 from types import SimpleNamespace
 
 import pytest
@@ -21,11 +20,10 @@ pytest.importorskip("sqlalchemy", reason="requires [web] extras")
 from pydantic import BaseModel
 
 from server.config import ServerConfig
-from server.generate.drain import DrainTelemetry, NOOP_DRAIN
+from server.generate.drain import DrainTelemetry
 from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SubjectSpec
-
 
 # ---------------------------------------------------------------------------
 # Shared fake question model

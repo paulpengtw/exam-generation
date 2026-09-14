@@ -84,3 +84,22 @@ choom -n 500 -- uv run pytest tests/gateway/test_proxy.py::test_a_fresh_state_di
 - Compose/Railway-level verification (confirming that the backend is genuinely unreachable from the public internet) requires `docker` or a Railway dashboard and was **not run** inside this sandbox.
 - Drain evidence (confirming that in-flight streams complete before a deployment swap) is tracked in issue #741.
 - The stream-version/426 upgrade is tracked in issue #742.
+
+---
+
+## /internal/ privacy rule (issue #741 addendum)
+
+Issue #741 added the `/internal/drain` endpoint to the backend.  To prevent
+this endpoint from being reachable via the public gateway, the following rule
+was added in the same branch:
+
+```python
+# gateway/admission.py
+def is_private_path(path: str) -> bool:
+    return path.startswith("/internal/") or path == "/internal"
+```
+
+The proxy in `gateway/app.py` checks `is_private_path(path)` before any
+forwarding and returns `{"detail": "Not Found"}` with status 404.  This is
+verified by `tests/gateway/test_proxy.py::test_internal_paths_not_proxied_by_gateway`
+and `tests/gateway/test_admission.py::test_is_private_path_internal`.

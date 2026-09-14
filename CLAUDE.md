@@ -97,7 +97,29 @@ Key files:
 - `Dockerfile.gateway`, `docker-compose.yml` (gateway service)
 - `DEPLOYMENT.md` § "Generation admission gateway" for Compose and Railway instructions
 
-Drain evidence (#741) and stream-version/426 upgrade (#742) are not part of this implementation.
+Drain evidence (#741) is implemented (see `### Drain telemetry and release control` below). Stream-version/426 upgrade (#742) is tracked separately.
+
+### Drain telemetry and release control (issue #741)
+
+`server/generate/drain.py` exports `DrainTelemetry`, `_NoopDrainTelemetry`, `NOOP_DRAIN`, and `get_drain(app_state)`.  `DrainTelemetry` maintains six thread-safe gauges (`active_runs`, `active_workers`, `open_streams`, `pending_deliveries`, `pending_persistence`, `renderer_leases_held`) plus instance-identity fields.  `snapshot()` returns a JSON-serialisable dict including `quiescent: bool` (all six gauges are zero).
+
+Key files:
+- `server/generate/drain.py` — `DrainTelemetry`, `_NoopDrainTelemetry`, `NOOP_DRAIN`, `get_drain`
+- `server/internal/routes.py` — `GET /internal/drain` (requires `X-Drain-Token` header matching `DRAIN_TELEMETRY_TOKEN` env; missing token → 404)
+- `server/config.py` — `drain_telemetry_token` field (`DRAIN_TELEMETRY_TOKEN` env)
+- `gateway/admission.py` — `is_private_path(path)` helper; `/internal/*` never proxied
+- `gateway/app.py` — blocks `/internal/*` before forwarding to backend
+- `scripts/release_control.py` — `preflight`, `drain-check`, `pause-and-drain`, `compat-check`, `reopen`, `readiness` subcommands; reads `inventory.json`
+- `DEPLOYMENT.md` § "Drain telemetry and release control" for runbook
+
+Integration points in `service.py`:
+- `generate_question_stream` registers the stream's queue with `drain.register_queue(queue)` and increments `_active_runs` at entry; a `with anyio.CancelScope(shield=True)` in the finally block ensures decrements run even on GeneratorExit.
+- `_worker_one` body is wrapped with `with ctx.drain_telemetry.ctx_active_worker():`.
+- `RendererLease.__init__` accepts an optional `drain_telemetry` parameter and increments/decrements `_renderer_leases_held` inside `render()`.
+- `event_generator` in `routes.py` increments/decrements `_open_streams` around the SSE loop.
+
+Stream-version protocol (#742) is tracked separately and must not be implemented here.
+
 
 ### 出題模式 is a prompt-level hint
 

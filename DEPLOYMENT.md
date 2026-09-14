@@ -349,6 +349,113 @@ curl https://<gateway-domain>/gateway/health
 
 ---
 
+## Drain telemetry and release control (issue #741)
+
+Drain telemetry extends the gateway pause capability by letting operators
+**confirm that all in-flight generation work has truly ended** before reopening
+admission after a pause.  Without this you must guess whether active SSE
+streams have finished; with drain telemetry you can poll a single endpoint and
+get a machine-readable `quiescent: true/false` signal.
+
+### How it works
+
+Each backend instance maintains a set of thread-safe gauges:
+
+| Gauge | What it counts |
+|---|---|
+| `active_runs` | `generate_question_stream` calls currently live |
+| `active_workers` | worker threads currently executing inside `_worker_one` |
+| `open_streams` | SSE event generators currently open to a client |
+| `renderer_leases_held` | Playwright renderer borrows currently in progress |
+| `pending_deliveries` | items queued in the stream's asyncio.Queue |
+| `pending_persistence` | pending DB-write operations |
+
+`quiescent: true` means all six gauges are zero simultaneously — the instance
+is idle and safe to take out of rotation.
+
+### Drain endpoint: GET /internal/drain
+
+The backend exposes a restricted telemetry endpoint at `GET /internal/drain`.
+
+**Security:**
+- The gateway blocks all `/internal/*` paths — they never reach the public internet.
+- The endpoint itself requires an `X-Drain-Token` header matching `DRAIN_TELEMETRY_TOKEN`.
+- Set `DRAIN_TELEMETRY_TOKEN` to a long random secret on the backend service.
+- If the environment variable is empty, the endpoint returns `404`.
+
+**Example:**
+```bash
+curl -s https://<backend-internal-url>/internal/drain \
+  -H "X-Drain-Token: <DRAIN_TELEMETRY_TOKEN>" | python3 -m json.tool
+```
+
+Response fields: `instance_id`, `hostname`, `pid`, `started_at`, `app_version`,
+`supported_stream_versions`, all six gauges, `captured_at`, and `quiescent`.
+
+### Inventory file
+
+`scripts/release_control.py` reads an **inventory.json** that lists every backend
+instance and the gateway:
+
+```json
+{
+    "instances": [
+        {
+            "name": "backend-1",
+            "url": "http://backend1.railway.internal:8000",
+            "token_env": "DRAIN_TOKEN_1"
+        }
+    ],
+    "gateway": {
+        "url": "https://<gateway-domain>",
+        "token_env": "GATEWAY_CONTROL_TOKEN"
+    }
+}
+```
+
+Each `token_env` names an environment variable that holds the secret token.
+
+### Release control subcommands
+
+```bash
+# Check all instances are reachable and drain endpoints respond
+python scripts/release_control.py preflight --inventory inventory.json
+
+# Poll until all instances report quiescent: true (or timeout)
+python scripts/release_control.py drain-check --inventory inventory.json --timeout 120
+
+# Pause gateway THEN wait for all in-flight work to finish
+python scripts/release_control.py pause-and-drain --inventory inventory.json \
+    --timeout 120 --reason "release v2.3"
+
+# Verify all instances support stream version 1 (or your required version)
+python scripts/release_control.py compat-check --inventory inventory.json \
+    --require-version 1
+
+# Reopen the gateway after deployment
+python scripts/release_control.py reopen --inventory inventory.json
+
+# Combined readiness check (preflight + compat + quiescence)
+python scripts/release_control.py readiness --inventory inventory.json \
+    --require-version 1
+```
+
+### Recommended release runbook
+
+1. `python scripts/release_control.py preflight` — confirm instances reachable.
+2. `python scripts/release_control.py compat-check --require-version 1` — confirm compatibility.
+3. `python scripts/release_control.py pause-and-drain --timeout 120 --reason "release"` — pause gate and wait for drain.
+4. Deploy new backend image.
+5. `python scripts/release_control.py readiness --require-version 1` — confirm new instances are healthy.
+6. `python scripts/release_control.py reopen` — reopen gate.
+
+> **Gateway privacy rule**: `/internal/` paths are never proxied by the gateway.
+> The drain endpoint is reachable only from internal network (Railway internal
+> hostnames, VPN, or direct container exec) — never via the public gateway URL.
+
+---
+
+
 ## Error reporting (Sentry, optional)
 
 The web app has a bottom-right "?" button that lets users report problems.
