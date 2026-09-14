@@ -99,6 +99,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "history.detail_loading": "Loading…",
     "history.detail_error": "Failed to load record.",
     "history.prefill_notice": "Some saved parameters are no longer available in the current schema and were left at their defaults.",
+    "history.prefill_dropped_codes": "These codes are not in this grade's curriculum pool and were deselected: {items}",
 
     "form.grade": "Grade",
     "form.difficulty": "Difficulty",
@@ -577,6 +578,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "history.detail_loading": "載入中…",
     "history.detail_error": "紀錄讀取失敗。",
     "history.prefill_notice": "部分儲存的參數已不在目前的題目設定中，保留為預設值。",
+    "history.prefill_dropped_codes": "以下代碼不在本年級的學習階段題庫中，已取消選取：{items}",
 
     "form.grade": "年級",
     "form.difficulty": "難度",
