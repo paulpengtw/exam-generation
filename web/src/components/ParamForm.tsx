@@ -359,6 +359,10 @@ export interface ParamFormProps {
   onUnsubmittedInput?: () => void;
   /** When present, takes precedence over loadDraft and history prefill (issue #772). */
   recoveredForm?: import("../lib/workspace/adapters/types").FormWorkspaceSnapshot;
+  /** Called when the user clicks 確認 on the recovery banner (issue #772). */
+  onRecoveryAcknowledge?: () => void;
+  /** Called when the user clicks 捨棄 on the recovery banner (issue #772). */
+  onRecoveryDiscard?: () => void;
 }
 
 /**
@@ -1260,12 +1264,17 @@ export default function ParamForm({
   initialParams,
   onUnsubmittedInput,
   recoveredForm,
+  onRecoveryAcknowledge,
+  onRecoveryDiscard,
 }: ParamFormProps) {
   const generationStartedRef = useRef(false);
-  const hasUserEditedRef = useRef(false);
-  const [hasUserEdited, setHasUserEdited] = useState(false);
+  // When recovering, treat the form as already user-edited so autosave/guards work.
+  const hasUserEditedRef = useRef(recoveredForm !== undefined);
+  const [hasUserEdited, setHasUserEdited] = useState(recoveredForm !== undefined);
   // Recovery banner state (issue #772)
   const [recoveryBannerDismissed, setRecoveryBannerDismissed] = useState(false);
+  // Invalid recovered fields: populated after schemas/models load (issue #772)
+  const [recoveredInvalidFields, setRecoveredInvalidFields] = useState<Set<string>>(new Set());
   const showRecoveryBanner = recoveredForm !== undefined && !recoveryBannerDismissed;
   const markUnsubmittedInput = () => {
     generationStartedRef.current = false;
@@ -1316,8 +1325,9 @@ export default function ParamForm({
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
+  // When recoveredForm is provided, suppress the draft prompt entirely (issue #772).
   const [draftToRestore, setDraftToRestore] = useState<FormDraft | null>(() =>
-    userId ? loadDraft(userId) : null,
+    recoveredForm ? null : (userId ? loadDraft(userId) : null),
   );
   const [historyDraftChoice, setHistoryDraftChoice] = useState<
     "draft" | "history" | "defaults" | null
@@ -1355,7 +1365,17 @@ export default function ParamForm({
     userChosenFields.current.add(key);
   }
 
-  const [formFields, setFormFields] = useState<FormFields>(() => ({
+  const [formFields, setFormFields] = useState<FormFields>(() => {
+    // When recoveredForm is present, use its fields directly (issue #772).
+    // This takes precedence over initialParams / localStorage defaults.
+    if (recoveredForm) {
+      return {
+        ...recoveredForm.fields,
+        contentDomain: recoveredForm.fields.contentDomain ?? "",
+        targetSurface: recoveredForm.fields.targetSurface ?? "紙本",
+      };
+    }
+    return {
     grade: fromInit<number | "">("grade", ""),
     style: stringFromInit("style", ""),
     contentType: fromInit<string>("content_type", DEFAULT_CONTENT_TYPE),
@@ -1401,7 +1421,8 @@ export default function ParamForm({
     effortVerify: stringFromInit("effort_verify", window.localStorage.getItem("effort_verify") ?? ""),
     effortCorrect: stringFromInit("effort_correct", window.localStorage.getItem("effort_correct") ?? ""),
     allowDuplicateFigureKinds: false,
-  }));
+    };
+  });
   const formSnapshot = formFields;
   const restoreFormSnapshot = setFormFields;
   const defaultsSnapshotRef = useRef<FormFields | null>(null);
@@ -1547,7 +1568,11 @@ export default function ParamForm({
     hasDraftHistoryConflict &&
     defaultsReady;
 
-  const formReadiness: SurfaceReadiness = hasDraftHistoryConflict || showDraftPrompt
+  // While recovery banner is visible, report 'restoring' to block a second
+  // save-and-update until the user acknowledges or discards (issue #772).
+  const formReadiness: SurfaceReadiness = showRecoveryBanner
+    ? "restoring"
+    : hasDraftHistoryConflict || showDraftPrompt
     ? "restoring"
     : schemas !== null && defaultsReady && modelsResolved ? "ready" : "hydrating";
   const exportForm = useCallback(() => exportFormWorkspace(formSnapshot), [formSnapshot]);
@@ -1754,38 +1779,43 @@ export default function ParamForm({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- schema reload resets the form while switching subject
     setSchemas(null);
     setError(null);
-    restoreFormSnapshot((current) => ({
-      ...current,
-      context: fromInit<string[]>("context", []),
-      qType: fromInit<string[]>("q_type", []),
-      imageGenerationMode: fromInit<"html" | "gpt_image">(
-        "image_generation_mode",
-        "gpt_image",
-      ),
-      difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
-      passage: fromInit<string>("passage", TEXT_HINT),
-      textWordLimit: fromInit<number | undefined>("text_word_limit", undefined) ?? null,
-      textInstruction: stringFromInit("text_instruction", ""),
-      options: fromInit<string[]>(
-        "options",
-        [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
-      ),
-      subjectFilter: (() => {
-        const v = fromInit<string | string[]>("subject_filter", "");
-        return Array.isArray(v) ? (v[0] ?? "") : v;
-      })(),
-      subContext: fromInit<string>("sub_context", ""),
-      scienceCompetency: fromInit<string[]>("science_competency", []),
-      learningPerformance: fromInit<string[]>("learning_performance", []),
-      learningContent: fromInit<string[]>("learning_content", []),
-      subQuestionCount: fromInit<number | "">("sub_question_count", ""),
-      subquestionConfigs: subquestionConfigsFromInit(),
-      contentDomain: stringFromInit("content_domain", ""),
-      targetSurface: ip.target_surface === "數位" ? "數位" : "紙本",
-      topic: fromInit<string>("topic", ""),
-      coreQuestion: fromInit<string | null>("core_question", null),
-      coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
-    }));
+    // When recovering, keep the recovered field values — do not reset to
+    // initialParams / schema defaults (issue #772). Schema is still fetched
+    // for display and validation purposes.
+    if (!recoveredForm) {
+      restoreFormSnapshot((current) => ({
+        ...current,
+        context: fromInit<string[]>("context", []),
+        qType: fromInit<string[]>("q_type", []),
+        imageGenerationMode: fromInit<"html" | "gpt_image">(
+          "image_generation_mode",
+          "gpt_image",
+        ),
+        difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
+        passage: fromInit<string>("passage", TEXT_HINT),
+        textWordLimit: fromInit<number | undefined>("text_word_limit", undefined) ?? null,
+        textInstruction: stringFromInit("text_instruction", ""),
+        options: fromInit<string[]>(
+          "options",
+          [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
+        ),
+        subjectFilter: (() => {
+          const v = fromInit<string | string[]>("subject_filter", "");
+          return Array.isArray(v) ? (v[0] ?? "") : v;
+        })(),
+        subContext: fromInit<string>("sub_context", ""),
+        scienceCompetency: fromInit<string[]>("science_competency", []),
+        learningPerformance: fromInit<string[]>("learning_performance", []),
+        learningContent: fromInit<string[]>("learning_content", []),
+        subQuestionCount: fromInit<number | "">("sub_question_count", ""),
+        subquestionConfigs: subquestionConfigsFromInit(),
+        contentDomain: stringFromInit("content_domain", ""),
+        targetSurface: ip.target_surface === "數位" ? "數位" : "紙本",
+        topic: fromInit<string>("topic", ""),
+        coreQuestion: fromInit<string | null>("core_question", null),
+        coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
+      }));
+    }
     const initialGrade = typeof ip.grade === "number" ? ip.grade : undefined;
     const seq = ++curriculumRequestSeq.current;
     fetchCurriculumPool(subject, initialGrade)
@@ -2353,6 +2383,20 @@ export default function ParamForm({
       };
     });
   }, [availableLearningContent, grade, schemas, restoreFormSnapshot]);
+
+  // Compute recovered invalid fields after schemas / models load (issue #772).
+  // Only relevant when a recoveredForm was provided.
+  useEffect(() => {
+    if (!recoveredForm || !schemas) return;
+    const invalid = new Set<string>();
+    const allowedQTypes = new Set(schemas.題型?.map((s) => s.value) ?? []);
+    if (qType.some((v) => !allowedQTypes.has(v))) invalid.add("qType");
+    const allowedContexts = new Set(schemas.情境?.map((s) => s.value) ?? []);
+    if (context.some((v) => !allowedContexts.has(v))) invalid.add("context");
+    const allowedSetTypes = new Set(schemas.題型種類?.map((s) => s.value) ?? []);
+    if (setType && !allowedSetTypes.has(setType)) invalid.add("setType");
+    setRecoveredInvalidFields(invalid);
+  }, [recoveredForm, schemas, qType, context, setType]);
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
@@ -3997,14 +4041,22 @@ export default function ParamForm({
           <div className="mt-2 flex gap-2">
             <button
               type="button"
-              onClick={() => setRecoveryBannerDismissed(true)}
+              onClick={() => {
+                setRecoveryBannerDismissed(true);
+                setRecoveredInvalidFields(new Set());
+                onRecoveryAcknowledge?.();
+              }}
               className="underline cursor-pointer"
             >
               {t("recovery.banner.acknowledge")}
             </button>
             <button
               type="button"
-              onClick={() => setRecoveryBannerDismissed(true)}
+              onClick={() => {
+                setRecoveryBannerDismissed(true);
+                setRecoveredInvalidFields(new Set());
+                onRecoveryDiscard?.();
+              }}
               className="underline cursor-pointer"
             >
               {t("recovery.banner.discard")}
@@ -5045,9 +5097,17 @@ export default function ParamForm({
         </div>
       )}
 
+      {recoveredInvalidFields.size > 0 && (
+        <p
+          role="alert"
+          className="sentry-unmask text-sm text-red-700"
+        >
+          {t("recovery.invalid_fields")}
+        </p>
+      )}
       <button
         type="submit"
-        disabled={disabled || resolverLoading}
+        disabled={disabled || resolverLoading || recoveredInvalidFields.size > 0}
         className="inline-flex w-full items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
         {disabled && (

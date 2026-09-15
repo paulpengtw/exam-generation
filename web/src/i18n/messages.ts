@@ -65,6 +65,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.banner.acknowledge": "Acknowledge",
     "recovery.banner.discard": "Discard",
     "recovery.banner.error": "Restore failed",
+    "recovery.invalid_fields": "Some recovered values are not valid for the current curriculum. Please correct them before submitting.",
 
     "feedback.button_aria": "Report a problem",
     "feedback.form_title": "Report a problem",
@@ -574,6 +575,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.banner.acknowledge": "確認",
     "recovery.banner.discard": "捨棄",
     "recovery.banner.error": "還原失敗",
+    "recovery.invalid_fields": "部分還原的值不在目前課綱的允許清單中，請修正後再送出。",
 
     "feedback.button_aria": "回報問題",
     "feedback.form_title": "回報問題",
