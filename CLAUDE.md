@@ -84,11 +84,11 @@ The store never receives an AbortController, promise or callback that can cancel
 
 ### Evidence profiles (issue #739)
 
-`web/src/lib/runEvidence.ts` defines the `generate-legacy`, `modification`, and reserved `generate-v2` profiles. The shared status bar on GeneratePage and inside QuestionCard consumes a profile-tagged evidence object. `generationStream.ts` projects legacy stage events and the five generation card fields; `modificationStream.ts` projects modification steps and decodes its existing SSE events. Modification never requires a generation manifest. `generate-v2` is the generation-only entry point reserved for OpenSpec `per-question-live-progress` tasks 5.x/6.x and issue #742; it currently renders the existing aggregate line. HistoryDetail retains its stored-record card props.
+`web/src/lib/runEvidence.ts` defines the `generate-legacy`, `modification`, and reserved `generate-v2` profiles. The shared status bar on GeneratePage and inside QuestionCard consumes a profile-tagged evidence object. `generationStream.ts` projects legacy stage events and the five generation card fields; `modificationStream.ts` projects modification steps and decodes its existing SSE events. Modification never requires a generation manifest. `generate-v2` is the generation-only entry point for OpenSpec `per-question-live-progress` (issue #742). The frontend decoder (`createGenerationStreamDecoder` in `generationStream.ts`) routes v2 SSE events through the `RunEvidenceState` reducer (`generationEvidence.ts`), which tracks per-question processing, content receipt, terminal status, and review. `GenerationStatusBar` renders a live 已結束/收到最終結果 counts line; `QuestionCard` renders a compact placeholder when `content.receipt === 'none'` and an evidence status line when content is available. `GeneratePage` renders cards in manifest order with live placeholders. HistoryDetail retains its stored-record card props.
 
-### Generation stream protocol v2 (issue #742, server side)
+### Generation stream protocol v2 (issue #742)
 
-The backend implements stream protocol v2. Clients **must** send `stream_version=2` on GET/POST `/api/generate`; missing or unsupported values return HTTP 426 with body `{code: "CLIENT_UPDATE_REQUIRED", supported_stream_versions: [2]}`. `stream_version` is a transport field: it is excluded from `params_json` and from the TypeScript contract (`SERVER_ONLY_GENERATE_FIELDS`). The frontend does not yet send `stream_version=2` (next slice).
+The backend implements stream protocol v2. Clients **must** send `stream_version=2` on GET/POST `/api/generate`; missing or unsupported values return HTTP 426 with body `{code: "CLIENT_UPDATE_REQUIRED", supported_stream_versions: [2]}`. `stream_version` is a transport field: it is excluded from `params_json` and from the TypeScript contract (`SERVER_ONLY_GENERATE_FIELDS`). The frontend sends `stream_version: 2` on every POST `/api/generate` request (appended by `useGenerate` in `buildQueryString` and the POST body); unsupported protocol versions abort the stream with a localized error.
 
 **Run identity.** `run_id` = `GenerationLog.id` when available, otherwise a fresh UUID4 hex string (32 chars, from `new_run_id()`). All question IDs are allocated before workers start: `allocate_manifest(prefix, run_id, count)` returns `{prefix}{run_id}_{i+1:03d}` for each question.
 
@@ -103,7 +103,7 @@ The backend implements stream protocol v2. Clients **must** send `stream_version
 - On `QuestionTerminalPayload` validation failure: logs a WARNING and falls back to a minimal `delivery_status='unknown'` terminal (never crashes the worker).
 - Grouped subjects (SS/NS) currently get `expected=[]`; fixed 小題 slots are issue #744.
 
-**Current gaps (not in this branch).** Operation/call ids are issue #743. Sibling-independent error handling is issue #747. The frontend does not yet send `stream_version=2` (next slice).
+**Current gaps (not in this branch).** Operation/call ids are issue #743. Sibling-independent error handling is issue #747.
 
 **Key files.**
 - `src/common/generation_events.py`: `RunContext`, `QuestionContext`, `new_run_id()`, `allocate_manifest()`.
@@ -111,6 +111,11 @@ The backend implements stream protocol v2. Clients **must** send `stream_version
 - `server/generate/publisher.py`: `GenerationPublisher` — thread-safe monotonic `event_seq`, `loop.call_soon_threadsafe`.
 - `server/generate/snapshot_ledger.py`: `QuestionSnapshotLedger.commit(question_dict, output_dir)` → `(revision, snapshot)`.
 - `server/generate/service.py`: `_build_question_terminal_payload()`, `_worker_one` wiring.
+- `web/src/lib/generationStream.ts`: `createGenerationStreamDecoder()` — state machine (`awaiting-start` → `v2`/`legacy`/`unsupported`); `projectGenerationEvidence()` accepts optional `RunEvidenceState` and returns `GenerationV2Evidence`.
+- `web/src/lib/generationEvidence.ts`: `RunEvidenceState` reducer — `createRunEvidence`, `applyV2Event`, `closeRun`, `selectEndedCount`, `selectFinalReceivedCount`.
+- `web/src/hooks/useGenerate.ts`: sends `stream_version: 2`; routes events through decoder; builds `RunEvidenceState` from `started` manifest; exposes `evidence: RunEvidenceState | null`.
+- `web/src/components/GenerationStatusBar.tsx`: `GenerationV2StatusLine` for live ended/final counts.
+- `web/src/components/QuestionCard.tsx`: `EvidenceStatusLine`; placeholder branch for `content.receipt === 'none'`.
 
 **Fixture.** `tests/fixtures/generation_v2/math_single_interleaved.jsonl` — a masked recording of a count=2 interleaved math run (run_id→'RUN', ts→0.0, generation_log_id→'LOG', ISO timestamps→'TS'). Regenerate with `GENERATE_V2_FIXTURE=1 uv run pytest tests/server/test_742_fixture.py::test_interleaved_fixture`.
 
