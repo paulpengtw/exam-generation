@@ -29,9 +29,14 @@ import VerificationTrailTimeline from "./VerificationTrailTimeline";
 import FigurePolicyTrailTimeline from "./FigurePolicyTrailTimeline";
 import ReferenceExampleRecordSection from "./ReferenceExampleRecordSection";
 import InteractiveItemViewer, { type InteractionSubmission } from "./InteractiveItemViewer";
+import type { QuestionEvidence } from "../lib/generationEvidence";
 
 export interface QuestionCardProps {
-  question: ExamQuestion;
+  question?: ExamQuestion;
+  /** Manifest position index (0-based); required when evidence is provided */
+  index?: number;
+  /** Per-question evidence from the v2 stream */
+  evidence?: QuestionEvidence;
   recordId?: string;
   phase?: DraftPhase;
   isFinal?: boolean;
@@ -437,8 +442,59 @@ function ModificationParticipation({
   return null;
 }
 
+function processingLabel(processing: QuestionEvidence["processing"], t: (k: string) => string): string {
+  switch (processing) {
+    case "waiting": return t("card.waiting");
+    case "running": return t("card.generating");
+    case "ended": return t("card.ended");
+    case "unknown": return t("card.unknown");
+    default: return t("card.unknown");
+  }
+}
+
+function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
+  const t = useT();
+  const procLabel = processingLabel(evidence.processing, t);
+  const reviewStatus = evidence.review.status;
+  const reviewLabel =
+    reviewStatus === "passed" ? t("card.review_passed")
+    : reviewStatus === "failed" ? t("card.review_failed")
+    : reviewStatus === "skipped" ? t("card.review_skipped")
+    : t("card.review_unknown");
+
+  let receiptLabel: string;
+  if (evidence.finalPending) {
+    receiptLabel = t("card.receipt_pending");
+  } else if (evidence.finalMissing) {
+    receiptLabel = t("card.receipt_missing");
+  } else if (evidence.content.receipt === "final") {
+    receiptLabel = t("card.receipt_final");
+  } else if (evidence.content.receipt === "draft") {
+    receiptLabel = t("card.receipt_draft");
+  } else {
+    receiptLabel = t("card.receipt_missing");
+  }
+
+  const terminationLabel = evidence.terminal
+    ? evidence.terminal.termination_reason === "normal" ? t("card.termination_normal")
+      : evidence.terminal.termination_reason === "failed" ? t("card.termination_failed")
+      : t("card.termination_cancelled")
+    : null;
+
+  return (
+    <div className="sentry-unmask flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
+      <span data-testid="evidence-processing-status">{procLabel}</span>
+      {terminationLabel && <span>{terminationLabel}</span>}
+      <span data-testid="evidence-review-status">{reviewLabel}</span>
+      <span data-testid="evidence-receipt-status">{receiptLabel}</span>
+    </div>
+  );
+}
+
 export default function QuestionCard({
   question: initialQuestion,
+  index,
+  evidence,
   recordId,
   phase = "verified",
   isFinal = true,
@@ -448,6 +504,7 @@ export default function QuestionCard({
   onInteractionSubmit,
 }: QuestionCardProps) {
   const t = useT();
+
   const [showSolution, setShowSolution] = useState(!isFinal);
   const cardRef = useRef<HTMLDivElement>(null);
   const nextAnnotationId = useRef(0);
@@ -466,12 +523,90 @@ export default function QuestionCard({
     setSubmitError(null);
   }, [modificationRun.result]);
 
-  const question = modificationResult?.question ?? initialQuestion;
-  const verification = question.verification as VerificationShape | undefined;
+
+  // Non-hook derived values needed by hooks below (may be null before early returns)
+  const resolvedQuestion = initialQuestion ?? evidence?.content.question ?? null;
+  const _question = (modificationResult?.question ?? resolvedQuestion) as ExamQuestion | null;
+  const isSocialStudies = (_question?.subquestions?.length ?? 0) > 0;
+  const verification = _question?.verification as VerificationShape | undefined;
   const passed = Boolean(verification?.passed);
   const selectionEnabled = isFinal && (passed || modificationResult !== null);
+
+  const mathCodes = useMemo(() => _question ? getLearningContentCodes(_question) : [], [_question]);
+
+  const ssGrades = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => [s.年級]) : [],
+    [_question, isSocialStudies]
+  );
+  const ssSubjects = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.科目) : [],
+    [_question, isSocialStudies]
+  );
+  const ssCoreComp = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.核心素養) : [],
+    [_question, isSocialStudies]
+  );
+  const ssScienceComp = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.科學能力 ?? []) : [],
+    [_question, isSocialStudies]
+  );
+  const ssLcCodes = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.學習內容.map((lc) => lc.編碼)) : [],
+    [_question, isSocialStudies]
+  );
+  const ssLpCodes = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.學習表現.map((lp) => lp.編碼)) : [],
+    [_question, isSocialStudies]
+  );
+
+  const handleSelectionMouseUp = useCallback(() => {
+    if (!selectionEnabled || isRunInFlight || !cardRef.current) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+
+    const segments = serializeSelection(cardRef.current, selection.getRangeAt(0));
+    if (segments.length === 0) {
+      setSelectionError(t("card.emptySelection"));
+      selection.removeAllRanges();
+      return;
+    }
+
+    setSelectionError(null);
+    setSubmitError(null);
+    setAnnotations((previous) => [
+      ...previous,
+      {
+        id: nextAnnotationId.current++,
+        segments,
+        instruction: "",
+      },
+    ]);
+    selection.removeAllRanges();
+  }, [isRunInFlight, selectionEnabled, t]);
+
+
+  // Placeholder: evidence provided but no content yet
+  if (evidence && evidence.content.receipt === "none") {
+    const posLabel = index !== undefined
+      ? (t("card.position") as string).replace("{n}", String(index + 1))
+      : `${index ?? ""}`;
+    const procLabel = processingLabel(evidence.processing, t);
+    return (
+      <div
+        data-testid="question-card-placeholder"
+        className="rounded-lg border bg-white p-3 shadow-sm text-sm sentry-unmask"
+      >
+        <div className="font-medium text-gray-500">{posLabel}</div>
+        <div className="text-gray-400 mt-1">{procLabel}</div>
+      </div>
+    );
+  }
+
+  if (!resolvedQuestion) return null;
+
+  // At this point resolvedQuestion and _question are guaranteed non-null
+  const question = _question!;
   const questionId = getQuestionId(question);
-  const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
   const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
   const figurePolicyWarnings = (figurePolicyTrail ?? []).filter(
     (
@@ -487,32 +622,6 @@ export default function QuestionCard({
     ? t("card.final")
     : t(`card.phase_${phase}` as Parameters<typeof t>[0]);
 
-  const mathCodes = useMemo(() => getLearningContentCodes(question), [question]);
-
-  const ssGrades = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => [s.年級]) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssSubjects = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.科目) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssCoreComp = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.核心素養) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssScienceComp = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.科學能力 ?? []) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssLcCodes = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.學習內容.map((lc) => lc.編碼)) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssLpCodes = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.學習表現.map((lp) => lp.編碼)) : [],
-    [question.subquestions, isSocialStudies]
-  );
   const eraTags = isIccsEra ? (
     <>
       {question.內容領域 && <Chip label={question.內容領域} tone="blue" />}
@@ -555,30 +664,6 @@ export default function QuestionCard({
     }).catch(() => op.end("failed"));
   };
 
-  const handleSelectionMouseUp = useCallback(() => {
-    if (!selectionEnabled || isRunInFlight || !cardRef.current) return;
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
-
-    const segments = serializeSelection(cardRef.current, selection.getRangeAt(0));
-    if (segments.length === 0) {
-      setSelectionError(t("card.emptySelection"));
-      selection.removeAllRanges();
-      return;
-    }
-
-    setSelectionError(null);
-    setSubmitError(null);
-    setAnnotations((previous) => [
-      ...previous,
-      {
-        id: nextAnnotationId.current++,
-        segments,
-        instruction: "",
-      },
-    ]);
-    selection.removeAllRanges();
-  }, [isRunInFlight, selectionEnabled, t]);
 
   const handleInstructionChange = (annotationId: number, instruction: string) => {
     setAnnotations((previous) => previous.map((annotation) => (
@@ -618,10 +703,12 @@ export default function QuestionCard({
 
   return (
     <div
+      data-testid="question-card-content"
       ref={cardRef}
       onMouseUp={handleSelectionMouseUp}
       className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3"
     >
+      {evidence && <EvidenceStatusLine evidence={evidence} />}
       {recordId && (
         <ModificationParticipation
           recordId={recordId}

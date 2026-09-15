@@ -57,17 +57,17 @@ describe("GenerationStatusBar — evidence profiles", () => {
     expect(screen.queryByTestId("generation-step-breadcrumb")).not.toBeInTheDocument();
   });
 
-  it("keeps the reserved generate-v2 entry point on the aggregate running line", () => {
+  it("renders v2 status lines for generate-v2 evidence", () => {
     render(
       <GenerationStatusBar
         {...BASE_PROPS}
         runState="running"
         requestedTotal={1}
-        evidence={{ profile: "generate-v2" }}
+        evidence={{ profile: "generate-v2", total: 1, endedCount: 0, finalReceivedCount: 0, closed: false }}
       />,
     );
 
-    expect(screen.getByTestId("statusbar-status")).toHaveTextContent("◐ 生成中 · 已完成 0 / 1");
+    expect(screen.getByTestId("statusbar-v2-ended")).toBeInTheDocument();
     expect(screen.queryByTestId("generation-step-breadcrumb")).not.toBeInTheDocument();
     expect(screen.queryByTestId("modification-step-breadcrumb")).not.toBeInTheDocument();
   });

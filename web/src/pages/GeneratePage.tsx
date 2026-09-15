@@ -66,6 +66,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     subQuestionTotal,
     generate,
     reset,
+    evidence: runEvidence,
   } = useGenerate();
   const { enabled, open } = useFeedbackDialog();
   const formRef = useRef<HTMLElement | null>(null);
@@ -80,7 +81,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   );
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
-  const hasResults = displayResults.length > 0;
+  const hasResults = displayResults.length > 0 || (runEvidence != null && runEvidence.total > 0);
   const exportWorkspace = useCallback(() => exportResultsWorkspace({
     status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
     subQuestionTotal, requestedTotal, submittedSubQuestionCount,
@@ -374,13 +375,31 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
               </div>
             </div>
             <div className="space-y-3">
-              {displayResults.map((item) => (
-                <QuestionCard
-                  key={item.question.id ?? `q-${item.index}`}
-                  question={item.question}
-                  {...projectGenerationCardEvidence(item)}
-                />
-              ))}
+              {runEvidence
+                ? runEvidence.order.map((qid, idx) => {
+                    const qEvidence = runEvidence.questions[qid];
+                    const displayItem = displayResults.find(
+                      (r) => (r.question.id ?? "") === qid
+                    );
+                    if (!qEvidence) return null;
+                    const cardProps = displayItem ? projectGenerationCardEvidence(displayItem) : {};
+                    return (
+                      <QuestionCard
+                        key={qid}
+                        index={idx}
+                        evidence={qEvidence}
+                        question={displayItem?.question}
+                        {...cardProps}
+                      />
+                    );
+                  })
+                : displayResults.map((item) => (
+                    <QuestionCard
+                      key={item.question.id ?? `q-${item.index}`}
+                      question={item.question}
+                      {...projectGenerationCardEvidence(item)}
+                    />
+                  ))}
             </div>
           </section>
         )}
