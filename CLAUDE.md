@@ -100,19 +100,23 @@ Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_CO
 
 `web/src/lib/recovery/format.ts` defines `RecoverySnapshotV1` (schema `exam-generation.recovery/1`) with `parseRecoverySnapshot` for strict validation (account, origin, environment, form shape).
 
-`web/src/lib/recovery/storage.ts` provides transactional localStorage/sessionStorage helpers: `saveSnapshotTransactionally` (write + read-back verify), `persistTabPointer`, `getOrCreateTabId`, `loadSnapshot`, `deleteSnapshot`, `clearTabPointer`.
+`web/src/lib/recovery/storage.ts` provides transactional localStorage/sessionStorage helpers: `saveSnapshotTransactionally` (write + read-back verify; catches `QuotaExceededError` → `{ok:false,reason:'quota'}`), `persistTabPointer`, `getOrCreateTabId`, `loadSnapshot`, `deleteSnapshot`, `clearTabPointer`. `TabPointer` carries optional `tab_id`, `attempted_target_build_id`, `attempted_target_release_revision` (backward-compatible).
 
 `web/src/lib/workspace/workspaceStore.ts` tracks `workspace_revision` (monotonically incremented on every surface/operation change), `navigationApproved: {target}|null`, and `freezeInput: boolean`. New methods: `approveNavigation`, `clearNavigationApproval`, `setFreezeInput`.
 
-`web/src/lib/recovery/saveAndUpdate.ts` exports `evaluateSaveAndUpdate(state)` which returns `{allowed:true}` only when all conditions are met (surface ready, no operations, no results, user signed in, update-required with known IDs, recovery format supported, form export seam present). Denied reasons are localised via `recovery.disabled.*` i18n keys.
+`web/src/lib/recovery/saveAndUpdate.ts` exports:
+- `evaluateSaveAndUpdate(state)` — returns `{allowed:true}` only when all conditions are met.
+- `runSaveAndUpdate(deps?)` — **full 10-step implementation** (not a stub): evaluate → record revision/user → export form → freeze → checkNow recheck (target, format, account, workspace) → build RecoverySnapshotV1 with `crypto.randomUUID()` → `saveSnapshotTransactionally` → `persistTabPointer` → `approveNavigation` → `navigate()`. On failure: `setFreezeInput(false)` + `clearNavigationApproval()`. `deps` is injectable for tests (`navigate`, `now`, `origin`, `environment`, `buildId`).
 
-`web/src/lib/recovery/recoveryStore.ts` is a zustand store. Call `initRecoveryStore({currentRoute, origin, environment})` at app boot or after sign-in to attempt snapshot restore. Sets `pending` on success, `blocked:'wrong_account'` when account mismatches, or silently skips otherwise.
+`web/src/lib/recovery/recoveryStore.ts` is a zustand store. Call `initRecoveryStore({currentRoute, origin, environment})` at app boot or after sign-in to attempt snapshot restore. Sets `pending` on success, `blocked:'wrong_account'` when account mismatches, or silently skips otherwise. `discardRecovery()` deletes the snapshot from localStorage, clears the tab pointer, and clears `pending`.
 
-`web/src/components/ReleaseNotice.tsx` renders a "儲存草稿並更新 / Save Draft & Update" button in `update-required` state, disabled with a localised tooltip when denied. `GeneratePage.tsx` `useBlocker` and `beforeunload` consult `navigationApproved` so an approved navigation bypasses the guard once.
+`web/src/components/ReleaseNotice.tsx` renders a "儲存草稿並更新 / Save Draft & Update" button in `update-required` state, disabled with a localised tooltip when denied. On failure, shows inline error + "重試" button. On success `navigate()` calls `window.location.reload()`. `GeneratePage.tsx` `useBlocker` and `beforeunload` consult `navigationApproved` so an approved navigation bypasses the guard once.
 
 `web/buildIdentity.ts` now emits `supported_recovery_formats: ["exam-generation.recovery/1"]` in the policy fixture. `useReleaseStore` exposes `supportedRecoveryFormats` from the last parsed policy.
 
-`web/src/components/ParamForm.tsx` accepts a `recoveredForm?: FormWorkspaceSnapshot` prop and shows a restoration banner when present.
+`web/src/components/ParamForm.tsx` accepts a `recoveredForm?: FormWorkspaceSnapshot` prop. When present: form fields are initialised from `recoveredForm.fields` (wins over draft/history prefill); a blue restoration banner is shown; `formReadiness` is `'restoring'` while the banner is visible; after schemas load, `recoveredInvalidFields: Set<string>` marks values not admitted by the current curriculum (submit disabled until corrected); the schema-load effect is guarded to prevent overwriting recovered values. `onRecoveryAcknowledge` and `onRecoveryDiscard` callbacks are called by the respective banner buttons.
+
+`web/src/pages/GeneratePage.tsx` reads `useRecoveryStore().pending` and passes `pending?.form` as `recoveredForm` and `discardRecovery` as `onRecoveryAcknowledge`/`onRecoveryDiscard` to ParamForm.
 
 See `docs/research/2026-09-15-772-save-draft-and-update.md`.
 
