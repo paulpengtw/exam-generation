@@ -17,14 +17,27 @@ where SS was already tolerant and NS was not (issue #158 AC3).
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any, Callable
 
-from pydantic import ValidationError
-
+from src.common.correction_decision import CorrectionDecision, CorrectionRejection
 from src.llm_client import LLMClient, emit_stage, extract_json
 
 # Callable: (sq_raw, original_sq, idx) -> SubQuestion | None
 RebuildSubquestionFn = Callable[[dict, Any, int], Any]
+DecisionCallback = Callable[[CorrectionDecision], None]
+
+
+class CorrectionStructureError(ValueError):
+    """A candidate failed the public correction structure contract."""
+
+    def __init__(self, reason: CorrectionRejection):
+        self.reason = reason
+        super().__init__(reason.message)
+
+
+def _rejection(code: str, path: str, message: str) -> CorrectionRejection:
+    return CorrectionRejection(code=code, path=path, message=message)
 
 _CORRECTION_USER_TEMPLATE = """\
 ## 原始題目（JSON）
@@ -85,49 +98,90 @@ def validate_correction_structure(candidate: object, originals: list[Any]) -> No
     the surviving input rows, without padding gaps from generation.
     """
     if not isinstance(candidate, dict):
-        raise ValueError("correction must be an object")
-    if not originals and "subquestions" not in candidate:
+        raise CorrectionStructureError(
+            _rejection("response_shape", "$", "correction must be an object")
+        )
+    # The list is optional.  Omitting it means that the corrector made no
+    # subquestion edit; an explicitly supplied list still has to account for
+    # every entering row exactly.
+    if "subquestions" not in candidate:
         return
-    rows = candidate.get("subquestions")
+    rows = candidate["subquestions"]
     if not isinstance(rows, list):
-        raise ValueError("subquestions must be a complete list")
+        raise CorrectionStructureError(
+            _rejection("subquestions_type", "subquestions", "subquestions must be a list")
+        )
     if len(rows) != len(originals):
-        raise ValueError(f"小題 count changed: expected {len(originals)}, received {len(rows)}")
+        raise CorrectionStructureError(
+            _rejection("subquestions_count", "subquestions", "subquestions count changed")
+        )
     for index, (raw, original) in enumerate(zip(rows, originals)):
+        path = f"subquestions[{index}]"
         if not isinstance(raw, dict):
-            raise ValueError(f"小題 {index + 1} must be an object")
+            raise CorrectionStructureError(
+                _rejection("subquestion_row_type", path, "subquestion row must be an object")
+            )
         identity = {}
         if "id" in raw:
-            if not isinstance(raw["id"], str) or raw["id"] != original.id:
-                raise ValueError(f"小題 {index + 1} id changed or reordered")
+            if not isinstance(raw["id"], str) or raw["id"] != getattr(original, "id", None):
+                raise CorrectionStructureError(
+                    _rejection(
+                        "subquestion_identity_mismatch",
+                        path,
+                        "subquestion id changed or reordered",
+                    )
+                )
             if raw["id"]:
                 identity["id"] = raw["id"]
         if "序號" in raw:
-            if type(raw["序號"]) is not int or raw["序號"] != original.序號:
-                raise ValueError(f"小題 {index + 1} 序號 changed or reordered")
+            if type(raw["序號"]) is not int or raw["序號"] != getattr(original, "序號", None):
+                raise CorrectionStructureError(
+                    _rejection(
+                        "subquestion_identity_mismatch",
+                        path,
+                        "subquestion ordinal changed or reordered",
+                    )
+                )
             identity["序號"] = raw["序號"]
         matches = [
             row for row in originals
             if identity and all(getattr(row, key) == value for key, value in identity.items())
         ]
         if len(matches) != 1:
-            raise ValueError(f"小題 {index + 1} identity is missing or ambiguous")
+            raise CorrectionStructureError(
+                _rejection(
+                    "subquestion_identity_ambiguous",
+                    path,
+                    "subquestion identity is missing or ambiguous",
+                )
+            )
 
 
 def reject_correction(
     client: LLMClient,
     question: Any,
-    reason: str,
-    on_rejected: Callable[[str], None] | None,
+    reason: CorrectionRejection | str,
+    on_rejected: Callable[[str], None] | None = None,
+    *,
+    on_decision: DecisionCallback | None = None,
 ) -> Any:
     """Retain the entire snapshot and report why this attempt was rejected."""
+    if isinstance(reason, str):
+        # Keep the old helper callable for integrations that still pass a
+        # concise string.  All internal rejection paths use a structured
+        # reason before reaching this compatibility branch.
+        reason = _rejection("correction_rejected", "$", reason)
+    decision = CorrectionDecision(outcome="rejected", reason=reason)
+    if on_decision is not None:
+        on_decision(decision)
     if on_rejected is not None:
-        on_rejected(reason)
-    else:
+        on_rejected(reason.message)
+    elif on_decision is None:
         observer = client.get_observer() if hasattr(client, "get_observer") else None
         emit_stage(
             observer, "corrector", "correct", "error",
-            code="correction_rejected", message=reason,
+            code="correction_rejected", message=reason.message,
+            reason=reason.model_dump(),
         )
     return question
 
@@ -136,14 +190,38 @@ def apply_correction(
     client: LLMClient,
     question: Any,
     update: dict,
-    on_rejected: Callable[[str], None] | None,
+    on_rejected: Callable[[str], None] | None = None,
+    *,
+    on_decision: DecisionCallback | None = None,
 ) -> Any:
     """Validate the full merged snapshot before accepting any of its edits."""
     try:
         type(question).model_validate({**question.model_dump(), **update})
-    except ValidationError:
-        return reject_correction(client, question, "correction contains invalid data", on_rejected)
-    return question.model_copy(update=update)
+    except Exception:
+        return reject_correction(
+            client,
+            question,
+            _rejection("merged_question_invalid", "$", "correction contains invalid data"),
+            on_rejected,
+            on_decision=on_decision,
+        )
+
+    # model_copy(deep=True) detaches both public nested fields and Pydantic
+    # PrivateAttr values such as generation slot/visual associations.  The
+    # callback is emitted only after this complete candidate exists.
+    try:
+        accepted = question.model_copy(deep=True, update=deepcopy(update))
+    except Exception:
+        return reject_correction(
+            client,
+            question,
+            _rejection("detached_candidate_invalid", "$", "correction could not be detached"),
+            on_rejected,
+            on_decision=on_decision,
+        )
+    if on_decision is not None:
+        on_decision(CorrectionDecision(outcome="accepted"))
+    return accepted
 
 
 def correct_question_common(
@@ -157,6 +235,7 @@ def correct_question_common(
     annotations: str | None = None,
     editable_paths: set[str] | None = None,
     on_rejected: Callable[[str], None] | None = None,
+    on_decision: DecisionCallback | None = None,
 ) -> Any:
     """Shared corrector core for questions with subquestions.
 
@@ -182,9 +261,12 @@ def correct_question_common(
         editable_paths: Optional field paths for a 人工審題修正 call.  The
             server remains the authoritative scope enforcer; this parameter
             lets subject rebuilders admit an explicitly selected chart_spec.
-        on_rejected: Receives a concise rejection reason. The generation loop
-            uses it to retain the snapshot, record the failed attempt, and
-            skip publication and re-verification until a correction is accepted.
+        on_rejected: Legacy callback receiving a concise rejection message.
+            New generation callers should use ``on_decision`` so they can
+            distinguish rejection from acceptance while retaining the input
+            snapshot.
+        on_decision: Receives exactly one immutable accepted/rejected decision
+            after the complete candidate has been validated.
 
     Returns:
         The corrected question (a ``model_copy`` of *question* with updated
@@ -230,13 +312,19 @@ def correct_question_common(
             corrected_data = client.generate_json(system_prompt, user_prompt, purpose="correct")
     except Exception:
         return reject_correction(
-            client, question, "correction response could not be read", on_rejected,
+            client,
+            question,
+            _rejection("response_unreadable", "$", "correction response could not be read"),
+            on_rejected,
+            on_decision=on_decision,
         )
 
     try:
         validate_correction_structure(corrected_data, question.subquestions)
-    except ValueError as exc:
-        return reject_correction(client, question, str(exc), on_rejected)
+    except CorrectionStructureError as exc:
+        return reject_correction(
+            client, question, exc.reason, on_rejected, on_decision=on_decision,
+        )
 
     update: dict = {}
 
@@ -257,15 +345,26 @@ def correct_question_common(
         new_sqs = []
         for idx, sq_raw in enumerate(corrected_data["subquestions"]):
             original = question.subquestions[idx]
-            rebuilt = rebuild_subquestion_fn(sq_raw, original, idx)
+            try:
+                rebuilt = rebuild_subquestion_fn(sq_raw, original, idx)
+            except Exception:
+                rebuilt = None
             if rebuilt is None:
                 return reject_correction(
-                    client, question, f"小題 {idx + 1} contains invalid row data", on_rejected,
+                    client,
+                    question,
+                    _rejection(
+                        "subquestion_invalid",
+                        f"subquestions[{idx}]",
+                        "subquestion contains invalid data",
+                    ),
+                    on_rejected,
+                    on_decision=on_decision,
                 )
             # Keep generation-owned slot metadata (notably _plan_index) so
             # later image rendering uses the original 各小題配置, even when
             # the model-reported 序號 differs from its generation slot.
-            new_sqs.append(original.model_copy(update={
+            new_sqs.append(original.model_copy(deep=True, update={
                 field: getattr(rebuilt, field) for field in type(rebuilt).model_fields
             }))
         if new_sqs:
@@ -281,13 +380,19 @@ def correct_question_common(
             if raw_spec is not None:
                 try:
                     update["chart_spec"] = image_spec_cls.model_validate(raw_spec)
-                except ValidationError:
+                except Exception:
                     return reject_correction(
-                        client, question, f"{key} contains invalid data", on_rejected,
+                        client,
+                        question,
+                        _rejection("image_spec_invalid", key, "image specification is invalid"),
+                        on_rejected,
+                        on_decision=on_decision,
                     )
 
     update["verification"] = None
     # Difficulty is frozen — force the original metadata (and thus difficulty) through.
     update["metadata"] = question.metadata
 
-    return apply_correction(client, question, update, on_rejected)
+    return apply_correction(
+        client, question, update, on_rejected, on_decision=on_decision,
+    )

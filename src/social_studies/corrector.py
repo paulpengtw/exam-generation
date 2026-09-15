@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from src.common.correction_decision import CorrectionDecision
 from src.common.corrector import correct_question_common, parse_rubric
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient
@@ -69,6 +70,8 @@ _CORRECTION_SYSTEM_PROMPT_CORE = """\
 - 若某小題的答案或選項有改動，該小題的 `誘答分析` 必須同步反映新的正解與誘答陷阱：
   正解鍵改為「正確答案：…」，其他鍵改為新的誤解描述。選項標籤必須與新題目一致；
   若題目沒有 (A)-(D) 標籤，可留空 `{}`。
+- `subquestions` 可以省略，表示不修改小題；若輸出此欄位，必須輸出與原題完全相同數量的清單。
+  每列的 `id`/`序號` 必須仍指向原列，且順序不可改變；不可新增、刪除、複製或重新排序小題。
 
 請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
 """
@@ -152,6 +155,7 @@ def correct_question(
     annotations: str | None = None,
     editable_paths: set[str] | None = None,
     on_rejected: Callable[[str], None] | None = None,
+    on_decision: Callable[[CorrectionDecision], None] | None = None,
 ) -> ExamQuestion:
     if curriculum_context is not None:
         curriculum_prefix = build_curriculum_section(curriculum_context)
@@ -181,4 +185,5 @@ def correct_question(
         annotations=annotations,
         editable_paths=editable_paths,
         on_rejected=on_rejected,
+        on_decision=on_decision,
     )

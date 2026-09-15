@@ -195,20 +195,21 @@ Durable gotchas and decisions for all agents and developers working on this repo
   readback verifies persisted exchanges. Live provider acceptance remains
   [#761](https://github.com/paulpengtw/exam-generation/issues/761).
 
-## Correction preserves the entering 題組 structure (#806, 2026-09-14)
+## Correction preserves the entering 題組 structure (#806, #811–#813, 2026-09-15)
 
 - [The correction acceptance guard](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/src/common/corrector.py)
   compares the complete candidate against the snapshot entering that attempt,
-  including surviving identities in an already-partial 題組. An explicit unique
-  `id` or `序號` identifies a 小題; when both are supplied, both must agree.
-  Array position alone is insufficient. Invalid structure or editable data
-  rejects the whole correction, including changed shared 文本.
+  including partial and zero-survivor groups. Omitting `subquestions` preserves
+  the rows; an explicit replacement must identify every original in order.
+  The complete public contract is in
+  [correction integrity](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/docs/correction-integrity.md).
 - [The shared retry loop](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/src/common/generation_core.py)
   consumes a rejected attempt and emits the existing `corrector/correct/error`
-  diagnostic with `code=correction_rejected`. It publishes no corrected update
-  or accepted correction-trail entry and does not re-verify the unchanged
-  snapshot. The previous failed verdict remains until a valid correction is
-  accepted and independently verified. The existing retry limit is unchanged.
+  diagnostic with `code=correction_rejected`. It publishes a rejected trail entry
+  with the retained snapshot and re-verifies that content, without publishing a
+  corrected draft or rendering discarded specifications. This supersedes the
+  initial #806 behavior that skipped retained-content verification and trail
+  entries. The existing retry limit is unchanged.
 - Accepted 社會領域/自然科學 rows must retain generation-owned `_plan_index`:
   model-reported `序號` can differ from the original 各小題配置 slot. Reconstructing
   rows without that metadata can swap image filenames and renderer settings
@@ -218,3 +219,8 @@ Durable gotchas and decisions for all agents and developers working on this repo
   uses controlled provider responses with the real generation pipeline,
   SSE snapshots/results, History detail, and Agent 自主驗證修正歷程. No paid
   generation or expected/delivered/missing protocol changes are needed.
+- [Manual review](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/server/generate/modification_service.py)
+  captures the decision at both correction sites. Rejected annotations alone
+  cannot newly mark an image stale; existing stale state survives in the child
+  History record. Manual review retains its separate stream and adds no
+  automatic-generation verification trail.

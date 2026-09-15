@@ -4,6 +4,7 @@ from __future__ import annotations
 from importlib import import_module
 
 import pytest
+from pydantic import ValidationError
 
 
 def make_question(subject: str, ordinals: tuple[int, ...] = (1, 2, 3, 4, 5)):
@@ -87,7 +88,7 @@ def test_five_to_four_correction_preserves_the_complete_previous_snapshot(subjec
 @pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
 @pytest.mark.parametrize("defect", [
     "extra", "duplicate", "changed_id", "changed_ordinal", "reordered", "non_object",
-    "ambiguous", "missing_list", "invalid_list", "empty", "bool_ordinal",
+    "ambiguous", "invalid_list", "empty", "bool_ordinal",
 ])
 def test_invalid_structure_rejects_all_candidate_content(subject, defect):
     question = make_question(subject)
@@ -113,8 +114,6 @@ def test_invalid_structure_rejects_all_candidate_content(subject, defect):
     elif defect == "ambiguous":
         rows[2].pop("id")
         rows[2].pop("序號")
-    elif defect == "missing_list":
-        candidate.pop("subquestions")
     elif defect == "invalid_list":
         candidate["subquestions"] = "broken"
     elif defect == "empty":
@@ -265,3 +264,233 @@ def test_unreadable_correction_reports_rejection_and_keeps_previous_snapshot(sub
     assert diagnostic["status"] == "error"
     assert diagnostic["code"] == "correction_rejected"
     assert diagnostic["message"]
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
+def test_omitted_subquestions_preserves_rows_but_accepts_valid_top_level_edit(subject):
+    question = make_question(subject)
+    before_rows = [row.model_dump(mode="json") for row in question.subquestions]
+    candidate = question.model_dump(mode="json")
+    candidate.pop("subquestions")
+    candidate["題目"] = ["修正後題幹"]
+    decisions = []
+
+    prefix = "src" if subject == "math" else f"src.{subject}"
+    correct_question = import_module(f"{prefix}.corrector").correct_question
+    result = correct_question(
+        CorrectionProvider(candidate), question, question.verification,
+        on_decision=decisions.append,
+    )
+
+    assert result.題目 == ["修正後題幹"]
+    assert [row.model_dump(mode="json") for row in result.subquestions] == before_rows
+    assert len(decisions) == 1
+    assert decisions[0].outcome == "accepted"
+    assert decisions[0].reason is None
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
+def test_repeated_ids_require_a_disambiguating_ordinal(subject):
+    question = make_question(subject, (1, 2, 3))
+    question.subquestions[1].id = question.subquestions[0].id
+    candidate = question.model_dump(mode="json")
+    candidate["subquestions"][1].pop("序號")
+    candidate["subquestions"][1]["答案"] = "不應套用"
+    before = question.model_dump(mode="json")
+    decisions = []
+
+    prefix = "src" if subject == "math" else f"src.{subject}"
+    correct_question = import_module(f"{prefix}.corrector").correct_question
+    result = correct_question(
+        CorrectionProvider(candidate), question, question.verification,
+        on_decision=decisions.append,
+    )
+
+    assert result.model_dump(mode="json") == before
+    assert len(decisions) == 1
+    assert decisions[0].outcome == "rejected"
+    assert decisions[0].reason.code == "subquestion_identity_ambiguous"
+    assert decisions[0].reason.path == "subquestions[1]"
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
+def test_repeated_ids_are_valid_when_ordinal_pair_identifies_each_row(subject):
+    question = make_question(subject, (1, 2, 3))
+    question.subquestions[1].id = question.subquestions[0].id
+    candidate = question.model_dump(mode="json")
+    candidate["subquestions"][1]["答案"] = "修正後答案"
+    decisions = []
+
+    prefix = "src" if subject == "math" else f"src.{subject}"
+    correct_question = import_module(f"{prefix}.corrector").correct_question
+    result = correct_question(
+        CorrectionProvider(candidate), question, question.verification,
+        on_decision=decisions.append,
+    )
+
+    assert result.subquestions[1].答案 == "修正後答案"
+    assert result.subquestions[0].答案 != "修正後答案"
+    assert [decision.outcome for decision in decisions] == ["accepted"]
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
+@pytest.mark.parametrize("identity_field,value", [("序號", "1"), ("id", "")])
+def test_malformed_or_empty_identity_is_rejected(subject, identity_field, value):
+    question = make_question(subject, (1, 2, 3))
+    candidate = question.model_dump(mode="json")
+    candidate["subquestions"][0][identity_field] = value
+    decisions = []
+    prefix = "src" if subject == "math" else f"src.{subject}"
+    correct_question = import_module(f"{prefix}.corrector").correct_question
+
+    result = correct_question(
+        CorrectionProvider(candidate), question, question.verification,
+        on_decision=decisions.append,
+    )
+
+    assert result.model_dump(mode="json") == question.model_dump(mode="json")
+    assert len(decisions) == 1
+    assert decisions[0].outcome == "rejected"
+    assert decisions[0].reason.path == "subquestions[0]"
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
+def test_repeated_ordinals_require_a_disambiguating_id(subject):
+    question = make_question(subject, (1, 2, 3))
+    question.subquestions[1].序號 = question.subquestions[0].序號
+    candidate = question.model_dump(mode="json")
+    candidate["subquestions"][1].pop("id")
+    candidate["subquestions"][1]["答案"] = "不應套用"
+    decisions = []
+    prefix = "src" if subject == "math" else f"src.{subject}"
+    correct_question = import_module(f"{prefix}.corrector").correct_question
+
+    result = correct_question(
+        CorrectionProvider(candidate), question, question.verification,
+        on_decision=decisions.append,
+    )
+
+    assert result.model_dump(mode="json") == question.model_dump(mode="json")
+    assert decisions[0].outcome == "rejected"
+    assert decisions[0].reason.code == "subquestion_identity_ambiguous"
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
+@pytest.mark.parametrize(
+    ("payload", "expected_code"),
+    [
+        (None, "response_shape"),
+        (ValueError("provider detail must not escape"), "response_unreadable"),
+    ],
+)
+def test_decision_callback_reports_safe_provider_failure(subject, payload, expected_code):
+    question = make_question(subject)
+    decisions = []
+    prefix = "src" if subject == "math" else f"src.{subject}"
+    correct_question = import_module(f"{prefix}.corrector").correct_question
+
+    result = correct_question(
+        CorrectionProvider(payload), question, question.verification,
+        on_decision=decisions.append,
+    )
+
+    assert result.model_dump(mode="json") == question.model_dump(mode="json")
+    assert len(decisions) == 1
+    decision = decisions[0]
+    assert decision.outcome == "rejected"
+    assert decision.reason.code == expected_code
+    assert decision.reason.path == "$"
+    assert "provider detail" not in decision.reason.message
+    with pytest.raises(ValidationError):
+        decision.outcome = "accepted"
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
+def test_group_with_zero_survivors_cannot_gain_rows_but_accepts_top_level_edit(subject):
+    question = make_question(subject, ())
+    candidate = question.model_dump(mode="json")
+    candidate["題目"] = ["修正後題幹"]
+    decisions = []
+    prefix = "src" if subject == "math" else f"src.{subject}"
+    correct_question = import_module(f"{prefix}.corrector").correct_question
+
+    result = correct_question(
+        CorrectionProvider(candidate), question, question.verification,
+        on_decision=decisions.append,
+    )
+
+    assert result.題目 == ["修正後題幹"]
+    assert result.subquestions == []
+    assert [decision.outcome for decision in decisions] == ["accepted"]
+
+    empty_candidate = {"題目": ["再次修正"], "subquestions": []}
+    empty_result = correct_question(
+        CorrectionProvider(empty_candidate), question, question.verification,
+        on_decision=decisions.append,
+    )
+    assert empty_result.題目 == ["再次修正"]
+    assert empty_result.subquestions == []
+    assert decisions[-1].outcome == "accepted"
+
+    candidate["subquestions"] = [{"id": "new", "序號": 1, "題目": "新增"}]
+    rejected = correct_question(
+        CorrectionProvider(candidate), question, question.verification,
+        on_decision=decisions.append,
+    )
+
+    assert rejected.model_dump(mode="json") == question.model_dump(mode="json")
+    assert decisions[-1].outcome == "rejected"
+    assert decisions[-1].reason.code == "subquestions_count"
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
+def test_accepted_correction_is_detached_from_input_snapshot(subject):
+    question = make_question(subject)
+    question.subquestions[0]._plan_index = 41
+    candidate = question.model_dump(mode="json")
+    candidate["subquestions"][0]["答案"] = "修正後答案"
+    prefix = "src" if subject == "math" else f"src.{subject}"
+    correct_question = import_module(f"{prefix}.corrector").correct_question
+
+    result = correct_question(CorrectionProvider(candidate), question, question.verification)
+    result.subquestions[0].答案 = "後續呼叫端修改"
+    result.subquestions[0].學習內容[0].說明 = "後續呼叫端修改釘選"
+    result.subquestions[0]._plan_index = 99
+
+    assert question.subquestions[0].答案 == "答案1"
+    assert question.subquestions[0].學習內容[0].說明 == "釘選1"
+    assert question.subquestions[0]._plan_index == 41
+
+
+def test_flat_math_correction_keeps_legacy_serialization_without_group_fields():
+    question = make_question("math", ())
+    question.題型種類 = type(question.題型種類)("單一題")
+    question.文本 = ""
+    question.核心問題 = ""
+    correct_question = import_module("src.corrector").correct_question
+    decisions = []
+
+    result = correct_question(
+        CorrectionProvider({"題目": ["修正後題目"], "正確解題分析": ["修正後解析"]}),
+        question, question.verification, on_decision=decisions.append,
+    )
+
+    serialized = result.model_dump(mode="json")
+    assert serialized["題目"] == ["修正後題目"]
+    assert serialized["正確解題分析"] == ["修正後解析"]
+    assert serialized["題型種類"] == "單一題"
+    assert {"subquestions", "文本", "核心問題", "取材來源"}.isdisjoint(serialized)
+    assert result.verification is None
+    assert [decision.outcome for decision in decisions] == ["accepted"]
+
+
+def test_math_actual_rows_remain_protected_despite_legacy_flat_label():
+    question = make_question("math", (1, 3, 5))
+    question.題型種類 = type(question.題型種類)("單一題")
+    candidate = question.model_dump(mode="json")
+    candidate["subquestions"].pop(1)
+    candidate["題目"] = ["不可套用的題目"]
+
+    result = correct("math", question, candidate)
+
+    assert result.model_dump(mode="json") == question.model_dump(mode="json")

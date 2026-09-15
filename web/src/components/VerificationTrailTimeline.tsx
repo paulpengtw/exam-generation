@@ -60,6 +60,7 @@ function SnapshotTrailItem({
   t: (key: string) => string;
 }) {
   const isCorrection = entry.kind === "correction";
+  const isRejectedCorrection = isCorrection && entry.outcome === "rejected";
   const [sideBySideOpen, setSideBySideOpen] = useState(false);
   const changes = isCorrection
     ? diffSnapshots(beforeSnapshot ?? {}, entry.snapshot)
@@ -72,7 +73,13 @@ function SnapshotTrailItem({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-semibold">
-          {t(isCorrection ? "card.trailCorrection" : "card.trailInitialVersion")}
+          {t(
+            isRejectedCorrection
+              ? "card.trailCorrectionRejected"
+              : isCorrection
+                ? "card.trailCorrection"
+                : "card.trailInitialVersion",
+          )}
         </span>
         <time dateTime={entry.timestamp} className="text-xs text-gray-500">
           {entry.timestamp}
@@ -90,7 +97,17 @@ function SnapshotTrailItem({
           />
         </dl>
       )}
-      {isCorrection && beforeSnapshot !== undefined && (
+      {isRejectedCorrection && entry.reason && (
+        <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-2">
+          <div className="font-medium text-amber-900">
+            {t("card.trailCorrectionRejectionReason")}
+          </div>
+          <p className="mt-1 whitespace-pre-wrap text-amber-950">
+            {entry.reason.message}
+          </p>
+        </div>
+      )}
+      {isCorrection && !isRejectedCorrection && beforeSnapshot !== undefined && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
@@ -106,7 +123,7 @@ function SnapshotTrailItem({
           </button>
         </div>
       )}
-      {isCorrection && sideBySideOpen && beforeSnapshot !== undefined ? (
+      {isCorrection && !isRejectedCorrection && sideBySideOpen && beforeSnapshot !== undefined ? (
         <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
           <div className="min-w-0 rounded border border-blue-100 bg-white p-2">
             <div className="font-medium text-gray-700">
@@ -126,7 +143,7 @@ function SnapshotTrailItem({
           </div>
         </div>
       ) : (
-        isCorrection && (
+        isCorrection && !isRejectedCorrection && (
           <div className="mt-2 rounded border border-blue-100 bg-white p-2">
             <div className="font-medium text-gray-700">
               {t("card.trailChangedFields")}
@@ -148,7 +165,9 @@ function SnapshotTrailItem({
         )
       )}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="font-medium text-gray-700">{t("card.trailSnapshot")}</span>
+        <span className="font-medium text-gray-700">
+          {t(isRejectedCorrection ? "card.trailRetainedSnapshot" : "card.trailSnapshot")}
+        </span>
         <button
           type="button"
           aria-controls={snapshotId}

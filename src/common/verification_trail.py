@@ -9,6 +9,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from src.common.correction_decision import CorrectionRejection
+
 
 class ChartVerificationTrail(BaseModel):
     """The chart verdict fields copied from a parsed verification result."""
@@ -54,6 +56,12 @@ class VerificationTrailCorrectionEntry(BaseModel):
     model: str
     timestamp: datetime
     snapshot: dict[str, Any]
+    outcome: Literal["accepted", "rejected"] | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
+    reason: CorrectionRejection | None = Field(
+        default=None, exclude_if=lambda value: value is None,
+    )
 
 
 VerificationTrailEvent = Annotated[
@@ -136,6 +144,9 @@ def make_correction_trail_entry(
     question: Any,
     retry_index: int,
     model: str,
+    *,
+    outcome: Literal["accepted", "rejected"] | None = None,
+    reason: CorrectionRejection | None = None,
 ) -> VerificationTrailCorrectionEntry:
     """Build a correction snapshot entry for a completed retry pass."""
     return VerificationTrailCorrectionEntry(
@@ -144,6 +155,8 @@ def make_correction_trail_entry(
         model=model,
         timestamp=datetime.now(timezone.utc),
         snapshot=make_question_snapshot(question),
+        outcome=outcome,
+        reason=reason,
     )
 
 

@@ -28,6 +28,7 @@ from server.generate.marshalling import (
 )
 from server.generate.persistence import make_exchange_recorder, persist_generation_record
 from server.generate.subjects import SUBJECTS
+from src.common.correction_decision import CorrectionDecision
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,10 @@ def _stage_event(
     agent: str = "corrector",
     stage: str = "modification",
     retry: int | None = None,
+    question_id: str | None = None,
+    code: str | None = None,
+    message: str | None = None,
+    reason: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     step = {
         "modification": "修改",
@@ -148,6 +153,14 @@ def _stage_event(
     }
     if retry is not None:
         data["retry"] = retry
+    if question_id is not None:
+        data["question_id"] = question_id
+    if code is not None:
+        data["code"] = code
+    if message is not None:
+        data["message"] = message
+    if reason is not None:
+        data["reason"] = copy.deepcopy(dict(reason))
     return {
         "event": SSEEventName.STAGE,
         "data": data,
@@ -278,6 +291,7 @@ async def modification_question_stream(
 
     current_payload = copy.deepcopy(base_question)
     image_source_was_edited = _image_source_was_edited(base_question, annotations)
+    accepted_correction = False
     question = spec.exam_question_cls.model_validate(current_payload)
     annotation_text = format_modification_annotations(annotations)
     modification_context = SimpleNamespace(
@@ -308,6 +322,7 @@ async def modification_question_stream(
     yield _stage_event("start")
 
     try:
+        decisions: list[CorrectionDecision] = []
         corrected = await asyncio.to_thread(
             corrector,
             client,
@@ -315,15 +330,34 @@ async def modification_question_stream(
             modification_context,
             annotations=annotation_text,
             editable_paths=editable_paths,
+            on_decision=decisions.append,
         )
         for event in await _flush_observer_queue(queue):
             yield event
 
-        candidate = json.loads(corrected.model_dump_json(exclude_none=False))
-        current_payload = _merge_scoped(base_question, candidate, editable_paths)
-        question = spec.exam_question_cls.model_validate(current_payload)
-        yield _stage_event("end")
-        yield _pipeline_event("end")
+        decision = decisions[-1] if decisions else None
+        rejected = decision is not None and decision.outcome == "rejected"
+        if rejected:
+            reason = decision.reason
+            yield _stage_event(
+                "error",
+                agent="corrector",
+                stage="correct",
+                retry=0,
+                question_id=str(base_question.get("id") or record_id),
+                code="correction_rejected",
+                message=(
+                    reason.message if reason is not None else "correction candidate was rejected"
+                ),
+                reason=reason.model_dump(mode="json") if reason is not None else None,
+            )
+        else:
+            candidate = json.loads(corrected.model_dump_json(exclude_none=False))
+            current_payload = _merge_scoped(base_question, candidate, editable_paths)
+            question = spec.exam_question_cls.model_validate(current_payload)
+            accepted_correction = True
+            yield _stage_event("end")
+            yield _pipeline_event("end")
 
         max_retries = max(0, int(config.max_retries))
         retry = 0
@@ -348,6 +382,7 @@ async def modification_question_stream(
             retry += 1
             yield _pipeline_event("start", stage="correction")
             yield _stage_event("start", agent="corrector", stage="correct", retry=retry)
+            decisions = []
             correction = await asyncio.to_thread(
                 corrector,
                 client,
@@ -355,24 +390,43 @@ async def modification_question_stream(
                 verification,
                 annotations=annotation_text,
                 editable_paths=editable_paths,
+                on_decision=decisions.append,
             )
             for event in await _flush_observer_queue(queue):
                 yield event
-            correction_candidate = json.loads(
-                correction.model_dump_json(exclude_none=False)
-            )
-            # Use the last scoped attempt as the base.  This prevents an
-            # irreconcilable verifier result from reverting the user's 修改 call.
-            current_payload = _merge_scoped(
-                current_payload, correction_candidate, editable_paths
-            )
-            question = spec.exam_question_cls.model_validate(current_payload)
-            yield _stage_event("end", agent="corrector", stage="correct", retry=retry)
-            yield _pipeline_event("end", stage="correction")
+            decision = decisions[-1] if decisions else None
+            rejected = decision is not None and decision.outcome == "rejected"
+            if rejected:
+                reason = decision.reason
+                yield _stage_event(
+                    "error",
+                    agent="corrector",
+                    stage="correct",
+                    retry=retry,
+                    question_id=str(base_question.get("id") or record_id),
+                    code="correction_rejected",
+                    message=(
+                        reason.message
+                        if reason is not None
+                        else "correction candidate was rejected"
+                    ),
+                    reason=reason.model_dump(mode="json") if reason is not None else None,
+                )
+            else:
+                correction_candidate = json.loads(correction.model_dump_json(exclude_none=False))
+                # Use the last scoped attempt as the base.  This prevents an
+                # irreconcilable verifier result from reverting the user's 修改 call.
+                current_payload = _merge_scoped(
+                    current_payload, correction_candidate, editable_paths
+                )
+                question = spec.exam_question_cls.model_validate(current_payload)
+                accepted_correction = True
+                yield _stage_event("end", agent="corrector", stage="correct", retry=retry)
+                yield _pipeline_event("end", stage="correction")
 
         verification_data = _verification_payload(verification)
         final_question = embed_image_base64(copy.deepcopy(current_payload), config)
-        if image_source_was_edited:
+        if base_question.get("image_stale") or (image_source_was_edited and accepted_correction):
             final_question["image_stale"] = True
         final_question["verification"] = verification_data
         ripple_report = sorted(

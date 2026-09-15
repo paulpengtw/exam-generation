@@ -204,9 +204,10 @@ class SubjectGenerationSpec:
 
     # Correct a failed question given the verification result.
     # Signature: (client, question, verification, *, chart_image_path,
-    #              curriculum_context, on_rejected) -> question
-    # on_rejected(reason) retains the previous snapshot and consumes the attempt
-    # without publishing a correction snapshot or claiming a successful repair.
+    #              curriculum_context, on_decision) -> question
+    # on_decision reports a validated accepted/rejected outcome for this call.
+    # Rejection retains the snapshot, records the attempt, and re-verifies it
+    # without publishing an applied correction or rendering discarded visuals.
     correct_fn: Callable
 
     # Optional pre-render subject policy hook.  Visual subjects use this to
