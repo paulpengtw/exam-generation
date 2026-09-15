@@ -62,6 +62,10 @@ emits a stage error instead of a successful applied completion. Accepted content
 is merged only through the admitted editable paths, preserving the existing
 child-version linkage and out-of-scope fields.
 
+Initial rejection closes the `modification` stage with an error; a rejected
+verification-driven retry closes the `correct` stage. The manual progress bar
+marks that matching step as failed and exposes its safe reason on hover.
+
 Rejected image-source annotations alone do not newly set `image_stale`; an
 existing stale flag survives. Accepted image-source edits keep the established
 stale-image behavior. Manual review uses its existing stream and child History

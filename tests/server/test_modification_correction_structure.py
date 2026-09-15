@@ -383,6 +383,7 @@ def test_manual_stream_retries_rejected_candidates_then_persists_scoped_acceptan
         if event["event"] == "stage" and event["data"].get("status") == "error"
     ]
     assert len(errors) == 2
+    assert [error["stage"] for error in errors] == ["modification", "correct"]
     assert all(error["code"] == "correction_rejected" for error in errors)
     assert all(error["reason"]["code"] == "subquestions_count" for error in errors)
     assert all(error["reason"]["path"] == "subquestions" for error in errors)

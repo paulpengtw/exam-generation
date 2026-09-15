@@ -342,7 +342,7 @@ async def modification_question_stream(
             yield _stage_event(
                 "error",
                 agent="corrector",
-                stage="correct",
+                stage="modification",
                 retry=0,
                 question_id=str(base_question.get("id") or record_id),
                 code="correction_rejected",
