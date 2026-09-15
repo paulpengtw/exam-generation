@@ -20,6 +20,7 @@ import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
+import { useRecoveryStore } from "../lib/recovery/recoveryStore";
 
 export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
@@ -75,6 +76,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     useState<number | null>(null);
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const { pending: pendingRecovery, discardRecovery } = useRecoveryStore();
   const hasResults = displayResults.length > 0;
   const exportWorkspace = useCallback(() => exportResultsWorkspace({
     status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
@@ -333,6 +335,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             disabled={status === "generating"}
             initialParams={prefillParams ?? undefined}
             onUnsubmittedInput={() => setHasUnsubmittedInput(true)}
+            recoveredForm={pendingRecovery?.form}
+            onRecoveryAcknowledge={discardRecovery}
+            onRecoveryDiscard={discardRecovery}
           />
         </section>
 
