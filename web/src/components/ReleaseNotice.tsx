@@ -61,7 +61,7 @@ export default function ReleaseNotice() {
     setSaveError(null);
     setFreezeInput(true);
     try {
-      const result = await runSaveAndUpdate({ navigate: (path) => { window.location.href = path; } });
+      const result = await runSaveAndUpdate({ navigate: () => window.location.reload() });
       if (!result.ok) {
         setSaveError(t("recovery.error.generic"));
         setFreezeInput(false);
