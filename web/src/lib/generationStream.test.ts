@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GeneratedQuestion, LlmCallEvent } from "../hooks/useGenerate";
-import { projectGenerationCardEvidence, projectGenerationEvidence } from "./generationStream";
+import { projectGenerationCardEvidence, projectGenerationEvidence, createGenerationStreamDecoder } from "./generationStream";
 
 describe("projectGenerationEvidence", () => {
   it("keeps only stage events in stream order and carries the subquestion count", () => {
@@ -62,5 +62,204 @@ describe("projectGenerationCardEvidence", () => {
     expect(Object.keys(evidence)).toEqual([
       "phase", "isFinal", "trail", "figurePolicyTrail", "referenceExampleRecord",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F1: createGenerationStreamDecoder
+// ---------------------------------------------------------------------------
+
+describe("createGenerationStreamDecoder", () => {
+  const validManifest = {
+    protocol_version: 2,
+    total: 2,
+    questions: [
+      { index: 0, question_id: "q_RUN_001" },
+      { index: 1, question_id: "q_RUN_002" },
+    ],
+    generation_log_id: null,
+  };
+  const validContext = { run_id: "RUN", event_seq: 1 };
+  const validStartedData = JSON.stringify({ context: validContext, payload: validManifest });
+
+  it("starts in awaiting-start mode with null run", () => {
+    const dec = createGenerationStreamDecoder();
+    expect(dec.mode).toBe("awaiting-start");
+    expect(dec.run).toBeNull();
+  });
+
+  it("transitions to v2 on a valid manifest and sets run", () => {
+    const dec = createGenerationStreamDecoder();
+    const events = dec.decode("started", validStartedData);
+    expect(dec.mode).toBe("v2");
+    expect(dec.run).toEqual({
+      runId: "RUN",
+      total: 2,
+      manifest: [
+        { index: 0, questionId: "q_RUN_001" },
+        { index: 1, questionId: "q_RUN_002" },
+      ],
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ kind: "v2", event: { name: "started" } });
+  });
+
+  it("is unsupported with unknown_protocol when protocol_version is not 2", () => {
+    const dec = createGenerationStreamDecoder();
+    const data = JSON.stringify({
+      context: validContext,
+      payload: { protocol_version: 3, total: 1, questions: [{ index: 0, question_id: "q1" }] },
+    });
+    const events = dec.decode("started", data);
+    expect(dec.mode).toBe("unsupported");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "unknown_protocol" });
+  });
+
+  it("is unsupported with invalid_manifest on duplicate question_id", () => {
+    const dec = createGenerationStreamDecoder();
+    const data = JSON.stringify({
+      context: validContext,
+      payload: {
+        protocol_version: 2,
+        total: 2,
+        questions: [
+          { index: 0, question_id: "same_id" },
+          { index: 1, question_id: "same_id" },
+        ],
+      },
+    });
+    const events = dec.decode("started", data);
+    expect(dec.mode).toBe("unsupported");
+    expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "invalid_manifest" });
+  });
+
+  it("is unsupported with invalid_manifest on index gap", () => {
+    const dec = createGenerationStreamDecoder();
+    const data = JSON.stringify({
+      context: validContext,
+      payload: {
+        protocol_version: 2,
+        total: 2,
+        questions: [
+          { index: 0, question_id: "q1" },
+          { index: 2, question_id: "q2" }, // gap: index 2 instead of 1
+        ],
+      },
+    });
+    const events = dec.decode("started", data);
+    expect(dec.mode).toBe("unsupported");
+    expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "invalid_manifest" });
+  });
+
+  it("is unsupported with invalid_manifest when total does not match questions length", () => {
+    const dec = createGenerationStreamDecoder();
+    const data = JSON.stringify({
+      context: validContext,
+      payload: {
+        protocol_version: 2,
+        total: 3, // mismatch
+        questions: [
+          { index: 0, question_id: "q1" },
+          { index: 1, question_id: "q2" },
+        ],
+      },
+    });
+    const events = dec.decode("started", data);
+    expect(dec.mode).toBe("unsupported");
+    expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "invalid_manifest" });
+  });
+
+  it("transitions to legacy on a started event with generation_log_id (no context)", () => {
+    const dec = createGenerationStreamDecoder();
+    const data = JSON.stringify({ generation_log_id: "LOG123" });
+    const events = dec.decode("started", data);
+    expect(dec.mode).toBe("legacy");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ kind: "legacy", name: "started", data });
+  });
+
+  it("transitions to legacy on an empty started payload", () => {
+    const dec = createGenerationStreamDecoder();
+    const events = dec.decode("started", "{}");
+    expect(dec.mode).toBe("legacy");
+    expect(events[0]).toMatchObject({ kind: "legacy", name: "started" });
+  });
+
+  it("holds events before started and returns {kind:'held'}", () => {
+    const dec = createGenerationStreamDecoder();
+    const ev = dec.decode("stage", JSON.stringify({ type: "stage" }));
+    expect(dec.mode).toBe("awaiting-start");
+    expect(ev).toHaveLength(1);
+    expect(ev[0]).toEqual({ kind: "held" });
+  });
+
+  it("replays held events after a valid started", () => {
+    const dec = createGenerationStreamDecoder();
+    const stageData = JSON.stringify({ context: { run_id: "RUN", event_seq: 2 }, payload: { type: "stage" } });
+    dec.decode("stage", stageData); // held
+    const events = dec.decode("started", validStartedData);
+    // started + replayed stage
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ kind: "v2", event: { name: "started" } });
+    expect(events[1]).toMatchObject({ kind: "v2", event: { name: "stage" } });
+  });
+
+  it("ignores events with wrong run_id in v2 mode", () => {
+    const dec = createGenerationStreamDecoder();
+    dec.decode("started", validStartedData);
+    const data = JSON.stringify({ context: { run_id: "OTHER", event_seq: 2 }, payload: {} });
+    const events = dec.decode("result", data);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ kind: "ignore", reason: "wrong_run" });
+  });
+
+  it("ignores events without integer event_seq in v2 mode", () => {
+    const dec = createGenerationStreamDecoder();
+    dec.decode("started", validStartedData);
+    const data = JSON.stringify({ context: { run_id: "RUN", event_seq: "notanumber" }, payload: {} });
+    const events = dec.decode("result", data);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ kind: "ignore", reason: "invalid_envelope" });
+  });
+
+  it("returns missing_started when done arrives before started", () => {
+    const dec = createGenerationStreamDecoder();
+    const events = dec.decode("done", "{}");
+    expect(dec.mode).toBe("unsupported");
+    expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "missing_started" });
+  });
+
+  it("returns missing_started when error arrives before started", () => {
+    const dec = createGenerationStreamDecoder();
+    const events = dec.decode("error", "{}");
+    expect(dec.mode).toBe("unsupported");
+    expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "missing_started" });
+  });
+
+  it("passes all events through in legacy mode", () => {
+    const dec = createGenerationStreamDecoder();
+    dec.decode("started", "{}"); // → legacy
+    const data = JSON.stringify({ something: "legacy_result" });
+    const events = dec.decode("result", data);
+    expect(events[0]).toEqual({ kind: "legacy", name: "result", data });
+  });
+
+  it("decodes v2 events with correct structure after valid started", () => {
+    const dec = createGenerationStreamDecoder();
+    dec.decode("started", validStartedData);
+    const ctx = { run_id: "RUN", event_seq: 5, question_id: "q_RUN_001", index: 0, content_revision: 1 };
+    const payload = { index: 0, phase: "draft", question: { id: "q_RUN_001" } };
+    const data = JSON.stringify({ context: ctx, payload });
+    const events = dec.decode("question_update", data);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      kind: "v2",
+      event: {
+        name: "question_update",
+        context: ctx,
+        payload,
+      },
+    });
   });
 });
