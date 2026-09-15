@@ -11,7 +11,7 @@ import { useAuthStore } from "../../store/authStore";
 import { useReleaseStore, resetReleaseDetector } from "../release/releaseStore";
 import type { ReleaseState } from "../release/releaseStore";
 import { runSaveAndUpdate } from "./saveAndUpdate";
-import { loadSnapshot, loadTabPointer, getOrCreateTabId } from "./storage";
+import { loadSnapshot, loadTabPointer } from "./storage";
 import { RECOVERY_FORMAT_V1 } from "./format";
 import { evaluateSaveAndUpdate, type EvaluateInput } from "./saveAndUpdate";
 import type { SurfaceParticipation } from "../workspace/workspaceStore";
@@ -328,7 +328,6 @@ describe("runSaveAndUpdate", () => {
     expect(navigate).not.toHaveBeenCalled();
 
     // Snapshot should still be on disk
-    const snapId = (result as { ok: false; reason: string; snapshot_id?: string }).snapshot_id;
     // We can check that SOME recovery key exists in localStorage
     const keys = [];
     for (let i = 0; i < localStorage.length; i++) {

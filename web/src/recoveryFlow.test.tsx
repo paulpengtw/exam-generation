@@ -222,7 +222,6 @@ describe("recovery flow — scenario 1: full save → restore → confirm", () =
     // (ParamForm initializes formFields from recoveredForm immediately)
     await waitFor(() => {
       const ws = useWorkspaceStore.getState();
-      const exported = ws.surfaces["generate.form"]?.exportWorkspace?.();
       // Either workspace has the exported form, or ParamForm is still mounting
       // — the surface registers on mount via useSurfaceParticipation
       expect(ws.surfaces["generate.form"]).toBeDefined();

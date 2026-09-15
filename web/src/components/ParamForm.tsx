@@ -2395,6 +2395,7 @@ export default function ParamForm({
     if (context.some((v) => !allowedContexts.has(v))) invalid.add("context");
     const allowedSetTypes = new Set(schemas.題型種類?.map((s) => s.value) ?? []);
     if (setType && !allowedSetTypes.has(setType)) invalid.add("setType");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- stable setter; no loop risk (deps don't include the state it sets)
     setRecoveredInvalidFields(invalid);
   }, [recoveredForm, schemas, qType, context, setType]);
 
