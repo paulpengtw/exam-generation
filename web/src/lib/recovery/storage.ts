@@ -17,6 +17,10 @@ export interface TabPointer {
   account_id: string;
   snapshot_id: string;
   route: string;
+  /** Present when pointer was saved by runSaveAndUpdate (issue #772). */
+  tab_id?: string;
+  attempted_target_build_id?: string;
+  attempted_target_release_revision?: number;
 }
 
 export type SaveResult =
