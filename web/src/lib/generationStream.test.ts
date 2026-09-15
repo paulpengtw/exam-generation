@@ -223,18 +223,27 @@ describe("createGenerationStreamDecoder", () => {
     expect(events[0]).toEqual({ kind: "ignore", reason: "invalid_envelope" });
   });
 
-  it("returns missing_started when done arrives before started", () => {
+  it("returns missing_started when done with v2 context arrives before started", () => {
     const dec = createGenerationStreamDecoder();
-    const events = dec.decode("done", "{}");
+    const data = JSON.stringify({ context: { run_id: "RUN", event_seq: 5 }, payload: {} });
+    const events = dec.decode("done", data);
     expect(dec.mode).toBe("unsupported");
     expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "missing_started" });
   });
 
-  it("returns missing_started when error arrives before started", () => {
+  it("returns missing_started when error with v2 context arrives before started", () => {
     const dec = createGenerationStreamDecoder();
-    const events = dec.decode("error", "{}");
+    const data = JSON.stringify({ context: { run_id: "RUN", event_seq: 5 }, payload: {} });
+    const events = dec.decode("error", data);
     expect(dec.mode).toBe("unsupported");
     expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "missing_started" });
+  });
+
+  it("falls through to legacy when done with no v2 context arrives before started", () => {
+    const dec = createGenerationStreamDecoder();
+    const events = dec.decode("done", "{}");
+    expect(dec.mode).toBe("legacy");
+    expect(events[0]).toEqual({ kind: "legacy", name: "done", data: "{}" });
   });
 
   it("passes all events through in legacy mode", () => {

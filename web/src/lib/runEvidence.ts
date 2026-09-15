@@ -14,7 +14,13 @@ export type ModificationEvidence = {
   steps: readonly ModificationStageEvent[];
 };
 
-/** Reserved entry point for OpenSpec per-question-live-progress tasks 5.x/6.x and issue #742. */
-export type GenerationV2Evidence = { profile: "generate-v2" };
+/** Evidence profile for the generation stream v2 protocol (issue #742). */
+export type GenerationV2Evidence = {
+  profile: "generate-v2";
+  total: number;
+  endedCount: number;
+  finalReceivedCount: number;
+  closed: boolean;
+};
 
 export type RunEvidence = GenerationLegacyEvidence | ModificationEvidence | GenerationV2Evidence;

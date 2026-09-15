@@ -6,12 +6,24 @@ import type {
   ReferenceExampleRecordShape,
   VerificationTrailEntry,
 } from "../hooks/useGenerate";
-import type { GenerationLegacyEvidence } from "./runEvidence";
+import type { GenerationLegacyEvidence, GenerationV2Evidence } from "./runEvidence";
+import type { RunEvidenceState } from "./generationEvidence";
+import { selectEndedCount, selectFinalReceivedCount } from "./generationEvidence";
 
 export function projectGenerationEvidence(
   llmCalls: readonly LlmCallEvent[],
   subQuestionCount: number | null,
-): GenerationLegacyEvidence {
+  v2Evidence?: RunEvidenceState | null,
+): GenerationLegacyEvidence | GenerationV2Evidence {
+  if (v2Evidence) {
+    return {
+      profile: "generate-v2",
+      total: v2Evidence.total,
+      endedCount: selectEndedCount(v2Evidence),
+      finalReceivedCount: selectFinalReceivedCount(v2Evidence),
+      closed: v2Evidence.closed,
+    };
+  }
   return {
     profile: "generate-legacy",
     stageEvents: llmCalls.filter((event) => event.type === "stage"),
@@ -190,8 +202,25 @@ export function createGenerationStreamDecoder(): GenerationStreamDecoder {
         return processStarted(rawData);
       }
       if (eventName === "done" || eventName === "error") {
-        mode = "unsupported";
-        return [{ kind: "mode", mode: "unsupported", reason: "missing_started" }];
+        // If the event data has a v2 context envelope, we know this is a v2
+        // stream that lost its started event → unsupported missing_started.
+        // If the data is legacy/empty (no context key), fall through to legacy.
+        let hasV2Context = false;
+        if (rawData) {
+          try {
+            const p = JSON.parse(rawData) as unknown;
+            if (p !== null && typeof p === "object" && "context" in (p as object)) {
+              hasV2Context = true;
+            }
+          } catch { /* ignore */ }
+        }
+        if (hasV2Context) {
+          mode = "unsupported";
+          return [{ kind: "mode", mode: "unsupported", reason: "missing_started" }];
+        }
+        // Legacy-format done/error (no context) → transition to legacy
+        mode = "legacy";
+        return [{ kind: "legacy", name: eventName, data: rawData }];
       }
       // Hold non-started events
       held.push({ name: eventName, rawData });
