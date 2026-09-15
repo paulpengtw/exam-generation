@@ -224,3 +224,38 @@ Durable gotchas and decisions for all agents and developers working on this repo
   cannot newly mark an image stale; existing stale state survives in the child
   History record. Manual review retains its separate stream and adds no
   automatic-generation verification trail.
+- Initial manual rejection ends the `modification` stage; later rejection
+  ends `correct`, matching the step that started. The manual progress bar
+  retains the error event so the failed step exposes its safe reason on hover.
+
+## Figures, slot configuration, and evidence discovery (#816–#821, 2026-09-15)
+
+- [Natural-sciences generation](https://github.com/paulpengtw/exam-generation/blob/fix/816-821-figures-and-diagnostics/src/natural_sciences/cli.py)
+  calls the existing top-level visual repair helper before rendering. A visual
+  題組-level content type requests one shared figure; each 小題 retains its own
+  figure obligation. An image generation mode alone requests no figure.
+- [The shared generation core](https://github.com/paulpengtw/exam-generation/blob/fix/816-821-figures-and-diagnostics/src/common/generation_core.py)
+  uses the plan array position for configuration lookup, private `_plan_index`,
+  and result collection. Model-reported plan ordinals previously could select
+  another slot's pins or merge two results under one dictionary key. Generated
+  row ordinals remain intact; correction owns their preservation separately.
+  Both subject renderers also use the planned slot in image filenames, so
+  duplicate model-reported ordinals cannot overwrite another slot's figure.
+- [History detail](https://github.com/paulpengtw/exam-generation/blob/fix/816-821-figures-and-diagnostics/server/history/routes.py)
+  advertises `generation_log_id` only when the returned version has owned
+  exchange evidence. Never-recorded and pruned evidence returns null. The
+  generation stream still exposes its log id at startup for live diagnostics.
+- [Subquestion diagnostics](https://github.com/paulpengtw/exam-generation/blob/fix/816-821-figures-and-diagnostics/src/common/generation_core.py)
+  retain the final attempt's safe failure cause through the existing retry/drop
+  path. Exhaustion emits the existing stage error and a WARNING, which the
+  configured Sentry logging integration promotes to an event. Recovery emits
+  no drop incident. Discarded visual specifications use WARNING after the row
+  is accepted; diagnostic records identify the question and planned slot while
+  excluding provider payloads. The figure-policy trail stays unchanged.
+- [ParamForm](https://github.com/paulpengtw/exam-generation/blob/fix/816-821-figures-and-diagnostics/web/src/components/ParamForm.tsx)
+  preserves and submits existing slot configurations while 小題數 is blank.
+  Explicit counts retain their row slicing; math still submits no slot configs.
+- The issue-referenced OpenSpec changes and the 2026-09-14 NS incident research
+  document were unavailable in the worktrees and registered stores inspected
+  for this implementation. Published GitHub issue requirements supplied the
+  contract; original-source OpenSpec strict validation remains unverified.

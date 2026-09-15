@@ -45,7 +45,8 @@ class _CapturingClient:
         return None
 
     def generate_json(self, system: str, user: str, **_kwargs):
-        self.prompts = (system, user)
+        if self.prompts is None:
+            self.prompts = (system, user)
         return self.payload
 
 

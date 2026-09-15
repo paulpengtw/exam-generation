@@ -14,10 +14,13 @@ from ``src.*`` only.
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import sys
 from collections.abc import Callable, Sequence
 from enum import Enum
 from typing import Any, get_args
+
+from pydantic import ValidationError
 
 from src.common.correction_decision import CorrectionDecision
 from src.common.figure_policy_trail import FigurePolicyTrailEvent
@@ -34,6 +37,8 @@ from src.html_renderer import PlaywrightRenderer
 from src.llm_client import LLMClient, emit_plan, emit_stage, make_render_error_sink
 from src.renderer import render_image
 
+logger = logging.getLogger(__name__)
+
 
 class GenerationCancelled(Exception):
     """Raised at stage boundaries when the run's cancel signal has been set.
@@ -41,6 +46,40 @@ class GenerationCancelled(Exception):
     Workers catch this and exit silently — the client has already disconnected.
     No error SSE event is emitted; the route layer persists 'aborted'.
     """
+
+
+class SubquestionParseError(ValueError):
+    """Safe, operator-facing reason for an unusable subquestion response."""
+
+    _FIELDS = frozenset({
+        "id", "序號", "年級", "科目", "科學能力", "核心素養", "學習內容",
+        "學習表現", "出題概念", "出題指示", "認知歷程", "reporting_scale", "題型",
+        "題目", "答案", "答案解析", "評分規準", "誘答分析", "題目內容類型",
+        "image_generation_mode", "圖片", "chart_spec", "interaction",
+    })
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+    @classmethod
+    def from_validation(cls, error: ValidationError) -> "SubquestionParseError":
+        """Convert Pydantic details to a field/type-only safe reason."""
+        try:
+            first = error.errors(include_input=False, include_context=False, include_url=False)[0]
+        except (AttributeError, IndexError, TypeError):
+            return cls("子題欄位驗證失敗（validation_error）")
+        location = first.get("loc", ())
+        field = location[0] if location else "子題欄位"
+        if field not in cls._FIELDS:
+            field = "子題欄位"
+        raw_type = first.get("type", "validation_error")
+        error_type = str(raw_type)
+        error_type = "".join(
+            character for character in error_type
+            if character.isalnum() or character in {".", "_", "-"}
+        )[:64] or "validation_error"
+        return cls(f"子題欄位「{field}」驗證失敗（{error_type}）")
 
 
 def _emit_update(callback: Callable | None, question: Any, phase: str) -> None:
@@ -164,7 +203,7 @@ def build_subquestion_generation_prompts(
             "序號": idx,
             "出題概念": "{{子題 plan：由前一階段產生}}",
         }
-        slot_cfg = subquestion_configs[idx - 1] if idx - 1 < len(subquestion_configs) else None
+        slot_cfg = subquestion_configs[idx - 1] if 1 <= idx <= len(subquestion_configs) else None
         sub_user, sub_images, _sub_draws = spec.build_subquestion_user_fn(
             text_raw,
             params,
@@ -275,13 +314,25 @@ def generate_one_core(
 
     def _generate_subquestion(plan_item: tuple[int, dict]) -> Any:
         plan_position, sq_plan = plan_item
-        idx = sq_plan.get("序號", plan_position + 1)
+        idx = plan_position + 1
         agent_id = f"sub_generator#{idx}"
         if use_embedded_subquestions:
-            return spec.parse_subquestion_fn(sq_plan, question_id, params, idx)
+            try:
+                return spec.parse_subquestion_fn(sq_plan, question_id, params, idx)
+            except SubquestionParseError as exc:
+                # Embedded responses predate the retrying LLM path; preserve
+                # their existing drop-on-parse-failure behavior while keeping
+                # the reason safe for operators.
+                logger.warning(
+                    "embedded subquestion discarded: question_id=%s agent=%s reason=%s",
+                    question_id,
+                    agent_id,
+                    exc.reason,
+                )
+                return None
 
         subquestion_configs = getattr(params, "subquestion_configs", [])
-        slot_cfg = subquestion_configs[idx - 1] if idx - 1 < len(subquestion_configs) else None
+        slot_cfg = subquestion_configs[idx - 1] if 1 <= idx <= len(subquestion_configs) else None
         sub_user, sub_images, sub_ref_draws = spec.build_subquestion_user_fn(
             text_raw, params, few_shot_dir, sq_plan, slot_cfg,
             image_generation_mode, disable_reference_fewshot,
@@ -298,8 +349,9 @@ def generate_one_core(
 
         attempts = 1 + max(0, config.subgen_retries)
         result = None
-        last_exc_text: str = ""
+        last_failure_reason = ""
         for attempt in range(1, attempts + 1):
+            last_failure_reason = ""
             sub_client = (
                 sub_client_factory() if sub_client_factory is not None else LLMClient(config)
             )
@@ -313,14 +365,31 @@ def generate_one_core(
                     images=sub_images or None,
                     agent_override=agent_id,
                 )
-                result = spec.parse_subquestion_fn(sq_raw, question_id, params, idx)
             except Exception as e:
+                last_failure_reason = f"provider call raised {type(e).__name__}"
                 print(
-                    f"  Sub-generator {agent_id} attempt {attempt}/{attempts} failed: {e}",
+                    f"  Sub-generator {agent_id} attempt {attempt}/{attempts} failed: "
+                    f"{last_failure_reason}",
                     file=sys.stderr,
                 )
                 result = None
-                last_exc_text = str(e)
+            else:
+                try:
+                    result = spec.parse_subquestion_fn(
+                        sq_raw, question_id, params, idx
+                    )
+                except SubquestionParseError as e:
+                    last_failure_reason = e.reason
+                    result = None
+                except Exception as e:
+                    last_failure_reason = (
+                        f"subquestion parser raised {type(e).__name__}"
+                    )
+                    result = None
+                if result is None and not last_failure_reason:
+                    last_failure_reason = (
+                        "subquestion response did not satisfy the expected schema"
+                    )
             if result is not None:
                 emit_stage(obs, agent_id, "llm_generate", "end", attempt=attempt)
                 configured_type = (
@@ -370,9 +439,16 @@ def generate_one_core(
                     file=sys.stderr,
                 )
         _drop_msg = (
-            f"子題 {idx} 生成失敗（{attempts} 次嘗試）: {last_exc_text}"
-            if last_exc_text
+            f"子題 {idx} 生成失敗（{attempts} 次嘗試）: {last_failure_reason}"
+            if last_failure_reason
             else f"子題 {idx} 生成失敗（{attempts} 次嘗試）"
+        )
+        logger.warning(
+            "subquestion generation exhausted: question_id=%s agent=%s attempts=%d reason=%s",
+            question_id,
+            agent_id,
+            attempts,
+            last_failure_reason or "subquestion response did not satisfy the expected schema",
         )
         emit_stage(obs, agent_id, "llm_generate", "error", message=_drop_msg)
         print(
@@ -389,7 +465,7 @@ def generate_one_core(
         }
         for future in concurrent.futures.as_completed(futures):
             plan_position, sq_plan = futures[future]
-            idx = sq_plan.get("序號", plan_position + 1)
+            idx = plan_position + 1
             result = future.result()
             if result is not None:
                 sq_results[idx] = result

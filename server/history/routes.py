@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import get_async_session
-from server.models import GenerationRecord, User
+from server.models import GenerationLog, GenerationRecord, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
 
 logger = logging.getLogger(__name__)
@@ -163,6 +163,26 @@ async def _load_latest_owned(
     )
 
 
+async def _available_generation_log_id(
+    row: GenerationRecord, user: User, session: AsyncSession
+) -> str | None:
+    """Return the returned record's log only while owned exchange evidence remains."""
+    if row.generation_log_id is None:
+        return None
+    evidence = await session.execute(
+        select(LLMExchange.id)
+        .join(GenerationLog, GenerationLog.id == LLMExchange.generation_log_id)
+        .where(
+            LLMExchange.generation_log_id == row.generation_log_id,
+            GenerationLog.user_id == user.id,
+        )
+        .limit(1)
+    )
+    if evidence.scalar_one_or_none() is None:
+        return None
+    return str(row.generation_log_id)
+
+
 def _embed_images_sync(question_json: dict, config: ServerConfig) -> dict:
     """Copy question_json and embed image_base64 for any PNG still on disk.
 
@@ -214,9 +234,7 @@ async def get_history_detail(
     row = await _load_latest_owned(row, user, session)
     return {
         "id": str(row.id),
-        "generation_log_id": (
-            str(row.generation_log_id) if row.generation_log_id is not None else None
-        ),
+        "generation_log_id": await _available_generation_log_id(row, user, session),
         "subject": row.subject,
         "question_id": row.question_id,
         "created_at": row.created_at.isoformat(),

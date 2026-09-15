@@ -268,20 +268,43 @@ def test_parser_keeps_valid_drag_drop_interaction() -> None:
     assert isinstance(question.interaction, DragDropSpec)
 
 
-def test_parser_retries_when_noninteractive_question_contains_interaction() -> None:
-    from src.social_studies.cli import _parse_subquestion
+def test_generation_retries_when_noninteractive_question_contains_interaction(tmp_path) -> None:
+    from src.config import Config
+    from src.social_studies.cli import generate_one
     from src.social_studies.sampler import sample_params
+    from tests.test_figure_obligations_pipeline import FigureProvider, SubquestionProvider
 
-    params = sample_params(seed=4)
+    class InteractiveResponseProvider(SubquestionProvider):
+        attempts = 0
 
-    question = _parse_subquestion(
-        {"序號": 1, "題型": "選擇題", "題目": "選擇", "interaction": _drag_spec()},
-        "interactive",
-        params,
-        1,
+        def generate_json(self, *args, agent_override, **kwargs):
+            payload = super().generate_json(*args, agent_override=agent_override, **kwargs)
+            if agent_override == "sub_generator#1":
+                self.attempts += 1
+                if self.attempts == 1:
+                    payload["interaction"] = _drag_spec()
+            return payload
+
+    params = sample_params(
+        seed=4, content_type="純文字", sub_question_count=3,
+        subquestion_configs=[{"question_type": "選擇題"}] * 3,
+    )
+    provider = InteractiveResponseProvider("social_studies")
+    main_client = FigureProvider()
+    question = generate_one(
+        config=Config(api_key="test", output_dir=tmp_path, subgen_retries=1),
+        client=main_client, params=params, question_id="interactive-retry",
+        skip_verify=True, disable_reference_fewshot=True,
+        sub_client_factory=lambda: provider,
     )
 
-    assert question is None
+    assert provider.attempts == 2
+    assert [sub.id for sub in question.subquestions] == ["slot-1", "slot-2", "slot-3"]
+    assert question.subquestions[0].interaction is None
+    assert not any(
+        event.get("type") == "stage" and event.get("status") == "error"
+        for event in main_client.events
+    )
 
 
 def test_corrector_restores_original_interaction_spec_verbatim() -> None:
