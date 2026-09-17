@@ -42,6 +42,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "release.paused": "App update in progress. Please wait.",
     "release.unavailable": "Cannot check for updates.",
     "release.check_again": "Check again",
+    "generate.preflight_update_required": "A newer version is available. Please refresh the page before generating.",
+    "generate.preflight_paused": "Generation is paused for a system update. Please wait and try again.",
+    "generate.preflight_unavailable": "Cannot verify app version. Please refresh the page and try again.",
 
     "feedback.button_aria": "Report a problem",
     "feedback.form_title": "Report a problem",
@@ -553,6 +556,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "release.paused": "應用程式更新中，請稍候。",
     "release.unavailable": "無法檢查更新。",
     "release.check_again": "重新檢查",
+    "generate.preflight_update_required": "介面版本已更新，請重新整理頁面後再生成。",
+    "generate.preflight_paused": "出題服務暫停維護中，請稍候後再試。",
+    "generate.preflight_unavailable": "無法確認介面版本，請重新整理頁面後再試。",
 
     "feedback.button_aria": "回報問題",
     "feedback.form_title": "回報問題",

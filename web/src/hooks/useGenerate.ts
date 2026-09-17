@@ -13,6 +13,7 @@ import {
   type RunEvidenceState,
 } from "../lib/generationEvidence";
 
+import { useReleaseStore } from "../lib/release/releaseStore";
 import { useWorkspaceStore, type OperationHandle, type OperationOutcome } from "../lib/workspace/workspaceStore";
 import type { ResultsWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 
@@ -621,10 +622,6 @@ export function useGenerate(): UseGenerateReturn {
     controllerRef.current?.abort();
     controllerRef.current = null;
     setProgressLines([]);
-    setResults([]);
-    setDisplayResults([]);
-    setEvidence(null);
-    evidenceRef.current = null;
     setLlmCalls([]);
     setErrorMessage(null);
     setStartedAt(null);
@@ -654,7 +651,7 @@ export function useGenerate(): UseGenerateReturn {
     return true;
   }, []);
 
-  const generate = useCallback((params: GenerateParams): Promise<AdmissionOutcome> => {
+  const generate = useCallback(async (params: GenerateParams): Promise<AdmissionOutcome> => {
     admissionResolveRef.current?.({ outcome: "rejected", reason: "superseded" });
     endOperation("superseded");
     const admissionPromise = new Promise<AdmissionOutcome>((resolve) => {
@@ -680,10 +677,9 @@ export function useGenerate(): UseGenerateReturn {
     setAdmission("submitting");
     setAdmissionError(null);
     setProgressLines([]);
-    setResults([]);
-    setDisplayResults([]);
-    setEvidence(null);
-    evidenceRef.current = null;
+    // Results, displayResults, and evidence are cleared only when the 'started'
+    // event establishes admission — so previous output is preserved on pre-stream
+    // errors (426 / 503 / preflight failure).  See issue #771.
     setLlmCalls([]);
     setErrorMessage(null);
     setStartedAt(streamContext.startedAt);
@@ -703,6 +699,10 @@ export function useGenerate(): UseGenerateReturn {
 
       switch (name) {
         case "started": {
+          setResults([]);
+          setDisplayResults([]);
+          setEvidence(null);
+          evidenceRef.current = null;
           setStatus("generating");
           settleAdmission({ outcome: "admitted" });
           // Build evidence from decoder's manifest
@@ -879,6 +879,10 @@ export function useGenerate(): UseGenerateReturn {
     function handleLegacyEvent(eventName: string, data: string) {
       switch (eventName) {
         case "started":
+          setResults([]);
+          setDisplayResults([]);
+          setEvidence(null);
+          evidenceRef.current = null;
           setStatus("generating");
           settleAdmission({ outcome: "admitted" });
           {
@@ -1050,6 +1054,29 @@ export function useGenerate(): UseGenerateReturn {
       }
     }
 
+    // Preflight: ensure we have a current release status before submission.
+    // Only trigger a network check when the store is in the initial "checking"
+    // state (no check has run yet).  When the background poller already set a
+    // definitive status, use it directly — this keeps generate() synchronous in
+    // the common case and avoids a microtask deferral that would break tests
+    // using a synchronous act().
+    if (useReleaseStore.getState().status === "checking") {
+      await useReleaseStore.getState().checkNow();
+    }
+    const preflightStatus = useReleaseStore.getState().status;
+    if (preflightStatus === "update-required" || preflightStatus === "paused" || preflightStatus === "unavailable") {
+      const msgKey =
+        preflightStatus === "update-required"
+          ? "generate.preflight_update_required"
+          : preflightStatus === "paused"
+            ? "generate.preflight_paused"
+            : "generate.preflight_unavailable";
+      const msg = MESSAGES["zh-TW"][msgKey] ?? msgKey;
+      setAdmission("idle");
+      setAdmissionError(msg);
+      settleAdmission({ outcome: "rejected", reason: msg });
+      return admissionPromise;
+    }
     operationRef.current = useWorkspaceStore.getState().beginOperation("generation", "generate.results");
     fetchEventSource("/api/generate", {
       method: "POST",
@@ -1057,6 +1084,7 @@ export function useGenerate(): UseGenerateReturn {
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
+        "X-Frontend-Build-ID": __BUILD_ID__,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       openWhenHidden: true,

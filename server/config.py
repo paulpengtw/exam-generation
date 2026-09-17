@@ -67,6 +67,9 @@ class ServerConfig(Config):
     math_curriculum_dir: Path = (
         Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"
     )
+    release_authority_path: Path = (
+        Path(__file__).resolve().parent.parent / "web" / "dist" / "release" / "policy.json"
+    )
     generation_history_retention_days: int = 0
     email_whitelist: tuple[str, ...] = ()
     llm_models_allowed: tuple[str, ...] = ()
@@ -145,6 +148,15 @@ class ServerConfig(Config):
                 os.environ.get(
                     "MATH_CURRICULUM_DIR",
                     str(Path(__file__).resolve().parent.parent / "data" / "math" / "curriculum"),
+                )
+            ),
+            release_authority_path=Path(
+                os.environ.get(
+                    "RELEASE_AUTHORITY_PATH",
+                    str(
+                        Path(__file__).resolve().parent.parent
+                        / "web" / "dist" / "release" / "policy.json"
+                    ),
                 )
             ),
             generation_history_retention_days=int(

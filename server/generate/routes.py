@@ -39,6 +39,7 @@ from server.generate.persistence import (
     persist_aborted_generation_record,
     persist_failed_generation_record,
 )
+from server.generate.release_authority import FileAuthoritySource, check_build_admission
 from server.generate.service import build_prompt_previews, generate_question_stream
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
@@ -399,6 +400,11 @@ async def generate_endpoint(
         )
         if stream_version is None or stream_version not in SUPPORTED_STREAM_VERSIONS:
             return JSONResponse(status_code=426, content=client_update_required_body())
+        if resp := check_build_admission(
+            request.headers.get("x-frontend-build-id"),
+            FileAuthoritySource(config.release_authority_path),
+        ):
+            return resp
         _check_generation_admission(params, config)
         params = GenerateParams.model_validate(params.model_dump())
     except ValidationError as exc:
@@ -426,6 +432,11 @@ async def generate_body_endpoint(
 ) -> EventSourceResponse:
     if params.stream_version is None or params.stream_version not in SUPPORTED_STREAM_VERSIONS:
         return JSONResponse(status_code=426, content=client_update_required_body())
+    if resp := check_build_admission(
+        request.headers.get("x-frontend-build-id"),
+        FileAuthoritySource(config.release_authority_path),
+    ):
+        return resp
     _check_generation_admission(params, config)
     return await _generate(request, params, user, session, config)
 

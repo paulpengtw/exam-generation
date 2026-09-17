@@ -95,6 +95,17 @@ The store never receives an AbortController, promise or callback that can cancel
 The store never calls `location.reload`, never touches workspace operations, and never submits anything. Generation enforcement (#771), save-and-update (#772+), scheduling (#777), and the live release controller (#778) are separate tickets.
 
 Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
+
+### Build admission (issue #771)
+
+Every `GET` and `POST /api/generate` request must carry an `X-Frontend-Build-ID` header whose value equals the authority fixture's `released_build_id`.
+
+`server/generate/release_authority.py`: `FileAuthoritySource` reads `web/dist/release/policy.json`; `check_build_admission(header, source) → JSONResponse | None` returns 426 `CLIENT_UPDATE_REQUIRED` (missing/outdated build) or 503 `AUTHORITY_UNAVAILABLE`/`SERVICE_PAUSED` (fixture unreachable or paused), and `None` on pass. Check order: FastAPI `get_current_user` (auth) → `stream_version` 426 → build-ID 426/503 → `_check_generation_admission` (model/effort/provider). The fixture path is `ServerConfig.release_authority_path` (env `RELEASE_AUTHORITY_PATH`); issue #778 swaps in a live source.
+
+`web/src/hooks/useGenerate.ts`: preflight `await useReleaseStore.getState().checkNow()` before each `fetchEventSource` call; `X-Frontend-Build-ID: __BUILD_ID__` header on the stream request; `setResults([])` / `setEvidence(null)` moved to the `started` event handler so previous output is preserved on pre-stream errors (426/503/timeout).
+
+Preview, resolve, history, modification API, and CLI pipeline are excluded.
+
 ### Evidence profiles (issue #739)
 
 `web/src/lib/runEvidence.ts` defines the `generate-legacy`, `modification`, and reserved `generate-v2` profiles. The shared status bar on GeneratePage and inside QuestionCard consumes a profile-tagged evidence object. `generationStream.ts` projects legacy stage events and the five generation card fields; `modificationStream.ts` projects modification steps and decodes its existing SSE events. Modification never requires a generation manifest. `generate-v2` is the generation-only entry point for OpenSpec `per-question-live-progress` (issue #742). The frontend decoder (`createGenerationStreamDecoder` in `generationStream.ts`) routes v2 SSE events through the `RunEvidenceState` reducer (`generationEvidence.ts`), which tracks per-question processing, content receipt, terminal status, and review. `GenerationStatusBar` renders a live 已結束/收到最終結果 counts line; `QuestionCard` renders a compact placeholder when `content.receipt === 'none'` and an evidence status line when content is available. `GeneratePage` renders cards in manifest order with live placeholders. HistoryDetail retains its stored-record card props.
