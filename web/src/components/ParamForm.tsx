@@ -1158,12 +1158,14 @@ function filterCurriculumEntriesBySubject<T extends SchemaEntry>(
   return filterEntriesByAdmittedParent(entries, "科目", values);
 }
 
+// #840: admission comes only from `admitted_by["內容領域"]` (ADR 0020) — a row
+// without that tag is unscoped and is never filtered/disabled by 內容領域,
+// regardless of its code prefix. No prefix table or 內容領域_mapping fallback.
 function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
   entries: readonly T[],
   subject: string,
   resolvedSubject: string | readonly string[] | undefined,
   contentDomain: string | undefined,
-  contentDomainMapping: Record<string, string[]> | undefined,
 ): T[] {
   if (subject !== "social_studies" || !contentDomain) return [...entries];
   const subjectValues = typeof resolvedSubject === "string"
@@ -1178,20 +1180,9 @@ function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
   const domainAdmittedEntries = new Set(
     filterEntriesByAdmittedParent(domainTaggedEntries, "內容領域", contentDomain),
   );
-  const mappedCodes = new Set(
-    Object.entries(contentDomainMapping ?? {})
-      .filter(([, domains]) => domains.includes(contentDomain))
-      .map(([code]) => code),
-  );
   return entries.filter((entry) =>
-    Object.hasOwn(entry.admitted_by ?? {}, "內容領域")
-      ? domainAdmittedEntries.has(entry)
-      : !isPublicSocialStudiesCode(entry.value) || mappedCodes.has(entry.value),
+    !Object.hasOwn(entry.admitted_by ?? {}, "內容領域") || domainAdmittedEntries.has(entry),
   );
-}
-
-function isPublicSocialStudiesCode(code: string): boolean {
-  return code.startsWith("公");
 }
 
 const PIN_RULE_MESSAGE_KEYS: Record<SocialStudiesPinRuleViolation, string> = {
@@ -2282,26 +2273,6 @@ export default function ParamForm({
     }
   }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade, availableLearningPerformance, availableLearningContent]);
 
-  // #833: 學習表現 has no 內容領域 parent (ADR 0020) and must never be filtered by
-  // it. Only 學習內容 admits a 內容領域 tag, so `filteredLcPool` below stays as-is.
-  const filteredLcPool = useMemo(() => {
-    if (
-      subject !== "social_studies" ||
-      !ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter) ||
-      !contentDomain
-    ) {
-      return undefined;
-    }
-    return filterLearningContentEntriesByDomain(
-      availableLearningContent,
-      subject,
-      subjectFilter,
-      contentDomain,
-      schemas?.內容領域_mapping,
-    )
-      .map((entry) => entry.value);
-  }, [availableLearningContent, contentDomain, schemas, subject, subjectFilter]);
-
   // #839: the 釘選 codes narrowing 科目/內容領域 are the 題組-level 學習內容 +
   // 學習表現 selections plus each 各小題配置 row's own pins. Admission comes
   // only from `admitted_by` tags (ADR 0020) via computeParentNarrowing — never
@@ -2368,6 +2339,43 @@ export default function ParamForm({
     lang,
     "form.content_domain_narrow_hint",
   );
+
+  // #840: a 學習內容 code the chosen (or, under 隨機, the still-viable) 內容領域
+  // would not admit is disabled — never dropped — in the request-level list/
+  // search and the per-小題 pickers. Admission comes only from
+  // `admitted_by["內容領域"]` (ADR 0020); a code without that tag (歷/地 codes,
+  // or an untagged civics code) is unscoped and never disabled here. Reuses
+  // `contentDomainNarrowing` (#839) for the 隨機 branch: its `disabledValues`
+  // are the 內容領域 values at least one 釘選 civics code already excludes, so
+  // `allContentDomainValues` minus that set is exactly the still-viable range.
+  const learningContentDomainDisabled = useMemo(() => {
+    const disabled = new Set<string>();
+    if (subject !== "social_studies") return disabled;
+    const viableDomains = contentDomain
+      ? null
+      : allContentDomainValues.filter((value) => !contentDomainNarrowing.disabledValues.has(value));
+    for (const entry of schemas?.學習內容 ?? []) {
+      const admitted = entry.admitted_by?.["內容領域"];
+      if (!Array.isArray(admitted)) continue; // unscoped — never disabled by 內容領域
+      if (contentDomain) {
+        if (!admitted.includes(contentDomain)) disabled.add(entry.value);
+        continue;
+      }
+      if (contentDomainNarrowing.constrainingCodes.length === 0) continue;
+      if (!admitted.some((value) => viableDomains?.includes(value))) disabled.add(entry.value);
+    }
+    return disabled;
+  }, [subject, schemas, contentDomain, contentDomainNarrowing, allContentDomainValues]);
+
+  const learningContentDomainHint = subject === "social_studies" && learningContentDomainDisabled.size > 0
+    ? (contentDomain
+        ? t("form.learning_content_domain_narrow_hint").replace("{domain}", contentDomain)
+        : formatNarrowingHint(
+            contentDomainNarrowing.constrainingCodes,
+            lang,
+            "form.learning_content_domain_narrow_hint_pinned",
+          ))
+    : null;
 
   const planEffortLevels = useMemo((): string[] => {
     if (!models?.effort) return [];
@@ -2567,10 +2575,10 @@ export default function ParamForm({
     if (isCurriculumSubject && !effectiveContentType) return;
     // #833: 學習表現 is never restricted by 內容領域; submit it unchanged.
     const selectedLearningPerformance = [...learningPerformance];
-    const lcPoolValues = filteredLcPool ?? availableLearningContent.map((entry) => entry.value);
-    const selectedLearningContent = filteredLcPool === undefined
-      ? [...learningContent]
-      : learningContent.filter((code) => lcPoolValues.includes(code));
+    // #840: no submit-time 內容領域 filtering of 學習內容 — the request carries
+    // exactly what is selected; disabling (never dropping) happens in the
+    // pickers themselves.
+    const selectedLearningContent = [...learningContent];
     const historyDrawn = Array.isArray(ip.drawn)
       ? ip.drawn.filter((path): path is string => typeof path === "string")
       : undefined;
@@ -3392,7 +3400,6 @@ export default function ParamForm({
               subject,
               resolvedQuestionSubject,
               questionContentDomain,
-              schemas?.內容領域_mapping,
             );
             const questionLpDisplayEntries = questionLpEntries.filter((entry) => questionLpCodes.includes(entry.value));
             const questionLcDisplayEntries = questionLcEntries.filter((entry) => questionLcCodes.includes(entry.value));
@@ -4659,33 +4666,50 @@ export default function ParamForm({
                     markUnsubmittedInput();
                   }}
                   placeholder="搜尋學習內容..."
+                  disabledValues={learningContentDomainDisabled}
+                  hint={learningContentDomainHint}
                 />
               </div>
             ) : (
-              <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {availableLearningContent.map((entry) => (
-                  <label key={entry.value} className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={learningContent.includes(entry.value)}
-                      onChange={() => {
-                        markUserChosen("learning_content");
-                        setField("learningContent", (prev) => toggleMulti(prev, entry.value));
-                      }}
-                      className="mt-1"
-                    />
-                    <span className="text-sm">
-                      <span className="font-medium">{entry.value}</span>
-                      {entry.instruction && (
-                        <span className="text-gray-600">：{entry.instruction}</span>
-                      )}
-                    </span>
-                  </label>
-                ))}
+              <div
+                className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2"
+                role="group"
+                aria-label={t("form.learning_content")}
+                aria-describedby={learningContentDomainHint ? "learning-content-checkbox-hint" : undefined}
+              >
+                {availableLearningContent.map((entry) => {
+                  const isSelected = learningContent.includes(entry.value);
+                  const isDisabled = !isSelected && learningContentDomainDisabled.has(entry.value);
+                  return (
+                    <label key={entry.value} className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={isDisabled}
+                        onChange={() => {
+                          markUserChosen("learning_content");
+                          setField("learningContent", (prev) => toggleMulti(prev, entry.value));
+                        }}
+                        className="mt-1"
+                      />
+                      <span className={`text-sm ${isDisabled ? "text-gray-400" : ""}`}>
+                        <span className="font-medium">{entry.value}</span>
+                        {entry.instruction && (
+                          <span className="text-gray-600">：{entry.instruction}</span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             )
           ) : (
             <p className="mt-1 text-sm text-gray-500">{t("form.learning_content_empty")}</p>
+          )}
+          {!useCurriculumSearch && learningContentDomainHint && (
+            <p id="learning-content-checkbox-hint" className="mt-1 text-xs text-amber-700">
+              {learningContentDomainHint}
+            </p>
           )}
         </div>
       )}
@@ -4767,7 +4791,8 @@ export default function ParamForm({
                   <SubQuestionCurriculumPickers
                     availableLearningPerformance={availableLearningPerformance}
                     availableLearningContent={availableLearningContent}
-                    filteredLcPool={filteredLcPool}
+                    learningContentDisabledValues={learningContentDomainDisabled}
+                    learningContentHint={learningContentDomainHint}
                     learningPerformance={cfg.learning_performance}
                     learningContent={cfg.learning_content}
                     onLearningPerformanceChange={(values) =>
