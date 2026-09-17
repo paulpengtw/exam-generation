@@ -345,6 +345,44 @@ def test_generate_route_reports_incompatible_parent_with_resolver_shape() -> Non
     ]
 
 
+@pytest.mark.parametrize("route", ["/api/generate", "/api/generate/preview"])
+def test_generate_and_preview_reject_the_empty_narrowed_civic_domain(route: str) -> None:
+    """#835 production reproduction: preview and generation reject the same
+
+    impossible 學習內容 combination /resolve rejects (issue #834's
+    production repro, now caught before any downstream call).
+    """
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                route,
+                params={
+                    "subject": "social_studies",
+                    "seed": 1,
+                    "grade": 8,
+                    "context": "個人",
+                    "set_type": "題組題",
+                    "subject_filter": "公民與社會",
+                    "learning_content": ["公Aa-Ⅳ-1", "公Ab-Ⅳ-1"],
+                },
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "內容領域"}
+    ]
+
+
 def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 

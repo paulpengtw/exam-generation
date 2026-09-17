@@ -358,6 +358,7 @@ def test_cross_subject_domain_filter_keeps_unscoped_history_and_geography_codes(
                     "學習階段": "第四學習階段",
                     "科目": "社",
                     "value": "社1a-Ⅳ-1",
+                    "admitted_by": {"科目": ["歷史", "地理", "公民與社會", "跨科"]},
                 }
             ]
         },
@@ -396,14 +397,14 @@ def test_cognitive_assignment_is_seeded_and_limits_knowing_defining_to_one() -> 
         first = sample_params(
             seed=seed,
             subject=[subject],
-            learning_content=["社1a-Ⅳ-1"],
+            learning_content=["公Aa-Ⅳ-1"],
             learning_performance=["社1a-Ⅳ-1"],
             sub_question_count=7,
         )
         second = sample_params(
             seed=seed,
             subject=[subject],
-            learning_content=["社1a-Ⅳ-1"],
+            learning_content=["公Aa-Ⅳ-1"],
             learning_performance=["社1a-Ⅳ-1"],
             sub_question_count=7,
         )
@@ -424,7 +425,7 @@ def test_every_cross_subject_group_contains_relate_or_integrate() -> None:
         params = sample_params(
             seed=seed,
             subject=[subject],
-            learning_content=["社1a-Ⅳ-1"],
+            learning_content=["公Aa-Ⅳ-1"],
             learning_performance=["社1a-Ⅳ-1"],
             sub_question_count=3,
         )
@@ -441,7 +442,7 @@ def test_cognitive_assignment_weights_knowing_toward_one_third() -> None:
         for process in _cognitive_processes(
             sample_params(
                 seed=seed,
-                learning_content=["社1a-Ⅳ-1"],
+                learning_content=["公Aa-Ⅳ-1"],
                 learning_performance=["社1a-Ⅳ-1"],
                 sub_question_count=3,
             )
@@ -718,13 +719,13 @@ def test_blank_domain_is_unrestricted_by_untagged_pinned_history_and_geography_c
     assert observed_domains == set(ContentDomain)
 
 
-def test_a_code_absent_from_the_content_admission_map_narrows_subject_to_nothing_admitted(
+def test_a_code_absent_from_the_content_admission_map_rejects_the_blank_subject_draw(
     monkeypatch,
 ) -> None:
     """An unknown/mistyped pinned code admits no candidate (#834 ruling); with
 
-    no rejection yet, an empty narrowed range falls back to the unfiltered
-    candidate set rather than raising.
+    #835 wired up, an empty narrowed range for a blank 科目 is rejected
+    rather than falling back to the unfiltered candidate set.
     """
     from src.social_studies import sampler
 
@@ -735,6 +736,118 @@ def test_a_code_absent_from_the_content_admission_map_narrows_subject_to_nothing
     )
     monkeypatch.setattr(sampler, "_LP_DATA", {"學習表現": []})
 
-    params = sampler.sample_params(seed=5, learning_content=["公Unknown-Ⅳ-9"])
+    with pytest.raises(sampler.ParentAdmissionError) as exc_info:
+        sampler.sample_params(seed=5, learning_content=["公Unknown-Ⅳ-9"])
 
-    assert params.科目 is not None
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "科目"}
+    ]
+
+
+# ── #835: impossible 科目/內容領域 combinations reject with a structured  ──
+# ── ParentAdmissionError instead of silently falling back ─────────────────
+
+
+def test_pinned_subject_incompatible_with_pinned_content_raises_incompatible_parent() -> None:
+    from src.social_studies.sampler import ParentAdmissionError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(ParentAdmissionError) as exc_info:
+        sample_params(seed=1, subject=[QuestionSubject("地理")], learning_content=["公Bj-Ⅳ-1"])
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "incompatible_parent", "parent": "地理"}
+    ]
+
+
+def test_pinned_domain_incompatible_with_pinned_content_raises_incompatible_parent() -> None:
+    from src.social_studies.sampler import IncompatibleContentDomainError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(IncompatibleContentDomainError) as exc_info:
+        sample_params(
+            seed=1,
+            subject=[QuestionSubject("公民與社會")],
+            content_domain="Civic Participation",
+            learning_content=["公Bn-Ⅳ-3"],
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        }
+    ]
+
+
+def test_blank_domain_with_conflicting_pinned_content_domains_raises_no_admitting_parent() -> (
+    None
+):
+    from src.social_studies.sampler import ParentAdmissionError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(ParentAdmissionError) as exc_info:
+        sample_params(
+            seed=1,
+            subject=[QuestionSubject("公民與社會")],
+            learning_content=["公Aa-Ⅳ-1", "公Ab-Ⅳ-1"],
+        )
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "內容領域"}
+    ]
+
+
+def test_multi_valued_subject_with_no_admitting_candidate_raises_no_admitting_parent_and_omits_domain() -> (  # noqa: E501
+    None
+):
+    from src.social_studies.sampler import ParentAdmissionError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(ParentAdmissionError) as exc_info:
+        sample_params(
+            seed=1,
+            subject=[QuestionSubject("歷史"), QuestionSubject("地理")],
+            learning_content=["公Bj-Ⅳ-1"],
+        )
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "科目"}
+    ]
+
+
+def test_multi_valued_subject_reports_one_no_admitting_parent_error_per_contributing_field() -> (
+    None
+):
+    from src.social_studies.sampler import ParentAdmissionError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(ParentAdmissionError) as exc_info:
+        sample_params(
+            seed=1,
+            subject=[QuestionSubject("歷史"), QuestionSubject("地理")],
+            learning_content=["地Bb-Ⅳ-1"],
+            learning_performance=["歷1a-Ⅳ-1"],
+        )
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "科目"},
+        {"field": "learning_performance", "code": "no_admitting_parent", "parent": "科目"},
+    ]
+
+
+def test_repeated_codes_in_one_field_do_not_duplicate_the_error() -> None:
+    from src.social_studies.sampler import ParentAdmissionError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(ParentAdmissionError) as exc_info:
+        sample_params(
+            seed=1,
+            subject=[QuestionSubject("地理")],
+            learning_content=["公Bj-Ⅳ-1", "公Bj-Ⅳ-1"],
+        )
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "incompatible_parent", "parent": "地理"}
+    ]

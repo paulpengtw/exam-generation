@@ -71,8 +71,41 @@ _QUESTION_TYPE_WEIGHTS: dict[str, int] = {
 }
 
 
-class IncompatibleContentDomainError(ValueError):
-    """A pinned ICCS domain has no admitted learning-content rows."""
+class ParentAdmissionError(ValueError):
+    """One or more 釘選 children make a 科目/內容領域 draw unsatisfiable (#834/#835).
+
+    ``errors`` is a list of ``{"field", "code", "parent"}`` dicts already
+    using resolver-facing field names (``learning_content`` /
+    ``learning_performance``), so ``src.common.resolver._resolve_social`` can
+    wrap them in ``ResolveConflictError`` (or batch-prefix them) unchanged.
+    ``code`` is ``"incompatible_parent"`` when a single supplied parent value
+    does not admit a pinned code, or ``"no_admitting_parent"`` when no value
+    of a blank/multi-valued parent admits every pinned code across the
+    contributing fields.
+    """
+
+    def __init__(self, errors: list[dict[str, str]]) -> None:
+        self.errors = errors
+        super().__init__(str(errors))
+
+
+class IncompatibleContentDomainError(ParentAdmissionError):
+    """A pinned ICCS domain has no admitted learning-content rows.
+
+    Kept as a distinct subclass so existing ``except``/``pytest.raises`` call
+    sites (the resolver's redraw-clearing special case; sampler-rule tests)
+    keep working unchanged; its ``.errors`` shape matches the general
+    contract above.
+    """
+
+    def __init__(self, domain: str) -> None:
+        self.domain = domain
+        super().__init__(
+            [{"field": "learning_content", "code": "incompatible_parent", "parent": domain}]
+        )
+
+    def __str__(self) -> str:
+        return self.domain
 
 
 def _admits_every_code(by_code: dict[str, list[str]], codes: list[str], value: str) -> bool:
@@ -97,6 +130,29 @@ def _narrow_subject_candidates(
             _admits_every_code(subject_admission[field_path], codes, candidate.value)
             for field_path, codes in pins
         )
+    ]
+
+
+def _contributing_no_admitting_parent_fields(
+    candidates: list[QuestionSubject],
+    pins: list[tuple[str, list[str]]],
+    subject_admission: dict[str, dict[str, list[str]]],
+) -> list[str]:
+    """Field paths whose own pins alone exclude a candidate from *candidates*.
+
+    Per the Global Constraints "contributing field" ruling: a field
+    contributes to a ``no_admitting_parent`` rejection when narrowing
+    *candidates* by that field's pinned codes alone (ignoring every other
+    pinned field) already excludes at least one candidate.
+    """
+    return [
+        field_path
+        for field_path, codes in pins
+        if codes
+        and len(
+            _narrow_subject_candidates(candidates, [(field_path, codes)], subject_admission)
+        )
+        < len(candidates)
     ]
 
 
@@ -149,8 +205,10 @@ def _resolve_domain_and_pools(
 
     ``admitted_domains``, when given, additionally narrows a blank draw to
     domains admitting every pinned 學習內容 code that carries a 內容領域 tag
-    (#834). An empty intersection falls back to the pool-only candidate set
-    unchanged (#835 turns that fallback into a rejection).
+    (#834). When *domain_pinned* is False and that intersection is empty
+    while the pool-only candidate set is not, no domain can satisfy every
+    pin: raise ``ParentAdmissionError`` (#835). A pinned domain is validated
+    by the caller instead, against the specific supplied value.
     """
     domains = list(ContentDomain)
     if subject.value not in _DOMAIN_FILTER_SUBJECTS:
@@ -172,6 +230,16 @@ def _resolve_domain_and_pools(
         ]
         if narrowed_domains:
             usable_domains = narrowed_domains
+        elif not domain_pinned and pool_usable_domains:
+            raise ParentAdmissionError(
+                [
+                    {
+                        "field": "learning_content",
+                        "code": "no_admitting_parent",
+                        "parent": "內容領域",
+                    }
+                ]
+            )
     if not domain_pinned and usable_domains:
         assert rng is not None
         selected_domain = rng.choice(usable_domains)
@@ -383,8 +451,8 @@ def sample_params(
 
     # A 釘選 學習內容/學習表現 child narrows a blank/multi-valued 科目 parent to
     # the candidates that admit every pinned code (#834); a single supplied
-    # 科目 is a pin and is never narrowed here (#835 rejects it separately
-    # when it does not admit). Task 3 appends per-小題 pairs to this same list.
+    # 科目 is a pin and is never narrowed here. Task 3 appends per-小題 pairs
+    # to this same list.
     pins: list[tuple[str, list[str]]] = []
     if learning_content is not None:
         pins.append(("learning_content", learning_content))
@@ -393,18 +461,40 @@ def sample_params(
 
     subject_candidates = list(subject) if subject is not None else list(QuestionSubject)
     subject_is_pinned = subject is not None and len(subject) == 1
-    if not subject_is_pinned and pins:
+    if pins:
         subject_admission = {
             "learning_content": admitted_parents_by_code(_LC_DATA, "學習內容", "科目"),
             "learning_performance": admitted_parents_by_code(_LP_DATA, "學習表現", "科目"),
         }
-        narrowed_subjects = _narrow_subject_candidates(
-            subject_candidates, pins, subject_admission
-        )
-        if narrowed_subjects:
-            subject_candidates = narrowed_subjects
-        # else: fall back to the unfiltered candidate set (#834); #835 rejects
-        # this empty-narrow case instead.
+        if subject_is_pinned:
+            # #835: a single supplied 科目 is a pin, not narrowed — but it is
+            # rejected outright when it fails to admit a pinned code.
+            lone = subject_candidates[0]
+            errors = [
+                {"field": field_path, "code": "incompatible_parent", "parent": lone.value}
+                for field_path, codes in pins
+                if not _admits_every_code(subject_admission[field_path], codes, lone.value)
+            ]
+            if errors:
+                raise ParentAdmissionError(errors)
+        else:
+            narrowed_subjects = _narrow_subject_candidates(
+                subject_candidates, pins, subject_admission
+            )
+            if narrowed_subjects:
+                subject_candidates = narrowed_subjects
+            else:
+                # #835: nothing in the (possibly multi-valued) unnarrowed range
+                # admits every pin; reject with one error per contributing field.
+                contributing_fields = _contributing_no_admitting_parent_fields(
+                    subject_candidates, pins, subject_admission
+                )
+                raise ParentAdmissionError(
+                    [
+                        {"field": field_path, "code": "no_admitting_parent", "parent": "科目"}
+                        for field_path in contributing_fields
+                    ]
+                )
 
     selected_subject = field_rng("科目").choice(subject_candidates)
     # Resolve the ICCS domain before the dependent learning-content pool draw.

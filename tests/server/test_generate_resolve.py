@@ -481,6 +481,103 @@ def test_resolve_endpoint_rejects_an_empty_pinned_civic_intersection(
     assert "payload" not in response.json()
 
 
+def test_resolve_endpoint_rejects_incompatible_pinned_subject_for_pinned_content(
+    resolve_client: TestClient,
+) -> None:
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 1,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["地理"],
+            "learning_content": ["公Bj-Ⅳ-1"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "learning_content", "code": "incompatible_parent", "parent": "地理"}
+    ]
+    assert "payload" not in response.json()
+
+
+def test_resolve_endpoint_rejects_incompatible_pinned_domain_for_pinned_content(
+    resolve_client: TestClient,
+) -> None:
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 1,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["公民與社會"],
+            "content_domain": "Civic Participation",
+            "learning_content": ["公Bn-Ⅳ-3"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {
+            "field": "learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        }
+    ]
+    assert "payload" not in response.json()
+
+
+def test_resolve_endpoint_rejects_blank_domain_with_an_empty_narrowed_range(
+    resolve_client: TestClient,
+) -> None:
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 1,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["公民與社會"],
+            "learning_content": ["公Aa-Ⅳ-1", "公Ab-Ⅳ-1"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "內容領域"}
+    ]
+    assert "payload" not in response.json()
+
+
+def test_resolve_endpoint_rejects_multi_valued_subject_and_reports_no_domain_error(
+    resolve_client: TestClient,
+) -> None:
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 1,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["歷史", "地理"],
+            "learning_content": ["公Bj-Ⅳ-1"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "科目"}
+    ]
+    assert "payload" not in response.json()
+
+
 def test_resolve_endpoint_requires_authentication() -> None:
     app = create_app()
     with TestClient(app, raise_server_exceptions=False) as client:

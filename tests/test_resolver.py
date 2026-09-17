@@ -655,6 +655,85 @@ def test_resolve_narrowed_social_subject_and_domain_is_idempotent() -> None:
     assert second.cleared == []
 
 
+def test_resolve_rejects_multi_valued_subject_with_no_admitting_candidate_and_skips_domain() -> (
+    None
+):
+    """科目 is evaluated before 內容領域 (#835): when 科目 fails, no 內容領域
+
+    error is reported for that 題組, even though 內容領域 is also blank here.
+    """
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "seed": 1,
+                "grade": 8,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "subject_filter": ["歷史", "地理"],
+                "learning_content": ["公Bj-Ⅳ-1"],
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "科目"}
+    ]
+
+
+def test_resolve_rejects_blank_civic_domain_with_an_empty_narrowed_range() -> None:
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "seed": 1,
+                "grade": 8,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "subject_filter": ["公民與社會"],
+                "learning_content": ["公Aa-Ⅳ-1", "公Ab-Ⅳ-1"],
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "內容領域"}
+    ]
+
+
+def test_resolve_batch_prefixes_no_admitting_parent_errors_per_row() -> None:
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "count": 2,
+                "seed": 1,
+                "grade": 8,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "content_type": "純文字",
+                "target_surface": "紙本",
+                "core_competency": ["社-J-A1"],
+                "per_question_params": [
+                    {
+                        "subject_filter": ["公民與社會"],
+                        "learning_content": ["公Aa-Ⅳ-1", "公Ab-Ⅳ-1"],
+                    },
+                    {
+                        "subject_filter": ["歷史", "地理"],
+                        "learning_content": ["公Bj-Ⅳ-1"],
+                    },
+                ],
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "per_question_params[0].learning_content",
+            "code": "no_admitting_parent",
+            "parent": "內容領域",
+        }
+    ]
+
+
 def test_resolve_keeps_configured_base_seed_out_of_drawn_paths() -> None:
     result = resolve(
         {
@@ -953,7 +1032,16 @@ def test_resolve_parent_edit_clears_and_redraws_incompatible_civic_learning_cont
     monkeypatch.setattr(
         sampler,
         "_LP_DATA",
-        {"學習表現": [{"學習階段": "第四學習階段", "科目": "社", "value": "社1a-Ⅳ-1"}]},
+        {
+            "學習表現": [
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "社",
+                    "value": "社1a-Ⅳ-1",
+                    "admitted_by": {"科目": ["歷史", "地理", "公民與社會", "跨科"]},
+                }
+            ]
+        },
     )
 
     result = resolve(

@@ -59,6 +59,7 @@ from src.schemas import (
 )
 from src.social_studies.sampler import (
     IncompatibleContentDomainError,
+    ParentAdmissionError,
 )
 from src.social_studies.sampler import (
     sample_params as sample_social_params,
@@ -585,23 +586,21 @@ def _resolve_social(
     try:
         sampled = sample_social(sampling_payload)
     except IncompatibleContentDomainError as exc:
+        # Pre-#834-era clearing path, preserved unchanged: a 內容領域 or 科目
+        # redraw counter > 0 still clears the pinned 學習內容 and resamples
+        # instead of rejecting. Task 4 (#837) generalises 重抽-triggered
+        # clearing to the other ParentAdmissionError kinds below.
         parent_redrawn = any(
             (redraws or {}).get(parent, 0) > 0 for parent in ("內容領域", "科目")
         )
         if not parent_redrawn:
-            raise ResolveConflictError(
-                [
-                    {
-                        "field": "learning_content",
-                        "code": "incompatible_parent",
-                        "parent": str(exc),
-                    }
-                ]
-            ) from exc
+            raise ResolveConflictError(exc.errors) from exc
         sampling_payload = deepcopy(payload)
         sampling_payload["learning_content"] = None
         cleared.append("學習內容")
         sampled = sample_social(sampling_payload)
+    except ParentAdmissionError as exc:
+        raise ResolveConflictError(exc.errors) from exc
 
     completed = deepcopy(sampling_payload)
     completed.update(

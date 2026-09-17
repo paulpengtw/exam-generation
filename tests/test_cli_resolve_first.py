@@ -445,3 +445,25 @@ def test_generate_resolves_before_generation_and_replays_seeded_payload(
         ]
 
     assert records(first_output) == records(second_output)
+
+
+def test_social_studies_resolve_reports_no_admitting_parent_domain_on_stderr(capsys) -> None:
+    import src.social_studies.cli as cli
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(
+            [
+                "resolve",
+                "--subject",
+                "公民與社會",
+                "--learning-content",
+                "公Aa-Ⅳ-1",
+                "公Ab-Ⅳ-1",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    error = json.loads(capsys.readouterr().err.splitlines()[-1])
+    assert error["errors"] == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "內容領域"}
+    ]
