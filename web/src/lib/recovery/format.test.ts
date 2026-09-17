@@ -8,6 +8,7 @@ import {
   RECOVERY_FORMAT_V1,
 } from "./format";
 import type { RecoverySnapshotV1 } from "./format";
+import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
 
 function makeValidSnapshot(): RecoverySnapshotV1 {
   return {
@@ -29,6 +30,35 @@ function makeValidSnapshot(): RecoverySnapshotV1 {
   };
 }
 
+function makeValidConfirmation(): ConfirmationWorkspaceSnapshot {
+  return {
+    kind: "confirmation",
+    version: 1,
+    pendingParams: {
+      subject: "math",
+      grade: 8,
+      context: ["生活情境"],
+      set_type: "單一題",
+      q_type: ["選擇題"],
+      count: 1,
+      skip_verify: false,
+      image_generation_mode: "html",
+      seed: 17,
+      drawn: ["context"],
+    } as never,
+    pendingPerQuestionParams: null,
+    clearedPaths: [],
+    redraws: {},
+    hasPendingConfirmationEdits: false,
+    coreQuestionResolution: "generated",
+    historyDraftChoice: "history",
+    pendingPrefill: {
+      topic: "保留的歷史預填",
+      model_execute: "gemini-3.1-pro-preview",
+    },
+  };
+}
+
 const OPTS = {
   expectedAccountId: "user-1",
   expectedOrigin: "https://example.com",
@@ -39,6 +69,30 @@ describe("parseRecoverySnapshot", () => {
   it("accepts a valid snapshot", () => {
     const result = parseRecoverySnapshot(makeValidSnapshot(), OPTS);
     expect(result.ok).toBe(true);
+  });
+
+  it("accepts an exact optional confirmation snapshot", () => {
+    const confirmation = makeValidConfirmation();
+    const result = parseRecoverySnapshot(
+      { ...makeValidSnapshot(), confirmation },
+      OPTS,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.snapshot.confirmation).toEqual(confirmation);
+  });
+
+  it("rejects a malformed optional confirmation snapshot", () => {
+    const result = parseRecoverySnapshot(
+      {
+        ...makeValidSnapshot(),
+        confirmation: { ...makeValidConfirmation(), pendingPrefill: [] },
+      },
+      OPTS,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_form");
   });
 
   it("rejects null", () => {
