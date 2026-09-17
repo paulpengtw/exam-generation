@@ -156,6 +156,19 @@ it never replays admission or SSE. Active modification operations still refuse
 Save Draft & Update, while settled replacements are captured for a later save.
 See `docs/research/2026-09-17-775-preserve-modification-drafts.md`.
 
+### Recovery identity hardening (issue #776)
+
+Two 401 paths and explicit logout are now distinct. `authStore.logout()` (called on API/stream 401s) clears credentials only — recovery snapshot preserved. `authStore.logoutExplicit()` (called on UI logout) calls `deleteAllSnapshotsForAccount(userId)` + `clearTabPointer()` first so a different account signing in next sees no prior snapshot.
+
+Both `apiFetch` 401 and `useGenerate` stream 401 now also call `saveSignoutReason("session_expired", userId)` and `saveReturnDestination(pathname)` so the login page can navigate back and restore.
+
+`web/src/lib/recovery/storage.ts` adds: `claimSnapshot(tabId, snapshotId)` (write+read-back nonce claim, structural fields only), `releaseSnapshotClaim(snapshotId)`, `deleteAllSnapshotsForAccount(accountId)`, `startTabCollisionListener(myTabId)` (BroadcastChannel probe responder), `detectTabCollision(tabId, timeoutMs)` (async probe — returns true if another live tab has same ID).
+
+`web/src/lib/recovery/recoveryStore.ts` adds `initRecoveryStoreAsync` (claims snapshot before hydrating; sets `claimedTabId`/`claimedSnapshotId` in state), and `acknowledgeRecovery`/`discardRecovery` now release the claim. Synchronous `initRecoveryStore` unchanged.
+
+New storage key: `localStorage exam_recovery_claim_<snapshot_id>`. No snapshot contents in any telemetry or log call.
+See `docs/research/2026-09-18-776-recovery-identity.md`.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.

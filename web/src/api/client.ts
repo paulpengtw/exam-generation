@@ -5,6 +5,8 @@ import {
   type VerificationTrailEntry,
 } from "../hooks/useGenerate";
 import type { ResolveResponse } from "./generated/contract";
+import { saveSignoutReason } from "../lib/signoutReason";
+import { saveReturnDestination } from "../lib/returnDestination";
 
 export interface MagicLinkResponse {
   message: string;
@@ -98,7 +100,19 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   const res = await fetch(path, { ...options, headers });
   if (!res.ok) {
     if (res.status === 401) {
-      useAuthStore.getState().logout();
+      // Classify as credential expiry (not explicit logout) — recovery snapshot
+      // is preserved so the teacher can restore after re-authenticating (#776).
+      const authState = useAuthStore.getState();
+      const userId = authState.user?.id ?? null;
+      if (userId !== null) {
+        saveSignoutReason("session_expired", userId);
+      }
+      const currentPath =
+        typeof window !== "undefined" ? window.location.pathname : null;
+      if (currentPath !== null) {
+        saveReturnDestination(currentPath);
+      }
+      authState.logout();
     }
     const error = await extractError(res);
     throw new ApiError(res.status, error.detail, error.code);
