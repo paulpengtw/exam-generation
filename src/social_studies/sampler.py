@@ -6,7 +6,11 @@ import logging
 import random
 from collections.abc import Callable
 
-from src.common.admission import entries_admitted_by
+from src.common.admission import (
+    admitted_parents,
+    admitted_parents_by_code,
+    entries_admitted_by,
+)
 from src.common.difficulty import Difficulty, resolve_difficulty
 from src.common.randomness import draw_rng
 from src.social_studies.core_competency_loader import (
@@ -71,6 +75,50 @@ class IncompatibleContentDomainError(ValueError):
     """A pinned ICCS domain has no admitted learning-content rows."""
 
 
+def _admits_every_code(by_code: dict[str, list[str]], codes: list[str], value: str) -> bool:
+    """True when *value* admits every code, per the ``{code: [admitting values]}`` map.
+
+    A code absent from *by_code* (or tagged with a non-list/empty admission
+    list) is admitted by no value — see admission.py's ``admitted_parents_by_code``.
+    """
+    return all(value in (by_code.get(code) or []) for code in codes)
+
+
+def _narrow_subject_candidates(
+    candidates: list[QuestionSubject],
+    pins: list[tuple[str, list[str]]],
+    subject_admission: dict[str, dict[str, list[str]]],
+) -> list[QuestionSubject]:
+    """Keep candidates admitting every pinned code across every pinned field."""
+    return [
+        candidate
+        for candidate in candidates
+        if all(
+            _admits_every_code(subject_admission[field_path], codes, candidate.value)
+            for field_path, codes in pins
+        )
+    ]
+
+
+def _tagged_domain_sets(
+    codes: list[str], entries_by_value: dict[str, dict]
+) -> list[frozenset[str]]:
+    """The 內容領域 admission sets for pinned codes that carry that tag.
+
+    Codes absent from *entries_by_value*, or present but untagged, contribute
+    nothing here (歷/地 codes and all 學習表現 never carry a 內容領域 tag).
+    """
+    sets: list[frozenset[str]] = []
+    for code in codes:
+        entry = entries_by_value.get(code)
+        if entry is None:
+            continue
+        tag = admitted_parents(entry, "內容領域")
+        if tag is not None:
+            sets.append(frozenset(tag))
+    return sets
+
+
 def _filter_entries_for_domain(
     entries: list[dict],
     domain: ContentDomain,
@@ -95,8 +143,15 @@ def _resolve_domain_and_pools(
     lp_entries: list[dict] | None,
     *,
     domain_pinned: bool = False,
+    admitted_domains: frozenset[str] | None = None,
 ) -> tuple[ContentDomain, list[dict] | None, list[dict] | None]:
-    """Draw once from domains with a non-empty dependent learning-content pool."""
+    """Draw once from domains with a non-empty dependent learning-content pool.
+
+    ``admitted_domains``, when given, additionally narrows a blank draw to
+    domains admitting every pinned 學習內容 code that carries a 內容領域 tag
+    (#834). An empty intersection falls back to the pool-only candidate set
+    unchanged (#835 turns that fallback into a rejection).
+    """
     domains = list(ContentDomain)
     if subject.value not in _DOMAIN_FILTER_SUBJECTS:
         if selected_domain is None:
@@ -104,12 +159,19 @@ def _resolve_domain_and_pools(
             selected_domain = rng.choice(domains)
         return selected_domain, lc_entries, lp_entries
 
-    usable_domains = [
+    pool_usable_domains = [
         domain
         for domain in domains
         if lc_entries is None
         or _filter_entries_for_domain(lc_entries, domain, subject)
     ]
+    usable_domains = pool_usable_domains
+    if admitted_domains is not None:
+        narrowed_domains = [
+            domain for domain in pool_usable_domains if domain.value in admitted_domains
+        ]
+        if narrowed_domains:
+            usable_domains = narrowed_domains
     if not domain_pinned and usable_domains:
         assert rng is not None
         selected_domain = rng.choice(usable_domains)
@@ -319,11 +381,32 @@ def sample_params(
         )
     )
 
-    selected_subject = (
-        field_rng("科目").choice(subject)
-        if subject is not None
-        else field_rng("科目").choice(list(QuestionSubject))
-    )
+    # A 釘選 學習內容/學習表現 child narrows a blank/multi-valued 科目 parent to
+    # the candidates that admit every pinned code (#834); a single supplied
+    # 科目 is a pin and is never narrowed here (#835 rejects it separately
+    # when it does not admit). Task 3 appends per-小題 pairs to this same list.
+    pins: list[tuple[str, list[str]]] = []
+    if learning_content is not None:
+        pins.append(("learning_content", learning_content))
+    if learning_performance is not None:
+        pins.append(("learning_performance", learning_performance))
+
+    subject_candidates = list(subject) if subject is not None else list(QuestionSubject)
+    subject_is_pinned = subject is not None and len(subject) == 1
+    if not subject_is_pinned and pins:
+        subject_admission = {
+            "learning_content": admitted_parents_by_code(_LC_DATA, "學習內容", "科目"),
+            "learning_performance": admitted_parents_by_code(_LP_DATA, "學習表現", "科目"),
+        }
+        narrowed_subjects = _narrow_subject_candidates(
+            subject_candidates, pins, subject_admission
+        )
+        if narrowed_subjects:
+            subject_candidates = narrowed_subjects
+        # else: fall back to the unfiltered candidate set (#834); #835 rejects
+        # this empty-narrow case instead.
+
+    selected_subject = field_rng("科目").choice(subject_candidates)
     # Resolve the ICCS domain before the dependent learning-content pool draw.
     domain_pinned = content_domain is not None
     domain_rng = field_rng("內容領域") if not domain_pinned else None
@@ -346,6 +429,16 @@ def sample_params(
         if learning_performance is not None
         else allowed_learning_performance(_LP_DATA, _LEARNING_STAGE, subj_key)
     )
+    # A pinned 學習內容 code carrying a 內容領域 tag narrows a blank domain draw
+    # to the domains it admits (#834); untagged codes (歷/地, and all 學習表現)
+    # never constrain it.
+    domain_admission_filter: frozenset[str] | None = None
+    if learning_content is not None and lc_entries:
+        entries_by_value = {entry["value"]: entry for entry in lc_entries}
+        tagged_domain_sets = _tagged_domain_sets(learning_content, entries_by_value)
+        if tagged_domain_sets:
+            domain_admission_filter = frozenset.intersection(*tagged_domain_sets)
+
     selected_content_domain, lc_entries, lp_entries = _resolve_domain_and_pools(
         domain_rng,
         selected_content_domain,
@@ -353,6 +446,7 @@ def sample_params(
         lc_entries,
         lp_entries,
         domain_pinned=domain_pinned,
+        admitted_domains=domain_admission_filter,
     )
 
     if domain_pinned and selected_subject.value in _DOMAIN_FILTER_SUBJECTS:

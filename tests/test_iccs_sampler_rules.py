@@ -640,3 +640,101 @@ def test_pin_rule_violation_helper_returns_empty_for_compliant_pins() -> None:
         [_KNOWING_DEFINING, _REASONING_RELATE, None],
         "跨科",
     ) == []
+
+
+# ── #834: a pinned 學習內容/學習表現 narrows a blank/multi-valued 科目, and a ──
+# ── pinned 學習內容 domain tag narrows a blank 內容領域 ─────────────────────
+
+
+def test_blank_subject_is_narrowed_to_admitting_candidates_by_pinned_content() -> None:
+    from src.social_studies.sampler import sample_params
+
+    for seed in range(200):
+        params = sample_params(seed=seed, learning_content=["公Bn-Ⅳ-3"])
+
+        assert params.科目.value in {"公民與社會", "跨科"}
+
+
+def test_multi_valued_subject_is_narrowed_to_the_single_admitting_candidate() -> None:
+    from src.social_studies.sampler import sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    params = sample_params(
+        seed=3,
+        subject=[QuestionSubject("公民與社會"), QuestionSubject("地理")],
+        learning_content=["公Bj-Ⅳ-1"],
+    )
+
+    assert params.科目.value == "公民與社會"
+
+
+def test_blank_subject_is_narrowed_by_two_pinned_content_codes_to_cross_subject() -> None:
+    from src.social_studies.sampler import sample_params
+
+    params = sample_params(
+        seed=11,
+        learning_content=["公Bn-Ⅳ-3", "歷Fb-Ⅳ-1"],
+    )
+
+    assert params.科目.value == "跨科"
+
+
+def test_blank_subject_is_narrowed_by_pinned_cross_subject_performance_code() -> None:
+    from src.social_studies.sampler import sample_params
+
+    for seed in range(50):
+        params = sample_params(seed=seed, learning_performance=["公1c-Ⅳ-1"])
+
+        assert params.科目.value in {"公民與社會", "跨科"}
+
+
+def test_blank_domain_is_narrowed_to_the_pinned_content_codes_tagged_domain() -> None:
+    from src.social_studies.sampler import sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    for seed in range(200):
+        params = sample_params(
+            seed=seed,
+            subject=[QuestionSubject("公民與社會")],
+            learning_content=["公Bn-Ⅳ-3"],
+        )
+
+        assert params.內容領域.value == "Civic Institutions and Systems"
+
+
+def test_blank_domain_is_unrestricted_by_untagged_pinned_history_and_geography_codes() -> None:
+    from src.social_studies.sampler import sample_params
+    from src.social_studies.schemas import ContentDomain, QuestionSubject
+
+    observed_domains = {
+        sample_params(
+            seed=seed,
+            subject=[QuestionSubject("跨科")],
+            learning_content=["歷Fb-Ⅳ-1", "地Bb-Ⅳ-1"],
+        ).內容領域
+        for seed in range(200)
+    }
+
+    assert observed_domains == set(ContentDomain)
+
+
+def test_a_code_absent_from_the_content_admission_map_narrows_subject_to_nothing_admitted(
+    monkeypatch,
+) -> None:
+    """An unknown/mistyped pinned code admits no candidate (#834 ruling); with
+
+    no rejection yet, an empty narrowed range falls back to the unfiltered
+    candidate set rather than raising.
+    """
+    from src.social_studies import sampler
+
+    monkeypatch.setattr(
+        sampler,
+        "_LC_DATA",
+        {"學習內容": [{"學習階段": "第四學習階段", "科目": "公", "value": "公Real-Ⅳ-1"}]},
+    )
+    monkeypatch.setattr(sampler, "_LP_DATA", {"學習表現": []})
+
+    params = sampler.sample_params(seed=5, learning_content=["公Unknown-Ⅳ-9"])
+
+    assert params.科目 is not None

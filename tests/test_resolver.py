@@ -596,6 +596,65 @@ def test_resolve_batch_uses_base_seed_plus_index_for_each_subject(
         )
 
 
+def test_resolve_batch_row_learning_content_narrows_subject_before_the_request_level_pin() -> (
+    None
+):
+    """A row's own 學習內容/學習表現 replaces the request-level pin before
+
+    narrowing 科目 (#834): row 0 keeps the request-level 歷史-admitted code,
+    row 1 overrides it with a civic-only code.
+    """
+    result = resolve(
+        {
+            "subject": "social_studies",
+            "count": 2,
+            "seed": 5,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "content_domain": "Civic Institutions and Systems",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "learning_content": ["歷Fb-Ⅳ-1"],
+            "per_question_params": [
+                {},
+                {"learning_content": ["公Bn-Ⅳ-3"], "learning_performance": ["社1a-Ⅳ-1"]},
+            ],
+        }
+    )
+
+    rows = result.payload["per_question_params"]
+    assert rows[0]["subject_filter"][0] in {"歷史", "跨科"}
+    assert rows[1]["subject_filter"][0] in {"公民與社會", "跨科"}
+
+
+def test_resolve_narrowed_social_subject_and_domain_is_idempotent() -> None:
+    payload = {
+        "subject": "social_studies",
+        "seed": 9,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "content_type": "純文字",
+        "target_surface": "紙本",
+        "core_competency": ["社-J-A1"],
+        "learning_content": ["公Bn-Ⅳ-3"],
+        "learning_performance": ["社1a-Ⅳ-1"],
+    }
+
+    first = resolve(payload)
+    second = resolve(first.payload)
+
+    assert first.payload["subject_filter"] == ["公民與社會"] or first.payload[
+        "subject_filter"
+    ] == ["跨科"]
+    assert first.payload["content_domain"] == "Civic Institutions and Systems"
+    assert second.payload == first.payload
+    assert second.drawn == []
+    assert second.cleared == []
+
+
 def test_resolve_keeps_configured_base_seed_out_of_drawn_paths() -> None:
     result = resolve(
         {
