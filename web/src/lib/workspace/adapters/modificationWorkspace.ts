@@ -11,8 +11,8 @@ export type ModificationWorkspaceLive = Omit<ModificationWorkspaceSnapshot, "kin
 
 const NON_CONTENT_KEYS = new Set(["verification", "image_stale", "content_revision"]);
 
-function canonicalize(value: unknown, key?: string): unknown {
-  if (key !== undefined && NON_CONTENT_KEYS.has(key)) return undefined;
+function canonicalize(value: unknown, key?: string, depth = 0): unknown {
+  if (depth === 1 && key !== undefined && NON_CONTENT_KEYS.has(key)) return undefined;
   if (typeof value === "string") {
     if (key === "image_base64") {
       return value.replace(/^data:image\/png;base64,/i, "");
@@ -21,11 +21,11 @@ function canonicalize(value: unknown, key?: string): unknown {
   }
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (Array.isArray(value)) return value.map((item) => canonicalize(item));
+  if (Array.isArray(value)) return value.map((item) => canonicalize(item, undefined, depth + 1));
   if (isRecord(value)) {
     const output: Record<string, unknown> = {};
     for (const entryKey of Object.keys(value).sort()) {
-      const entry = canonicalize(value[entryKey], entryKey);
+      const entry = canonicalize(value[entryKey], entryKey, depth + 1);
       if (entry !== undefined) output[entryKey] = entry;
     }
     return output;
@@ -39,12 +39,14 @@ export function canonicalQuestionIdentity(question: unknown): string {
 }
 
 function isSegment(value: unknown): value is ModificationSegmentRequest {
-  return isRecord(value) && typeof value.field_path === "string" &&
-    Number.isInteger(value.start) && Number.isInteger(value.end) && typeof value.quoted_text === "string";
+  return isRecord(value) && typeof value.field_path === "string" && value.field_path.length > 0 &&
+    typeof value.start === "number" && Number.isInteger(value.start) && value.start >= 0 &&
+    typeof value.end === "number" && Number.isInteger(value.end) && value.end >= value.start &&
+    typeof value.quoted_text === "string" && value.quoted_text.trim().length > 0;
 }
 
 function isAnnotation(value: unknown): value is ModificationAnnotationSnapshot {
-  return isRecord(value) && Array.isArray(value.segments) &&
+  return isRecord(value) && Array.isArray(value.segments) && value.segments.length > 0 &&
     value.segments.every(isSegment) && typeof value.instruction === "string";
 }
 
@@ -67,7 +69,7 @@ function isJsonValue(value: unknown): boolean {
 
 function isReplacement(value: unknown): value is ModificationRunResult {
   return isRecord(value) &&
-    (value.record_id === null || typeof value.record_id === "string") &&
+    (value.record_id === null || (typeof value.record_id === "string" && value.record_id.length > 0)) &&
     isRecord(value.question) &&
     Array.isArray(value.ripple_report) && value.ripple_report.every((item) => typeof item === "string") &&
     typeof value.verified === "boolean" &&

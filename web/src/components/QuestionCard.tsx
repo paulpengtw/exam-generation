@@ -13,7 +13,10 @@ import type {
 import { useModificationRun } from "../hooks/useModificationRun";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
-import { exportModificationWorkspace } from "../lib/workspace/adapters/modificationWorkspace";
+import {
+  canonicalQuestionIdentity,
+  exportModificationWorkspace,
+} from "../lib/workspace/adapters/modificationWorkspace";
 import type { ModificationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 import { useT } from "../i18n/useT";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
@@ -32,12 +35,16 @@ import InteractiveItemViewer, { type InteractionSubmission } from "./Interactive
 export interface QuestionCardProps {
   question: ExamQuestion;
   recordId?: string;
+  route?: string;
+  subject?: string;
   phase?: DraftPhase;
   isFinal?: boolean;
   trail?: VerificationTrailEntry[] | null;
   figurePolicyTrail?: FigurePolicyTrailEntry[] | null;
   referenceExampleRecord?: ReferenceExampleRecordShape | null;
   onInteractionSubmit?: (submission: InteractionSubmission) => void;
+  recoveredModification?: ModificationWorkspaceSnapshot;
+  modificationRestoreEligible?: boolean;
 }
 
 interface VerificationShape {
@@ -83,6 +90,13 @@ function getModificationSubmitError(error: unknown, fallback: string): Modificat
 
 function getQuestionId(question: ExamQuestion): string {
   return question.id && question.id.length > 0 ? question.id : "question";
+}
+
+function getContentRevision(question: ExamQuestion): number | null {
+  const revision = (question as ExamQuestion & { content_revision?: unknown }).content_revision;
+  return typeof revision === "number" && Number.isInteger(revision) && revision > 0
+    ? revision
+    : null;
 }
 
 function comparePoints(
@@ -420,13 +434,14 @@ function SubQuestionBlock({
 }
 
 function ModificationParticipation({
-  recordId, questionId, annotations, replacement,
+  route, subject, recordId, questionId, contentIdentity, contentRevision, eligibility,
+  annotations, replacement,
 }: Omit<ModificationWorkspaceSnapshot, "kind" | "version">) {
   const exportWorkspace = useCallback(() => exportModificationWorkspace({
-    recordId, questionId,
+    route, subject, recordId, questionId, contentIdentity, contentRevision, eligibility,
     annotations: annotations.map(({ segments, instruction }) => ({ segments, instruction })),
     replacement,
-  }), [recordId, questionId, annotations, replacement]);
+  }), [route, subject, recordId, questionId, contentIdentity, contentRevision, eligibility, annotations, replacement]);
   useSurfaceParticipation("history.modification", {
     readiness: "ready",
     hasEditableState: annotations.length > 0,
@@ -439,36 +454,64 @@ function ModificationParticipation({
 export default function QuestionCard({
   question: initialQuestion,
   recordId,
+  route,
+  subject,
   phase = "verified",
   isFinal = true,
   trail = [],
   figurePolicyTrail = [],
   referenceExampleRecord,
   onInteractionSubmit,
+  recoveredModification,
+  modificationRestoreEligible = true,
 }: QuestionCardProps) {
   const t = useT();
   const [showSolution, setShowSolution] = useState(!isFinal);
   const cardRef = useRef<HTMLDivElement>(null);
-  const nextAnnotationId = useRef(0);
-  const [annotations, setAnnotations] = useState<ModificationAnnotation[]>([]);
+  const [latchedRecoveredModification] = useState(recoveredModification);
+  const recoveredAnnotations = latchedRecoveredModification?.annotations ?? [];
+  const nextAnnotationId = useRef(recoveredAnnotations.length);
+  const [annotations, setAnnotations] = useState<ModificationAnnotation[]>(() =>
+    recoveredAnnotations.map((annotation, id) => ({ ...annotation, id })),
+  );
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<ModificationSubmitError | null>(null);
-  const modificationRun = useModificationRun(recordId);
+  const modificationRun = useModificationRun(
+    recordId,
+    latchedRecoveredModification?.replacement ?? null,
+  );
   const modificationResult = modificationRun.result;
   const isRunInFlight = modificationRun.status === "running";
+  const restoredEligibility = latchedRecoveredModification === undefined || modificationRestoreEligible;
 
+  const previousResultRef = useRef(modificationResult);
   useEffect(() => {
-    if (modificationRun.result === null) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the prior review round when the SSE stream publishes a replacement question
+    if (
+      modificationRun.result === null ||
+      modificationRun.result === previousResultRef.current
+    ) {
+      previousResultRef.current = modificationRun.result;
+      return;
+    }
     setAnnotations([]);
     setSelectionError(null);
     setSubmitError(null);
+    previousResultRef.current = modificationRun.result;
   }, [modificationRun.result]);
 
   const question = modificationResult?.question ?? initialQuestion;
   const verification = question.verification as VerificationShape | undefined;
   const passed = Boolean(verification?.passed);
-  const selectionEnabled = isFinal && (passed || modificationResult !== null);
+  const selectionEnabled = restoredEligibility && isFinal && (passed || modificationResult !== null);
+  const contentIdentity = useMemo(() => canonicalQuestionIdentity(question), [question]);
+  const modificationEligibility = useMemo(() => ({
+    status: "completed" as const,
+    verified: passed,
+    eligible: selectionEnabled,
+  }), [passed, selectionEnabled]);
+  const showModificationWorkspace = Boolean(
+    selectionEnabled || annotations.length > 0 || latchedRecoveredModification,
+  );
   const questionId = getQuestionId(question);
   const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
   const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
@@ -593,6 +636,7 @@ export default function QuestionCard({
 
   const canSubmit = Boolean(
     recordId &&
+    restoredEligibility &&
     !isRunInFlight &&
     annotations.length > 0 &&
     annotations.every((annotation) => annotation.instruction.trim().length > 0),
@@ -623,8 +667,13 @@ export default function QuestionCard({
     >
       {recordId && (
         <ModificationParticipation
-          recordId={recordId}
+          route={route ?? window.location.pathname}
+          subject={subject ?? (isSocialStudies ? "social_studies" : "math")}
+          recordId={modificationResult?.record_id ?? recordId}
           questionId={questionId}
+          contentIdentity={contentIdentity}
+          contentRevision={getContentRevision(question)}
+          eligibility={modificationEligibility}
           annotations={annotations}
           replacement={modificationResult}
         />
@@ -875,7 +924,7 @@ export default function QuestionCard({
         </>
       )}
 
-      {selectionEnabled && (
+      {showModificationWorkspace && (
         <section aria-label={t("card.annotations")} className="space-y-2 border-t border-gray-100 pt-2">
           {annotations.length > 0 && (
             <ul aria-label={t("card.annotations")} className="flex flex-wrap gap-1.5">
@@ -900,6 +949,7 @@ export default function QuestionCard({
                         <button
                           type="button"
                           onClick={() => handleDeleteAnnotation(annotation.id)}
+                          disabled={!restoredEligibility || isRunInFlight}
                           aria-label={`${t("card.deleteAnnotation")} ${annotationIndex + 1}`}
                           className="ml-auto rounded px-1 text-indigo-700 hover:bg-indigo-200"
                         >
@@ -920,6 +970,7 @@ export default function QuestionCard({
                           aria-label={`${t("card.modificationInstruction")} ${annotationIndex + 1}`}
                           value={annotation.instruction}
                           onChange={(event) => handleInstructionChange(annotation.id, event.target.value)}
+                          disabled={!restoredEligibility || isRunInFlight}
                           placeholder={t("card.modificationInstructionPlaceholder")}
                           rows={2}
                           className="w-full rounded border border-indigo-200 bg-white px-2 py-1 text-sm font-normal text-gray-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"

@@ -137,7 +137,11 @@ export function evaluateSaveAndUpdate(state: EvaluateInput): EvaluateResult {
     }
     if (surface.id === "history.modification") {
       const modification = readModificationSnapshot(surface);
-      if (!modification || !modification.eligibility.eligible) {
+      if (
+        !modification ||
+        (!surface.hasEditableState && !surface.hasReceivedResults) ||
+        !modification.eligibility.eligible
+      ) {
         return { allowed: false, reason: "modification_draft" };
       }
       continue;

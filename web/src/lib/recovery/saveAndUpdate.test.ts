@@ -307,6 +307,20 @@ describe("evaluateSaveAndUpdate", () => {
     expect(result).toEqual({ allowed: true });
   });
 
+  it("does not make an empty History page saveable", () => {
+    const result = evaluateSaveAndUpdate(
+      makeValidInput({
+        surfaces: {
+          "history.modification": makeModificationSurface(
+            makeModificationSnapshot({ annotations: [], replacement: null }),
+            { hasEditableState: false, hasReceivedResults: false },
+          ),
+        },
+      }),
+    );
+    expect(result).toEqual({ allowed: false, reason: "modification_draft" });
+  });
+
   it("rejects a malformed history modification workspace", () => {
     const result = evaluateSaveAndUpdate(
       makeValidInput({
@@ -650,6 +664,28 @@ describe("runSaveAndUpdate", () => {
     operation.end("completed");
 
     expect(result).toEqual({ ok: false, reason: "operation_active", retryable: false });
+  });
+
+  it("does not abort or save over an active History modification run", async () => {
+    setupValidModificationRunState();
+    const operation = useWorkspaceStore.getState().beginOperation(
+      "modification",
+      "history.modification",
+    );
+    vi.stubGlobal("location", { pathname: "/history/history-record", origin: "https://test.com", reload: vi.fn() });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "operation_active", retryable: false });
+    expect(useWorkspaceStore.getState().operations).toEqual([
+      expect.objectContaining({ kind: "modification", surface: "history.modification" }),
+    ]);
+    operation.end("completed");
   });
 
   it("quota failure → no navigate, freezeInput false, navigationApproved false, reason quota", async () => {

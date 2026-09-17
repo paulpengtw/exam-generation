@@ -103,6 +103,20 @@ describe("modification workspace adapter", () => {
     expect(changed).not.toBe(first);
   });
 
+  it("does not hide nested content fields that happen to use metadata names", () => {
+    const first = canonicalQuestionIdentity({
+      id: "q1",
+      subquestions: [{ verification: { note: "first" } }],
+      verification: { passed: true },
+    });
+    const changed = canonicalQuestionIdentity({
+      id: "q1",
+      subquestions: [{ verification: { note: "changed" } }],
+      verification: { passed: false },
+    });
+    expect(changed).not.toBe(first);
+  });
+
   it.each([null, 42, "modification", [], {}])("rejects a malformed envelope %#", (raw) => {
     expect(importModificationWorkspace(raw)).toBeNull();
   });
@@ -120,14 +134,15 @@ describe("modification workspace adapter", () => {
     { annotations: [{ segments: [segment], instruction: 42 }] },
     { annotations: [{ segments: [{ path: "文本", start: 2, end: 9, text: "passage" }], instruction: "edit" }] },
     { replacement: [] }, { replacement: {} }, { replacement: { question: null } },
-    { replacement: { question: [] } },
+    { replacement: { question: [] } }, { replacement: { ...live.replacement, record_id: "" } },
   ])("rejects invalid modification fields %#", (patch) => {
     expect(importModificationWorkspace({ ...live, kind: "modification", version: 1, ...patch })).toBeNull();
   });
 
   it.each([
     { field_path: 42 }, { quoted_text: null }, { start: 0.5 }, { end: "9" },
-    { start: Number.NaN }, { end: Number.POSITIVE_INFINITY },
+    { start: Number.NaN }, { end: Number.POSITIVE_INFINITY }, { start: -1 }, { end: 1, start: 2 },
+    { field_path: "" }, { quoted_text: "   " },
   ])("validates the real ModificationSegmentRequest fields %#", (patch) => {
     expect(importModificationWorkspace({ ...live, kind: "modification", version: 1,
       annotations: [{ segments: [{ ...segment, ...patch }], instruction: "edit" }],

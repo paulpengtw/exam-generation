@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExamQuestion } from "../hooks/useGenerate";
 import { resetWorkspaceStoreForTests, useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { importModificationWorkspace } from "../lib/workspace/adapters/modificationWorkspace";
+import type { ModificationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 
 const buildOdt = vi.hoisted(() => vi.fn());
+const fetchMock = vi.hoisted(() => vi.fn());
 const fetchEventSourceMock = vi.hoisted(() => vi.fn<(url: string, init: FetchEventSourceInit) => Promise<void>>());
 vi.mock("@microsoft/fetch-event-source", () => ({ fetchEventSource: fetchEventSourceMock }));
 vi.mock("../api/client", async (importOriginal) => ({
@@ -21,11 +23,43 @@ const question: ExamQuestion = {
   題目: ["A passage that can be selected"], 正確解題分析: ["answer"],
   image_base64: "aW1hZ2U=", verification: { passed: true },
 };
+
+const recoveredModification: ModificationWorkspaceSnapshot = {
+  kind: "modification",
+  version: 1,
+  route: "/history/record-1",
+  subject: "math",
+  recordId: "record-1",
+  questionId: "q1",
+  contentIdentity: "canonical-q1",
+  contentRevision: null,
+  eligibility: { status: "completed", verified: true, eligible: true },
+  annotations: [
+    {
+      segments: [{ field_path: "題目[0]", start: 2, end: 9, quoted_text: "passage" }],
+      instruction: "Fix the passage",
+    },
+    {
+      segments: [{ field_path: "題目[0]", start: 10, end: 16, quoted_text: "that can" }],
+      instruction: "Clarify the wording",
+    },
+  ],
+  replacement: {
+    record_id: "record-1",
+    question: { ...question, 題目: ["Updated passage"] },
+    ripple_report: [],
+    verified: true,
+    verification: { passed: true },
+    failure_details: null,
+  },
+};
 const beginOperation = useWorkspaceStore.getState().beginOperation;
 let end: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   resetWorkspaceStoreForTests();
+  vi.stubGlobal("fetch", fetchMock);
+  fetchMock.mockReset();
   buildOdt.mockReset();
   fetchEventSourceMock.mockReset().mockResolvedValue(undefined);
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
@@ -39,6 +73,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   useWorkspaceStore.setState({ beginOperation });
   window.getSelection()?.removeAllRanges();
 });
@@ -77,8 +112,9 @@ describe("QuestionCard workspace", () => {
     });
     const surface = useWorkspaceStore.getState().surfaces["history.modification"];
     expect(surface?.hasEditableState).toBe(true);
-    expect(importModificationWorkspace(surface?.exportWorkspace?.())).toEqual({
-      recordId: "record-1", questionId: "q1", replacement: null,
+    expect(importModificationWorkspace(surface?.exportWorkspace?.())).toMatchObject({
+      route: "/", subject: "math", recordId: "record-1", questionId: "q1", replacement: null,
+      eligibility: { status: "completed", verified: true, eligible: true },
       annotations: [{ segments: [{ field_path: "題目[0]", start: 2, end: 9, quoted_text: "passage" }], instruction: "Fix this wording" }],
     });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Submit modifications" })); });
@@ -90,10 +126,51 @@ describe("QuestionCard workspace", () => {
     const updated = useWorkspaceStore.getState().surfaces["history.modification"];
     expect(updated).toMatchObject({ hasEditableState: false, hasReceivedResults: true });
     expect(importModificationWorkspace(updated?.exportWorkspace?.())).toMatchObject({
-      recordId: "record-1", questionId: "q1", annotations: [], replacement,
+      recordId: "record-2", questionId: "q1", annotations: [], replacement,
     });
     unmount();
     expect(useWorkspaceStore.getState().surfaces["history.modification"]).toBeUndefined();
+  });
+
+  it("restores multiple selections and instructions without replaying modification work", () => {
+    const { rerender } = render(
+      <QuestionCard
+        question={question}
+        recordId="record-1"
+        recoveredModification={recoveredModification}
+        modificationRestoreEligible
+      />,
+    );
+
+    expect(screen.getByText("Updated passage")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Selections" })).toHaveTextContent("passage");
+    expect(screen.getByRole("list", { name: "Selections" })).toHaveTextContent("that can");
+    expect(screen.getByRole("textbox", { name: "Modification instruction 1" })).toHaveValue("Fix the passage");
+    expect(screen.getByRole("textbox", { name: "Modification instruction 2" })).toHaveValue("Clarify the wording");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchEventSourceMock).not.toHaveBeenCalled();
+
+    // The recovery notice may be acknowledged after hydration. The card's
+    // restored workspace must not fall back to its ordinary initial state.
+    rerender(<QuestionCard question={question} recordId="record-1" />);
+    expect(screen.getByText("Updated passage")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Modification instruction 1" })).toHaveValue("Fix the passage");
+  });
+
+  it("keeps restored edits visible but disables them when the base check fails", () => {
+    render(
+      <QuestionCard
+        question={question}
+        recordId="record-1"
+        recoveredModification={recoveredModification}
+        modificationRestoreEligible={false}
+      />,
+    );
+
+    expect(screen.getByText("Updated passage")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Modification instruction 1" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete selection 1" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Submit modifications" })).toBeDisabled();
   });
 
   it.each([
