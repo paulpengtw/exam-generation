@@ -22,11 +22,13 @@ import release_control  # noqa: E402  (after sys.path patch)
 # Helpers
 # ---------------------------------------------------------------------------
 
+_FRESH_CAPTURED_AT = _dt.datetime.now(_dt.timezone.utc).isoformat()
+
 _QUIESCENT_SNAP = {
     "instance_id": "abc",
     "hostname": "host1",
     "pid": 1,
-    "started_at": "2026-09-15T00:00:00+00:00",
+    "started_at": _FRESH_CAPTURED_AT,
     "app_version": None,
     "supported_stream_versions": [1],
     "active_runs": 0,
@@ -36,7 +38,7 @@ _QUIESCENT_SNAP = {
     "pending_persistence": 0,
     "renderer_leases_held": 0,
     "quiescent": True,
-    "captured_at": "2026-09-15T00:00:00+00:00",
+    "captured_at": _FRESH_CAPTURED_AT,
 }
 
 _BUSY_SNAP = {**_QUIESCENT_SNAP, "active_runs": 1, "quiescent": False}
@@ -67,7 +69,7 @@ def test_preflight_all_reachable(tmp_path, monkeypatch):
 
     mock_get = MagicMock()
     mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = _QUIESCENT_SNAP
+    mock_get.return_value.json.return_value = _fresh_snap()
 
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(["preflight", "--inventory", str(inv_path)])
@@ -97,7 +99,7 @@ def test_drain_check_already_quiescent(tmp_path, monkeypatch):
 
     mock_get = MagicMock()
     mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = _QUIESCENT_SNAP
+    mock_get.return_value.json.return_value = _fresh_snap()
 
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(
@@ -113,7 +115,7 @@ def test_drain_check_times_out(tmp_path, monkeypatch):
 
     mock_get = MagicMock()
     mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = _BUSY_SNAP
+    mock_get.return_value.json.return_value = _fresh_snap(active_runs=1, quiescent=False)
 
     with patch("release_control.httpx.get", mock_get), \
          patch("release_control.time.sleep"):
@@ -140,7 +142,7 @@ def test_pause_and_drain_success(tmp_path, monkeypatch):
 
     mock_get = MagicMock()
     mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = _QUIESCENT_SNAP
+    mock_get.return_value.json.return_value = _fresh_snap()
 
     with patch("release_control.httpx.post", mock_post), \
          patch("release_control.httpx.get", mock_get):
@@ -181,7 +183,7 @@ def test_compat_check_pass(tmp_path, monkeypatch):
 
     mock_get = MagicMock()
     mock_get.return_value.status_code = 200
-    mock_get.return_value.json.return_value = _QUIESCENT_SNAP  # has [1]
+    mock_get.return_value.json.return_value = _fresh_snap()  # has [1]
 
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(

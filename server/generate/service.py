@@ -449,17 +449,7 @@ def _worker_one(
     batch_briefs: list,
 ) -> None:
     """Execute one question-generation worker; enqueues result/error events."""
-    with ctx.drain_telemetry.ctx_active_worker():
-        _worker_one_body(i, question_client, ctx, batch_briefs)
-
-
-def _worker_one_body(
-    i: int,
-    question_client: LLMClient,
-    ctx: _RunContext,
-    batch_briefs: list,
-) -> None:
-    """Run the v2 worker body inside the drain telemetry wrapper."""
+    ctx.drain_telemetry._inc("_active_workers")
     worker_recorder = make_exchange_recorder(
         generation_log_id=ctx.generation_log_id,
         retention_days=ctx.retention_days,
@@ -683,6 +673,8 @@ def _worker_one_body(
             index=i,
             payload=_failed_payload,
         )
+    finally:
+        ctx.drain_telemetry._dec("_active_workers")
 
 
 async def generate_question_stream(
