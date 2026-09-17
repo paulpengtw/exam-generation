@@ -83,7 +83,7 @@ The promise that every value generation would otherwise draw is resolved by 預�
 _Avoid_: full pre-draw, exhaustive sampling, no-backend-randomness
 
 **從屬參數**:
-A setting whose legal values are fixed by another setting's resolved value — 情境子類別 by 情境; 學習內容 / 學習表現 by 科目; and, for 公民與社會 and 跨科, 學習內容 also by 內容領域. A child may have several parents, and its range is the intersection of theirs. 預抽 resolves every parent first and draws the child only from that range. A pair drawn from unrelated ranges is invalid and is rejected, never silently corrected.
+A setting whose legal values are fixed by another setting's resolved value — 情境子類別 by 情境; 學習內容 / 學習表現 by 科目; and, for 公民與社會 and 跨科, 學習內容 also by 內容領域. A child may have several parents, and its range is the intersection of theirs. 預抽 resolves every parent first and draws the child only from that range; a 釘選 child in turn narrows a parent left blank, which is drawn only from values that admit every 釘選 child. A pair drawn from unrelated ranges is invalid and is rejected, never silently corrected.
 小題數 is also a structural parent: the per-小題 slot list (the 各小題配置 rows) exists only because of the resolved 小題數.
 When 小題數 is 重抽, the slots are rebuilt to the new count; 覆寫'd rows keep their values where they survive, while untouched 預抽 rows re-resolve.
 _Avoid_: dependent field, child parameter, cascading select, parented value
@@ -131,6 +131,20 @@ _Avoid_: 難度 (wrong term for 自然科學), 報告等級
 **難度**:
 The easy / medium / hard demand signal for 數學 and 社會領域. Not used for 自然科學, which uses Reporting Scale instead.
 _Avoid_: using 難度 for 自然科學
+
+### 更新 (Update)
+
+**工作區參與**:
+A surface's declaration of its readiness, editable state, received results and workspace export seam, so an updater can assess the work it holds.
+_Avoid_: surface participation, workspace registration, page activity
+
+**受理**:
+The moment the server accepts a submitted generation or 人工審題修正 request — the `started` event for generation, or a returned `run_id` for 人工審題修正. Sending the request alone does not establish 受理.
+_Avoid_: admission, submitted, accepted (without the server acknowledgement)
+
+**可觀察作業**:
+An in-flight generation, 人工審題修正, 核心問題 planning, 預抽, 提示詞預覽 or export operation that an updater can observe but cannot abort.
+_Avoid_: observed operation, cancellable task, background job
 
 ### 流程 (Pipeline)
 

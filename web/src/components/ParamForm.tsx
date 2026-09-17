@@ -1,14 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getAvailableModels, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
+import type { Lang } from "../i18n/messages";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
 import { filterEntriesByAdmittedParent } from "../lib/admittedBy";
+import {
+  computeParentNarrowing,
+  formatNarrowingHint,
+  type PinnedCodeGroup,
+} from "../lib/parentNarrowing";
 import { fetchCurriculumPool, type CurriculumPool } from "../lib/curriculumPool";
+import { formatResolverFieldErrors, isResolverFieldErrorLike } from "../lib/resolverErrorMessages";
 import {
   filterDrawnAfterSubquestionCountRedraw,
   rebuildSubquestionSlots,
 } from "../lib/rebuildSubquestionSlots";
 import { renewSessionIfNeeded } from "../lib/sessionRenewal";
+import { exportFormWorkspace } from "../lib/workspace/adapters/formWorkspace";
+import { exportConfirmationWorkspace } from "../lib/workspace/adapters/confirmationWorkspace";
+import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
+import { useWorkspaceStore, type OperationHandle, type SurfaceParticipation, type SurfaceReadiness } from "../lib/workspace/workspaceStore";
 import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
 import {
@@ -1071,7 +1082,9 @@ function readConfirmationPathValue(
 const CONFIRMATION_PARENT_CHILDREN: Record<string, string[]> = {
   "情境": ["情境子類別"],
   "科目": ["學習內容", "學習表現"],
-  "內容領域": ["學習內容", "學習表現"],
+  // #833/#839: 學習表現 has no 內容領域 parent — only 學習內容 admits a 內容領域
+  // tag, so a 內容領域 confirmation edit must never clear a drawn 學習表現.
+  "內容領域": ["學習內容"],
   sub_question_count: ["subquestion_configs"],
 };
 
@@ -1145,12 +1158,14 @@ function filterCurriculumEntriesBySubject<T extends SchemaEntry>(
   return filterEntriesByAdmittedParent(entries, "科目", values);
 }
 
+// #840: admission comes only from `admitted_by["內容領域"]` (ADR 0020) — a row
+// without that tag is unscoped and is never filtered/disabled by 內容領域,
+// regardless of its code prefix. No prefix table or 內容領域_mapping fallback.
 function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
   entries: readonly T[],
   subject: string,
   resolvedSubject: string | readonly string[] | undefined,
   contentDomain: string | undefined,
-  contentDomainMapping: Record<string, string[]> | undefined,
 ): T[] {
   if (subject !== "social_studies" || !contentDomain) return [...entries];
   const subjectValues = typeof resolvedSubject === "string"
@@ -1165,20 +1180,9 @@ function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
   const domainAdmittedEntries = new Set(
     filterEntriesByAdmittedParent(domainTaggedEntries, "內容領域", contentDomain),
   );
-  const mappedCodes = new Set(
-    Object.entries(contentDomainMapping ?? {})
-      .filter(([, domains]) => domains.includes(contentDomain))
-      .map(([code]) => code),
-  );
   return entries.filter((entry) =>
-    Object.hasOwn(entry.admitted_by ?? {}, "內容領域")
-      ? domainAdmittedEntries.has(entry)
-      : !isPublicSocialStudiesCode(entry.value) || mappedCodes.has(entry.value),
+    !Object.hasOwn(entry.admitted_by ?? {}, "內容領域") || domainAdmittedEntries.has(entry),
   );
-}
-
-function isPublicSocialStudiesCode(code: string): boolean {
-  return code.startsWith("公");
 }
 
 const PIN_RULE_MESSAGE_KEYS: Record<SocialStudiesPinRuleViolation, string> = {
@@ -1219,6 +1223,34 @@ function isValidPromptPreviewResponse(
 }
 
 /**
+ * Turn a caught resolve/preview failure into display text.
+ *
+ * Shared by the 發送前確認 resolver banner and prompt-preview errors (#835):
+ * an `ApiError` (`../api/client`) carrying field-addressed resolver errors
+ * on its `errors` property is formatted via the one shared formatter
+ * (`incompatible_parent` / `no_admitting_parent` become a readable
+ * sentence); everything else — a plain network/other `Error`, or a batch
+ * the formatter declines (e.g. `unresolved`, which keeps its current text)
+ * — falls back to the caught error's own message, exactly as before #835.
+ *
+ * Duck-types `cause.errors` via `isResolverFieldErrorLike` rather than
+ * `instanceof ApiError` so this doesn't require a runtime import of the
+ * `ApiError` class (many existing tests `vi.mock("../api/client")` wholesale
+ * without re-exporting it).
+ */
+function resolveDisplayError(cause: unknown, lang: Lang, fallback: string): string {
+  if (cause && typeof cause === "object" && "errors" in cause) {
+    const errors = (cause as { errors?: unknown }).errors;
+    if (Array.isArray(errors) && errors.length > 0 && errors.every(isResolverFieldErrorLike)) {
+      const readable = formatResolverFieldErrors(errors, lang);
+      if (readable !== null) return readable;
+    }
+  }
+  if (cause instanceof Error && cause.message) return cause.message;
+  return fallback;
+}
+
+/**
  * The planner endpoint promises three distinct, non-empty textual
  * candidates. Treat a malformed success body as a planning failure so the
  * confirmation screen can keep its generation-decides fallback.
@@ -1237,6 +1269,16 @@ function selectPlannedCoreQuestion(candidates: unknown): string | undefined {
   return normalised[0];
 }
 
+function ConfirmationParticipation({ exportWorkspace }: Pick<SurfaceParticipation, "exportWorkspace">) {
+  useSurfaceParticipation("generate.confirmation", {
+    readiness: "ready",
+    hasEditableState: true,
+    hasReceivedResults: false,
+    exportWorkspace,
+  });
+  return null;
+}
+
 export default function ParamForm({
   subject = "math",
   onSubmit,
@@ -1246,9 +1288,11 @@ export default function ParamForm({
 }: ParamFormProps) {
   const generationStartedRef = useRef(false);
   const hasUserEditedRef = useRef(false);
+  const [hasUserEdited, setHasUserEdited] = useState(false);
   const markUnsubmittedInput = () => {
     generationStartedRef.current = false;
     hasUserEditedRef.current = true;
+    setHasUserEdited(true);
     onUnsubmittedInput?.();
   };
   const t = useT();
@@ -1270,6 +1314,10 @@ export default function ParamForm({
   const [confirmInvalidFields, setConfirmInvalidFields] = useState<Map<string, true>>(new Map());
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
+  // #835: readable message for the most recent prompt-preview failure (initial
+  // fetch, debounced 確認頁修改 re-fetch, or manual retry) — shares
+  // resolveDisplayError/formatResolverFieldErrors with the resolver banner.
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [models, setModels] = useState<AvailableModels | null>(null);
   const [modelsResolved, setModelsResolved] = useState(false);
   const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(true);
@@ -1287,6 +1335,7 @@ export default function ParamForm({
     rebuildSubquestionSlots: boolean;
   } | null>(null);
   const resolveRequestSeqRef = useRef(0);
+  const resolveOperationRef = useRef<OperationHandle | null>(null);
   const redrawsRef = useRef<Record<string, number>>({});
   const pendingParamsRef = useRef<FormParams | null>(null);
   const pendingPerQuestionParamsRef = useRef<Record<string, unknown>[] | null>(null);
@@ -1524,6 +1573,26 @@ export default function ParamForm({
     hasDraftHistoryConflict &&
     defaultsReady;
 
+  const formReadiness: SurfaceReadiness = hasDraftHistoryConflict || showDraftPrompt
+    ? "restoring"
+    : schemas !== null && defaultsReady && modelsResolved ? "ready" : "hydrating";
+  const exportForm = useCallback(() => exportFormWorkspace(formSnapshot), [formSnapshot]);
+  useSurfaceParticipation("generate.form", {
+    readiness: formReadiness,
+    hasEditableState: hasUserEdited,
+    hasReceivedResults: false,
+    exportWorkspace: exportForm,
+  });
+  const exportConfirmation = useCallback(() => pendingParams === null ? null : exportConfirmationWorkspace({
+    pendingParams,
+    pendingPerQuestionParams,
+    clearedPaths,
+    redraws: redrawsRef.current,
+    hasPendingConfirmationEdits,
+    coreQuestionResolution,
+    historyDraftChoice,
+  }), [pendingParams, pendingPerQuestionParams, clearedPaths, hasPendingConfirmationEdits, coreQuestionResolution, historyDraftChoice]);
+
   function handleRestoreDraft() {
     if (!draftToRestore) return;
     const fields = draftToRestore.fields;
@@ -1541,6 +1610,7 @@ export default function ParamForm({
 
   function handleUseHistoryParams() {
     hasUserEditedRef.current = false;
+    setHasUserEdited(false);
     setHistoryDraftChoice("history");
     setDraftToRestore(null);
     if (defaultsSnapshotRef.current !== null) {
@@ -1551,6 +1621,7 @@ export default function ParamForm({
   function handleStartWithDefaults() {
     if (!schemas) return;
     hasUserEditedRef.current = false;
+    setHasUserEdited(false);
     setHistoryDraftChoice("defaults");
     setDraftToRestore(null);
     setPrefillNotice(null);
@@ -1569,15 +1640,23 @@ export default function ParamForm({
     if (!pendingParams || coreQuestionResolution === "loading" || previewRequestedRef.current) return;
     let cancelled = false;
     previewRequestedRef.current = true;
+    const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
     void previewGenerate(toGenerateParams(subject, pendingParams))
       .then(({ prompts }) => {
+        op.end("completed");
         if (cancelled) return;
         if (isValidPromptPreviewResponse(prompts)) {
           setPromptPreviews(prompts);
         }
+        setPreviewError(null);
       })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
+      .catch((cause: unknown) => {
+        op.end("failed");
+        if (cancelled) return;
+        setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
+      });
+    return () => { cancelled = true; op.end("superseded"); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang/t deliberately excluded: they must not re-trigger the preview fetch on a language switch, only affect the text of a failure caught by this same effect run
   }, [coreQuestionResolution, pendingParams, subject]);
 
   // Debounced re-fetch triggered by 確認頁修改 (#445).
@@ -1602,25 +1681,37 @@ export default function ParamForm({
         per_question_params: JSON.stringify(pendingPerQuestionParams),
       };
       const fetchParams = toGenerateParams(subject, formParams);
+      const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
       void previewGenerate(fetchParams)
         .then(({ prompts }) => {
-          if (seq !== previewRefetchSeqRef.current) return; // superseded
+          if (seq !== previewRefetchSeqRef.current) {
+            op.end("superseded");
+            return;
+          }
+          op.end("completed");
           if (isValidPromptPreviewResponse(prompts)) {
             setPromptPreviews(prompts);
           }
           setPreviewRefetchLoading(false);
+          setPreviewError(null);
           // #446: clear stale state on success
           setStalePreviewIndices(new Set());
         })
-        .catch(() => {
-          if (seq !== previewRefetchSeqRef.current) return;
+        .catch((cause: unknown) => {
+          if (seq !== previewRefetchSeqRef.current) {
+            op.end("superseded");
+            return;
+          }
+          op.end("failed");
           setPreviewRefetchLoading(false);
+          setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
           // #446: mark only the edited 題組 as stale
           setStalePreviewIndices((prev) => new Set([...prev, ...capturedEditedIndices]));
         });
     }, 500);
 
     return () => { window.clearTimeout(timeoutId); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang/t deliberately excluded: they must not re-trigger the debounced preview refetch on a language switch, only affect the text of a failure caught by this same effect run
   }, [hasPendingConfirmationEdits, pendingPerQuestionParams, pendingParams, subject]);
 
   useEffect(() => {
@@ -1631,14 +1722,16 @@ export default function ParamForm({
       : pendingParams.subject_filter
         ? [pendingParams.subject_filter]
         : undefined;
+    const op = useWorkspaceStore.getState().beginOperation("core_question_planning", "generate.confirmation");
     void planCoreQuestions({
       topic: pendingParams.topic ?? "",
       subject,
       subject_filter: pendingSubjectFilter,
       grade: pendingParams.grade,
     }).then(({ candidates }) => {
-      if (cancelled) return;
       const selected = selectPlannedCoreQuestion(candidates);
+      op.end(selected ? "completed" : "failed");
+      if (cancelled) return;
       if (!selected) {
         setCoreQuestionResolution("failed");
         return;
@@ -1678,10 +1771,11 @@ export default function ParamForm({
       }
       setCoreQuestionResolution("generated");
     }).catch(() => {
+      op.end("failed");
       if (cancelled) return;
       setCoreQuestionResolution("failed");
     });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; op.end("aborted"); };
   }, [coreQuestionResolution, pendingParams, subject]);
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
@@ -2133,13 +2227,17 @@ export default function ParamForm({
     const poolMatchesGrade = schemas.poolGrade === (grade === "" ? null : grade);
     if (poolMatchesGrade) {
       const configs = parseSubquestionConfigs(ip.subquestion_configs);
-      // Report the selections removed by the curriculum reconciliation effects below.
+      // #841: absence is judged against the grade's whole curriculum pool
+      // (schemas.學習表現/學習內容), not the 科目/內容領域-filtered
+      // available* lists — a code merely excluded by the restored 科目 or
+      // 內容領域 is a conflict (flagged on the parent control below), not a
+      // drop, and must not appear in this notice.
       for (const [label, values, entries] of [
         ["學習表現", [
           ...arr("learning_performance"),
           ...configs.flatMap((cfg) => cfg.learning_performance ?? []),
-        ], availableLearningPerformance],
-        ["學習內容", arr("learning_content"), availableLearningContent],
+        ], schemas.學習表現 ?? []],
+        ["學習內容", arr("learning_content"), schemas.學習內容 ?? []],
       ] as const) {
         const allowed = new Set(entries.map((entry) => entry.value));
         for (const code of new Set(values)) {
@@ -2177,55 +2275,133 @@ export default function ParamForm({
       const allowedDomains = new Set(schemas.內容領域?.map((s) => s.value));
       setField("contentDomain", (prev) => (prev && allowedDomains.has(prev) ? prev : ""));
     }
-  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade, availableLearningPerformance, availableLearningContent]);
+  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade]);
 
-  const iccsDomainMappedCodes = useMemo(() => {
-    if (
-      subject !== "social_studies" ||
-      !ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter) ||
-      !contentDomain ||
-      !schemas?.內容領域_mapping
-    ) {
-      return undefined;
+  // #839: the 釘選 codes narrowing 科目/內容領域 are the 題組-level 學習內容 +
+  // 學習表現 selections plus each 各小題配置 row's own pins. Admission comes
+  // only from `admitted_by` tags (ADR 0020) via computeParentNarrowing — never
+  // a prefix table.
+  const pinnedCurriculumCodeGroups = useMemo((): PinnedCodeGroup[] => {
+    const groups: PinnedCodeGroup[] = [];
+    const groupCodes = [...learningContent, ...learningPerformance];
+    if (groupCodes.length > 0) groups.push({ codes: groupCodes });
+    subquestionConfigs.forEach((cfg, index) => {
+      const codes = [...(cfg.learning_content ?? []), ...(cfg.learning_performance ?? [])];
+      if (codes.length > 0) groups.push({ codes, subquestionNumber: index + 1 });
+    });
+    return groups;
+  }, [learningContent, learningPerformance, subquestionConfigs]);
+
+  const curriculumCodeLookup = useMemo(() => {
+    const map = new Map<string, SchemaEntry>();
+    for (const entry of schemas?.學習內容 ?? []) map.set(entry.value, entry);
+    for (const entry of schemas?.學習表現 ?? []) map.set(entry.value, entry);
+    return map;
+  }, [schemas]);
+
+  const allSubjectFilterValues = useMemo(
+    () => (schemas?.科目 ?? []).map((entry) => entry.value),
+    [schemas],
+  );
+  // #839/#841 scope: 科目-side narrowing (disabled options, hint,
+  // aria-invalid) applies only to the social-studies form — the math and
+  // natural-sciences forms behave exactly as before this branch. The
+  // 內容領域 counterpart already gates on subject via
+  // applyContentDomainNarrowing below.
+  const applySubjectFilterNarrowing = subject === "social_studies";
+  const subjectFilterNarrowing = useMemo(() => {
+    if (!applySubjectFilterNarrowing) {
+      return { disabledValues: new Set<string>(), constrainingCodes: [] };
     }
-    return new Set(
-      Object.entries(schemas.內容領域_mapping)
-        .filter(([, domains]) => domains.includes(contentDomain))
-        .map(([code]) => code),
+    return computeParentNarrowing(
+      allSubjectFilterValues,
+      "科目",
+      pinnedCurriculumCodeGroups,
+      (code) => curriculumCodeLookup.get(code),
     );
-  }, [contentDomain, schemas, subject, subjectFilter]);
+  }, [applySubjectFilterNarrowing, allSubjectFilterValues, pinnedCurriculumCodeGroups, curriculumCodeLookup]);
+  const subjectFilterHint = formatNarrowingHint(
+    subjectFilterNarrowing.constrainingCodes,
+    lang,
+    "form.subject_filter_narrow_hint",
+  );
 
-  const filteredLpPool = useMemo(() => {
-    if (iccsDomainMappedCodes === undefined) return undefined;
-    return availableLearningPerformance
-      .filter((entry) => !isPublicSocialStudiesCode(entry.value) || iccsDomainMappedCodes.has(entry.value))
-      .map((entry) => entry.value);
-  }, [availableLearningPerformance, iccsDomainMappedCodes]);
-
-  const filteredLcPool = useMemo(() => {
-    if (
-      subject !== "social_studies" ||
-      !ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter) ||
-      !contentDomain
-    ) {
-      return undefined;
+  // 內容領域 is only ever narrowed for the 科目 values that can carry an ICCS
+  // domain (公民與社會/跨科/全部) — matching filterLearningContentEntriesByDomain's
+  // own subject gate. 歷/地 選擇 leaves 內容領域 fully open.
+  const applyContentDomainNarrowing = subject === "social_studies" &&
+    (subjectFilter === "" || ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter));
+  const allContentDomainValues = useMemo(
+    () => (schemas?.內容領域 ?? []).map((entry) => entry.value),
+    [schemas],
+  );
+  const contentDomainNarrowing = useMemo(() => {
+    if (!applyContentDomainNarrowing) {
+      return { disabledValues: new Set<string>(), constrainingCodes: [] };
     }
-    return filterLearningContentEntriesByDomain(
-      availableLearningContent,
-      subject,
-      subjectFilter,
-      contentDomain,
-      schemas?.內容領域_mapping,
-    )
-      .map((entry) => entry.value);
-  }, [availableLearningContent, contentDomain, schemas, subject, subjectFilter]);
-
-  const restrictCodesToIccsDomain = (codes: readonly string[]): string[] => {
-    if (iccsDomainMappedCodes === undefined) return [...codes];
-    return codes.filter(
-      (code) => !isPublicSocialStudiesCode(code) || iccsDomainMappedCodes.has(code),
+    return computeParentNarrowing(
+      allContentDomainValues,
+      "內容領域",
+      pinnedCurriculumCodeGroups,
+      (code) => curriculumCodeLookup.get(code),
     );
-  };
+  }, [applyContentDomainNarrowing, allContentDomainValues, pinnedCurriculumCodeGroups, curriculumCodeLookup]);
+  const contentDomainHint = formatNarrowingHint(
+    contentDomainNarrowing.constrainingCodes,
+    lang,
+    "form.content_domain_narrow_hint",
+  );
+
+  // #841: a restored draft/history/Regenerate prefill (or a live edit) can
+  // leave 科目/內容領域 set to a value the current 釘選 codes no longer admit.
+  // Never silently fix it: `disabledValues` already tells us exactly which
+  // values conflict (computed above, purely from admitted_by tags — no
+  // prefix table), so the conflict is just "is the current value one of
+  // them". The conflicting control is marked invalid (aria-invalid + the
+  // same narrowing hint) and 產生 stays disabled until the teacher changes
+  // the parent or deselects the constraining code(s).
+  const subjectFilterConflict = subjectFilter !== "" &&
+    subjectFilterNarrowing.disabledValues.has(subjectFilter);
+  const contentDomainConflict = (contentDomain ?? "") !== "" &&
+    contentDomainNarrowing.disabledValues.has(contentDomain ?? "");
+  const hasParentNarrowingConflict = subjectFilterConflict || contentDomainConflict;
+
+  // #840: a 學習內容 code the chosen (or, under 隨機, the still-viable) 內容領域
+  // would not admit is disabled — never dropped — in the request-level list/
+  // search and the per-小題 pickers. Admission comes only from
+  // `admitted_by["內容領域"]` (ADR 0020); a code without that tag (歷/地 codes,
+  // or an untagged civics code) is unscoped and never disabled here. Reuses
+  // `contentDomainNarrowing` (#839) for the 隨機 branch: its `disabledValues`
+  // are the 內容領域 values at least one 釘選 civics code already excludes, so
+  // `allContentDomainValues` minus that set is exactly the still-viable range.
+  const learningContentDomainDisabled = useMemo(() => {
+    const disabled = new Set<string>();
+    if (subject !== "social_studies") return disabled;
+    const viableDomains = contentDomain
+      ? null
+      : allContentDomainValues.filter((value) => !contentDomainNarrowing.disabledValues.has(value));
+    for (const entry of schemas?.學習內容 ?? []) {
+      const admitted = entry.admitted_by?.["內容領域"];
+      if (!Array.isArray(admitted)) continue; // unscoped — never disabled by 內容領域
+      if (contentDomain) {
+        if (!admitted.includes(contentDomain)) disabled.add(entry.value);
+        continue;
+      }
+      if (contentDomainNarrowing.constrainingCodes.length === 0) continue;
+      if (!admitted.some((value) => viableDomains?.includes(value))) disabled.add(entry.value);
+    }
+    return disabled;
+  }, [subject, schemas, contentDomain, contentDomainNarrowing, allContentDomainValues]);
+
+  const learningContentDomainHint = subject === "social_studies" && learningContentDomainDisabled.size > 0
+    ? (contentDomain
+        ? t("form.learning_content_domain_narrow_hint").replace("{domain}", contentDomain)
+        : formatNarrowingHint(
+            contentDomainNarrowing.constrainingCodes,
+            lang,
+            "form.learning_content_domain_narrow_hint_pinned",
+          ))
+    : null;
 
   const planEffortLevels = useMemo((): string[] => {
     if (!models?.effort) return [];
@@ -2265,7 +2441,12 @@ export default function ParamForm({
 
   useEffect(() => {
     if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
-    const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
+    // #841: absence is judged against the grade's whole 學習表現 pool, not
+    // `availableLearningPerformance` (科目-filtered) — a code merely excluded
+    // by the restored/current 科目 is kept selected and flagged as a conflict
+    // on the 科目 control (subjectFilterNarrowing) instead of being silently
+    // dropped here. Only a code truly absent from this grade is removed.
+    const allowed = new Set((schemas.學習表現 ?? []).map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     restoreFormSnapshot((current) => {
       // A draft restore can change the grade before this queued update runs.
@@ -2280,11 +2461,14 @@ export default function ParamForm({
         ),
       };
     });
-  }, [availableLearningPerformance, grade, schemas, restoreFormSnapshot]);
+  }, [grade, schemas, restoreFormSnapshot]);
 
   useEffect(() => {
     if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
-    const allowed = new Set(availableLearningContent.map((entry) => entry.value));
+    // #841: same whole-pool rule as above, for 學習內容 — a code merely
+    // excluded by the restored/current 科目 or 內容領域 is kept selected and
+    // flagged on the conflicting parent control, never silently dropped here.
+    const allowed = new Set((schemas.學習內容 ?? []).map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     restoreFormSnapshot((current) => {
       if (schemas.poolGrade !== (current.grade === "" ? null : current.grade)) return current;
@@ -2293,7 +2477,7 @@ export default function ParamForm({
         learningContent: current.learningContent.filter((value) => allowed.has(value)),
       };
     });
-  }, [availableLearningContent, grade, schemas, restoreFormSnapshot]);
+  }, [grade, schemas, restoreFormSnapshot]);
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
@@ -2342,6 +2526,7 @@ export default function ParamForm({
     setResolverError(null);
     setHasPendingConfirmationEdits(preserveConfirmationEdits);
     setStalePreviewIndices(new Set());
+    setPreviewError(null);
     pendingEditedIndicesRef.current = new Set();
     previewRequestedRef.current = false;
     setPromptPreviews([]);
@@ -2354,6 +2539,9 @@ export default function ParamForm({
     rebuildSubquestionSlots = false,
   ) {
     const sequence = ++resolveRequestSeqRef.current;
+    resolveOperationRef.current?.end("superseded");
+    const op = useWorkspaceStore.getState().beginOperation("resolve", "generate.confirmation");
+    resolveOperationRef.current = op;
     resolveRequestRef.current = { payload, redraws, rebuildSubquestionSlots };
     setResolverLoading(true);
     setResolverError(null);
@@ -2375,14 +2563,14 @@ export default function ParamForm({
         },
         preserveConfirmationEdits,
       );
+      op.end("completed");
+      if (resolveOperationRef.current === op) resolveOperationRef.current = null;
     } catch (cause) {
       if (sequence !== resolveRequestSeqRef.current) return;
+      op.end("failed");
+      if (resolveOperationRef.current === op) resolveOperationRef.current = null;
       setResolverLoading(false);
-      setResolverError(
-        cause instanceof Error && cause.message
-          ? cause.message
-          : t("form.confirm_resolve_error"),
-      );
+      setResolverError(resolveDisplayError(cause, lang, t("form.confirm_resolve_error")));
     }
   }
 
@@ -2407,6 +2595,7 @@ export default function ParamForm({
     pendingPerQuestionParamsRef.current = null;
     setClearedPaths([]);
     setResolverError(null);
+    setPreviewError(null);
     if (grade === "") return;
     if (!setType.trim()) {
       setValidationError(t("form.error_set_type_required"));
@@ -2420,11 +2609,12 @@ export default function ParamForm({
       ? (contentType === "customized" ? customContentType.trim() : contentType)
       : undefined;
     if (isCurriculumSubject && !effectiveContentType) return;
-    const selectedLearningPerformance = restrictCodesToIccsDomain(learningPerformance);
-    const lcPoolValues = filteredLcPool ?? availableLearningContent.map((entry) => entry.value);
-    const selectedLearningContent = filteredLcPool === undefined
-      ? restrictCodesToIccsDomain(learningContent)
-      : learningContent.filter((code) => lcPoolValues.includes(code));
+    // #833: 學習表現 is never restricted by 內容領域; submit it unchanged.
+    const selectedLearningPerformance = [...learningPerformance];
+    // #840: no submit-time 內容領域 filtering of 學習內容 — the request carries
+    // exactly what is selected; disabling (never dropping) happens in the
+    // pickers themselves.
+    const selectedLearningContent = [...learningContent];
     const historyDrawn = Array.isArray(ip.drawn)
       ? ip.drawn.filter((path): path is string => typeof path === "string")
       : undefined;
@@ -2571,6 +2761,8 @@ export default function ParamForm({
     }
     if (userId) clearDraft(userId);
     resolveRequestSeqRef.current += 1;
+    resolveOperationRef.current?.end("superseded");
+    resolveOperationRef.current = null;
     resolveRequestRef.current = null;
     pendingParamsRef.current = null;
     pendingPerQuestionParamsRef.current = null;
@@ -2940,18 +3132,29 @@ export default function ParamForm({
       per_question_params: JSON.stringify(pendingPerQuestionParams),
     };
     const fetchParams = toGenerateParams(subject, formParams);
+    const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
     void previewGenerate(fetchParams)
       .then(({ prompts }) => {
-        if (seq !== previewRefetchSeqRef.current) return;
+        if (seq !== previewRefetchSeqRef.current) {
+          op.end("superseded");
+          return;
+        }
+        op.end("completed");
         if (isValidPromptPreviewResponse(prompts)) {
           setPromptPreviews(prompts);
         }
         setPreviewRefetchLoading(false);
+        setPreviewError(null);
         setStalePreviewIndices(new Set());
       })
-      .catch(() => {
-        if (seq !== previewRefetchSeqRef.current) return;
+      .catch((cause: unknown) => {
+        if (seq !== previewRefetchSeqRef.current) {
+          op.end("superseded");
+          return;
+        }
+        op.end("failed");
         setPreviewRefetchLoading(false);
+        setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
         // Leave stale badge in place so the user can retry again
       });
   }
@@ -3081,6 +3284,7 @@ export default function ParamForm({
 
     return (
       <div className="space-y-4">
+        <ConfirmationParticipation exportWorkspace={exportConfirmation} />
         <div>
           <h2 className="text-base font-semibold">{t("form.confirm_title")}</h2>
           <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
@@ -3179,6 +3383,11 @@ export default function ParamForm({
         {previewRefetchLoading && (
           <p className="text-sm text-amber-700">{t("form.confirm_preview_loading")}</p>
         )}
+        {previewError && (
+          <div role="alert" className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            {previewError}
+          </div>
+        )}
         <div className="space-y-4">
           {resolvedPerQuestionParams.map((questionParams, index) => {
             const heading = t("form.confirm_question_block").replace("{n}", String(index + 1));
@@ -3223,19 +3432,14 @@ export default function ParamForm({
               : typeof p.content_domain === "string"
                 ? p.content_domain
                 : undefined;
-            const questionLpEntries = filterLearningContentEntriesByDomain(
-              questionLpEntriesBySubject,
-              subject,
-              resolvedQuestionSubject,
-              questionContentDomain,
-              schemas?.內容領域_mapping,
-            );
+            // #833: 學習表現 has no 內容領域 parent — offer the subject-filtered pool
+            // unfiltered by domain. 學習內容 domain filtering below is unchanged.
+            const questionLpEntries = questionLpEntriesBySubject;
             const questionLcEntries = filterLearningContentEntriesByDomain(
               questionLcEntriesBySubject,
               subject,
               resolvedQuestionSubject,
               questionContentDomain,
-              schemas?.內容領域_mapping,
             );
             const questionLpDisplayEntries = questionLpEntries.filter((entry) => questionLpCodes.includes(entry.value));
             const questionLcDisplayEntries = questionLcEntries.filter((entry) => questionLcCodes.includes(entry.value));
@@ -3851,6 +4055,8 @@ export default function ParamForm({
               type="button"
               onClick={() => {
                 resolveRequestSeqRef.current += 1;
+                resolveOperationRef.current?.end("superseded");
+                resolveOperationRef.current = null;
                 resolveRequestRef.current = null;
                 pendingParamsRef.current = null;
                 pendingPerQuestionParamsRef.current = null;
@@ -4119,7 +4325,7 @@ export default function ParamForm({
 
       {schemas.科目 && schemas.科目.length > 0 && (
         <div>
-          <label className="block text-sm font-medium">
+          <label htmlFor="subject-filter-select" className="block text-sm font-medium">
             {t(
               subject === "natural_sciences"
                 ? "form.subject_filter_natural_sciences"
@@ -4127,16 +4333,23 @@ export default function ParamForm({
             )}
           </label>
           <select
+            id="subject-filter-select"
             value={subjectFilter}
             onChange={(e) => {
               markUserChosen("subject_filter");
               setField("subjectFilter", e.target.value);
             }}
+            aria-describedby={subjectFilterHint ? "subject-filter-hint" : undefined}
+            aria-invalid={subjectFilterConflict || undefined}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.subject_filter.all")}</option>
             {schemas.科目.map((s) => (
-              <option key={s.value} value={s.value}>
+              <option
+                key={s.value}
+                value={s.value}
+                disabled={subjectFilterNarrowing.disabledValues.has(s.value)}
+              >
                 {s.value}
               </option>
             ))}
@@ -4144,6 +4357,11 @@ export default function ParamForm({
           {subject === "natural_sciences" && (
             <p className="mt-1 text-sm text-gray-500">
               {t("form.subject_filter_natural_sciences_help")}
+            </p>
+          )}
+          {subjectFilterHint && (
+            <p id="subject-filter-hint" className="mt-1 text-sm text-gray-500">
+              {subjectFilterHint}
             </p>
           )}
         </div>
@@ -4161,15 +4379,26 @@ export default function ParamForm({
               markUserChosen("content_domain");
               setField("contentDomain", e.target.value);
             }}
+            aria-describedby={contentDomainHint ? "content-domain-hint" : undefined}
+            aria-invalid={contentDomainConflict || undefined}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.content_domain_random")}</option>
             {(schemas.內容領域 ?? []).map((entry) => (
-              <option key={entry.value} value={entry.value}>
+              <option
+                key={entry.value}
+                value={entry.value}
+                disabled={contentDomainNarrowing.disabledValues.has(entry.value)}
+              >
                 {entry.value}
               </option>
             ))}
           </select>
+          {contentDomainHint && (
+            <p id="content-domain-hint" className="mt-1 text-sm text-gray-500">
+              {contentDomainHint}
+            </p>
+          )}
         </div>
       )}
 
@@ -4479,33 +4708,50 @@ export default function ParamForm({
                     markUnsubmittedInput();
                   }}
                   placeholder="搜尋學習內容..."
+                  disabledValues={learningContentDomainDisabled}
+                  hint={learningContentDomainHint}
                 />
               </div>
             ) : (
-              <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {availableLearningContent.map((entry) => (
-                  <label key={entry.value} className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={learningContent.includes(entry.value)}
-                      onChange={() => {
-                        markUserChosen("learning_content");
-                        setField("learningContent", (prev) => toggleMulti(prev, entry.value));
-                      }}
-                      className="mt-1"
-                    />
-                    <span className="text-sm">
-                      <span className="font-medium">{entry.value}</span>
-                      {entry.instruction && (
-                        <span className="text-gray-600">：{entry.instruction}</span>
-                      )}
-                    </span>
-                  </label>
-                ))}
+              <div
+                className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2"
+                role="group"
+                aria-label={t("form.learning_content")}
+                aria-describedby={learningContentDomainHint ? "learning-content-checkbox-hint" : undefined}
+              >
+                {availableLearningContent.map((entry) => {
+                  const isSelected = learningContent.includes(entry.value);
+                  const isDisabled = !isSelected && learningContentDomainDisabled.has(entry.value);
+                  return (
+                    <label key={entry.value} className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={isDisabled}
+                        onChange={() => {
+                          markUserChosen("learning_content");
+                          setField("learningContent", (prev) => toggleMulti(prev, entry.value));
+                        }}
+                        className="mt-1"
+                      />
+                      <span className={`text-sm ${isDisabled ? "text-gray-400" : ""}`}>
+                        <span className="font-medium">{entry.value}</span>
+                        {entry.instruction && (
+                          <span className="text-gray-600">：{entry.instruction}</span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             )
           ) : (
             <p className="mt-1 text-sm text-gray-500">{t("form.learning_content_empty")}</p>
+          )}
+          {!useCurriculumSearch && learningContentDomainHint && (
+            <p id="learning-content-checkbox-hint" className="mt-1 text-xs text-amber-700">
+              {learningContentDomainHint}
+            </p>
           )}
         </div>
       )}
@@ -4587,8 +4833,8 @@ export default function ParamForm({
                   <SubQuestionCurriculumPickers
                     availableLearningPerformance={availableLearningPerformance}
                     availableLearningContent={availableLearningContent}
-                    filteredLpPool={filteredLpPool}
-                    filteredLcPool={filteredLcPool}
+                    learningContentDisabledValues={learningContentDomainDisabled}
+                    learningContentHint={learningContentDomainHint}
                     learningPerformance={cfg.learning_performance}
                     learningContent={cfg.learning_content}
                     onLearningPerformanceChange={(values) =>
@@ -4949,7 +5195,7 @@ export default function ParamForm({
 
       <button
         type="submit"
-        disabled={disabled || resolverLoading}
+        disabled={disabled || resolverLoading || hasParentNarrowingConflict}
         className="inline-flex w-full items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
         {disabled && (

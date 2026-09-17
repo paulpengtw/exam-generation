@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
@@ -17,6 +17,9 @@ import { useAuthStore } from "../store/authStore";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
+import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
+import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
+import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
 
 export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
@@ -73,6 +76,17 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const hasResults = displayResults.length > 0;
+  const exportWorkspace = useCallback(() => exportResultsWorkspace({
+    status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
+    subQuestionTotal, requestedTotal, submittedSubQuestionCount,
+  }), [status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
+    subQuestionTotal, requestedTotal, submittedSubQuestionCount]);
+  useSurfaceParticipation("generate.results", {
+    readiness: "ready",
+    hasEditableState: false,
+    hasReceivedResults: hasResults,
+    exportWorkspace,
+  });
   const blocker = useBlocker(
     ({ historyAction }) =>
       (hasUnsubmittedInput || hasResults) && historyAction === "POP",
@@ -111,7 +125,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     }
     setRequestedTotal(params.count);
     setSubmittedSubQuestionCount(generateParams.sub_question_count ?? null);
-    generate(generateParams);
+    return generate(generateParams);
   };
 
   const handleReset = () => {
@@ -130,17 +144,21 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   };
 
   const handleDownloadAll = () => {
+    const op = useWorkspaceStore.getState().beginOperation("export_json", "generate.results");
     const json = JSON.stringify(results, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     downloadBlob(blob, `batch_${ts}.json`);
+    op.end("completed");
   };
 
   const handleDownloadAllOdt = () => {
+    const op = useWorkspaceStore.getState().beginOperation("export_odt", "generate.results");
     const ts = formatTimestamp();
     buildExamOdt(`exam_${ts}`, results).then((blob) => {
       downloadBlob(blob, `exam_${ts}.odt`);
-    });
+      op.end("completed");
+    }).catch(() => op.end("failed"));
   };
 
   const showProgress = !(progressLines.length === 0 && status === "idle");

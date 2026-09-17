@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
+
 import QuestionCard from "../components/QuestionCard";
 import FigurePolicyTrailTimeline from "../components/FigurePolicyTrailTimeline";
 import ReferenceExampleRecordSection from "../components/ReferenceExampleRecordSection";
@@ -33,6 +35,12 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<HistoryDetailPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useSurfaceParticipation("history.detail", {
+    readiness: detail !== null || error !== null ? "ready" : "hydrating",
+    hasEditableState: false,
+    hasReceivedResults: false,
+  });
 
   useEffect(() => {
     let cancelled = false;

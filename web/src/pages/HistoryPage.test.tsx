@@ -276,3 +276,23 @@ describe("HistoryPage (list mode)", () => {
     expect(screen.getByText("Failed")).toHaveClass("bg-red-100", "text-red-700");
   });
 });
+
+import { act } from "@testing-library/react";
+import { resetWorkspaceStoreForTests, useWorkspaceStore } from "../lib/workspace/workspaceStore";
+
+describe("HistoryList workspace readiness", () => {
+  it.each([true, false])("becomes ready after loading succeeds=%s", async (success) => {
+    resetWorkspaceStoreForTests();
+    let resolve!: (value: unknown) => void;
+    let reject!: (error: Error) => void;
+    listHistoryMock.mockReturnValueOnce(new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const { unmount } = render(<MemoryRouter><HistoryPage /></MemoryRouter>);
+    expect(useWorkspaceStore.getState().surfaces["history.list"]).toMatchObject({
+      readiness: "hydrating", hasEditableState: false, hasReceivedResults: false,
+    });
+    await act(async () => { if (success) resolve({ total: 0, items: [] }); else reject(new Error("load failed")); });
+    expect(useWorkspaceStore.getState().surfaces["history.list"]?.readiness).toBe("ready");
+    unmount();
+    expect(useWorkspaceStore.getState().surfaces["history.list"]).toBeUndefined();
+  });
+});
