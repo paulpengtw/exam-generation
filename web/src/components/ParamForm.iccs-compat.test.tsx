@@ -135,7 +135,7 @@ describe("#506 confirmation ICCS compatibility", () => {
       resolveConfirmationPayload(payload));
   });
 
-  it("公民 confirmation card limits LC/LP SearchPicker and 重抽 to the drawn domain pool", async () => {
+  it("公民 confirmation card limits LC SearchPicker/重抽 to the drawn domain pool but leaves 學習表現 unfiltered (#833)", async () => {
     render(
       <ParamForm
         subject="social_studies"
@@ -160,8 +160,20 @@ describe("#506 confirmation ICCS compatibility", () => {
 
     fireEvent.change(lcInput, { target: { value: "公Aa" } });
     expect(card.queryByText(OUT_OF_DOMAIN_LC)).not.toBeInTheDocument();
+
+    // #833: 學習表現 has no 內容領域 parent — the out-of-domain code (公1c-Ⅳ-1,
+    // the only stage-4 公 學習表現 code) is still offered and selectable here.
     fireEvent.change(lpInput, { target: { value: "公1c" } });
-    expect(card.queryByText(OUT_OF_DOMAIN_LP)).not.toBeInTheDocument();
+    expect(await card.findByText(OUT_OF_DOMAIN_LP)).toBeInTheDocument();
+
+    const lpPickerRoot = lpInput.parentElement as HTMLElement;
+    const lpOption = within(lpPickerRoot).getByText(OUT_OF_DOMAIN_LP);
+    act(() => {
+      fireEvent.mouseDown(lpOption);
+    });
+    await waitFor(() =>
+      expect(readChipCodes(lpPickerRoot)).toEqual([ALLOWED_LP, OUT_OF_DOMAIN_LP]),
+    );
 
     const lcPickerRoot = lcInput.parentElement as HTMLElement;
     await waitFor(() => expect(readChipCodes(lcPickerRoot)).toEqual([ALLOWED_LC]));

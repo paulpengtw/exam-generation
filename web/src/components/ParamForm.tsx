@@ -2232,29 +2232,8 @@ export default function ParamForm({
     }
   }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade, availableLearningPerformance, availableLearningContent]);
 
-  const iccsDomainMappedCodes = useMemo(() => {
-    if (
-      subject !== "social_studies" ||
-      !ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter) ||
-      !contentDomain ||
-      !schemas?.內容領域_mapping
-    ) {
-      return undefined;
-    }
-    return new Set(
-      Object.entries(schemas.內容領域_mapping)
-        .filter(([, domains]) => domains.includes(contentDomain))
-        .map(([code]) => code),
-    );
-  }, [contentDomain, schemas, subject, subjectFilter]);
-
-  const filteredLpPool = useMemo(() => {
-    if (iccsDomainMappedCodes === undefined) return undefined;
-    return availableLearningPerformance
-      .filter((entry) => !isPublicSocialStudiesCode(entry.value) || iccsDomainMappedCodes.has(entry.value))
-      .map((entry) => entry.value);
-  }, [availableLearningPerformance, iccsDomainMappedCodes]);
-
+  // #833: 學習表現 has no 內容領域 parent (ADR 0020) and must never be filtered by
+  // it. Only 學習內容 admits a 內容領域 tag, so `filteredLcPool` below stays as-is.
   const filteredLcPool = useMemo(() => {
     if (
       subject !== "social_studies" ||
@@ -2272,13 +2251,6 @@ export default function ParamForm({
     )
       .map((entry) => entry.value);
   }, [availableLearningContent, contentDomain, schemas, subject, subjectFilter]);
-
-  const restrictCodesToIccsDomain = (codes: readonly string[]): string[] => {
-    if (iccsDomainMappedCodes === undefined) return [...codes];
-    return codes.filter(
-      (code) => !isPublicSocialStudiesCode(code) || iccsDomainMappedCodes.has(code),
-    );
-  };
 
   const planEffortLevels = useMemo((): string[] => {
     if (!models?.effort) return [];
@@ -2478,10 +2450,11 @@ export default function ParamForm({
       ? (contentType === "customized" ? customContentType.trim() : contentType)
       : undefined;
     if (isCurriculumSubject && !effectiveContentType) return;
-    const selectedLearningPerformance = restrictCodesToIccsDomain(learningPerformance);
+    // #833: 學習表現 is never restricted by 內容領域; submit it unchanged.
+    const selectedLearningPerformance = [...learningPerformance];
     const lcPoolValues = filteredLcPool ?? availableLearningContent.map((entry) => entry.value);
     const selectedLearningContent = filteredLcPool === undefined
-      ? restrictCodesToIccsDomain(learningContent)
+      ? [...learningContent]
       : learningContent.filter((code) => lcPoolValues.includes(code));
     const historyDrawn = Array.isArray(ip.drawn)
       ? ip.drawn.filter((path): path is string => typeof path === "string")
@@ -3289,13 +3262,9 @@ export default function ParamForm({
               : typeof p.content_domain === "string"
                 ? p.content_domain
                 : undefined;
-            const questionLpEntries = filterLearningContentEntriesByDomain(
-              questionLpEntriesBySubject,
-              subject,
-              resolvedQuestionSubject,
-              questionContentDomain,
-              schemas?.內容領域_mapping,
-            );
+            // #833: 學習表現 has no 內容領域 parent — offer the subject-filtered pool
+            // unfiltered by domain. 學習內容 domain filtering below is unchanged.
+            const questionLpEntries = questionLpEntriesBySubject;
             const questionLcEntries = filterLearningContentEntriesByDomain(
               questionLcEntriesBySubject,
               subject,
@@ -4655,7 +4624,6 @@ export default function ParamForm({
                   <SubQuestionCurriculumPickers
                     availableLearningPerformance={availableLearningPerformance}
                     availableLearningContent={availableLearningContent}
-                    filteredLpPool={filteredLpPool}
                     filteredLcPool={filteredLcPool}
                     learningPerformance={cfg.learning_performance}
                     learningContent={cfg.learning_content}
