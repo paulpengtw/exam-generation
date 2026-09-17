@@ -72,8 +72,13 @@ export async function saveSnapshotTransactionally(
       e instanceof DOMException &&
       (e.name === "QuotaExceededError" || e.code === 22)
     ) {
+      // Some storage implementations can commit part of a write before
+      // reporting quota. Remove that candidate so a later boot cannot mistake
+      // it for a verified snapshot.
+      try { localStorage.removeItem(key); } catch { /* best effort */ }
       return { ok: false, reason: "quota" };
     }
+    try { localStorage.removeItem(key); } catch { /* best effort */ }
     return { ok: false, reason: "storage_denied" };
   }
 
@@ -115,8 +120,10 @@ export async function persistTabPointer(pointer: TabPointer): Promise<SaveResult
       e instanceof DOMException &&
       (e.name === "QuotaExceededError" || e.code === 22)
     ) {
+      try { sessionStorage.removeItem(TAB_POINTER_KEY); } catch { /* best effort */ }
       return { ok: false, reason: "quota" };
     }
+    try { sessionStorage.removeItem(TAB_POINTER_KEY); } catch { /* best effort */ }
     return { ok: false, reason: "storage_denied" };
   }
 

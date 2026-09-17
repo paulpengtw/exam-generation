@@ -7,7 +7,8 @@ import { isSentryEnabled } from "../sentry";
 import type { GenerateParams, ResolveFieldError } from "../api/generated/contract";
 
 import { useWorkspaceStore, type OperationHandle, type OperationOutcome } from "../lib/workspace/workspaceStore";
-import type { ResultsWorkspaceSnapshot } from "../lib/workspace/adapters/types";
+import { importResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
+import type { ResultsCompletion, ResultsWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 
 export type { GenerateParams };
 
@@ -237,6 +238,9 @@ export interface GeneratedQuestion {
   question: ExamQuestion;
   phase: DraftPhase;
   isFinal: boolean;
+  /** Stable server identity/content revision when the stream provides them. */
+  stableId?: string;
+  contentRevision?: number | null;
   trail?: VerificationTrailEntry[];
   figurePolicyTrail?: FigurePolicyTrailEntry[];
   referenceExampleRecord?: ReferenceExampleRecordShape;
@@ -294,6 +298,9 @@ export interface UseGenerateReturn {
   subQuestionTotal: number | null;
   admission: AdmissionState;
   admissionError: string | null;
+  /** Optional for callers that do not render recovery status (legacy mocks). */
+  resultsCompletion?: ResultsCompletion | null;
+  terminalEvidence?: boolean;
   generate: (params: GenerateParams) => Promise<AdmissionOutcome>;
   restoreResults: (snapshot: ResultsWorkspaceSnapshot) => boolean;
   reset: () => void;
@@ -563,6 +570,8 @@ export function useGenerate(): UseGenerateReturn {
   const [finishedAt, setFinishedAt] = useState<number | null>(null);
   const [generationLogId, setGenerationLogId] = useState<string | null>(null);
   const [subQuestionTotal, setSubQuestionTotal] = useState<number | null>(null);
+  const [resultsCompletion, setResultsCompletion] = useState<ResultsCompletion | null>(null);
+  const [terminalEvidence, setTerminalEvidence] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
   const nextFinalIndexRef = useRef(0);
   const trailByQuestionRef = useRef(new Map<string, VerificationTrailEntry[]>());
@@ -572,6 +581,8 @@ export function useGenerate(): UseGenerateReturn {
   const referenceExampleEntriesByQuestionRef = useRef(
     new Map<string, ReferenceExampleEntryShape[]>(),
   );
+  const terminalQuestionKeysRef = useRef(new Set<string>());
+  const expectedQuestionTotalRef = useRef<number | null>(null);
   const paramsRef = useRef<GenerateParams | null>(null);
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
@@ -616,23 +627,38 @@ export function useGenerate(): UseGenerateReturn {
     setFinishedAt(null);
     setGenerationLogId(null);
     setSubQuestionTotal(null);
+    setResultsCompletion(null);
+    setTerminalEvidence(false);
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
+    terminalQuestionKeysRef.current.clear();
+    expectedQuestionTotalRef.current = null;
     setStatus("idle");
   }, [endOperation]);
 
   const restoreResults = useCallback((snapshot: ResultsWorkspaceSnapshot): boolean => {
     if (controllerRef.current !== null) return false;
-    setResults(snapshot.results);
-    setDisplayResults(snapshot.displayResults);
-    setProgressLines(snapshot.progressLines);
-    setErrorMessage(snapshot.errorMessage);
-    setStartedAt(snapshot.startedAt);
-    setFinishedAt(snapshot.finishedAt);
-    setSubQuestionTotal(snapshot.subQuestionTotal);
-    setStatus(snapshot.completion === "error" ? "error" : "idle");
+    const hydrated = importResultsWorkspace(snapshot);
+    if (!hydrated) return false;
+    setResults(hydrated.results);
+    setDisplayResults(hydrated.displayResults);
+    setProgressLines(hydrated.progressLines);
+    setErrorMessage(hydrated.errorMessage);
+    setStartedAt(hydrated.startedAt);
+    setFinishedAt(hydrated.finishedAt);
+    setGenerationLogId(hydrated.runId ?? null);
+    setSubQuestionTotal(hydrated.subQuestionTotal);
+    // A legacy result envelope may say "settled" without carrying the
+    // authoritative question-terminal evidence introduced for recovery. Do
+    // not turn that missing proof into a success claim on restore.
+    const restoredCompletion = hydrated.completion === "settled" && hydrated.terminalEvidence !== true
+      ? "unknown"
+      : hydrated.completion;
+    setResultsCompletion(restoredCompletion);
+    setTerminalEvidence(hydrated.terminalEvidence === true);
+    setStatus(restoredCompletion === "error" ? "error" : "idle");
     setAdmission("idle");
     setAdmissionError(null);
     setLlmCalls([]);
@@ -670,10 +696,14 @@ export function useGenerate(): UseGenerateReturn {
     setFinishedAt(null);
     setGenerationLogId(null);
     setSubQuestionTotal(null);
+    setResultsCompletion(null);
+    setTerminalEvidence(false);
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
+    terminalQuestionKeysRef.current.clear();
+    expectedQuestionTotalRef.current = typeof params.count === "number" ? params.count : null;
 
     operationRef.current = useWorkspaceStore.getState().beginOperation("generation", "generate.results");
     fetchEventSource("/api/generate", {
@@ -692,6 +722,9 @@ export function useGenerate(): UseGenerateReturn {
             useAuthStore.getState().logout();
             const msg = "Session expired — please sign in again";
             setErrorMessage(msg);
+            setStatus("error");
+            setResultsCompletion("error");
+            setTerminalEvidence(false);
             setFinishedAt(Date.now());
             settleAdmission({ outcome: "rejected", reason: msg });
             endOperation("failed");
@@ -712,6 +745,9 @@ export function useGenerate(): UseGenerateReturn {
           }
           if (controllerRef.current !== controller) return;
           setErrorMessage(msg);
+          setStatus("error");
+          setResultsCompletion("error");
+          setTerminalEvidence(false);
           setFinishedAt(Date.now());
           settleAdmission({ outcome: "rejected", reason: msg });
           endOperation("failed");
@@ -798,7 +834,13 @@ export function useGenerate(): UseGenerateReturn {
             break;
           case "question_update": {
             try {
-              const parsed = JSON.parse(ev.data) as { index: number; phase: DraftPhase; question: ExamQuestion };
+              const parsed = JSON.parse(ev.data) as {
+                index: number;
+                phase: DraftPhase;
+                question: ExamQuestion;
+                stable_id?: string;
+                content_revision?: number | null;
+              };
               const laneKey = questionKey(parsed.question, parsed.index);
               const draftEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey) ?? [];
               const draftRefRecord: ReferenceExampleRecordShape = draftEntries.length > 0
@@ -809,6 +851,10 @@ export function useGenerate(): UseGenerateReturn {
                 question: parsed.question,
                 phase: parsed.phase,
                 isFinal: false,
+                stableId: parsed.stable_id ?? questionKey(parsed.question, parsed.index),
+                contentRevision: typeof parsed.content_revision === "number" && parsed.content_revision > 0
+                  ? parsed.content_revision
+                  : null,
                 trail: trailByQuestionRef.current.get(laneKey) ?? [],
                 figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
                 referenceExampleRecord: draftRefRecord,
@@ -856,7 +902,15 @@ export function useGenerate(): UseGenerateReturn {
           }
           case "result":
             try {
-              const parsed = JSON.parse(ev.data) as ExamQuestion;
+              const raw = JSON.parse(ev.data) as ExamQuestion & {
+                stable_id?: string;
+                question_id?: string;
+                content_revision?: number | null;
+                question?: ExamQuestion;
+              };
+              const parsed = raw.question !== undefined && typeof raw.question === "object" && raw.question !== null
+                ? raw.question
+                : raw;
               const index = nextFinalIndexRef.current;
               nextFinalIndexRef.current += 1;
               setResults((prev) => [...prev, parsed]);
@@ -867,6 +921,10 @@ export function useGenerate(): UseGenerateReturn {
                 question: parsed,
                 phase: "verified",
                 isFinal: true,
+                stableId: raw.stable_id ?? raw.question_id ?? questionKey(parsed, index),
+                contentRevision: typeof raw.content_revision === "number" && raw.content_revision > 0
+                  ? raw.content_revision
+                  : null,
                 trail: trailByQuestionRef.current.get(laneKey) ?? [],
                 figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
                 referenceExampleRecord: refEntries
@@ -880,11 +938,36 @@ export function useGenerate(): UseGenerateReturn {
           case "error":
             setErrorMessage(parseErrorEventData(ev.data ?? ""));
             setStatus("error");
+            setResultsCompletion("error");
+            setTerminalEvidence(false);
             setFinishedAt(Date.now());
             endOperation("failed");
             break;
+          case "question_terminal": {
+            try {
+              const parsed = JSON.parse(ev.data) as Record<string, unknown>;
+              const context = parsed.context && typeof parsed.context === "object"
+                ? parsed.context as Record<string, unknown>
+                : null;
+              const questionId = typeof parsed.question_id === "string"
+                ? parsed.question_id
+                : typeof context?.question_id === "string"
+                  ? context.question_id
+                  : Number.isInteger(parsed.index) ? `index-${parsed.index}` : null;
+              if (questionId !== null) terminalQuestionKeysRef.current.add(questionId);
+            } catch { /* legacy streams may not send JSON terminal envelopes */ }
+            break;
+          }
           case "done":
             setStatus("idle");
+            {
+              const expected = expectedQuestionTotalRef.current;
+              const hasTerminalEvidence = expected === null
+                ? terminalQuestionKeysRef.current.size > 0
+                : expected > 0 && terminalQuestionKeysRef.current.size >= expected;
+              setTerminalEvidence(hasTerminalEvidence);
+              setResultsCompletion(hasTerminalEvidence ? "settled" : "unknown");
+            }
             setFinishedAt(Date.now());
             endOperation("completed");
             controller.abort();
@@ -897,6 +980,8 @@ export function useGenerate(): UseGenerateReturn {
         const message = err instanceof Error ? err.message : String(err);
         setErrorMessage(message);
         setStatus("error");
+        setResultsCompletion("error");
+        setTerminalEvidence(false);
         setFinishedAt(Date.now());
         settleAdmission({ outcome: "rejected", reason: message });
         endOperation("failed");
@@ -939,6 +1024,8 @@ export function useGenerate(): UseGenerateReturn {
     finishedAt,
     generationLogId,
     subQuestionTotal,
+    resultsCompletion,
+    terminalEvidence,
     generate,
     reset,
   };

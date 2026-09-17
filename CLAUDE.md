@@ -132,6 +132,19 @@ back into the form. Active operations, results, and modification drafts remain
 refused for their owning issues.
 See `docs/research/2026-09-17-773-preserve-confirmation.md`.
 
+### Received results recovery (issue #774)
+
+The same v1 recovery envelope may also carry an optional `results` workspace.
+Save is allowed only after observed work settles; it preserves final and
+visible partial content, evidence, progress, totals, errors, and raw PNG
+base64. Missing terminal evidence remains `unknown`, and result hydration must
+finish before the snapshot/pointer is acknowledged or deleted. Quota,
+read-back, persistence, or hydration failures leave the live cards and their
+existing JSON/ODT exports available; no object URLs, provider diagnostics,
+credentials, draft-export feature, or History-only modification eligibility is
+introduced. Active generation and modification drafts remain refusals.
+See `docs/research/2026-09-17-774-preserve-results.md`.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.

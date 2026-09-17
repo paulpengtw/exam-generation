@@ -362,10 +362,10 @@ export interface ParamFormProps {
   recoveredForm?: import("../lib/workspace/adapters/types").FormWorkspaceSnapshot;
   /** When present, reopens the exact settled pre-send confirmation (issue #773). */
   recoveredConfirmation?: ConfirmationWorkspaceSnapshot;
-  /** Called when the user clicks 確認 on the recovery banner (issue #772). */
-  onRecoveryAcknowledge?: () => void;
+  /** Return false to keep the banner when result evidence has not hydrated. */
+  onRecoveryAcknowledge?: () => boolean | void;
   /** Called when the user clicks 捨棄 on the recovery banner (issue #772). */
-  onRecoveryDiscard?: () => void;
+  onRecoveryDiscard?: () => boolean | void;
 }
 
 /**
@@ -3598,13 +3598,13 @@ export default function ParamForm({
   }
 
   function acknowledgeRecoveryBanner() {
-    setRecoveryBannerDismissed(true);
-    onRecoveryAcknowledge?.();
+    const result = onRecoveryAcknowledge?.();
+    if (result !== false) setRecoveryBannerDismissed(true);
   }
 
   function discardRecoveryBanner() {
-    setRecoveryBannerDismissed(true);
-    onRecoveryDiscard?.();
+    const result = onRecoveryDiscard?.();
+    if (result !== false) setRecoveryBannerDismissed(true);
   }
 
   const recoveryBanner = showRecoveryBanner ? (

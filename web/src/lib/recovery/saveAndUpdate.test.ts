@@ -17,6 +17,7 @@ import { evaluateSaveAndUpdate, type EvaluateInput } from "./saveAndUpdate";
 import type { SurfaceParticipation } from "../workspace/workspaceStore";
 import type { FormWorkspaceSnapshot } from "../workspace/adapters/types";
 import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
+import type { ResultsWorkspaceSnapshot } from "../workspace/adapters/types";
 
 function makeConfirmationSnapshot(
   overrides: Partial<ConfirmationWorkspaceSnapshot> = {},
@@ -57,6 +58,48 @@ function makeConfirmationSurface(
     hasEditableState: true,
     hasReceivedResults: false,
     exportWorkspace,
+    ...overrides,
+  };
+}
+
+function makeResultsSnapshot(): ResultsWorkspaceSnapshot {
+  return {
+    kind: "results",
+    version: 1,
+    results: [{ id: "q-1", 情境: [], 題型種類: "single", 題型: "multiple_choice", 題目: ["received"], 正確解題分析: ["analysis"] }],
+    displayResults: [{
+      index: 0,
+      question: { id: "q-1", 情境: [], 題型種類: "single", 題型: "multiple_choice", 題目: ["received"], 正確解題分析: ["analysis"] },
+      phase: "verified",
+      isFinal: true,
+    }],
+    progressLines: ["received"],
+    errorMessage: null,
+    startedAt: 10,
+    finishedAt: 20,
+    subQuestionTotal: null,
+    requestedTotal: 1,
+    submittedSubQuestionCount: null,
+    completion: "unknown",
+    processing: "unknown",
+    terminalEvidence: false,
+    evidence: [{
+      stableId: "q-1", index: 0, receipt: "final", processing: "unknown", contentRevision: null,
+      terminal: "unknown", review: { status: "unknown", contentRevision: null },
+    }],
+  };
+}
+
+function makeResultsSurface(
+  snapshot: ResultsWorkspaceSnapshot = makeResultsSnapshot(),
+  overrides: Partial<SurfaceParticipation> = {},
+): SurfaceParticipation {
+  return {
+    id: "generate.results",
+    readiness: "ready",
+    hasEditableState: false,
+    hasReceivedResults: true,
+    exportWorkspace: () => snapshot,
     ...overrides,
   };
 }
@@ -118,6 +161,17 @@ describe("evaluateSaveAndUpdate", () => {
   it("returns allowed:true for a valid state", () => {
     const result = evaluateSaveAndUpdate(makeValidInput());
     expect(result.allowed).toBe(true);
+  });
+
+  it("allows received results when the result surface can export verified workspace state", () => {
+    const result = evaluateSaveAndUpdate(makeValidInput({
+      surfaces: {
+        "generate.form": makeFormSurface(),
+        "generate.results": makeResultsSurface(),
+      },
+    }));
+
+    expect(result).toEqual({ allowed: true });
   });
 
   it("rejects when no surfaces registered", () => {
@@ -377,6 +431,47 @@ describe("runSaveAndUpdate", () => {
     const saved = loadSnapshot("u1", result.snapshot_id);
     expect(saved?.confirmation).toEqual(confirmation);
     expect(saved?.form.fields).toEqual({});
+  });
+
+  it("saves received results and preserves unknown completion evidence", async () => {
+    setupValidRunState();
+    const results = makeResultsSnapshot();
+    useWorkspaceStore.getState().registerSurface(makeResultsSurface(results));
+    vi.stubGlobal("location", { pathname: "/generate/social_studies", origin: "https://test.com", reload: vi.fn() });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    const saved = loadSnapshot("u1", result.snapshot_id);
+    expect(saved?.results).toEqual(results);
+    expect(saved?.results?.completion).toBe("unknown");
+    expect(saved?.results?.terminalEvidence).toBe(false);
+  });
+
+  it("preserves a settled error/progress workspace even when no question body arrived", async () => {
+    setupValidRunState();
+    const errorResults = {
+      ...makeResultsSnapshot(),
+      results: [], displayResults: [], progressLines: ["started"], errorMessage: "provider unavailable",
+    } satisfies ResultsWorkspaceSnapshot;
+    useWorkspaceStore.getState().registerSurface(makeResultsSurface(errorResults, { hasReceivedResults: false }));
+    vi.stubGlobal("location", { pathname: "/generate/natural_sciences", origin: "https://test.com", reload: vi.fn() });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(), origin: "https://test.com", environment: "production", buildId: "build-A",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(loadSnapshot("u1", result.snapshot_id)?.results).toMatchObject({
+      results: [], displayResults: [], progressLines: ["started"], errorMessage: "provider unavailable",
+    });
   });
 
   it("refuses when a late callback mutates the settled confirmation source", async () => {
