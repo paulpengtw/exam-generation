@@ -463,7 +463,7 @@ export default function QuestionCard({
   referenceExampleRecord,
   onInteractionSubmit,
   recoveredModification,
-  modificationRestoreEligible = true,
+  modificationRestoreEligible,
 }: QuestionCardProps) {
   const t = useT();
   const [showSolution, setShowSolution] = useState(!isFinal);
@@ -482,7 +482,7 @@ export default function QuestionCard({
   );
   const modificationResult = modificationRun.result;
   const isRunInFlight = modificationRun.status === "running";
-  const restoredEligibility = latchedRecoveredModification === undefined || modificationRestoreEligible;
+  const restoredEligibility = latchedRecoveredModification === undefined || modificationRestoreEligible === true;
 
   const previousResultRef = useRef(modificationResult);
   useEffect(() => {

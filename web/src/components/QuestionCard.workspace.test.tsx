@@ -173,6 +173,19 @@ describe("QuestionCard workspace", () => {
     expect(screen.getByRole("button", { name: "Submit modifications" })).toBeDisabled();
   });
 
+  it("keeps recovered edits blocked unless the caller explicitly authorizes the base", () => {
+    render(
+      <QuestionCard
+        question={question}
+        recordId="record-1"
+        recoveredModification={recoveredModification}
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Modification instruction 1" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Submit modifications" })).toBeDisabled();
+  });
+
   it.each([
     [undefined, "generate.results", "JSON", "export_json"],
     ["record-1", "history.modification", "JSON", "export_json"],
