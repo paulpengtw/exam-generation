@@ -578,6 +578,74 @@ def test_resolve_endpoint_rejects_multi_valued_subject_and_reports_no_domain_err
     assert "payload" not in response.json()
 
 
+def test_resolve_endpoint_row_content_pin_narrows_and_is_idempotent(
+    resolve_client: TestClient,
+) -> None:
+    """#836 acceptance: a 各小題配置 row's own 學習內容 narrows a blank
+
+    科目/內容領域 exactly like a question-level pin, and re-resolving the
+    completed payload is a no-op.
+    """
+    payload = {
+        "subject": "social_studies",
+        "seed": 3,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "content_type": "純文字",
+        "target_surface": "紙本",
+        "core_competency": ["社-J-A1"],
+        "sub_question_count": 3,
+        "subquestion_configs": [{}, {"learning_content": ["公Aa-Ⅳ-1"]}, {}],
+    }
+
+    first_response = resolve_client.post("/api/generate/resolve", json=payload)
+    first = first_response.json()
+
+    assert first_response.status_code == 200
+    assert first["payload"]["subject_filter"][0] in {"公民與社會", "跨科"}
+    assert first["payload"]["content_domain"] == "Civic Roles and Identities"
+    assert first["payload"]["subquestion_configs"][1]["learning_content"] == ["公Aa-Ⅳ-1"]
+
+    second_response = resolve_client.post("/api/generate/resolve", json=first["payload"])
+
+    assert second_response.status_code == 200
+    assert second_response.json() == {
+        "payload": first["payload"],
+        "drawn": [],
+        "cleared": [],
+    }
+
+
+def test_resolve_endpoint_rejects_row_pin_incompatible_with_pinned_domain(
+    resolve_client: TestClient,
+) -> None:
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 1,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["公民與社會"],
+            "content_domain": "Civic Participation",
+            "sub_question_count": 3,
+            "subquestion_configs": [{"learning_content": ["公Bn-Ⅳ-3"]}, {}, {}],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        }
+    ]
+    assert "payload" not in response.json()
+
+
 def test_resolve_endpoint_requires_authentication() -> None:
     app = create_app()
     with TestClient(app, raise_server_exceptions=False) as client:

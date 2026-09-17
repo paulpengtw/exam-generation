@@ -851,3 +851,193 @@ def test_repeated_codes_in_one_field_do_not_duplicate_the_error() -> None:
     assert exc_info.value.errors == [
         {"field": "learning_content", "code": "incompatible_parent", "parent": "地理"}
     ]
+
+
+# ── #836: 各小題配置 學習內容/學習表現 narrow and are checked like ────────
+# ── 題組-level codes, for rows within the resolved 小題數 ──────────────────
+
+
+def test_subquestion_row_content_pin_narrows_blank_subject_and_domain() -> None:
+    from src.social_studies.sampler import sample_params
+
+    for seed in range(200):
+        params = sample_params(
+            seed=seed,
+            sub_question_count=3,
+            subquestion_configs=[{}, {"learning_content": ["公Aa-Ⅳ-1"]}, {}],
+        )
+
+        assert params.科目.value in {"公民與社會", "跨科"}
+        assert params.內容領域.value == "Civic Roles and Identities"
+
+
+def test_subquestion_row_beyond_resolved_count_narrows_nothing() -> None:
+    from src.social_studies.sampler import sample_params
+
+    with_row = sample_params(
+        seed=7,
+        sub_question_count=3,
+        subquestion_configs=[
+            {},
+            {},
+            {},
+            {},
+            {"learning_content": ["公Aa-Ⅳ-1"]},
+        ],
+    )
+    without_row = sample_params(
+        seed=7,
+        sub_question_count=3,
+        subquestion_configs=[{}, {}, {}],
+    )
+
+    assert with_row.科目 == without_row.科目
+    assert with_row.內容領域 == without_row.內容領域
+
+
+def test_two_row_pins_are_both_reported_in_an_empty_domain_conflict() -> None:
+    from src.social_studies.sampler import ParentAdmissionError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(ParentAdmissionError) as exc_info:
+        sample_params(
+            seed=1,
+            subject=[QuestionSubject("公民與社會")],
+            sub_question_count=3,
+            subquestion_configs=[
+                {"learning_content": ["公Aa-Ⅳ-1"]},
+                {"learning_content": ["公Bn-Ⅳ-3"]},
+                {},
+            ],
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "no_admitting_parent",
+            "parent": "內容領域",
+        },
+        {
+            "field": "subquestion_configs[1].learning_content",
+            "code": "no_admitting_parent",
+            "parent": "內容領域",
+        },
+    ]
+
+
+def test_question_level_and_row_pin_are_both_reported_in_a_mixed_domain_conflict() -> None:
+    from src.social_studies.sampler import ParentAdmissionError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(ParentAdmissionError) as exc_info:
+        sample_params(
+            seed=1,
+            subject=[QuestionSubject("公民與社會")],
+            learning_content=["公Bn-Ⅳ-3"],
+            sub_question_count=3,
+            subquestion_configs=[{"learning_content": ["公Aa-Ⅳ-1"]}, {}, {}],
+        )
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "內容領域"},
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "no_admitting_parent",
+            "parent": "內容領域",
+        },
+    ]
+
+
+def test_row_pin_incompatible_with_pinned_domain_raises_incompatible_parent() -> None:
+    from src.social_studies.sampler import IncompatibleContentDomainError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(IncompatibleContentDomainError) as exc_info:
+        sample_params(
+            seed=1,
+            subject=[QuestionSubject("公民與社會")],
+            content_domain="Civic Participation",
+            sub_question_count=3,
+            subquestion_configs=[{"learning_content": ["公Bn-Ⅳ-3"]}, {}, {}],
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        }
+    ]
+
+
+def test_row_performance_pin_narrows_blank_subject_but_leaves_domain_unrestricted() -> None:
+    from src.social_studies.sampler import sample_params
+    from src.social_studies.schemas import ContentDomain, QuestionSubject
+
+    for seed in range(200):
+        params = sample_params(
+            seed=seed,
+            sub_question_count=3,
+            subquestion_configs=[{"learning_performance": ["公1c-Ⅳ-1"]}, {}, {}],
+        )
+        assert params.科目.value in {"公民與社會", "跨科"}
+
+    observed_domains = {
+        sample_params(
+            seed=seed,
+            subject=[QuestionSubject("跨科")],
+            sub_question_count=3,
+            subquestion_configs=[{"learning_performance": ["公1c-Ⅳ-1"]}, {}, {}],
+        ).內容領域
+        for seed in range(200)
+    }
+    assert observed_domains == set(ContentDomain)
+
+
+def test_row_performance_pin_incompatible_with_pinned_subject_raises_incompatible_parent() -> (
+    None
+):
+    from src.social_studies.sampler import ParentAdmissionError, sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    with pytest.raises(ParentAdmissionError) as exc_info:
+        sample_params(
+            seed=1,
+            subject=[QuestionSubject("地理")],
+            sub_question_count=3,
+            subquestion_configs=[{"learning_performance": ["公1c-Ⅳ-1"]}, {}, {}],
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "subquestion_configs[0].learning_performance",
+            "code": "incompatible_parent",
+            "parent": "地理",
+        }
+    ]
+
+
+def test_history_learning_pools_are_unaffected_by_content_domain_pin() -> None:
+    """內容領域 is not an applicable parent for 歷史 (#833); pinning two
+
+    different domain values must draw identical 學習內容/學習表現 pools
+    across a seed range — the deleted content-domain guard's intent,
+    deferred from Task 1's review into #836.
+    """
+    from src.social_studies.sampler import sample_params
+    from src.social_studies.schemas import QuestionSubject
+
+    for seed in range(200):
+        first = sample_params(
+            seed=seed,
+            subject=[QuestionSubject("歷史")],
+            content_domain="Civic Participation",
+        )
+        second = sample_params(
+            seed=seed,
+            subject=[QuestionSubject("歷史")],
+            content_domain="Civic Principles",
+        )
+
+        assert first.學習內容_pool == second.學習內容_pool
+        assert first.學習表現_pool == second.學習表現_pool

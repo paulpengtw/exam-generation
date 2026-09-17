@@ -500,6 +500,35 @@ def test_generate_and_preview_accept_the_834_narrowed_reproductions(
     assert re_resolved["cleared"] == []
 
 
+@pytest.mark.parametrize("route", ["/api/generate", "/api/generate/preview"])
+def test_generate_and_preview_accept_the_row_pinned_civic_content(route: str) -> None:
+    """#836 acceptance bullet 1: preview and generation accept a payload
+
+    narrowed by a 各小題配置 row's own 學習內容 pin (not just a question-level
+    pin), and re-resolving the completed payload draws nothing new.
+    """
+    partial = {
+        "subject": "social_studies",
+        "seed": 3,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "content_type": "純文字",
+        "target_surface": "紙本",
+        "core_competency": ["社-J-A1"],
+        "sub_question_count": 3,
+        "subquestion_configs": [{}, {"learning_content": ["公Aa-Ⅳ-1"]}, {}],
+    }
+
+    status_code, re_resolved = _accept_narrowed_payload_via_route(route, partial)
+
+    assert status_code == 200
+    assert re_resolved["payload"]["subject_filter"][0] in {"公民與社會", "跨科"}
+    assert re_resolved["payload"]["content_domain"] == "Civic Roles and Identities"
+    assert re_resolved["drawn"] == []
+    assert re_resolved["cleared"] == []
+
+
 def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 

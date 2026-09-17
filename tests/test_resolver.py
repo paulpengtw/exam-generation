@@ -1120,3 +1120,198 @@ def test_resolve_accepts_any_admitted_natural_parent(
     )
 
     assert result.payload["context"] == ["Global"]
+
+
+# ── #836: 各小題配置 學習內容/學習表現 narrow and are checked like ────────
+# ── 題組-level codes, for rows within the resolved 小題數 ──────────────────
+
+
+def test_resolve_row_content_pin_narrows_and_re_resolves_unchanged_across_seeds() -> None:
+    for seed in range(200):
+        payload = {
+            "subject": "social_studies",
+            "seed": seed,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "sub_question_count": 3,
+            "subquestion_configs": [{}, {"learning_content": ["公Aa-Ⅳ-1"]}, {}],
+        }
+
+        first = resolve(payload)
+
+        assert first.payload["subject_filter"][0] in {"公民與社會", "跨科"}
+        assert first.payload["content_domain"] == "Civic Roles and Identities"
+        assert (
+            first.payload["subquestion_configs"][1]["learning_content"] == ["公Aa-Ⅳ-1"]
+        )
+
+        second = resolve(first.payload)
+
+        assert second.payload == first.payload
+        assert second.drawn == []
+        assert second.cleared == []
+
+
+def test_resolve_row_beyond_resolved_count_narrows_nothing() -> None:
+    base = {
+        "subject": "social_studies",
+        "seed": 7,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "content_type": "純文字",
+        "target_surface": "紙本",
+        "core_competency": ["社-J-A1"],
+        "sub_question_count": 3,
+    }
+
+    with_row = resolve(
+        {
+            **base,
+            "subquestion_configs": [
+                {},
+                {},
+                {},
+                {},
+                {"learning_content": ["公Aa-Ⅳ-1"]},
+            ],
+        }
+    )
+    without_row = resolve({**base, "subquestion_configs": [{}, {}, {}]})
+
+    assert with_row.payload["subject_filter"] == without_row.payload["subject_filter"]
+    assert with_row.payload["content_domain"] == without_row.payload["content_domain"]
+
+
+def test_resolve_reports_both_row_pins_in_an_empty_domain_conflict() -> None:
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "seed": 1,
+                "grade": 8,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "subject_filter": ["公民與社會"],
+                "sub_question_count": 3,
+                "subquestion_configs": [
+                    {"learning_content": ["公Aa-Ⅳ-1"]},
+                    {"learning_content": ["公Bn-Ⅳ-3"]},
+                    {},
+                ],
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "no_admitting_parent",
+            "parent": "內容領域",
+        },
+        {
+            "field": "subquestion_configs[1].learning_content",
+            "code": "no_admitting_parent",
+            "parent": "內容領域",
+        },
+    ]
+
+
+def test_resolve_reports_question_level_and_row_pin_in_a_mixed_domain_conflict() -> None:
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "seed": 1,
+                "grade": 8,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "subject_filter": ["公民與社會"],
+                "learning_content": ["公Bn-Ⅳ-3"],
+                "sub_question_count": 3,
+                "subquestion_configs": [{"learning_content": ["公Aa-Ⅳ-1"]}, {}, {}],
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "內容領域"},
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "no_admitting_parent",
+            "parent": "內容領域",
+        },
+    ]
+
+
+def test_resolve_row_performance_pin_rejects_incompatible_pinned_subject() -> None:
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "seed": 1,
+                "grade": 8,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "subject_filter": ["地理"],
+                "sub_question_count": 3,
+                "subquestion_configs": [
+                    {"learning_performance": ["公1c-Ⅳ-1"]},
+                    {},
+                    {},
+                ],
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "subquestion_configs[0].learning_performance",
+            "code": "incompatible_parent",
+            "parent": "地理",
+        }
+    ]
+
+
+def test_resolve_batch_row_pin_incompatible_with_pinned_domain_is_prefixed() -> None:
+    """#836 acceptance: a second question's own row 學習內容 pin, incompatible
+
+    with that question's pinned 內容領域, is rejected with the full nested
+    batch + slot path (per_question_params[i].subquestion_configs[j].<field>).
+    """
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "count": 2,
+                "seed": 1,
+                "grade": 8,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "content_type": "純文字",
+                "target_surface": "紙本",
+                "core_competency": ["社-J-A1"],
+                "per_question_params": [
+                    {"subject_filter": ["歷史"]},
+                    {
+                        "subject_filter": ["公民與社會"],
+                        "content_domain": "Civic Participation",
+                        "sub_question_count": 3,
+                        "subquestion_configs": [
+                            {"learning_content": ["公Bn-Ⅳ-3"]},
+                            {},
+                            {},
+                        ],
+                    },
+                ],
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "per_question_params[1].subquestion_configs[0].learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        }
+    ]
