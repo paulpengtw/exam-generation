@@ -53,6 +53,34 @@ export function getOrCreateTabId(): string {
 }
 
 /**
+ * Returns the current tab ID from sessionStorage without creating one.
+ * Returns null if no tab ID has been persisted yet.
+ * Use this to check whether collision detection is needed (a tab with no ID
+ * cannot be a duplicate).
+ */
+export function peekTabId(): string | null {
+  try {
+    return sessionStorage.getItem(TAB_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clears the current tab ID from sessionStorage and mints a fresh one.
+ * Called when a duplicate-tab collision is detected so the duplicate gets a
+ * unique identity without carrying the original tab's snapshot claim.
+ */
+export function resetTabIdForCollision(): string {
+  try {
+    sessionStorage.removeItem(TAB_ID_KEY);
+  } catch {
+    // best-effort
+  }
+  return getOrCreateTabId();
+}
+
+/**
  * Save a recovery snapshot transactionally.
  * Writes to localStorage and immediately reads back to verify integrity.
  */

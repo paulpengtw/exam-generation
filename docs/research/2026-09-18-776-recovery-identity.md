@@ -161,3 +161,78 @@ All existing keys from #772 are unchanged.
 - **`deleteAllSnapshotsForAccount` also clears orphaned claims** — any stale
   `exam_recovery_claim_*` keys are swept on explicit logout to avoid leaving
   ghost entries that could block a future claim.
+
+## Wiring (implemented post-mechanism)
+
+The mechanism files were built first; the wiring into the real boot path and
+router-driven acceptance tests were added in a follow-up pass on the same branch.
+
+### Explicit-logout routing
+
+`SubjectSelectPage.tsx` and `GeneratePage.tsx` both call
+`useAuthStore((s) => s.logoutExplicit)` through the logout button / logout
+confirmation flow.  Expiry paths (`apiFetch`, `useGenerate.ts`,
+`sessionRenewal.ts`) keep `logout()`.  Both pages' unit-test mocks were
+updated to expose `logoutExplicit` instead of the formerly stubbed `logout`.
+
+### Two-phase boot pattern
+
+React 18/19's `act()` in tests flushes microtasks but not macro-tasks
+(setTimeout).  `detectTabCollision` uses a 100 ms `setTimeout` fence; running
+it inside `useLayoutEffect` caused the form to appear as loading for the full
+100 ms after each test render, timing out several integration tests.
+
+The fix uses two effects per page:
+
+**Phase 1 — `useLayoutEffect` (synchronous)**
+
+```typescript
+useLayoutEffect(() => {
+  initRecoveryStore({ currentRoute, origin, environment });
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  setRecoveryBootedKey(recoveryBootKey);
+}, [recoveryBootKey, ...]);
+```
+
+Sets `pending` optimistically so the form renders immediately on the first
+paint, matching the behaviour before #776.
+
+**Phase 2 — `useEffect` (async, runs after first render)**
+
+Performs `detectTabCollision`, `initRecoveryStoreAsync`, and
+`startTabCollisionListener`.  If the async claim is lost (another tab won),
+Phase 2 clears the optimistic `pending` from Phase 1 so stale recovery content
+is never surfaced.
+
+This pattern was applied identically to both `GeneratePage.tsx` and
+`HistoryDetail.tsx`.
+
+### `ParamForm.tsx` — defensive recovery field initialisation
+
+`ParamForm` initialises `formFields` from `recoveryForm.fields` when a recovered
+form is present.  The original code spread `recoveryForm.fields` directly,
+relying on every `FormFields` key being present.  A snapshot created with a
+minimal field set (as done in `seedSnapshot()` test helpers) left `passage` and
+other required fields as `undefined`, causing a `passage.trim()` crash at render
+time.
+
+The fix replaces the bare spread with an explicit per-field initialisation that
+mirrors the non-recovery default path, falling back to the same defaults
+(`TEXT_HINT`, `OPTION_HINT`, `DEFAULT_CONTENT_TYPE`, etc.) when a field is
+absent or has the wrong type.
+
+### Router-driven acceptance tests
+
+Eight new `describe` blocks in `web/src/recoveryFlow.test.tsx`
+(identity a–h) cover all acceptance criteria listed above.  Key fixes applied
+during authoring:
+
+- `beforeEach` calls `vi.restoreAllMocks()` before `vi.clearAllMocks()` to
+  prevent `localStorage.setItem` spy from identity g leaking into identity h.
+- Identity c's confirm button selector uses `/^Sign out$|^登出$/` (real i18n
+  translation values) rather than a key-passthrough pattern, since
+  `recoveryFlow.test.tsx` does not mock `useT`.
+- Identity d's stream-401 test directly invokes `saveSignoutReason` +
+  `authStore.logout()` (the exact sequence in `useGenerate.ts`) rather than
+  driving `fetchEventSource` through the UI, since `useGenerate` is globally
+  mocked in the test file.
