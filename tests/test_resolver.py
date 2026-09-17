@@ -1315,3 +1315,346 @@ def test_resolve_batch_row_pin_incompatible_with_pinned_domain_is_prefixed() -> 
             "parent": "Civic Participation",
         }
     ]
+
+
+# ── #837: editing 科目 or 內容領域 on 發送前確認 clears 釘選 codes ─────────
+# ── that no longer fit, instead of rejecting ──────────────────────────────
+
+
+def test_resolve_subject_edit_clears_incompatible_content_survives_compatible_performance() -> (
+    None
+):
+    """Acceptance bullet 1 + "compatible children survive": editing 科目 from
+
+    公民與社會 to 地理 with a 科目 重抽 counter clears the now-incompatible
+    公Bj-Ⅳ-1 學習內容 pin and redraws it from 地理's admitted pool, while the
+    compatible 社1a-Ⅳ-1 學習表現 pin (admitted by every subject) survives
+    untouched and is never listed in ``cleared``.
+    """
+    result = resolve(
+        {
+            "subject": "social_studies",
+            "seed": 11,
+            "grade": 7,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "subject_filter": ["地理"],
+            "learning_content": ["公Bj-Ⅳ-1"],
+            "learning_performance": ["社1a-Ⅳ-1"],
+        },
+        redraws={"科目": 1},
+    )
+
+    assert result.payload["subject_filter"] == ["地理"]
+    assert "公Bj-Ⅳ-1" not in result.payload["learning_content"]
+    assert result.payload["learning_content"]
+    assert result.payload["learning_performance"] == ["社1a-Ⅳ-1"]
+    assert result.cleared == ["學習內容"]
+    assert "學習內容" in result.drawn
+    assert "學習表現" not in result.drawn
+
+    # The result re-resolves unchanged (equivalent to generation's HTTP gate
+    # accepting it: that gate is itself a resolve() call requiring drawn == []
+    # — see the Task 3 design note).
+    second = resolve(result.payload)
+    assert second.payload == result.payload
+    assert second.drawn == []
+    assert second.cleared == []
+
+
+def test_resolve_subject_edit_without_a_redraw_counter_still_rejects() -> None:
+    """Acceptance bullet 6, 科目 variant: without a 科目 重抽 counter the same
+
+    incompatible payload from the previous test is still rejected, unchanged
+    from pre-#837 behavior.
+    """
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "seed": 11,
+                "grade": 7,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "content_type": "純文字",
+                "target_surface": "紙本",
+                "core_competency": ["社-J-A1"],
+                "subject_filter": ["地理"],
+                "learning_content": ["公Bj-Ⅳ-1"],
+                "learning_performance": ["社1a-Ⅳ-1"],
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {"field": "learning_content", "code": "incompatible_parent", "parent": "地理"}
+    ]
+
+
+def test_resolve_subject_edit_clears_question_and_row_level_performance_and_row_content() -> (
+    None
+):
+    """Acceptance bullet 2: a 科目 edit clears incompatible 學習表現 at both
+
+    question level and in a 各小題配置 row, and incompatible 學習內容 in a
+    different row, while a compatible row 學習表現 pin survives.
+    """
+    result = resolve(
+        {
+            "subject": "social_studies",
+            "seed": 13,
+            "grade": 7,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "subject_filter": ["地理"],
+            "learning_performance": ["公1c-Ⅳ-1"],
+            "sub_question_count": 3,
+            "subquestion_configs": [
+                {"learning_content": ["公Bj-Ⅳ-1"]},
+                {"learning_performance": ["社1a-Ⅳ-1"]},
+                {},
+            ],
+        },
+        redraws={"科目": 1},
+    )
+
+    assert result.cleared == [
+        "學習表現",
+        "subquestion_configs[0].learning_content",
+    ]
+    assert "公1c-Ⅳ-1" not in result.payload["learning_performance"]
+    assert "公Bj-Ⅳ-1" not in result.payload["subquestion_configs"][0]["learning_content"]
+    assert result.payload["subquestion_configs"][1]["learning_performance"] == [
+        "社1a-Ⅳ-1"
+    ]
+    assert "學習表現" in result.drawn
+    assert "subquestion_configs[0].learning_content" in result.drawn
+    assert "subquestion_configs[1].learning_performance" not in result.drawn
+
+    second = resolve(result.payload)
+    assert second.payload == result.payload
+    assert second.drawn == []
+    assert second.cleared == []
+
+
+def test_resolve_domain_edit_clears_question_and_row_level_content_but_not_performance() -> (
+    None
+):
+    """Acceptance bullet 3: a 內容領域 edit clears incompatible 學習內容 at
+
+    question level and in a 各小題配置 row, and never touches 學習表現 (which
+    has no 內容領域 parent), so it is neither cleared nor redrawn.
+    """
+    result = resolve(
+        {
+            "subject": "social_studies",
+            "seed": 17,
+            "grade": 7,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "subject_filter": ["公民與社會"],
+            "content_domain": "Civic Participation",
+            "learning_content": ["公Bn-Ⅳ-3"],
+            "learning_performance": ["社1a-Ⅳ-1"],
+            "sub_question_count": 3,
+            "subquestion_configs": [
+                {"learning_content": ["公Bj-Ⅳ-1"]},
+                {},
+                {},
+            ],
+        },
+        redraws={"內容領域": 1},
+    )
+
+    assert result.cleared == [
+        "學習內容",
+        "subquestion_configs[0].learning_content",
+    ]
+    assert "學習表現" not in result.cleared
+    assert "公Bn-Ⅳ-3" not in result.payload["learning_content"]
+    assert (
+        "公Bj-Ⅳ-1" not in result.payload["subquestion_configs"][0]["learning_content"]
+    )
+    assert result.payload["learning_performance"] == ["社1a-Ⅳ-1"]
+    assert result.payload["content_domain"] == "Civic Participation"
+    assert "學習表現" not in result.drawn
+
+    second = resolve(result.payload)
+    assert second.payload == result.payload
+    assert second.drawn == []
+    assert second.cleared == []
+
+
+def test_resolve_domain_edit_without_a_redraw_counter_still_rejects_both_levels() -> None:
+    """Acceptance bullet 6, 內容領域 variant, with both a question-level and a
+
+    row-level offending field reported (mirrors the previous test's payload).
+    """
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "seed": 17,
+                "grade": 7,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "content_type": "純文字",
+                "target_surface": "紙本",
+                "core_competency": ["社-J-A1"],
+                "subject_filter": ["公民與社會"],
+                "content_domain": "Civic Participation",
+                "learning_content": ["公Bn-Ⅳ-3"],
+                "learning_performance": ["社1a-Ⅳ-1"],
+                "sub_question_count": 3,
+                "subquestion_configs": [
+                    {"learning_content": ["公Bj-Ⅳ-1"]},
+                    {},
+                    {},
+                ],
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        },
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        },
+    ]
+
+
+def test_resolve_batch_content_domain_alias_matches_the_canonical_redraw_key() -> None:
+    """Acceptance bullet 5: the request alias ``content_domain`` behaves
+
+    identically to the canonical ``內容領域`` redraw key, including with a
+    batch prefix.
+    """
+
+    def make_payload() -> dict:
+        return {
+            "subject": "social_studies",
+            "seed": 5,
+            "grade": 7,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "learning_performance": ["社1a-Ⅳ-1"],
+            "per_question_params": [
+                {
+                    "subject_filter": ["公民與社會"],
+                    "content_domain": "Civic Participation",
+                    "learning_content": ["公Bn-Ⅳ-3"],
+                }
+            ],
+        }
+
+    via_alias = resolve(
+        make_payload(), redraws={"per_question_params[0].content_domain": 1}
+    )
+    via_canonical = resolve(
+        make_payload(), redraws={"per_question_params[0].內容領域": 1}
+    )
+
+    assert via_alias.payload == via_canonical.payload
+    assert (
+        via_alias.cleared
+        == via_canonical.cleared
+        == ["per_question_params[0].學習內容"]
+    )
+
+
+def test_resolve_row_domain_conflict_clears_and_redraws_across_a_civic_edit() -> None:
+    """Regression (coordinator finding on Task 3's review): a 內容領域 edit
+
+    whose only 釘選 conflict lives in a 各小題配置 row (not the question-level
+    ``learning_content``) must clear that row's field, not crash with an
+    unhandled ``IncompatibleContentDomainError``. Live-reproduced payload:
+    civic 科目, ``content_domain`` edited to ``Civic Participation`` with a
+    single row pinning ``公Bn-Ⅳ-3`` (admitted only by "Civic Institutions and
+    Systems").
+    """
+    result = resolve(
+        {
+            "subject": "social_studies",
+            "subject_filter": ["公民與社會"],
+            "content_domain": "Civic Participation",
+            "subquestion_configs": [
+                {"learning_content": ["公Bn-Ⅳ-3"]},
+                {},
+                {},
+            ],
+            "sub_question_count": 3,
+            "grade": 7,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "seed": 19,
+        },
+        redraws={"內容領域": 1},
+    )
+
+    assert result.cleared == ["subquestion_configs[0].learning_content"]
+    assert (
+        "公Bn-Ⅳ-3" not in result.payload["subquestion_configs"][0]["learning_content"]
+    )
+    assert result.payload["subquestion_configs"][0]["learning_content"]
+    assert "subquestion_configs[0].learning_content" in result.drawn
+
+    second = resolve(result.payload)
+    assert second.payload == result.payload
+    assert second.drawn == []
+    assert second.cleared == []
+
+
+def test_resolve_row_domain_conflict_without_a_redraw_counter_still_rejects() -> None:
+    """Same regression payload, without the 重抽 counter: must raise
+
+    ``ResolveConflictError`` naming the row path — no ``ParentAdmissionError``
+    (or any other sampler exception) may escape ``resolve()``.
+    """
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(
+            {
+                "subject": "social_studies",
+                "subject_filter": ["公民與社會"],
+                "content_domain": "Civic Participation",
+                "subquestion_configs": [
+                    {"learning_content": ["公Bn-Ⅳ-3"]},
+                    {},
+                    {},
+                ],
+                "sub_question_count": 3,
+                "grade": 7,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "content_type": "純文字",
+                "target_surface": "紙本",
+                "core_competency": ["社-J-A1"],
+                "seed": 19,
+            }
+        )
+
+    assert exc_info.value.errors == [
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        }
+    ]

@@ -58,7 +58,6 @@ from src.schemas import (
     QuestionType as MathQuestionType,
 )
 from src.social_studies.sampler import (
-    IncompatibleContentDomainError,
     ParentAdmissionError,
 )
 from src.social_studies.sampler import (
@@ -211,6 +210,7 @@ _TOP_LEVEL_ALIASES = {
     "content_type": "題目內容類型",
     "math_thinking": "數學思考",
     "subject_filter": "科目",
+    "content_domain": "內容領域",
     "sub_context": "情境子類別",
     "science_competency": "科學能力",
     "learning_content": "學習內容",
@@ -520,6 +520,89 @@ def _resolve_math(
     return ResolveResult(payload=completed, drawn=drawn)
 
 
+# #837: editing 科目/內容領域 on 發送前確認 behaves like a 重抽 of that parent —
+# a 釘選 child the resolved value no longer admits is cleared and re-resolved
+# instead of rejected. A bounded loop guards against a hypothetical sampler bug
+# that never converges; the sampler only ever raises for 科目 then 內容領域, so
+# two rounds normally suffice.
+_MAX_ADMISSION_CLEAR_ROUNDS = 4
+
+_SOCIAL_SUBJECT_VALUES = frozenset(member.value for member in SocialQuestionSubject)
+
+
+def _admission_conflict_parent(errors: list[dict[str, str]]) -> str | None:
+    """The 重抽 key that must be set before a sampler conflict may be cleared.
+
+    Every error inside one ``ParentAdmissionError`` shares a single failing
+    parent (the sampler always checks 科目 before 內容領域, so one raise never
+    mixes the two). A ``no_admitting_parent`` entry already names the parent
+    as ``"科目"``/``"內容領域"``; an ``incompatible_parent`` entry names the
+    specific pinned value instead, so a subject value is classified by
+    membership in the subject enum — ICCS domain values are distinct English
+    strings and never collide with a Chinese subject name.
+    """
+    if not errors:
+        return None
+    parent = errors[0].get("parent")
+    if parent in ("科目", "內容領域"):
+        return parent
+    return "科目" if parent in _SOCIAL_SUBJECT_VALUES else "內容領域"
+
+
+def _clear_admission_conflict(
+    sampling_payload: dict[str, Any],
+    configs: list[dict[str, Any]] | None,
+    errors: list[dict[str, str]],
+) -> tuple[dict[str, Any], list[dict[str, Any]] | None, list[str]]:
+    """Clear exactly the 釘選 fields one ``ParentAdmissionError`` names (#837).
+
+    A compatible 釘選 sibling, or a field on an unrelated parent, is never
+    touched. Returns the updated top-level payload, the updated 各小題配置 rows
+    (the original ``configs`` object when no row changed), and the canonical
+    paths cleared — top-level fields translate through ``_canonical_local_path``
+    to their Chinese sampler name; per-小題 paths keep their dotted
+    ``subquestion_configs[i].<field>`` form, matching the sampler's own error
+    field paths.
+    """
+    updated_payload = sampling_payload
+    updated_configs = configs
+    cleared_now: list[str] = []
+    for error in errors:
+        path = error["field"]
+        if path in ("learning_content", "learning_performance"):
+            if updated_payload.get(path) is None:
+                continue
+            if updated_payload is sampling_payload:
+                updated_payload = deepcopy(sampling_payload)
+            updated_payload[path] = None
+            cleared_now.append(_canonical_local_path(path))
+            continue
+        if (
+            updated_configs is None
+            or not path.startswith("subquestion_configs[")
+            or not (
+                path.endswith(".learning_content") or path.endswith(".learning_performance")
+            )
+        ):
+            continue
+        index_text, _, remainder = path[len("subquestion_configs[") :].partition("]")
+        if not index_text.isdigit():
+            continue
+        index = int(index_text)
+        field = remainder.rsplit(".", 1)[-1]
+        if index >= len(updated_configs) or not isinstance(updated_configs[index], dict):
+            continue
+        if field not in updated_configs[index]:
+            continue
+        if updated_configs is configs:
+            updated_configs = list(configs)
+        row = dict(updated_configs[index])
+        row.pop(field, None)
+        updated_configs[index] = row
+        cleared_now.append(path)
+    return updated_payload, updated_configs, cleared_now
+
+
 def _resolve_social(
     payload: dict[str, Any], redraws: dict[str, int] | None
 ) -> ResolveResult:
@@ -585,22 +668,31 @@ def _resolve_social(
 
     try:
         sampled = sample_social(sampling_payload)
-    except IncompatibleContentDomainError as exc:
-        # Pre-#834-era clearing path, preserved unchanged: a 內容領域 or 科目
-        # redraw counter > 0 still clears the pinned 學習內容 and resamples
-        # instead of rejecting. Task 4 (#837) generalises 重抽-triggered
-        # clearing to the other ParentAdmissionError kinds below.
-        parent_redrawn = any(
-            (redraws or {}).get(parent, 0) > 0 for parent in ("內容領域", "科目")
-        )
-        if not parent_redrawn:
-            raise ResolveConflictError(exc.errors) from exc
-        sampling_payload = deepcopy(payload)
-        sampling_payload["learning_content"] = None
-        cleared.append("學習內容")
-        sampled = sample_social(sampling_payload)
     except ParentAdmissionError as exc:
-        raise ResolveConflictError(exc.errors) from exc
+        # #837: when the failing parent (科目 or 內容領域) has a 重抽 counter
+        # set, clear exactly the 釘選 children the sampler named and resample
+        # from the newly-admitted pool instead of rejecting; loop because
+        # clearing a 科目 conflict can surface a further 內容領域 conflict on
+        # the same resample (the sampler always checks 科目 first). Every exit
+        # from this except block either succeeds or raises ResolveConflictError
+        # — no ParentAdmissionError may escape _resolve_social un-converted.
+        for _ in range(_MAX_ADMISSION_CLEAR_ROUNDS):
+            parent_key = _admission_conflict_parent(exc.errors)
+            if parent_key is None or (redraws or {}).get(parent_key, 0) <= 0:
+                raise ResolveConflictError(exc.errors) from exc
+            sampling_payload, configs, cleared_now = _clear_admission_conflict(
+                sampling_payload, configs, exc.errors
+            )
+            if not cleared_now:
+                raise ResolveConflictError(exc.errors) from exc
+            cleared.extend(cleared_now)
+            try:
+                sampled = sample_social(sampling_payload)
+                break
+            except ParentAdmissionError as retry_exc:
+                exc = retry_exc
+        else:
+            raise ResolveConflictError(exc.errors) from exc
 
     completed = deepcopy(sampling_payload)
     completed.update(

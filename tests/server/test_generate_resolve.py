@@ -646,6 +646,168 @@ def test_resolve_endpoint_rejects_row_pin_incompatible_with_pinned_domain(
     assert "payload" not in response.json()
 
 
+# ── #837: editing 科目 or 內容領域 on 發送前確認 clears 釘選 codes ─────────
+# ── that no longer fit, instead of rejecting ──────────────────────────────
+
+
+def test_resolve_endpoint_subject_edit_clears_incompatible_content_and_is_accepted(
+    resolve_client: TestClient,
+) -> None:
+    """Acceptance bullet 1: a 科目 edit with its 重抽 counter clears the
+
+    now-incompatible 學習內容 pin, returns 200 with the canonical path in
+    ``cleared``, and the returned payload re-resolves unchanged — the same
+    gate ``/api/generate`` reruns before accepting a request (Task 3's design
+    note: that gate is itself a ``resolve()`` call requiring ``drawn == []``).
+    """
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 11,
+            "grade": 7,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "subject_filter": ["地理"],
+            "learning_content": ["公Bj-Ⅳ-1"],
+            "redraws": {"科目": 1},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cleared"] == ["學習內容"]
+    assert "公Bj-Ⅳ-1" not in body["payload"]["learning_content"]
+
+    second_response = resolve_client.post("/api/generate/resolve", json=body["payload"])
+
+    assert second_response.status_code == 200
+    assert second_response.json() == {
+        "payload": body["payload"],
+        "drawn": [],
+        "cleared": [],
+    }
+
+
+def test_resolve_endpoint_subject_edit_without_a_redraw_counter_is_still_422(
+    resolve_client: TestClient,
+) -> None:
+    """Acceptance bullet 6, 科目 variant, at the HTTP seam."""
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 11,
+            "grade": 7,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "subject_filter": ["地理"],
+            "learning_content": ["公Bj-Ⅳ-1"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "learning_content", "code": "incompatible_parent", "parent": "地理"}
+    ]
+    assert "payload" not in response.json()
+
+
+def test_resolve_endpoint_domain_edit_clears_content_but_not_performance(
+    resolve_client: TestClient,
+) -> None:
+    """Acceptance bullet 3, at the HTTP seam: 內容領域 edit clears 學習內容 at
+
+    question level and in a 各小題配置 row; 學習表現 (no 內容領域 parent)
+    survives untouched and is absent from ``cleared``.
+    """
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 17,
+            "grade": 7,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "content_type": "純文字",
+            "target_surface": "紙本",
+            "core_competency": ["社-J-A1"],
+            "subject_filter": ["公民與社會"],
+            "content_domain": "Civic Participation",
+            "learning_content": ["公Bn-Ⅳ-3"],
+            "learning_performance": ["社1a-Ⅳ-1"],
+            "sub_question_count": 3,
+            "subquestion_configs": [
+                {"learning_content": ["公Bj-Ⅳ-1"]},
+                {},
+                {},
+            ],
+            "redraws": {"內容領域": 1},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cleared"] == [
+        "學習內容",
+        "subquestion_configs[0].learning_content",
+    ]
+    assert body["payload"]["learning_performance"] == ["社1a-Ⅳ-1"]
+
+    second_response = resolve_client.post("/api/generate/resolve", json=body["payload"])
+
+    assert second_response.status_code == 200
+    assert second_response.json()["drawn"] == []
+    assert second_response.json()["cleared"] == []
+
+
+def test_resolve_endpoint_row_domain_conflict_with_counter_clears_and_is_accepted(
+    resolve_client: TestClient,
+) -> None:
+    """Regression (coordinator finding on Task 3's review), at the HTTP seam:
+
+    the crash payload from ``test_resolve_endpoint_rejects_row_pin_incompatible_with_pinned_domain``
+    (just above), resubmitted with a 內容領域 重抽 counter, must clear the row's
+    field and return 200 instead of a 500 from an escaped
+    ``IncompatibleContentDomainError``.
+    """
+    response = resolve_client.post(
+        "/api/generate/resolve",
+        json={
+            "subject": "social_studies",
+            "seed": 1,
+            "grade": 8,
+            "context": ["個人"],
+            "set_type": "題組題",
+            "subject_filter": ["公民與社會"],
+            "content_domain": "Civic Participation",
+            "sub_question_count": 3,
+            "subquestion_configs": [{"learning_content": ["公Bn-Ⅳ-3"]}, {}, {}],
+            "redraws": {"內容領域": 1},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cleared"] == ["subquestion_configs[0].learning_content"]
+    assert (
+        "公Bn-Ⅳ-3"
+        not in body["payload"]["subquestion_configs"][0]["learning_content"]
+    )
+
+    second_response = resolve_client.post("/api/generate/resolve", json=body["payload"])
+
+    assert second_response.status_code == 200
+    assert second_response.json()["drawn"] == []
+    assert second_response.json()["cleared"] == []
+
+
 def test_resolve_endpoint_requires_authentication() -> None:
     app = create_app()
     with TestClient(app, raise_server_exceptions=False) as client:
