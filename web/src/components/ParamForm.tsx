@@ -4,6 +4,11 @@ import { useT } from "../i18n/useT";
 import type { Lang } from "../i18n/messages";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
 import { filterEntriesByAdmittedParent } from "../lib/admittedBy";
+import {
+  computeParentNarrowing,
+  formatNarrowingHint,
+  type PinnedCodeGroup,
+} from "../lib/parentNarrowing";
 import { fetchCurriculumPool, type CurriculumPool } from "../lib/curriculumPool";
 import { formatResolverFieldErrors, isResolverFieldErrorLike } from "../lib/resolverErrorMessages";
 import {
@@ -1077,7 +1082,9 @@ function readConfirmationPathValue(
 const CONFIRMATION_PARENT_CHILDREN: Record<string, string[]> = {
   "情境": ["情境子類別"],
   "科目": ["學習內容", "學習表現"],
-  "內容領域": ["學習內容", "學習表現"],
+  // #833/#839: 學習表現 has no 內容領域 parent — only 學習內容 admits a 內容領域
+  // tag, so a 內容領域 confirmation edit must never clear a drawn 學習表現.
+  "內容領域": ["學習內容"],
   sub_question_count: ["subquestion_configs"],
 };
 
@@ -2294,6 +2301,73 @@ export default function ParamForm({
     )
       .map((entry) => entry.value);
   }, [availableLearningContent, contentDomain, schemas, subject, subjectFilter]);
+
+  // #839: the 釘選 codes narrowing 科目/內容領域 are the 題組-level 學習內容 +
+  // 學習表現 selections plus each 各小題配置 row's own pins. Admission comes
+  // only from `admitted_by` tags (ADR 0020) via computeParentNarrowing — never
+  // a prefix table.
+  const pinnedCurriculumCodeGroups = useMemo((): PinnedCodeGroup[] => {
+    const groups: PinnedCodeGroup[] = [];
+    const groupCodes = [...learningContent, ...learningPerformance];
+    if (groupCodes.length > 0) groups.push({ codes: groupCodes });
+    subquestionConfigs.forEach((cfg, index) => {
+      const codes = [...(cfg.learning_content ?? []), ...(cfg.learning_performance ?? [])];
+      if (codes.length > 0) groups.push({ codes, subquestionNumber: index + 1 });
+    });
+    return groups;
+  }, [learningContent, learningPerformance, subquestionConfigs]);
+
+  const curriculumCodeLookup = useMemo(() => {
+    const map = new Map<string, SchemaEntry>();
+    for (const entry of schemas?.學習內容 ?? []) map.set(entry.value, entry);
+    for (const entry of schemas?.學習表現 ?? []) map.set(entry.value, entry);
+    return map;
+  }, [schemas]);
+
+  const allSubjectFilterValues = useMemo(
+    () => (schemas?.科目 ?? []).map((entry) => entry.value),
+    [schemas],
+  );
+  const subjectFilterNarrowing = useMemo(
+    () => computeParentNarrowing(
+      allSubjectFilterValues,
+      "科目",
+      pinnedCurriculumCodeGroups,
+      (code) => curriculumCodeLookup.get(code),
+    ),
+    [allSubjectFilterValues, pinnedCurriculumCodeGroups, curriculumCodeLookup],
+  );
+  const subjectFilterHint = formatNarrowingHint(
+    subjectFilterNarrowing.constrainingCodes,
+    lang,
+    "form.subject_filter_narrow_hint",
+  );
+
+  // 內容領域 is only ever narrowed for the 科目 values that can carry an ICCS
+  // domain (公民與社會/跨科/全部) — matching filterLearningContentEntriesByDomain's
+  // own subject gate. 歷/地 選擇 leaves 內容領域 fully open.
+  const applyContentDomainNarrowing = subject === "social_studies" &&
+    (subjectFilter === "" || ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter));
+  const allContentDomainValues = useMemo(
+    () => (schemas?.內容領域 ?? []).map((entry) => entry.value),
+    [schemas],
+  );
+  const contentDomainNarrowing = useMemo(() => {
+    if (!applyContentDomainNarrowing) {
+      return { disabledValues: new Set<string>(), constrainingCodes: [] };
+    }
+    return computeParentNarrowing(
+      allContentDomainValues,
+      "內容領域",
+      pinnedCurriculumCodeGroups,
+      (code) => curriculumCodeLookup.get(code),
+    );
+  }, [applyContentDomainNarrowing, allContentDomainValues, pinnedCurriculumCodeGroups, curriculumCodeLookup]);
+  const contentDomainHint = formatNarrowingHint(
+    contentDomainNarrowing.constrainingCodes,
+    lang,
+    "form.content_domain_narrow_hint",
+  );
 
   const planEffortLevels = useMemo((): string[] => {
     if (!models?.effort) return [];
@@ -4204,7 +4278,7 @@ export default function ParamForm({
 
       {schemas.科目 && schemas.科目.length > 0 && (
         <div>
-          <label className="block text-sm font-medium">
+          <label htmlFor="subject-filter-select" className="block text-sm font-medium">
             {t(
               subject === "natural_sciences"
                 ? "form.subject_filter_natural_sciences"
@@ -4212,16 +4286,22 @@ export default function ParamForm({
             )}
           </label>
           <select
+            id="subject-filter-select"
             value={subjectFilter}
             onChange={(e) => {
               markUserChosen("subject_filter");
               setField("subjectFilter", e.target.value);
             }}
+            aria-describedby={subjectFilterHint ? "subject-filter-hint" : undefined}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.subject_filter.all")}</option>
             {schemas.科目.map((s) => (
-              <option key={s.value} value={s.value}>
+              <option
+                key={s.value}
+                value={s.value}
+                disabled={subjectFilterNarrowing.disabledValues.has(s.value)}
+              >
                 {s.value}
               </option>
             ))}
@@ -4229,6 +4309,11 @@ export default function ParamForm({
           {subject === "natural_sciences" && (
             <p className="mt-1 text-sm text-gray-500">
               {t("form.subject_filter_natural_sciences_help")}
+            </p>
+          )}
+          {subjectFilterHint && (
+            <p id="subject-filter-hint" className="mt-1 text-sm text-gray-500">
+              {subjectFilterHint}
             </p>
           )}
         </div>
@@ -4246,15 +4331,25 @@ export default function ParamForm({
               markUserChosen("content_domain");
               setField("contentDomain", e.target.value);
             }}
+            aria-describedby={contentDomainHint ? "content-domain-hint" : undefined}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.content_domain_random")}</option>
             {(schemas.內容領域 ?? []).map((entry) => (
-              <option key={entry.value} value={entry.value}>
+              <option
+                key={entry.value}
+                value={entry.value}
+                disabled={contentDomainNarrowing.disabledValues.has(entry.value)}
+              >
                 {entry.value}
               </option>
             ))}
           </select>
+          {contentDomainHint && (
+            <p id="content-domain-hint" className="mt-1 text-sm text-gray-500">
+              {contentDomainHint}
+            </p>
+          )}
         </div>
       )}
 
