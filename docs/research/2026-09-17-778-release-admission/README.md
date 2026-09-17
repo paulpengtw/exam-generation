@@ -36,6 +36,8 @@ The recorded scenarios are:
 - an established stream completing while read-only routes continue;
 - a policy publication rejected while an admission is pending, then accepted
   after that stream completes;
+- target artifact/reader metadata read over both serving gateway surfaces before
+  publication;
 - release revision, route metadata, two backend identities, and exact dispatch
   counts recorded from the local server seams.
 

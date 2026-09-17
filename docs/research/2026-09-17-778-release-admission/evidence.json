@@ -1,7 +1,7 @@
 {
   "schema": "exam-generation.release-admission-evidence/1",
   "issue": 778,
-  "generated_at": "2026-09-17T16:08:50.567917+00:00",
+  "generated_at": "2026-09-17T16:35:19.713742+00:00",
   "authority": {
     "schema": "exam-generation.release-policy/1",
     "environment": "test",
@@ -12,11 +12,11 @@
   "backend_instances": [
     {
       "name": "backend-1",
-      "url": "http://127.0.0.1:56765"
+      "url": "http://127.0.0.1:59975"
     },
     {
       "name": "backend-2",
-      "url": "http://127.0.0.1:52571"
+      "url": "http://127.0.0.1:43521"
     }
   ],
   "route_inventory": [
@@ -391,6 +391,24 @@
       "published_status": 200,
       "pending_publish_code": "RELEASE_TRANSITION_REJECTED",
       "published_build_id": "build-next",
+      "target_route_metadata": [
+        {
+          "surface": "gateway-1",
+          "path": "/release/target-policy.json",
+          "status": 200,
+          "build_id": "build-next",
+          "release_revision": 2,
+          "reader_version": "reader-1"
+        },
+        {
+          "surface": "gateway-2",
+          "path": "/release/target-policy.json",
+          "status": 200,
+          "build_id": "build-next",
+          "release_revision": 2,
+          "reader_version": "reader-1"
+        }
+      ],
       "pending_stream_completed": true
     },
     "nginx_headers": {
@@ -403,15 +421,15 @@
       "name": "backend-1",
       "generation_dispatches": 2,
       "provider_dispatches": 2,
-      "read_only_dispatches": 13,
-      "request_count": 15
+      "read_only_dispatches": 14,
+      "request_count": 16
     },
     {
       "name": "backend-2",
       "generation_dispatches": 1,
       "provider_dispatches": 1,
-      "read_only_dispatches": 13,
-      "request_count": 14
+      "read_only_dispatches": 14,
+      "request_count": 15
     }
   ]
 }

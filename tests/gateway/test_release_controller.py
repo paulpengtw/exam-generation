@@ -57,6 +57,7 @@ def _evidence(*, build_id: str = "build-b", revision: int = 2, **overrides) -> d
         "pending_admissions": 0,
         "drain_snapshots": [_drain("backend-1"), _drain("backend-2")],
         "instances": ["backend-1", "backend-2"],
+        "expected_routes": ["frontend", "gateway"],
         "routes": [
             {
                 "name": "frontend",
@@ -216,7 +217,11 @@ def test_retirement_requires_evidence_and_keeps_current_and_rollback(tmp_path) -
 
     state = controller.retire_artifact(
         "transition",
-        {"pending_admissions": 0, "drain_snapshots": [_drain("backend-1"), _drain("backend-2")]},
+        {
+            "pending_admissions": 0,
+            "instances": ["backend-1", "backend-2"],
+            "drain_snapshots": [_drain("backend-1"), _drain("backend-2")],
+        },
     )
     assert state["artifacts"]["current"]["build_id"] == "build-b"
     assert state["artifacts"]["prepared_rollback"]["build_id"] == "build-a"
@@ -226,6 +231,7 @@ def test_retirement_requires_evidence_and_keeps_current_and_rollback(tmp_path) -
         "build-a",
         {
             "pending_admissions": 0,
+            "instances": ["backend-1", "backend-2"],
             "drain_snapshots": [_drain("backend-1"), _drain("backend-2")],
         },
     )

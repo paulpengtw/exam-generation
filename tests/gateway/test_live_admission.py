@@ -95,6 +95,7 @@ def _publish_evidence(build_id: str = "build-b", revision: int = 2) -> dict:
     }
     return {
         "instances": ["backend-1", "backend-2"],
+        "expected_routes": ["frontend", "gateway"],
         "drain_snapshots": [_drain("backend-1"), _drain("backend-2")],
         "routes": [{"name": "frontend", **route}, {"name": "gateway", **route}],
     }

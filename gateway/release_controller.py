@@ -384,11 +384,12 @@ class ReleaseController:
         if not isinstance(routes, list) or not routes:
             raise ReleasePolicyError("route evidence is missing")
         expected_routes = evidence.get("expected_routes")
-        if expected_routes is not None:
-            if not isinstance(expected_routes, list) or {
-                str(item) for item in expected_routes
-            } != {str(item.get("name")) for item in routes if isinstance(item, dict)}:
-                raise ReleasePolicyError("route evidence is incomplete")
+        if not isinstance(expected_routes, list) or not expected_routes:
+            raise ReleasePolicyError("route inventory is missing")
+        if {str(item) for item in expected_routes} != {
+            str(item.get("name")) for item in routes if isinstance(item, dict)
+        }:
+            raise ReleasePolicyError("route evidence is incomplete")
         seen: set[str] = set()
         for route in routes:
             if not isinstance(route, dict):
@@ -420,9 +421,8 @@ class ReleaseController:
         if not isinstance(snapshots, list):
             raise ReleasePolicyError("drain evidence is missing")
         expected_instances = evidence.get("instances")
-        if expected_instances is not None and (
-            not isinstance(expected_instances, list)
-            or any(not isinstance(item, str) for item in expected_instances)
+        if not isinstance(expected_instances, list) or not expected_instances or any(
+            not isinstance(item, str) for item in expected_instances
         ):
             raise ReleasePolicyError("drain inventory is invalid")
         ids: set[str] = set()
@@ -448,9 +448,9 @@ class ReleaseController:
                 raise ReleasePolicyError("drain evidence is stale")
             if any(snapshot.get(counter) != 0 for counter in _DRAIN_COUNTERS):
                 raise ReleasePolicyError("drain evidence is nonzero")
-            if snapshot.get("integrity_errors", 0) != 0 or snapshot.get("quiescent") is not True:
+            if snapshot.get("integrity_errors") != 0 or snapshot.get("quiescent") is not True:
                 raise ReleasePolicyError("drain evidence is not positive")
-        if expected_instances is not None and ids != set(expected_instances):
+        if ids != set(expected_instances):
             raise ReleasePolicyError("drain evidence does not cover inventory")
         return snapshots
 

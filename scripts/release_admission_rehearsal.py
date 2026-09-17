@@ -96,6 +96,7 @@ class _Backend:
         self.provider_dispatches = 0
         self.read_only_dispatches = 0
         self.requests: list[tuple[str, str]] = []
+        self.target_policy: dict[str, Any] | None = None
         self.generation_started = threading.Event()
         self.stream_release = threading.Event()
         self.stream_release.set()
@@ -120,6 +121,13 @@ class _Backend:
             self.requests.append((request.method, request.url.path))
             return JSONResponse({"ok": True, "backend": self.name})
 
+        async def target_metadata(request: Request) -> JSONResponse:
+            self.read_only_dispatches += 1
+            self.requests.append((request.method, request.url.path))
+            if self.target_policy is None:
+                return JSONResponse({"detail": "target not prepared"}, status_code=503)
+            return JSONResponse(self.target_policy)
+
         return Starlette(
             routes=[
                 Route("/api/generate", generate, methods=["GET", "POST"]),
@@ -142,6 +150,7 @@ class _Backend:
                 Route("/api/schemas", read_only, methods=["GET"]),
                 Route("/auth/{rest:path}", read_only, methods=["GET", "POST"]),
                 Route("/health", read_only, methods=["GET"]),
+                Route("/release/target-policy.json", target_metadata, methods=["GET"]),
             ]
         )
 
@@ -209,16 +218,19 @@ def _drain(instance_id: str) -> dict[str, Any]:
     }
 
 
-def _publish_evidence() -> dict[str, Any]:
-    route = {
-        "build_id": NEXT_BUILD,
-        "release_revision": 2,
-        "reader_version": READER_VERSION,
-    }
+def _publish_evidence(routes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    if routes is None:
+        route = {
+            "build_id": NEXT_BUILD,
+            "release_revision": 2,
+            "reader_version": READER_VERSION,
+        }
+        routes = [{"name": "frontend", **route}, {"name": "gateway", **route}]
     return {
         "instances": ["backend-1", "backend-2"],
+        "expected_routes": [route["name"] for route in routes],
         "drain_snapshots": [_drain("backend-1"), _drain("backend-2")],
-        "routes": [{"name": "frontend", **route}, {"name": "gateway", **route}],
+        "routes": routes,
     }
 
 
@@ -414,10 +426,40 @@ def run_rehearsal(output_path: Path | str) -> dict[str, Any]:
         controller.prepare_target(
             {"build_id": NEXT_BUILD, "release_revision": 2, "reader_version": READER_VERSION}
         )
+        for backend in backends:
+            backend.target_policy = {
+                "released_build_id": NEXT_BUILD,
+                "release_revision": 2,
+                "reader_version": READER_VERSION,
+            }
+        target_route_metadata: list[dict[str, Any]] = []
+        target_routes: list[dict[str, Any]] = []
+        for gateway_index, gateway in enumerate(gateway_servers, start=1):
+            response = _request(gateway.base_url, "GET", "/release/target-policy.json")
+            raw = response.json()
+            target_route_metadata.append(
+                {
+                    "surface": f"gateway-{gateway_index}",
+                    "path": "/release/target-policy.json",
+                    "status": response.status_code,
+                    "build_id": raw.get("released_build_id"),
+                    "release_revision": raw.get("release_revision"),
+                    "reader_version": raw.get("reader_version"),
+                }
+            )
+            target_routes.append(
+                {
+                    "name": f"gateway-{gateway_index}",
+                    "build_id": raw.get("released_build_id"),
+                    "release_revision": raw.get("release_revision"),
+                    "reader_version": raw.get("reader_version"),
+                }
+            )
+        publish_evidence = _publish_evidence(target_routes)
         pending_publish = httpx.post(
             f"{gateway_servers[0].base_url}/gateway/release/publish",
             headers={"X-Gateway-Control-Token": "evidence-token"},
-            json=_publish_evidence(),
+            json=publish_evidence,
             timeout=10,
         )
         backends[0].stream_release.set()
@@ -425,7 +467,7 @@ def run_rehearsal(output_path: Path | str) -> dict[str, Any]:
         published = httpx.post(
             f"{gateway_servers[0].base_url}/gateway/release/publish",
             headers={"X-Gateway-Control-Token": "evidence-token"},
-            json=_publish_evidence(),
+            json=publish_evidence,
             timeout=10,
         )
 
@@ -472,6 +514,7 @@ def run_rehearsal(output_path: Path | str) -> dict[str, Any]:
                     "published_status": published.status_code,
                     "pending_publish_code": pending_publish.json().get("code"),
                     "published_build_id": published.json().get("released_build_id"),
+                    "target_route_metadata": target_route_metadata,
                     "pending_stream_completed": not pending_thread.is_alive()
                     and any("done" in line for line in pending_lines),
                 },
