@@ -92,9 +92,59 @@ that failure.
 
 ## Tests added
 
-| File | Type | Description |
-|------|------|-------------|
-| `web/src/lib/recovery/queuedIntent.test.ts` | unit | Five tests for queue/cancel/transition semantics |
-| `web/src/lib/recovery/autoRefresh.test.ts` | unit | Eight tests for eligibility check + marker |
-| `web/src/lib/recovery/chunkErrorGuard.test.ts` | unit | Nine tests for classify + decide |
-| `web/src/lib/recovery/scheduledUpdate.test.tsx` | unit | Combined unit tests for chunk routing, marker deduplication, queued intent |
+All tests pass in three consecutive runs (1445 total).  Tests labeled **unit** are
+pure function/store calls with no rendered UI; tests labeled **router-driven** render
+real React components (within a `MemoryRouter`), drive visible controls, and assert
+what the user sees — they follow the style of `recoveryFlow.test.tsx` and
+`GeneratePage.results-recovery.test.tsx`.
+
+| File | Type | Scenarios covered |
+|------|------|-------------------|
+| `web/src/lib/recovery/queuedIntent.test.ts` | unit | Five tests: queue/cancel/transition store semantics |
+| `web/src/lib/recovery/autoRefresh.test.ts` | unit | Eight tests: eligibility check + marker + all denial reasons |
+| `web/src/lib/recovery/chunkErrorGuard.test.ts` | unit | Nine tests: classify + decide, including preload errors |
+| `web/src/lib/recovery/scheduledUpdate.test.tsx` | unit (4) + router-driven (11) | See table below |
+
+### `scheduledUpdate.test.tsx` scenarios
+
+| Test name | Type | Scenario |
+|-----------|------|----------|
+| unit: old HTML: decideOnChunkError returns show_error | unit | `currentBuildId ≠ releasedBuildId` → `show_error` / `old_html` |
+| unit: missing assets on eligible empty page: decideOnChunkError returns reload | unit | matching build IDs, eligible page → `reload` |
+| unit: empty-page auto-reload fires only once per target/revision per tab | unit | marker prevents second `checkAutoRefreshEligible` from returning eligible |
+| unit: late result callback: queued intent captures latest workspace after callback settles | unit | `queued → active` store transition when last operation ends |
+| router: queue 工作完成後儲存並更新 on busy page, then cancel | router-driven | click queue button, click cancel, end operation → no save, no reload |
+| router: late planner and result callbacks after queuing | router-driven | two operations; queue via UI; planner settles (still queued); generation settles → reload |
+| router: active ODT export and image conversion delay the update | router-driven | export_odt + export_image; queue; odt settles (still queued); image settles → reload |
+| router: target change during read-back | router-driven | `checkNow` changes `requiredBuildId`; `runSaveAndUpdate` returns `target_changed`; no navigation; no localStorage entry |
+| router: incompatible recovery reader on target | router-driven | `supportedRecoveryFormats: []`; `runSaveAndUpdate` returns `unsupported_target_reader`; no localStorage entry |
+| router: old HTML after a reload — loop stops | router-driven | `ChunkErrorBoundary` with `__BUILD_ID__ ≠ requiredBuildId`; shows error; no reload |
+| router: chunk error on eligible empty page — reload triggered once | router-driven | `ChunkErrorBoundary` with matching build IDs, empty page; reload called once |
+| router: chunk error on a non-empty page — error shown | router-driven | `ChunkErrorBoundary` with editable surface; shows error; no reload |
+| router: empty-page automatic reload fires at most once per target/revision per tab | router-driven | `ReleaseNotice` on eligible empty page; reload once; remount; marker prevents second reload |
+| router: automatic reload disabled when marker cannot be stored | router-driven | `sessionStorage.setItem` throws; `markAutoReloadAttempted` returns false; no reload |
+| router: no restored flow automatically submits generation or modification | router-driven | `useRecoveryStore.pending` set; `updateIntent` stays null; auto-refresh blocked by `pending_recovery`; no reload |
+
+## Test isolation fix (Problem 2)
+
+`web/src/recoveryFlow.test.tsx` lacked `cleanup()` in its `afterEach` and did not
+reset `useReleaseStore` in its `beforeEach`.  Without `cleanup()`, a test that fails
+before its own `unmount()` leaves stale React trees mounted across test boundaries.
+Those stale `ReleaseNotice` components hold live Zustand subscriptions and can
+duplicate DOM elements visible to `screen` queries in subsequent tests — causing the
+order-dependent "recovery flow — scenario 2: quota failure > reload not called"
+failure observed in full runs.
+
+**Fix applied:**
+- Added `cleanup` to the import from `@testing-library/react` in `recoveryFlow.test.tsx`.
+- Added `cleanup()` as the first statement of `afterEach` (unmounts all components
+  rendered by the test, even if the test asserted early).
+- Added an explicit `useReleaseStore.setState({...initial state...})` call in
+  `beforeEach` after `resetReleaseDetector()`, so no test inherits
+  `status: "update-required"` or other release state from a previous test.
+
+**Product verdict: no product bug.**  In production there is exactly one
+`ReleaseNotice` mounted for the lifetime of the tab (in `RootLayout`).  The
+auto-refresh effect's deps `[status, requiredBuildId, releaseRevision]` and the
+per-revision sessionStorage marker fully prevent reload loops.  The stale-component
+hazard is test-specific and is resolved entirely by the isolation fix above.
