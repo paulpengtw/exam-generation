@@ -281,101 +281,111 @@ def create_app(
         if is_private_path(path):
             return JSONResponse({"detail": "Not Found"}, status_code=404)
 
-        admission_lease = False
-        if is_generation_entry(method, path) and release_controller is not None:
-            pending_admissions.enter()
-            admission_lease = True
-            policy = _controller_policy()
-            if policy is None:
+        admission_held = False
+
+        def _release_admission() -> None:
+            nonlocal admission_held
+            if admission_held:
+                admission_held = False
                 pending_admissions.leave()
-                return _authority_unavailable()
-            if policy["admission"] in {"paused", "preparing"}:
-                pending_admissions.leave()
-                return _service_paused()
-            required_build_id = policy["released_build_id"]
-            supplied_build_id = (request.headers.get("X-Frontend-Build-ID") or "").strip()
-            if supplied_build_id != required_build_id:
-                pending_admissions.leave()
-                return JSONResponse(
-                    {
-                        "detail": "Client build is outdated; please reload the page.",
-                        "code": "CLIENT_UPDATE_REQUIRED",
-                        "required_build_id": required_build_id,
-                    },
-                    status_code=426,
-                )
-        elif is_generation_entry(method, path):
-            # Re-read state on every legacy gateway request — no caching.
-            state = read_state(state_dir)
-            if state.state == "paused":
-                return JSONResponse(
-                    {
-                        "detail": PAUSED_DETAIL,
-                        "code": PAUSED_CODE,
-                        "reason": state.reason,
-                    },
-                    status_code=503,
-                    headers={"Retry-After": "30"},
-                )
 
-        client = client_holder[0]
-        # Build forwarded URL preserving raw query string
-        raw_query = request.url.query
-        target_path = f"{path}?{raw_query}" if raw_query else path
-
-        # Forward request headers (minus hop-by-hop and host)
-        fwd_headers = _filter_request_headers(dict(request.headers))
-
-        # Add forwarding headers
-        client_host = request.client.host if request.client else "unknown"
-        existing_xff = fwd_headers.get("x-forwarded-for", "")
-        fwd_headers["x-forwarded-for"] = (
-            f"{existing_xff}, {client_host}" if existing_xff else client_host
-        )
-        fwd_headers["x-forwarded-proto"] = request.url.scheme
-        fwd_headers["x-forwarded-host"] = request.headers.get("host", "")
-
-        # Stream request body
-        body = await request.body()
-
-        # We need to keep the httpx response stream open while Starlette iterates it.
-        # Build the request, send it, and pipe chunks through an async generator that
-        # owns the open connection for the duration of the response body.
-        req = client.build_request(method, target_path, headers=fwd_headers, content=body)
         try:
-            backend_resp = await client.send(req, stream=True)
-        except httpx.ConnectError as exc:
-            if admission_lease:
-                pending_admissions.leave()
-            return JSONResponse(
-                {"detail": f"Backend connection failed: {exc}"},
-                status_code=502,
-            )
-        except httpx.HTTPError as exc:
-            if admission_lease:
-                pending_admissions.leave()
-            return JSONResponse(
-                {"detail": f"Backend error: {exc}"},
-                status_code=502,
-            )
+            if is_generation_entry(method, path) and release_controller is not None:
+                pending_admissions.enter()
+                admission_held = True
+                policy = _controller_policy()
+                if policy is None:
+                    _release_admission()
+                    return _authority_unavailable()
+                if policy["admission"] in {"paused", "preparing"}:
+                    _release_admission()
+                    return _service_paused()
+                required_build_id = policy["released_build_id"]
+                supplied_build_id = (request.headers.get("X-Frontend-Build-ID") or "").strip()
+                if supplied_build_id != required_build_id:
+                    _release_admission()
+                    return JSONResponse(
+                        {
+                            "detail": "Client build is outdated; please reload the page.",
+                            "code": "CLIENT_UPDATE_REQUIRED",
+                            "required_build_id": required_build_id,
+                        },
+                        status_code=426,
+                    )
+            elif is_generation_entry(method, path):
+                # Re-read state on every legacy gateway request — no caching.
+                state = read_state(state_dir)
+                if state.state == "paused":
+                    return JSONResponse(
+                        {
+                            "detail": PAUSED_DETAIL,
+                            "code": PAUSED_CODE,
+                            "reason": state.reason,
+                        },
+                        status_code=503,
+                        headers={"Retry-After": "30"},
+                    )
 
-        resp_headers = _filter_response_headers(backend_resp.headers)
+            client = client_holder[0]
+            # Build forwarded URL preserving raw query string
+            raw_query = request.url.query
+            target_path = f"{path}?{raw_query}" if raw_query else path
 
-        async def iter_raw():
+            # Forward request headers (minus hop-by-hop and host)
+            fwd_headers = _filter_request_headers(dict(request.headers))
+
+            # Add forwarding headers
+            client_host = request.client.host if request.client else "unknown"
+            existing_xff = fwd_headers.get("x-forwarded-for", "")
+            fwd_headers["x-forwarded-for"] = (
+                f"{existing_xff}, {client_host}" if existing_xff else client_host
+            )
+            fwd_headers["x-forwarded-proto"] = request.url.scheme
+            fwd_headers["x-forwarded-host"] = request.headers.get("host", "")
+
+            # Stream request body
+            body = await request.body()
+
+            # We need to keep the httpx response stream open while Starlette iterates it.
+            # Build the request, send it, and pipe chunks through an async generator that
+            # owns the open connection for the duration of the response body.
+            req = client.build_request(method, target_path, headers=fwd_headers, content=body)
             try:
-                async for chunk in backend_resp.aiter_raw():
-                    yield chunk
-            finally:
-                await backend_resp.aclose()
-                if admission_lease:
-                    pending_admissions.leave()
+                backend_resp = await client.send(req, stream=True)
+            except httpx.ConnectError as exc:
+                _release_admission()
+                return JSONResponse(
+                    {"detail": f"Backend connection failed: {exc}"},
+                    status_code=502,
+                )
+            except httpx.HTTPError as exc:
+                _release_admission()
+                return JSONResponse(
+                    {"detail": f"Backend error: {exc}"},
+                    status_code=502,
+                )
 
-        return StreamingResponse(
-            iter_raw(),
-            status_code=backend_resp.status_code,
-            headers=resp_headers,
-            media_type=None,
-        )
+            resp_headers = _filter_response_headers(backend_resp.headers)
+
+            async def iter_raw():
+                try:
+                    async for chunk in backend_resp.aiter_raw():
+                        yield chunk
+                finally:
+                    try:
+                        await backend_resp.aclose()
+                    finally:
+                        _release_admission()
+
+            return StreamingResponse(
+                iter_raw(),
+                status_code=backend_resp.status_code,
+                headers=resp_headers,
+                media_type=None,
+            )
+        except BaseException:
+            _release_admission()
+            raise
 
     routes = [
         Route("/gateway/health", gateway_health, methods=["GET"]),

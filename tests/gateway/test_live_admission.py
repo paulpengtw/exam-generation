@@ -11,7 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
-from gateway.app import create_app
+from gateway.app import PendingAdmissionTracker, create_app
 from gateway.release_controller import POLICY_SCHEMA, ReleaseController
 from tests.gateway.test_proxy import _TestServer
 
@@ -233,3 +233,31 @@ def test_policy_transition_waits_for_pending_admission_and_existing_stream_survi
         thread.join(5)
         gateway_server.stop()
         backend_server.stop()
+
+
+def test_policy_setup_failure_releases_pending_admission(tmp_path) -> None:
+    """An exception after admission entry must not strand the pending count."""
+
+    class _FailingAuthority:
+        def read_policy(self):
+            raise RuntimeError("policy read failed")
+
+    tracker = PendingAdmissionTracker()
+    gateway_server = _TestServer(
+        create_app(
+            backend_url="http://127.0.0.1:1",
+            state_dir=tmp_path / "gate",
+            release_controller=_FailingAuthority(),
+            pending_tracker=tracker,
+        )
+    )
+    gateway_server.start()
+    try:
+        response = httpx.get(
+            f"{gateway_server.base_url}/api/generate",
+            headers={"X-Frontend-Build-ID": "build-a"},
+        )
+        assert response.status_code == 500
+        assert tracker.count == 0
+    finally:
+        gateway_server.stop()
