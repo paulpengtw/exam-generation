@@ -19,7 +19,6 @@ from src.social_studies.curriculum_loader import (
     load_learning_content,
     load_learning_performance,
 )
-from src.social_studies.domain_mapping import DomainMapping, load_domain_mapping
 from src.social_studies.schema_loader import load_grades, load_learning_stage, load_schemas
 from src.social_studies.schemas import (
     CognitiveProcess,
@@ -50,7 +49,6 @@ _ALLOWED_COMPETENCIES: list[CoreCompetency] = [
 
 _LC_DATA: dict = load_learning_content()
 _LP_DATA: dict = load_learning_performance()
-_DOMAIN_MAPPING: DomainMapping = load_domain_mapping()
 _DOMAIN_FILTER_SUBJECTS = {"公民與社會", "跨科"}
 logger = logging.getLogger(__name__)
 _KNOWING_DEFINING = "Knowing–Defining and Describing"
@@ -73,10 +71,6 @@ class IncompatibleContentDomainError(ValueError):
     """A pinned ICCS domain has no admitted learning-content rows."""
 
 
-def _is_public_code(value: str) -> bool:
-    return value.startswith("公")
-
-
 def _filter_entries_for_domain(
     entries: list[dict],
     domain: ContentDomain,
@@ -91,28 +85,6 @@ def _filter_entries_for_domain(
     if subject.value not in _DOMAIN_FILTER_SUBJECTS:
         return entries
     return entries_admitted_by(entries, "內容領域", domain.value)
-
-
-def _filter_performance_entries_for_domain(
-    entries: list[dict],
-    domain: ContentDomain,
-    subject: QuestionSubject,
-) -> list[dict]:
-    """Keep 學習表現 rows admitted by *domain* for subjects whose parent applies.
-
-    Kept verbatim (code-prefix check + ``_DOMAIN_MAPPING``) pending #833,
-    which removes this function once 學習表現 domain filtering also reads
-    the shared admission lookup.
-    """
-    if subject.value not in _DOMAIN_FILTER_SUBJECTS:
-        return entries
-
-    mapped_codes = _DOMAIN_MAPPING.domain_to_codes.get(domain.value, set())
-    filtered: list[dict] = []
-    for entry in entries:
-        if not _is_public_code(entry.get("value", "")) or entry["value"] in mapped_codes:
-            filtered.append(entry)
-    return filtered
 
 
 def _resolve_domain_and_pools(
@@ -148,12 +120,8 @@ def _resolve_domain_and_pools(
         if lc_entries is not None
         else None
     )
-    filtered_lp = (
-        _filter_performance_entries_for_domain(lp_entries, selected_domain, subject)
-        if lp_entries is not None
-        else None
-    )
-    return selected_domain, filtered_lc, filtered_lp
+    # 學習表現 has no 內容領域 parent (#833): the pool passes through unfiltered.
+    return selected_domain, filtered_lc, lp_entries
 
 
 def _assign_cognitive_processes(

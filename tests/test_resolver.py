@@ -102,6 +102,28 @@ def test_resolve_leaves_supplied_social_core_competency_pinned() -> None:
     assert "sub_question_count" in result.drawn
 
 
+def test_pinned_learning_performance_is_unchanged_by_content_domain_for_civic_subject() -> None:
+    """公1c-Ⅳ-1 maps to no ICCS 內容領域 (#833); pinning it must resolve as-is."""
+    payload = {
+        "subject": "social_studies",
+        "seed": 7,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "q_type": ["選擇題"],
+        "subject_filter": ["公民與社會"],
+        "content_domain": "Civic Institutions and Systems",
+        "target_surface": "紙本",
+        "learning_performance": ["公1c-Ⅳ-1"],
+        "content_type": "純文字",
+    }
+
+    result = resolve(payload)
+
+    assert result.payload["learning_performance"] == ["公1c-Ⅳ-1"]
+    assert "learning_performance" not in result.drawn
+
+
 def test_resolve_assigns_a_seed_when_the_request_omits_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(secrets, "randbelow", lambda _upper: 123)
 

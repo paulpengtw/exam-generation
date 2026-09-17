@@ -69,11 +69,35 @@ def test_civic_and_cross_subject_public_learning_content_uses_drawn_domain() -> 
             )
 
 
-def test_domain_filter_applies_to_public_learning_content_and_performance(
+def test_civic_learning_performance_pool_is_drawable_under_every_content_domain() -> None:
+    """公1c-Ⅳ-1 is the only stage-4 公 學習表現 code and maps to no ICCS domain
+
+    (#833): under every 內容領域 it must still be drawable from the 公民與社會
+    學習表現 pool since 學習表現 is never restricted by 內容領域.
+    """
+    from src.social_studies.sampler import sample_params
+    from src.social_studies.schemas import ContentDomain, QuestionSubject
+
+    target_code = "公1c-Ⅳ-1"
+    subject = QuestionSubject("公民與社會")
+    for domain in ContentDomain:
+        observed = {
+            code
+            for seed in range(200)
+            for code in sample_params(
+                seed=seed,
+                subject=[subject],
+                content_domain=domain.value,
+            ).學習表現_pool
+        }
+
+        assert target_code in observed
+
+
+def test_domain_filter_applies_to_public_learning_content_but_not_performance(
     monkeypatch,
 ) -> None:
     from src.social_studies import sampler
-    from src.social_studies.domain_mapping import DomainMapping
     from src.social_studies.schemas import QuestionSubject
 
     domains = [domain.value for domain in sampler.ContentDomain]
@@ -81,19 +105,6 @@ def test_domain_filter_applies_to_public_learning_content_and_performance(
         "公Aa-Ⅳ-1": {domains[0], domains[2]},
         "公Ab-Ⅳ-1": {domains[1], domains[3]},
     }
-    monkeypatch.setattr(
-        sampler,
-        "_DOMAIN_MAPPING",
-        DomainMapping(
-            code_to_domains=code_to_domains,
-            domain_to_codes={
-                domain: {
-                    code for code, code_domains in code_to_domains.items() if domain in code_domains
-                }
-                for domain in domains
-            },
-        ),
-    )
     monkeypatch.setattr(
         sampler,
         "_LC_DATA",
@@ -121,12 +132,21 @@ def test_domain_filter_applies_to_public_learning_content_and_performance(
     )
 
     subject = QuestionSubject("公民與社會")
+    observed_lp_codes: set[str] = set()
     for seed in range(80):
         params = sampler.sample_params(seed=seed, subject=[subject])
-        mapped_codes = sampler._DOMAIN_MAPPING.domain_to_codes[params.內容領域.value]
+        mapped_codes = {
+            code
+            for code, code_domains in code_to_domains.items()
+            if params.內容領域.value in code_domains
+        }
 
         assert set(params.學習內容_pool) <= mapped_codes
-        assert set(params.學習表現_pool) <= mapped_codes
+        observed_lp_codes.update(params.學習表現_pool)
+
+    # 學習表現 is never restricted by 內容領域 (#833): both fixture codes remain
+    # drawable across the seed loop regardless of which domain a seed selected.
+    assert observed_lp_codes == set(code_to_domains)
 
 
 def test_domain_filter_resamples_when_initial_domain_has_no_public_pool(monkeypatch) -> None:
@@ -354,26 +374,6 @@ def test_cross_subject_domain_filter_keeps_unscoped_history_and_geography_codes(
     assert params.學習內容_pool == [history_code, geography_code]
 
 
-def test_history_sampling_is_unchanged_when_domain_mapping_is_absent(monkeypatch) -> None:
-    from src.social_studies import sampler
-    from src.social_studies.domain_mapping import DomainMapping, load_domain_mapping
-    from src.social_studies.schemas import QuestionSubject
-
-    subject = QuestionSubject("歷史")
-    with_mapping = load_domain_mapping()
-    without_mapping = DomainMapping(code_to_domains={}, domain_to_codes={})
-
-    for seed in range(80):
-        monkeypatch.setattr(sampler, "_DOMAIN_MAPPING", with_mapping)
-        mapped = sampler.sample_params(seed=seed, subject=[subject])
-        monkeypatch.setattr(sampler, "_DOMAIN_MAPPING", without_mapping)
-        unmapped = sampler.sample_params(seed=seed, subject=[subject])
-
-        assert mapped.內容領域 == unmapped.內容領域
-        assert mapped.學習內容_pool == unmapped.學習內容_pool
-        assert mapped.學習表現_pool == unmapped.學習表現_pool
-
-
 _KNOWING_DEFINING = "Knowing–Defining and Describing"
 _KNOWING_ILLUSTRATING = "Knowing–Illustrating with examples"
 _REASONING_INTERPRET = "Reasoning and Applying–Interpret information"
@@ -467,9 +467,11 @@ def test_pinned_content_domain_restricts_public_draws_to_that_domain() -> None:
     allowed_codes = load_domain_mapping().domain_to_codes[target.value]
 
     assert params.內容領域 == target
+    # 學習內容 remains restricted to the pinned domain's admitted codes; 學習表現
+    # is never restricted by 內容領域 (#833), so it is intentionally excluded here.
     assert all(
         not code.startswith("公") or code in allowed_codes
-        for code in params.學習內容_pool + params.學習表現_pool
+        for code in params.學習內容_pool
     )
 
 
@@ -477,21 +479,10 @@ def test_pinned_content_domain_is_not_resampled_when_its_public_pool_is_empty(
     monkeypatch,
 ) -> None:
     from src.social_studies import sampler
-    from src.social_studies.domain_mapping import DomainMapping
     from src.social_studies.schemas import ContentDomain, QuestionSubject
 
     target = ContentDomain("Civic Principles")
     code = "公Aa-Ⅳ-1"
-    monkeypatch.setattr(
-        sampler,
-        "_DOMAIN_MAPPING",
-        DomainMapping(
-            code_to_domains={code: {ContentDomain("Civic Institutions and Systems").value}},
-            domain_to_codes={
-                ContentDomain("Civic Institutions and Systems").value: {code},
-            },
-        ),
-    )
     monkeypatch.setattr(
         sampler,
         "_LC_DATA",
