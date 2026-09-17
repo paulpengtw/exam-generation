@@ -349,3 +349,87 @@ describe("#839 科目/內容領域 narrowing by 釘選 codes", () => {
     expect(nestedConfigs[0]).toHaveProperty("learning_performance", [LP_CIVIC]);
   });
 });
+
+// #839/#841 scope fix: 科目-side narrowing (disabled options, hint,
+// aria-invalid, and the 產生 conflict gate) must apply only to the
+// social-studies form. Math (and natural sciences) keep exactly their
+// pre-#839 behaviour even when a pinned 學習內容 code happens to carry an
+// admitted_by["科目"] tag that would exclude other strands.
+const MATH_LC_NUMBER = "N-7-1";
+
+const MATH_SCHEMA = {
+  學習階段: "第四學習階段",
+  grades: [7, 8, 9],
+  情境: [{ value: "個人", instruction: "" }],
+  題型種類: [{ value: "單一題", instruction: "" }],
+  題型: [{ value: "選擇題", instruction: "" }],
+  數學思考: [{ value: "形成", instruction: "" }],
+  question_style: [{ value: "課本", instruction: "" }],
+  題目內容類型: [{ value: "純文字", instruction: "" }],
+  科目: [
+    { value: "數與量", instruction: "" },
+    { value: "代數", instruction: "" },
+    { value: "幾何", instruction: "" },
+    { value: "統計與機率", instruction: "" },
+    { value: "跨領域", instruction: "" },
+  ],
+  學習表現: [
+    { value: "n-IV-1", instruction: "", 科目: "n", admitted_by: { 科目: ["數與量", "跨領域"] } },
+  ],
+  學習內容: [
+    {
+      value: MATH_LC_NUMBER,
+      instruction: "",
+      科目: "N",
+      // Same shape as a social-studies 釘選-narrowing code: admitted_by["科目"]
+      // excludes 代數/幾何/統計與機率. Math must ignore this entirely.
+      admitted_by: { 科目: ["數與量", "跨領域"] },
+    },
+  ],
+  digital_only_question_types: [],
+};
+
+describe("#839/#841 scope: 科目 narrowing never applies to the math form", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    getSchemasMock.mockResolvedValue(MATH_SCHEMA);
+    getAvailableModelsMock.mockResolvedValue({
+      allowed: [],
+      defaults: { plan: "", execute: "", verify: "", correct: "" },
+    });
+    planCoreQuestionsMock.mockResolvedValue({ candidates: [] });
+    previewGenerateMock.mockResolvedValue({ prompts: [] });
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) => ({
+      payload,
+      drawn: [],
+    }));
+  });
+
+  it("disables no 科目 option, shows no hint/aria-invalid, and never blocks 產生", async () => {
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={vi.fn()}
+        disabled={false}
+        initialParams={{ learning_content: [MATH_LC_NUMBER], subject_filter: "代數" }}
+      />,
+    );
+    const generateButton = await screen.findByRole("button", { name: "產生" });
+
+    // A pinned math 學習內容 code whose admitted_by["科目"] excludes
+    // 代數/幾何/統計與機率 must not disable any 科目 option — unlike the
+    // social-studies form, math never gates on this narrowing.
+    await waitFor(() => expect(subjectOption("數與量")).toBeInTheDocument());
+    expect(subjectOption("數與量")).not.toBeDisabled();
+    expect(subjectOption("代數")).not.toBeDisabled();
+    expect(subjectOption("幾何")).not.toBeDisabled();
+    expect(subjectOption("統計與機率")).not.toBeDisabled();
+    expect(subjectOption("跨領域")).not.toBeDisabled();
+
+    expect(subjectSelect().getAttribute("aria-describedby")).toBeNull();
+    expect(subjectSelect().getAttribute("aria-invalid")).toBeNull();
+
+    expect(generateButton).not.toBeDisabled();
+  });
+});

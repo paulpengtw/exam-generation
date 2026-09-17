@@ -2303,15 +2303,23 @@ export default function ParamForm({
     () => (schemas?.科目 ?? []).map((entry) => entry.value),
     [schemas],
   );
-  const subjectFilterNarrowing = useMemo(
-    () => computeParentNarrowing(
+  // #839/#841 scope: 科目-side narrowing (disabled options, hint,
+  // aria-invalid) applies only to the social-studies form — the math and
+  // natural-sciences forms behave exactly as before this branch. The
+  // 內容領域 counterpart already gates on subject via
+  // applyContentDomainNarrowing below.
+  const applySubjectFilterNarrowing = subject === "social_studies";
+  const subjectFilterNarrowing = useMemo(() => {
+    if (!applySubjectFilterNarrowing) {
+      return { disabledValues: new Set<string>(), constrainingCodes: [] };
+    }
+    return computeParentNarrowing(
       allSubjectFilterValues,
       "科目",
       pinnedCurriculumCodeGroups,
       (code) => curriculumCodeLookup.get(code),
-    ),
-    [allSubjectFilterValues, pinnedCurriculumCodeGroups, curriculumCodeLookup],
-  );
+    );
+  }, [applySubjectFilterNarrowing, allSubjectFilterValues, pinnedCurriculumCodeGroups, curriculumCodeLookup]);
   const subjectFilterHint = formatNarrowingHint(
     subjectFilterNarrowing.constrainingCodes,
     lang,
