@@ -5,7 +5,10 @@
  */
 import { act, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { FormWorkspaceSnapshot } from "../lib/workspace/adapters/types";
+import type {
+  ConfirmationWorkspaceSnapshot,
+  FormWorkspaceSnapshot,
+} from "../lib/workspace/adapters/types";
 import { resetWorkspaceStoreForTests, useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { useAuthStore } from "../store/authStore";
 import { saveDraft } from "../lib/formDraft";
@@ -16,13 +19,16 @@ vi.stubGlobal("__BUILD_ENVIRONMENT__", "test");
 // ---- API client module mock ----
 const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
+const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
+const previewGenerateMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
-  planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
-  previewGenerate: vi.fn(async () => ({ prompts: [] })),
-  resolveGenerate: vi.fn(async (payload: Record<string, unknown>) => ({ payload, drawn: [] })),
+  planCoreQuestions: planCoreQuestionsMock,
+  previewGenerate: previewGenerateMock,
+  resolveGenerate: resolveGenerateMock,
 }));
 
 // Default math schema
@@ -114,6 +120,45 @@ const RECOVERED_FORM_WITH_VALUES: FormWorkspaceSnapshot = {
   },
 };
 
+const RECOVERED_CONFIRMATION: ConfirmationWorkspaceSnapshot = {
+  kind: "confirmation",
+  version: 1,
+  pendingParams: {
+    subject: "math",
+    grade: 8,
+    context: ["個人"],
+    set_type: "單一題",
+    q_type: ["選擇題"],
+    count: 2,
+    skip_verify: false,
+    image_generation_mode: "html",
+    seed: 713,
+    drawn: ["context", "per_question_params[0].context"],
+    topic: "confirmation-only-topic",
+    text_instruction: "confirmation text instruction",
+    model_execute: "claude-opus-4-6",
+    effort_execute: "high",
+    per_question_params: JSON.stringify([
+      { context: ["個人"], q_type: ["選擇題"], topic: "first-question" },
+      { context: ["社會"], q_type: ["填充題"], topic: "second-question" },
+    ]),
+  } as never,
+  pendingPerQuestionParams: [
+    { context: ["個人"], q_type: ["選擇題"], topic: "first-question" },
+    { context: ["社會"], q_type: ["填充題"], topic: "second-question" },
+  ],
+  pendingPrefill: {
+    topic: "history-prefill-topic",
+    model_execute: "claude-opus-4-6",
+    image_generation_mode: "gpt_image",
+  },
+  clearedPaths: ["per_question_params[0].context"],
+  redraws: { "per_question_params[0].context": 1 },
+  hasPendingConfirmationEdits: true,
+  coreQuestionResolution: "generated",
+  historyDraftChoice: "history",
+};
+
 beforeEach(() => {
   resetWorkspaceStoreForTests();
   useAuthStore.setState({
@@ -126,6 +171,9 @@ beforeEach(() => {
   // Re-set defaults after clearAllMocks
   getSchemasMock.mockResolvedValue(MATH_SCHEMA);
   getAvailableModelsMock.mockResolvedValue(DEFAULT_MODELS);
+  planCoreQuestionsMock.mockResolvedValue({ candidates: [] });
+  previewGenerateMock.mockResolvedValue({ prompts: [] });
+  resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) => ({ payload, drawn: [] }));
 });
 
 // ---------------------------------------------------------------------------
@@ -181,6 +229,217 @@ describe("ParamForm — recovery restore", () => {
 // ---------------------------------------------------------------------------
 
 describe("ParamForm — recovery restore T2", () => {
+  it("keeps the ordinary recovered form intact when schema and model hydration resolves", async () => {
+    let resolveSchemas!: (value: typeof MATH_SCHEMA) => void;
+    let resolveModels!: (value: typeof DEFAULT_MODELS) => void;
+    getSchemasMock.mockReturnValue(new Promise<typeof MATH_SCHEMA>((resolve) => {
+      resolveSchemas = resolve;
+    }));
+    getAvailableModelsMock.mockReturnValue(new Promise<typeof DEFAULT_MODELS>((resolve) => {
+      resolveModels = resolve;
+    }));
+    const recoveredForm: FormWorkspaceSnapshot = {
+      ...RECOVERED_FORM_WITH_VALUES,
+      fields: {
+        ...RECOVERED_FORM_WITH_VALUES.fields,
+        style: "removed-style",
+        setType: "removed-set-type",
+        modelExecute: "removed-model",
+        effortExecute: "removed-effort",
+      },
+    };
+
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={() => undefined}
+        disabled={false}
+        recoveredForm={recoveredForm}
+      />,
+    );
+
+    await act(async () => {
+      resolveSchemas(MATH_SCHEMA);
+      resolveModels(DEFAULT_MODELS);
+    });
+
+    const exported = useWorkspaceStore.getState().surfaces["generate.form"]?.exportWorkspace?.();
+    expect(exported?.kind === "form" && exported.fields).toMatchObject({
+      style: "removed-style",
+      setType: "removed-set-type",
+      modelExecute: "removed-model",
+      effortExecute: "removed-effort",
+    });
+    expect(screen.getByRole("button", { name: "Generate", exact: true })).toBeDisabled();
+  });
+
+  it("keeps restored confirmation inert even when the captured core-question state is loading", async () => {
+    const confirmation = {
+      ...RECOVERED_CONFIRMATION,
+      coreQuestionResolution: "loading" as const,
+    };
+
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={() => undefined}
+        disabled={false}
+        recoveredForm={RECOVERED_FORM_WITH_VALUES}
+        recoveredConfirmation={confirmation}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("confirmation-only-topic")).toBeInTheDocument());
+    expect(planCoreQuestionsMock).not.toHaveBeenCalled();
+    expect(previewGenerateMock).not.toHaveBeenCalled();
+    expect(resolveGenerateMock).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().operations).toHaveLength(0);
+  });
+
+  it("keeps an invalid restored confirmation value visible and blocks explicit send", async () => {
+    const confirmation: ConfirmationWorkspaceSnapshot = {
+      ...RECOVERED_CONFIRMATION,
+      pendingParams: {
+        ...RECOVERED_CONFIRMATION.pendingParams,
+        q_type: ["removed-qtype"],
+      } as never,
+      pendingPerQuestionParams: [
+        { ...RECOVERED_CONFIRMATION.pendingPerQuestionParams![0], q_type: ["removed-qtype"] },
+        ...RECOVERED_CONFIRMATION.pendingPerQuestionParams!.slice(1),
+      ],
+    };
+
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={() => undefined}
+        disabled={false}
+        recoveredForm={RECOVERED_FORM_WITH_VALUES}
+        recoveredConfirmation={confirmation}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("removed-qtype")).toBeInTheDocument();
+      expect(screen.getByText(/Some restored confirmation values are not valid/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /Confirm & Generate|確認送出/i })).toBeDisabled();
+  });
+
+  it("keeps a restored grade removed from the current schema visible and blocks send", async () => {
+    const invalidConfirmation: ConfirmationWorkspaceSnapshot = {
+      ...RECOVERED_CONFIRMATION,
+      pendingParams: {
+        ...RECOVERED_CONFIRMATION.pendingParams,
+        grade: 10,
+      } as never,
+    };
+
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={() => undefined}
+        disabled={false}
+        recoveredForm={RECOVERED_FORM_EMPTY}
+        recoveredConfirmation={invalidConfirmation}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("10")).toBeInTheDocument();
+      expect(screen.getByText(/Some restored confirmation values are not valid/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /Confirm & Generate|確認送出/i })).toBeDisabled();
+  });
+
+  it("restores settled confirmation before delayed schema/model hydration and submits it unchanged", async () => {
+    let resolveSchemas!: (value: typeof MATH_SCHEMA) => void;
+    let resolveModels!: (value: typeof DEFAULT_MODELS) => void;
+    getSchemasMock.mockReturnValue(new Promise<typeof MATH_SCHEMA>((resolve) => {
+      resolveSchemas = resolve;
+    }));
+    getAvailableModelsMock.mockReturnValue(new Promise<typeof DEFAULT_MODELS>((resolve) => {
+      resolveModels = resolve;
+    }));
+    const onSubmit = vi.fn();
+
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={onSubmit}
+        disabled={false}
+        recoveredForm={RECOVERED_FORM_WITH_VALUES}
+        recoveredConfirmation={RECOVERED_CONFIRMATION}
+      />,
+    );
+
+    expect(screen.getByText("confirmation-only-topic")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /Question 1|第 1 題/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /Question 2|第 2 題/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /確認送出|Confirm & Generate/i })).toBeDisabled();
+    expect(getSchemasMock).toHaveBeenCalled();
+    expect(getAvailableModelsMock).toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSchemas(MATH_SCHEMA);
+      resolveModels(DEFAULT_MODELS);
+    });
+
+    expect(screen.getByText("confirmation-only-topic")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /Question 1|第 1 題/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /Question 2|第 2 題/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /確認送出|Confirm & Generate/i })).not.toBeDisabled();
+    expect(useWorkspaceStore.getState().operations).toHaveLength(0);
+
+    const confirmButton = screen.getByRole("button", { name: /確認送出|Confirm & Generate/i });
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
+
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(onSubmit.mock.calls[0][0]).toEqual({
+      ...RECOVERED_CONFIRMATION.pendingParams,
+      per_question_params: JSON.stringify(RECOVERED_CONFIRMATION.pendingPerQuestionParams),
+    });
+    const formExport = useWorkspaceStore.getState().surfaces["generate.form"]?.exportWorkspace?.();
+    expect(formExport?.kind === "form" && formExport.fields.topic).toBe("unique-topic-xyz");
+  });
+
+  it("keeps confirmation values that the current schema no longer admits and blocks sending", async () => {
+    const invalidConfirmation: ConfirmationWorkspaceSnapshot = {
+      ...RECOVERED_CONFIRMATION,
+      pendingParams: {
+        ...RECOVERED_CONFIRMATION.pendingParams,
+      } as never,
+      pendingPerQuestionParams: [
+        {
+          ...RECOVERED_CONFIRMATION.pendingPerQuestionParams![0],
+          q_type: ["removed-question-type"],
+          learning_content: ["removed-curriculum-code"],
+        },
+        ...RECOVERED_CONFIRMATION.pendingPerQuestionParams!.slice(1),
+      ],
+    };
+
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={() => undefined}
+        disabled={false}
+        recoveredForm={RECOVERED_FORM_EMPTY}
+        recoveredConfirmation={invalidConfirmation}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("removed-question-type")).toBeInTheDocument();
+      expect(screen.getByText("removed-curriculum-code")).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: /確認送出|Confirm & Generate/i })).toBeDisabled();
+  });
+
   it("workspace export has recovered topic before schemas resolve", async () => {
     // Schemas never resolve during this test
     getSchemasMock.mockReturnValue(new Promise(() => {}));
@@ -298,6 +557,28 @@ describe("ParamForm — recovery restore T2", () => {
     if (exported?.kind === "form") {
       expect(exported.fields.modelExecute).toBe("claude-opus-4-6");
     }
+  });
+
+  it("keeps a restored confirmation blocked when model discovery fails", async () => {
+    getAvailableModelsMock.mockRejectedValueOnce(new Error("models unavailable"));
+
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={() => undefined}
+        disabled={false}
+        recoveredForm={RECOVERED_FORM_WITH_VALUES}
+        recoveredConfirmation={RECOVERED_CONFIRMATION}
+      />,
+    );
+
+    await waitFor(() => expect(getAvailableModelsMock).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().surfaces["generate.form"]?.readiness).toBe("hydrating");
+    });
+    expect(screen.getByText("confirmation-only-topic")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Confirm & Generate|確認送出/i })).toBeDisabled();
+    expect(useWorkspaceStore.getState().surfaces["generate.form"]?.readiness).toBe("hydrating");
   });
 
   it("recovered qType value not in schema shows invalid marker and disables submit", async () => {

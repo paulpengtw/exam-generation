@@ -192,6 +192,7 @@ export async function runSaveAndUpdate(
   const workspaceRevisionAtSave = wsState.workspace_revision;
   const userId = authState.user!.id; // safe: evalResult.allowed implies user is set
   const requiredBuildIdAtEval = releaseState.requiredBuildId!;
+  const releaseRevisionAtEval = releaseState.releaseRevision!;
 
   // (c) export the form via the 'generate.form' surface's exportWorkspace
   const formSurface = wsState.surfaces["generate.form"];
@@ -256,12 +257,17 @@ export async function runSaveAndUpdate(
 
   if (
     recheckRelease.status !== "update-required" ||
-    recheckRelease.requiredBuildId === null
+    recheckRelease.requiredBuildId === null ||
+    recheckRelease.releaseRevision === null
   ) {
     cleanup();
     return { ok: false, reason: "target_changed", retryable: false };
   }
   if (recheckRelease.requiredBuildId !== requiredBuildIdAtEval) {
+    cleanup();
+    return { ok: false, reason: "target_changed", retryable: false };
+  }
+  if (recheckRelease.releaseRevision !== releaseRevisionAtEval) {
     cleanup();
     return { ok: false, reason: "target_changed", retryable: false };
   }
