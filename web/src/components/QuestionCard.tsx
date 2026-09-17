@@ -11,6 +11,10 @@ import type {
   ReferenceExampleRecordShape,
 } from "../hooks/useGenerate";
 import { useModificationRun } from "../hooks/useModificationRun";
+import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
+import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
+import { exportModificationWorkspace } from "../lib/workspace/adapters/modificationWorkspace";
+import type { ModificationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 import { useT } from "../i18n/useT";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
@@ -415,6 +419,23 @@ function SubQuestionBlock({
   );
 }
 
+function ModificationParticipation({
+  recordId, questionId, annotations, replacement,
+}: Omit<ModificationWorkspaceSnapshot, "kind" | "version">) {
+  const exportWorkspace = useCallback(() => exportModificationWorkspace({
+    recordId, questionId,
+    annotations: annotations.map(({ segments, instruction }) => ({ segments, instruction })),
+    replacement,
+  }), [recordId, questionId, annotations, replacement]);
+  useSurfaceParticipation("history.modification", {
+    readiness: "ready",
+    hasEditableState: annotations.length > 0,
+    hasReceivedResults: replacement !== null,
+    exportWorkspace,
+  });
+  return null;
+}
+
 export default function QuestionCard({
   question: initialQuestion,
   recordId,
@@ -507,23 +528,30 @@ export default function QuestionCard({
     </>
   );
 
+  const exportSurface = recordId ? "history.modification" : "generate.results";
   const handleDownloadJson = () => {
+    const op = useWorkspaceStore.getState().beginOperation("export_json", exportSurface);
     const json = JSON.stringify(question, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     downloadBlob(blob, `${questionId}.json`);
+    op.end("completed");
   };
 
   const handleDownloadPng = () => {
     if (!question.image_base64) return;
+    const op = useWorkspaceStore.getState().beginOperation("export_image", exportSurface);
     const blob = base64ToBlob(question.image_base64, "image/png");
     downloadBlob(blob, `${questionId}.png`);
+    op.end("completed");
   };
 
   const handleDownloadOdt = () => {
+    const op = useWorkspaceStore.getState().beginOperation("export_odt", exportSurface);
     const ts = formatTimestamp();
     buildExamOdt(`exam_${ts}`, [question]).then((blob) => {
       downloadBlob(blob, `exam_${ts}.odt`);
-    });
+      op.end("completed");
+    }).catch(() => op.end("failed"));
   };
 
   const handleSelectionMouseUp = useCallback(() => {
@@ -593,6 +621,14 @@ export default function QuestionCard({
       onMouseUp={handleSelectionMouseUp}
       className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3"
     >
+      {recordId && (
+        <ModificationParticipation
+          recordId={recordId}
+          questionId={questionId}
+          annotations={annotations}
+          replacement={modificationResult}
+        />
+      )}
       {isRunInFlight && (
         <GenerationStatusBar
           runState="running"

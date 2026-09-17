@@ -581,3 +581,31 @@ describe("HistoryDetail", () => {
     );
   });
 });
+
+import { act } from "@testing-library/react";
+import { resetWorkspaceStoreForTests, useWorkspaceStore } from "../lib/workspace/workspaceStore";
+
+describe("HistoryDetail workspace readiness", () => {
+  it.each([true, false])("becomes ready after loading succeeds=%s and rehydrates for another record", async (success) => {
+    resetWorkspaceStoreForTests();
+    let resolve!: (value: unknown) => void;
+    let reject!: (error: Error) => void;
+    getDetailMock.mockReturnValueOnce(new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const { rerender, unmount } = render(<MemoryRouter><HistoryDetail recordId="first" /></MemoryRouter>);
+    expect(useWorkspaceStore.getState().surfaces["history.detail"]).toMatchObject({
+      readiness: "hydrating", hasEditableState: false, hasReceivedResults: false,
+    });
+    await act(async () => {
+      if (success) resolve({ id: "first", subject: "math", question_json: { id: "q1" }, params_json: {} });
+      else reject(new Error("load failed"));
+    });
+    expect(useWorkspaceStore.getState().surfaces["history.detail"]?.readiness).toBe("ready");
+    getDetailMock.mockReturnValueOnce(new Promise((yes) => { resolve = yes; }));
+    rerender(<MemoryRouter><HistoryDetail recordId="second" /></MemoryRouter>);
+    expect(useWorkspaceStore.getState().surfaces["history.detail"]?.readiness).toBe("hydrating");
+    await act(async () => { resolve({ id: "second", subject: "math", question_json: { id: "q2" }, params_json: {} }); });
+    expect(useWorkspaceStore.getState().surfaces["history.detail"]?.readiness).toBe("ready");
+    unmount();
+    expect(useWorkspaceStore.getState().surfaces["history.detail"]).toBeUndefined();
+  });
+});

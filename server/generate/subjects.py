@@ -14,11 +14,12 @@ import dataclasses
 import json
 import os
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
 from src.cli import _math_params_from_resolved as _math_params_from_resolved_impl
 from src.cli import build_generation_prompts as _math_build_prompts_impl
 from src.cli import generate_with_corrections as _math_generate_with_corrections
+from src.common.admission import admitted_parents_by_code
 from src.common.batch_dedup import (
     extract_math_prior_scope,
     extract_ns_prior_scope,
@@ -279,25 +280,6 @@ def _resolve_stage(schemas: dict, grade: int | None) -> str:
     return schemas.get("學習階段", "")
 
 
-def _curriculum_admitted_subjects_by_code(
-    loader: Callable[[], dict],
-    key: Literal["學習內容", "學習表現"],
-) -> dict[str, list[str]]:
-    data = loader()
-    by_code: dict[str, list[str]] = {}
-    for entry in data.get(key, []):
-        if not isinstance(entry, dict) or not isinstance(entry.get("value"), str):
-            continue
-        admitted_subjects = entry.get("admitted_by", {}).get("科目")
-        if not isinstance(admitted_subjects, list):
-            continue
-        existing = by_code.setdefault(entry["value"], [])
-        for subject in admitted_subjects:
-            if isinstance(subject, str) and subject not in existing:
-                existing.append(subject)
-    return by_code
-
-
 def _validate_curriculum_subject_pairs(
     params: Any,
     *,
@@ -310,11 +292,11 @@ def _validate_curriculum_subject_pairs(
         return
 
     admissions = {
-        "learning_content": _curriculum_admitted_subjects_by_code(
-            load_content, "學習內容"
+        "learning_content": admitted_parents_by_code(
+            load_content(), "學習內容", "科目"
         ),
-        "learning_performance": _curriculum_admitted_subjects_by_code(
-            load_performance, "學習表現"
+        "learning_performance": admitted_parents_by_code(
+            load_performance(), "學習表現", "科目"
         ),
     }
     subject_label = "、".join(subjects)

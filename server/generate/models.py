@@ -279,7 +279,7 @@ class ResolveFieldError(BaseModel):
     """Field-addressed resolver error used by the 422 response contract."""
 
     field: str
-    code: Literal["incompatible_parent", "unresolved"]
+    code: Literal["incompatible_parent", "no_admitting_parent", "unresolved"]
     parent: str | None = None
 
 
