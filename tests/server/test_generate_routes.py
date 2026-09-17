@@ -35,7 +35,8 @@ from src.common.resolver import resolve
 
 def _complete_query_params(payload: dict[str, Any]) -> dict[str, Any]:
     """Encode a resolver-complete payload for the GET route's wire shape."""
-    completed = resolve(payload).payload
+    completed = dict(resolve(payload).payload)
+    completed["stream_version"] = 2
     rows = completed.get("per_question_params")
     if isinstance(rows, list):
         for row in rows:
@@ -82,6 +83,7 @@ def test_generate_route_rejects_unresolved_top_level_field() -> None:
                     "learning_content": "A-7-7",
                     "learning_performance": "s-IV-12",
                     "core_competency": "數-J-A2",
+                    "stream_version": 2,
                 },
             )
     finally:
@@ -135,6 +137,7 @@ def test_generate_route_rejects_unresolved_per_question_field() -> None:
                     "subject": "math",
                     "seed": 41,
                     "count": 2,
+                    "stream_version": 2,
                     "per_question_params": json.dumps(rows, ensure_ascii=False),
                 },
             )
@@ -183,6 +186,7 @@ def test_generate_route_rejects_unresolved_subquestion_field() -> None:
                     "subject": "natural_sciences",
                     "seed": 41,
                     "grade": 8,
+                    "stream_version": 2,
                     "context": "Personal",
                     "sub_context": "Maintenance of health",
                     "set_type": "題組題",
@@ -322,6 +326,7 @@ def test_generate_route_reports_incompatible_parent_with_resolver_shape() -> Non
                     "subject": "natural_sciences",
                     "seed": 1,
                     "grade": 8,
+                    "stream_version": 2,
                     "context": "Global",
                     "sub_context": "Maintenance of health",
                     "set_type": "單一題",
@@ -421,6 +426,7 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
                 if value is not None
             }
 
+            wire_payload["stream_version"] = 2
             generate_response = client.get("/api/generate", params=wire_payload)
             preview_response = client.get("/api/generate/preview", params=wire_payload)
     finally:
@@ -432,8 +438,13 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
     assert generate_response.status_code == 200, generate_response.text
     assert preview_response.status_code == 200, preview_response.text
     expected = submitted.model_dump(mode="json")
-    assert captured["generate"].model_dump(mode="json") == expected
-    assert captured["preview"].model_dump(mode="json") == expected
+    # stream_version is a server-only transport field; exclude from the round-trip check
+    captured_generate = captured["generate"].model_dump(mode="json")
+    captured_preview = captured["preview"].model_dump(mode="json")
+    for d in (captured_generate, captured_preview, expected):
+        d.pop("stream_version", None)
+    assert captured_generate == expected
+    assert captured_preview == expected
 
 
 def test_generate_route_returns_422_for_empty_enum_value() -> None:
@@ -468,7 +479,7 @@ def test_generate_route_rejects_malformed_per_question_params() -> None:
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.get(
                 "/api/generate",
-                params={"per_question_params": "{not-json"},
+                params={"per_question_params": "{not-json", "stream_version": 2},
             )
     finally:
         limiter.reset()
@@ -490,7 +501,7 @@ def test_generate_route_rejects_count_above_ten(count: int) -> None:
 
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
-            response = client.get("/api/generate", params={"count": count})
+            response = client.get("/api/generate", params={"count": count, "stream_version": 2})
     finally:
         limiter.reset()
 
@@ -811,11 +822,11 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
     results = [event for event in events if event["event"] == "result"]
 
     assert len(updates) == 1
-    assert updates[0]["data"]["index"] == 0
-    assert updates[0]["data"]["phase"] == "draft"
-    assert updates[0]["data"]["question"]["image_base64"] == "ZHJhZnQtcG5n"
+    assert updates[0]["payload"]["index"] == 0
+    assert updates[0]["payload"]["phase"] == "draft"
+    assert updates[0]["payload"]["question"]["image_base64"] == "ZHJhZnQtcG5n"
     assert len(results) == 1
-    assert results[0]["data"]["image_base64"] == "ZHJhZnQtcG5n"
+    assert results[0]["payload"]["image_base64"] == "ZHJhZnQtcG5n"
 
 
 def test_generate_route_accepts_difficulty_query_param() -> None:
@@ -1339,7 +1350,7 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
     assert len({entry["question_id"] for entry in log.figure_policy_trail_json}) == 2
     policy_events = [event for event in emitted_events if event["event"] == "trail"]
     assert len(policy_events) == 2
-    assert all(event["data"]["code"] == "figure_policy" for event in policy_events)
+    assert all(event["payload"]["code"] == "figure_policy" for event in policy_events)
 
 
 def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_path) -> None:
@@ -1618,7 +1629,8 @@ def test_generate_route_rejects_unknown_subject_422() -> None:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=typo",
+                "/api/generate",
+                params={"subject": "typo", "stream_version": 2},
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -1743,8 +1755,8 @@ def test_service_worker_error_event_is_structured(tmp_path) -> None:
 
     error_events = [e for e in events if e["event"] == "error"]
     assert len(error_events) == 1, f"expected 1 error event, got: {error_events}"
-    data = error_events[0]["data"]
-    # data must be a dict with code and message
+    data = error_events[0]["payload"]
+    # payload must be a dict with code and message
     assert isinstance(data, dict), f"expected dict, got {type(data)}: {data!r}"
     assert data["code"] == "generation_failed"
     assert "message" in data
@@ -2035,7 +2047,7 @@ def test_generate_422_emits_warning_free_of_user_content(caplog) -> None:
                     # Malformed JSON with embedded sentinel so any echo would be detectable.
                     response = client.get(
                         "/api/generate",
-                        params={"per_question_params": f"{{{SENTINEL}"},
+                        params={"per_question_params": f"{{{SENTINEL}", "stream_version": 2},
                     )
         finally:
             gen_routes.logger.removeHandler(caplog.handler)

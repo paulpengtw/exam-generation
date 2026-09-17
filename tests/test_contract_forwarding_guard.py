@@ -502,6 +502,12 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
         _SS: (FORWARDED, ""),
         _NS: (FORWARDED, ""),
     },
+    # ── stream_version — server-only transport version gate (issue #742) ──
+    "stream_version": {
+        _MA: (INAPPLICABLE, "server-only: transport version gate, excluded from subject dispatch"),
+        _SS: (INAPPLICABLE, "server-only: transport version gate, excluded from subject dispatch"),
+        _NS: (INAPPLICABLE, "server-only: transport version gate, excluded from subject dispatch"),
+    },
 }
 
 # ── Structural forwarding proofs ───────────────────────────────────────────────
@@ -1007,4 +1013,4 @@ def test_classification_counts() -> None:
     assert forwarded == 105, f"Expected 105 FORWARDED, got {forwarded}"
     # +4 SS-only fields + math text instruction
     assert rejected     == 9,  f"Expected 9 REJECTED, got {rejected}"
-    assert inapplicable == 27, f"Expected 27 INAPPLICABLE, got {inapplicable}"
+    assert inapplicable == 30, f"Expected 30 INAPPLICABLE, got {inapplicable}"

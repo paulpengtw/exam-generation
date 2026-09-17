@@ -5,32 +5,14 @@ import {
   submitModificationBatch,
   type ModificationBatchRequest,
 } from "../api/client";
-import type { AdmissionState, ExamQuestion } from "./useGenerate";
+import type { AdmissionState } from "./useGenerate";
 import { useAuthStore } from "../store/authStore";
 import { useWorkspaceStore, type OperationHandle, type OperationOutcome } from "../lib/workspace/workspaceStore";
+import { decodeModificationEvent, type ModificationStageEvent, type ModificationRunResult } from "../lib/modificationStream";
+
+export type { ModificationStageName, ModificationStageEvent, ModificationRunResult } from "../lib/modificationStream";
 
 export type ModificationRunStatus = "idle" | "running" | "completed" | "error";
-export type ModificationStageName = "modification" | "verify" | "correct";
-
-export interface ModificationStageEvent {
-  type: "stage";
-  agent: string;
-  stage: ModificationStageName;
-  step: string;
-  status: "start" | "end" | "error";
-  ts: number;
-  retry?: number;
-  message?: string;
-}
-
-export interface ModificationRunResult {
-  record_id: string | null;
-  question: ExamQuestion;
-  ripple_report: string[];
-  verified: boolean;
-  verification: unknown;
-  failure_details: string | null;
-}
 
 export interface UseModificationRunReturn {
   status: ModificationRunStatus;
@@ -40,71 +22,6 @@ export interface UseModificationRunReturn {
   result: ModificationRunResult | null;
   error: unknown | null;
   start: (batch: ModificationBatchRequest) => Promise<void>;
-}
-
-function parseJson(raw: string): unknown {
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    return raw;
-  }
-}
-
-function parseStage(raw: string): ModificationStageEvent | null {
-  const parsed = parseJson(raw);
-  if (parsed === null || typeof parsed !== "object") return null;
-  const data = parsed as Record<string, unknown>;
-  const stage = data.stage;
-  const status = data.status;
-  if (
-    (stage !== "modification" && stage !== "verify" && stage !== "correct") ||
-    (status !== "start" && status !== "end" && status !== "error") ||
-    typeof data.agent !== "string" ||
-    typeof data.step !== "string" ||
-    typeof data.ts !== "number"
-  ) {
-    return null;
-  }
-  return {
-    type: "stage",
-    agent: data.agent,
-    stage,
-    step: data.step,
-    status,
-    ts: data.ts,
-    ...(typeof data.retry === "number" ? { retry: data.retry } : {}),
-    ...(typeof data.message === "string" ? { message: data.message } : {}),
-  };
-}
-
-function parseResult(raw: string): ModificationRunResult | null {
-  const parsed = parseJson(raw);
-  if (parsed === null || typeof parsed !== "object") return null;
-  const data = parsed as Record<string, unknown>;
-  if (data.question === null || typeof data.question !== "object") return null;
-  return {
-    record_id: typeof data.record_id === "string" ? data.record_id : null,
-    question: data.question as ExamQuestion,
-    ripple_report: Array.isArray(data.ripple_report)
-      ? data.ripple_report.filter((path): path is string => typeof path === "string")
-      : [],
-    verified: data.verified === true,
-    verification: data.verification ?? null,
-    failure_details: typeof data.failure_details === "string"
-      ? data.failure_details
-      : null,
-  };
-}
-
-function parseError(raw: string): Error {
-  const parsed = parseJson(raw);
-  if (parsed !== null && typeof parsed === "object") {
-    const message = (parsed as Record<string, unknown>).message;
-    if (typeof message === "string" && message.length > 0) {
-      return new Error(message);
-    }
-  }
-  return new Error(raw || "Modification stream failed");
 }
 
 export function useModificationRun(recordId?: string): UseModificationRunReturn {
@@ -197,24 +114,29 @@ export function useModificationRun(recordId?: string): UseModificationRunReturn 
           },
           onmessage(event) {
             if (!isCurrent()) return;
-            if (event.event === "stage") {
-              const stage = parseStage(event.data);
-              if (stage) setStageEvents((previous) => [...previous, stage]);
+            const decoded = decodeModificationEvent(event.event, event.data);
+            if (decoded === null) {
+              // A malformed result clears any earlier buffered result, as before.
+              if (event.event === "result") terminalResult = null;
               return;
             }
-            if (event.event === "result") {
-              terminalResult = parseResult(event.data);
+            if (decoded.kind === "stage") {
+              setStageEvents((previous) => [...previous, decoded.event]);
               return;
             }
-            if (event.event === "error") {
+            if (decoded.kind === "result") {
+              terminalResult = decoded.result;
+              return;
+            }
+            if (decoded.kind === "error") {
               streamFailed = true;
-              setError(parseError(event.data));
+              setError(decoded.error);
               setStatus("error");
               endOperation("failed");
               return;
             }
-            if (event.event === "done") {
-              const doneResult = parseResult(event.data) ?? terminalResult;
+            if (decoded.kind === "done") {
+              const doneResult = decoded.result ?? terminalResult;
               if (streamFailed) return;
               if (doneResult === null) {
                 setError(new Error("Modification stream ended without a result"));

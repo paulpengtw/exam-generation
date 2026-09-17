@@ -267,8 +267,8 @@ def test_renderer_is_returned_to_pool_after_run_completes(tmp_path: Path) -> Non
         e
         for e in events
         if e["event"] == "pipeline"
-        and isinstance(e.get("data"), dict)
-        and e["data"].get("event_name") == "pipeline_start"
+        and isinstance(e.get("payload", e.get("data")), dict)
+        and e.get("payload", e.get("data", {})).get("event_name") == "pipeline_start"
     ]
     assert pipeline_start_events, "expected at least one pipeline_start event"
 
@@ -319,8 +319,8 @@ def test_aborted_run_does_not_hold_renderer_while_worker_is_blocked(tmp_path: Pa
         async for evt in stream:
             if (
                 evt["event"] == "pipeline"
-                and isinstance(evt.get("data"), dict)
-                and evt["data"].get("event_name") == "pipeline_start"
+                and isinstance(evt.get("payload", evt.get("data")), dict)
+                and evt.get("payload", evt.get("data", {})).get("event_name") == "pipeline_start"
             ):
                 break
 
@@ -411,8 +411,8 @@ def test_batch_brief_planning_does_not_block_event_loop(tmp_path: Path) -> None:
                     ticks_at_started = ticks
                 elif (
                     evt["event"] == "pipeline"
-                    and isinstance(evt.get("data"), dict)
-                    and evt["data"].get("event_name") == "pipeline_start"
+                    and isinstance(evt.get("payload", evt.get("data")), dict)
+                    and evt.get("payload", evt.get("data", {})).get("event_name") == "pipeline_start"  # noqa: E501
                 ):
                     ticks_at_pipeline_start = ticks
                     break  # measurement complete; drain the rest below
@@ -473,20 +473,20 @@ def test_batch_briefs_stage_events_emitted_before_pipeline_start(tmp_path: Path)
         e
         for e in events
         if e["event"] == "stage"
-        and isinstance(e.get("data"), dict)
-        and e["data"].get("agent") == "planner"
-        and e["data"].get("stage") == "batch_briefs"
+        and isinstance(e.get("payload", e.get("data")), dict)
+        and e.get("payload", e.get("data", {})).get("agent") == "planner"
+        and e.get("payload", e.get("data", {})).get("stage") == "batch_briefs"
     ]
     assert len(planner_stages) == 2, (
         f"expected 2 planner/batch_briefs stage events (start + end); got {len(planner_stages)}"
     )
-    assert planner_stages[0]["data"]["status"] == "start", (
+    assert planner_stages[0].get("payload", planner_stages[0].get("data", {})).get("status") == "start", (  # noqa: E501
         f"first planner/batch_briefs event should have status 'start'; "
-        f"got {planner_stages[0]['data']['status']!r}"
+        f"got {planner_stages[0].get('payload', planner_stages[0].get('data', {})).get('status')!r}"
     )
-    assert planner_stages[1]["data"]["status"] == "end", (
+    assert planner_stages[1].get("payload", planner_stages[1].get("data", {})).get("status") == "end", (  # noqa: E501
         f"second planner/batch_briefs event should have status 'end'; "
-        f"got {planner_stages[1]['data']['status']!r}"
+        f"got {planner_stages[1].get('payload', planner_stages[1].get('data', {})).get('status')!r}"
     )
 
     # Both stage events must appear before pipeline_start
@@ -494,8 +494,8 @@ def test_batch_briefs_stage_events_emitted_before_pipeline_start(tmp_path: Path)
         i
         for i, e in enumerate(events)
         if e["event"] == "pipeline"
-        and isinstance(e.get("data"), dict)
-        and e["data"].get("event_name") == "pipeline_start"
+        and isinstance(e.get("payload", e.get("data")), dict)
+        and e.get("payload", e.get("data", {})).get("event_name") == "pipeline_start"
     ]
     assert pipeline_start_indices, "expected at least one pipeline_start event"
     first_pipeline_start_idx = pipeline_start_indices[0]
@@ -503,7 +503,7 @@ def test_batch_briefs_stage_events_emitted_before_pipeline_start(tmp_path: Path)
     for stage_evt in planner_stages:
         stage_idx = events.index(stage_evt)
         assert stage_idx < first_pipeline_start_idx, (
-            f"planner/batch_briefs stage event (status={stage_evt['data']['status']!r}) "
+            f"planner/batch_briefs stage event (status={stage_evt.get('payload', stage_evt.get('data', {})).get('status')!r}) "  # noqa: E501
             f"at index {stage_idx} must appear before pipeline_start at "
             f"index {first_pipeline_start_idx}"
         )
@@ -795,8 +795,8 @@ def test_aclose_early_does_not_lose_renderer(tmp_path: Path) -> None:
         # Next event is planner/batch_briefs/start (not renderer/acquire/start)
         e2 = await stream.__anext__()
         assert e2["event"] == "stage"
-        assert e2["data"]["agent"] == "planner", (
-            f"first stage event after started must be planner; got {e2['data']['agent']!r}"
+        assert e2.get("payload", e2.get("data", {})).get("agent") == "planner", (
+            f"first stage event after started must be planner; got {e2.get('payload', e2.get('data', {})).get('agent')!r}"  # noqa: E501
         )
         assert pool.qsize() == 1, "pool must stay full before planning (no stream-level hold)"
 

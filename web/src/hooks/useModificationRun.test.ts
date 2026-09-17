@@ -110,6 +110,19 @@ describe("modification admission", () => {
     expect(useWorkspaceStore.getState().operations).toEqual([]);
   });
 
+  it("clears a buffered result when a later result is malformed", async () => {
+    const { result } = renderHook(() => useModificationRun("record-1"));
+    await act(async () => { await result.current.start(batch); });
+    event("result", completedResult);
+    event("result", { question: null });
+    event("done");
+
+    expect(result.current.result).toBeNull();
+    expect(result.current.status).toBe("error");
+    expect(result.current.error).toEqual(new Error("Modification stream ended without a result"));
+    expect(end).toHaveBeenCalledWith("failed");
+  });
+
   it.each([false, true])("ends on unmount with admitted=%s and ignores late responses", async (admitted) => {
     const pending = deferred<Awaited<ReturnType<typeof submitModificationBatch>>>();
     if (!admitted) vi.mocked(submitModificationBatch).mockReturnValue(pending.promise);

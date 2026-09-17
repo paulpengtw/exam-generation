@@ -132,7 +132,7 @@ it.each(batches)("submits a large complete $subject batch once and receives its 
   expect(result.current.errorMessage).toBeNull();
   expect(result.current.results).toEqual([{ id: "transport-result", 題目: ["完整題目"] }]);
   expect(received).toEqual([{
-    url: "/api/generate", method: "POST", body: payload,
+    url: "/api/generate", method: "POST", body: { ...payload, stream_version: 2 },
     authorization: "Bearer test-token",
   }]);
 });
@@ -241,7 +241,7 @@ it("shows the nested field and validation message when a malformed POST is rejec
   // fetch-event-source retries after 1s unless the HTTP rejection is fatal.
   await new Promise((resolve) => setTimeout(resolve, 1100));
   expect(received).toEqual([{
-    url: "/api/generate", method: "POST", body: payload,
+    url: "/api/generate", method: "POST", body: { ...payload, stream_version: 2 },
     authorization: "Bearer test-token",
   }]);
 });

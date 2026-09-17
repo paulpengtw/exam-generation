@@ -1064,3 +1064,255 @@ describe("workspace operation", () => {
     unmount();
   });
 });
+
+// ---------------------------------------------------------------------------
+// F3: Generation stream v2 — hook integration tests
+// ---------------------------------------------------------------------------
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { RunEvidenceState } from "../lib/generationEvidence";
+
+function sendV2Event(event: string, context: Record<string, unknown>, payload: unknown) {
+  act(() => {
+    latestStreamOptions().onmessage?.({
+      id: "",
+      event,
+      data: JSON.stringify({ context, payload }),
+    });
+  });
+}
+
+const V2_STARTED_DATA = {
+  context: { run_id: "RUN", event_seq: 1 },
+  payload: {
+    protocol_version: 2,
+    total: 2,
+    questions: [
+      { index: 0, question_id: "q_RUN_001" },
+      { index: 1, question_id: "q_RUN_002" },
+    ],
+    generation_log_id: null,
+  },
+};
+
+const sampleQ = (id: string) => ({
+  id,
+  情境: ["個人"],
+  題型種類: "單一題",
+  題型: "選擇題",
+  題目: [`question for ${id}`],
+  正確解題分析: ["answer"],
+  出題概念: "",
+  誘答分析: {},
+});
+
+describe("F3: stream_version 2 in POST body", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sends stream_version 2 in the POST body", () => {
+    renderStartedRun();
+    const opts = latestStreamOptions();
+    const body = JSON.parse(opts.body as string);
+    expect(body.stream_version).toBe(2);
+  });
+});
+
+describe("F3: v2 fixture replay", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("replays math_single_interleaved.jsonl: 2 placeholders after started, B filled first, 2/2 at done", () => {
+    const fixtureLines = readFileSync(
+      resolve(__dirname, "../../../tests/fixtures/generation_v2/math_single_interleaved.jsonl"),
+      "utf-8",
+    ).trim().split("\n").map((l) => JSON.parse(l) as {
+      event: string;
+      context: Record<string, unknown>;
+      payload: unknown;
+    });
+
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math", count: 2 }); });
+
+    // Assert stream_version 2 in body
+    const body = JSON.parse(latestStreamOptions().body as string);
+    expect(body.stream_version).toBe(2);
+
+    let bFilledBeforeA = false;
+    let aFilled = false;
+
+    for (const line of fixtureLines) {
+      act(() => {
+        latestStreamOptions().onmessage?.({
+          id: "",
+          event: line.event,
+          data: JSON.stringify({ context: line.context, payload: line.payload }),
+        });
+      });
+      const ev = result.current as unknown as { evidence: RunEvidenceState | null };
+      const evState = ev.evidence;
+      if (!evState) continue;
+
+      // Check placeholders after started
+      if (line.event === "started") {
+        expect(evState.total).toBe(2);
+        expect(evState.order).toEqual(["q_RUN_001", "q_RUN_002"]);
+        expect(evState.questions["q_RUN_001"].content.receipt).toBe("none");
+        expect(evState.questions["q_RUN_002"].content.receipt).toBe("none");
+      }
+
+      // Check B filled before A (B is index 1, result arrives at seq 18)
+      if (evState.questions["q_RUN_002"].content.receipt === "final" && evState.questions["q_RUN_001"].content.receipt !== "final") {
+        bFilledBeforeA = true;
+      }
+      if (evState.questions["q_RUN_001"].content.receipt === "final") {
+        aFilled = true;
+      }
+    }
+
+    expect(bFilledBeforeA).toBe(true);
+    expect(aFilled).toBe(true);
+
+    const finalEv = result.current as unknown as { evidence: RunEvidenceState | null };
+    const finalState = finalEv.evidence!;
+    expect(finalState.closed).toBe(true);
+    // Both questions have terminals (ended count)
+    const endedCount = Object.values(finalState.questions).filter((q) => q.terminal !== null).length;
+    expect(endedCount).toBe(2);
+    // Both have final receipt
+    const finalCount = Object.values(finalState.questions).filter((q) => q.content.receipt === "final").length;
+    expect(finalCount).toBe(2);
+  });
+});
+
+describe("F3: unknown protocol → abort and error", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets status error on unknown_protocol and does not call generate a second time", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({
+          context: { run_id: "RUN", event_seq: 1 },
+          payload: { protocol_version: 99, total: 1, questions: [{ index: 0, question_id: "q1" }] },
+        }),
+      });
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toBeTruthy();
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1); // no retry
+  });
+});
+
+describe("F3: missing started then done → no placeholders, error", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets status error and no evidence when done arrives before started", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "done",
+        data: JSON.stringify({ context: { run_id: "RUN", event_seq: 1 }, payload: {} }),
+      });
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toBeTruthy();
+    const ev = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev.evidence).toBeNull();
+  });
+});
+
+describe("F3: stale started from previous generation ignored", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("ignores started event from a superseded generation", async () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+    const staleOpts = latestStreamOptions();
+
+    // Start a new generation (supersedes the first)
+    act(() => { result.current.generate({ subject: "math" }); });
+    expect(result.current.admission).toBe("submitting");
+
+    // Send v2 started on the stale connection
+    act(() => {
+      staleOpts.onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // Evidence should still be null (stale callback ignored)
+    const ev = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev.evidence).toBeNull();
+    expect(result.current.admission).toBe("submitting");
+  });
+});
+
+describe("F3: terminal-before-final then final fills", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("shows finalPending then cleared when final arrives after terminal", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    // v2 started
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "", event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // terminal arrives for q_RUN_001 before result
+    sendV2Event("question_terminal", { run_id: "RUN", event_seq: 5, question_id: "q_RUN_001", index: 0 }, {
+      termination_reason: "normal", has_final: true, final_revision: 1,
+      delivery_status: "complete", expected: [], delivered: [], missing: [],
+      review: { status: "passed", content_revision: 1 },
+    });
+
+    const ev1 = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev1.evidence?.questions["q_RUN_001"].finalPending).toBe(true);
+
+    // now result arrives
+    sendV2Event("result", { run_id: "RUN", event_seq: 6, question_id: "q_RUN_001", index: 0, content_revision: 1 }, sampleQ("q_RUN_001"));
+
+    const ev2 = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev2.evidence?.questions["q_RUN_001"].finalPending).toBe(false);
+    expect(ev2.evidence?.questions["q_RUN_001"].content.receipt).toBe("final");
+  });
+});
+
+describe("F3: final without terminal then done → processing unknown", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("leaves processing unknown when stream closes without terminal", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({ id: "", event: "started", data: JSON.stringify(V2_STARTED_DATA) });
+    });
+
+    // result for q_RUN_001 without terminal
+    sendV2Event("result", { run_id: "RUN", event_seq: 5, question_id: "q_RUN_001", index: 0, content_revision: 1 }, sampleQ("q_RUN_001"));
+
+    // done
+    sendV2Event("done", { run_id: "RUN", event_seq: 6 }, {});
+
+    const ev = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev.evidence?.questions["q_RUN_001"].processing).toBe("unknown");
+    expect(ev.evidence?.questions["q_RUN_001"].content.receipt).toBe("final");
+    expect(ev.evidence?.closed).toBe(true);
+  });
+});
