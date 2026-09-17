@@ -1658,3 +1658,106 @@ def test_resolve_row_domain_conflict_without_a_redraw_counter_still_rejects() ->
             "parent": "Civic Participation",
         }
     ]
+
+
+# ── #837 regression: chained clearing across two rounds in one resolve() ──
+
+
+def _chained_clearing_payload() -> dict:
+    """Needs two clearing rounds in one ``resolve()`` call.
+
+    ``subject_filter=["公民與社會"]`` is pinned single-valued, and the
+    request-level ``learning_content=["地Aa-Ⅳ-1"]`` pin (admitted only by
+    歷史/跨科) is incompatible with it — a first-round 科目 conflict. Clearing
+    it (a 科目 重抽 counter > 0) drops the top-level 學習內容 pin and
+    resamples, which then surfaces a second, independent conflict: the
+    pinned ``content_domain="Civic Participation"`` does not admit the
+    row-0 ``公Bj-Ⅳ-1`` pin (admitted only by "Civic Institutions and
+    Systems") — a 內容領域 conflict that only a second round can clear.
+    Verified interactively against ``src/common/admission.py`` before
+    writing this fixture (see the fix-wave report for the exact payload).
+    """
+    return {
+        "subject": "social_studies",
+        "seed": 23,
+        "grade": 7,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "content_type": "純文字",
+        "target_surface": "紙本",
+        "core_competency": ["社-J-A1"],
+        "subject_filter": ["公民與社會"],
+        "content_domain": "Civic Participation",
+        "learning_content": ["地Aa-Ⅳ-1"],
+        "learning_performance": ["社1a-Ⅳ-1"],
+        "sub_question_count": 3,
+        "subquestion_configs": [
+            {"learning_content": ["公Bj-Ⅳ-1"]},
+            {},
+            {},
+        ],
+    }
+
+
+def test_resolve_chains_a_subject_clear_into_a_domain_clear_in_one_call() -> None:
+    """Both counters set: the 科目 conflict clears first, the resample's
+
+    fresh 內容領域 conflict clears second, and the fully-resolved payload
+    re-resolves identically (idempotent, per the resolver's own contract).
+    """
+    result = resolve(_chained_clearing_payload(), redraws={"科目": 1, "內容領域": 1})
+
+    assert result.cleared == ["學習內容", "subquestion_configs[0].learning_content"]
+    assert "地Aa-Ⅳ-1" not in (result.payload["learning_content"] or [])
+    assert result.payload["learning_content"]
+    row0 = result.payload["subquestion_configs"][0]
+    assert "公Bj-Ⅳ-1" not in (row0.get("learning_content") or [])
+    assert row0["learning_content"]
+
+    second = resolve(result.payload)
+    assert second.payload == result.payload
+    assert second.drawn == []
+    assert second.cleared == []
+
+
+def test_resolve_chained_clearing_with_only_the_subject_counter_still_rejects() -> None:
+    """Only the 科目 counter is set: the first round clears fine, but the
+
+    surfaced 內容領域 conflict has no counter to clear it, so ``resolve()``
+    raises ``ResolveConflictError`` naming that second conflict (never the
+    already-cleared first one).
+    """
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(_chained_clearing_payload(), redraws={"科目": 1})
+
+    assert exc_info.value.errors == [
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        }
+    ]
+
+
+def test_resolve_exhausted_clear_rounds_raises_resolve_conflict_not_parent_admission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the bounded clearing loop is exhausted before converging,
+
+    ``resolve()`` must still raise ``ResolveConflictError`` — never let the
+    sampler's internal ``ParentAdmissionError`` escape unconverted.
+    """
+    from src.common import resolver as resolver_module
+
+    monkeypatch.setattr(resolver_module, "_MAX_ADMISSION_CLEAR_ROUNDS", 1)
+
+    with pytest.raises(ResolveConflictError) as exc_info:
+        resolve(_chained_clearing_payload(), redraws={"科目": 1, "內容領域": 1})
+
+    assert exc_info.value.errors == [
+        {
+            "field": "subquestion_configs[0].learning_content",
+            "code": "incompatible_parent",
+            "parent": "Civic Participation",
+        }
+    ]

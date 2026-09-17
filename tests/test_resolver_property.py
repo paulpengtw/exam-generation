@@ -30,13 +30,14 @@ from __future__ import annotations
 import random
 import re
 
+from src.common.admission import admitted_parents_by_code
 from src.common.curriculum_loader import (
     allowed_learning_content as _math_allowed_lc,
 )
 from src.common.curriculum_loader import (
     allowed_learning_performance as _math_allowed_lp,
 )
-from src.common.resolver import ResolveConflictError, resolve
+from src.common.resolver import ResolveConflictError, _resolved_subquestion_count, resolve
 from src.natural_sciences.curriculum_loader import (
     allowed_learning_content as _ns_allowed_lc,
 )
@@ -103,6 +104,15 @@ _NATURAL_SUBCONTEXTS = [c.value for c in NaturalSubContext]
 _SOCIAL_SUBJECTS = [s.value for s in QuestionSubject]
 _SOCIAL_DOMAINS = [d.value for d in ContentDomain]
 _MATH_SUBJECT_FILTERS = list(_MATH_SUBJECT_TO_PREFIXES)
+
+# Independent admission maps for the #838 necessity check below -- computed
+# straight from the raw curriculum data via src.common.admission, never
+# through the resolver/sampler's own bookkeeping, so a bug in how the
+# resolver threads pins/subject/domain around cannot also hide from this
+# check just because it shares the same low-level admission primitive.
+_SS_LC_SUBJECT_ADMISSION = admitted_parents_by_code(_load_ss_lc(), "學習內容", "科目")
+_SS_LP_SUBJECT_ADMISSION = admitted_parents_by_code(_load_ss_lp(), "學習表現", "科目")
+_SS_LC_DOMAIN_ADMISSION = admitted_parents_by_code(_load_ss_lc(), "學習內容", "內容領域")
 
 _KNOWN_ERROR_CODES = frozenset({"incompatible_parent", "no_admitting_parent"})
 _SUBQ_FIELD_RE = re.compile(
@@ -334,21 +344,27 @@ def _row_view(payload: dict, row_index: int | None) -> dict:
     return merged
 
 
+def _parse_error_field(field: str, count: int) -> tuple[int | None, str]:
+    """Split a resolver error field into its batch row index (``None`` when
+
+    the payload is not a batch) and its local (per-row) field name.
+    """
+    if not field.startswith("per_question_params["):
+        return None, field
+    idx_text, _, rest = field[len("per_question_params[") :].partition("]")
+    assert idx_text.isdigit() and rest.startswith("."), field
+    row_index = int(idx_text)
+    assert 0 <= row_index < count, field
+    return row_index, rest[1:]
+
+
 def _assert_well_formed_error(error: dict, payload: dict, count: int) -> None:
     assert {"field", "code", "parent"} <= set(error.keys()), error
     assert error["code"] in _KNOWN_ERROR_CODES, error
     assert isinstance(error["parent"], str) and error["parent"], error
 
     field = error["field"]
-    row_index = None
-    local_field = field
-    if field.startswith("per_question_params["):
-        idx_text, _, rest = field[len("per_question_params[") :].partition("]")
-        assert idx_text.isdigit() and rest.startswith("."), field
-        row_index = int(idx_text)
-        assert 0 <= row_index < count, field
-        local_field = rest[1:]
-
+    row_index, local_field = _parse_error_field(field, count)
     view = _row_view(payload, row_index)
     subq_match = _SUBQ_FIELD_RE.match(local_field)
     if subq_match:
@@ -363,6 +379,127 @@ def _assert_well_formed_error(error: dict, payload: dict, count: int) -> None:
         raise AssertionError(f"unexpected resolver error field shape: {field!r}")
 
     assert not _blank(value), (field, value, payload)
+
+
+# ---------------------------------------------------------------------------
+# #838 necessity check: every social-studies conflict must be unavoidable.
+#
+# ``_assert_well_formed_error`` only checks the error's *shape*. This section
+# independently re-derives, from raw admission data via ``src.common.admission``
+# (never by trusting the resolver's own bookkeeping), that no candidate parent
+# value could have satisfied every pinned code -- i.e. the resolver did not
+# over-reject.
+# ---------------------------------------------------------------------------
+
+
+def _row_seed(payload: dict, row_index: int | None) -> int | str | None:
+    """The seed the resolver actually used to resolve this row's 小題數.
+
+    Mirrors ``resolve()``'s own batch worker-seed derivation (``seed +
+    index`` unless the row pins its own seed) so the 小題數 draw below lines
+    up with what the resolver itself drew.
+    """
+    base_seed = payload.get("seed")
+    if row_index is None:
+        return base_seed
+    rows = payload.get("per_question_params") or []
+    row = rows[row_index] if row_index < len(rows) else {}
+    row_seed = row.get("seed")
+    if not _blank(row_seed):
+        return row_seed
+    if base_seed is None:
+        return None
+    return base_seed + row_index
+
+
+def _resolved_curriculum_pins(
+    payload: dict, row_index: int | None
+) -> tuple[list[str], list[str]]:
+    """Every 學習內容/學習表現 code pinned for this merged row.
+
+    Request-level (or batch-row) top-level pins, plus each
+    ``subquestion_configs`` row's own pins -- limited to the resolver's own
+    resolved 小題數 for this row (recomputed with the same pure
+    ``_resolved_subquestion_count`` helper the resolver itself calls,
+    independent of the admission checks under test here), since rows beyond
+    that count are never inspected by the sampler and are not real
+    constraints.
+    """
+    view = _row_view(payload, row_index)
+    lc = list(view.get("learning_content") or [])
+    lp = list(view.get("learning_performance") or [])
+    configs = view.get("subquestion_configs")
+    if isinstance(configs, list) and configs:
+        count = _resolved_subquestion_count(
+            {**view, "seed": _row_seed(payload, row_index)}, None
+        )
+        for row in configs[:count]:
+            if isinstance(row, dict):
+                lc.extend(row.get("learning_content") or [])
+                lp.extend(row.get("learning_performance") or [])
+    return lc, lp
+
+
+def _parent_kind(parent: str) -> str:
+    """Classify an error's ``parent`` value as the ``科目`` or ``內容領域`` check."""
+    if parent in ("科目", "內容領域"):
+        return parent
+    if parent in _SOCIAL_SUBJECTS:
+        return "科目"
+    if parent in _SOCIAL_DOMAINS:
+        return "內容領域"
+    raise AssertionError(f"unrecognized 科目/內容領域 parent value: {parent!r}")
+
+
+def _assert_social_conflict_necessary(error: dict, payload: dict, count: int) -> None:
+    """The reported conflict must be unavoidable, verified independently.
+
+    科目-parent error: no candidate 科目 -- the supplied ``subject_filter``
+    list, or all four values when blank -- admits every pinned 學習內容/
+    學習表現 code of the merged row.
+
+    內容領域-parent error: no candidate 內容領域 -- the pinned
+    ``content_domain``, or all four domains when blank -- admits every
+    pinned 學習內容 code that carries a 內容領域 tag (untagged codes, e.g.
+    歷/地, never constrain 內容領域 and are excluded, per #833).
+    """
+    row_index, _local_field = _parse_error_field(error["field"], count)
+    view = _row_view(payload, row_index)
+    lc_codes, lp_codes = _resolved_curriculum_pins(payload, row_index)
+    kind = _parent_kind(error["parent"])
+
+    if kind == "科目":
+        subject_filter = view.get("subject_filter")
+        if _blank(subject_filter):
+            candidates: list[str] = list(_SOCIAL_SUBJECTS)
+        elif isinstance(subject_filter, list):
+            candidates = subject_filter
+        else:
+            candidates = [subject_filter]
+        for candidate in candidates:
+            lc_ok = all(candidate in (_SS_LC_SUBJECT_ADMISSION.get(c) or []) for c in lc_codes)
+            lp_ok = all(candidate in (_SS_LP_SUBJECT_ADMISSION.get(c) or []) for c in lp_codes)
+            if lc_ok and lp_ok:
+                raise AssertionError(
+                    "resolver raised a 科目 conflict but candidate "
+                    f"{candidate!r} admits every pinned code: "
+                    f"lc={lc_codes} lp={lp_codes} error={error} payload={payload}"
+                )
+    else:
+        tagged_lc = [c for c in lc_codes if c in _SS_LC_DOMAIN_ADMISSION]
+        if not tagged_lc:
+            return
+        content_domain = view.get("content_domain")
+        domain_candidates = (
+            list(_SOCIAL_DOMAINS) if _blank(content_domain) else [content_domain]
+        )
+        for candidate in domain_candidates:
+            if all(candidate in (_SS_LC_DOMAIN_ADMISSION.get(c) or []) for c in tagged_lc):
+                raise AssertionError(
+                    "resolver raised a 內容領域 conflict but candidate "
+                    f"{candidate!r} admits every pinned tagged code: "
+                    f"lc={tagged_lc} error={error} payload={payload}"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -384,6 +521,8 @@ def test_resolver_property_all_subjects() -> None:
             assert exc.errors, payload
             for error in exc.errors:
                 _assert_well_formed_error(error, payload, count)
+                if payload.get("subject") == "social_studies":
+                    _assert_social_conflict_necessary(error, payload, count)
             continue
 
         second = resolve(result.payload)
