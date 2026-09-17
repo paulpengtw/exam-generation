@@ -240,7 +240,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/social_studies/core_competency_loader.py` | Thin shim over `src.common.core_competency_loader`; adds `allowed_core_competencies(data, stage, subject)` for 核心素養 sampler pool. |
 | `src/social_studies/planner.py` | Thin shim over `src.common.planner.plan_core_questions`; provides the 社會領域 system/user templates. |
 | `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
-| `src/social_studies/domain_mapping.py` | `內容領域_mapping.csv` is read by the curriculum loader to attach `admitted_by["內容領域"]` tags, by the schema payload, by the verifier, and (until #833) by the sampler's 學習表現 domain filter — the 學習內容 pool no longer reads it directly. |
+| `src/social_studies/domain_mapping.py` | `內容領域_mapping.csv` is read by the curriculum loader to attach `admitted_by["內容領域"]` tags, by the schema payload, and by the verifier. The sampler no longer reads it directly for either curriculum pool: 學習內容 reads the shared admission lookup (`src/common/admission.py`) and 學習表現 has no 內容領域 parent (#833). |
 | `src/social_studies/process_exemplar_loader.py` | Loads Channel-2 JSON exemplars keyed by the four `認知歷程` buckets; invalid or unknown entries fail open. |
 | `src/social_studies/interaction_scoring.py` | Scores digital 拖放題 and 滑桿題 responses using their authoritative interaction specs. |
 | `src/social_studies/pin_rules.py` | Checks composition constraints for pinned ICCS cognitive-process assignments. |
