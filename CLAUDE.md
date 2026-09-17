@@ -120,6 +120,18 @@ Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_CO
 
 See `docs/research/2026-09-15-772-save-draft-and-update.md`.
 
+Issue #773 extends the same `exam-generation.recovery/1` envelope with an
+optional settled `confirmation` workspace. Save-and-update captures the
+ordinary form and the exact 發送前確認 payload independently before its
+release recheck; restore mounts that confirmation before schema/model
+hydration, never re-runs resolver/planner/preview work, and keeps invalid
+current-schema values visible and blocked until an explicit correction.
+Confirmation-only edits, per-題組/per-小題 rows, seed/drawn/redraw/cleared
+provenance, pending prefill, and draft-versus-History choice are not folded
+back into the form. Active operations, results, and modification drafts remain
+refused for their owning issues.
+See `docs/research/2026-09-17-773-preserve-confirmation.md`.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.

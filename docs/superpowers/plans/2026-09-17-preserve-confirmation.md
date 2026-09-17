@@ -128,4 +128,3 @@
 - [ ] **Step 3: Fix any Critical or Important findings, rerun affected tests, and commit fixes with the `feat(773): ` prefix.**
 - [ ] **Step 4: Run the complete verification suite once more after all fixes.**
 - [ ] **Step 5: Confirm the final commit message ends with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`, do not push, and report exact counts.**
-
