@@ -291,4 +291,3 @@
   ```
 
   The branch must be `feat/775-preserve-modification-drafts`, the tree must be clean, and no push or PR may be performed.
-
