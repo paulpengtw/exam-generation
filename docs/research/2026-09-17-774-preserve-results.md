@@ -88,9 +88,39 @@ again after the release recheck.
 
 ## Verification scope
 
-The web tests cover adapter normalization plus real GeneratePage/router flows
-for math, social studies, and natural sciences. The flows include final and
-partial received cards, unknown completion, mixed batches with images,
-storage unavailable, quota/read-back failure, repeated hydration failure,
-active generation refusal, and unsupported modification drafts. They assert
-that the existing JSON/ODT and modification boundaries remain unchanged.
+The adapter tests cover normalization, durable image maps, evidence, unknown
+completion, rejected object URLs, and preservation of final versus partial
+content. The real GeneratePage/router recovery flow is covered by
+`web/src/pages/GeneratePage.results-recovery.test.tsx`; it uses the real
+`useGenerate`, `GeneratePage`, `QuestionCard`, `ReleaseNotice`, recovery
+storage, and save-and-update controller. Its five scenarios assert that:
+
+- restored final results remain available to batch JSON and ODT exports, with
+  restored image bytes passed to the ODT builder; final-card PNG download
+  remains enabled while the partial-card PNG remains disabled;
+- restored generated cards have no `history.modification` surface and expose
+  no History-only instruction or submit controls, while the same real
+  `QuestionCard` still exposes those controls when a History `recordId` is
+  supplied;
+- a quota failure on an image-bearing mixed final/partial batch leaves the
+  live cards and images rendered, leaves JSON/ODT exports usable, retains the
+  previously saved pointer and complete stored `results`/`displayResults`/
+  `images` content, and does not navigate;
+- a batch with no History IDs is still persisted and restored with both cards,
+  images, and export controls intact; and
+- an active generation operation disables Save Draft & Update in the rendered
+  page and prevents navigation.
+
+The implementation also fixes a preexisting boundary leak found by this
+real-flow coverage: `QuestionCard` now gates History-only annotation deletion,
+instruction, submit, and submit-error controls on `recordId`, while retaining
+the existing non-History selection capture behavior. The focused regression
+run for this change passed 3 files / 42 tests.
+
+Final web verification from `web/`:
+
+- `npx tsc -b --noEmit`: passed, 0 TypeScript errors.
+- `npm run lint`: passed, 0 ESLint errors and 0 warnings.
+- `npm test`: 132/132 test files passed; 1,310/1,310 tests passed.
+- `npm run build`: passed; Vite transformed 446 modules. The command emitted
+  only the existing Node deprecation and chunk-size warnings.
