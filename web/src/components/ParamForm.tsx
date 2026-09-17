@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getAvailableModels, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
+import type { Lang } from "../i18n/messages";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
 import { filterEntriesByAdmittedParent } from "../lib/admittedBy";
 import { fetchCurriculumPool, type CurriculumPool } from "../lib/curriculumPool";
+import { formatResolverFieldErrors, isResolverFieldErrorLike } from "../lib/resolverErrorMessages";
 import {
   filterDrawnAfterSubquestionCountRedraw,
   rebuildSubquestionSlots,
@@ -1223,6 +1225,34 @@ function isValidPromptPreviewResponse(
 }
 
 /**
+ * Turn a caught resolve/preview failure into display text.
+ *
+ * Shared by the 發送前確認 resolver banner and prompt-preview errors (#835):
+ * an `ApiError` (`../api/client`) carrying field-addressed resolver errors
+ * on its `errors` property is formatted via the one shared formatter
+ * (`incompatible_parent` / `no_admitting_parent` become a readable
+ * sentence); everything else — a plain network/other `Error`, or a batch
+ * the formatter declines (e.g. `unresolved`, which keeps its current text)
+ * — falls back to the caught error's own message, exactly as before #835.
+ *
+ * Duck-types `cause.errors` via `isResolverFieldErrorLike` rather than
+ * `instanceof ApiError` so this doesn't require a runtime import of the
+ * `ApiError` class (many existing tests `vi.mock("../api/client")` wholesale
+ * without re-exporting it).
+ */
+function resolveDisplayError(cause: unknown, lang: Lang, fallback: string): string {
+  if (cause && typeof cause === "object" && "errors" in cause) {
+    const errors = (cause as { errors?: unknown }).errors;
+    if (Array.isArray(errors) && errors.length > 0 && errors.every(isResolverFieldErrorLike)) {
+      const readable = formatResolverFieldErrors(errors, lang);
+      if (readable !== null) return readable;
+    }
+  }
+  if (cause instanceof Error && cause.message) return cause.message;
+  return fallback;
+}
+
+/**
  * The planner endpoint promises three distinct, non-empty textual
  * candidates. Treat a malformed success body as a planning failure so the
  * confirmation screen can keep its generation-decides fallback.
@@ -1286,6 +1316,10 @@ export default function ParamForm({
   const [confirmInvalidFields, setConfirmInvalidFields] = useState<Map<string, true>>(new Map());
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
+  // #835: readable message for the most recent prompt-preview failure (initial
+  // fetch, debounced 確認頁修改 re-fetch, or manual retry) — shares
+  // resolveDisplayError/formatResolverFieldErrors with the resolver banner.
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [models, setModels] = useState<AvailableModels | null>(null);
   const [modelsResolved, setModelsResolved] = useState(false);
   const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(true);
@@ -1616,9 +1650,15 @@ export default function ParamForm({
         if (isValidPromptPreviewResponse(prompts)) {
           setPromptPreviews(prompts);
         }
+        setPreviewError(null);
       })
-      .catch(() => op.end("failed"));
+      .catch((cause: unknown) => {
+        op.end("failed");
+        if (cancelled) return;
+        setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
+      });
     return () => { cancelled = true; op.end("superseded"); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang/t deliberately excluded: they must not re-trigger the preview fetch on a language switch, only affect the text of a failure caught by this same effect run
   }, [coreQuestionResolution, pendingParams, subject]);
 
   // Debounced re-fetch triggered by 確認頁修改 (#445).
@@ -1655,22 +1695,25 @@ export default function ParamForm({
             setPromptPreviews(prompts);
           }
           setPreviewRefetchLoading(false);
+          setPreviewError(null);
           // #446: clear stale state on success
           setStalePreviewIndices(new Set());
         })
-        .catch(() => {
+        .catch((cause: unknown) => {
           if (seq !== previewRefetchSeqRef.current) {
             op.end("superseded");
             return;
           }
           op.end("failed");
           setPreviewRefetchLoading(false);
+          setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
           // #446: mark only the edited 題組 as stale
           setStalePreviewIndices((prev) => new Set([...prev, ...capturedEditedIndices]));
         });
     }, 500);
 
     return () => { window.clearTimeout(timeoutId); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang/t deliberately excluded: they must not re-trigger the debounced preview refetch on a language switch, only affect the text of a failure caught by this same effect run
   }, [hasPendingConfirmationEdits, pendingPerQuestionParams, pendingParams, subject]);
 
   useEffect(() => {
@@ -2365,6 +2408,7 @@ export default function ParamForm({
     setResolverError(null);
     setHasPendingConfirmationEdits(preserveConfirmationEdits);
     setStalePreviewIndices(new Set());
+    setPreviewError(null);
     pendingEditedIndicesRef.current = new Set();
     previewRequestedRef.current = false;
     setPromptPreviews([]);
@@ -2408,11 +2452,7 @@ export default function ParamForm({
       op.end("failed");
       if (resolveOperationRef.current === op) resolveOperationRef.current = null;
       setResolverLoading(false);
-      setResolverError(
-        cause instanceof Error && cause.message
-          ? cause.message
-          : t("form.confirm_resolve_error"),
-      );
+      setResolverError(resolveDisplayError(cause, lang, t("form.confirm_resolve_error")));
     }
   }
 
@@ -2437,6 +2477,7 @@ export default function ParamForm({
     pendingPerQuestionParamsRef.current = null;
     setClearedPaths([]);
     setResolverError(null);
+    setPreviewError(null);
     if (grade === "") return;
     if (!setType.trim()) {
       setValidationError(t("form.error_set_type_required"));
@@ -2981,15 +3022,17 @@ export default function ParamForm({
           setPromptPreviews(prompts);
         }
         setPreviewRefetchLoading(false);
+        setPreviewError(null);
         setStalePreviewIndices(new Set());
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         if (seq !== previewRefetchSeqRef.current) {
           op.end("superseded");
           return;
         }
         op.end("failed");
         setPreviewRefetchLoading(false);
+        setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
         // Leave stale badge in place so the user can retry again
       });
   }
@@ -3217,6 +3260,11 @@ export default function ParamForm({
         </section>
         {previewRefetchLoading && (
           <p className="text-sm text-amber-700">{t("form.confirm_preview_loading")}</p>
+        )}
+        {previewError && (
+          <div role="alert" className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            {previewError}
+          </div>
         )}
         <div className="space-y-4">
           {resolvedPerQuestionParams.map((questionParams, index) => {

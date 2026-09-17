@@ -186,6 +186,24 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_resolve_loading": "Resolving settings…",
     "form.confirm_resolve_error": "Could not resolve settings.",
     "form.confirm_resolve_retry": "Retry resolving",
+
+    // Field-addressed resolver errors (#835): shared by the 發送前確認 resolver
+    // banner, prompt-preview errors, and the SSE generation error — all three
+    // format through web/src/lib/resolverErrorMessages.ts.
+    "resolver_error.child_learning_content": "learning content",
+    "resolver_error.child_learning_performance": "learning performance",
+    "resolver_error.child_sub_context": "sub-context",
+    "resolver_error.parent_subject": "subject",
+    "resolver_error.parent_content_domain": "content domain",
+    "resolver_error.parent_context": "context",
+    "resolver_error.position_question": "In question {q}, ",
+    "resolver_error.position_subquestion": "In sub-question {s}, ",
+    "resolver_error.position_question_subquestion": "In question {q}, sub-question {s}, ",
+    "resolver_error.incompatible_parent":
+      "{position}the selected {child} does not belong to the {parentKind} \"{parent}\".",
+    "resolver_error.no_admitting_parent":
+      "{position}the selected {child} has no common {parentKind} available; remove some of the selected codes.",
+    "form.confirm_preview_error": "Could not load the prompt preview.",
     "form.confirm_shared_heading": "Shared settings",
     "form.confirm_topic": "Topic",
     "form.confirm_text_instruction": "Text-generation instruction",
@@ -665,6 +683,23 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "form.confirm_resolve_loading": "設定解析中…",
     "form.confirm_resolve_error": "無法解析出題設定。",
     "form.confirm_resolve_retry": "重新解析",
+
+    // Field-addressed resolver errors (#835): shared by the 發送前確認 resolver
+    // banner, prompt-preview errors, and the SSE generation error — all three
+    // format through web/src/lib/resolverErrorMessages.ts.
+    "resolver_error.child_learning_content": "學習內容",
+    "resolver_error.child_learning_performance": "學習表現",
+    "resolver_error.child_sub_context": "情境子類別",
+    "resolver_error.parent_subject": "科目",
+    "resolver_error.parent_content_domain": "內容領域",
+    "resolver_error.parent_context": "情境",
+    "resolver_error.position_question": "第{q}題",
+    "resolver_error.position_subquestion": "第{s}小題",
+    "resolver_error.position_question_subquestion": "第{q}題第{s}小題",
+    "resolver_error.incompatible_parent": "{position}所選的{child}不屬於{parentKind}「{parent}」。",
+    "resolver_error.no_admitting_parent":
+      "{position}所選的{child}沒有共同可用的{parentKind}，請移除部分代碼。",
+    "form.confirm_preview_error": "無法載入提示詞預覽。",
     "form.confirm_shared_heading": "共同設定",
     "form.confirm_topic": "主題",
     "form.confirm_text_instruction": "文本出題指示",
