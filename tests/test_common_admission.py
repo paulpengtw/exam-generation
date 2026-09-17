@@ -12,7 +12,6 @@ from src.common.admission import (
     entries_admitted_by,
 )
 
-
 # --- admitted_parents ---------------------------------------------------
 
 
