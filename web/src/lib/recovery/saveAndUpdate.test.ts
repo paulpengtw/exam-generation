@@ -16,6 +16,50 @@ import { RECOVERY_FORMAT_V1 } from "./format";
 import { evaluateSaveAndUpdate, type EvaluateInput } from "./saveAndUpdate";
 import type { SurfaceParticipation } from "../workspace/workspaceStore";
 import type { FormWorkspaceSnapshot } from "../workspace/adapters/types";
+import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
+
+function makeConfirmationSnapshot(
+  overrides: Partial<ConfirmationWorkspaceSnapshot> = {},
+): ConfirmationWorkspaceSnapshot {
+  return {
+    kind: "confirmation",
+    version: 1,
+    pendingParams: {
+      subject: "math",
+      grade: 8,
+      context: ["生活情境"],
+      set_type: "單一題",
+      q_type: ["選擇題"],
+      count: 1,
+      skip_verify: false,
+      image_generation_mode: "html",
+      seed: 42,
+      drawn: ["context"],
+    } as never,
+    pendingPerQuestionParams: null,
+    clearedPaths: ["context"],
+    redraws: { context: 1 },
+    hasPendingConfirmationEdits: true,
+    coreQuestionResolution: "generated",
+    historyDraftChoice: "history",
+    pendingPrefill: { topic: "confirmation-only topic" },
+    ...overrides,
+  };
+}
+
+function makeConfirmationSurface(
+  overrides: Partial<SurfaceParticipation> = {},
+): SurfaceParticipation {
+  const exportWorkspace = (): ConfirmationWorkspaceSnapshot => makeConfirmationSnapshot();
+  return {
+    id: "generate.confirmation",
+    readiness: "ready",
+    hasEditableState: true,
+    hasReceivedResults: false,
+    exportWorkspace,
+    ...overrides,
+  };
+}
 
 function makeFormSurface(
   overrides: Partial<SurfaceParticipation> = {},
@@ -130,17 +174,29 @@ describe("evaluateSaveAndUpdate", () => {
     if (!result.allowed) expect(result.reason).toBe("results_present");
   });
 
-  it("rejects when generate.confirmation is registered", () => {
+  it("allows a settled generate.confirmation snapshot", () => {
     const result = evaluateSaveAndUpdate(
       makeValidInput({
         surfaces: {
           "generate.form": makeFormSurface(),
-          "generate.confirmation": {
-            id: "generate.confirmation",
-            readiness: "ready",
-            hasEditableState: true,
-            hasReceivedResults: false,
-          },
+          "generate.confirmation": makeConfirmationSurface(),
+        },
+      }),
+    );
+    expect(result.allowed).toBe(true);
+  });
+
+  it("rejects an unsettled confirmation even when no operation is registered", () => {
+    const result = evaluateSaveAndUpdate(
+      makeValidInput({
+        surfaces: {
+          "generate.form": makeFormSurface(),
+          "generate.confirmation": makeConfirmationSurface({
+            exportWorkspace: () => ({
+              ...makeConfirmationSurface().exportWorkspace!() as ConfirmationWorkspaceSnapshot,
+              coreQuestionResolution: "loading",
+            }),
+          }),
         },
       }),
     );
@@ -277,6 +333,97 @@ describe("runSaveAndUpdate", () => {
 
     // freezeInput stays true after success (page is navigating)
     expect(useWorkspaceStore.getState().freezeInput).toBe(true);
+  });
+
+  it("saves the exact settled confirmation independently from the form", async () => {
+    setupValidRunState();
+    const confirmation = makeConfirmationSnapshot({
+      pendingParams: {
+        ...makeConfirmationSnapshot().pendingParams,
+        topic: "只存在於確認頁的題目",
+        text_instruction: "確認頁專用的文本出題指示",
+        per_question_params: JSON.stringify([
+          { learning_content: ["Nf-IV-2"], question_type: "選擇題" },
+          { learning_content: ["Na-IV-1"], question_type: "非選擇題" },
+        ]),
+      } as never,
+      pendingPerQuestionParams: [
+        { learning_content: ["Nf-IV-2"], question_type: "選擇題" },
+        { learning_content: ["Na-IV-1"], question_type: "非選擇題" },
+      ],
+      clearedPaths: ["context", "per_question_params[1].learning_content"],
+      redraws: { context: 2, "per_question_params[1].learning_content": 1 },
+      pendingPrefill: {
+        topic: "History carried topic",
+        model_execute: "gemini-3.1-pro-preview",
+        effort_execute: "high",
+        image_generation_mode: "gpt_image",
+      },
+    });
+    useWorkspaceStore.getState().registerSurface(makeConfirmationSurface({
+      exportWorkspace: () => confirmation,
+    }));
+    vi.stubGlobal("location", { pathname: "/generate/natural_sciences", origin: "https://test.com", reload: vi.fn() });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    const saved = loadSnapshot("u1", result.snapshot_id);
+    expect(saved?.confirmation).toEqual(confirmation);
+    expect(saved?.form.fields).toEqual({});
+  });
+
+  it("refuses when a late callback mutates the settled confirmation source", async () => {
+    const confirmation = makeConfirmationSnapshot({
+      pendingParams: {
+        ...makeConfirmationSnapshot().pendingParams,
+        topic: "before callback",
+      } as never,
+    });
+    setupValidRunState(async () => {
+      confirmation.pendingParams.topic = "late callback mutation";
+    });
+    useWorkspaceStore.getState().registerSurface(makeConfirmationSurface({
+      exportWorkspace: () => confirmation,
+    }));
+    vi.stubGlobal("location", { pathname: "/generate/math", origin: "https://test.com", reload: vi.fn() });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "workspace_changed", retryable: true });
+    expect(Object.keys(localStorage).filter((key) => key.startsWith("exam_recovery_")))
+      .toHaveLength(0);
+  });
+
+  it("continues refusing an active operation while confirmation is settled", async () => {
+    setupValidRunState();
+    useWorkspaceStore.getState().registerSurface(makeConfirmationSurface());
+    const operation = useWorkspaceStore.getState().beginOperation(
+      "prompt_preview",
+      "generate.confirmation",
+    );
+    vi.stubGlobal("location", { pathname: "/generate/math", origin: "https://test.com", reload: vi.fn() });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+    operation.end("completed");
+
+    expect(result).toEqual({ ok: false, reason: "operation_active", retryable: false });
   });
 
   it("quota failure → no navigate, freezeInput false, navigationApproved false, reason quota", async () => {

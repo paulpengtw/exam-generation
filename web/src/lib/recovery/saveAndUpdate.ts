@@ -6,6 +6,8 @@ import type { SurfaceId } from "../workspace/workspaceStore";
 import type { AuthUser } from "../../store/authStore";
 import type { ReleaseStatus } from "../release/releaseStore";
 import { RECOVERY_FORMAT_V1 } from "./format";
+import { importConfirmationWorkspace } from "../workspace/adapters/confirmationWorkspace";
+import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
 
 export type SaveAndUpdateDeniedReason =
   | "no_surface"
@@ -34,6 +36,31 @@ export interface EvaluateInput {
   releaseRevision: number | null;
   supportedRecoveryFormats: string[];
   user: AuthUser | null;
+}
+
+function readConfirmationSnapshot(
+  surface: SurfaceParticipation | undefined,
+): ConfirmationWorkspaceSnapshot | null {
+  if (!surface?.exportWorkspace) return null;
+  try {
+    const raw = surface.exportWorkspace();
+    if (!importConfirmationWorkspace(raw)) return null;
+    return raw as ConfirmationWorkspaceSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function jsonClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
 }
 
 export function evaluateSaveAndUpdate(state: EvaluateInput): EvaluateResult {
@@ -66,9 +93,14 @@ export function evaluateSaveAndUpdate(state: EvaluateInput): EvaluateResult {
     }
   }
 
-  // Confirmation must not be open
-  if (state.surfaces["generate.confirmation"]) {
-    return { allowed: false, reason: "confirmation_open" };
+  // A confirmation may be carried only after its own async work has settled.
+  // The export seam is the source of truth; registration alone is not enough.
+  const confirmationSurface = state.surfaces["generate.confirmation"];
+  if (confirmationSurface) {
+    const confirmation = readConfirmationSnapshot(confirmationSurface);
+    if (!confirmation || confirmation.coreQuestionResolution === "loading") {
+      return { allowed: false, reason: "confirmation_open" };
+    }
   }
 
   // Modification draft must not be open
@@ -118,7 +150,7 @@ export type RunResult =
   | { ok: false; reason: string; retryable: boolean };
 
 /**
- * Execute the save-and-update flow (issue #772).
+ * Execute the save-and-update flow (issues #772/#773).
  *
  * deps are injectable for testing; all have sensible production defaults.
  */
@@ -172,6 +204,27 @@ export async function runSaveAndUpdate(
     return { ok: false, reason: "export_failed", retryable: true };
   }
 
+  // Confirmation is an independent workspace. Capture and clone both seams
+  // before the awaited release recheck so late callbacks cannot overwrite the
+  // settled state that the teacher saw.
+  const confirmationSurface = wsState.surfaces["generate.confirmation"];
+  const confirmationSnapshot = confirmationSurface
+    ? readConfirmationSnapshot(confirmationSurface)
+    : null;
+  if (confirmationSurface && !confirmationSnapshot) {
+    return { ok: false, reason: "export_failed", retryable: true };
+  }
+  let capturedFormSnapshot: FormWorkspaceSnapshot;
+  let capturedConfirmationSnapshot: ConfirmationWorkspaceSnapshot | undefined;
+  try {
+    capturedFormSnapshot = jsonClone(formSnapshot as FormWorkspaceSnapshot);
+    capturedConfirmationSnapshot = confirmationSnapshot
+      ? jsonClone(confirmationSnapshot)
+      : undefined;
+  } catch {
+    return { ok: false, reason: "export_failed", retryable: true };
+  }
+
   // (d) setFreezeInput true
   useWorkspaceStore.getState().setFreezeInput(true);
 
@@ -186,6 +239,20 @@ export async function runSaveAndUpdate(
   const recheckRelease = useReleaseStore.getState();
   const recheckAuth = useAuthStore.getState();
   const recheckWs = useWorkspaceStore.getState();
+
+  if (recheckWs.operations.length > 0) {
+    cleanup();
+    return { ok: false, reason: "operation_active", retryable: true };
+  }
+  const recheckSurfaces = Object.values(recheckWs.surfaces).filter(Boolean) as SurfaceParticipation[];
+  if (recheckSurfaces.some((surface) => surface.hasReceivedResults)) {
+    cleanup();
+    return { ok: false, reason: "results_present", retryable: false };
+  }
+  if (recheckWs.surfaces["history.modification"]) {
+    cleanup();
+    return { ok: false, reason: "modification_draft", retryable: false };
+  }
 
   if (
     recheckRelease.status !== "update-required" ||
@@ -207,6 +274,24 @@ export async function runSaveAndUpdate(
     return { ok: false, reason: "account_changed", retryable: false };
   }
   if (recheckWs.workspace_revision !== workspaceRevisionAtSave) {
+    cleanup();
+    return { ok: false, reason: "workspace_changed", retryable: true };
+  }
+
+  // A callback can mutate a captured object without going through the store's
+  // revision counter. Compare fresh exports as a second, content-level guard.
+  const currentFormSnapshot = recheckWs.surfaces["generate.form"]?.exportWorkspace?.();
+  const currentConfirmationSnapshot = recheckWs.surfaces["generate.confirmation"]
+    ? readConfirmationSnapshot(recheckWs.surfaces["generate.confirmation"])
+    : null;
+  if (
+    !currentFormSnapshot ||
+    currentFormSnapshot.kind !== "form" ||
+    currentFormSnapshot.version !== 1 ||
+    !sameJsonValue(currentFormSnapshot, capturedFormSnapshot) ||
+    !sameJsonValue(currentConfirmationSnapshot, capturedConfirmationSnapshot ?? null) ||
+    (currentConfirmationSnapshot?.coreQuestionResolution === "loading")
+  ) {
     cleanup();
     return { ok: false, reason: "workspace_changed", retryable: true };
   }
@@ -237,7 +322,10 @@ export async function runSaveAndUpdate(
     target_release_revision: targetReleaseRevision,
     saved_at: new Date(now()).toISOString(),
     workspace_revision: workspaceRevisionAtSave,
-    form: formSnapshot as FormWorkspaceSnapshot,
+    form: capturedFormSnapshot,
+    ...(capturedConfirmationSnapshot
+      ? { confirmation: capturedConfirmationSnapshot }
+      : {}),
   };
 
   // (g) saveSnapshotTransactionally
