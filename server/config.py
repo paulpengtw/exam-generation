@@ -73,6 +73,7 @@ class ServerConfig(Config):
     email_whitelist: tuple[str, ...] = ()
     llm_models_allowed: tuple[str, ...] = ()
     llm_exchange_retention_days: int = 30
+    drain_telemetry_token: str = ""  # DRAIN_TELEMETRY_TOKEN; empty = endpoint disabled
     creative_planning: bool = True
     effort_plan: str = DEFAULT_EFFORT_PLAN  # Planning effort (LLM_EFFORT_PLAN)
     effort_execute: str = DEFAULT_EFFORT_EXECUTE  # Execution effort (LLM_EFFORT_EXECUTE)
@@ -170,6 +171,7 @@ class ServerConfig(Config):
             web_search_max_uses=int(os.environ.get("WEB_SEARCH_MAX_USES", "5")),
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
             not in ("0", "false", "False", ""),
+            drain_telemetry_token=os.environ.get("DRAIN_TELEMETRY_TOKEN", ""),
             effort_plan=os.environ.get("LLM_EFFORT_PLAN", DEFAULT_EFFORT_PLAN),
             effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", DEFAULT_EFFORT_EXECUTE),
             effort_verify=os.environ.get("LLM_EFFORT_VERIFY", DEFAULT_EFFORT_VERIFY),
