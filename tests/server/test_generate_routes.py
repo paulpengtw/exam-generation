@@ -383,6 +383,123 @@ def test_generate_and_preview_reject_the_empty_narrowed_civic_domain(route: str)
     ]
 
 
+def _accept_narrowed_payload_via_route(
+    route: str, partial: dict[str, Any]
+) -> tuple[int, dict[str, Any]]:
+    """Resolve *partial*, submit it to *route*, and re-resolve the result.
+
+    Shared by the #834/#836 "preview and generation accept the narrowed
+    payload" reproductions below: builds a throwaway in-memory DB + app with
+    ``generate_question_stream``/``build_prompt_previews`` faked out (no LLM
+    call), submits the resolver-completed payload as a GET request, and
+    returns ``(route_status_code, re_resolved_json)`` so callers can assert
+    both the route accepted it and re-resolving is a no-op.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    user = User(id=uuid.uuid4(), email="narrowed-accept@example.com")
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(user)
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
+    from server.generate import routes as gen_routes
+
+    async def fake_stream(params, *_args, **_kwargs):
+        yield {"event": "done", "data": ""}
+
+    def fake_previews(params, *_args, **_kwargs):
+        return []
+
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    original_stream = gen_routes.generate_question_stream
+    original_previews = gen_routes.build_prompt_previews
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    gen_routes.build_prompt_previews = fake_previews  # type: ignore[assignment]
+    limiter.reset()
+
+    try:
+        query = _complete_query_params(partial)
+        with TestClient(app) as client:
+            response = client.get(route, params=query)
+            re_resolved = client.post("/api/generate/resolve", json=query)
+    finally:
+        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
+        gen_routes.build_prompt_previews = original_previews  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    return response.status_code, re_resolved.json()
+
+
+@pytest.mark.parametrize("route", ["/api/generate", "/api/generate/preview"])
+@pytest.mark.parametrize(
+    "partial",
+    [
+        pytest.param(
+            {
+                "subject": "social_studies",
+                "seed": 1,
+                "grade": 7,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "content_type": "純文字",
+                "target_surface": "紙本",
+                "core_competency": ["社-J-A1"],
+                "subject_filter": ["公民與社會"],
+                "learning_content": ["公Bn-Ⅳ-3"],
+            },
+            id="single-subject-blank-domain-narrowed",
+        ),
+        pytest.param(
+            {
+                "subject": "social_studies",
+                "seed": 1,
+                "grade": 7,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "content_type": "純文字",
+                "target_surface": "紙本",
+                "core_competency": ["社-J-A1"],
+                "subject_filter": ["公民與社會", "地理"],
+                "learning_content": ["公Bj-Ⅳ-1"],
+            },
+            id="multi-subject-narrowed-to-single-candidate",
+        ),
+    ],
+)
+def test_generate_and_preview_accept_the_834_narrowed_reproductions(
+    route: str, partial: dict[str, Any]
+) -> None:
+    """#834 production reproduction (its own acceptance bullets): preview
+
+    and generation accept the same 科目/內容領域-narrowed payload /resolve
+    completes, and re-resolving the completed payload draws nothing new.
+    """
+    status_code, re_resolved = _accept_narrowed_payload_via_route(route, partial)
+
+    assert status_code == 200
+    assert re_resolved["drawn"] == []
+    assert re_resolved["cleared"] == []
+
+
 def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 

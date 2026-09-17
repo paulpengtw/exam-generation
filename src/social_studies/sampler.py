@@ -140,7 +140,7 @@ def _contributing_no_admitting_parent_fields(
 ) -> list[str]:
     """Field paths whose own pins alone exclude a candidate from *candidates*.
 
-    Per the Global Constraints "contributing field" ruling: a field
+    Per the plan's "contributing field" ruling: a field
     contributes to a ``no_admitting_parent`` rejection when narrowing
     *candidates* by that field's pinned codes alone (ignoring every other
     pinned field) already excludes at least one candidate.
