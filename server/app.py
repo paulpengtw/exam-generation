@@ -24,6 +24,7 @@ from server.auth.routes import router as auth_router
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.modification_routes import router as modification_router
+from server.generate.release_authority import AuthoritySource, build_authority_source
 from server.generate.routes import router as generate_router
 from server.history.routes import router as history_router
 from server.models import GenerationRecord, LLMExchange
@@ -174,7 +175,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     print(f"Warning: Playwright shutdown failed: {exc}", file=sys.stderr)
 
 
-def create_app() -> FastAPI:
+def create_app(*, release_authority_source: AuthoritySource | None = None) -> FastAPI:
     init_sentry()
     app = FastAPI(title="Exam Generation API", lifespan=lifespan)
 
@@ -200,6 +201,14 @@ def create_app() -> FastAPI:
     app.add_middleware(SlowAPIMiddleware)
 
     config = get_config()
+    app.state.release_authority_source = (
+        release_authority_source
+        if release_authority_source is not None
+        else build_authority_source(
+            config.release_authority_url,
+            config.release_authority_path,
+        )
+    )
     allow_origins = [config.frontend_url] if config.frontend_url else ["*"]
     app.add_middleware(
         CORSMiddleware,

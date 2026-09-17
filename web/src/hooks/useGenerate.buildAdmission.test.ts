@@ -36,9 +36,16 @@ vi.mock("../sentry", () => ({
 
 import { useGenerate, type AdmissionOutcome } from "./useGenerate";
 import { useReleaseStore, resetReleaseDetector } from "../lib/release/releaseStore";
+import { useAuthStore } from "../store/authStore";
 
 function setReleaseStatus(status: "current" | "update-required" | "paused" | "unavailable" | "checking") {
   useReleaseStore.setState({ status, lastCheckedAt: Date.now(), lastFailure: null });
+}
+
+function latestStreamOptions(): FetchEventSourceInit {
+  const call = fetchEventSourceMock.mock.lastCall;
+  if (!call) throw new Error("Expected an event-stream request");
+  return call[1];
 }
 
 beforeEach(() => {
@@ -60,6 +67,15 @@ afterEach(() => {
 });
 
 describe("useGenerate — build admission preflight", () => {
+  const previousQuestion = {
+    id: "previous-question",
+    情境: ["個人"],
+    題型種類: "單一題",
+    題型: "選擇題",
+    題目: ["previous"],
+    正確解題分析: ["answer"],
+  };
+
   it("rejects on update-required without sending HTTP fetch", async () => {
     // Mock checkNow to immediately set update-required
     vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
@@ -140,6 +156,148 @@ describe("useGenerate — build admission preflight", () => {
     const headers = (init.headers as Record<string, string>);
     expect(headers["X-Frontend-Build-ID"]).toBe("test-build-abc");
   });
+
+  it("attaches the build header to the POST body transport for long payloads", async () => {
+    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
+      setReleaseStatus("current");
+    });
+
+    const { result } = renderHook(() => useGenerate());
+    act(() => {
+      result.current.generate({
+        subject: "math",
+        text_instruction: "x".repeat(12_000),
+      });
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
+    const [, init] = fetchEventSourceMock.mock.lastCall!;
+    expect(init.method).toBe("POST");
+    expect(String(init.body).length).toBeGreaterThan(12_000);
+    expect((init.headers as Record<string, string>)["X-Frontend-Build-ID"])
+      .toBe("test-build-abc");
+  });
+
+  it("ignores a duplicate click while the first stream is still pending", async () => {
+    setReleaseStatus("current");
+    const { result } = renderHook(() => useGenerate());
+
+    let first!: Promise<AdmissionOutcome>;
+    let duplicate!: Promise<AdmissionOutcome>;
+    act(() => {
+      first = result.current.generate({ subject: "math" });
+      duplicate = result.current.generate({ subject: "math" });
+    });
+
+    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
+    await expect(duplicate).resolves.toEqual(
+      expect.objectContaining({ outcome: "rejected" }),
+    );
+    act(() => {
+      latestStreamOptions().onmessage?.({ id: "", event: "started", data: "{}" });
+    });
+    await expect(first).resolves.toEqual({ outcome: "admitted" });
+  });
+
+  it("preserves prior results and does not retry when admission changes after preflight", async () => {
+    setReleaseStatus("current");
+    const { result } = renderHook(() => useGenerate());
+    act(() => {
+      result.current.generate({ subject: "math" });
+    });
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "result",
+        data: JSON.stringify(previousQuestion),
+      });
+      latestStreamOptions().onmessage?.({ id: "", event: "done", data: "" });
+    });
+    expect(result.current.results).toEqual([previousQuestion]);
+
+    fetchEventSourceMock.mockClear();
+    useReleaseStore.setState({ status: "checking" });
+    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
+      setReleaseStatus("current");
+    });
+    fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
+      await init.onopen?.(new Response(
+        JSON.stringify({ code: "CLIENT_UPDATE_REQUIRED", required_build_id: "new-build" }),
+        { status: 426 },
+      ));
+    });
+
+    let rejected!: Promise<AdmissionOutcome>;
+    await act(async () => {
+      rejected = result.current.generate({ subject: "math" });
+      await Promise.resolve();
+    });
+
+    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
+    await expect(rejected).resolves.toEqual(expect.objectContaining({ outcome: "rejected" }));
+    expect(result.current.status).toBe("error");
+    expect(result.current.results).toEqual([previousQuestion]);
+    expect(result.current.displayResults).toHaveLength(1);
+  });
+
+  it("keeps the existing signout behavior for a pre-stream 401", async () => {
+    setReleaseStatus("current");
+    const logout = vi.spyOn(useAuthStore.getState(), "logout");
+    fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
+      await init.onopen?.(new Response(null, { status: 401 }));
+    });
+
+    const { result } = renderHook(() => useGenerate());
+    let rejected!: Promise<AdmissionOutcome>;
+    act(() => {
+      rejected = result.current.generate({ subject: "math" });
+    });
+
+    await expect(rejected).resolves.toEqual(
+      expect.objectContaining({ outcome: "rejected" }),
+    );
+    expect(logout).toHaveBeenCalledOnce();
+    logout.mockRestore();
+  });
+
+  it.each([414, 422])(
+    "preserves prior results on a pre-stream HTTP %s error",
+    async (status) => {
+      setReleaseStatus("current");
+      const { result } = renderHook(() => useGenerate());
+      act(() => {
+        result.current.generate({ subject: "math" });
+      });
+      act(() => {
+        latestStreamOptions().onmessage?.({
+          id: "",
+          event: "result",
+          data: JSON.stringify(previousQuestion),
+        });
+        latestStreamOptions().onmessage?.({ id: "", event: "done", data: "" });
+      });
+      fetchEventSourceMock.mockClear();
+      fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
+        await init.onopen?.(new Response("", { status }));
+      });
+
+      let rejected!: Promise<AdmissionOutcome>;
+      await act(async () => {
+        rejected = result.current.generate({ subject: "math" });
+        await Promise.resolve();
+      });
+
+      expect(fetchEventSourceMock).toHaveBeenCalledOnce();
+      await expect(rejected).resolves.toEqual(expect.objectContaining({ outcome: "rejected" }));
+      expect(result.current.status).toBe("error");
+      expect(result.current.results).toEqual([previousQuestion]);
+      expect(result.current.displayResults).toHaveLength(1);
+    },
+  );
 
   it("preserves existing results on 426 response", async () => {
     // Set up a pre-existing result to confirm it is preserved

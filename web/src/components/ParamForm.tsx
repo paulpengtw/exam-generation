@@ -353,10 +353,15 @@ export type FormParams = Omit<
 
 export interface ParamFormProps {
   subject?: string;
-  onSubmit: (params: FormParams) => void;
+  onSubmit: (params: FormParams) => void | PromiseLike<GenerationAdmissionResult>;
   disabled: boolean;
   initialParams?: Partial<FormParams> & { [key: string]: unknown };
   onUnsubmittedInput?: () => void;
+}
+
+export interface GenerationAdmissionResult {
+  outcome: "admitted" | "rejected";
+  reason?: string;
 }
 
 /**
@@ -1307,6 +1312,7 @@ export default function ParamForm({
   const redrawsRef = useRef<Record<string, number>>({});
   const pendingParamsRef = useRef<FormParams | null>(null);
   const pendingPerQuestionParamsRef = useRef<Record<string, unknown>[] | null>(null);
+  const confirmationSubmitInFlightRef = useRef(false);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
@@ -2609,8 +2615,18 @@ export default function ParamForm({
     );
   }
 
-  function handleConfirmSend() {
-    if (!pendingParams) return;
+  function clearSubmittedConfirmation() {
+    pendingParamsRef.current = null;
+    pendingPerQuestionParamsRef.current = null;
+    setPendingParams(null);
+    setPendingPerQuestionParams(null);
+    setClearedPaths([]);
+    setHasPendingConfirmationEdits(false);
+  }
+
+  async function handleConfirmSend() {
+    if (!pendingParams || confirmationSubmitInFlightRef.current) return;
+    confirmationSubmitInFlightRef.current = true;
     const submittedParams = pendingPerQuestionParams
       ? { ...pendingParams, per_question_params: JSON.stringify(pendingPerQuestionParams) }
       : pendingParams;
@@ -2628,15 +2644,28 @@ export default function ParamForm({
     resolveOperationRef.current?.end("superseded");
     resolveOperationRef.current = null;
     resolveRequestRef.current = null;
-    pendingParamsRef.current = null;
-    pendingPerQuestionParamsRef.current = null;
-    setPendingParams(null);
-    setPendingPerQuestionParams(null);
-    setClearedPaths([]);
-    setHasPendingConfirmationEdits(false);
     // #446: clear stale state on submit
     setStalePreviewIndices(new Set());
-    onSubmit(submittedParams);
+    const admission = onSubmit(submittedParams);
+    if (admission === undefined || typeof admission.then !== "function") {
+      clearSubmittedConfirmation();
+      confirmationSubmitInFlightRef.current = false;
+      return;
+    }
+    try {
+      const outcome = await admission;
+      if (outcome.outcome === "rejected") {
+        generationStartedRef.current = false;
+        confirmationSubmitInFlightRef.current = false;
+        return;
+      }
+    } catch {
+      generationStartedRef.current = false;
+      confirmationSubmitInFlightRef.current = false;
+      return;
+    }
+    clearSubmittedConfirmation();
+    confirmationSubmitInFlightRef.current = false;
   }
 
   function updatePendingConfirmationField(

@@ -652,13 +652,13 @@ export function useGenerate(): UseGenerateReturn {
   }, []);
 
   const generate = useCallback(async (params: GenerateParams): Promise<AdmissionOutcome> => {
-    admissionResolveRef.current?.({ outcome: "rejected", reason: "superseded" });
-    endOperation("superseded");
+    if (controllerRef.current !== null) {
+      return { outcome: "rejected", reason: "generation already in progress" };
+    }
     const admissionPromise = new Promise<AdmissionOutcome>((resolve) => {
       admissionResolveRef.current = resolve;
     });
     paramsRef.current = params;
-    controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
 
@@ -1075,6 +1075,8 @@ export function useGenerate(): UseGenerateReturn {
       setAdmission("idle");
       setAdmissionError(msg);
       settleAdmission({ outcome: "rejected", reason: msg });
+      controller.abort();
+      controllerRef.current = null;
       return admissionPromise;
     }
     operationRef.current = useWorkspaceStore.getState().beginOperation("generation", "generate.results");
@@ -1095,6 +1097,7 @@ export function useGenerate(): UseGenerateReturn {
             useAuthStore.getState().logout();
             const msg = "Session expired — please sign in again";
             setErrorMessage(msg);
+            setStatus("error");
             setFinishedAt(Date.now());
             settleAdmission({ outcome: "rejected", reason: msg });
             endOperation("failed");
@@ -1115,6 +1118,7 @@ export function useGenerate(): UseGenerateReturn {
           }
           if (controllerRef.current !== controller) return;
           setErrorMessage(msg);
+          setStatus("error");
           setFinishedAt(Date.now());
           settleAdmission({ outcome: "rejected", reason: msg });
           endOperation("failed");
@@ -1187,6 +1191,9 @@ export function useGenerate(): UseGenerateReturn {
             },
           },
         });
+      }
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
       }
       // Stream terminated (abort or fatal error). State already updated.
     });

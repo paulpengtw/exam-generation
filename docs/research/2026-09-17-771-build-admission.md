@@ -11,9 +11,14 @@
 A teacher submitting a generation request with an outdated front-end build now
 receives a clear rejection before any work is dispatched.
 
-**Server**: `server/generate/release_authority.py` — `FileAuthoritySource` reads
-`web/dist/release/policy.json` (the deterministic fixture emitted by `buildIdentityPlugin`
-at `npm run build`).  `check_build_admission(header, source)` returns `JSONResponse|None`:
+**Server**: `server/generate/release_authority.py` — the backend selects an
+`HttpAuthoritySource` from `RELEASE_AUTHORITY_URL` when present, otherwise a
+`FileAuthoritySource` from `RELEASE_AUTHORITY_PATH`.  The HTTP source reads the
+frontend's `release/policy.json` with a bounded two-second timeout and creates a
+fresh async client for every request, so a changed policy is visible on the next
+admission check. Invalid URLs, non-2xx responses, invalid JSON, and timeouts are
+treated as unavailable. `check_build_admission(header, source)` returns
+`JSONResponse|None`:
 - Missing or outdated `X-Frontend-Build-ID` → **426** `CLIENT_UPDATE_REQUIRED` + `required_build_id`
 - Authority file unavailable or unknown schema → **503** `AUTHORITY_UNAVAILABLE`
 - Authority in `paused`/`preparing` state → **503** `SERVICE_PAUSED`
@@ -46,11 +51,20 @@ on rejection.
 
 ## Authority source
 
-`FileAuthoritySource` reads `ServerConfig.release_authority_path` (env:
-`RELEASE_AUTHORITY_PATH`), defaulting to `web/dist/release/policy.json`.
+The source is constructed once by `create_app()` and stored in FastAPI app
+state, while the check remains injectable for issue #778. Configuration follows
+this order:
 
-Issue #778 swaps in a live controller by implementing `AuthoritySource` (a `Protocol`)
-and wiring it in without changing `check_build_admission`.
+1. `RELEASE_AUTHORITY_URL` — recommended when frontend and backend are separate
+   services (for example, Railway's frontend `/release/policy.json`).
+2. `RELEASE_AUTHORITY_PATH` — an optional local fixture path for a deployment
+   that intentionally shares the policy file with the backend.
+3. No source — generation fails closed with retryable `503 AUTHORITY_UNAVAILABLE`.
+
+If both variables are set, the URL wins. Deployments must set at least one;
+the backend no longer assumes that `web/dist` exists in its image. Neither
+source caches a positive policy between requests. File reads run off the event
+loop, and HTTP reads use an async client with a maximum two-second timeout.
 
 ---
 
@@ -67,11 +81,12 @@ beginning of `generate()` to the `started` event handlers.  This ensures:
 ## Excluded endpoints
 
 Build-ID check is NOT required for:
-- `GET /api/generate/preview` and `POST /api/generate/preview`
-- `GET /api/resolve` and `POST /api/resolve`
-- `GET /api/generations` (History reads)
-- `POST /api/generate/plan-core-questions`
-- All modification API routes (`/api/generate/modification/*`)
+
+- `GET` and `POST /api/generate/preview`
+- `POST /api/generate/resolve`
+- `GET /api/history`, `/api/history/{record_id}`, and the history download route
+- `POST /api/plan-core-questions`
+- The 人工審題修正 routes under `/api/generation-records/{record_id}/modifications`
 - CLI pipeline calls
 
 ---

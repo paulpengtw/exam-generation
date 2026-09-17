@@ -306,6 +306,7 @@ describe("useGenerate — generation log identity", () => {
     expect(result.current.generationLogId).toBe("old-log");
 
     act(() => {
+      oldStream.onmessage?.({ id: "", event: "done", data: "{}" });
       result.current.generate({ subject: "social_studies", count: 1 });
     });
     expect(result.current.generationLogId).toBeNull();
@@ -386,6 +387,7 @@ describe("useGenerate — resolved sub-question total", () => {
     expect(result.current.subQuestionTotal).toBe(5);
 
     act(() => {
+      latestStreamOptions().onmessage?.({ id: "", event: "done", data: "{}" });
       result.current.generate({ subject: "social_studies", count: 1 });
     });
 
@@ -669,9 +671,7 @@ describe("useGenerate — stream open error detail", () => {
     vi.useRealTimers();
   });
 
-  it.each(["new run", "reset"] as const)(
-    "does not let a stale non-2xx open response update state after %s",
-    async (transition) => {
+  it("does not let a stale non-2xx open response update state after reset", async () => {
       const { result } = renderStartedRun();
       let resolveBody!: (body: unknown) => void;
       const bodyPromise = new Promise<unknown>((resolve) => {
@@ -689,11 +689,7 @@ describe("useGenerate — stream open error detail", () => {
       });
 
       act(() => {
-        if (transition === "new run") {
-          result.current.generate({ subject: "social_studies", count: 1 });
-        } else {
-          result.current.reset();
-        }
+        result.current.reset();
       });
 
       await act(async () => {
@@ -703,9 +699,8 @@ describe("useGenerate — stream open error detail", () => {
 
       expect(result.current.errorMessage).toBeNull();
       expect(result.current.finishedAt).toBeNull();
-      expect(result.current.status).toBe(transition === "new run" ? "generating" : "idle");
-    },
-  );
+      expect(result.current.status).toBe("idle");
+    });
 
   it("surfaces the JSON detail field from the response body on a non-2xx open", async () => {
     const { result } = renderStartedRun();
@@ -971,16 +966,23 @@ describe("admission", () => {
       ? { outcome: "admitted" } : { outcome: "rejected", reason: "connection lost" });
   });
 
-  it("settles a superseded run and ignores its late callbacks", async () => {
+  it("ignores a duplicate run and keeps the active stream", async () => {
     const { result } = renderHook(() => useGenerate());
     let first!: Promise<AdmissionOutcome>;
     act(() => { first = result.current.generate({ subject: "math" }); });
-    const stale = latestStreamOptions();
-    act(() => { result.current.generate({ subject: "math" }); });
-    await expect(first).resolves.toEqual({ outcome: "rejected", reason: "superseded" });
-    act(() => { stale.onmessage?.({ id: "", event: "started", data: "{}" }); });
-    expect(result.current.admission).toBe("submitting");
+    const active = latestStreamOptions();
+    let duplicate!: Promise<AdmissionOutcome>;
+    act(() => { duplicate = result.current.generate({ subject: "math" }); });
+    await expect(duplicate).resolves.toEqual({
+      outcome: "rejected",
+      reason: "generation already in progress",
+    });
+    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
+    act(() => { active.onmessage?.({ id: "", event: "started", data: "{}" }); });
+    expect(result.current.admission).toBe("admitted");
     expect(result.current.admissionError).toBeNull();
+    act(() => { result.current.reset(); });
+    await expect(first).resolves.toEqual({ outcome: "admitted" });
   });
 
   it("settles a pending admission on reset and unmount", async () => {
@@ -1041,7 +1043,7 @@ describe("workspace operation", () => {
 
   it.each([
     ["done", "completed"], ["error", "failed"], ["onerror", "failed"],
-    ["onopen", "failed"], ["reset", "aborted"], ["unmount", "aborted"], ["superseded", "superseded"],
+    ["onopen", "failed"], ["reset", "aborted"], ["unmount", "aborted"],
   ] as const)("ends generation on %s as %s", async (event, outcome) => {
     const begin = useWorkspaceStore.getState().beginOperation;
     const end = vi.fn();
@@ -1055,12 +1057,11 @@ describe("workspace operation", () => {
     ]);
     if (event === "reset") act(() => { result.current.reset(); });
     else if (event === "unmount") unmount();
-    else if (event === "superseded") act(() => { result.current.generate({ subject: "math" }); });
     else if (event === "onerror") act(() => { expect(() => latestStreamOptions().onerror?.(new Error("lost"))).toThrow(); });
     else if (event === "onopen") await act(async () => { await expect(latestStreamOptions().onopen?.(new Response("", { status: 500 }))).rejects.toThrow(); });
     else sendWorkspaceEvent(event);
     expect(end).toHaveBeenCalledWith(outcome);
-    expect(useWorkspaceStore.getState().operations).toHaveLength(event === "superseded" ? 1 : 0);
+    expect(useWorkspaceStore.getState().operations).toHaveLength(0);
     unmount();
   });
 });
@@ -1234,28 +1235,32 @@ describe("F3: missing started then done → no placeholders, error", () => {
 describe("F3: stale started from previous generation ignored", () => {
   beforeEach(() => { fetchEventSourceMock.mockClear(); });
 
-  it("ignores started event from a superseded generation", async () => {
+  it("ignores a duplicate without replacing the active generation", async () => {
     const { result } = renderHook(() => useGenerate());
     act(() => { result.current.generate({ subject: "math" }); });
-    const staleOpts = latestStreamOptions();
+    const activeOpts = latestStreamOptions();
 
-    // Start a new generation (supersedes the first)
-    act(() => { result.current.generate({ subject: "math" }); });
+    let duplicate!: Promise<AdmissionOutcome>;
+    act(() => { duplicate = result.current.generate({ subject: "math" }); });
+    await expect(duplicate).resolves.toEqual({
+      outcome: "rejected",
+      reason: "generation already in progress",
+    });
     expect(result.current.admission).toBe("submitting");
 
-    // Send v2 started on the stale connection
+    // The active connection remains the only connection.
     act(() => {
-      staleOpts.onmessage?.({
+      activeOpts.onmessage?.({
         id: "",
         event: "started",
         data: JSON.stringify(V2_STARTED_DATA),
       });
     });
 
-    // Evidence should still be null (stale callback ignored)
+    // Evidence is accepted from the active connection.
     const ev = result.current as unknown as { evidence: RunEvidenceState | null };
-    expect(ev.evidence).toBeNull();
-    expect(result.current.admission).toBe("submitting");
+    expect(ev.evidence).not.toBeNull();
+    expect(result.current.admission).toBe("admitted");
   });
 });
 
