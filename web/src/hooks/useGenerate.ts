@@ -8,7 +8,7 @@ import { isSentryEnabled } from "../sentry";
 import type { GenerateParams } from "../api/generated/contract";
 import {
   formatResolverFieldErrors,
-  type ResolverFieldErrorLike,
+  isResolverFieldErrorLike,
 } from "../lib/resolverErrorMessages";
 
 import { useWorkspaceStore, type OperationHandle, type OperationOutcome } from "../lib/workspace/workspaceStore";
@@ -377,14 +377,7 @@ function formatHttpErrorDetail(detail: unknown): string | null {
   if (typeof detail === "string" && detail !== "") return detail;
   if (!Array.isArray(detail)) return null;
 
-  const fieldErrors = detail.filter(
-    (item): item is ResolverFieldErrorLike => (
-      item !== null
-      && typeof item === "object"
-      && typeof (item as Record<string, unknown>).field === "string"
-      && typeof (item as Record<string, unknown>).code === "string"
-    ),
-  );
+  const fieldErrors = detail.filter(isResolverFieldErrorLike);
   if (fieldErrors.length > 0) {
     // #835: incompatible_parent / no_admitting_parent get a readable
     // sentence via the shared formatter; `unresolved` (and any other/

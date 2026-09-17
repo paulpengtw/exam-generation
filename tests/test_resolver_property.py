@@ -560,39 +560,44 @@ def test_resolver_property_all_subjects() -> None:
 
 
 def test_resolve_production_reproduction_civic_domain_blank_is_idempotent() -> None:
-    payload = {
-        "subject": "social_studies",
-        "seed": 101,
-        "grade": 7,
-        "set_type": "題組題",
-        "target_surface": "紙本",
-        "subject_filter": ["公民與社會"],
-        "learning_content": ["公Bn-Ⅳ-3"],
-    }
+    for seed in range(200):
+        payload = {
+            "subject": "social_studies",
+            "seed": seed,
+            "grade": 7,
+            "set_type": "題組題",
+            "target_surface": "紙本",
+            "subject_filter": ["公民與社會"],
+            "learning_content": ["公Bn-Ⅳ-3"],
+        }
 
-    result = resolve(payload)
+        result = resolve(payload)
 
-    assert result.payload["content_domain"] == "Civic Institutions and Systems"
-    second = resolve(result.payload)
-    assert second.payload == result.payload
-    assert second.drawn == []
-    assert second.cleared == []
+        assert result.payload["content_domain"] == "Civic Institutions and Systems", (
+            f"seed={seed}"
+        )
+        second = resolve(result.payload)
+        assert second.payload == result.payload, f"seed={seed}"
+        assert second.drawn == [], f"seed={seed}"
+        assert second.cleared == [], f"seed={seed}"
 
 
 def test_resolve_production_reproduction_mixed_subject_civic_code_is_idempotent() -> None:
-    payload = {
-        "subject": "social_studies",
-        "seed": 202,
-        "grade": 7,
-        "set_type": "題組題",
-        "target_surface": "紙本",
-        "subject_filter": ["公民與社會", "地理"],
-        "learning_content": ["公Bj-Ⅳ-1"],
-    }
+    for seed in range(200):
+        payload = {
+            "subject": "social_studies",
+            "seed": seed,
+            "grade": 7,
+            "set_type": "題組題",
+            "target_surface": "紙本",
+            "subject_filter": ["公民與社會", "地理"],
+            "learning_content": ["公Bj-Ⅳ-1"],
+        }
 
-    result = resolve(payload)
+        result = resolve(payload)
 
-    second = resolve(result.payload)
-    assert second.payload == result.payload
-    assert second.drawn == []
-    assert second.cleared == []
+        assert result.payload["subject_filter"] == ["公民與社會"], f"seed={seed}"
+        second = resolve(result.payload)
+        assert second.payload == result.payload, f"seed={seed}"
+        assert second.drawn == [], f"seed={seed}"
+        assert second.cleared == [], f"seed={seed}"
