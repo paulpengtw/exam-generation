@@ -37,7 +37,12 @@ from src.common.curriculum_loader import (
 from src.common.curriculum_loader import (
     allowed_learning_performance as _math_allowed_lp,
 )
-from src.common.resolver import ResolveConflictError, _resolved_subquestion_count, resolve
+from src.common.resolver import (
+    ResolveConflictError,
+    _local_redraws,
+    _resolved_subquestion_count,
+    resolve,
+)
 from src.natural_sciences.curriculum_loader import (
     allowed_learning_content as _ns_allowed_lc,
 )
@@ -413,7 +418,7 @@ def _row_seed(payload: dict, row_index: int | None) -> int | str | None:
 
 
 def _resolved_curriculum_pins(
-    payload: dict, row_index: int | None
+    payload: dict, row_index: int | None, redraws: dict[str, int] | None
 ) -> tuple[list[str], list[str]]:
     """Every 學習內容/學習表現 code pinned for this merged row.
 
@@ -430,8 +435,13 @@ def _resolved_curriculum_pins(
     lp = list(view.get("learning_performance") or [])
     configs = view.get("subquestion_configs")
     if isinstance(configs, list) and configs:
+        local_redraws = _local_redraws(
+            redraws,
+            index=0 if row_index is None else row_index,
+            batch=row_index is not None,
+        )
         count = _resolved_subquestion_count(
-            {**view, "seed": _row_seed(payload, row_index)}, None
+            {**view, "seed": _row_seed(payload, row_index)}, local_redraws
         )
         for row in configs[:count]:
             if isinstance(row, dict):
@@ -451,7 +461,12 @@ def _parent_kind(parent: str) -> str:
     raise AssertionError(f"unrecognized 科目/內容領域 parent value: {parent!r}")
 
 
-def _assert_social_conflict_necessary(error: dict, payload: dict, count: int) -> None:
+def _assert_social_conflict_necessary(
+    error: dict,
+    payload: dict,
+    count: int,
+    redraws: dict[str, int] | None,
+) -> None:
     """The reported conflict must be unavoidable, verified independently.
 
     科目-parent error: no candidate 科目 -- the supplied ``subject_filter``
@@ -465,7 +480,7 @@ def _assert_social_conflict_necessary(error: dict, payload: dict, count: int) ->
     """
     row_index, _local_field = _parse_error_field(error["field"], count)
     view = _row_view(payload, row_index)
-    lc_codes, lp_codes = _resolved_curriculum_pins(payload, row_index)
+    lc_codes, lp_codes = _resolved_curriculum_pins(payload, row_index, redraws)
     kind = _parent_kind(error["parent"])
 
     if kind == "科目":
@@ -512,23 +527,29 @@ _SEED = 20260917
 
 def test_resolver_property_all_subjects() -> None:
     rng = random.Random(_SEED)
+    cleared_hits = 0
     for _ in range(_ITERATIONS):
-        payload = _build_payload(rng)
+        payload = dict(_build_payload(rng))
+        redraws = payload.pop("redraws", None)
         count = payload.get("count", 1)
         try:
-            result = resolve(payload)
+            result = resolve(payload, redraws=redraws)
         except ResolveConflictError as exc:
             assert exc.errors, payload
             for error in exc.errors:
                 _assert_well_formed_error(error, payload, count)
                 if payload.get("subject") == "social_studies":
-                    _assert_social_conflict_necessary(error, payload, count)
+                    _assert_social_conflict_necessary(error, payload, count, redraws)
             continue
 
+        if result.cleared:
+            cleared_hits += 1
         second = resolve(result.payload)
         assert second.payload == result.payload, (payload, result.payload, second.payload)
         assert second.drawn == [], (payload, second.drawn)
         assert second.cleared == [], (payload, second.cleared)
+
+    assert cleared_hits > 0, "fixed-seed property run never exercised redraw clearing"
 
 
 # ---------------------------------------------------------------------------
