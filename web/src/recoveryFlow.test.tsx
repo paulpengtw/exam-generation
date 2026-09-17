@@ -11,7 +11,7 @@
  *   3. Quota failure: reload not called, form preserved, 重試 button shown
  *   4. Unsupported format / changed target: refused before saving, nothing in storage
  */
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ExamQuestion, GeneratedQuestion } from "./hooks/useGenerate";
@@ -528,6 +528,20 @@ beforeEach(() => {
   resetWorkspaceStoreForTests();
   resetRecoveryStoreForTests();
   resetReleaseDetector();
+  // Reset the release store to a neutral initial state so that stale
+  // `status: "update-required"` or `status: "current"` values from a
+  // previous test cannot leak through the store into the next test.
+  // `resetReleaseDetector()` only resets the in-flight request tracking;
+  // the store itself must be reset separately.
+  useReleaseStore.setState({
+    status: "checking",
+    requiredBuildId: null,
+    releaseRevision: null,
+    lastCheckedAt: null,
+    lastFailure: null,
+    supportedRecoveryFormats: [],
+    checkNow: async () => {},
+  } as ReleaseState);
   useAuthStore.setState({
     token: "tok",
     user: USER,
@@ -551,6 +565,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Unmount any components that a test left mounted (e.g. when a test assertion
+  // fails before reaching its own `unmount()` call). Without this, stale
+  // ReleaseNotice components remain in the DOM with live Zustand subscriptions;
+  // they can interfere with later tests by reacting to store changes, firing
+  // auto-refresh effects, or duplicating DOM elements visible to `screen`.
+  cleanup();
   vi.unstubAllGlobals();
   vi.stubGlobal("__BUILD_ID__", "build-A");
   vi.stubGlobal("__BUILD_ENVIRONMENT__", "production");
