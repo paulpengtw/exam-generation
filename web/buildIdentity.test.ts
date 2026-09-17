@@ -172,6 +172,7 @@ describe("buildIdentityPlugin", () => {
       environment: string;
       admission: string;
       supported_recovery_formats: string[];
+      reader_version: string;
     };
 
     // Both files must share the same build_id
@@ -187,6 +188,7 @@ describe("buildIdentityPlugin", () => {
     expect(policyJson.release_revision).toBe(3);
     expect(policyJson.admission).toBe("open");
     expect(policyJson.supported_recovery_formats).toEqual([]);
+    expect(policyJson.reader_version).toBe("reader-1");
 
     // Build meta fields
     expect(buildMetaJson.commit).toBe(REAL_COMMIT);

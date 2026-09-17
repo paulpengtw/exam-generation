@@ -20,6 +20,7 @@ from server.db import get_async_session
 from server.generate.release_authority import (
     FileAuthoritySource,
     HttpAuthoritySource,
+    LiveControllerAuthoritySource,
     build_authority_source,
     check_build_admission,
 )
@@ -315,10 +316,62 @@ def test_authority_source_selection_prefers_url_then_path(tmp_path: Path) -> Non
     path = tmp_path / "policy.json"
     assert isinstance(
         build_authority_source("https://frontend.example/release/policy.json", path),
-        HttpAuthoritySource,
+        LiveControllerAuthoritySource,
     )
     assert isinstance(build_authority_source("", path), FileAuthoritySource)
     assert build_authority_source("", None) is None
+
+
+def test_live_controller_source_rereads_policy_without_positive_cache() -> None:
+    policies = [_make_fixture("build-a"), _make_fixture("build-b")]
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=policies.pop(0))
+
+    source = LiveControllerAuthoritySource(
+        "http://gateway/release/policy.json",
+        transport=httpx.MockTransport(handler),
+    )
+    assert asyncio.run(source.read())["released_build_id"] == "build-a"
+    assert asyncio.run(source.read())["released_build_id"] == "build-b"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"environment": ""},
+        {"release_revision": 0},
+        {"release_revision": True},
+        {"supported_recovery_formats": [1]},
+    ],
+)
+def test_malformed_release_contract_is_unavailable(change: dict) -> None:
+    policy = _make_fixture()
+    policy.update(change)
+
+    async def read() -> dict:
+        return policy
+
+    class Source:
+        async def read(self) -> dict:
+            return await read()
+
+    response = asyncio.run(check_build_admission("build-abc", Source()))
+    assert response is not None
+    assert response.status_code == 503
+    assert json.loads(response.body)["code"] == "AUTHORITY_UNAVAILABLE"
+
+
+def test_expected_environment_mismatch_is_unavailable() -> None:
+    source = HttpAuthoritySource(
+        "http://gateway/release/policy.json",
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=_make_fixture())),
+    )
+    response = asyncio.run(
+        check_build_admission("build-abc", source, expected_environment="staging")
+    )
+    assert response is not None
+    assert response.status_code == 503
 
 
 def test_excluded_endpoints_do_not_require_build_header(tmp_path: Path) -> None:

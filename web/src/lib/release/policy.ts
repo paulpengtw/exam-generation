@@ -21,6 +21,7 @@ export interface ReleasePolicy {
   released_build_id: string;
   admission: Admission;
   supported_recovery_formats: string[];
+  reader_version?: string;
 }
 
 type ParseOk = { ok: true; policy: ReleasePolicy };
@@ -64,8 +65,12 @@ export function parseReleasePolicy(
   // Required field type checks
   if (
     typeof doc.environment !== "string" ||
+    doc.environment.length === 0 ||
     typeof doc.release_revision !== "number" ||
+    !Number.isInteger(doc.release_revision) ||
+    doc.release_revision < 1 ||
     typeof doc.released_build_id !== "string" ||
+    doc.released_build_id.length === 0 ||
     typeof doc.admission !== "string" ||
     !Array.isArray(doc.supported_recovery_formats)
   ) {
@@ -83,6 +88,11 @@ export function parseReleasePolicy(
     return { ok: false, reason: "malformed" };
   }
 
+  if (doc.reader_version !== undefined &&
+      (typeof doc.reader_version !== "string" || doc.reader_version.length === 0)) {
+    return { ok: false, reason: "malformed" };
+  }
+
   // Environment check
   if (doc.environment !== expectedEnvironment) {
     return { ok: false, reason: "environment_mismatch" };
@@ -97,6 +107,7 @@ export function parseReleasePolicy(
       released_build_id: doc.released_build_id,
       admission: doc.admission as Admission,
       supported_recovery_formats: doc.supported_recovery_formats as string[],
+      ...(doc.reader_version !== undefined ? { reader_version: doc.reader_version } : {}),
     },
   };
 }

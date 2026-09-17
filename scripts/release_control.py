@@ -206,6 +206,16 @@ def _validate_snapshot(
         return "stale"
     if snap.get("integrity_errors", 0) > 0:
         return "integrity-errors"
+    counters = (
+        "active_runs",
+        "active_workers",
+        "open_streams",
+        "pending_deliveries",
+        "pending_persistence",
+        "renderer_leases_held",
+    )
+    if any(snap.get(counter) != 0 for counter in counters):
+        return "nonzero"
     if not snap.get("quiescent", False):
         return "busy"
     return None
@@ -269,6 +279,113 @@ def _open_gateway(gateway: dict) -> bool:
         print(f"  [ERROR] gateway open returned HTTP {r.status_code}", file=sys.stderr)
         return False
     return True
+
+
+def _controller_post(gateway: dict, path: str, body: dict) -> tuple[bool, dict | None]:
+    """POST one controller operation with the gateway's existing control token."""
+    try:
+        token = _gateway_token(gateway)
+    except RuntimeError as exc:
+        print(f"  [ERROR] {exc}", file=sys.stderr)
+        return False, None
+    try:
+        response = httpx.post(
+            gateway["url"].rstrip("/") + path,
+            json=body,
+            headers={"X-Gateway-Control-Token": token},
+            timeout=10,
+        )
+    except httpx.HTTPError as exc:
+        print(f"  [ERROR] controller request failed: {exc}", file=sys.stderr)
+        return False, None
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+    if response.status_code != 200 or not isinstance(data, dict):
+        print(
+            f"  [ERROR] controller {path} returned HTTP {response.status_code}: {data}",
+            file=sys.stderr,
+        )
+        return False, data if isinstance(data, dict) else None
+    return True, data
+
+
+def _collect_positive_drain_evidence(
+    inventory: dict, max_age: float
+) -> dict[str, Any] | None:
+    instances = inventory.get("instances", [])
+    snapshots: list[dict] = []
+    for instance in instances:
+        snapshot, label = _fetch_snapshot_classified(instance)
+        if label is not None or snapshot is None:
+            print(f"  [FAIL] {instance.get('name', '<unknown>')}: {label}", file=sys.stderr)
+            return None
+        failure = _validate_snapshot(snapshot, instance["name"], max_age)
+        if failure:
+            print(f"  [FAIL] {instance['name']}: {failure}", file=sys.stderr)
+            return None
+        snapshots.append(snapshot)
+    coverage = _check_coverage(snapshots, len(instances))
+    if coverage:
+        print(f"  [FAIL] {coverage}", file=sys.stderr)
+        return None
+    return {
+        "instances": [instance["name"] for instance in instances],
+        "drain_snapshots": snapshots,
+    }
+
+
+def _route_policy_evidence(inventory: dict) -> dict[str, Any] | None:
+    """Read every serving route's live policy; never infer readiness locally."""
+    routes = inventory.get("routes", [])
+    if not isinstance(routes, list) or not routes:
+        print("  [ERROR] inventory has no routes metadata entries", file=sys.stderr)
+        return None
+    records: list[dict[str, Any]] = []
+    for route in routes:
+        if not isinstance(route, dict) or not route.get("name"):
+            print("  [ERROR] route inventory entry is invalid", file=sys.stderr)
+            return None
+        url = route.get("policy_url") or (
+            route.get("url", "").rstrip("/") + "/release/policy.json"
+        )
+        if not url.startswith(("http://", "https://")):
+            print(f"  [ERROR] route {route['name']}: invalid policy URL", file=sys.stderr)
+            return None
+        try:
+            response = httpx.get(url, timeout=10)
+            raw = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            print(f"  [ERROR] route {route['name']}: metadata read failed: {exc}", file=sys.stderr)
+            return None
+        if response.status_code != 200 or not isinstance(raw, dict):
+            print(
+                f"  [ERROR] route {route['name']}: HTTP {response.status_code}",
+                file=sys.stderr,
+            )
+            return None
+        records.append(
+            {
+                "name": route["name"],
+                "build_id": raw.get("released_build_id"),
+                "release_revision": raw.get("release_revision"),
+                "reader_version": raw.get("reader_version"),
+            }
+        )
+    return {"routes": records, "expected_routes": [route["name"] for route in routes]}
+
+
+def _load_target(path: str) -> dict[str, Any]:
+    with open(path, encoding="utf-8") as handle:
+        raw = json.load(handle)
+    if not isinstance(raw, dict):
+        raise ValueError("target policy must be an object")
+    if "build_id" not in raw and "released_build_id" in raw:
+        raw["build_id"] = raw["released_build_id"]
+    if "reader_version" not in raw:
+        raw["reader_version"] = raw.get("reader", "reader-1")
+    return raw
 
 
 # ---------------------------------------------------------------------------
@@ -526,6 +643,69 @@ def cmd_readiness(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prepare(args: argparse.Namespace) -> int:
+    """Record a target and enter controller preparation without reopening."""
+    inv = _load_inventory(args.inventory)
+    gateway = inv.get("gateway")
+    if not gateway:
+        print("[ERROR] No gateway in inventory", file=sys.stderr)
+        return 1
+    try:
+        target = _load_target(args.target)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"[ERROR] target policy: {exc}", file=sys.stderr)
+        return 1
+    body = {"target": target, "transition_assets": target.pop("transition_assets", [])}
+    ok, _ = _controller_post(gateway, "/gateway/release/prepare", body)
+    if not ok:
+        return 1
+    print("release target prepared; admission remains closed until publish + reopen")
+    return 0
+
+
+def cmd_publish(args: argparse.Namespace) -> int:
+    """Publish only after fresh all-instance drain and all-route evidence."""
+    inv = _load_inventory(args.inventory)
+    gateway = inv.get("gateway")
+    if not gateway:
+        print("[ERROR] No gateway in inventory", file=sys.stderr)
+        return 1
+    drain = _collect_positive_drain_evidence(inv, float(args.max_age_seconds))
+    if drain is None:
+        print("publish ABORTED: positive drain evidence is not established")
+        return 3
+    routes = _route_policy_evidence(inv)
+    if routes is None:
+        print("publish ABORTED: every serving route must report target metadata")
+        return 1
+    body = {**drain, **routes, "pending_admissions": 0}
+    ok, _ = _controller_post(gateway, "/gateway/release/publish", body)
+    if not ok:
+        print("publish ABORTED: controller rejected the transition")
+        return 1
+    print("release target published; admission remains closed until reopen")
+    return 0
+
+
+def cmd_retire(args: argparse.Namespace) -> int:
+    """Retire one transition asset only after fresh drain evidence."""
+    inv = _load_inventory(args.inventory)
+    gateway = inv.get("gateway")
+    if not gateway:
+        print("[ERROR] No gateway in inventory", file=sys.stderr)
+        return 1
+    drain = _collect_positive_drain_evidence(inv, float(args.max_age_seconds))
+    if drain is None:
+        print("retire ABORTED: positive drain evidence is not established")
+        return 3
+    ok, _ = _controller_post(
+        gateway,
+        "/gateway/release/retire",
+        {"artifact": args.artifact, "evidence": drain},
+    )
+    return 0 if ok else 1
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -590,6 +770,20 @@ def main(argv: list[str] | None = None) -> int:
     _add_age(_rd)
     _rd.add_argument("--require-version", type=int, default=1, dest="require_version")
 
+    # live controller preparation/publication/retirement
+    prep = sub.add_parser("prepare", help="Prepare a target release without opening admission")
+    _add_inv(prep)
+    prep.add_argument("--target", required=True, help="Target policy/artifact JSON")
+
+    pub = sub.add_parser("publish", help="Publish a prepared target after evidence checks")
+    _add_inv(pub)
+    _add_age(pub)
+
+    ret = sub.add_parser("retire", help="Retire a transition asset after drain evidence")
+    _add_inv(ret)
+    _add_age(ret)
+    ret.add_argument("--artifact", required=True)
+
     args = parser.parse_args(argv)
     _DISPATCH = {
         "preflight": cmd_preflight,
@@ -598,6 +792,9 @@ def main(argv: list[str] | None = None) -> int:
         "compat-check": cmd_compat_check,
         "reopen": cmd_reopen,
         "readiness": cmd_readiness,
+        "prepare": cmd_prepare,
+        "publish": cmd_publish,
+        "retire": cmd_retire,
     }
     return _DISPATCH[args.command](args)
 

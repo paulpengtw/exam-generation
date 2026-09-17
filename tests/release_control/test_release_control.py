@@ -461,3 +461,69 @@ def test_reopen_after_compat_mismatch_stays_paused(tmp_path, monkeypatch):
     assert len(open_calls_post) == 0, (
         f"gateway was asked to open despite compat mismatch: {open_calls_post}"
     )
+
+
+def test_prepare_and_publish_use_route_and_drain_evidence(tmp_path, monkeypatch):
+    """Live controller commands post only after every inventory source is read."""
+    inventory = {
+        "instances": [
+            {"name": "backend-1", "url": "http://backend1", "token_env": "DRAIN_TOKEN_1"},
+            {"name": "backend-2", "url": "http://backend2", "token_env": "DRAIN_TOKEN_2"},
+        ],
+        "routes": [
+            {"name": "frontend", "url": "http://frontend"},
+            {"name": "gateway", "url": "http://gateway"},
+        ],
+        "gateway": {"url": "http://gateway", "token_env": "GATEWAY_CONTROL_TOKEN"},
+    }
+    inv_path = _write_inventory(tmp_path, inventory)
+    target_path = tmp_path / "target.json"
+    target_path.write_text(
+        json.dumps(
+            {
+                "build_id": "build-b",
+                "release_revision": 2,
+                "reader_version": "reader-1",
+            }
+        )
+    )
+    monkeypatch.setenv("DRAIN_TOKEN_1", "tok1")
+    monkeypatch.setenv("DRAIN_TOKEN_2", "tok2")
+    monkeypatch.setenv("GATEWAY_CONTROL_TOKEN", "gw-tok")
+
+    def fake_get(url, **kwargs):
+        response = MagicMock()
+        response.status_code = 200
+        if "/internal/drain" in url:
+            response.json.return_value = _fresh_snap(
+                instance_id="backend-1" if "backend1" in url else "backend-2"
+            )
+        else:
+            response.json.return_value = {
+                "released_build_id": "build-b",
+                "release_revision": 2,
+                "reader_version": "reader-1",
+            }
+        return response
+
+    post_response = MagicMock()
+    post_response.status_code = 200
+    post_response.json.return_value = {"admission": "preparing"}
+    with patch("release_control.httpx.get", side_effect=fake_get), patch(
+        "release_control.httpx.post", return_value=post_response
+    ) as mock_post:
+        assert release_control.main(
+            ["prepare", "--inventory", str(inv_path), "--target", str(target_path)]
+        ) == 0
+        assert release_control.main(
+            ["publish", "--inventory", str(inv_path), "--max-age-seconds", "30"]
+        ) == 0
+
+    paths = [call.args[0] for call in mock_post.call_args_list]
+    assert paths == [
+        "http://gateway/gateway/release/prepare",
+        "http://gateway/gateway/release/publish",
+    ]
+    publish_body = mock_post.call_args_list[-1].kwargs["json"]
+    assert publish_body["expected_routes"] == ["frontend", "gateway"]
+    assert len(publish_body["drain_snapshots"]) == 2

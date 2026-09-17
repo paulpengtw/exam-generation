@@ -69,6 +69,7 @@ class ServerConfig(Config):
     )
     release_authority_url: str = ""
     release_authority_path: Path | None = None
+    release_environment: str = ""
     generation_history_retention_days: int = 0
     email_whitelist: tuple[str, ...] = ()
     llm_models_allowed: tuple[str, ...] = ()
@@ -156,6 +157,7 @@ class ServerConfig(Config):
                 if os.environ.get("RELEASE_AUTHORITY_PATH", "").strip()
                 else None
             ),
+            release_environment=os.environ.get("RELEASE_ENVIRONMENT", "").strip(),
             generation_history_retention_days=int(
                 os.environ.get("GENERATION_HISTORY_RETENTION_DAYS", "0")
             ),

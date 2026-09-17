@@ -1,0 +1,417 @@
+{
+  "schema": "exam-generation.release-admission-evidence/1",
+  "issue": 778,
+  "generated_at": "2026-09-17T16:08:50.567917+00:00",
+  "authority": {
+    "schema": "exam-generation.release-policy/1",
+    "environment": "test",
+    "initial_build_id": "build-current",
+    "published_build_id": "build-next",
+    "published_revision": 2
+  },
+  "backend_instances": [
+    {
+      "name": "backend-1",
+      "url": "http://127.0.0.1:56765"
+    },
+    {
+      "name": "backend-2",
+      "url": "http://127.0.0.1:52571"
+    }
+  ],
+  "route_inventory": [
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/release/policy.json",
+      "kind": "metadata",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/build-meta.json",
+      "kind": "metadata",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/api/generate",
+      "kind": "generation",
+      "status": 426,
+      "code": "CLIENT_UPDATE_REQUIRED",
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "POST",
+      "path": "/api/generate",
+      "kind": "generation",
+      "status": 426,
+      "code": "CLIENT_UPDATE_REQUIRED",
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/api/generate/",
+      "kind": "generation",
+      "status": 426,
+      "code": "CLIENT_UPDATE_REQUIRED",
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "POST",
+      "path": "/api/generate/",
+      "kind": "generation",
+      "status": 426,
+      "code": "CLIENT_UPDATE_REQUIRED",
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "POST",
+      "path": "/api/generate/preview",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "POST",
+      "path": "/api/generate/resolve",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "POST",
+      "path": "/api/plan-core-questions",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "POST",
+      "path": "/api/generation-records/example/modifications",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/api/generation-logs/example/exchanges",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/api/history",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/api/history/1",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/api/schemas",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/auth/magic-link",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "POST",
+      "path": "/auth/session",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/health",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-1",
+      "method": "GET",
+      "path": "/internal/drain",
+      "kind": "private",
+      "status": 404,
+      "code": null,
+      "backend": "backend-1"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/release/policy.json",
+      "kind": "metadata",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/build-meta.json",
+      "kind": "metadata",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/api/generate",
+      "kind": "generation",
+      "status": 426,
+      "code": "CLIENT_UPDATE_REQUIRED",
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "POST",
+      "path": "/api/generate",
+      "kind": "generation",
+      "status": 426,
+      "code": "CLIENT_UPDATE_REQUIRED",
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/api/generate/",
+      "kind": "generation",
+      "status": 426,
+      "code": "CLIENT_UPDATE_REQUIRED",
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "POST",
+      "path": "/api/generate/",
+      "kind": "generation",
+      "status": 426,
+      "code": "CLIENT_UPDATE_REQUIRED",
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "POST",
+      "path": "/api/generate/preview",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "POST",
+      "path": "/api/generate/resolve",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "POST",
+      "path": "/api/plan-core-questions",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "POST",
+      "path": "/api/generation-records/example/modifications",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/api/generation-logs/example/exchanges",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/api/history",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/api/history/1",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/api/schemas",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/auth/magic-link",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "POST",
+      "path": "/auth/session",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/health",
+      "kind": "passthrough",
+      "status": 200,
+      "code": null,
+      "backend": "backend-2"
+    },
+    {
+      "surface": "gateway-2",
+      "method": "GET",
+      "path": "/internal/drain",
+      "kind": "private",
+      "status": 404,
+      "code": null,
+      "backend": "backend-2"
+    }
+  ],
+  "checks": {
+    "current_build_accepted": {
+      "status": 200,
+      "generation_dispatches": 1,
+      "provider_dispatches": 1
+    },
+    "stale_or_missing_build": {
+      "rejected_statuses": [
+        426,
+        426
+      ],
+      "generation_dispatches_delta": 0
+    },
+    "paused_or_unavailable_authority": {
+      "statuses": [
+        503,
+        503
+      ],
+      "unavailable_statuses": [
+        503,
+        503
+      ],
+      "generation_dispatches_delta": 0,
+      "paused_codes": [
+        "SERVICE_PAUSED",
+        "SERVICE_PAUSED"
+      ],
+      "unavailable_codes": [
+        "AUTHORITY_UNAVAILABLE",
+        "AUTHORITY_UNAVAILABLE"
+      ]
+    },
+    "existing_stream_and_read_only": {
+      "stream_completed": true,
+      "read_only_statuses": [
+        200,
+        200,
+        200,
+        200
+      ]
+    },
+    "pending_transition": {
+      "pending_publish_status": 409,
+      "published_status": 200,
+      "pending_publish_code": "RELEASE_TRANSITION_REJECTED",
+      "published_build_id": "build-next",
+      "pending_stream_completed": true
+    },
+    "nginx_headers": {
+      "nginx.conf": true,
+      "nginx.conf.template": true
+    }
+  },
+  "dispatch_evidence": [
+    {
+      "name": "backend-1",
+      "generation_dispatches": 2,
+      "provider_dispatches": 2,
+      "read_only_dispatches": 13,
+      "request_count": 15
+    },
+    {
+      "name": "backend-2",
+      "generation_dispatches": 1,
+      "provider_dispatches": 1,
+      "read_only_dispatches": 13,
+      "request_count": 14
+    }
+  ]
+}

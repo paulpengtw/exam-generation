@@ -139,6 +139,11 @@ export function buildIdentityPlugin(): Plugin {
     generateBundle() {
       const builtAt = new Date().toISOString();
       const releaseRevision = Number(process.env.RELEASE_REVISION ?? 1);
+      const readerVersion = process.env.RELEASE_READER_VERSION ?? "reader-1";
+      const supportedRecoveryFormats = (process.env.SUPPORTED_RECOVERY_FORMATS ?? "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
 
       // dist/build-meta.json — artifact provenance
       this.emitFile({
@@ -151,6 +156,9 @@ export function buildIdentityPlugin(): Plugin {
             environment: resolvedEnvironment,
             commit: resolvedCommit,
             built_at: builtAt,
+            release_revision: releaseRevision,
+            reader_version: readerVersion,
+            supported_recovery_formats: supportedRecoveryFormats,
           },
           null,
           2,
@@ -168,7 +176,8 @@ export function buildIdentityPlugin(): Plugin {
             release_revision: releaseRevision,
             released_build_id: resolvedBuildId,
             admission: "open",
-            supported_recovery_formats: [],
+            supported_recovery_formats: supportedRecoveryFormats,
+            reader_version: readerVersion,
           },
           null,
           2,
