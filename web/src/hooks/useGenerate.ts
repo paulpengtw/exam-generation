@@ -3,10 +3,21 @@ import { fetchEventSource } from "@microsoft/fetch-event-source";
 import * as Sentry from "@sentry/react";
 
 import { useAuthStore } from "../store/authStore";
+import { useLangStore } from "../store/langStore";
 import { isSentryEnabled } from "../sentry";
-import type { GenerateParams, ResolveFieldError } from "../api/generated/contract";
+import type { GenerateParams } from "../api/generated/contract";
+import {
+  formatResolverFieldErrors,
+  isResolverFieldErrorLike,
+} from "../lib/resolverErrorMessages";
+
+import { useWorkspaceStore, type OperationHandle, type OperationOutcome } from "../lib/workspace/workspaceStore";
+import type { ResultsWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 
 export type { GenerateParams };
+
+export type AdmissionState = "idle" | "submitting" | "admitted" | "rejected";
+export type AdmissionOutcome = { outcome: "admitted" } | { outcome: "rejected"; reason: string };
 
 export type GenerateStatus = "idle" | "generating" | "error";
 
@@ -286,7 +297,10 @@ export interface UseGenerateReturn {
   finishedAt: number | null;
   generationLogId: string | null;
   subQuestionTotal: number | null;
-  generate: (params: GenerateParams) => void;
+  admission: AdmissionState;
+  admissionError: string | null;
+  generate: (params: GenerateParams) => Promise<AdmissionOutcome>;
+  restoreResults: (snapshot: ResultsWorkspaceSnapshot) => boolean;
   reset: () => void;
 }
 
@@ -363,15 +377,16 @@ function formatHttpErrorDetail(detail: unknown): string | null {
   if (typeof detail === "string" && detail !== "") return detail;
   if (!Array.isArray(detail)) return null;
 
-  const fieldErrors = detail.filter(
-    (item): item is ResolveFieldError => (
-      item !== null
-      && typeof item === "object"
-      && typeof (item as Record<string, unknown>).field === "string"
-      && typeof (item as Record<string, unknown>).code === "string"
-    ),
-  );
+  const fieldErrors = detail.filter(isResolverFieldErrorLike);
   if (fieldErrors.length > 0) {
+    // #835: incompatible_parent / no_admitting_parent get a readable
+    // sentence via the shared formatter; `unresolved` (and any other/
+    // unknown code) keeps its pre-#835 "field (code)" text — the formatter
+    // returns null for a batch containing any of those, and this falls
+    // back to the original join.
+    const lang = useLangStore.getState().lang;
+    const readable = formatResolverFieldErrors(fieldErrors, lang);
+    if (readable !== null) return readable;
     return `Incomplete request: ${fieldErrors
       .map(({ field, code }) => `${field} (${code})`)
       .join("; ")}`;
@@ -541,6 +556,10 @@ function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
 
 export function useGenerate(): UseGenerateReturn {
   const [status, setStatus] = useState<GenerateStatus>("idle");
+  const [admission, setAdmission] = useState<AdmissionState>("idle");
+  const [admissionError, setAdmissionError] = useState<string | null>(null);
+  const admissionResolveRef = useRef<((outcome: AdmissionOutcome) => void) | null>(null);
+  const operationRef = useRef<OperationHandle | null>(null);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [results, setResults] = useState<ExamQuestion[]>([]);
   const [displayResults, setDisplayResults] = useState<GeneratedQuestion[]>([]);
@@ -563,14 +582,35 @@ export function useGenerate(): UseGenerateReturn {
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
+  const settleAdmission = useCallback((outcome: AdmissionOutcome) => {
+    if (!admissionResolveRef.current) return;
+    setAdmission(outcome.outcome);
+    setAdmissionError(outcome.outcome === "rejected" ? outcome.reason : null);
+    admissionResolveRef.current(outcome);
+    admissionResolveRef.current = null;
+  }, []);
+
+  const endOperation = useCallback((outcome: OperationOutcome) => {
+    operationRef.current?.end(outcome);
+    operationRef.current = null;
+  }, []);
+
   useEffect(() => {
     return () => {
+      admissionResolveRef.current?.({ outcome: "rejected", reason: "aborted" });
+      admissionResolveRef.current = null;
+      endOperation("aborted");
       controllerRef.current?.abort();
       controllerRef.current = null;
     };
-  }, []);
+  }, [endOperation]);
 
   const reset = useCallback(() => {
+    admissionResolveRef.current?.({ outcome: "rejected", reason: "reset" });
+    admissionResolveRef.current = null;
+    endOperation("aborted");
+    setAdmission("idle");
+    setAdmissionError(null);
     controllerRef.current?.abort();
     controllerRef.current = null;
     setProgressLines([]);
@@ -587,9 +627,30 @@ export function useGenerate(): UseGenerateReturn {
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
     setStatus("idle");
+  }, [endOperation]);
+
+  const restoreResults = useCallback((snapshot: ResultsWorkspaceSnapshot): boolean => {
+    if (controllerRef.current !== null) return false;
+    setResults(snapshot.results);
+    setDisplayResults(snapshot.displayResults);
+    setProgressLines(snapshot.progressLines);
+    setErrorMessage(snapshot.errorMessage);
+    setStartedAt(snapshot.startedAt);
+    setFinishedAt(snapshot.finishedAt);
+    setSubQuestionTotal(snapshot.subQuestionTotal);
+    setStatus(snapshot.completion === "error" ? "error" : "idle");
+    setAdmission("idle");
+    setAdmissionError(null);
+    setLlmCalls([]);
+    return true;
   }, []);
 
-  const generate = useCallback((params: GenerateParams) => {
+  const generate = useCallback((params: GenerateParams): Promise<AdmissionOutcome> => {
+    admissionResolveRef.current?.({ outcome: "rejected", reason: "superseded" });
+    endOperation("superseded");
+    const admissionPromise = new Promise<AdmissionOutcome>((resolve) => {
+      admissionResolveRef.current = resolve;
+    });
     paramsRef.current = params;
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -604,6 +665,8 @@ export function useGenerate(): UseGenerateReturn {
     const token = useAuthStore.getState().token;
 
     setStatus("generating");
+    setAdmission("submitting");
+    setAdmissionError(null);
     setProgressLines([]);
     setResults([]);
     setDisplayResults([]);
@@ -618,6 +681,7 @@ export function useGenerate(): UseGenerateReturn {
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
 
+    operationRef.current = useWorkspaceStore.getState().beginOperation("generation", "generate.results");
     fetchEventSource("/api/generate", {
       method: "POST",
       body: JSON.stringify(params),
@@ -635,6 +699,8 @@ export function useGenerate(): UseGenerateReturn {
             const msg = "Session expired — please sign in again";
             setErrorMessage(msg);
             setFinishedAt(Date.now());
+            settleAdmission({ outcome: "rejected", reason: msg });
+            endOperation("failed");
             throw new FatalStreamError(msg);
           }
           let msg = `Stream open failed: HTTP ${res.status}`;
@@ -653,6 +719,8 @@ export function useGenerate(): UseGenerateReturn {
           if (controllerRef.current !== controller) return;
           setErrorMessage(msg);
           setFinishedAt(Date.now());
+          settleAdmission({ outcome: "rejected", reason: msg });
+          endOperation("failed");
           throw new FatalStreamError(msg);
         }
       },
@@ -664,6 +732,7 @@ export function useGenerate(): UseGenerateReturn {
         switch (ev.event) {
           case "started":
             setStatus("generating");
+            settleAdmission({ outcome: "admitted" });
             {
               const payload = parseStartedEventData(ev.data);
               if (payload) setGenerationLogId(payload.generation_log_id);
@@ -818,10 +887,12 @@ export function useGenerate(): UseGenerateReturn {
             setErrorMessage(parseErrorEventData(ev.data ?? ""));
             setStatus("error");
             setFinishedAt(Date.now());
+            endOperation("failed");
             break;
           case "done":
             setStatus("idle");
             setFinishedAt(Date.now());
+            endOperation("completed");
             controller.abort();
             controllerRef.current = null;
             break;
@@ -829,9 +900,12 @@ export function useGenerate(): UseGenerateReturn {
       },
       onerror(err) {
         if (controllerRef.current !== controller) return;
-        setErrorMessage(err instanceof Error ? err.message : String(err));
+        const message = err instanceof Error ? err.message : String(err);
+        setErrorMessage(message);
         setStatus("error");
         setFinishedAt(Date.now());
+        settleAdmission({ outcome: "rejected", reason: message });
+        endOperation("failed");
         throw err instanceof Error ? err : new FatalStreamError(String(err));
       },
     }).catch((err: unknown) => {
@@ -853,9 +927,13 @@ export function useGenerate(): UseGenerateReturn {
       }
       // Stream terminated (abort or fatal error). State already updated.
     });
-  }, []);
+    return admissionPromise;
+  }, [endOperation, settleAdmission]);
 
   return {
+    admission,
+    admissionError,
+    restoreResults,
     status,
     progressLines,
     results,
