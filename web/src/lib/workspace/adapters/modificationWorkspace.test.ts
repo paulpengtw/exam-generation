@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { ExamQuestion } from "../../../hooks/useGenerate";
 import type { ModificationSegmentRequest } from "../../../api/client";
 import type { ModificationWorkspaceSnapshot } from "./types";
-import { exportModificationWorkspace, importModificationWorkspace } from "./modificationWorkspace";
+import {
+  canonicalQuestionIdentity,
+  exportModificationWorkspace,
+  importModificationWorkspace,
+} from "./modificationWorkspace";
 
 const verifiedHistoryQuestion: ExamQuestion = {
   id: "history-question",
@@ -39,7 +43,12 @@ const segment: ModificationSegmentRequest = {
   field_path: "文本", start: 2, end: 9, quoted_text: "passage",
 };
 const live: Omit<ModificationWorkspaceSnapshot, "kind" | "version"> = {
+  route: "/history/history-record",
+  subject: "social_studies",
   recordId: "history-record", questionId: "history-question",
+  contentIdentity: "canonical-history-question",
+  contentRevision: null,
+  eligibility: { status: "completed", verified: true, eligible: true },
   annotations: [{ segments: [segment], instruction: "Clarify this passage" }],
   replacement: {
     record_id: "replacement-record", question: verifiedHistoryQuestion,
@@ -66,13 +75,44 @@ describe("modification workspace adapter", () => {
     expect(importModificationWorkspace(exportModificationWorkspace(state))).toEqual(state);
   });
 
+  it("keeps the saved base identity and eligibility evidence separate from annotations", () => {
+    const snapshot = exportModificationWorkspace(live);
+    expect(snapshot).toMatchObject({
+      route: "/history/history-record",
+      subject: "social_studies",
+      recordId: "history-record",
+      questionId: "history-question",
+      contentIdentity: "canonical-history-question",
+      contentRevision: null,
+      eligibility: { status: "completed", verified: true, eligible: true },
+    });
+    expect(importModificationWorkspace(JSON.parse(JSON.stringify(snapshot)))).toMatchObject({
+      route: "/history/history-record",
+      subject: "social_studies",
+      contentIdentity: "canonical-history-question",
+      eligibility: { eligible: true },
+    });
+  });
+
+  it("canonicalizes question key order while detecting content changes", () => {
+    const first = canonicalQuestionIdentity({ id: "q1", 題目: ["text"], 答案: "A" });
+    const reordered = canonicalQuestionIdentity({ 答案: "A", 題目: ["text"], id: "q1" });
+    const changed = canonicalQuestionIdentity({ id: "q1", 題目: ["changed"], 答案: "A" });
+    expect(first).toBe('{"id":"q1","答案":"A","題目":["text"]}');
+    expect(reordered).toBe(first);
+    expect(changed).not.toBe(first);
+  });
+
   it.each([null, 42, "modification", [], {}])("rejects a malformed envelope %#", (raw) => {
     expect(importModificationWorkspace(raw)).toBeNull();
   });
 
   it.each([
     { kind: "confirmation" }, { version: 2 }, { version: "1" },
+    { route: "" }, { subject: "" }, { contentIdentity: "" },
     { recordId: "" }, { recordId: 42 }, { questionId: "" }, { questionId: null },
+    { contentRevision: -1 }, { contentRevision: "1" },
+    { eligibility: null }, { eligibility: { status: "completed", verified: true, eligible: "yes" } },
     { annotations: {} }, { annotations: [null] }, { annotations: [[]] },
     { annotations: [{ segments: null, instruction: "edit" }] },
     { annotations: [{ segments: [null], instruction: "edit" }] },

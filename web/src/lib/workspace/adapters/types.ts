@@ -79,11 +79,29 @@ export interface ModificationAnnotationSnapshot {
   instruction: string;
 }
 
+export type ModificationRecordStatus = "completed" | "failed" | "aborted";
+
+/**
+ * Evidence captured from the History detail that makes a manual-review base
+ * eligible. The record id is the immutable version anchor; contentRevision
+ * is retained when a producer exposes one.
+ */
+export interface ModificationEligibilityEvidence {
+  status: ModificationRecordStatus;
+  verified: boolean;
+  eligible: boolean;
+}
+
 export interface ModificationWorkspaceSnapshot {
   kind: "modification";
   version: 1;
+  route: string;
+  subject: string;
   recordId: string;
   questionId: string;
+  contentIdentity: string;
+  contentRevision: number | null;
+  eligibility: ModificationEligibilityEvidence;
   annotations: ModificationAnnotationSnapshot[];
   replacement: ModificationRunResult | null;
 }
