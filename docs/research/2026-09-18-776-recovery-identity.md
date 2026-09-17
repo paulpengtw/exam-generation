@@ -126,24 +126,54 @@ All existing keys from #772 are unchanged.
 
 ## Tests added
 
-1. **Expired-session restore via same-tab sign-in** — pointer preserved through
-   credential-clearing logout; snapshot restored after re-login.
-2. **Different-account login refused** — `wrong_account` blocked without
-   exposing `pending` contents; both sync and async variants.
-3. **Explicit logout** — `logoutExplicit` deletes snapshots for current account,
-   preserves other accounts, clears pointer; subsequent init finds nothing.
-4. **Both 401 paths** — `apiFetch` 401 saves `session_expired` reason + return
-   destination; snapshot preserved; non-401 errors leave auth intact.
-5. **Two independent tabs** — simultaneous claims on distinct snapshot IDs both
-   win; simulated concurrent overwrite causes the earlier tab to lose.
-6. **Duplicate-tab collision** — `detectTabCollision` returns true when
-   `startTabCollisionListener` is active; returns false otherwise; different tab
-   IDs do not interfere.
-7. **Denied marker storage** — `claimSnapshot` returns `won:false` on
-   `setItem` throw or null read-back; `persistTabPointer` failure leaves
-   snapshot intact but no pointer.
-8. **Telemetry exclusion** — console calls, signout reason payload, and claim
-   record contain no snapshot fields or content values.
+### Test type key
+- **unit test** — calls library/store functions directly, no React render
+- **router-driven test** — renders the real app router (`createMemoryRouter` + `renderApp`) and asserts on visible UI
+- **real-hook test** — renders a hook with `renderHook`, mocks only the transport layer
+
+### Identity a — Expired-session restore via same-tab sign-in
+**Mixed: one router-driven test + one unit test**
+- `recoveryFlow.test.tsx`: "recovery banner appears after the user re-signs-in on the same tab" — **router-driven** (renderApp, asserts on recovery banner text)
+- `recoveryFlow.test.tsx`: "credential-clearing logout preserves snapshot in storage" — **unit test** (calls `logout()` directly, asserts on `loadSnapshot`)
+
+### Identity b — Different-account login refused
+**Unit test** (no React render)
+- `recoveryFlow.test.tsx`: two tests calling `initRecoveryStore` / `initRecoveryStoreAsync` directly and asserting on store state (`blocked: "wrong_account"`).
+- What is NOT tested here: the user-visible warning banner that appears in the UI when `blocked` is set.
+
+### Identity c — Explicit logout invalidates recovery
+**Mixed: one router-driven test + one unit test**
+- `recoveryFlow.test.tsx`: "clicking logout in SubjectSelectPage deletes the snapshot" — **router-driven** (renders real router, fires logout button click)
+- `recoveryFlow.test.tsx`: "logoutExplicit (the call behind the UI button) deletes snapshots" — **unit test** (calls `logoutExplicit()` directly)
+
+### Identity d — Both 401 paths preserve snapshot
+**Unit test** (no React render)
+- `recoveryFlow.test.tsx`: "apiFetch 401 clears auth but leaves snapshot on disk" — **unit test** (spies on `globalThis.fetch`, calls `apiFetch` directly)
+- `hooks/useGenerate.401.test.ts`: "onopen 401 saves session_expired reason, calls logout() but NOT logoutExplicit(), leaves snapshot intact" — **real-hook test** (imports real `useGenerate`, mocks only fetchEventSource transport, asserts snapshot intact + signout reason + logoutExplicit NOT called)
+
+### Identity e — Two independent tabs each keep their own snapshot
+**Unit test** (no React render)
+- `recoveryFlow.test.tsx`: two tests calling `claimSnapshot`, `releaseSnapshotClaim`, `initRecoveryStore` directly and asserting on store state.
+- What is NOT tested here: the user-visible form state in each tab (requires two concurrent browser tabs — not feasible in jsdom).
+
+### Identity f — Duplicate-tab collision detection
+**Unit test** (no React render)
+- `recoveryFlow.test.tsx`: three tests calling `detectTabCollision`, `startTabCollisionListener`, `initRecoveryStoreAsync` directly.
+- What is NOT tested here: real duplicate-tab browser behavior (Ctrl+Drag, copied sessionStorage) — requires E2E test.
+
+### Identity g — Denied marker storage blocks save-and-update
+**Router-driven test** (uses `renderApp`)
+- `recoveryFlow.test.tsx`: "save-and-update returns snapshot_failed when localStorage.setItem is denied" — **router-driven** (renderApp, fills topic input, mocks localStorage)
+- `recoveryFlow.test.tsx`: "claimSnapshot returns won:false when localStorage throws" — **unit test**
+
+### Identity h — Telemetry exclusion
+**Unit test** (no React render)
+- `recoveryFlow.test.tsx`: three tests calling `logoutExplicit()`, `deleteAllSnapshotsForAccount()`, `apiFetch()` directly and spying on console methods.
+- What is NOT tested here: browser DevTools console during a real UI logout session.
+
+### Regression tests
+- `lib/recovery/recoveryIdentity.test.ts`: 31 unit tests covering all required scenarios at the mechanism level (storage, store, claim lifecycle).
+- `components/ParamForm.recovery.test.tsx`: "sparse snapshot crash regression (#776)" — **router-driven test** (renders ParamForm with `fields: { topic: "..." }` as never, asserts no crash and recovery banner appears). Covers the `passage.trim()` crash fixed in commit 39fe0a9.
 
 ## Ambiguities and conservative choices
 
@@ -221,18 +251,24 @@ mirrors the non-recovery default path, falling back to the same defaults
 (`TEXT_HINT`, `OPTION_HINT`, `DEFAULT_CONTENT_TYPE`, etc.) when a field is
 absent or has the wrong type.
 
-### Router-driven acceptance tests
+### Recovery identity acceptance tests
 
-Eight new `describe` blocks in `web/src/recoveryFlow.test.tsx`
-(identity a–h) cover all acceptance criteria listed above.  Key fixes applied
-during authoring:
+Eight `describe` blocks in `web/src/recoveryFlow.test.tsx` (identity a–h) plus
+one real-hook test in `web/src/hooks/useGenerate.401.test.ts` cover all
+acceptance criteria.  See the **Tests added** section above for the exact
+test-type label of each describe block.
+
+Key implementation notes:
 
 - `beforeEach` calls `vi.restoreAllMocks()` before `vi.clearAllMocks()` to
   prevent `localStorage.setItem` spy from identity g leaking into identity h.
 - Identity c's confirm button selector uses `/^Sign out$|^登出$/` (real i18n
   translation values) rather than a key-passthrough pattern, since
   `recoveryFlow.test.tsx` does not mock `useT`.
-- Identity d's stream-401 test directly invokes `saveSignoutReason` +
-  `authStore.logout()` (the exact sequence in `useGenerate.ts`) rather than
-  driving `fetchEventSource` through the UI, since `useGenerate` is globally
-  mocked in the test file.
+- Identity d's tautological stream-401 test was removed and replaced by
+  `hooks/useGenerate.401.test.ts`, which imports the REAL `useGenerate` hook,
+  mocks only the `fetchEventSource` transport, and asserts snapshot intact +
+  `session_expired` reason + `logoutExplicit` NOT called.
+- Identities b, d (remaining), e, f, h are unit-level (no `renderApp` call);
+  their `(router-driven)` title suffix was removed and a comment was added
+  explaining what level each test covers and what is out of scope for jsdom.

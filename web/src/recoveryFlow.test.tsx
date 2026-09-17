@@ -323,7 +323,6 @@ import {
   startTabCollisionListener,
 } from "./lib/recovery/storage";
 import { RECOVERY_FORMAT_V1 } from "./lib/recovery/format";
-import { saveSignoutReason } from "./lib/signoutReason";
 import { importResultsWorkspace } from "./lib/workspace/adapters/resultsWorkspace";
 import { routes } from "./routes";
 import type { ReleaseState } from "./lib/release/releaseStore";
@@ -1369,7 +1368,11 @@ describe("identity a: expired-session restore via same-tab sign-in (router-drive
 
 // b. Different account logging in — refused, content never rendered ─────────────
 
-describe("identity b: different-account login — refused (router-driven)", () => {
+describe("identity b: different-account login — refused", () => {
+  // Unit-level: both tests call initRecoveryStore / initRecoveryStoreAsync directly and
+  // assert on useRecoveryStore state. The "refused" outcome is a store state check;
+  // the user-visible UI (a warning banner) requires a router render and is not tested here.
+  // Router-driven coverage would render the app after a wrong-account boot and assert on DOM.
   it("sets blocked:wrong_account when user-B signs in with user-A's snapshot", async () => {
     // Snapshot for user-A
     await seedSnapshot({ accountId: "user-A" });
@@ -1457,9 +1460,13 @@ describe("identity c: explicit logout — snapshot invalidated (router-driven)",
   });
 });
 
-// d. Both 401 paths preserve snapshot (router-driven) ─────────────────────────
+// d. Both 401 paths preserve snapshot ─────────────────────────────────────────
 
-describe("identity d: both 401 paths preserve snapshot (router-driven)", () => {
+describe("identity d: both 401 paths preserve snapshot", () => {
+  // Unit-level: apiFetch 401 is tested by spying on globalThis.fetch directly (no router
+  // render). The useGenerate stream 401 path is covered by the real-hook test in
+  // hooks/useGenerate.401.test.ts. Router-driven coverage of the full UI 401→redirect flow
+  // would require E2E tests (the auth redirect happens at the browser level after logout).
   it("apiFetch 401 clears auth but leaves snapshot on disk", async () => {
     const snapshotId = await seedSnapshot();
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
@@ -1479,35 +1486,16 @@ describe("identity d: both 401 paths preserve snapshot (router-driven)", () => {
     expect(JSON.parse(raw!).reason).toBe("session_expired");
   });
 
-  it("useGenerate stream 401 (onopen) preserves snapshot and saves session_expired reason", async () => {
-    // Note: useGenerate is globally mocked in this file, so we cannot drive the real
-    // fetchEventSource onopen path through the UI. Instead we directly simulate the
-    // exact sequence that useGenerate.ts executes on a stream 401:
-    //   1. saveSignoutReason("session_expired", userId)
-    //   2. authStore.logout()   ← NOT logoutExplicit()
-    // This verifies the critical identity invariant: logout() preserves the snapshot
-    // while logoutExplicit() would have deleted it.
-    const snapshotId = await seedSnapshot();
-    expect(loadSnapshot(USER.id, snapshotId)).not.toBeNull();
-
-    // Simulate stream 401 handler in useGenerate.ts
-    saveSignoutReason("session_expired", USER.id);
-    useAuthStore.getState().logout();
-
-    // Auth cleared
-    expect(useAuthStore.getState().token).toBeNull();
-    // Snapshot still on disk — logout() does NOT delete snapshots
-    expect(loadSnapshot(USER.id, snapshotId)).not.toBeNull();
-    // Signout reason stored
-    const raw = localStorage.getItem("exam_signout_reason");
-    expect(raw).not.toBeNull();
-    expect(JSON.parse(raw!).reason).toBe("session_expired");
-  });
+  // identity d — useGenerate stream 401 path tested in hooks/useGenerate.401.test.ts
 });
 
 // e. Two independent tabs each keep their own snapshot ─────────────────────────
 
-describe("identity e: two independent tabs each keep their own snapshot (router-driven)", () => {
+describe("identity e: two independent tabs each keep their own snapshot", () => {
+  // Unit-level: tests call claimSnapshot / releaseSnapshotClaim and initRecoveryStore
+  // directly, verifying storage-level isolation between snapshots. There is no React
+  // render; tab independence in the real UI (each tab showing its own form) would require
+  // two concurrent browser tabs, which jsdom cannot model — use E2E tests for that.
   it("tab-1 and tab-2 can each claim their own distinct snapshot", async () => {
     // Simulate two different snapshots for the same user (different routes)
     const snapA = await seedSnapshot({ snapshotId: "snap-tab1-A", route: "/generate/math" });
@@ -1556,9 +1544,14 @@ describe("identity e: two independent tabs each keep their own snapshot (router-
   });
 });
 
-// f. Duplicate-tab collision (router-driven) ──────────────────────────────────
+// f. Duplicate-tab collision ──────────────────────────────────────────────────
 
-describe("identity f: duplicate-tab collision detection (router-driven)", () => {
+describe("identity f: duplicate-tab collision detection", () => {
+  // Unit-level: tests call detectTabCollision and initRecoveryStoreAsync directly.
+  // BroadcastChannel-based collision detection works in jsdom for same-origin tests, but
+  // real duplicate-tab behaviour (Ctrl+Drag opening a tab with a copied sessionStorage)
+  // cannot be reproduced in jsdom. The UI outcome (duplicate tab sees empty form instead
+  // of recovery banner) requires an E2E test.
   it("detectTabCollision returns true when another tab listener is active with the same ID", async () => {
     const tabId = "dup-tab-776-id";
     const stopListener = startTabCollisionListener(tabId);
@@ -1633,9 +1626,12 @@ describe("identity g: denied marker storage blocks save-and-update (router-drive
   });
 });
 
-// h. Telemetry exclusion (router-driven) ──────────────────────────────────────
+// h. Telemetry exclusion ──────────────────────────────────────────────────────
 
-describe("identity h: telemetry exclusion — recovery contents never in logs (router-driven)", () => {
+describe("identity h: telemetry exclusion — recovery contents never in logs", () => {
+  // Unit-level: tests call logoutExplicit(), deleteAllSnapshotsForAccount(), and apiFetch()
+  // directly and spy on console methods. No React render is needed because telemetry
+  // exclusion is a property of the storage / auth functions, not the UI layer.
   it("logoutExplicit does not log account ID or snapshot contents to console", async () => {
     await seedSnapshot({ snapshotId: "snap-priv-h" });
 
