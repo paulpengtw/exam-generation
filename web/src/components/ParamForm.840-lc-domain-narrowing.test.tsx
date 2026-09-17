@@ -209,12 +209,22 @@ describe("#840 學習內容 disabled (never dropped) by the chosen/remaining 內
     await waitFor(() => expect(screen.queryByText(LC_A)).not.toBeInTheDocument());
   });
 
-  it("submits the resolve request body with exactly the selected 學習內容 codes despite a 內容領域-disabled pin", async () => {
+  it("submits the resolve request body with exactly the selected 學習內容 codes despite a 內容領域-disabled pin, once the #841 restored conflict is resolved", async () => {
     await renderSocial({
       subject_filter: "公民與社會",
       content_domain: DOMAIN_A,
       learning_content: [LC_A, LC_B],
     });
+
+    // #841: LC_A only admits DOMAIN_B, so the restored 內容領域 (DOMAIN_A) is a
+    // genuine conflict with an already-釘選 code — 產生 stays disabled and
+    // neither code is silently dropped or fixed.
+    expect(screen.getByRole("button", { name: "產生" })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "內容領域" }), {
+      target: { value: "" },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "產生" })).not.toBeDisabled());
 
     fireEvent.click(screen.getByRole("button", { name: "產生" }));
 

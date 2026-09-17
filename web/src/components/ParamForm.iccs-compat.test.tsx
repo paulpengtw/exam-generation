@@ -145,7 +145,12 @@ describe("#506 confirmation ICCS compatibility", () => {
           subject_filter: "公民與社會",
           content_domain: DOMAIN,
           sub_question_count: 3,
-          learning_content: [ALLOWED_LC, OUT_OF_DOMAIN_LC],
+          // #841: OUT_OF_DOMAIN_LC does not admit DOMAIN, so pinning it here
+          // too would make the restored 內容領域 a genuine conflict (marked
+          // invalid, 產生 disabled) — this test is about the confirmation
+          // card's own domain-scoped pool, not that restore-conflict path,
+          // so only the DOMAIN-admitting code is pinned at the top level.
+          learning_content: [ALLOWED_LC],
           subquestion_configs: [{}, {}, {}],
         }}
       />,

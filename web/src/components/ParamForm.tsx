@@ -2227,13 +2227,17 @@ export default function ParamForm({
     const poolMatchesGrade = schemas.poolGrade === (grade === "" ? null : grade);
     if (poolMatchesGrade) {
       const configs = parseSubquestionConfigs(ip.subquestion_configs);
-      // Report the selections removed by the curriculum reconciliation effects below.
+      // #841: absence is judged against the grade's whole curriculum pool
+      // (schemas.學習表現/學習內容), not the 科目/內容領域-filtered
+      // available* lists — a code merely excluded by the restored 科目 or
+      // 內容領域 is a conflict (flagged on the parent control below), not a
+      // drop, and must not appear in this notice.
       for (const [label, values, entries] of [
         ["學習表現", [
           ...arr("learning_performance"),
           ...configs.flatMap((cfg) => cfg.learning_performance ?? []),
-        ], availableLearningPerformance],
-        ["學習內容", arr("learning_content"), availableLearningContent],
+        ], schemas.學習表現 ?? []],
+        ["學習內容", arr("learning_content"), schemas.學習內容 ?? []],
       ] as const) {
         const allowed = new Set(entries.map((entry) => entry.value));
         for (const code of new Set(values)) {
@@ -2271,7 +2275,7 @@ export default function ParamForm({
       const allowedDomains = new Set(schemas.內容領域?.map((s) => s.value));
       setField("contentDomain", (prev) => (prev && allowedDomains.has(prev) ? prev : ""));
     }
-  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade, availableLearningPerformance, availableLearningContent]);
+  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade]);
 
   // #839: the 釘選 codes narrowing 科目/內容領域 are the 題組-level 學習內容 +
   // 學習表現 selections plus each 各小題配置 row's own pins. Admission comes
@@ -2339,6 +2343,20 @@ export default function ParamForm({
     lang,
     "form.content_domain_narrow_hint",
   );
+
+  // #841: a restored draft/history/Regenerate prefill (or a live edit) can
+  // leave 科目/內容領域 set to a value the current 釘選 codes no longer admit.
+  // Never silently fix it: `disabledValues` already tells us exactly which
+  // values conflict (computed above, purely from admitted_by tags — no
+  // prefix table), so the conflict is just "is the current value one of
+  // them". The conflicting control is marked invalid (aria-invalid + the
+  // same narrowing hint) and 產生 stays disabled until the teacher changes
+  // the parent or deselects the constraining code(s).
+  const subjectFilterConflict = subjectFilter !== "" &&
+    subjectFilterNarrowing.disabledValues.has(subjectFilter);
+  const contentDomainConflict = (contentDomain ?? "") !== "" &&
+    contentDomainNarrowing.disabledValues.has(contentDomain ?? "");
+  const hasParentNarrowingConflict = subjectFilterConflict || contentDomainConflict;
 
   // #840: a 學習內容 code the chosen (or, under 隨機, the still-viable) 內容領域
   // would not admit is disabled — never dropped — in the request-level list/
@@ -2415,7 +2433,12 @@ export default function ParamForm({
 
   useEffect(() => {
     if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
-    const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
+    // #841: absence is judged against the grade's whole 學習表現 pool, not
+    // `availableLearningPerformance` (科目-filtered) — a code merely excluded
+    // by the restored/current 科目 is kept selected and flagged as a conflict
+    // on the 科目 control (subjectFilterNarrowing) instead of being silently
+    // dropped here. Only a code truly absent from this grade is removed.
+    const allowed = new Set((schemas.學習表現 ?? []).map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     restoreFormSnapshot((current) => {
       // A draft restore can change the grade before this queued update runs.
@@ -2430,11 +2453,14 @@ export default function ParamForm({
         ),
       };
     });
-  }, [availableLearningPerformance, grade, schemas, restoreFormSnapshot]);
+  }, [grade, schemas, restoreFormSnapshot]);
 
   useEffect(() => {
     if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
-    const allowed = new Set(availableLearningContent.map((entry) => entry.value));
+    // #841: same whole-pool rule as above, for 學習內容 — a code merely
+    // excluded by the restored/current 科目 or 內容領域 is kept selected and
+    // flagged on the conflicting parent control, never silently dropped here.
+    const allowed = new Set((schemas.學習內容 ?? []).map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     restoreFormSnapshot((current) => {
       if (schemas.poolGrade !== (current.grade === "" ? null : current.grade)) return current;
@@ -2443,7 +2469,7 @@ export default function ParamForm({
         learningContent: current.learningContent.filter((value) => allowed.has(value)),
       };
     });
-  }, [availableLearningContent, grade, schemas, restoreFormSnapshot]);
+  }, [grade, schemas, restoreFormSnapshot]);
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
@@ -4300,6 +4326,7 @@ export default function ParamForm({
               setField("subjectFilter", e.target.value);
             }}
             aria-describedby={subjectFilterHint ? "subject-filter-hint" : undefined}
+            aria-invalid={subjectFilterConflict || undefined}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.subject_filter.all")}</option>
@@ -4339,6 +4366,7 @@ export default function ParamForm({
               setField("contentDomain", e.target.value);
             }}
             aria-describedby={contentDomainHint ? "content-domain-hint" : undefined}
+            aria-invalid={contentDomainConflict || undefined}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.content_domain_random")}</option>
@@ -5153,7 +5181,7 @@ export default function ParamForm({
 
       <button
         type="submit"
-        disabled={disabled || resolverLoading}
+        disabled={disabled || resolverLoading || hasParentNarrowingConflict}
         className="inline-flex w-full items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
         {disabled && (
