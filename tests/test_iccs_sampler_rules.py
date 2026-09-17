@@ -99,8 +99,13 @@ def test_domain_filter_applies_to_public_learning_content_and_performance(
         "_LC_DATA",
         {
             "學習內容": [
-                {"學習階段": "第四學習階段", "科目": "公", "value": code}
-                for code in code_to_domains
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": code,
+                    "admitted_by": {"內容領域": sorted(code_domains)},
+                }
+                for code, code_domains in code_to_domains.items()
             ]
         },
     )
@@ -126,17 +131,11 @@ def test_domain_filter_applies_to_public_learning_content_and_performance(
 
 def test_domain_filter_resamples_when_initial_domain_has_no_public_pool(monkeypatch) -> None:
     from src.social_studies import sampler
-    from src.social_studies.domain_mapping import DomainMapping
     from src.social_studies.schemas import QuestionSubject
 
     domains = [domain.value for domain in sampler.ContentDomain]
     target_domain = domains[0]
     code = "公Aa-Ⅳ-1"
-    monkeypatch.setattr(
-        sampler,
-        "_LC_DATA",
-        {"學習內容": [{"學習階段": "第四學習階段", "科目": "公", "value": code}]},
-    )
     monkeypatch.setattr(
         sampler,
         "_LP_DATA",
@@ -147,23 +146,35 @@ def test_domain_filter_resamples_when_initial_domain_has_no_public_pool(monkeypa
         },
     )
 
-    unrestricted = DomainMapping(
-        code_to_domains={code: set(domains)},
-        domain_to_codes={domain: {code} for domain in domains},
-    )
-    restricted = DomainMapping(
-        code_to_domains={code: {target_domain}},
-        domain_to_codes={target_domain: {code}},
-    )
+    unrestricted_lc = {
+        "學習內容": [
+            {
+                "學習階段": "第四學習階段",
+                "科目": "公",
+                "value": code,
+                "admitted_by": {"內容領域": list(domains)},
+            }
+        ]
+    }
+    restricted_lc = {
+        "學習內容": [
+            {
+                "學習階段": "第四學習階段",
+                "科目": "公",
+                "value": code,
+                "admitted_by": {"內容領域": [target_domain]},
+            }
+        ]
+    }
     subject = QuestionSubject("公民與社會")
 
     for seed in range(100):
-        monkeypatch.setattr(sampler, "_DOMAIN_MAPPING", unrestricted)
+        monkeypatch.setattr(sampler, "_LC_DATA", unrestricted_lc)
         initial = sampler.sample_params(seed=seed, subject=[subject])
         if initial.內容領域.value == target_domain:
             continue
 
-        monkeypatch.setattr(sampler, "_DOMAIN_MAPPING", restricted)
+        monkeypatch.setattr(sampler, "_LC_DATA", restricted_lc)
         resampled = sampler.sample_params(seed=seed, subject=[subject])
 
         assert resampled.內容領域.value == target_domain
@@ -484,7 +495,20 @@ def test_pinned_content_domain_is_not_resampled_when_its_public_pool_is_empty(
     monkeypatch.setattr(
         sampler,
         "_LC_DATA",
-        {"學習內容": [{"學習階段": "第四學習階段", "科目": "公", "value": code}]},
+        {
+            "學習內容": [
+                {
+                    "學習階段": "第四學習階段",
+                    "科目": "公",
+                    "value": code,
+                    "admitted_by": {
+                        "內容領域": [
+                            ContentDomain("Civic Institutions and Systems").value
+                        ]
+                    },
+                }
+            ]
+        },
     )
     monkeypatch.setattr(
         sampler,

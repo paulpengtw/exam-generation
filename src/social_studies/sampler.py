@@ -6,6 +6,7 @@ import logging
 import random
 from collections.abc import Callable
 
+from src.common.admission import entries_admitted_by
 from src.common.difficulty import Difficulty, resolve_difficulty
 from src.common.randomness import draw_rng
 from src.social_studies.core_competency_loader import (
@@ -80,30 +81,35 @@ def _filter_entries_for_domain(
     entries: list[dict],
     domain: ContentDomain,
     subject: QuestionSubject,
-    *,
-    use_admitted_domains: bool = True,
 ) -> list[dict]:
-    """Keep rows admitted by *domain* for subjects whose parent applies."""
+    """Keep 學習內容 rows admitted by *domain* for subjects whose parent applies.
+
+    Reads the shared admission lookup over each entry's ``admitted_by``
+    tags (attached at curriculum-load time); no code-prefix check and no
+    separately built domain map on this path.
+    """
+    if subject.value not in _DOMAIN_FILTER_SUBJECTS:
+        return entries
+    return entries_admitted_by(entries, "內容領域", domain.value)
+
+
+def _filter_performance_entries_for_domain(
+    entries: list[dict],
+    domain: ContentDomain,
+    subject: QuestionSubject,
+) -> list[dict]:
+    """Keep 學習表現 rows admitted by *domain* for subjects whose parent applies.
+
+    Kept verbatim (code-prefix check + ``_DOMAIN_MAPPING``) pending #833,
+    which removes this function once 學習表現 domain filtering also reads
+    the shared admission lookup.
+    """
     if subject.value not in _DOMAIN_FILTER_SUBJECTS:
         return entries
 
     mapped_codes = _DOMAIN_MAPPING.domain_to_codes.get(domain.value, set())
     filtered: list[dict] = []
     for entry in entries:
-        admitted_by = entry.get("admitted_by")
-        if (
-            use_admitted_domains
-            and isinstance(admitted_by, dict)
-            and "內容領域" in admitted_by
-        ):
-            admitted_domains = admitted_by.get("內容領域")
-            if not isinstance(admitted_domains, list):
-                continue
-            if domain.value in admitted_domains:
-                filtered.append(entry)
-            continue
-        # The ICCS mapping only governs 公 rows.  Rows without a domain tag
-        # (歷/地/shared curriculum rows) retain the unscoped behavior.
         if not _is_public_code(entry.get("value", "")) or entry["value"] in mapped_codes:
             filtered.append(entry)
     return filtered
@@ -143,12 +149,7 @@ def _resolve_domain_and_pools(
         else None
     )
     filtered_lp = (
-        _filter_entries_for_domain(
-            lp_entries,
-            selected_domain,
-            subject,
-            use_admitted_domains=False,
-        )
+        _filter_performance_entries_for_domain(lp_entries, selected_domain, subject)
         if lp_entries is not None
         else None
     )
