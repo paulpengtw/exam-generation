@@ -8,7 +8,12 @@ import type { ReleaseStatus } from "../release/releaseStore";
 import { RECOVERY_FORMAT_V1 } from "./format";
 import { importConfirmationWorkspace } from "../workspace/adapters/confirmationWorkspace";
 import { importResultsWorkspace } from "../workspace/adapters/resultsWorkspace";
-import type { ConfirmationWorkspaceSnapshot, ResultsWorkspaceSnapshot } from "../workspace/adapters/types";
+import { exportModificationWorkspace, importModificationWorkspace } from "../workspace/adapters/modificationWorkspace";
+import type {
+  ConfirmationWorkspaceSnapshot,
+  ModificationWorkspaceSnapshot,
+  ResultsWorkspaceSnapshot,
+} from "../workspace/adapters/types";
 
 export type SaveAndUpdateDeniedReason =
   | "no_surface"
@@ -63,6 +68,18 @@ function readResultsSnapshot(
   }
 }
 
+function readModificationSnapshot(
+  surface: SurfaceParticipation | undefined,
+): ModificationWorkspaceSnapshot | null {
+  if (!surface?.exportWorkspace) return null;
+  try {
+    const live = importModificationWorkspace(surface.exportWorkspace());
+    return live ? exportModificationWorkspace(live) : null;
+  } catch {
+    return null;
+  }
+}
+
 function hasPreservableResults(
   surface: SurfaceParticipation,
   snapshot: ResultsWorkspaceSnapshot,
@@ -108,13 +125,24 @@ export function evaluateSaveAndUpdate(state: EvaluateInput): EvaluateResult {
   }
 
   // A received result is now eligible for recovery when the result surface
-  // exposes a valid workspace snapshot. Other received content (including an
-  // unsupported modification surface) remains a hard refusal.
+  // exposes a valid workspace snapshot. A History modification replacement is
+  // part of its own settled workspace; all other received content remains a
+  // hard refusal.
   for (const surface of surfaceList) {
-    if (surface.hasReceivedResults && surface.id !== "generate.results") {
-      return { allowed: false, reason: "results_present" };
+    if (surface.id === "generate.results") {
+      if (surface.hasReceivedResults && !readResultsSnapshot(surface)) {
+        return { allowed: false, reason: "results_present" };
+      }
+      continue;
     }
-    if (surface.id === "generate.results" && surface.hasReceivedResults && !readResultsSnapshot(surface)) {
+    if (surface.id === "history.modification") {
+      const modification = readModificationSnapshot(surface);
+      if (!modification || !modification.eligibility.eligible) {
+        return { allowed: false, reason: "modification_draft" };
+      }
+      continue;
+    }
+    if (surface.hasReceivedResults) {
       return { allowed: false, reason: "results_present" };
     }
   }
@@ -127,11 +155,6 @@ export function evaluateSaveAndUpdate(state: EvaluateInput): EvaluateResult {
     if (!confirmation || confirmation.coreQuestionResolution === "loading") {
       return { allowed: false, reason: "confirmation_open" };
     }
-  }
-
-  // Modification draft must not be open
-  if (state.surfaces["history.modification"]) {
-    return { allowed: false, reason: "modification_draft" };
   }
 
   // User must be signed in
@@ -151,7 +174,9 @@ export function evaluateSaveAndUpdate(state: EvaluateInput): EvaluateResult {
   // Recovery format must be supported by the target reader
   const formSurface = state.surfaces["generate.form"];
   const targetSupportsFormat = state.supportedRecoveryFormats.includes(RECOVERY_FORMAT_V1);
-  const hasExportSeam = formSurface?.exportWorkspace !== undefined;
+  const modificationSurface = state.surfaces["history.modification"];
+  const hasExportSeam = formSurface?.exportWorkspace !== undefined ||
+    modificationSurface?.exportWorkspace !== undefined;
 
   if (!targetSupportsFormat || !hasExportSeam) {
     return { allowed: false, reason: "unsupported_target_reader" };
@@ -222,7 +247,14 @@ export async function runSaveAndUpdate(
 
   // (c) export the form via the 'generate.form' surface's exportWorkspace
   const formSurface = wsState.surfaces["generate.form"];
-  const formSnapshot = formSurface?.exportWorkspace?.();
+  const modificationSurface = wsState.surfaces["history.modification"];
+  const modificationSnapshot = modificationSurface
+    ? readModificationSnapshot(modificationSurface)
+    : null;
+  const historyOnly = formSurface === undefined && modificationSnapshot !== null;
+  const formSnapshot = formSurface?.exportWorkspace?.() ?? (
+    historyOnly ? { kind: "form", version: 1, fields: {} } : null
+  );
   if (
     !formSnapshot ||
     formSnapshot.kind !== "form" ||
@@ -253,12 +285,16 @@ export async function runSaveAndUpdate(
   let capturedFormSnapshot: FormWorkspaceSnapshot;
   let capturedConfirmationSnapshot: ConfirmationWorkspaceSnapshot | undefined;
   let capturedResultsSnapshot: ResultsWorkspaceSnapshot | undefined;
+  let capturedModificationSnapshot: ModificationWorkspaceSnapshot | undefined;
   try {
     capturedFormSnapshot = jsonClone(formSnapshot as FormWorkspaceSnapshot);
     capturedConfirmationSnapshot = confirmationSnapshot
       ? jsonClone(confirmationSnapshot)
       : undefined;
     capturedResultsSnapshot = resultsSnapshot ? jsonClone(resultsSnapshot) : undefined;
+    capturedModificationSnapshot = modificationSnapshot
+      ? jsonClone(modificationSnapshot)
+      : undefined;
   } catch {
     return { ok: false, reason: "export_failed", retryable: true };
   }
@@ -284,12 +320,18 @@ export async function runSaveAndUpdate(
   }
   const recheckSurfaces = Object.values(recheckWs.surfaces).filter(Boolean) as SurfaceParticipation[];
   if (recheckSurfaces.some((surface) => surface.hasReceivedResults && surface.id !== "generate.results")) {
-    cleanup();
-    return { ok: false, reason: "results_present", retryable: false };
-  }
-  if (recheckWs.surfaces["history.modification"]) {
-    cleanup();
-    return { ok: false, reason: "modification_draft", retryable: false };
+    const hasUnsupportedReceivedResults = recheckSurfaces.some((surface) =>
+      surface.hasReceivedResults && surface.id !== "history.modification" && surface.id !== "generate.results"
+    );
+    if (hasUnsupportedReceivedResults) {
+      cleanup();
+      return { ok: false, reason: "results_present", retryable: false };
+    }
+    const currentModification = readModificationSnapshot(recheckWs.surfaces["history.modification"]);
+    if (!currentModification || !currentModification.eligibility.eligible) {
+      cleanup();
+      return { ok: false, reason: "modification_draft", retryable: false };
+    }
   }
 
   if (
@@ -333,13 +375,17 @@ export async function runSaveAndUpdate(
     hasPreservableResults(currentResultsSurface, currentResultsCandidate)
     ? currentResultsCandidate
     : null;
+  const currentModificationSnapshot = recheckWs.surfaces["history.modification"]
+    ? readModificationSnapshot(recheckWs.surfaces["history.modification"])
+    : null;
   if (
-    !currentFormSnapshot ||
-    currentFormSnapshot.kind !== "form" ||
-    currentFormSnapshot.version !== 1 ||
-    !sameJsonValue(currentFormSnapshot, capturedFormSnapshot) ||
+    (!historyOnly && (!currentFormSnapshot ||
+      currentFormSnapshot.kind !== "form" ||
+      currentFormSnapshot.version !== 1 ||
+      !sameJsonValue(currentFormSnapshot, capturedFormSnapshot))) ||
     !sameJsonValue(currentConfirmationSnapshot, capturedConfirmationSnapshot ?? null) ||
     !sameJsonValue(currentResultsSnapshot, capturedResultsSnapshot ?? null) ||
+    !sameJsonValue(currentModificationSnapshot, capturedModificationSnapshot ?? null) ||
     (currentConfirmationSnapshot?.coreQuestionResolution === "loading")
   ) {
     cleanup();
@@ -350,8 +396,9 @@ export async function runSaveAndUpdate(
   const snapshotId = crypto.randomUUID();
   const tabId = getOrCreateTabId();
   const route = window.location.pathname;
-  // subject is the second path segment: /generate/math → "math"
-  const subject = route.split("/").filter(Boolean)[1] ?? "math";
+  // Generate routes use their second path segment. History-only saves carry
+  // the authoritative subject in the modification workspace.
+  const subject = capturedModificationSnapshot?.subject ?? route.split("/").filter(Boolean)[1] ?? "math";
 
   const targetBuildId = recheckRelease.requiredBuildId;
   const targetReleaseRevision = recheckRelease.releaseRevision!;
@@ -378,6 +425,9 @@ export async function runSaveAndUpdate(
       : {}),
     ...(capturedResultsSnapshot
       ? { results: capturedResultsSnapshot }
+      : {}),
+    ...(capturedModificationSnapshot
+      ? { modification: capturedModificationSnapshot }
       : {}),
   };
 
