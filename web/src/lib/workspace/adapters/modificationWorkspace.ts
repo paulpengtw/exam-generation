@@ -70,7 +70,7 @@ function isJsonValue(value: unknown): boolean {
 function isReplacement(value: unknown): value is ModificationRunResult {
   return isRecord(value) &&
     (value.record_id === null || (typeof value.record_id === "string" && value.record_id.length > 0)) &&
-    isRecord(value.question) &&
+    isRecord(value.question) && isJsonValue(value.question) &&
     Array.isArray(value.ripple_report) && value.ripple_report.every((item) => typeof item === "string") &&
     typeof value.verified === "boolean" &&
     isJsonValue(value.verification) &&

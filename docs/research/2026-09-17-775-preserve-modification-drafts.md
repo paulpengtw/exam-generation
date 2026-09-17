@@ -123,8 +123,8 @@ The final counts below are recorded after the complete web verification run:
 - `npx tsc -b --noEmit`: passed; 0 TypeScript errors.
 - `npm run lint`: passed; 0 ESLint errors and 0 warnings.
 - `npm test -- --run --reporter=dot`: passed; 134/134 test files and
-  1,358/1,358 tests passed in 53.41s. The suite emitted existing React
+  1,360/1,360 tests passed in 86.59s. The suite emitted existing React
   `act(...)` notices and jsdom navigation notices, but no test failures.
-- `npm run build`: passed; Vite transformed 447 modules in 460ms. It emitted
+- `npm run build`: passed; Vite transformed 447 modules in 467ms. It emitted
   the existing Node `module.register()` deprecation warning and the existing
   >500 kB chunk-size warning; there were no build errors.

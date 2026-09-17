@@ -599,6 +599,32 @@ describe("runSaveAndUpdate", () => {
     expect(loadSnapshot("u1", result.snapshot_id)?.modification?.replacement).toEqual(replacement);
   });
 
+  it("refuses when a late callback mutates the settled modification source", async () => {
+    const snapshot = makeModificationSnapshot();
+    setupValidModificationRunState(async () => {
+      snapshot.annotations[0].instruction = "late callback mutation";
+    });
+    useWorkspaceStore.getState().updateSurface("history.modification", {
+      exportWorkspace: () => snapshot,
+    });
+    vi.stubGlobal("location", {
+      pathname: "/history/history-record",
+      origin: "https://test.com",
+      reload: vi.fn(),
+    });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "workspace_changed", retryable: true });
+    expect(Object.keys(localStorage).filter((key) => key.startsWith("exam_recovery_")))
+      .toHaveLength(0);
+  });
+
   it("preserves a settled error/progress workspace even when no question body arrived", async () => {
     setupValidRunState();
     const errorResults = {

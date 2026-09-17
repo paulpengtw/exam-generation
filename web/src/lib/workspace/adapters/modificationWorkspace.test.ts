@@ -135,6 +135,7 @@ describe("modification workspace adapter", () => {
     { annotations: [{ segments: [{ path: "文本", start: 2, end: 9, text: "passage" }], instruction: "edit" }] },
     { replacement: [] }, { replacement: {} }, { replacement: { question: null } },
     { replacement: { question: [] } }, { replacement: { ...live.replacement, record_id: "" } },
+    { replacement: { ...live.replacement, question: { id: "q1", unsupported: undefined } } },
   ])("rejects invalid modification fields %#", (patch) => {
     expect(importModificationWorkspace({ ...live, kind: "modification", version: 1, ...patch })).toBeNull();
   });
