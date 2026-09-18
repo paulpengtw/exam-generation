@@ -82,6 +82,20 @@ Each mounted surface declares its readiness, editable state, received results an
 Generation and 人工審題修正 expose 受理 beside their existing `status`, acknowledged by the SSE `started` event or a returned `run_id`, while guards and 發送前確認 timing remain unchanged.
 The store never receives an AbortController, promise or callback that can cancel work; see [ADR 0030](docs/adr/0030-workspace-participation-is-declared-by-each-surface.md) when extending participation, observed operations or admission for the updater.
 
+### Release version detection (issue #770)
+
+`web/buildIdentity.ts` computes a deterministic build ID (SHA-256 over commit + canonical public VITE_* config) and emits two static assets at build time:
+- `dist/build-meta.json` (`exam-generation.build-meta/1`) — build provenance.
+- `dist/release/policy.json` (`exam-generation.release-policy/1`) — deterministic authority fixture (starts as `admission: 'open'`, `released_build_id` = this artifact's id).
+
+`web/src/lib/release/releaseStore.ts` is a zustand store that polls `GET /release/policy.json` (cache: no-store, 5 s timeout, coalesced) and sets one of: `checking | current | update-required | paused | unavailable`. A previously known update requirement is sticky — it survives transient failures. `web/src/lib/release/useReleaseStatus.ts` installs the event-driven triggers (pageshow, popstate, online, visibilitychange, 60 s interval gated by visibility).
+
+`web/src/components/ReleaseNotice.tsx` is a persistent bar (mounted in `RootLayout` under `StagingBanner`) that shows the localized state. `checking/current/unavailable` → `role=status`; `update-required/paused` → `role=alert`. A "重新檢查 / Check again" button calls `checkNow()`. Focus is never moved by state changes. Reduced-motion is respected.
+
+The store never calls `location.reload`, never touches workspace operations, and never submits anything. Generation enforcement (#771), save-and-update (#772+), scheduling (#777), and the live release controller (#778) are separate tickets.
+
+Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.
