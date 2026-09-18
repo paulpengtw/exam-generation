@@ -136,18 +136,22 @@ describe("ParamForm resolver redraws", () => {
     removeChip(picker, LC_A);
     await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(2));
     expect(resolveGenerateMock.mock.calls[1][1]).toEqual({ [REDRAW_PATH]: 1 });
-    expect(getFirstSubquestionCard().getByText(LC_B)).toBeInTheDocument();
-    expect(getFirstSubquestionCard().getByText(LP_A)).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "第1題" })).getByText("604")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(getFirstSubquestionCard().getByText(LC_B)).toBeInTheDocument();
+      expect(getFirstSubquestionCard().getByText(LP_A)).toBeInTheDocument();
+      expect(within(screen.getByRole("region", { name: "第1題" })).getByText("604")).toBeInTheDocument();
+    });
     expect(JSON.parse(resolveGenerateMock.mock.calls[1][0].per_question_params)[0].subquestion_configs)
       .not.toContain(LC_A);
 
     removeChip(getLearningContentPicker(getFirstSubquestionCard()), LC_B);
     await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(3));
     expect(resolveGenerateMock.mock.calls[2][1]).toEqual({ [REDRAW_PATH]: 2 });
-    expect(getFirstSubquestionCard().getByText(LC_C)).toBeInTheDocument();
-    expect(getFirstSubquestionCard().getByText(LP_A)).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "第1題" })).getByText("604")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(getFirstSubquestionCard().getByText(LC_C)).toBeInTheDocument();
+      expect(getFirstSubquestionCard().getByText(LP_A)).toBeInTheDocument();
+      expect(within(screen.getByRole("region", { name: "第1題" })).getByText("604")).toBeInTheDocument();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
