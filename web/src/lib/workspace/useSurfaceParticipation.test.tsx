@@ -27,7 +27,10 @@ describe("useSurfaceParticipation", () => {
 
   it("keeps the latest export seam callable from the store and can remove it", () => {
     const snapshot: ModificationWorkspaceSnapshot = {
-      kind: "modification", version: 1, recordId: "r1", questionId: "q1", annotations: [], replacement: null,
+      kind: "modification", version: 1, route: "/history/r1", subject: "math",
+      recordId: "r1", questionId: "q1", contentIdentity: "q1", contentRevision: null,
+      eligibility: { status: "completed", verified: true, eligible: true },
+      annotations: [], replacement: null,
     };
     const { rerender } = renderHook(
       ({ exportWorkspace }: Pick<SurfaceParticipation, "exportWorkspace">) =>

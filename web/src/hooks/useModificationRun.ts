@@ -107,18 +107,23 @@ function parseError(raw: string): Error {
   return new Error(raw || "Modification stream failed");
 }
 
-export function useModificationRun(recordId?: string): UseModificationRunReturn {
-  const [status, setStatus] = useState<ModificationRunStatus>("idle");
+export function useModificationRun(
+  recordId?: string,
+  initialResult: ModificationRunResult | null = null,
+): UseModificationRunReturn {
+  const [status, setStatus] = useState<ModificationRunStatus>(
+    initialResult === null ? "idle" : "completed",
+  );
   const [admission, setAdmission] = useState<AdmissionState>("idle");
   const [admissionError, setAdmissionError] = useState<string | null>(null);
   const operationRef = useRef<OperationHandle | null>(null);
   const [stageEvents, setStageEvents] = useState<ModificationStageEvent[]>([]);
-  const [result, setResult] = useState<ModificationRunResult | null>(null);
+  const [result, setResult] = useState<ModificationRunResult | null>(initialResult);
   const [error, setError] = useState<unknown | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const runSequenceRef = useRef(0);
   const sourceRecordIdRef = useRef(recordId);
-  const activeRecordIdRef = useRef(recordId);
+  const activeRecordIdRef = useRef(initialResult?.record_id ?? recordId);
 
   useEffect(() => {
     if (sourceRecordIdRef.current === recordId) return;

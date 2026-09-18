@@ -145,6 +145,17 @@ credentials, draft-export feature, or History-only modification eligibility is
 introduced. Active generation and modification drafts remain refusals.
 See `docs/research/2026-09-17-774-preserve-results.md`.
 
+### Manual-review modification draft recovery (issue #775)
+
+The v1 recovery envelope may also carry an optional settled `modification`
+workspace from History detail: unsent 圈選/instructions, route and exact
+record/question/content identity, known revision, eligibility evidence, and a
+received replacement. Restore re-fetches the authorized History record and
+blocks changed descendants, content/revision, authorization, or eligibility;
+it never replays admission or SSE. Active modification operations still refuse
+Save Draft & Update, while settled replacements are captured for a later save.
+See `docs/research/2026-09-17-775-preserve-modification-drafts.md`.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.

@@ -6,6 +6,11 @@ import { importConfirmationWorkspace } from "../workspace/adapters/confirmationW
 import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
 import { importResultsWorkspace } from "../workspace/adapters/resultsWorkspace";
 import type { ResultsWorkspaceSnapshot } from "../workspace/adapters/types";
+import {
+  exportModificationWorkspace,
+  importModificationWorkspace,
+} from "../workspace/adapters/modificationWorkspace";
+import type { ModificationWorkspaceSnapshot } from "../workspace/adapters/types";
 
 export const RECOVERY_FORMAT_V1 = "exam-generation.recovery/1" as const;
 export type RecoveryFormatV1 = typeof RECOVERY_FORMAT_V1;
@@ -30,6 +35,8 @@ export interface RecoverySnapshotV1 {
   confirmation?: ConfirmationWorkspaceSnapshot;
   /** Optional so snapshots written by #772/#773 remain readable. */
   results?: ResultsWorkspaceSnapshot;
+  /** Optional so snapshots written by #772/#773/#774 remain readable. */
+  modification?: ModificationWorkspaceSnapshot;
 }
 
 export type ParseRecoveryResult =
@@ -138,11 +145,23 @@ export function parseRecoverySnapshot(
     return { ok: false, reason: "invalid_form" };
   }
 
+  // Manual-review drafts are an optional v1 extension. They are validated
+  // through the same adapter used by the live History card.
+  const modificationSnapshot = Object.hasOwn(raw, "modification")
+    ? importModificationWorkspace(raw.modification)
+    : undefined;
+  if (Object.hasOwn(raw, "modification") && !modificationSnapshot) {
+    return { ok: false, reason: "invalid_form" };
+  }
+
   return {
     ok: true,
     snapshot: {
       ...(raw as unknown as RecoverySnapshotV1),
       ...(resultsSnapshot ? { results: resultsSnapshot } : {}),
+      ...(modificationSnapshot
+        ? { modification: exportModificationWorkspace(modificationSnapshot) }
+        : {}),
     },
   };
 }

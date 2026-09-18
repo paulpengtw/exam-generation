@@ -10,6 +10,7 @@ import {
 import type { RecoverySnapshotV1 } from "./format";
 import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
 import type { ResultsWorkspaceSnapshot } from "../workspace/adapters/types";
+import type { ModificationWorkspaceSnapshot } from "../workspace/adapters/types";
 
 function makeValidSnapshot(): RecoverySnapshotV1 {
   return {
@@ -84,6 +85,25 @@ function makeValidResults(): ResultsWorkspaceSnapshot {
   };
 }
 
+function makeValidModification(): ModificationWorkspaceSnapshot {
+  return {
+    kind: "modification",
+    version: 1,
+    route: "/history/history-record",
+    subject: "social_studies",
+    recordId: "history-record",
+    questionId: "history-question",
+    contentIdentity: "canonical-history-question",
+    contentRevision: null,
+    eligibility: { status: "completed", verified: true, eligible: true },
+    annotations: [{
+      segments: [{ field_path: "文本", start: 0, end: 4, quoted_text: "passage" }],
+      instruction: "Clarify this passage",
+    }],
+    replacement: null,
+  };
+}
+
 const OPTS = {
   expectedAccountId: "user-1",
   expectedOrigin: "https://example.com",
@@ -115,6 +135,17 @@ describe("parseRecoverySnapshot", () => {
     if (result.ok) expect(result.snapshot.results).toEqual(results);
   });
 
+  it("accepts an exact optional modification snapshot", () => {
+    const modification = makeValidModification();
+    const result = parseRecoverySnapshot(
+      { ...makeValidSnapshot(), modification },
+      OPTS,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.snapshot.modification).toEqual(modification);
+  });
+
   it("rejects a malformed optional received-results snapshot", () => {
     const result = parseRecoverySnapshot({
       ...makeValidSnapshot(),
@@ -133,6 +164,16 @@ describe("parseRecoverySnapshot", () => {
       },
       OPTS,
     );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_form");
+  });
+
+  it("rejects a malformed optional modification snapshot", () => {
+    const result = parseRecoverySnapshot({
+      ...makeValidSnapshot(),
+      modification: { ...makeValidModification(), eligibility: null },
+    }, OPTS);
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("invalid_form");

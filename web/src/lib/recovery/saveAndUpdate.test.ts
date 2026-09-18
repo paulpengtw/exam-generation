@@ -18,6 +18,7 @@ import type { SurfaceParticipation } from "../workspace/workspaceStore";
 import type { FormWorkspaceSnapshot } from "../workspace/adapters/types";
 import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
 import type { ResultsWorkspaceSnapshot } from "../workspace/adapters/types";
+import type { ModificationWorkspaceSnapshot } from "../workspace/adapters/types";
 
 function makeConfirmationSnapshot(
   overrides: Partial<ConfirmationWorkspaceSnapshot> = {},
@@ -99,6 +100,42 @@ function makeResultsSurface(
     readiness: "ready",
     hasEditableState: false,
     hasReceivedResults: true,
+    exportWorkspace: () => snapshot,
+    ...overrides,
+  };
+}
+
+function makeModificationSnapshot(
+  overrides: Partial<ModificationWorkspaceSnapshot> = {},
+): ModificationWorkspaceSnapshot {
+  return {
+    kind: "modification",
+    version: 1,
+    route: "/history/history-record",
+    subject: "social_studies",
+    recordId: "history-record",
+    questionId: "history-question",
+    contentIdentity: "canonical-history-question",
+    contentRevision: null,
+    eligibility: { status: "completed", verified: true, eligible: true },
+    annotations: [{
+      segments: [{ field_path: "文本", start: 0, end: 7, quoted_text: "passage" }],
+      instruction: "Clarify this passage",
+    }],
+    replacement: null,
+    ...overrides,
+  };
+}
+
+function makeModificationSurface(
+  snapshot: ModificationWorkspaceSnapshot = makeModificationSnapshot(),
+  overrides: Partial<SurfaceParticipation> = {},
+): SurfaceParticipation {
+  return {
+    id: "history.modification",
+    readiness: "ready",
+    hasEditableState: Array.isArray(snapshot.annotations) && snapshot.annotations.length > 0,
+    hasReceivedResults: snapshot.replacement !== null,
     exportWorkspace: () => snapshot,
     ...overrides,
   };
@@ -258,22 +295,44 @@ describe("evaluateSaveAndUpdate", () => {
     if (!result.allowed) expect(result.reason).toBe("confirmation_open");
   });
 
-  it("rejects when history.modification is registered", () => {
+  it("allows a valid settled history modification workspace", () => {
     const result = evaluateSaveAndUpdate(
       makeValidInput({
         surfaces: {
           "generate.form": makeFormSurface(),
-          "history.modification": {
-            id: "history.modification",
-            readiness: "ready",
-            hasEditableState: true,
-            hasReceivedResults: false,
-          },
+          "history.modification": makeModificationSurface(),
         },
       }),
     );
-    expect(result.allowed).toBe(false);
-    if (!result.allowed) expect(result.reason).toBe("modification_draft");
+    expect(result).toEqual({ allowed: true });
+  });
+
+  it("does not make an empty History page saveable", () => {
+    const result = evaluateSaveAndUpdate(
+      makeValidInput({
+        surfaces: {
+          "history.modification": makeModificationSurface(
+            makeModificationSnapshot({ annotations: [], replacement: null }),
+            { hasEditableState: false, hasReceivedResults: false },
+          ),
+        },
+      }),
+    );
+    expect(result).toEqual({ allowed: false, reason: "modification_draft" });
+  });
+
+  it("rejects a malformed history modification workspace", () => {
+    const result = evaluateSaveAndUpdate(
+      makeValidInput({
+        surfaces: {
+          "generate.form": makeFormSurface(),
+          "history.modification": makeModificationSurface({
+            eligibility: null as never,
+          }),
+        },
+      }),
+    );
+    expect(result).toEqual({ allowed: false, reason: "modification_draft" });
   });
 
   it("rejects when user is not signed in", () => {
@@ -337,6 +396,26 @@ function setupValidRunState(checkNowImpl?: () => Promise<void>) {
     hasReceivedResults: false,
     exportWorkspace: () => ({ kind: "form", version: 1, fields: {} as never }),
   });
+  const defaultCheckNow = async () => {
+    // no-op: state already set correctly
+  };
+  useReleaseStore.setState({
+    status: "update-required",
+    requiredBuildId: "build-B",
+    releaseRevision: 2,
+    supportedRecoveryFormats: [RECOVERY_FORMAT_V1],
+    lastCheckedAt: null,
+    lastFailure: null,
+    checkNow: checkNowImpl ?? defaultCheckNow,
+  } as ReleaseState);
+}
+
+function setupValidModificationRunState(checkNowImpl?: () => Promise<void>) {
+  useAuthStore.setState({
+    token: "tok",
+    user: { id: "u1", email: "u@test.com", created_at: "2024-01-01T00:00:00Z" },
+  });
+  useWorkspaceStore.getState().registerSurface(makeModificationSurface());
   const defaultCheckNow = async () => {
     // no-op: state already set correctly
   };
@@ -454,6 +533,98 @@ describe("runSaveAndUpdate", () => {
     expect(saved?.results?.terminalEvidence).toBe(false);
   });
 
+  it("saves a History-only modification draft with its route and base evidence", async () => {
+    setupValidModificationRunState();
+    vi.stubGlobal("location", {
+      pathname: "/history/history-record",
+      origin: "https://test.com",
+      reload: vi.fn(),
+    });
+    const navigate = vi.fn();
+
+    const result = await runSaveAndUpdate({
+      navigate,
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    const saved = loadSnapshot("u1", result.snapshot_id);
+    expect(saved?.route).toBe("/history/history-record");
+    expect(saved?.subject).toBe("social_studies");
+    expect(saved?.form).toEqual({ kind: "form", version: 1, fields: {} });
+    expect(saved?.modification).toEqual(makeModificationSnapshot());
+    expect(navigate).toHaveBeenCalledOnce();
+  });
+
+  it("allows a settled replacement and persists the latest received result", async () => {
+    setupValidModificationRunState();
+    const replacement = {
+      record_id: "history-child",
+      question: { id: "history-child-question", 題目: ["replacement"] },
+      ripple_report: ["題目[0]"],
+      verified: true,
+      verification: { passed: true },
+      failure_details: null,
+    };
+    const snapshot = makeModificationSnapshot({
+      recordId: "history-child",
+      questionId: "history-child-question",
+      contentIdentity: "canonical-replacement",
+      replacement,
+      annotations: [],
+    });
+    useWorkspaceStore.getState().updateSurface("history.modification", {
+      hasEditableState: false,
+      hasReceivedResults: true,
+      exportWorkspace: () => snapshot,
+    });
+    vi.stubGlobal("location", {
+      pathname: "/history/history-record",
+      origin: "https://test.com",
+      reload: vi.fn(),
+    });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(loadSnapshot("u1", result.snapshot_id)?.modification?.replacement).toEqual(replacement);
+  });
+
+  it("refuses when a late callback mutates the settled modification source", async () => {
+    const snapshot = makeModificationSnapshot();
+    setupValidModificationRunState(async () => {
+      snapshot.annotations[0].instruction = "late callback mutation";
+    });
+    useWorkspaceStore.getState().updateSurface("history.modification", {
+      exportWorkspace: () => snapshot,
+    });
+    vi.stubGlobal("location", {
+      pathname: "/history/history-record",
+      origin: "https://test.com",
+      reload: vi.fn(),
+    });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "workspace_changed", retryable: true });
+    expect(Object.keys(localStorage).filter((key) => key.startsWith("exam_recovery_")))
+      .toHaveLength(0);
+  });
+
   it("preserves a settled error/progress workspace even when no question body arrived", async () => {
     setupValidRunState();
     const errorResults = {
@@ -519,6 +690,28 @@ describe("runSaveAndUpdate", () => {
     operation.end("completed");
 
     expect(result).toEqual({ ok: false, reason: "operation_active", retryable: false });
+  });
+
+  it("does not abort or save over an active History modification run", async () => {
+    setupValidModificationRunState();
+    const operation = useWorkspaceStore.getState().beginOperation(
+      "modification",
+      "history.modification",
+    );
+    vi.stubGlobal("location", { pathname: "/history/history-record", origin: "https://test.com", reload: vi.fn() });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "operation_active", retryable: false });
+    expect(useWorkspaceStore.getState().operations).toEqual([
+      expect.objectContaining({ kind: "modification", surface: "history.modification" }),
+    ]);
+    operation.end("completed");
   });
 
   it("quota failure → no navigate, freezeInput false, navigationApproved false, reason quota", async () => {

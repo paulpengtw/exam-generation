@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 
@@ -10,10 +10,18 @@ import type { ExamQuestion } from "../hooks/useGenerate";
 import type { ReferenceExampleRecordShape } from "../components/ReferenceExampleRecordSection";
 import { useT } from "../i18n/useT";
 import {
+  ApiError,
   downloadHistoryJson,
   getHistoryDetail,
   type HistoryDetail as HistoryDetailPayload,
 } from "../api/client";
+import { useAuthStore } from "../store/authStore";
+import { initRecoveryStore, useRecoveryStore } from "../lib/recovery/recoveryStore";
+import type { ModificationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
+import {
+  validateModificationBase,
+  type ModificationRestoreBlockReason,
+} from "../lib/recovery/modificationValidation";
 
 function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -30,14 +38,48 @@ export interface HistoryDetailProps {
   recordId: string;
 }
 
-export default function HistoryDetail({ recordId }: HistoryDetailProps) {
+interface HistoryDetailContentProps extends HistoryDetailProps {
+  route: string;
+  recoveredModification: ModificationWorkspaceSnapshot | null;
+}
+
+type ModificationRestoreState = "none" | "checking" | "ready" | "blocked" | "failed";
+type ModificationRestoreReason = ModificationRestoreBlockReason | "unauthorized" | "restore_failed";
+
+function getModificationRestoreReason(error: unknown): ModificationRestoreReason {
+  if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
+    return "unauthorized";
+  }
+  return "restore_failed";
+}
+
+function modificationRestoreReasonKey(reason: ModificationRestoreReason): string {
+  return `recovery.modification_blocked.${reason}`;
+}
+
+function HistoryDetailContent({
+  recordId,
+  route,
+  recoveredModification: recoveredModificationProp,
+}: HistoryDetailContentProps) {
   const t = useT();
   const navigate = useNavigate();
+  const [recoveredModification] = useState(recoveredModificationProp);
   const [detail, setDetail] = useState<HistoryDetailPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [restoreState, setRestoreState] = useState<ModificationRestoreState>(
+    recoveredModification === null ? "none" : "checking",
+  );
+  const [restoreReason, setRestoreReason] = useState<ModificationRestoreReason | null>(null);
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [recoveryDismissed, setRecoveryDismissed] = useState(false);
+  const discardRecovery = useRecoveryStore((state) => state.discardRecovery);
 
   useSurfaceParticipation("history.detail", {
-    readiness: detail !== null || error !== null ? "ready" : "hydrating",
+    readiness: detail !== null || error !== null ||
+      (recoveredModification !== null && restoreState !== "checking")
+      ? "ready"
+      : "hydrating",
     hasEditableState: false,
     hasReceivedResults: false,
   });
@@ -49,16 +91,60 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
     setDetail(null);
     getHistoryDetail(recordId)
       .then((res) => {
-        if (!cancelled) setDetail(res);
+        if (cancelled) return;
+        setDetail(res);
+        if (recoveredModification !== null) {
+          const validation = validateModificationBase(recoveredModification, res, route);
+          if (validation.valid) {
+            setRestoreReason(null);
+            setRestoreState("ready");
+          } else {
+            setRestoreReason(validation.reason);
+            setRestoreState("blocked");
+          }
+        }
       })
       .catch((err) => {
-        if (!cancelled)
-          setError(err instanceof Error ? err.message : "error");
+        if (cancelled) return;
+        if (recoveredModification !== null) {
+          const reason = getModificationRestoreReason(err);
+          setRestoreReason(reason);
+          setRestoreState(reason === "restore_failed" ? "failed" : "blocked");
+          return;
+        }
+        setError(err instanceof Error ? err.message : "error");
       });
     return () => {
       cancelled = true;
     };
-  }, [recordId]);
+  }, [recordId, recoveredModification, restoreAttempt, route]);
+
+  const showRecovery = recoveredModification !== null && !recoveryDismissed;
+  const recoveryCanAcknowledge = restoreState === "ready";
+  const recoveryMessage = (() => {
+    if (restoreState === "checking") return t("recovery.modification_checking");
+    if (restoreState === "ready") return t("recovery.modification_restored");
+    if (restoreState === "failed") return t("recovery.modification_restore_failed");
+    if (restoreReason !== null) return t(modificationRestoreReasonKey(restoreReason));
+    return "";
+  })();
+
+  const handleAcknowledgeRecovery = () => {
+    if (!recoveryCanAcknowledge) return;
+    discardRecovery();
+    setRecoveryDismissed(true);
+  };
+
+  const handleDiscardRecovery = () => {
+    discardRecovery();
+    setRecoveryDismissed(true);
+  };
+
+  const handleRetryRecovery = () => {
+    setRestoreReason(null);
+    setRestoreState("checking");
+    setRestoreAttempt((attempt) => attempt + 1);
+  };
 
   const isFailed = detail?.status === "failed";
   const isAborted = detail?.status === "aborted";
@@ -126,6 +212,42 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-4 px-3 py-4 sm:px-4 sm:py-6">
+        {showRecovery && (
+          <section
+            role={restoreState === "blocked" || restoreState === "failed" ? "alert" : "status"}
+            className="sentry-unmask rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
+          >
+            <h2 className="font-semibold">{t("recovery.banner.modification_title")}</h2>
+            <p className="mt-1">{recoveryMessage}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {recoveryCanAcknowledge && (
+                <button
+                  type="button"
+                  onClick={handleAcknowledgeRecovery}
+                  className="rounded border border-blue-700 px-2 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100"
+                >
+                  {t("recovery.banner.acknowledge")}
+                </button>
+              )}
+              {(restoreState === "blocked" || restoreState === "failed") && (
+                <button
+                  type="button"
+                  onClick={handleRetryRecovery}
+                  className="rounded border border-blue-700 px-2 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100"
+                >
+                  {t("recovery.modification_retry")}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleDiscardRecovery}
+                className="rounded border border-gray-400 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
+              >
+                {t("recovery.banner.discard")}
+              </button>
+            </div>
+          </section>
+        )}
         {error && (
           <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {t("history.detail_error")} {error}
@@ -180,15 +302,57 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
               key={detail.id}
               question={detail.question_json as unknown as ExamQuestion}
               recordId={detail.id}
+              route={route}
+              subject={detail.subject}
               phase="verified"
               isFinal
               trail={detail.verification_trail}
               figurePolicyTrail={detail.figure_policy_trail}
               referenceExampleRecord={detail.reference_example_record as ReferenceExampleRecordShape | null}
+              recoveredModification={recoveredModification ?? undefined}
+              modificationRestoreEligible={recoveredModification === null || restoreState === "ready"}
             />
           )
         )}
       </main>
     </div>
+  );
+}
+
+export default function HistoryDetail({ recordId }: HistoryDetailProps) {
+  const location = useLocation();
+  const userId = useAuthStore((state) => state.user?.id ?? "");
+  const route = location.pathname;
+  const recoveryBootKey = `${route}:${userId}`;
+  const [recoveryBootedKey, setRecoveryBootedKey] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    initRecoveryStore({
+      currentRoute: route,
+      origin: window.location.origin,
+      environment:
+        typeof __BUILD_ENVIRONMENT__ === "undefined"
+          ? "development"
+          : __BUILD_ENVIRONMENT__,
+    });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the gate deliberately waits for synchronous recovery-store hydration before mounting the detail surface
+    setRecoveryBootedKey(recoveryBootKey);
+  }, [recoveryBootKey, route]);
+
+  const pendingRecovery = useRecoveryStore((state) => state.pending);
+  const recoveredModification = pendingRecovery?.route === route
+    ? pendingRecovery.modification ?? null
+    : null;
+
+  if (recoveryBootedKey !== recoveryBootKey) {
+    return <div className="min-h-screen bg-gray-50" aria-busy="true" />;
+  }
+
+  return (
+    <HistoryDetailContent
+      recordId={recordId}
+      route={route}
+      recoveredModification={recoveredModification}
+    />
   );
 }
