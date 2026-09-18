@@ -5,3 +5,5 @@ A 從屬參數 is a setting whose legal range is fixed by another setting's reso
 ## Considered options
 
 A drift-guard test over two copies, or a build-time generated constant, were rejected because the 科目 buckets belong to curriculum data operators swap at runtime (`SOCIAL_STUDIES_CURRICULUM_DIR`); a compile-time contract would freeze a rule the data is allowed to change. Shipping the raw maps and letting the client join was rejected in favour of pre-joined admitting-parent tags, which make the observed drift impossible rather than detectable.
+
+**Status:** Implemented server-side by `src/common/admission.py` (#832), the single lookup both 預抽 and generation-time validation read.
