@@ -140,10 +140,14 @@ export function buildIdentityPlugin(): Plugin {
       const builtAt = new Date().toISOString();
       const releaseRevision = Number(process.env.RELEASE_REVISION ?? 1);
       const readerVersion = process.env.RELEASE_READER_VERSION ?? "reader-1";
-      const supportedRecoveryFormats = (process.env.SUPPORTED_RECOVERY_FORMATS ?? "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
+      const _envFormats = process.env.SUPPORTED_RECOVERY_FORMATS;
+      const supportedRecoveryFormats =
+        _envFormats !== undefined
+          ? _envFormats
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean)
+          : ["exam-generation.recovery/1"];
 
       // dist/build-meta.json — artifact provenance
       this.emitFile({

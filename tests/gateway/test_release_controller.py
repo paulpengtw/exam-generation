@@ -237,3 +237,36 @@ def test_retirement_requires_evidence_and_keeps_current_and_rollback(tmp_path) -
     )
     assert retired_rollback["artifacts"]["current"]["build_id"] == "build-b"
     assert retired_rollback["artifacts"]["prepared_rollback"] is None
+
+
+def test_gateway_first_boot_default_recovery_format(tmp_path, monkeypatch) -> None:
+    """First-boot gateway.__main__.main() must persist exam-generation.recovery/1.
+
+    Exercises the real first-boot path in gateway/__main__.py: sets the
+    required env vars, deletes GATEWAY_SUPPORTED_RECOVERY_FORMATS and
+    GATEWAY_READER_VERSION so the code falls back to its hard-coded defaults,
+    stubs uvicorn.run to a no-op, then calls main() and reads the persisted
+    policy back through ReleaseController.read_policy() + parse_policy().
+    This test would fail if __main__.py's default reverted to "json-v1".
+    """
+    import gateway.__main__ as gateway_main
+
+    monkeypatch.setenv("GATEWAY_BACKEND_URL", "http://backend.invalid")
+    monkeypatch.setenv("GATEWAY_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("GATEWAY_RELEASED_BUILD_ID", "build-test")
+    monkeypatch.setenv("RELEASE_ENVIRONMENT", "test")
+    monkeypatch.delenv("GATEWAY_SUPPORTED_RECOVERY_FORMATS", raising=False)
+    monkeypatch.delenv("GATEWAY_READER_VERSION", raising=False)
+    # Stub uvicorn.run so main() returns immediately without binding a port.
+    monkeypatch.setattr(gateway_main.uvicorn, "run", lambda *a, **k: None)
+
+    gateway_main.main()
+
+    controller = ReleaseController(tmp_path, environment="test")
+    loaded = parse_policy(controller.read_policy())
+    assert loaded["supported_recovery_formats"] == ["exam-generation.recovery/1"], (
+        f"First-boot default must be ['exam-generation.recovery/1'],"
+        f" got {loaded['supported_recovery_formats']}"
+    )
+    assert loaded["reader_version"] == "reader-1"
+    assert loaded["admission"] == "paused"

@@ -33,7 +33,7 @@ def main() -> None:
                 "supported_recovery_formats": [
                     item.strip()
                     for item in os.environ.get(
-                        "GATEWAY_SUPPORTED_RECOVERY_FORMATS", "json-v1"
+                        "GATEWAY_SUPPORTED_RECOVERY_FORMATS", "exam-generation.recovery/1"
                     ).split(",")
                     if item.strip()
                 ],

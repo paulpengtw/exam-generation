@@ -72,7 +72,9 @@ def test_preflight_all_reachable(tmp_path, monkeypatch):
     mock_get.return_value.json.return_value = _fresh_snap()
 
     with patch("release_control.httpx.get", mock_get):
-        rc = release_control.main(["preflight", "--inventory", str(inv_path)])
+        rc = release_control.main(
+            ["preflight", "--inventory", str(inv_path), "--max-age-seconds", "3600"]
+        )
     assert rc == 0
 
 
@@ -103,7 +105,8 @@ def test_drain_check_already_quiescent(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(
-            ["drain-check", "--inventory", str(inv_path), "--timeout", "5"]
+            ["drain-check", "--inventory", str(inv_path), "--timeout", "5",
+             "--max-age-seconds", "3600"]
         )
     assert rc == 0
 
@@ -148,7 +151,7 @@ def test_pause_and_drain_success(tmp_path, monkeypatch):
          patch("release_control.httpx.get", mock_get):
         rc = release_control.main(
             ["pause-and-drain", "--inventory", str(inv_path), "--timeout", "10",
-             "--reason", "release test"]
+             "--reason", "release test", "--max-age-seconds", "3600"]
         )
     assert rc == 0
     # gateway pause call was made
@@ -187,7 +190,8 @@ def test_compat_check_pass(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(
-            ["compat-check", "--inventory", str(inv_path), "--require-version", "1"]
+            ["compat-check", "--inventory", str(inv_path), "--require-version", "1",
+             "--max-age-seconds", "3600"]
         )
     assert rc == 0
 

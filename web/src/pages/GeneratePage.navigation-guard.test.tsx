@@ -51,8 +51,8 @@ vi.mock("../components/ParamForm", () => ({
 vi.mock("../store/authStore", () => ({
   useAuthStore: (selector: (state: {
     user: null;
-    logout: () => void;
-  }) => unknown) => selector({ user: null, logout: logoutMock }),
+    logoutExplicit: () => void;
+  }) => unknown) => selector({ user: null, logoutExplicit: logoutMock }),
 }));
 
 vi.mock("../i18n/useT", () => ({

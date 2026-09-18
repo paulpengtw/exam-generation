@@ -593,7 +593,7 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     # text_instruction — routed via _per_question_text_instruction for per-row override (#637)
     ("text_instruction", _SS): (_svc._worker_one_body, "_per_question_text_instruction"),
     ("text_instruction", _NS): (_svc._worker_one_body, "_per_question_text_instruction"),
-    # text_word_limit — forwarded in _worker_one_body (SS/NS); math uses canonical sampler value
+    # text_word_limit — forwarded in _worker_one_body (SS/NS) and into math's sampler value
     ("text_word_limit", _MA): (
         _math_params_from_resolved_payload,
         'payload.get("text_word_limit")',

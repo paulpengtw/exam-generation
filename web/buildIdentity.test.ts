@@ -187,7 +187,7 @@ describe("buildIdentityPlugin", () => {
     // Policy fields
     expect(policyJson.release_revision).toBe(3);
     expect(policyJson.admission).toBe("open");
-    expect(policyJson.supported_recovery_formats).toEqual([]);
+    expect(policyJson.supported_recovery_formats).toEqual(["exam-generation.recovery/1"]);
     expect(policyJson.reader_version).toBe("reader-1");
 
     // Build meta fields

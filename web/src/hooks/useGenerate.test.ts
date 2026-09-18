@@ -37,6 +37,7 @@ import {
   useGenerate,
   type VerificationTrailEntry,
 } from "./useGenerate";
+import { useLangStore } from "../store/langStore";
 
 function latestStreamOptions(): FetchEventSourceInit {
   const call = fetchEventSourceMock.mock.lastCall;
@@ -752,6 +753,79 @@ describe("useGenerate — stream open error detail", () => {
     );
   });
 
+  // #835: incompatible_parent / no_admitting_parent format through the
+  // shared web/src/lib/resolverErrorMessages.ts formatter instead of the
+  // legacy "field (code)" text — unlike `unresolved` above, which is
+  // unchanged by #835.
+  it("surfaces a readable incompatible_parent sentence (zh-TW) instead of the legacy code text", async () => {
+    const originalLang = useLangStore.getState().lang;
+    useLangStore.getState().setLang("zh-TW");
+    try {
+      const { result } = renderStartedRun();
+      let thrown: unknown;
+
+      await act(async () => {
+        try {
+          await latestStreamOptions().onopen?.(
+            new Response(
+              JSON.stringify({
+                detail: [
+                  { field: "learning_content", code: "incompatible_parent", parent: "地理" },
+                ],
+              }),
+              { status: 422, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        } catch (error) {
+          thrown = error;
+        }
+      });
+
+      expect(thrown).toEqual(new Error("所選的學習內容不屬於科目「地理」。"));
+      expect(result.current.errorMessage).toBe("所選的學習內容不屬於科目「地理」。");
+    } finally {
+      useLangStore.getState().setLang(originalLang);
+    }
+  });
+
+  it("surfaces a readable no_admitting_parent sentence (en-US) naming the question/小題 position", async () => {
+    const originalLang = useLangStore.getState().lang;
+    useLangStore.getState().setLang("en-US");
+    try {
+      const { result } = renderStartedRun();
+      let thrown: unknown;
+
+      await act(async () => {
+        try {
+          await latestStreamOptions().onopen?.(
+            new Response(
+              JSON.stringify({
+                detail: [
+                  {
+                    field: "per_question_params[1].subquestion_configs[0].learning_content",
+                    code: "no_admitting_parent",
+                    parent: "科目",
+                  },
+                ],
+              }),
+              { status: 422, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        } catch (error) {
+          thrown = error;
+        }
+      });
+
+      const expected =
+        "In question 2, sub-question 1, the selected learning content has no common subject "
+        + "available; remove some of the selected codes.";
+      expect(thrown).toEqual(new Error(expected));
+      expect(result.current.errorMessage).toBe(expected);
+    } finally {
+      useLangStore.getState().setLang(originalLang);
+    }
+  });
+
   it("falls back to the generic message when the body is not valid JSON", async () => {
     const { result } = renderStartedRun();
     let thrown: unknown;
@@ -1020,7 +1094,8 @@ describe("restoreResults", () => {
       status: completion === "error" ? "error" : "idle", admission: "idle", admissionError: null, llmCalls: [],
     });
     expect(exportResultsWorkspace({ ...result.current, requestedTotal: 2, submittedSubQuestionCount: 3 })).toMatchObject({
-      ...snapshot, completion: completion === "error" ? "error" : "settled",
+      ...snapshot,
+      completion: completion === "settled" ? "unknown" : completion,
     });
   });
 
@@ -1319,5 +1394,82 @@ describe("F3: final without terminal then done → processing unknown", () => {
     expect(ev.evidence?.questions["q_RUN_001"].processing).toBe("unknown");
     expect(ev.evidence?.questions["q_RUN_001"].content.receipt).toBe("final");
     expect(ev.evidence?.closed).toBe(true);
+  });
+});
+
+describe("F3: v2 displayResults carry stableId and contentRevision", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets stableId = question_id and contentRevision from context.content_revision on question_update", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "", event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // Send question_update for q_RUN_001 with content_revision 3
+    // payload must have { question, phase } — the evidence reducer reads payload.question
+    sendV2Event(
+      "question_update",
+      { run_id: "RUN", event_seq: 2, question_id: "q_RUN_001", index: 0, content_revision: 3 },
+      { question: sampleQ("q_RUN_001"), phase: "draft" },
+    );
+
+    const dr = result.current.displayResults;
+    expect(dr).toHaveLength(1);
+    expect(dr[0].stableId).toBe("q_RUN_001");
+    expect(dr[0].contentRevision).toBe(3);
+  });
+
+  it("sets stableId = question_id and contentRevision from context.content_revision on result", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "", event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // Send result for q_RUN_001 with content_revision 5
+    sendV2Event(
+      "result",
+      { run_id: "RUN", event_seq: 3, question_id: "q_RUN_001", index: 0, content_revision: 5 },
+      sampleQ("q_RUN_001"),
+    );
+
+    const dr = result.current.displayResults;
+    expect(dr).toHaveLength(1);
+    expect(dr[0].stableId).toBe("q_RUN_001");
+    expect(dr[0].contentRevision).toBe(5);
+  });
+
+});
+
+describe("F3: v2 error event sets resultsCompletion to 'error'", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets resultsCompletion to 'error' when a v2 error event arrives", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "", event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    sendV2Event("error", { run_id: "RUN", event_seq: 4 }, { message: "something went wrong" });
+
+    const r = result.current as unknown as { resultsCompletion: string | null; terminalEvidence: boolean };
+    expect(result.current.status).toBe("error");
+    expect(r.resultsCompletion).toBe("error");
+    expect(r.terminalEvidence).toBe(false);
   });
 });

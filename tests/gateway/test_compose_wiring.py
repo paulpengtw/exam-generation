@@ -35,6 +35,12 @@ def test_gateway_environment(compose):
     assert "GATEWAY_CONTROL_TOKEN" in env
     assert "RELEASE_ENVIRONMENT" in env
     assert "GATEWAY_RELEASED_BUILD_ID" in env
+    assert env.get("GATEWAY_SUPPORTED_RECOVERY_FORMATS") == (
+        "${SUPPORTED_RECOVERY_FORMATS:-exam-generation.recovery/1}"
+    ), (
+        f"docker-compose gateway GATEWAY_SUPPORTED_RECOVERY_FORMATS default must be "
+        f"exam-generation.recovery/1, got {env.get('GATEWAY_SUPPORTED_RECOVERY_FORMATS')}"
+    )
 
 
 def test_gateway_ports(compose):

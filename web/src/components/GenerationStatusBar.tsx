@@ -42,7 +42,7 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
   );
 }
 
-export type RunState = "idle" | "running" | "done" | "error";
+export type RunState = "idle" | "running" | "done" | "error" | "unknown";
 export type JumpTarget = "form" | "progress" | "results";
 type Subject = "math" | "social_studies" | "natural_sciences";
 type StepState = "complete" | "live" | "pending";
@@ -336,7 +336,9 @@ export default function GenerationStatusBar({
                 ? "text-green-600"
                 : runState === "error"
                   ? "text-red-600"
-                  : "text-gray-500"
+                  : runState === "unknown"
+                    ? "text-amber-700"
+                    : "text-gray-500"
           }`}
         >
           <span data-testid="statusbar-status" className="truncate">
@@ -396,6 +398,11 @@ export default function GenerationStatusBar({
             {runState === "error" ? (
               <span className="sentry-unmask">
                 ✕ {t("statusbar.error")}
+              </span>
+            ) : null}
+            {runState === "unknown" ? (
+              <span className="sentry-unmask">
+                ? {t("statusbar.unknown")}
               </span>
             ) : null}
           </span>
