@@ -30,6 +30,8 @@ export interface ReleaseState {
   releaseRevision: number | null;
   lastCheckedAt: number | null;
   lastFailure: FailureReason | null;
+  /** Recovery formats declared in the last successfully parsed policy. */
+  supportedRecoveryFormats: string[];
 
   /** Coalesced check: at most one in-flight. */
   checkNow(): Promise<void>;
@@ -39,6 +41,7 @@ interface SuccessResult {
   status: ReleaseStatus;
   requiredBuildId: string | null;
   releaseRevision: number;
+  supportedRecoveryFormats: string[];
 }
 
 const POLICY_URL = "/release/policy.json";
@@ -64,6 +67,7 @@ export const useReleaseStore = create<ReleaseState>((_set, get) => ({
   releaseRevision: null,
   lastCheckedAt: null,
   lastFailure: null,
+  supportedRecoveryFormats: [],
 
   checkNow(): Promise<void> {
     if (_inFlight !== null) return _inFlight;
@@ -116,6 +120,7 @@ async function _doCheck(getState: () => ReleaseState): Promise<void> {
         status: "paused",
         requiredBuildId: getState().requiredBuildId,
         releaseRevision: policy.release_revision,
+        supportedRecoveryFormats: policy.supported_recovery_formats,
       };
     } else {
       const cmp = compareArtifact(__BUILD_ID__, policy);
@@ -124,6 +129,7 @@ async function _doCheck(getState: () => ReleaseState): Promise<void> {
         requiredBuildId:
           cmp === "update-required" ? policy.released_build_id : null,
         releaseRevision: policy.release_revision,
+        supportedRecoveryFormats: policy.supported_recovery_formats,
       };
     }
   } catch (err) {
@@ -157,6 +163,7 @@ async function _doCheck(getState: () => ReleaseState): Promise<void> {
     status: successResult.status,
     requiredBuildId: successResult.requiredBuildId,
     releaseRevision: successResult.releaseRevision,
+    supportedRecoveryFormats: successResult.supportedRecoveryFormats,
     lastCheckedAt: Date.now(),
     lastFailure: null,
   });
