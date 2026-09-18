@@ -896,7 +896,7 @@ export default function QuestionCard({
                       <span>{segment.field_path}</span>
                       <span>{segment.start}–{segment.end}</span>
                       <span>「{segment.quoted_text}」</span>
-                      {segmentIndex === 0 && (
+                      {recordId && segmentIndex === 0 && (
                         <button
                           type="button"
                           onClick={() => handleDeleteAnnotation(annotation.id)}
@@ -907,7 +907,7 @@ export default function QuestionCard({
                         </button>
                       )}
                     </div>
-                    {segmentIndex === 0 && (
+                    {recordId && segmentIndex === 0 && (
                       <div className="space-y-1">
                         <label
                           htmlFor={`modification-instruction-${annotation.id}`}
@@ -934,37 +934,39 @@ export default function QuestionCard({
           {selectionError && (
             <p role="alert" className="text-sm text-red-700">{selectionError}</p>
           )}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!canSubmit || isRunInFlight}
-              className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isRunInFlight ? t("card.submittingModifications") : t("card.submitModifications")}
-            </button>
-            {displayedSubmitError && (() => {
-              const isStaleBase = displayedSubmitError.code === "stale_base";
-              const titleKey = displayedSubmitError.code
-                ? MODIFICATION_ERROR_TITLE_KEYS[displayedSubmitError.code]
-                : undefined;
-              return (
-                <div
-                  role="alert"
-                  data-error-code={displayedSubmitError.code}
-                  data-severity={isStaleBase ? "warning" : "error"}
-                  className={isStaleBase
-                    ? "rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-                    : "rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800"}
-                >
-                  <p className="font-semibold">
-                    {t(titleKey ?? "card.modificationErrorTitle")}
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap">{displayedSubmitError.message}</p>
-                </div>
-              );
-            })()}
-          </div>
+          {recordId && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!canSubmit || isRunInFlight}
+                className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isRunInFlight ? t("card.submittingModifications") : t("card.submitModifications")}
+              </button>
+              {displayedSubmitError && (() => {
+                const isStaleBase = displayedSubmitError.code === "stale_base";
+                const titleKey = displayedSubmitError.code
+                  ? MODIFICATION_ERROR_TITLE_KEYS[displayedSubmitError.code]
+                  : undefined;
+                return (
+                  <div
+                    role="alert"
+                    data-error-code={displayedSubmitError.code}
+                    data-severity={isStaleBase ? "warning" : "error"}
+                    className={isStaleBase
+                      ? "rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                      : "rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800"}
+                  >
+                    <p className="font-semibold">
+                      {t(titleKey ?? "card.modificationErrorTitle")}
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap">{displayedSubmitError.message}</p>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </section>
       )}
 

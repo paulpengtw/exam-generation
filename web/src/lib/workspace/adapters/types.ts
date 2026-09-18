@@ -28,6 +28,29 @@ export interface ConfirmationWorkspaceSnapshot {
 
 export type ResultsCompletion = "settled" | "error" | "unknown";
 
+export type ResultsProcessing = "settled" | "interrupted" | "unknown";
+export type ResultsReceipt = "none" | "draft" | "final";
+export type ResultsReview = "passed" | "failed" | "skipped" | "unknown";
+
+export interface ResultsEvidenceSnapshot {
+  stableId: string;
+  index: number;
+  receipt: ResultsReceipt;
+  processing: ResultsProcessing;
+  contentRevision: number | null;
+  terminal: "normal" | "failed" | "cancelled" | "unknown";
+  review: {
+    status: ResultsReview;
+    contentRevision: number | null;
+  };
+}
+
+export interface DurableImageSnapshot {
+  base64: string;
+  mimeType: "image/png";
+  location: "question" | "subquestion";
+}
+
 export interface ResultsWorkspaceSnapshot {
   kind: "results";
   version: 1;
@@ -41,6 +64,14 @@ export interface ResultsWorkspaceSnapshot {
   requestedTotal: number;
   submittedSubQuestionCount: number | null;
   completion: ResultsCompletion;
+  /** Optional #774 evidence; omitted by older live adapters and snapshots. */
+  processing?: ResultsProcessing;
+  /** False means the stream ended without authoritative terminal evidence. */
+  terminalEvidence?: boolean;
+  runId?: string | null;
+  evidence?: ResultsEvidenceSnapshot[];
+  /** Durable raw PNG bytes keyed by stable question/sub-question identity. */
+  images?: Record<string, DurableImageSnapshot>;
 }
 
 export interface ModificationAnnotationSnapshot {

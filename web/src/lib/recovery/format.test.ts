@@ -9,6 +9,7 @@ import {
 } from "./format";
 import type { RecoverySnapshotV1 } from "./format";
 import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
+import type { ResultsWorkspaceSnapshot } from "../workspace/adapters/types";
 
 function makeValidSnapshot(): RecoverySnapshotV1 {
   return {
@@ -59,6 +60,30 @@ function makeValidConfirmation(): ConfirmationWorkspaceSnapshot {
   };
 }
 
+function makeValidResults(): ResultsWorkspaceSnapshot {
+  return {
+    kind: "results",
+    version: 1,
+    results: [{ id: "q-1", 情境: [], 題型種類: "single", 題型: "multiple_choice", 題目: ["q"], 正確解題分析: ["a"] }],
+    displayResults: [{ index: 0, question: { id: "q-1", 情境: [], 題型種類: "single", 題型: "multiple_choice", 題目: ["q"], 正確解題分析: ["a"] }, phase: "verified", isFinal: true }],
+    progressLines: ["done"],
+    errorMessage: null,
+    startedAt: 1,
+    finishedAt: 2,
+    subQuestionTotal: null,
+    requestedTotal: 1,
+    submittedSubQuestionCount: null,
+    completion: "unknown",
+    processing: "unknown",
+    terminalEvidence: false,
+    evidence: [{
+      stableId: "q-1", index: 0, receipt: "final", processing: "unknown",
+      contentRevision: null, terminal: "unknown",
+      review: { status: "unknown", contentRevision: null },
+    }],
+  };
+}
+
 const OPTS = {
   expectedAccountId: "user-1",
   expectedOrigin: "https://example.com",
@@ -80,6 +105,24 @@ describe("parseRecoverySnapshot", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.snapshot.confirmation).toEqual(confirmation);
+  });
+
+  it("accepts an exact optional received-results snapshot", () => {
+    const results = makeValidResults();
+    const result = parseRecoverySnapshot({ ...makeValidSnapshot(), results }, OPTS);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.snapshot.results).toEqual(results);
+  });
+
+  it("rejects a malformed optional received-results snapshot", () => {
+    const result = parseRecoverySnapshot({
+      ...makeValidSnapshot(),
+      results: { kind: "results", version: 1 },
+    }, OPTS);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_form");
   });
 
   it("rejects a malformed optional confirmation snapshot", () => {

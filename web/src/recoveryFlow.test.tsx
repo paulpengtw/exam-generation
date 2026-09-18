@@ -14,6 +14,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import type { ExamQuestion, GeneratedQuestion } from "./hooks/useGenerate";
+import type { ResultsWorkspaceSnapshot } from "./lib/workspace/adapters/types";
 
 vi.stubGlobal("__BUILD_ID__", "build-A");
 vi.stubGlobal("__BUILD_ENVIRONMENT__", "production");
@@ -23,23 +25,37 @@ const generateMock = vi.hoisted(() => vi.fn());
 const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
 const previewGenerateMock = vi.hoisted(() => vi.fn());
 const resolveGenerateMock = vi.hoisted(() => vi.fn());
+const restoreResultsMock = vi.hoisted(() => vi.fn(() => true));
+const generatedState = vi.hoisted(() => ({
+  status: "idle" as const,
+  progressLines: [] as string[],
+  results: [] as ExamQuestion[],
+  displayResults: [] as GeneratedQuestion[],
+  llmCalls: [],
+  agentLanes: [],
+  errorMessage: null,
+  startedAt: null,
+  finishedAt: null,
+  generationLogId: null,
+  subQuestionTotal: null,
+  resultsCompletion: null,
+  terminalEvidence: false,
+}));
 vi.mock("./hooks/useGenerate", () => ({
-  useGenerate: () => ({
-    status: "idle" as const,
-    progressLines: [],
-    results: [],
-    displayResults: [],
-    llmCalls: [],
-    agentLanes: [],
-    errorMessage: null,
-    startedAt: null,
-    finishedAt: null,
-    generate: generateMock,
-    reset: vi.fn(),
-  }),
+  useGenerate: () => ({ ...generatedState, generate: generateMock, reset: vi.fn(), restoreResults: restoreResultsMock }),
 }));
 vi.mock("./components/ProgressLog", () => ({ default: () => null }));
-vi.mock("./components/QuestionCard", () => ({ default: () => null }));
+vi.mock("./components/QuestionCard", () => ({
+  default: ({ question, isFinal }: { question: ExamQuestion; isFinal: boolean }) => (
+    <article data-testid={`recovered-card-${question.id ?? "unknown"}`}>
+      <p>{question.題目.join(" ")}</p>
+      {question.image_base64 ? (
+        <img alt={question.id ?? "recovered question"} src={`data:image/png;base64,${question.image_base64}`} />
+      ) : null}
+      <button type="button" disabled={!isFinal}>card.download_json</button>
+    </article>
+  ),
+}));
 vi.mock("./components/AgentStatusPanel", () => ({ default: () => null }));
 vi.mock("./utils/odt", () => ({ buildExamOdt: vi.fn(), formatTimestamp: vi.fn(() => "ts") }));
 
@@ -297,6 +313,7 @@ import {
   getOrCreateTabId,
 } from "./lib/recovery/storage";
 import { RECOVERY_FORMAT_V1 } from "./lib/recovery/format";
+import { importResultsWorkspace } from "./lib/workspace/adapters/resultsWorkspace";
 import { routes } from "./routes";
 import type { ReleaseState } from "./lib/release/releaseStore";
 import type { ConfirmationWorkspaceSnapshot, FormWorkspaceSnapshot } from "./lib/workspace/adapters/types";
@@ -424,6 +441,62 @@ async function persistRecoveryFixture(
   return snapshotId;
 }
 
+function receivedResultsFixture(subject: "math" | "social_studies" | "natural_sciences"): ResultsWorkspaceSnapshot {
+  const finalId = `${subject}-final`;
+  const partialId = `${subject}-partial`;
+  const finalQuestion: ExamQuestion = {
+    id: finalId, 情境: [], 題型種類: subject === "math" ? "single" : "題組題", 題型: "選擇題",
+    題目: [`${subject} final received question`], 正確解題分析: ["known answer"],
+  };
+  const partialQuestion: ExamQuestion = {
+    id: partialId, 情境: [], 題型種類: "題組題", 題型: "選擇題",
+    題目: [`${subject} partial received draft`], 正確解題分析: ["draft answer"],
+  };
+  return {
+    kind: "results", version: 1,
+    results: [finalQuestion],
+    displayResults: [
+      { index: 0, question: finalQuestion, phase: "verified", isFinal: true, stableId: finalId, contentRevision: 7 },
+      { index: 1, question: partialQuestion, phase: "draft", isFinal: false, stableId: partialId, contentRevision: 2 },
+    ],
+    progressLines: [`${subject} received progress`], errorMessage: null,
+    startedAt: 10, finishedAt: 20, subQuestionTotal: subject === "math" ? null : 3,
+    requestedTotal: 2, submittedSubQuestionCount: subject === "math" ? null : 3,
+    completion: "unknown", processing: "unknown", terminalEvidence: false, runId: `${subject}-run`,
+    evidence: [
+      { stableId: finalId, index: 0, receipt: "final", processing: "unknown", contentRevision: 7, terminal: "unknown", review: { status: "passed", contentRevision: 7 } },
+      { stableId: partialId, index: 1, receipt: "draft", processing: "unknown", contentRevision: 2, terminal: "unknown", review: { status: "unknown", contentRevision: 2 } },
+    ],
+    images: {
+      [finalId]: { base64: "ZmluYWw=", mimeType: "image/png", location: "question" },
+      [partialId]: { base64: "cGFydGlhbA==", mimeType: "image/png", location: "question" },
+    },
+  };
+}
+
+async function persistResultsFixture(
+  subject: "math" | "social_studies" | "natural_sciences",
+): Promise<{ snapshotId: string; results: ResultsWorkspaceSnapshot }> {
+  const route = `/generate/${subject}`;
+  const snapshotId = `results-${subject}`;
+  const tabId = getOrCreateTabId();
+  const results = receivedResultsFixture(subject);
+  const saved = await saveSnapshotTransactionally({
+    schema: RECOVERY_FORMAT_V1, snapshot_id: snapshotId, tab_id: tabId, route, subject,
+    account_id: USER.id, origin: "https://test.example.com", environment: "production",
+    source_build_id: "build-A", target_build_id: "build-B", source_release_revision: 1,
+    target_release_revision: 2, saved_at: new Date(0).toISOString(), workspace_revision: 11,
+    form: recoveredForm(subject), results,
+  });
+  expect(saved.ok).toBe(true);
+  const pointer = await persistTabPointer({
+    tab_id: tabId, snapshot_id: snapshotId, account_id: USER.id, route,
+    attempted_target_build_id: "build-B", attempted_target_release_revision: 2,
+  });
+  expect(pointer.ok).toBe(true);
+  return { snapshotId, results };
+}
+
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
@@ -450,6 +523,16 @@ beforeEach(() => {
     reload: vi.fn(),
     href: "https://test.example.com/generate/math",
   });
+  generatedState.results = [];
+  generatedState.displayResults = [];
+  generatedState.progressLines = [];
+  generatedState.errorMessage = null;
+  generatedState.startedAt = null;
+  generatedState.finishedAt = null;
+  generatedState.resultsCompletion = null;
+  generatedState.terminalEvidence = false;
+  restoreResultsMock.mockReset();
+  restoreResultsMock.mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -788,6 +871,87 @@ describe("recovery flow — scenario 1b: restore settled confirmation workspaces
   });
 });
 
+describe("recovery flow — scenario 1c: preserve received results", () => {
+  it.each([
+    ["math", "/generate/math"],
+    ["social_studies", "/generate/social_studies"],
+    ["natural_sciences", "/generate/natural_sciences"],
+  ] as const)("restores final and partial image-bearing results for %s without starting a stream", async (subject, route) => {
+    setUpCurrent();
+    vi.stubGlobal("__BUILD_ID__", "build-B");
+    const { snapshotId, results } = await persistResultsFixture(subject);
+    const hydrated = importResultsWorkspace(results);
+    expect(hydrated).not.toBeNull();
+    generatedState.results = hydrated?.results ?? [];
+    generatedState.displayResults = hydrated?.displayResults ?? [];
+    generatedState.resultsCompletion = "unknown";
+    initRecoveryStore({
+      currentRoute: route,
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+
+    const { unmount } = renderApp(route);
+    expect(restoreResultsMock).toHaveBeenCalledOnce();
+    expect(screen.getByText(`${subject} final received question`)).toBeInTheDocument();
+    expect(screen.getByText(`${subject} partial received draft`)).toBeInTheDocument();
+    expect(screen.getAllByRole("img")).toHaveLength(2);
+    expect(screen.getByTestId("statusbar-status").textContent).toMatch(/未知|unknown/i);
+    const downloadJson = screen.getByRole("button", { name: /Download all as JSON|下載全部 JSON/i });
+    expect(downloadJson).not.toBeDisabled();
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:recovered-json");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    fireEvent.click(downloadJson);
+    expect(createObjectUrl).toHaveBeenCalledOnce();
+
+    const acknowledge = await waitFor(() => {
+      const button = screen.getAllByRole("button").find((candidate) =>
+        /^(Acknowledge|確認)$/i.test(candidate.textContent?.trim() ?? ""));
+      if (!button) throw new Error("recovery acknowledgement is not ready");
+      return button;
+    });
+    expect(acknowledge).toBeDefined();
+    await act(async () => { fireEvent.click(acknowledge!); });
+    await waitFor(() => expect(useRecoveryStore.getState().pending).toBeNull());
+    expect(loadSnapshot(USER.id, snapshotId)).toBeNull();
+    expect(screen.getByText(`${subject} final received question`)).toBeInTheDocument();
+    unmount();
+  });
+
+  it("keeps the saved results snapshot and banner after repeated hydration failures", async () => {
+    setUpCurrent();
+    vi.stubGlobal("__BUILD_ID__", "build-B");
+    const { snapshotId } = await persistResultsFixture("math");
+    generatedState.results = [];
+    generatedState.displayResults = [];
+    restoreResultsMock.mockReturnValue(false);
+    initRecoveryStore({
+      currentRoute: "/generate/math",
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+
+    const { unmount } = renderApp("/generate/math");
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    const retry = screen.getByRole("button", { name: /Retry|重試/i });
+    await act(async () => { fireEvent.click(retry); });
+    expect(restoreResultsMock).toHaveBeenCalledTimes(2);
+    expect(loadSnapshot(USER.id, snapshotId)).not.toBeNull();
+
+    const acknowledge = await waitFor(() => {
+      const button = screen.getAllByRole("button").find((candidate) =>
+        /^(Acknowledge|確認)$/i.test(candidate.textContent?.trim() ?? ""));
+      if (!button) throw new Error("recovery acknowledgement is not ready");
+      return button;
+    });
+    await act(async () => { fireEvent.click(acknowledge!); });
+    expect(useRecoveryStore.getState().pending).not.toBeNull();
+    expect(loadSnapshot(USER.id, snapshotId)).not.toBeNull();
+    unmount();
+  });
+});
+
 describe("recovery flow — scenario 2: quota failure", () => {
   it("reload not called, freezeInput reset, quota reason returned", async () => {
     setUpUpdateRequired();
@@ -832,6 +996,31 @@ describe("recovery flow — scenario 2: quota failure", () => {
     // freezeInput reset to false after failure
     expect(useWorkspaceStore.getState().freezeInput).toBe(false);
 
+    unmount();
+  });
+
+  it("read-back mismatch keeps the original form workspace and does not navigate", async () => {
+    setUpUpdateRequired();
+    const navigateSpy = vi.fn();
+    const { unmount } = renderApp();
+    const topicInput = await screen.findByPlaceholderText(
+      /e\.g\. Climate change|例如：氣候變遷/i,
+      {},
+      { timeout: 5000 },
+    );
+    await act(async () => {
+      fireEvent.change(topicInput, { target: { value: "readback-preserved-topic" } });
+    });
+    vi.spyOn(localStorage, "getItem").mockImplementationOnce(() => "{\"corrupt\":true}");
+
+    const result = await runSaveAndUpdate({
+      navigate: navigateSpy, origin: "https://test.example.com", environment: "production", buildId: "build-A",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "readback_mismatch", retryable: true });
+    expect(navigateSpy).not.toHaveBeenCalled();
+    expect((topicInput as HTMLInputElement).value).toBe("readback-preserved-topic");
+    expect(useWorkspaceStore.getState().freezeInput).toBe(false);
     unmount();
   });
 

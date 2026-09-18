@@ -66,6 +66,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.banner.acknowledge": "Acknowledge",
     "recovery.banner.discard": "Discard",
     "recovery.banner.error": "Restore failed",
+    "recovery.results_restore_failed": "The received results could not be restored. The saved copy is kept; please retry.",
     "recovery.invalid_fields": "Some recovered values are not valid for the current curriculum. Please correct them before submitting.",
     "recovery.confirmation_invalid_fields": "Some restored confirmation values are not valid for the current schema. Please correct them before sending.",
 
@@ -348,6 +349,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "statusbar.completed_prefix": "completed",
     "statusbar.done": "Done",
     "statusbar.error": "Error",
+    "statusbar.unknown": "Result status unknown",
     "statusbar.unit_question": "questions",
     "statusbar.unit_minute": "m",
     "statusbar.unit_second": "s",
@@ -601,6 +603,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.banner.acknowledge": "確認",
     "recovery.banner.discard": "捨棄",
     "recovery.banner.error": "還原失敗",
+    "recovery.results_restore_failed": "已收到的題目無法還原。保存的內容仍保留，請重試。",
     "recovery.invalid_fields": "部分還原的值不在目前課綱的允許清單中，請修正後再送出。",
     "recovery.confirmation_invalid_fields": "部分還原的發送前確認值不在目前設定允許清單中，請修正後再送出。",
 
@@ -884,6 +887,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "statusbar.completed_prefix": "已完成",
     "statusbar.done": "完成",
     "statusbar.error": "錯誤",
+    "statusbar.unknown": "結果狀態未知",
     "statusbar.unit_question": "題",
     "statusbar.unit_minute": "分",
     "statusbar.unit_second": "秒",

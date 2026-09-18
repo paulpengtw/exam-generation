@@ -63,8 +63,12 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     errorMessage,
     startedAt,
     finishedAt,
+    generationLogId,
     subQuestionTotal,
+    resultsCompletion,
+    terminalEvidence,
     generate,
+    restoreResults: restoreSavedResults,
     reset,
   } = useGenerate();
   // Recovery must be resolved before ParamForm mounts. Otherwise its schema,
@@ -101,12 +105,58 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     pendingRecovery.subject === subject
     ? pendingRecovery
     : null;
+  const recoveryResults = pendingRecoveryForRoute?.results;
+  const recoverySnapshotId = pendingRecoveryForRoute?.snapshot_id ?? null;
+  const [resultsRestoreError, setResultsRestoreError] = useState(false);
+  const [resultsRestoreVerified, setResultsRestoreVerified] = useState(false);
+  const restoredResultsKeyRef = useRef<string | null>(null);
+  const restoreReceivedResults = useCallback((): boolean => {
+    if (!recoveryResults) {
+      setResultsRestoreError(false);
+      setResultsRestoreVerified(true);
+      return true;
+    }
+    const restored = restoreSavedResults(recoveryResults);
+    if (!restored) {
+      setResultsRestoreError(true);
+      setResultsRestoreVerified(false);
+      return false;
+    }
+    setRequestedTotal(recoveryResults.requestedTotal);
+    setSubmittedSubQuestionCount(recoveryResults.submittedSubQuestionCount);
+    setResultsRestoreError(false);
+    setResultsRestoreVerified(true);
+    return true;
+  }, [recoveryResults, restoreSavedResults]);
+  useLayoutEffect(() => {
+    if (!recoveryResults) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- recovery has no result payload to hydrate
+      setResultsRestoreVerified(true);
+      restoredResultsKeyRef.current = null;
+      return;
+    }
+    if (restoredResultsKeyRef.current === recoverySnapshotId) return;
+    restoredResultsKeyRef.current = recoverySnapshotId;
+    restoreReceivedResults();
+  }, [recoveryResults, recoverySnapshotId, restoreReceivedResults]);
+  const handleRecoveryAcknowledge = useCallback((): boolean => {
+    if (recoveryResults && !resultsRestoreVerified && !restoreReceivedResults()) return false;
+    discardRecovery();
+    return true;
+  }, [discardRecovery, recoveryResults, restoreReceivedResults, resultsRestoreVerified]);
+  const handleRecoveryDiscard = useCallback((): boolean => {
+    if (recoveryResults && !resultsRestoreVerified && !restoreReceivedResults()) return false;
+    discardRecovery();
+    return true;
+  }, [discardRecovery, recoveryResults, restoreReceivedResults, resultsRestoreVerified]);
   const hasResults = displayResults.length > 0;
   const exportWorkspace = useCallback(() => exportResultsWorkspace({
     status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
     subQuestionTotal, requestedTotal, submittedSubQuestionCount,
+    runId: generationLogId,
+    terminalEvidence: terminalEvidence ?? false,
   }), [status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
-    subQuestionTotal, requestedTotal, submittedSubQuestionCount]);
+    subQuestionTotal, requestedTotal, submittedSubQuestionCount, generationLogId, terminalEvidence]);
   useSurfaceParticipation("generate.results", {
     readiness: "ready",
     hasEditableState: false,
@@ -204,6 +254,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const runState: RunState =
     status === "error"
       ? "error"
+      : resultsCompletion === "unknown"
+        ? "unknown"
       : status === "generating"
         ? "running"
         : startedAt !== null && finishedAt !== null
@@ -356,6 +408,18 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-6 px-3 pt-4 pb-20 sm:px-4 sm:pt-6">
+        {resultsRestoreError ? (
+          <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+            <span>{t("recovery.results_restore_failed")}</span>{" "}
+            <button
+              type="button"
+              onClick={restoreReceivedResults}
+              className="font-medium underline"
+            >
+              {t("recovery.retry")}
+            </button>
+          </div>
+        ) : null}
         <section ref={formRef} className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
           <ParamForm
             subject={subject}
@@ -365,8 +429,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             onUnsubmittedInput={() => setHasUnsubmittedInput(true)}
             recoveredForm={pendingRecoveryForRoute?.form}
             recoveredConfirmation={pendingRecoveryForRoute?.confirmation}
-            onRecoveryAcknowledge={discardRecovery}
-            onRecoveryDiscard={discardRecovery}
+            onRecoveryAcknowledge={handleRecoveryAcknowledge}
+            onRecoveryDiscard={handleRecoveryDiscard}
           />
         </section>
 

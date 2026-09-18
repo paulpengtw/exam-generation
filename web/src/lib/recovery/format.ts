@@ -4,6 +4,8 @@
 import type { FormWorkspaceSnapshot } from "../workspace/adapters/types";
 import { importConfirmationWorkspace } from "../workspace/adapters/confirmationWorkspace";
 import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
+import { importResultsWorkspace } from "../workspace/adapters/resultsWorkspace";
+import type { ResultsWorkspaceSnapshot } from "../workspace/adapters/types";
 
 export const RECOVERY_FORMAT_V1 = "exam-generation.recovery/1" as const;
 export type RecoveryFormatV1 = typeof RECOVERY_FORMAT_V1;
@@ -26,6 +28,8 @@ export interface RecoverySnapshotV1 {
   form: FormWorkspaceSnapshot;
   /** Optional so snapshots written by #772 remain readable. */
   confirmation?: ConfirmationWorkspaceSnapshot;
+  /** Optional so snapshots written by #772/#773 remain readable. */
+  results?: ResultsWorkspaceSnapshot;
 }
 
 export type ParseRecoveryResult =
@@ -124,8 +128,21 @@ export function parseRecoverySnapshot(
     return { ok: false, reason: "invalid_form" };
   }
 
+  // Received results are an optional member of the same v1 envelope. They
+  // must pass the workspace adapter before the page is allowed to hydrate;
+  // otherwise a half-written result could replace the original workspace.
+  const resultsSnapshot = Object.hasOwn(raw, "results")
+    ? importResultsWorkspace(raw.results)
+    : undefined;
+  if (Object.hasOwn(raw, "results") && !resultsSnapshot) {
+    return { ok: false, reason: "invalid_form" };
+  }
+
   return {
     ok: true,
-    snapshot: raw as unknown as RecoverySnapshotV1,
+    snapshot: {
+      ...(raw as unknown as RecoverySnapshotV1),
+      ...(resultsSnapshot ? { results: resultsSnapshot } : {}),
+    },
   };
 }

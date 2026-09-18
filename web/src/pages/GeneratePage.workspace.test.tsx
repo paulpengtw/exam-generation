@@ -4,7 +4,7 @@ import type { FormParams } from "../components/ParamForm";
 import type { AdmissionOutcome, ExamQuestion, UseGenerateReturn } from "../hooks/useGenerate";
 import { resetWorkspaceStoreForTests, useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { importResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
-import type { ConfirmationWorkspaceSnapshot, FormWorkspaceSnapshot } from "../lib/workspace/adapters/types";
+import type { ConfirmationWorkspaceSnapshot, FormWorkspaceSnapshot, ResultsWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 import { resetRecoveryStoreForTests, useRecoveryStore } from "../lib/recovery/recoveryStore";
 
 vi.stubGlobal("__BUILD_ENVIRONMENT__", "test");
@@ -16,6 +16,8 @@ const capturedParamFormProps = vi.hoisted(() => ({
   current: null as {
     recoveredForm?: FormWorkspaceSnapshot;
     recoveredConfirmation?: ConfirmationWorkspaceSnapshot;
+    onRecoveryAcknowledge?: () => boolean | void;
+    onRecoveryDiscard?: () => boolean | void;
   } | null,
 }));
 let state: UseGenerateReturn;
@@ -31,13 +33,17 @@ vi.mock("../components/ParamForm", () => ({
     onSubmit,
     recoveredForm,
     recoveredConfirmation,
+    onRecoveryAcknowledge,
+    onRecoveryDiscard,
   }: {
     onSubmit: typeof capturedSubmit.current;
     recoveredForm?: FormWorkspaceSnapshot;
     recoveredConfirmation?: ConfirmationWorkspaceSnapshot;
+    onRecoveryAcknowledge?: () => boolean | void;
+    onRecoveryDiscard?: () => boolean | void;
   }) => {
     capturedSubmit.current = onSubmit;
-    capturedParamFormProps.current = { recoveredForm, recoveredConfirmation };
+    capturedParamFormProps.current = { recoveredForm, recoveredConfirmation, onRecoveryAcknowledge, onRecoveryDiscard };
     return null;
   },
 }));
@@ -59,7 +65,7 @@ beforeEach(() => {
     status: "idle", admission: "idle", admissionError: null,
     progressLines: [], results: [], displayResults: [], llmCalls: [], agentLanes: [],
     errorMessage: null, startedAt: null, finishedAt: null, generationLogId: null, subQuestionTotal: null,
-    generate: generateMock, reset: vi.fn(), restoreResults: vi.fn(),
+    generate: generateMock, reset: vi.fn(), restoreResults: vi.fn(() => true),
   };
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
@@ -77,6 +83,17 @@ afterEach(() => {
 
 function withResults() {
   state = { ...state, results: [question], displayResults: [{ index: 0, question, isFinal: true }] };
+}
+
+function recoveryResults(): ResultsWorkspaceSnapshot {
+  return {
+    kind: "results", version: 1,
+    results: [question],
+    displayResults: [{ index: 0, question, isFinal: true, phase: "verified" }],
+    progressLines: ["received"], errorMessage: null, startedAt: 1, finishedAt: 2,
+    subQuestionTotal: null, requestedTotal: 1, submittedSubQuestionCount: null,
+    completion: "unknown", processing: "unknown", terminalEvidence: false,
+  };
 }
 
 describe("GeneratePage workspace", () => {
@@ -121,10 +138,7 @@ describe("GeneratePage workspace", () => {
 
     render(<GeneratePage subject="math" />);
 
-    expect(capturedParamFormProps.current).toEqual({
-      recoveredForm,
-      recoveredConfirmation,
-    });
+    expect(capturedParamFormProps.current).toMatchObject({ recoveredForm, recoveredConfirmation });
   });
 
   it("mirrors received results, exports submitted counts, and unregisters on unmount", () => {
@@ -146,6 +160,25 @@ describe("GeneratePage workspace", () => {
     expect(useWorkspaceStore.getState().surfaces["generate.results"]?.hasReceivedResults).toBe(false);
     unmount();
     expect(useWorkspaceStore.getState().surfaces["generate.results"]).toBeUndefined();
+  });
+
+  it("hydrates received results through the hook before recovery can be acknowledged", () => {
+    const results = recoveryResults();
+    useRecoveryStore.setState({
+      pending: {
+        schema: "exam-generation.recovery/1", snapshot_id: "snapshot-results", tab_id: "tab-1",
+        route: "/generate/math", subject: "math", account_id: "u1", origin: "https://example.test",
+        environment: "test", source_build_id: "build-a", target_build_id: "build-b",
+        source_release_revision: 1, target_release_revision: 2, saved_at: new Date(0).toISOString(),
+        workspace_revision: 1, form: { kind: "form", version: 1, fields: {} as never }, results,
+      },
+      blocked: null,
+    });
+    render(<GeneratePage subject="math" />);
+
+    expect(state.restoreResults).toHaveBeenCalledWith(results);
+    expect(capturedParamFormProps.current?.onRecoveryAcknowledge?.()).toBe(true);
+    expect(useRecoveryStore.getState().pending).toBeNull();
   });
 
   it("returns the admission promise from onSubmit", async () => {
