@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getAvailableModels, resolveGenerate } from "./client";
+import { ApiError, getAvailableModels, resolveGenerate } from "./client";
 
 const fetchMock = vi.fn();
 
@@ -53,6 +53,62 @@ describe("getAvailableModels", () => {
       }),
     );
     await expect(getAvailableModels()).rejects.toThrow("nope");
+  });
+});
+
+describe("extractError array detail (#835)", () => {
+  it("parses an array-valued detail into ApiError.errors instead of discarding it", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          detail: [{ field: "learning_content", code: "incompatible_parent", parent: "地理" }],
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(resolveGenerate({ subject: "social_studies" })).rejects.toMatchObject({
+      status: 422,
+      errors: [{ field: "learning_content", code: "incompatible_parent", parent: "地理" }],
+    });
+  });
+
+  it("still surfaces a string detail unchanged, with no errors array", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('{"detail":"nope"}', {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    let caught: unknown;
+    try {
+      await resolveGenerate({ subject: "math" });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).detail).toBe("nope");
+    expect((caught as ApiError).errors).toBeUndefined();
+  });
+
+  it("leaves errors undefined for a malformed array detail", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: ["not a field error"] }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    let caught: unknown;
+    try {
+      await resolveGenerate({ subject: "math" });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).errors).toBeUndefined();
+    expect((caught as ApiError).detail).toBe("Request failed with status 422");
   });
 });
 
