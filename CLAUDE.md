@@ -68,7 +68,7 @@ Natural-sciences schema payloads carry each 情境子類別's admitting values a
 The web client uses one generic parent-keyed filter, resolves each 題組's own 情境 before drawing its 情境子類別, and keeps an explicitly pinned 情境 out of the per-題組 draw. The 發送前確認 screen lets the supervisor edit or redraw the resolved 情境 and shows its schema-filtered 情境子類別 result.
 
 For 社會領域 and 數學, curriculum rows expose `admitted_by: {"科目": [...]}`, computed when the active curriculum is loaded from the same backend pools used for sampling; shared rows therefore follow backend admission, including runtime `SOCIAL_STUDIES_CURRICULUM_DIR` swaps. ParamForm reuses `filterEntriesByAdmittedParent` for each 題組's resolved 科目 across group and per-小題 學習內容/學習表現 pools, with no client-side prefix tables. An explicitly pinned 科目 remains in the submitted batch but suppresses the per-題組 科目 draw.
-Social-studies 學習內容 rows for 公民與社會/跨科 additionally carry `admitted_by["內容領域"]` from the ICCS mapping; 歷史/地理 rows omit that key because 內容領域 is not an applicable parent for those subjects.
+Social-studies 學習內容 rows for 公民與社會/跨科 additionally carry `admitted_by["內容領域"]` from the ICCS mapping; 歷史/地理 rows omit that key because 內容領域 is not an applicable parent for those subjects. 預抽 pool filtering and generation-time validation both read those tags through `src/common/admission.py`, never from prefixes or a separate map.
 
 數學也 exposes request-level `sub_question_count` and the 題組文本
 `text_word_limit` in the web form. For a resolved 題組題, 發送前確認 shows the
@@ -255,6 +255,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/common/curriculum_loader.py` | Subject-agnostic JSON loaders + `allowed_learning_content/performance(data, stage, *, subject, subject_to_prefixes)` filters. |
 | `src/common/core_competency_loader.py` | Subject-agnostic 核心素養 loader + `build_core_competency_enum` + `allowed_competencies(data, stage)`. |
 | `src/common/planner.py` | Subject-agnostic `plan_core_questions()`; callers pass their own system/user prompt templates. |
+| `src/common/admission.py` | Shared admission lookup over `admitted_by` tags (ADR 0020): answers which 科目 / 內容領域 admit a loaded curriculum row; read by the social-studies 學習內容 內容領域 pool filter and by generation-time 科目/code validation. |
 | `src/planner.py` | Math planner shim — wraps `src.common.planner.plan_core_questions` with a 資深108課綱數學領域命題教師 system prompt asking for 3 candidate 核心問題 covering 代數 / 幾何 / 統計三大面向. |
 | `data/few_shot/` | Math few-shot examples by question style |
 | `data/example_exams/` | Past national exam PDFs (112-114) for reference |
@@ -277,7 +278,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/social_studies/core_competency_loader.py` | Thin shim over `src.common.core_competency_loader`; adds `allowed_core_competencies(data, stage, subject)` for 核心素養 sampler pool. |
 | `src/social_studies/planner.py` | Thin shim over `src.common.planner.plan_core_questions`; provides the 社會領域 system/user templates. |
 | `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
-| `src/social_studies/domain_mapping.py` | Loads `內容領域_mapping.csv` into code→domain and domain→code indexes for ICCS-aware sampling. |
+| `src/social_studies/domain_mapping.py` | `內容領域_mapping.csv` is read by the curriculum loader to attach `admitted_by["內容領域"]` tags, by the schema payload, and by the verifier. The sampler no longer reads it directly for either curriculum pool: 學習內容 reads the shared admission lookup (`src/common/admission.py`) and 學習表現 has no 內容領域 parent (#833). |
 | `src/social_studies/process_exemplar_loader.py` | Loads Channel-2 JSON exemplars keyed by the four `認知歷程` buckets; invalid or unknown entries fail open. |
 | `src/social_studies/interaction_scoring.py` | Scores digital 拖放題 and 滑桿題 responses using their authoritative interaction specs. |
 | `src/social_studies/pin_rules.py` | Checks composition constraints for pinned ICCS cognitive-process assignments. |
