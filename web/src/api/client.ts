@@ -5,6 +5,9 @@ import {
   type VerificationTrailEntry,
 } from "../hooks/useGenerate";
 import type { ResolveResponse } from "./generated/contract";
+import { saveSignoutReason } from "../lib/signoutReason";
+import { saveReturnDestination } from "../lib/returnDestination";
+import { isResolverFieldErrorLike, type ResolverFieldErrorLike } from "../lib/resolverErrorMessages";
 
 export interface MagicLinkResponse {
   message: string;
@@ -60,17 +63,28 @@ export class ApiError extends Error {
   status: number;
   detail: string;
   code?: string;
+  /** Field-addressed resolver errors parsed from an array-valued `detail` (#835). */
+  errors?: ResolverFieldErrorLike[];
 
-  constructor(status: number, detail: string, code?: string) {
+  constructor(status: number, detail: string, code?: string, errors?: ResolverFieldErrorLike[]) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
     this.code = code;
+    this.errors = errors;
   }
 }
 
-async function extractError(res: Response): Promise<{ detail: string; code?: string }> {
+/** Parse an array-valued `detail` into field-addressed resolver errors, if it looks like one. */
+function parseResolverFieldErrors(detail: unknown): ResolverFieldErrorLike[] | undefined {
+  if (!Array.isArray(detail) || detail.length === 0) return undefined;
+  return detail.every(isResolverFieldErrorLike) ? detail : undefined;
+}
+
+async function extractError(
+  res: Response,
+): Promise<{ detail: string; code?: string; errors?: ResolverFieldErrorLike[] }> {
   try {
     const body = await res.json() as unknown;
     if (body && typeof body === "object") {
@@ -82,6 +96,11 @@ async function extractError(res: Response): Promise<{ detail: string; code?: str
           : undefined;
       const code = typeof payload.error === "string" ? payload.error : undefined;
       if (detail) return { detail, code };
+      // #835: keep the string path above unchanged; additionally surface a
+      // non-string (array) `detail` as parsed field errors instead of
+      // discarding it, so callers can format it readably.
+      const errors = parseResolverFieldErrors(payload.detail);
+      if (errors) return { detail: `Request failed with status ${res.status}`, errors };
     }
   } catch {
     // ignore
@@ -98,10 +117,22 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   const res = await fetch(path, { ...options, headers });
   if (!res.ok) {
     if (res.status === 401) {
-      useAuthStore.getState().logout();
+      // Classify as credential expiry (not explicit logout) — recovery snapshot
+      // is preserved so the teacher can restore after re-authenticating (#776).
+      const authState = useAuthStore.getState();
+      const userId = authState.user?.id ?? null;
+      if (userId !== null) {
+        saveSignoutReason("session_expired", userId);
+      }
+      const currentPath =
+        typeof window !== "undefined" ? window.location.pathname : null;
+      if (currentPath !== null) {
+        saveReturnDestination(currentPath);
+      }
+      authState.logout();
     }
     const error = await extractError(res);
-    throw new ApiError(res.status, error.detail, error.code);
+    throw new ApiError(res.status, error.detail, error.code, error.errors);
   }
   return res;
 }

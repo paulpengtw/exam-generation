@@ -23,6 +23,7 @@ import anyio
 
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
+from server.generate.drain import get_drain
 from server.generate.event_protocol import QuestionTerminalPayload
 from server.generate.marshalling import (
     SSEEventName,
@@ -221,6 +222,7 @@ class _RunContext:
     manifest: tuple[QuestionContext, ...]
     publisher: GenerationPublisher
     snapshot_ledger: QuestionSnapshotLedger
+    drain_telemetry: Any
 
 
 def _build_run_context(
@@ -314,6 +316,7 @@ def _build_run_context(
         manifest=_manifest,
         publisher=_publisher,
         snapshot_ledger=_snapshot_ledger,
+        drain_telemetry=get_drain(app_state),
     )
 
 
@@ -446,6 +449,17 @@ def _worker_one(
     batch_briefs: list,
 ) -> None:
     """Execute one question-generation worker; enqueues result/error events."""
+    with ctx.drain_telemetry.ctx_active_worker():
+        _worker_one_body(i, question_client, ctx, batch_briefs)
+
+
+def _worker_one_body(
+    i: int,
+    question_client: LLMClient,
+    ctx: _RunContext,
+    batch_briefs: list,
+) -> None:
+    """Run the v2 worker body inside the drain telemetry wrapper."""
     worker_recorder = make_exchange_recorder(
         generation_log_id=ctx.generation_log_id,
         retention_days=ctx.retention_days,
@@ -695,6 +709,9 @@ async def generate_question_stream(
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+    _drain = get_drain(app_state)
+    _drain.register_queue(queue)
+    _drain._inc("_active_runs")
     renderer_pool = getattr(app_state, "renderer_pool", None)
 
     # Per-render lease: a renderer is borrowed only for the duration of one HTML
@@ -709,7 +726,12 @@ async def generate_question_stream(
     if renderer_pool is not None:
         from server.generate.renderer_lease import RendererLease  # noqa: PLC0415
         html_renderer: Any = RendererLease(
-            renderer_pool, loop, _cancel_event, queue, publisher=_publisher
+            renderer_pool,
+            loop,
+            _cancel_event,
+            queue,
+            publisher=_publisher,
+            drain_telemetry=_drain,
         )
     else:
         html_renderer = None
@@ -955,3 +977,5 @@ async def generate_question_stream(
                     await ctx.figure_policy_recorder.flush()
                 if ctx.reference_example_recorder is not None:
                     await ctx.reference_example_recorder.flush()
+            _drain.unregister_queue(queue)
+            _drain._dec("_active_runs")

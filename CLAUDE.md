@@ -68,7 +68,7 @@ Natural-sciences schema payloads carry each 情境子類別's admitting values a
 The web client uses one generic parent-keyed filter, resolves each 題組's own 情境 before drawing its 情境子類別, and keeps an explicitly pinned 情境 out of the per-題組 draw. The 發送前確認 screen lets the supervisor edit or redraw the resolved 情境 and shows its schema-filtered 情境子類別 result.
 
 For 社會領域 and 數學, curriculum rows expose `admitted_by: {"科目": [...]}`, computed when the active curriculum is loaded from the same backend pools used for sampling; shared rows therefore follow backend admission, including runtime `SOCIAL_STUDIES_CURRICULUM_DIR` swaps. ParamForm reuses `filterEntriesByAdmittedParent` for each 題組's resolved 科目 across group and per-小題 學習內容/學習表現 pools, with no client-side prefix tables. An explicitly pinned 科目 remains in the submitted batch but suppresses the per-題組 科目 draw.
-Social-studies 學習內容 rows for 公民與社會/跨科 additionally carry `admitted_by["內容領域"]` from the ICCS mapping; 歷史/地理 rows omit that key because 內容領域 is not an applicable parent for those subjects.
+Social-studies 學習內容 rows for 公民與社會/跨科 additionally carry `admitted_by["內容領域"]` from the ICCS mapping; 歷史/地理 rows omit that key because 內容領域 is not an applicable parent for those subjects. 預抽 pool filtering and generation-time validation both read those tags through `src/common/admission.py`, never from prefixes or a separate map.
 
 數學也 exposes request-level `sub_question_count` and the 題組文本
 `text_word_limit` in the web form. For a resolved 題組題, 發送前確認 shows the
@@ -82,29 +82,6 @@ Each mounted surface declares its readiness, editable state, received results an
 Generation and 人工審題修正 expose 受理 beside their existing `status`, acknowledged by the SSE `started` event or a returned `run_id`, while guards and 發送前確認 timing remain unchanged.
 The store never receives an AbortController, promise or callback that can cancel work; see [ADR 0030](docs/adr/0030-workspace-participation-is-declared-by-each-surface.md) when extending participation, observed operations or admission for the updater.
 
-### Release version detection (issue #770)
-
-`web/buildIdentity.ts` computes a deterministic build ID (SHA-256 over commit + canonical public VITE_* config) and emits two static assets at build time:
-- `dist/build-meta.json` (`exam-generation.build-meta/1`) — build provenance.
-- `dist/release/policy.json` (`exam-generation.release-policy/1`) — deterministic authority fixture (starts as `admission: 'open'`, `released_build_id` = this artifact's id).
-
-`web/src/lib/release/releaseStore.ts` is a zustand store that polls `GET /release/policy.json` (cache: no-store, 5 s timeout, coalesced) and sets one of: `checking | current | update-required | paused | unavailable`. A previously known update requirement is sticky — it survives transient failures. `web/src/lib/release/useReleaseStatus.ts` installs the event-driven triggers (pageshow, popstate, online, visibilitychange, 60 s interval gated by visibility).
-
-`web/src/components/ReleaseNotice.tsx` is a persistent bar (mounted in `RootLayout` under `StagingBanner`) that shows the localized state. `checking/current/unavailable` → `role=status`; `update-required/paused` → `role=alert`. A "重新檢查 / Check again" button calls `checkNow()`. Focus is never moved by state changes. Reduced-motion is respected.
-
-The store never calls `location.reload`, never touches workspace operations, and never submits anything. Generation enforcement (#771), save-and-update (#772+), scheduling (#777), and the live release controller (#778) are separate tickets.
-
-Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
-
-### Build admission (issue #771)
-
-Every `GET` and `POST /api/generate` request must carry an `X-Frontend-Build-ID` header whose value equals the authority fixture's `released_build_id`.
-
-`server/generate/release_authority.py` provides async `HttpAuthoritySource` and `FileAuthoritySource` implementations plus the injectable `AuthoritySource` seam. `RELEASE_AUTHORITY_URL` is preferred; otherwise `RELEASE_AUTHORITY_PATH` is used; with neither configured, the source is absent and generation fails closed with retryable 503 `AUTHORITY_UNAVAILABLE`. HTTP reads are bounded to 2 seconds and every request reads afresh — there is no positive process-local cache. `check_build_admission(header, source) → JSONResponse | None` returns 426 `CLIENT_UPDATE_REQUIRED` (missing/outdated build) or 503 `AUTHORITY_UNAVAILABLE`/`SERVICE_PAUSED` (source unreachable or paused), and `None` on pass. Check order: FastAPI `get_current_user` (auth) → `stream_version` 426 → build-ID 426/503 → `_check_generation_admission` (model/effort/provider). The source is built once in FastAPI app state and deployments must set one of the two authority variables.
-
-`web/src/hooks/useGenerate.ts`: preflight `await useReleaseStore.getState().checkNow()` before each `fetchEventSource` call; `X-Frontend-Build-ID: __BUILD_ID__` header on the stream request; `setResults([])` / `setEvidence(null)` moved to the `started` event handler so previous output is preserved on pre-stream errors (426/503/timeout).
-
-Preview, resolve, history, modification API, and CLI pipeline are excluded.
 
 ### Evidence profiles (issue #739)
 
@@ -142,6 +119,140 @@ The backend implements stream protocol v2. Clients **must** send `stream_version
 - `web/src/components/QuestionCard.tsx`: `EvidenceStatusLine`; placeholder branch for `content.receipt === 'none'`.
 
 **Fixture.** `tests/fixtures/generation_v2/math_single_interleaved.jsonl` — a masked recording of a count=2 interleaved math run (run_id→'RUN', ts→0.0, generation_log_id→'LOG', ISO timestamps→'TS'). Regenerate with `GENERATE_V2_FIXTURE=1 uv run pytest tests/server/test_742_fixture.py::test_interleaved_fixture`.
+### Release version detection (issue #770)
+
+`web/buildIdentity.ts` computes a deterministic build ID (SHA-256 over commit + canonical public VITE_* config) and emits two static assets at build time:
+- `dist/build-meta.json` (`exam-generation.build-meta/1`) — build provenance.
+- `dist/release/policy.json` (`exam-generation.release-policy/1`) — deterministic authority fixture (starts as `admission: 'open'`, `released_build_id` = this artifact's id).
+
+`web/src/lib/release/releaseStore.ts` is a zustand store that polls `GET /release/policy.json` (cache: no-store, 5 s timeout, coalesced) and sets one of: `checking | current | update-required | paused | unavailable`. A previously known update requirement is sticky — it survives transient failures. `web/src/lib/release/useReleaseStatus.ts` installs the event-driven triggers (pageshow, popstate, online, visibilitychange, 60 s interval gated by visibility).
+
+`web/src/components/ReleaseNotice.tsx` is a persistent bar (mounted in `RootLayout` under `StagingBanner`) that shows the localized state. `checking/current/unavailable` → `role=status`; `update-required/paused` → `role=alert`. A "重新檢查 / Check again" button calls `checkNow()`. Focus is never moved by state changes. Reduced-motion is respected.
+
+The store never calls `location.reload`, never touches workspace operations, and never submits anything. Generation enforcement (#771), save-and-update (#772+), scheduling (#777), and the live release controller (#778) are separate tickets.
+
+Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
+
+### Build admission (issue #771)
+
+Every `GET` and `POST /api/generate` request must carry an `X-Frontend-Build-ID` header whose value equals the authority fixture's `released_build_id`.
+
+`server/generate/release_authority.py` provides async `HttpAuthoritySource` and `FileAuthoritySource` implementations plus the injectable `AuthoritySource` seam. `RELEASE_AUTHORITY_URL` is preferred; otherwise `RELEASE_AUTHORITY_PATH` is used; with neither configured, the source is absent and generation fails closed with retryable 503 `AUTHORITY_UNAVAILABLE`. HTTP reads are bounded to 2 seconds and every request reads afresh — there is no positive process-local cache. `check_build_admission(header, source) → JSONResponse | None` returns 426 `CLIENT_UPDATE_REQUIRED` (missing/outdated build) or 503 `AUTHORITY_UNAVAILABLE`/`SERVICE_PAUSED` (source unreachable or paused), and `None` on pass. Check order: FastAPI `get_current_user` (auth) → `stream_version` 426 → build-ID 426/503 → `_check_generation_admission` (model/effort/provider). The source is built once in FastAPI app state and deployments must set one of the two authority variables.
+
+`web/src/hooks/useGenerate.ts`: preflight `await useReleaseStore.getState().checkNow()` before each `fetchEventSource` call; `X-Frontend-Build-ID: __BUILD_ID__` header on the stream request; `setResults([])` / `setEvidence(null)` moved to the `started` event handler so previous output is preserved on pre-stream errors (426/503/timeout).
+
+Preview, resolve, history, modification API, and CLI pipeline are excluded.
+
+### Save draft and update (issue #772)
+
+`web/src/lib/recovery/format.ts` defines `RecoverySnapshotV1` (schema `exam-generation.recovery/1`) with `parseRecoverySnapshot` for strict validation (account, origin, environment, form shape).
+
+`web/src/lib/recovery/storage.ts` provides transactional localStorage/sessionStorage helpers: `saveSnapshotTransactionally` (write + read-back verify; catches `QuotaExceededError` → `{ok:false,reason:'quota'}`), `persistTabPointer`, `getOrCreateTabId`, `loadSnapshot`, `deleteSnapshot`, `clearTabPointer`. `TabPointer` carries optional `tab_id`, `attempted_target_build_id`, `attempted_target_release_revision` (backward-compatible).
+
+`web/src/lib/workspace/workspaceStore.ts` tracks `workspace_revision` (monotonically incremented on every surface/operation change), `navigationApproved: {target}|null`, and `freezeInput: boolean`. New methods: `approveNavigation`, `clearNavigationApproval`, `setFreezeInput`.
+
+`web/src/lib/recovery/saveAndUpdate.ts` exports:
+- `evaluateSaveAndUpdate(state)` — returns `{allowed:true}` only when all conditions are met.
+- `runSaveAndUpdate(deps?)` — **full 10-step implementation** (not a stub): evaluate → record revision/user → export form → freeze → checkNow recheck (target, format, account, workspace) → build RecoverySnapshotV1 with `crypto.randomUUID()` → `saveSnapshotTransactionally` → `persistTabPointer` → `approveNavigation` → `navigate()`. On failure: `setFreezeInput(false)` + `clearNavigationApproval()`. `deps` is injectable for tests (`navigate`, `now`, `origin`, `environment`, `buildId`).
+
+`web/src/lib/recovery/recoveryStore.ts` is a zustand store. Call `initRecoveryStore({currentRoute, origin, environment})` at app boot or after sign-in to attempt snapshot restore. Sets `pending` on success, `blocked:'wrong_account'` when account mismatches, or silently skips otherwise. `discardRecovery()` deletes the snapshot from localStorage, clears the tab pointer, and clears `pending`.
+
+`web/src/components/ReleaseNotice.tsx` renders a "儲存草稿並更新 / Save Draft & Update" button in `update-required` state, disabled with a localised tooltip when denied. On failure, shows inline error + "重試" button. On success `navigate()` calls `window.location.reload()`. `GeneratePage.tsx` `useBlocker` and `beforeunload` consult `navigationApproved` so an approved navigation bypasses the guard once.
+
+`web/buildIdentity.ts` now emits `supported_recovery_formats: ["exam-generation.recovery/1"]` in the policy fixture. `useReleaseStore` exposes `supportedRecoveryFormats` from the last parsed policy.
+
+`web/src/components/ParamForm.tsx` accepts a `recoveredForm?: FormWorkspaceSnapshot` prop. When present: form fields are initialised from `recoveredForm.fields` (wins over draft/history prefill); a blue restoration banner is shown; `formReadiness` is `'restoring'` while the banner is visible; after schemas load, `recoveredInvalidFields: Set<string>` marks values not admitted by the current curriculum (submit disabled until corrected); the schema-load effect is guarded to prevent overwriting recovered values. `onRecoveryAcknowledge` and `onRecoveryDiscard` callbacks are called by the respective banner buttons.
+
+`web/src/pages/GeneratePage.tsx` reads `useRecoveryStore().pending` and passes `pending?.form` as `recoveredForm` and `discardRecovery` as `onRecoveryAcknowledge`/`onRecoveryDiscard` to ParamForm.
+
+See `docs/research/2026-09-15-772-save-draft-and-update.md`.
+
+Issue #773 extends the same `exam-generation.recovery/1` envelope with an
+optional settled `confirmation` workspace. Save-and-update captures the
+ordinary form and the exact 發送前確認 payload independently before its
+release recheck; restore mounts that confirmation before schema/model
+hydration, never re-runs resolver/planner/preview work, and keeps invalid
+current-schema values visible and blocked until an explicit correction.
+Confirmation-only edits, per-題組/per-小題 rows, seed/drawn/redraw/cleared
+provenance, pending prefill, and draft-versus-History choice are not folded
+back into the form. Active operations, results, and modification drafts remain
+refused for their owning issues.
+See `docs/research/2026-09-17-773-preserve-confirmation.md`.
+
+### Received results recovery (issue #774)
+
+The same v1 recovery envelope may also carry an optional `results` workspace.
+Save is allowed only after observed work settles; it preserves final and
+visible partial content, evidence, progress, totals, errors, and raw PNG
+base64. Missing terminal evidence remains `unknown`, and result hydration must
+finish before the snapshot/pointer is acknowledged or deleted. Quota,
+read-back, persistence, or hydration failures leave the live cards and their
+existing JSON/ODT exports available; no object URLs, provider diagnostics,
+credentials, draft-export feature, or History-only modification eligibility is
+introduced. Active generation and modification drafts remain refusals.
+See `docs/research/2026-09-17-774-preserve-results.md`.
+
+### Manual-review modification draft recovery (issue #775)
+
+The v1 recovery envelope may also carry an optional settled `modification`
+workspace from History detail: unsent 圈選/instructions, route and exact
+record/question/content identity, known revision, eligibility evidence, and a
+received replacement. Restore re-fetches the authorized History record and
+blocks changed descendants, content/revision, authorization, or eligibility;
+it never replays admission or SSE. Active modification operations still refuse
+Save Draft & Update, while settled replacements are captured for a later save.
+See `docs/research/2026-09-17-775-preserve-modification-drafts.md`.
+
+### Recovery identity hardening (issue #776)
+
+Two 401 paths and explicit logout are now distinct. `authStore.logout()` (called on API/stream 401s) clears credentials only — recovery snapshot preserved. `authStore.logoutExplicit()` (called on UI logout) calls `deleteAllSnapshotsForAccount(userId)` + `clearTabPointer()` first so a different account signing in next sees no prior snapshot.
+
+Both `apiFetch` 401 and `useGenerate` stream 401 now also call `saveSignoutReason("session_expired", userId)` and `saveReturnDestination(pathname)` so the login page can navigate back and restore.
+
+`web/src/lib/recovery/storage.ts` adds: `claimSnapshot(tabId, snapshotId)` (write+read-back nonce claim, structural fields only), `releaseSnapshotClaim(snapshotId)`, `deleteAllSnapshotsForAccount(accountId)`, `startTabCollisionListener(myTabId)` (BroadcastChannel probe responder), `detectTabCollision(tabId, timeoutMs)` (async probe — returns true if another live tab has same ID).
+
+`web/src/lib/recovery/recoveryStore.ts` adds `initRecoveryStoreAsync` (claims snapshot before hydrating; sets `claimedTabId`/`claimedSnapshotId` in state), and `acknowledgeRecovery`/`discardRecovery` now release the claim. Synchronous `initRecoveryStore` unchanged.
+
+New storage key: `localStorage exam_recovery_claim_<snapshot_id>`. No snapshot contents in any telemetry or log call.
+See `docs/research/2026-09-18-776-recovery-identity.md`.
+
+### Generation admission gateway (issue #740)
+
+`gateway/` is an independent ASGI reverse proxy that lets an operator pause all new `GET /api/generate` and `POST /api/generate` requests from a single control point, independent of the frontend and backend deployment units.
+
+State is file-backed (`admission.json` on a dedicated volume), fail-closed (missing or unreadable file = paused), and survives application rollbacks.  The proxy is transparent to every other route — preview, resolve, planning, modification stream, history, auth, health — only the two generation entry-points are gated.
+
+Key files:
+- `gateway/admission.py` — `is_generation_entry(method, path)`, `PAUSED_DETAIL`, `PAUSED_CODE`
+- `gateway/state.py` — `AdmissionState`, `read_state`, `pause`, `open_gate`
+- `gateway/app.py` — `create_app(*, backend_url, state_dir, control_token)` → Starlette app
+- `gateway/__main__.py` — uvicorn entry point (env: `GATEWAY_BACKEND_URL`, `GATEWAY_STATE_DIR`, `GATEWAY_CONTROL_TOKEN`, `PORT`)
+- `scripts/admission_gate.py` — CLI (`pause`, `open`, `status --require PAUSED|OPEN`)
+- `Dockerfile.gateway`, `docker-compose.yml` (gateway service)
+- `DEPLOYMENT.md` § "Generation admission gateway" for Compose and Railway instructions
+
+Drain evidence (#741) is implemented (see `### Drain telemetry and release control` below). Stream-version/426 upgrade (#742) is implemented (see `### Generation stream protocol v2` above).
+
+### Drain telemetry and release control (issue #741)
+
+`server/generate/drain.py` exports `DrainTelemetry`, `_NoopDrainTelemetry`, `NOOP_DRAIN`, and `get_drain(app_state)`.  `DrainTelemetry` maintains six thread-safe gauges (`active_runs`, `active_workers`, `open_streams`, `pending_deliveries`, `pending_persistence`, `renderer_leases_held`) plus instance-identity fields.  `snapshot()` returns a JSON-serialisable dict including `quiescent: bool` (all six gauges are zero).
+
+Key files:
+- `server/generate/drain.py` — `DrainTelemetry`, `_NoopDrainTelemetry`, `NOOP_DRAIN`, `get_drain`
+- `server/internal/routes.py` — `GET /internal/drain` (requires `X-Drain-Token` header matching `DRAIN_TELEMETRY_TOKEN` env; missing token → 404)
+- `server/config.py` — `drain_telemetry_token` field (`DRAIN_TELEMETRY_TOKEN` env)
+- `gateway/admission.py` — `is_private_path(path)` helper; `/internal/*` never proxied
+- `gateway/app.py` — blocks `/internal/*` before forwarding to backend
+- `scripts/release_control.py` — `preflight`, `drain-check`, `pause-and-drain`, `compat-check`, `reopen`, `readiness` subcommands; reads `inventory.json`
+- `DEPLOYMENT.md` § "Drain telemetry and release control" for runbook
+
+Integration points in `service.py`:
+- `generate_question_stream` registers the stream's queue with `drain.register_queue(queue)` and increments `_active_runs` at entry; a `with anyio.CancelScope(shield=True)` in the finally block ensures decrements run even on GeneratorExit.
+- `_worker_one` body is wrapped with `with ctx.drain_telemetry.ctx_active_worker():`.
+- `RendererLease.__init__` accepts an optional `drain_telemetry` parameter and increments/decrements `_renderer_leases_held` inside `render()`.
+- `event_generator` in `routes.py` increments/decrements `_open_streams` around the SSE loop.
+
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.
@@ -277,6 +388,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/common/curriculum_loader.py` | Subject-agnostic JSON loaders + `allowed_learning_content/performance(data, stage, *, subject, subject_to_prefixes)` filters. |
 | `src/common/core_competency_loader.py` | Subject-agnostic 核心素養 loader + `build_core_competency_enum` + `allowed_competencies(data, stage)`. |
 | `src/common/planner.py` | Subject-agnostic `plan_core_questions()`; callers pass their own system/user prompt templates. |
+| `src/common/admission.py` | Shared admission lookup over `admitted_by` tags (ADR 0020): answers which 科目 / 內容領域 admit a loaded curriculum row; read by the social-studies 學習內容 內容領域 pool filter and by generation-time 科目/code validation. |
 | `src/planner.py` | Math planner shim — wraps `src.common.planner.plan_core_questions` with a 資深108課綱數學領域命題教師 system prompt asking for 3 candidate 核心問題 covering 代數 / 幾何 / 統計三大面向. |
 | `data/few_shot/` | Math few-shot examples by question style |
 | `data/example_exams/` | Past national exam PDFs (112-114) for reference |
@@ -299,7 +411,7 @@ Each folder accepts `*.json` files (flat pool, parallel to math's `data/few_shot
 | `src/social_studies/core_competency_loader.py` | Thin shim over `src.common.core_competency_loader`; adds `allowed_core_competencies(data, stage, subject)` for 核心素養 sampler pool. |
 | `src/social_studies/planner.py` | Thin shim over `src.common.planner.plan_core_questions`; provides the 社會領域 system/user templates. |
 | `src/social_studies/data_loader.py` | Loads CSV few-shot examples (learning content/performance now via `curriculum_loader`) |
-| `src/social_studies/domain_mapping.py` | Loads `內容領域_mapping.csv` into code→domain and domain→code indexes for ICCS-aware sampling. |
+| `src/social_studies/domain_mapping.py` | `內容領域_mapping.csv` is read by the curriculum loader to attach `admitted_by["內容領域"]` tags, by the schema payload, and by the verifier. The sampler no longer reads it directly for either curriculum pool: 學習內容 reads the shared admission lookup (`src/common/admission.py`) and 學習表現 has no 內容領域 parent (#833). |
 | `src/social_studies/process_exemplar_loader.py` | Loads Channel-2 JSON exemplars keyed by the four `認知歷程` buckets; invalid or unknown entries fail open. |
 | `src/social_studies/interaction_scoring.py` | Scores digital 拖放題 and 滑桿題 responses using their authoritative interaction specs. |
 | `src/social_studies/pin_rules.py` | Checks composition constraints for pinned ICCS cognitive-process assignments. |

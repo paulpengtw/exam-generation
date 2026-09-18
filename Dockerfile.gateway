@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY gateway/ gateway/
+COPY scripts/admission_gate.py scripts/admission_gate.py
+
+RUN pip install uv && uv pip install --system '.[gateway]'
+
+VOLUME /var/lib/examgen-gate
+
+EXPOSE 8000
+
+CMD ["python", "-m", "gateway"]

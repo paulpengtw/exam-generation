@@ -2,6 +2,7 @@
  * ReleaseNotice — persistent bar showing the current release-check state.
  *
  * Mounted in RootLayout under StagingBanner (issue #770).
+ * Issue #772: adds Save Draft & Update button when update is required.
  *
  * ARIA:
  *   checking / current / unavailable → role="status" aria-live="polite"
@@ -11,8 +12,15 @@
  * Reduced-motion: no transition/animation classes when
  *   matchMedia('(prefers-reduced-motion: reduce)') matches.
  */
+import { useState, useEffect } from "react";
 import { useReleaseStore } from "../lib/release/releaseStore";
+import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
+import { useAuthStore } from "../store/authStore";
+import { evaluateSaveAndUpdate, runSaveAndUpdate } from "../lib/recovery/saveAndUpdate";
 import { useT } from "../i18n/useT";
+import { useQueuedUpdateIntent } from "../lib/recovery/useQueuedUpdateIntent";
+import { useRecoveryStore } from "../lib/recovery/recoveryStore";
+import { checkAutoRefreshEligible, markAutoReloadAttempted } from "../lib/recovery/autoRefresh";
 
 function useReducedMotion(): boolean {
   try {
@@ -22,10 +30,43 @@ function useReducedMotion(): boolean {
   }
 }
 
+/** Map a denied reason to its i18n key */
+function reasonKey(reason: string): string {
+  return `recovery.disabled.${reason}`;
+}
+
 export default function ReleaseNotice() {
-  const { status, checkNow } = useReleaseStore();
+  const { status, checkNow, requiredBuildId, releaseRevision, supportedRecoveryFormats } =
+    useReleaseStore();
   const t = useT();
   const reducedMotion = useReducedMotion();
+  const { surfaces, operations } = useWorkspaceStore();
+  const user = useAuthStore((s) => s.user);
+  const setFreezeInput = useWorkspaceStore((s) => s.setFreezeInput);
+  useQueuedUpdateIntent(() => window.location.reload());
+  const updateIntent = useWorkspaceStore((s) => s.updateIntent);
+  const queueUpdateIntent = useWorkspaceStore((s) => s.queueUpdateIntent);
+  const cancelUpdateIntent = useWorkspaceStore((s) => s.cancelUpdateIntent);
+
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status !== "update-required" || requiredBuildId === null || releaseRevision === null) return;
+    const eligibility = checkAutoRefreshEligible({
+      workspaceState: useWorkspaceStore.getState(),
+      recoveryPending: useRecoveryStore.getState().pending !== null,
+      pageVisible: document.visibilityState === "visible",
+      targetBuildId: requiredBuildId,
+      releaseRevision,
+      releaseStatus: status,
+    });
+    if (!eligibility.eligible) return;
+    const marked = markAutoReloadAttempted(requiredBuildId, releaseRevision);
+    if (marked) {
+      window.location.reload();
+    }
+  }, [status, requiredBuildId, releaseRevision]);
 
   const isAlert = status === "update-required" || status === "paused";
   const role = isAlert ? "alert" : "status";
@@ -38,6 +79,40 @@ export default function ReleaseNotice() {
   function handleCheckAgain() {
     void checkNow();
   }
+
+  async function handleSaveAndUpdate() {
+    setSaving(true);
+    setSaveError(null);
+    setFreezeInput(true);
+    try {
+      const result = await runSaveAndUpdate({ navigate: () => window.location.reload() });
+      if (!result.ok) {
+        setSaveError(t("recovery.error.generic"));
+        setFreezeInput(false);
+      }
+      // On success, navigation will happen — freezeInput stays true
+    } catch {
+      setSaveError(t("recovery.error.generic"));
+      setFreezeInput(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Evaluate save-and-update eligibility
+  const evalResult = status === "update-required"
+    ? evaluateSaveAndUpdate({
+        surfaces,
+        operations,
+        releaseStatus: status,
+        requiredBuildId,
+        releaseRevision,
+        supportedRecoveryFormats: supportedRecoveryFormats ?? [],
+        user,
+      })
+    : null;
+
+  const showSaveAndUpdate = status === "update-required";
 
   if (status === "current") {
     // Keep in DOM for assistive tech but visually minimal (sr-only for the
@@ -64,13 +139,74 @@ export default function ReleaseNotice() {
     }
   })();
 
-  const showButton =
+  const showCheckButton =
     status === "update-required" || status === "paused" || status === "unavailable";
+
+  const saveButtonDisabled =
+    saving || !evalResult || !evalResult.allowed;
+
+  const saveButtonTitle =
+    saving
+      ? t("recovery.saving")
+      : evalResult && !evalResult.allowed
+        ? t(reasonKey(evalResult.reason))
+        : undefined;
 
   return (
     <div role={role} aria-live={ariaLive} className={baseClass}>
       <span className="sentry-unmask">{message}</span>
-      {showButton && (
+      {showSaveAndUpdate && (
+        <>
+          {updateIntent?.kind === "queued" || updateIntent?.kind === "active" ? (
+            <>
+              <span className="sentry-unmask ml-2">{t("recovery.queuedUpdatePending")}</span>
+              <button
+                type="button"
+                onClick={cancelUpdateIntent}
+                className="ml-2 underline cursor-pointer"
+              >
+                <span className="sentry-unmask">{t("recovery.cancelQueuedUpdate")}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => { void handleSaveAndUpdate(); }}
+                disabled={saveButtonDisabled}
+                title={saveButtonTitle}
+                className="ml-2 underline cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="sentry-unmask">
+                  {saving ? t("recovery.saving") : t("recovery.saveAndUpdate")}
+                </span>
+              </button>
+              {evalResult?.allowed === false && evalResult.reason === "operation_active" && updateIntent === null && (
+                <button
+                  type="button"
+                  onClick={queueUpdateIntent}
+                  className="ml-2 underline cursor-pointer"
+                >
+                  <span className="sentry-unmask">{t("recovery.queueUpdate")}</span>
+                </button>
+              )}
+              {saveError && (
+                <>
+                  <span className="sentry-unmask ml-2 text-red-600">{saveError}</span>
+                  <button
+                    type="button"
+                    onClick={() => { void handleSaveAndUpdate(); }}
+                    className="ml-1 underline cursor-pointer"
+                  >
+                    <span className="sentry-unmask">{t("recovery.retry")}</span>
+                  </button>
+                </>
+              )}
+            </>
+          )}
+        </>
+      )}
+      {showCheckButton && (
         <button
           type="button"
           onClick={handleCheckAgain}

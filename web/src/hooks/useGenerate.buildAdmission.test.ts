@@ -350,4 +350,83 @@ describe("useGenerate — build admission preflight", () => {
 
     expect(result.current.admission).not.toBe("admitted");
   });
+
+  // -------------------------------------------------------------------------
+  // resultsCompletion / terminalEvidence interaction with 426 (#771 + #774)
+  // -------------------------------------------------------------------------
+
+  it("(a) settled run followed by 426 keeps resultsCompletion='settled' and terminalEvidence=true", async () => {
+    setReleaseStatus("current");
+    const { result } = renderHook(() => useGenerate());
+
+    // --- First generate: completes with terminal evidence ---
+    act(() => {
+      result.current.generate({ subject: "math" });
+    });
+    act(() => {
+      const opts = latestStreamOptions();
+      opts.onmessage?.({ id: "", event: "started", data: "{}" });
+      // question_terminal populates terminalQuestionKeysRef so done sets terminalEvidence=true
+      opts.onmessage?.({
+        id: "",
+        event: "question_terminal",
+        data: JSON.stringify({ question_id: "q1" }),
+      });
+      opts.onmessage?.({
+        id: "",
+        event: "result",
+        data: JSON.stringify(previousQuestion),
+      });
+      opts.onmessage?.({ id: "", event: "done", data: "" });
+    });
+
+    expect(result.current.resultsCompletion).toBe("settled");
+    expect(result.current.terminalEvidence).toBe(true);
+    const preservedResults = result.current.results;
+
+    // --- Second generate: rejected by 426 stale-build ---
+    fetchEventSourceMock.mockClear();
+    useReleaseStore.setState({ status: "checking" });
+    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
+      setReleaseStatus("current");
+    });
+    fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
+      await init.onopen?.(new Response(
+        JSON.stringify({ code: "CLIENT_UPDATE_REQUIRED", required_build_id: "new-build" }),
+        { status: 426 },
+      ));
+    });
+
+    let rejected!: Promise<AdmissionOutcome>;
+    await act(async () => {
+      rejected = result.current.generate({ subject: "math" });
+      await Promise.resolve();
+    });
+    await expect(rejected).resolves.toEqual(expect.objectContaining({ outcome: "rejected" }));
+
+    // Results are preserved and completion state travels with them (not clobbered by 426)
+    expect(result.current.results).toEqual(preservedResults);
+    expect(result.current.resultsCompletion).toBe("settled");
+    expect(result.current.terminalEvidence).toBe(true);
+  });
+
+  it("(b) started event received then stream error sets resultsCompletion='error'", async () => {
+    setReleaseStatus("current");
+    const { result } = renderHook(() => useGenerate());
+
+    act(() => {
+      result.current.generate({ subject: "math" });
+    });
+    act(() => {
+      const opts = latestStreamOptions();
+      opts.onmessage?.({ id: "", event: "started", data: "{}" });
+      opts.onmessage?.({
+        id: "",
+        event: "error",
+        data: JSON.stringify({ message: "Something went wrong" }),
+      });
+    });
+
+    expect(result.current.resultsCompletion).toBe("error");
+  });
 });

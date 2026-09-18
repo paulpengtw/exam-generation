@@ -90,7 +90,7 @@ export interface ResolveResponse {
 /** Field-addressed 422 detail emitted for resolver conflicts. */
 export interface ResolveFieldError {
   field: string;
-  code: "incompatible_parent" | "unresolved";
+  code: "incompatible_parent" | "no_admitting_parent" | "unresolved";
   parent?: string;
 }
 

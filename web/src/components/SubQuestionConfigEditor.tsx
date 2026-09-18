@@ -9,6 +9,14 @@ const PISA_SCIENCE_QUESTION_TYPE_VALUES = [
   "Constructed response",
 ] as const;
 
+function entriesWithCurrentValue(
+  entries: readonly SchemaEntry[],
+  value: string | undefined,
+): SchemaEntry[] {
+  if (!value || entries.some((entry) => entry.value === value)) return [...entries];
+  return [...entries, { value, instruction: "" }];
+}
+
 export interface SubQuestionFigureKindFieldProps {
   config: SubQuestionConfig;
   figureKinds: string[];
@@ -121,9 +129,9 @@ export function SubQuestionReportingScaleField({
 }: SubQuestionReportingScaleFieldProps) {
   const reportingScaleId = useId();
   const t = useT();
-  const reportingScaleOptions = options ?? [
+  const reportingScaleOptions = entriesWithCurrentValue(options ?? [
     "1c", "1b", "1a", "2", "3", "4", "5", "6",
-  ].map((value) => ({ value, instruction: `等級 ${value}` }));
+  ].map((value) => ({ value, instruction: `等級 ${value}` })), config.reporting_scale);
 
   return (
     <div>
@@ -173,7 +181,10 @@ export function SubQuestionQuestionTypeField({
 }: SubQuestionQuestionTypeFieldProps) {
   const questionTypeId = useId();
   const t = useT();
-  const availableQuestionTypes = questionTypeOptions(subject, questionTypes);
+  const availableQuestionTypes = entriesWithCurrentValue(
+    questionTypeOptions(subject, questionTypes),
+    config.question_type,
+  );
 
   return (
     <div>
@@ -232,7 +243,7 @@ export function SubQuestionContentTypeField({
         className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
       >
         <option value="">{t("form.confirm_inherit_text")}</option>
-        {contentTypes.map((entry) => (
+        {entriesWithCurrentValue(contentTypes, config.content_type).map((entry) => (
           <option key={entry.value} value={entry.value}>{entry.value}</option>
         ))}
       </select>
@@ -272,6 +283,11 @@ export function SubQuestionImageGenerationModeField({
         className="mt-0.5 block w-full border rounded px-1.5 py-1 text-sm"
       >
         <option value="">{t("form.confirm_inherit_text")}</option>
+        {config.image_generation_mode &&
+          config.image_generation_mode !== "html" &&
+          config.image_generation_mode !== "gpt_image" && (
+            <option value={config.image_generation_mode}>{config.image_generation_mode}</option>
+          )}
         <option value="html">HTML 渲染</option>
         <option value="gpt_image">GPT 生圖</option>
       </select>

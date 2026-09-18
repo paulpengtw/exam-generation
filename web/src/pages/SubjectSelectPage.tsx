@@ -9,11 +9,11 @@ export default function SubjectSelectPage() {
   const navigate = useNavigate();
   const t = useT();
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const logoutExplicit = useAuthStore((s) => s.logoutExplicit);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
   const handleLogout = () => {
-    logout();
+    logoutExplicit();
     navigate("/");
   };
 

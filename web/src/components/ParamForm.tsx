@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getAvailableModels, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
+import type { Lang } from "../i18n/messages";
 import { clearDraft, loadDraft, saveDraft, type FormDraft } from "../lib/formDraft";
 import { filterEntriesByAdmittedParent } from "../lib/admittedBy";
+import {
+  computeParentNarrowing,
+  formatNarrowingHint,
+  type PinnedCodeGroup,
+} from "../lib/parentNarrowing";
 import { fetchCurriculumPool, type CurriculumPool } from "../lib/curriculumPool";
+import { formatResolverFieldErrors, isResolverFieldErrorLike } from "../lib/resolverErrorMessages";
 import {
   filterDrawnAfterSubquestionCountRedraw,
   rebuildSubquestionSlots,
@@ -11,6 +18,7 @@ import {
 import { renewSessionIfNeeded } from "../lib/sessionRenewal";
 import { exportFormWorkspace } from "../lib/workspace/adapters/formWorkspace";
 import { exportConfirmationWorkspace } from "../lib/workspace/adapters/confirmationWorkspace";
+import type { ConfirmationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore, type OperationHandle, type SurfaceParticipation, type SurfaceReadiness } from "../lib/workspace/workspaceStore";
 import { useAuthStore } from "../store/authStore";
@@ -357,6 +365,14 @@ export interface ParamFormProps {
   disabled: boolean;
   initialParams?: Partial<FormParams> & { [key: string]: unknown };
   onUnsubmittedInput?: () => void;
+  /** When present, takes precedence over loadDraft and history prefill (issue #772). */
+  recoveredForm?: import("../lib/workspace/adapters/types").FormWorkspaceSnapshot;
+  /** When present, reopens the exact settled pre-send confirmation (issue #773). */
+  recoveredConfirmation?: ConfirmationWorkspaceSnapshot;
+  /** Return false to keep the banner when result evidence has not hydrated. */
+  onRecoveryAcknowledge?: () => boolean | void;
+  /** Called when the user clicks 捨棄 on the recovery banner (issue #772). */
+  onRecoveryDiscard?: () => boolean | void;
 }
 
 export interface GenerationAdmissionResult {
@@ -450,6 +466,10 @@ function jsonDeepEqual(left: unknown, right: unknown): boolean {
   );
 }
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 type ConfirmationValueKind = "absent" | "sampled" | "defaulted";
 
 type ConfirmationRow = {
@@ -516,6 +536,14 @@ function confirmationEntries(
       .filter((value) => value !== "" && !known.has(value))
       .map((value) => ({ value, instruction: "" })),
   ];
+}
+
+function entriesForValues(
+  entries: readonly SchemaEntry[],
+  values: readonly string[],
+): SchemaEntry[] {
+  const byValue = new Map(entries.map((entry) => [entry.value, entry]));
+  return values.map((value) => byValue.get(value) ?? { value, instruction: "" });
 }
 
 function ConfirmationSingleSelect({
@@ -1080,7 +1108,9 @@ function readConfirmationPathValue(
 const CONFIRMATION_PARENT_CHILDREN: Record<string, string[]> = {
   "情境": ["情境子類別"],
   "科目": ["學習內容", "學習表現"],
-  "內容領域": ["學習內容", "學習表現"],
+  // #833/#839: 學習表現 has no 內容領域 parent — only 學習內容 admits a 內容領域
+  // tag, so a 內容領域 confirmation edit must never clear a drawn 學習表現.
+  "內容領域": ["學習內容"],
   sub_question_count: ["subquestion_configs"],
 };
 
@@ -1154,6 +1184,9 @@ function filterCurriculumEntriesBySubject<T extends SchemaEntry>(
   return filterEntriesByAdmittedParent(entries, "科目", values);
 }
 
+// #840: admission comes only from `admitted_by["內容領域"]` (ADR 0020) — a row
+// without that tag is unscoped and is never filtered/disabled by 內容領域,
+// regardless of its code prefix. No prefix table or 內容領域_mapping fallback.
 function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
   entries: readonly T[],
   subject: string,
@@ -1228,6 +1261,34 @@ function isValidPromptPreviewResponse(
 }
 
 /**
+ * Turn a caught resolve/preview failure into display text.
+ *
+ * Shared by the 發送前確認 resolver banner and prompt-preview errors (#835):
+ * an `ApiError` (`../api/client`) carrying field-addressed resolver errors
+ * on its `errors` property is formatted via the one shared formatter
+ * (`incompatible_parent` / `no_admitting_parent` become a readable
+ * sentence); everything else — a plain network/other `Error`, or a batch
+ * the formatter declines (e.g. `unresolved`, which keeps its current text)
+ * — falls back to the caught error's own message, exactly as before #835.
+ *
+ * Duck-types `cause.errors` via `isResolverFieldErrorLike` rather than
+ * `instanceof ApiError` so this doesn't require a runtime import of the
+ * `ApiError` class (many existing tests `vi.mock("../api/client")` wholesale
+ * without re-exporting it).
+ */
+function resolveDisplayError(cause: unknown, lang: Lang, fallback: string): string {
+  if (cause && typeof cause === "object" && "errors" in cause) {
+    const errors = (cause as { errors?: unknown }).errors;
+    if (Array.isArray(errors) && errors.length > 0 && errors.every(isResolverFieldErrorLike)) {
+      const readable = formatResolverFieldErrors(errors, lang);
+      if (readable !== null) return readable;
+    }
+  }
+  if (cause instanceof Error && cause.message) return cause.message;
+  return fallback;
+}
+
+/**
  * The planner endpoint promises three distinct, non-empty textual
  * candidates. Treat a malformed success body as a planning failure so the
  * confirmation screen can keep its generation-decides fallback.
@@ -1262,10 +1323,30 @@ export default function ParamForm({
   disabled,
   initialParams,
   onUnsubmittedInput,
+  recoveredForm,
+  recoveredConfirmation,
+  onRecoveryAcknowledge,
+  onRecoveryDiscard,
 }: ParamFormProps) {
+  // Recovery props are a one-shot snapshot. Latching them prevents the store's
+  // acknowledgement update (or a late hydration render) from rebuilding the
+  // ordinary form or confirmation from defaults/history.
+  const [recoverySource] = useState(() => ({
+    form: recoveredForm,
+    confirmation: recoveredConfirmation,
+  }));
+  const recoveryForm = recoverySource.form;
+  const recoveryConfirmation = recoverySource.confirmation;
+  const hasRecovery = recoveryForm !== undefined || recoveryConfirmation !== undefined;
   const generationStartedRef = useRef(false);
-  const hasUserEditedRef = useRef(false);
-  const [hasUserEdited, setHasUserEdited] = useState(false);
+  // When recovering, treat the form as already user-edited so autosave/guards work.
+  const hasUserEditedRef = useRef(recoveryForm !== undefined);
+  const [hasUserEdited, setHasUserEdited] = useState(recoveryForm !== undefined);
+  // Recovery banner state (issue #772)
+  const [recoveryBannerDismissed, setRecoveryBannerDismissed] = useState(false);
+  // Invalid recovered fields: populated after schemas/models load (issue #772)
+  const [recoveredInvalidFields, setRecoveredInvalidFields] = useState<Set<string>>(new Set());
+  const showRecoveryBanner = hasRecovery && !recoveryBannerDismissed;
   const markUnsubmittedInput = () => {
     generationStartedRef.current = false;
     hasUserEditedRef.current = true;
@@ -1281,20 +1362,40 @@ export default function ParamForm({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
   const [surfaceQuestionTypeNotice, setSurfaceQuestionTypeNotice] = useState<string[]>([]);
-  const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
-  const [pendingPerQuestionParams, setPendingPerQuestionParams] = useState<Record<string, unknown>[] | null>(null);
-  const [clearedPaths, setClearedPaths] = useState<string[]>([]);
-  const [hasPendingConfirmationEdits, setHasPendingConfirmationEdits] = useState(false);
+  const [pendingParams, setPendingParams] = useState<FormParams | null>(() =>
+    recoveryConfirmation ? cloneJson(recoveryConfirmation.pendingParams) : null,
+  );
+  const [pendingPerQuestionParams, setPendingPerQuestionParams] = useState<Record<string, unknown>[] | null>(() =>
+    recoveryConfirmation?.pendingPerQuestionParams
+      ? cloneJson(recoveryConfirmation.pendingPerQuestionParams)
+      : null,
+  );
+  const [clearedPaths, setClearedPaths] = useState<string[]>(() =>
+    recoveryConfirmation ? [...recoveryConfirmation.clearedPaths] : [],
+  );
+  const [hasPendingConfirmationEdits, setHasPendingConfirmationEdits] = useState(() =>
+    recoveryConfirmation?.hasPendingConfirmationEdits ?? false,
+  );
   const [resolverLoading, setResolverLoading] = useState(false);
   const [resolverError, setResolverError] = useState<string | null>(null);
   // Generic gate: keyed by "${questionIndex}-${subquestionIndex}-${field}". Any truthy entry disables 確認送出.
   const [confirmInvalidFields, setConfirmInvalidFields] = useState<Map<string, true>>(new Map());
-  const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
+  const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">(() =>
+    recoveryConfirmation?.coreQuestionResolution ?? "idle",
+  );
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
+  // #835: readable message for the most recent prompt-preview failure (initial
+  // fetch, debounced 確認頁修改 re-fetch, or manual retry) — shares
+  // resolveDisplayError/formatResolverFieldErrors with the resolver banner.
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [models, setModels] = useState<AvailableModels | null>(null);
   const [modelsResolved, setModelsResolved] = useState(false);
   const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(true);
-  const previewRequestedRef = useRef(false);
+  // Restored confirmation state is display-only until a teacher explicitly
+  // edits/resubmits a field. This guard suppresses both preview effects until
+  // one of the edit handlers deliberately releases it.
+  const restoredConfirmationEffectsSuppressedRef = useRef(recoveryConfirmation !== undefined);
+  const previewRequestedRef = useRef(recoveryConfirmation !== undefined);
   const previewRefetchSeqRef = useRef(0);
   const [previewRefetchLoading, setPreviewRefetchLoading] = useState(false);
   // #446: per-題組 stale-preview tracking. Keyed by 題組 index.
@@ -1309,19 +1410,37 @@ export default function ParamForm({
   } | null>(null);
   const resolveRequestSeqRef = useRef(0);
   const resolveOperationRef = useRef<OperationHandle | null>(null);
-  const redrawsRef = useRef<Record<string, number>>({});
-  const pendingParamsRef = useRef<FormParams | null>(null);
-  const pendingPerQuestionParamsRef = useRef<Record<string, unknown>[] | null>(null);
+  const redrawsRef = useRef<Record<string, number>>(
+    recoveryConfirmation ? cloneJson(recoveryConfirmation.redraws) : {},
+  );
+  const pendingParamsRef = useRef<FormParams | null>(
+    pendingParams ? cloneJson(pendingParams) : null,
+  );
+  const pendingPerQuestionParamsRef = useRef<Record<string, unknown>[] | null>(
+    pendingPerQuestionParams ? cloneJson(pendingPerQuestionParams) : null,
+  );
   const confirmationSubmitInFlightRef = useRef(false);
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
+  const initialPendingPrefill = (() => {
+    if (recoveryConfirmation && Object.hasOwn(recoveryConfirmation, "pendingPrefill")) {
+      return recoveryConfirmation.pendingPrefill === null
+        ? null
+        : cloneJson(recoveryConfirmation.pendingPrefill);
+    }
+    return hasInitialParams
+      ? cloneJson(initialParams as Record<string, unknown>)
+      : undefined;
+  })();
+  const pendingPrefillRef = useRef<Record<string, unknown> | null | undefined>(initialPendingPrefill);
+  // When recovery is provided, suppress the draft prompt entirely (issues #772/#773).
   const [draftToRestore, setDraftToRestore] = useState<FormDraft | null>(() =>
-    userId ? loadDraft(userId) : null,
+    hasRecovery ? null : (userId ? loadDraft(userId) : null),
   );
   const [historyDraftChoice, setHistoryDraftChoice] = useState<
     "draft" | "history" | "defaults" | null
-  >(null);
+  >(() => recoveryConfirmation?.historyDraftChoice ?? null);
 
   const normalisedHistoryPrefill = useMemo(
     () => normaliseHistoryPrefill(subject, initialParams),
@@ -1355,7 +1474,57 @@ export default function ParamForm({
     userChosenFields.current.add(key);
   }
 
-  const [formFields, setFormFields] = useState<FormFields>(() => ({
+  const [formFields, setFormFields] = useState<FormFields>(() => {
+    // When a recovered form is present, use its fields directly (issues #772/#773).
+    // This takes precedence over initialParams / localStorage defaults.
+    if (recoveryForm) {
+      // Defensively fill in every required FormFields key so that downstream
+      // code (e.g. passage.trim()) never sees undefined even when the snapshot
+      // was created with a minimal/partial fields object (issue #776 tests).
+      const f = recoveryForm.fields;
+      return {
+        grade: typeof f.grade === "number" || f.grade === "" ? f.grade : "",
+        style: typeof f.style === "string" ? f.style : "",
+        contentType: typeof f.contentType === "string" ? f.contentType : DEFAULT_CONTENT_TYPE,
+        customContentType: typeof f.customContentType === "string" ? f.customContentType : "",
+        context: Array.isArray(f.context) ? f.context : [],
+        setType: typeof f.setType === "string" ? f.setType : "",
+        qType: Array.isArray(f.qType) ? f.qType : [],
+        count: typeof f.count === "number" ? f.count : 1,
+        coverageMode: f.coverageMode === "random" ? "random" : "balanced",
+        skipVerify: typeof f.skipVerify === "boolean" ? f.skipVerify : false,
+        disableReferenceFewshot: typeof f.disableReferenceFewshot === "boolean" ? f.disableReferenceFewshot : false,
+        coreQuestionCallback: typeof f.coreQuestionCallback === "boolean" ? f.coreQuestionCallback : true,
+        imageGenerationMode: f.imageGenerationMode === "html" || f.imageGenerationMode === "gpt_image" ? f.imageGenerationMode : "gpt_image",
+        difficulty: f.difficulty === "easy" || f.difficulty === "medium" || f.difficulty === "hard" ? f.difficulty : "",
+        reportingScale: typeof f.reportingScale === "string" ? f.reportingScale : "",
+        subjectFilter: typeof f.subjectFilter === "string" ? f.subjectFilter : "",
+        passage: typeof f.passage === "string" ? f.passage : TEXT_HINT,
+        textWordLimit: typeof f.textWordLimit === "number" ? f.textWordLimit : null,
+        textInstruction: typeof f.textInstruction === "string" ? f.textInstruction : "",
+        options: Array.isArray(f.options) ? f.options : [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
+        topic: typeof f.topic === "string" ? f.topic : "",
+        coreQuestion: typeof f.coreQuestion === "string" || f.coreQuestion === null ? f.coreQuestion : null,
+        subContext: typeof f.subContext === "string" ? f.subContext : "",
+        scienceCompetency: Array.isArray(f.scienceCompetency) ? f.scienceCompetency : [],
+        learningPerformance: Array.isArray(f.learningPerformance) ? f.learningPerformance : [],
+        learningContent: Array.isArray(f.learningContent) ? f.learningContent : [],
+        subQuestionCount: typeof f.subQuestionCount === "number" || f.subQuestionCount === "" ? f.subQuestionCount : "",
+        subquestionConfigs: Array.isArray(f.subquestionConfigs) ? f.subquestionConfigs : [],
+        contentDomain: f.contentDomain ?? "",
+        targetSurface: f.targetSurface === "數位" ? "數位" : "紙本",
+        modelPlan: typeof f.modelPlan === "string" ? f.modelPlan : "",
+        modelExecute: typeof f.modelExecute === "string" ? f.modelExecute : "",
+        modelVerify: typeof f.modelVerify === "string" ? f.modelVerify : "",
+        modelCorrect: typeof f.modelCorrect === "string" ? f.modelCorrect : "",
+        effortPlan: typeof f.effortPlan === "string" ? f.effortPlan : "",
+        effortExecute: typeof f.effortExecute === "string" ? f.effortExecute : "",
+        effortVerify: typeof f.effortVerify === "string" ? f.effortVerify : "",
+        effortCorrect: typeof f.effortCorrect === "string" ? f.effortCorrect : "",
+        allowDuplicateFigureKinds: typeof f.allowDuplicateFigureKinds === "boolean" ? f.allowDuplicateFigureKinds : false,
+      };
+    }
+    return {
     grade: fromInit<number | "">("grade", ""),
     style: stringFromInit("style", ""),
     contentType: fromInit<string>("content_type", DEFAULT_CONTENT_TYPE),
@@ -1401,7 +1570,8 @@ export default function ParamForm({
     effortVerify: stringFromInit("effort_verify", window.localStorage.getItem("effort_verify") ?? ""),
     effortCorrect: stringFromInit("effort_correct", window.localStorage.getItem("effort_correct") ?? ""),
     allowDuplicateFigureKinds: false,
-  }));
+    };
+  });
   const formSnapshot = formFields;
   const restoreFormSnapshot = setFormFields;
   const defaultsSnapshotRef = useRef<FormFields | null>(null);
@@ -1547,7 +1717,12 @@ export default function ParamForm({
     hasDraftHistoryConflict &&
     defaultsReady;
 
-  const formReadiness: SurfaceReadiness = hasDraftHistoryConflict || showDraftPrompt
+  // An ordinary form recovery remains restoring until acknowledged. A settled
+  // confirmation recovery is deliberately saveable once hydration finishes;
+  // #773 lifts the old #772 refusal for that independent workspace.
+  const formReadiness: SurfaceReadiness = showRecoveryBanner && !recoveryConfirmation
+    ? "restoring"
+    : hasDraftHistoryConflict || showDraftPrompt
     ? "restoring"
     : schemas !== null && defaultsReady && modelsResolved ? "ready" : "hydrating";
   const exportForm = useCallback(() => exportFormWorkspace(formSnapshot), [formSnapshot]);
@@ -1560,6 +1735,9 @@ export default function ParamForm({
   const exportConfirmation = useCallback(() => pendingParams === null ? null : exportConfirmationWorkspace({
     pendingParams,
     pendingPerQuestionParams,
+    ...(pendingPrefillRef.current !== undefined
+      ? { pendingPrefill: pendingPrefillRef.current }
+      : {}),
     clearedPaths,
     redraws: redrawsRef.current,
     hasPendingConfirmationEdits,
@@ -1570,6 +1748,7 @@ export default function ParamForm({
   function handleRestoreDraft() {
     if (!draftToRestore) return;
     const fields = draftToRestore.fields;
+    pendingPrefillRef.current = cloneJson(fields as unknown as Record<string, unknown>);
     if (hasInitialParams) {
       setHistoryDraftChoice("draft");
       setPrefillNotice(null);
@@ -1586,6 +1765,9 @@ export default function ParamForm({
     hasUserEditedRef.current = false;
     setHasUserEdited(false);
     setHistoryDraftChoice("history");
+    pendingPrefillRef.current = hasInitialParams
+      ? cloneJson(initialParams as Record<string, unknown>)
+      : null;
     setDraftToRestore(null);
     if (defaultsSnapshotRef.current !== null) {
       restoreFormSnapshot(defaultsSnapshotRef.current);
@@ -1597,6 +1779,7 @@ export default function ParamForm({
     hasUserEditedRef.current = false;
     setHasUserEdited(false);
     setHistoryDraftChoice("defaults");
+    pendingPrefillRef.current = null;
     setDraftToRestore(null);
     setPrefillNotice(null);
     userChosenFields.current.clear();
@@ -1611,7 +1794,12 @@ export default function ParamForm({
   }
 
   useEffect(() => {
-    if (!pendingParams || coreQuestionResolution === "loading" || previewRequestedRef.current) return;
+    if (
+      restoredConfirmationEffectsSuppressedRef.current ||
+      !pendingParams ||
+      coreQuestionResolution === "loading" ||
+      previewRequestedRef.current
+    ) return;
     let cancelled = false;
     previewRequestedRef.current = true;
     const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
@@ -1622,9 +1810,15 @@ export default function ParamForm({
         if (isValidPromptPreviewResponse(prompts)) {
           setPromptPreviews(prompts);
         }
+        setPreviewError(null);
       })
-      .catch(() => op.end("failed"));
+      .catch((cause: unknown) => {
+        op.end("failed");
+        if (cancelled) return;
+        setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
+      });
     return () => { cancelled = true; op.end("superseded"); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang/t deliberately excluded: they must not re-trigger the preview fetch on a language switch, only affect the text of a failure caught by this same effect run
   }, [coreQuestionResolution, pendingParams, subject]);
 
   // Debounced re-fetch triggered by 確認頁修改 (#445).
@@ -1632,7 +1826,12 @@ export default function ParamForm({
   // (which sets pendingPerQuestionParams) does not schedule a spurious second fetch.
   // #446: captures which 題組 indices were edited so failures can be scoped per-題組.
   useEffect(() => {
-    if (!pendingParams || !pendingPerQuestionParams || !hasPendingConfirmationEdits) return;
+    if (
+      restoredConfirmationEffectsSuppressedRef.current ||
+      !pendingParams ||
+      !pendingPerQuestionParams ||
+      !hasPendingConfirmationEdits
+    ) return;
 
     // Snapshot the edited indices accumulated since the last effect run, then
     // reset the accumulator so the next edit cycle starts fresh.
@@ -1661,26 +1860,33 @@ export default function ParamForm({
             setPromptPreviews(prompts);
           }
           setPreviewRefetchLoading(false);
+          setPreviewError(null);
           // #446: clear stale state on success
           setStalePreviewIndices(new Set());
         })
-        .catch(() => {
+        .catch((cause: unknown) => {
           if (seq !== previewRefetchSeqRef.current) {
             op.end("superseded");
             return;
           }
           op.end("failed");
           setPreviewRefetchLoading(false);
+          setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
           // #446: mark only the edited 題組 as stale
           setStalePreviewIndices((prev) => new Set([...prev, ...capturedEditedIndices]));
         });
     }, 500);
 
     return () => { window.clearTimeout(timeoutId); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang/t deliberately excluded: they must not re-trigger the debounced preview refetch on a language switch, only affect the text of a failure caught by this same effect run
   }, [hasPendingConfirmationEdits, pendingPerQuestionParams, pendingParams, subject]);
 
   useEffect(() => {
-    if (!pendingParams || coreQuestionResolution !== "loading") return;
+    if (
+      restoredConfirmationEffectsSuppressedRef.current ||
+      !pendingParams ||
+      coreQuestionResolution !== "loading"
+    ) return;
     let cancelled = false;
     const pendingSubjectFilter = Array.isArray(pendingParams.subject_filter)
       ? pendingParams.subject_filter
@@ -1754,38 +1960,43 @@ export default function ParamForm({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- schema reload resets the form while switching subject
     setSchemas(null);
     setError(null);
-    restoreFormSnapshot((current) => ({
-      ...current,
-      context: fromInit<string[]>("context", []),
-      qType: fromInit<string[]>("q_type", []),
-      imageGenerationMode: fromInit<"html" | "gpt_image">(
-        "image_generation_mode",
-        "gpt_image",
-      ),
-      difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
-      passage: fromInit<string>("passage", TEXT_HINT),
-      textWordLimit: fromInit<number | undefined>("text_word_limit", undefined) ?? null,
-      textInstruction: stringFromInit("text_instruction", ""),
-      options: fromInit<string[]>(
-        "options",
-        [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
-      ),
-      subjectFilter: (() => {
-        const v = fromInit<string | string[]>("subject_filter", "");
-        return Array.isArray(v) ? (v[0] ?? "") : v;
-      })(),
-      subContext: fromInit<string>("sub_context", ""),
-      scienceCompetency: fromInit<string[]>("science_competency", []),
-      learningPerformance: fromInit<string[]>("learning_performance", []),
-      learningContent: fromInit<string[]>("learning_content", []),
-      subQuestionCount: fromInit<number | "">("sub_question_count", ""),
-      subquestionConfigs: subquestionConfigsFromInit(),
-      contentDomain: stringFromInit("content_domain", ""),
-      targetSurface: ip.target_surface === "數位" ? "數位" : "紙本",
-      topic: fromInit<string>("topic", ""),
-      coreQuestion: fromInit<string | null>("core_question", null),
-      coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
-    }));
+    // When recovering, keep the recovered field values — do not reset to
+    // initialParams / schema defaults (issue #772). Schema is still fetched
+    // for display and validation purposes.
+    if (!recoveryForm) {
+      restoreFormSnapshot((current) => ({
+        ...current,
+        context: fromInit<string[]>("context", []),
+        qType: fromInit<string[]>("q_type", []),
+        imageGenerationMode: fromInit<"html" | "gpt_image">(
+          "image_generation_mode",
+          "gpt_image",
+        ),
+        difficulty: fromInit<"" | "easy" | "medium" | "hard">("difficulty", ""),
+        passage: fromInit<string>("passage", TEXT_HINT),
+        textWordLimit: fromInit<number | undefined>("text_word_limit", undefined) ?? null,
+        textInstruction: stringFromInit("text_instruction", ""),
+        options: fromInit<string[]>(
+          "options",
+          [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
+        ),
+        subjectFilter: (() => {
+          const v = fromInit<string | string[]>("subject_filter", "");
+          return Array.isArray(v) ? (v[0] ?? "") : v;
+        })(),
+        subContext: fromInit<string>("sub_context", ""),
+        scienceCompetency: fromInit<string[]>("science_competency", []),
+        learningPerformance: fromInit<string[]>("learning_performance", []),
+        learningContent: fromInit<string[]>("learning_content", []),
+        subQuestionCount: fromInit<number | "">("sub_question_count", ""),
+        subquestionConfigs: subquestionConfigsFromInit(),
+        contentDomain: stringFromInit("content_domain", ""),
+        targetSurface: ip.target_surface === "數位" ? "數位" : "紙本",
+        topic: fromInit<string>("topic", ""),
+        coreQuestion: fromInit<string | null>("core_question", null),
+        coreQuestionCallback: fromInit<boolean>("core_question_callback", true),
+      }));
+    }
     const initialGrade = typeof ip.grade === "number" ? ip.grade : undefined;
     const seq = ++curriculumRequestSeq.current;
     fetchCurriculumPool(subject, initialGrade)
@@ -1804,53 +2015,55 @@ export default function ParamForm({
           setSchemas(s);
           if (s.poolGrade !== null) latestGradePoolSeq.current = seq;
         }
-        if (s.grades.length > 0 && ip.grade === undefined) setField("grade", s.grades[0]);
-        if (
-          subject === "natural_sciences" &&
-          s.情境.length > 0 &&
-          ip.context === undefined
-        ) {
-          if (ip.sub_context !== undefined) {
-            const admittedContexts = s.情境子類別?.find(
-              (entry) => entry.value === ip.sub_context,
-            )?.admitted_by?.["情境"] ?? [];
-            if (admittedContexts.length > 0) {
-              setField("context", admittedContexts);
-              userChosenFields.current.add("context");
+        if (!recoveryForm) {
+          if (s.grades.length > 0 && ip.grade === undefined) setField("grade", s.grades[0]);
+          if (
+            subject === "natural_sciences" &&
+            s.情境.length > 0 &&
+            ip.context === undefined
+          ) {
+            if (ip.sub_context !== undefined) {
+              const admittedContexts = s.情境子類別?.find(
+                (entry) => entry.value === ip.sub_context,
+              )?.admitted_by?.["情境"] ?? [];
+              if (admittedContexts.length > 0) {
+                setField("context", admittedContexts);
+                userChosenFields.current.add("context");
+              }
+            } else {
+              setField("context", [s.情境[0].value]);
+              const firstSub = filterEntriesByAdmittedParent(
+                s.情境子類別 ?? [],
+                "情境",
+                s.情境[0].value,
+              )[0];
+              setField("subContext", firstSub?.value ?? "");
             }
-          } else {
-            setField("context", [s.情境[0].value]);
-            const firstSub = filterEntriesByAdmittedParent(
-              s.情境子類別 ?? [],
-              "情境",
-              s.情境[0].value,
-            )[0];
-            setField("subContext", firstSub?.value ?? "");
           }
-        }
-        const questionStyles = s.question_style ?? [];
-        if (ip.style === undefined) {
-          if (subject === "math" && questionStyles.length > 0) {
-            setField("style", questionStyles[0].value);
-          } else {
-            setField("style", "");
+          const questionStyles = s.question_style ?? [];
+          if (ip.style === undefined) {
+            if (subject === "math" && questionStyles.length > 0) {
+              setField("style", questionStyles[0].value);
+            } else {
+              setField("style", "");
+            }
           }
+          if (ip.content_type === undefined) {
+            const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
+            setField(
+              "contentType",
+              isCurriculumSubject &&
+                Array.isArray(contentTypes) &&
+                contentTypes.length > 0
+                ? (contentTypes.find((t) => t.value === DEFAULT_CONTENT_TYPE)?.value ??
+                    contentTypes[0].value)
+                : "純文字",
+            );
+            markUserChosen("content_type");
+          }
+          setField("customContentType", "");
+          if (s.題型種類.length > 0 && ip.set_type === undefined) setField("setType", s.題型種類[0].value);
         }
-        if (ip.content_type === undefined) {
-          const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
-          setField(
-            "contentType",
-            isCurriculumSubject &&
-              Array.isArray(contentTypes) &&
-              contentTypes.length > 0
-              ? (contentTypes.find((t) => t.value === DEFAULT_CONTENT_TYPE)?.value ??
-                  contentTypes[0].value)
-              : "純文字",
-          );
-          markUserChosen("content_type");
-        }
-        setField("customContentType", "");
-        if (s.題型種類.length > 0 && ip.set_type === undefined) setField("setType", s.題型種類[0].value);
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message);
@@ -1867,6 +2080,10 @@ export default function ParamForm({
       .then((m) => {
         if (cancelled) return;
         setModels(m);
+        if (recoveryForm) {
+          setModelsResolved(true);
+          return;
+        }
         // Reconcile any localStorage-hydrated selection against the live
         // allowlist — a stale value (e.g. a model that was removed server
         // side) must never be silently submitted.
@@ -2018,6 +2235,13 @@ export default function ParamForm({
         // when /api/models fails, even for a returning user with a
         // persisted choice.
         setModels(null);
+        if (recoveryForm && recoveryConfirmation) {
+          // A recovered confirmation cannot be submitted without knowing
+          // whether its model/effort values still belong to the current
+          // registry. Keep the surface hydrating so the captured values stay
+          // visible but remain explicitly blocked until discovery succeeds.
+          return;
+        }
         if (defaultsSnapshotRef.current) {
           defaultsSnapshotRef.current = {
             ...defaultsSnapshotRef.current,
@@ -2044,7 +2268,7 @@ export default function ParamForm({
     return () => {
       cancelled = true;
     };
-  }, [restoreFormSnapshot, setField]);
+  }, [recoveryConfirmation, recoveryForm, restoreFormSnapshot, setField]);
 
   useEffect(() => {
     window.localStorage.setItem("model_plan", modelPlan);
@@ -2123,7 +2347,7 @@ export default function ParamForm({
   }, [schemas, subject, subquestionConfigs, targetSurface]);
 
   useEffect(() => {
-    if (invalidDigitalOnlyPins.length === 0) return;
+    if (recoveryForm || invalidDigitalOnlyPins.length === 0) return;
     // A schema update or a surface flip can expose a stale history pin. Clear
     // it before submit so the backend never receives a known 422 combination.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -2133,7 +2357,7 @@ export default function ParamForm({
         : config,
     ));
     setSurfaceQuestionTypeNotice(invalidDigitalOnlyPins);
-  }, [invalidDigitalOnlyPins, setField]);
+  }, [invalidDigitalOnlyPins, recoveryForm, setField]);
 
   const availableLearningContent = useMemo(() => {
     const entries = schemas?.學習內容 ?? [];
@@ -2153,7 +2377,7 @@ export default function ParamForm({
   }, [schemas, subjectFilter, subject]);
 
   useEffect(() => {
-    if (!schemas || !initialParams) return;
+    if (!schemas || !initialParams || recoveryForm) return;
     const missing: string[] = [];
     const arr = (key: string): string[] => {
       const raw = ip[key];
@@ -2192,13 +2416,17 @@ export default function ParamForm({
     const poolMatchesGrade = schemas.poolGrade === (grade === "" ? null : grade);
     if (poolMatchesGrade) {
       const configs = parseSubquestionConfigs(ip.subquestion_configs);
-      // Report the selections removed by the curriculum reconciliation effects below.
+      // #841: absence is judged against the grade's whole curriculum pool
+      // (schemas.學習表現/學習內容), not the 科目/內容領域-filtered
+      // available* lists — a code merely excluded by the restored 科目 or
+      // 內容領域 is a conflict (flagged on the parent control below), not a
+      // drop, and must not appear in this notice.
       for (const [label, values, entries] of [
         ["學習表現", [
           ...arr("learning_performance"),
           ...configs.flatMap((cfg) => cfg.learning_performance ?? []),
-        ], availableLearningPerformance],
-        ["學習內容", arr("learning_content"), availableLearningContent],
+        ], schemas.學習表現 ?? []],
+        ["學習內容", arr("learning_content"), schemas.學習內容 ?? []],
       ] as const) {
         const allowed = new Set(entries.map((entry) => entry.value));
         for (const code of new Set(values)) {
@@ -2236,55 +2464,133 @@ export default function ParamForm({
       const allowedDomains = new Set(schemas.內容領域?.map((s) => s.value));
       setField("contentDomain", (prev) => (prev && allowedDomains.has(prev) ? prev : ""));
     }
-  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade, availableLearningPerformance, availableLearningContent]);
+  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade, recoveryForm]);
 
-  const iccsDomainMappedCodes = useMemo(() => {
-    if (
-      subject !== "social_studies" ||
-      !ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter) ||
-      !contentDomain ||
-      !schemas?.內容領域_mapping
-    ) {
-      return undefined;
+  // #839: the 釘選 codes narrowing 科目/內容領域 are the 題組-level 學習內容 +
+  // 學習表現 selections plus each 各小題配置 row's own pins. Admission comes
+  // only from `admitted_by` tags (ADR 0020) via computeParentNarrowing — never
+  // a prefix table.
+  const pinnedCurriculumCodeGroups = useMemo((): PinnedCodeGroup[] => {
+    const groups: PinnedCodeGroup[] = [];
+    const groupCodes = [...learningContent, ...learningPerformance];
+    if (groupCodes.length > 0) groups.push({ codes: groupCodes });
+    subquestionConfigs.forEach((cfg, index) => {
+      const codes = [...(cfg.learning_content ?? []), ...(cfg.learning_performance ?? [])];
+      if (codes.length > 0) groups.push({ codes, subquestionNumber: index + 1 });
+    });
+    return groups;
+  }, [learningContent, learningPerformance, subquestionConfigs]);
+
+  const curriculumCodeLookup = useMemo(() => {
+    const map = new Map<string, SchemaEntry>();
+    for (const entry of schemas?.學習內容 ?? []) map.set(entry.value, entry);
+    for (const entry of schemas?.學習表現 ?? []) map.set(entry.value, entry);
+    return map;
+  }, [schemas]);
+
+  const allSubjectFilterValues = useMemo(
+    () => (schemas?.科目 ?? []).map((entry) => entry.value),
+    [schemas],
+  );
+  // #839/#841 scope: 科目-side narrowing (disabled options, hint,
+  // aria-invalid) applies only to the social-studies form — the math and
+  // natural-sciences forms behave exactly as before this branch. The
+  // 內容領域 counterpart already gates on subject via
+  // applyContentDomainNarrowing below.
+  const applySubjectFilterNarrowing = subject === "social_studies";
+  const subjectFilterNarrowing = useMemo(() => {
+    if (!applySubjectFilterNarrowing) {
+      return { disabledValues: new Set<string>(), constrainingCodes: [] };
     }
-    return new Set(
-      Object.entries(schemas.內容領域_mapping)
-        .filter(([, domains]) => domains.includes(contentDomain))
-        .map(([code]) => code),
+    return computeParentNarrowing(
+      allSubjectFilterValues,
+      "科目",
+      pinnedCurriculumCodeGroups,
+      (code) => curriculumCodeLookup.get(code),
     );
-  }, [contentDomain, schemas, subject, subjectFilter]);
+  }, [applySubjectFilterNarrowing, allSubjectFilterValues, pinnedCurriculumCodeGroups, curriculumCodeLookup]);
+  const subjectFilterHint = formatNarrowingHint(
+    subjectFilterNarrowing.constrainingCodes,
+    lang,
+    "form.subject_filter_narrow_hint",
+  );
 
-  const filteredLpPool = useMemo(() => {
-    if (iccsDomainMappedCodes === undefined) return undefined;
-    return availableLearningPerformance
-      .filter((entry) => !isPublicSocialStudiesCode(entry.value) || iccsDomainMappedCodes.has(entry.value))
-      .map((entry) => entry.value);
-  }, [availableLearningPerformance, iccsDomainMappedCodes]);
-
-  const filteredLcPool = useMemo(() => {
-    if (
-      subject !== "social_studies" ||
-      !ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter) ||
-      !contentDomain
-    ) {
-      return undefined;
+  // 內容領域 is only ever narrowed for the 科目 values that can carry an ICCS
+  // domain (公民與社會/跨科/全部) — matching filterLearningContentEntriesByDomain's
+  // own subject gate. 歷/地 選擇 leaves 內容領域 fully open.
+  const applyContentDomainNarrowing = subject === "social_studies" &&
+    (subjectFilter === "" || ICCS_DOMAIN_FILTER_SUBJECTS.has(subjectFilter));
+  const allContentDomainValues = useMemo(
+    () => (schemas?.內容領域 ?? []).map((entry) => entry.value),
+    [schemas],
+  );
+  const contentDomainNarrowing = useMemo(() => {
+    if (!applyContentDomainNarrowing) {
+      return { disabledValues: new Set<string>(), constrainingCodes: [] };
     }
-    return filterLearningContentEntriesByDomain(
-      availableLearningContent,
-      subject,
-      subjectFilter,
-      contentDomain,
-      schemas?.內容領域_mapping,
-    )
-      .map((entry) => entry.value);
-  }, [availableLearningContent, contentDomain, schemas, subject, subjectFilter]);
-
-  const restrictCodesToIccsDomain = (codes: readonly string[]): string[] => {
-    if (iccsDomainMappedCodes === undefined) return [...codes];
-    return codes.filter(
-      (code) => !isPublicSocialStudiesCode(code) || iccsDomainMappedCodes.has(code),
+    return computeParentNarrowing(
+      allContentDomainValues,
+      "內容領域",
+      pinnedCurriculumCodeGroups,
+      (code) => curriculumCodeLookup.get(code),
     );
-  };
+  }, [applyContentDomainNarrowing, allContentDomainValues, pinnedCurriculumCodeGroups, curriculumCodeLookup]);
+  const contentDomainHint = formatNarrowingHint(
+    contentDomainNarrowing.constrainingCodes,
+    lang,
+    "form.content_domain_narrow_hint",
+  );
+
+  // #841: a restored draft/history/Regenerate prefill (or a live edit) can
+  // leave 科目/內容領域 set to a value the current 釘選 codes no longer admit.
+  // Never silently fix it: `disabledValues` already tells us exactly which
+  // values conflict (computed above, purely from admitted_by tags — no
+  // prefix table), so the conflict is just "is the current value one of
+  // them". The conflicting control is marked invalid (aria-invalid + the
+  // same narrowing hint) and 產生 stays disabled until the teacher changes
+  // the parent or deselects the constraining code(s).
+  const subjectFilterConflict = subjectFilter !== "" &&
+    subjectFilterNarrowing.disabledValues.has(subjectFilter);
+  const contentDomainConflict = (contentDomain ?? "") !== "" &&
+    contentDomainNarrowing.disabledValues.has(contentDomain ?? "");
+  const hasParentNarrowingConflict = subjectFilterConflict || contentDomainConflict;
+
+  // #840: a 學習內容 code the chosen (or, under 隨機, the still-viable) 內容領域
+  // would not admit is disabled — never dropped — in the request-level list/
+  // search and the per-小題 pickers. Admission comes only from
+  // `admitted_by["內容領域"]` (ADR 0020); a code without that tag (歷/地 codes,
+  // or an untagged civics code) is unscoped and never disabled here. Reuses
+  // `contentDomainNarrowing` (#839) for the 隨機 branch: its `disabledValues`
+  // are the 內容領域 values at least one 釘選 civics code already excludes, so
+  // `allContentDomainValues` minus that set is exactly the still-viable range.
+  const learningContentDomainDisabled = useMemo(() => {
+    const disabled = new Set<string>();
+    if (subject !== "social_studies") return disabled;
+    const viableDomains = contentDomain
+      ? null
+      : allContentDomainValues.filter((value) => !contentDomainNarrowing.disabledValues.has(value));
+    for (const entry of schemas?.學習內容 ?? []) {
+      const admitted = entry.admitted_by?.["內容領域"];
+      if (!Array.isArray(admitted)) continue; // unscoped — never disabled by 內容領域
+      if (contentDomain) {
+        if (!admitted.includes(contentDomain)) disabled.add(entry.value);
+        continue;
+      }
+      if (contentDomainNarrowing.constrainingCodes.length === 0) continue;
+      if (!admitted.some((value) => viableDomains?.includes(value))) disabled.add(entry.value);
+    }
+    return disabled;
+  }, [subject, schemas, contentDomain, contentDomainNarrowing, allContentDomainValues]);
+
+  const learningContentDomainHint = subject === "social_studies" && learningContentDomainDisabled.size > 0
+    ? (contentDomain
+        ? t("form.learning_content_domain_narrow_hint").replace("{domain}", contentDomain)
+        : formatNarrowingHint(
+            contentDomainNarrowing.constrainingCodes,
+            lang,
+            "form.learning_content_domain_narrow_hint_pinned",
+          ))
+    : null;
 
   const planEffortLevels = useMemo((): string[] => {
     if (!models?.effort) return [];
@@ -2314,17 +2620,22 @@ export default function ParamForm({
   }, [models, modelCorrect, modelExecute]);
 
   useEffect(() => {
-    if (subject !== "natural_sciences" || !schemas || availableSubContexts.length === 0) return;
+    if (recoveryForm || subject !== "natural_sciences" || !schemas || availableSubContexts.length === 0) return;
     const allowed = new Set(availableSubContexts.map((entry) => entry.value));
     if (!subContext || !allowed.has(subContext)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- fill the first valid dependent sub-context after schema load
       setField("subContext", availableSubContexts[0]?.value ?? "");
     }
-  }, [availableSubContexts, schemas, subContext, subject, setField]);
+  }, [availableSubContexts, recoveryForm, schemas, subContext, subject, setField]);
 
   useEffect(() => {
-    if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
-    const allowed = new Set(availableLearningPerformance.map((entry) => entry.value));
+    if (recoveryForm || !schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
+    // #841: absence is judged against the grade's whole 學習表現 pool, not
+    // `availableLearningPerformance` (科目-filtered) — a code merely excluded
+    // by the restored/current 科目 is kept selected and flagged as a conflict
+    // on the 科目 control (subjectFilterNarrowing) instead of being silently
+    // dropped here. Only a code truly absent from this grade is removed.
+    const allowed = new Set((schemas.學習表現 ?? []).map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     restoreFormSnapshot((current) => {
       // A draft restore can change the grade before this queued update runs.
@@ -2339,11 +2650,14 @@ export default function ParamForm({
         ),
       };
     });
-  }, [availableLearningPerformance, grade, schemas, restoreFormSnapshot]);
+  }, [grade, recoveryForm, schemas, restoreFormSnapshot]);
 
   useEffect(() => {
-    if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
-    const allowed = new Set(availableLearningContent.map((entry) => entry.value));
+    if (recoveryForm || !schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
+    // #841: same whole-pool rule as above, for 學習內容 — a code merely
+    // excluded by the restored/current 科目 or 內容領域 is kept selected and
+    // flagged on the conflicting parent control, never silently dropped here.
+    const allowed = new Set((schemas.學習內容 ?? []).map((entry) => entry.value));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reconcile history/draft curriculum selections with the loaded pool
     restoreFormSnapshot((current) => {
       if (schemas.poolGrade !== (current.grade === "" ? null : current.grade)) return current;
@@ -2352,13 +2666,435 @@ export default function ParamForm({
         learningContent: current.learningContent.filter((value) => allowed.has(value)),
       };
     });
-  }, [availableLearningContent, grade, schemas, restoreFormSnapshot]);
+  }, [grade, recoveryForm, schemas, restoreFormSnapshot]);
+
+  // Compute recovered invalid fields after schemas / models load (issues #772/#773).
+  // Only relevant when an ordinary form was recovered; confirmation validity is
+  // tracked independently below so the two workspaces remain distinct.
+  useEffect(() => {
+    if (!recoveryForm || !schemas) return;
+    const invalid = new Set<string>();
+    const hasInvalid = (values: readonly string[], entries: readonly SchemaEntry[] | undefined) =>
+      values.some((value) => value !== "" && !(entries ?? []).some((entry) => entry.value === value));
+    const allowedGrade = schemas.grades.includes(grade as number);
+    if (grade !== "" && !allowedGrade) invalid.add("grade");
+    if (hasInvalid(qType, schemas.題型)) invalid.add("qType");
+    if (hasInvalid(context, schemas.情境)) invalid.add("context");
+    if (setType && hasInvalid([setType], schemas.題型種類)) invalid.add("setType");
+    if (contentType && hasInvalid([contentType], schemas.題目內容類型)) invalid.add("contentType");
+    if (subjectFilter && hasInvalid([subjectFilter], schemas.科目)) invalid.add("subjectFilter");
+    if (contentDomain && hasInvalid([contentDomain], schemas.內容領域)) invalid.add("contentDomain");
+    if (style && hasInvalid([style], schemas.question_style)) invalid.add("style");
+    if (difficulty && !["easy", "medium", "hard"].includes(difficulty)) invalid.add("difficulty");
+    if (imageGenerationMode !== "html" && imageGenerationMode !== "gpt_image") {
+      invalid.add("imageGenerationMode");
+    }
+    if (reportingScale && hasInvalid([reportingScale], schemas.reporting_scale)) {
+      invalid.add("reportingScale");
+    }
+    if (subContext && hasInvalid([subContext], availableSubContexts)) invalid.add("subContext");
+    if (hasInvalid(scienceCompetency, schemas.科學能力)) invalid.add("scienceCompetency");
+
+    const gradePoolReady = schemas.poolGrade === null || schemas.poolGrade === grade;
+    if (gradePoolReady) {
+      if (hasInvalid(learningPerformance, availableLearningPerformance)) invalid.add("learningPerformance");
+      if (hasInvalid(learningContent, availableLearningContent)) invalid.add("learningContent");
+      const configs = subquestionConfigs;
+      configs.forEach((config, index) => {
+        if (config.question_type && hasInvalid([config.question_type], availableQuestionTypes)) {
+          invalid.add(`subquestionConfigs[${index}].question_type`);
+        }
+        if (config.content_type && hasInvalid([config.content_type], schemas.題目內容類型)) {
+          invalid.add(`subquestionConfigs[${index}].content_type`);
+        }
+        if (config.learning_content && hasInvalid(config.learning_content, availableLearningContent)) {
+          invalid.add(`subquestionConfigs[${index}].learning_content`);
+        }
+        if (config.learning_performance && hasInvalid(config.learning_performance, availableLearningPerformance)) {
+          invalid.add(`subquestionConfigs[${index}].learning_performance`);
+        }
+      });
+    }
+
+    if (subQuestionCount !== "" &&
+      (!Number.isInteger(subQuestionCount) || subQuestionCount < 3 || subQuestionCount > 7)) {
+      invalid.add("subQuestionCount");
+    }
+    if (textWordLimit !== null && textWordLimit !== undefined &&
+      (!Number.isInteger(textWordLimit) || textWordLimit < 1)) {
+      invalid.add("textWordLimit");
+    }
+
+    if (models?.effort) {
+      const modelValues: Array<[keyof AvailableModels["defaults"], string]> = [
+        ["plan", modelPlan],
+        ["execute", modelExecute],
+        ["verify", modelVerify],
+        ["correct", modelCorrect],
+      ];
+      const allowedModels = new Set(models.allowed);
+      for (const [, model] of modelValues) {
+        if (model && !allowedModels.has(model)) invalid.add("models");
+      }
+      const effectiveModel = (tierModel: string, fallback: string) =>
+        tierModel || fallback;
+      const effortChecks: Array<[string, string, string]> = [
+        ["effortPlan", effortPlan, effectiveModel(modelPlan, models.defaults.plan)],
+        ["effortExecute", effortExecute, effectiveModel(modelExecute, models.defaults.execute)],
+        [
+          "effortVerify",
+          effortVerify,
+          effectiveModel(modelVerify, modelExecute || models.defaults.execute),
+        ],
+        [
+          "effortCorrect",
+          effortCorrect,
+          effectiveModel(modelCorrect, modelExecute || models.defaults.execute),
+        ],
+      ];
+      for (const [field, effort, model] of effortChecks) {
+        if (effort && models.effort[model] && !models.effort[model].includes(effort)) {
+          invalid.add(field);
+        }
+      }
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- stable setter; no loop risk (deps don't include the state it sets)
+    setRecoveredInvalidFields(invalid);
+  }, [
+    availableLearningContent,
+    availableLearningPerformance,
+    availableQuestionTypes,
+    availableSubContexts,
+    contentDomain,
+    contentType,
+    context,
+    difficulty,
+    effortCorrect,
+    effortExecute,
+    effortPlan,
+    effortVerify,
+    grade,
+    imageGenerationMode,
+    learningContent,
+    learningPerformance,
+    models,
+    modelCorrect,
+    modelExecute,
+    modelPlan,
+    modelVerify,
+    qType,
+    recoveryForm,
+    reportingScale,
+    schemas,
+    scienceCompetency,
+    setType,
+    style,
+    subContext,
+    subQuestionCount,
+    subquestionConfigs,
+    subjectFilter,
+    textWordLimit,
+  ]);
+
+  const confirmationInvalidFields = useMemo(() => {
+    const invalid = new Map<string, true>();
+    if (!recoveryConfirmation || !pendingParams || !schemas) return invalid;
+
+    const add = (path: string) => invalid.set(path, true);
+    const valuesOf = (value: unknown): string[] => {
+      if (Array.isArray(value)) {
+        return value.filter((item): item is string => typeof item === "string" && item !== "");
+      }
+      return typeof value === "string" && value !== "" ? [value] : [];
+    };
+    const checkValues = (
+      path: string,
+      value: unknown,
+      entries: readonly SchemaEntry[],
+    ) => {
+      if (
+        value !== null && value !== undefined &&
+        (Array.isArray(value)
+          ? value.some((item) => typeof item !== "string")
+          : typeof value !== "string")
+      ) {
+        add(path);
+        return;
+      }
+      const allowed = new Set(entries.map((entry) => entry.value));
+      if (valuesOf(value).some((item) => !allowed.has(item))) add(path);
+    };
+    const checkContentType = (
+      path: string,
+      value: unknown,
+      entries: readonly SchemaEntry[],
+    ) => {
+      if (
+        value !== null && value !== undefined &&
+        (Array.isArray(value)
+          ? value.some((item) => typeof item !== "string")
+          : typeof value !== "string")
+      ) {
+        add(path);
+        return;
+      }
+      const allowed = new Set(entries.map((entry) => entry.value));
+      const customAllowed = allowed.has("customized");
+      if (valuesOf(value).some((item) => !allowed.has(item) && !(customAllowed && item === "customized"))) {
+        add(path);
+      }
+    };
+    const checkNumbers = (path: string, value: unknown, minimum = 1) => {
+      if (value !== undefined && value !== null &&
+        (typeof value !== "number" || !Number.isInteger(value) || value < minimum)) {
+        add(path);
+      }
+    };
+    const checkBoolean = (path: string, value: unknown) => {
+      if (value !== undefined && typeof value !== "boolean") add(path);
+    };
+    const admittedValues = (
+      entries: readonly SchemaEntry[],
+      parentKey: string,
+      parentValue: unknown,
+    ): SchemaEntry[] => {
+      const parents = valuesOf(parentValue);
+      if (parents.length === 0) return entries.filter((entry) => !entry.admitted_by?.[parentKey]);
+      return entries.filter((entry) => {
+        const admitted = entry.admitted_by?.[parentKey];
+        if (Array.isArray(admitted)) return parents.some((parent) => admitted.includes(parent));
+        return entry.parent === undefined || parents.includes(entry.parent);
+      });
+    };
+    const params = pendingParams as unknown as Record<string, unknown>;
+    const allSubjectValues = schemas.科目?.map((entry) => entry.value) ?? [];
+    const subjectFor = (row: Record<string, unknown>) =>
+      row.subject_filter ?? params.subject_filter;
+    const domainFor = (row: Record<string, unknown>) =>
+      typeof row.content_domain === "string"
+        ? row.content_domain
+        : typeof params.content_domain === "string"
+          ? params.content_domain
+          : undefined;
+    const curriculumEntriesFor = (
+      row: Record<string, unknown>,
+      entries: SchemaEntry[],
+    ) => filterLearningContentEntriesByDomain(
+      filterCurriculumEntriesBySubject(
+        entries,
+        subject,
+        subjectFor(row) as string | readonly string[] | undefined,
+        allSubjectValues,
+      ),
+      subject,
+      subjectFor(row) as string | readonly string[] | undefined,
+      domainFor(row),
+      schemas.內容領域_mapping,
+    );
+
+    const naturalQuestionTypes = [
+      ...schemas.題型,
+      ...["Simple multiple-choice", "Complex multiple-choice", "Constructed response"]
+        .filter((value) => !schemas.題型.some((entry) => entry.value === value))
+        .map((value) => ({ value, instruction: "" })),
+    ];
+    const questionTypes = subject === "natural_sciences"
+      ? naturalQuestionTypes
+      : schemas.題型;
+    const reportingScales = schemas.reporting_scale ??
+      ["1c", "1b", "1a", "2", "3", "4", "5", "6"].map((value) => ({ value, instruction: "" }));
+    const imageModes = ["html", "gpt_image"].map((value) => ({ value, instruction: "" }));
+
+    const checkEffort = (
+      path: string,
+      value: unknown,
+      model: unknown,
+      fallbackModel: unknown,
+    ) => {
+      if (!models?.effort || value === undefined || value === "") return;
+      const modelId = typeof model === "string" && model !== ""
+        ? model
+        : typeof fallbackModel === "string" ? fallbackModel : "";
+      const allowed = modelId && models.effort[modelId]
+        ? models.effort[modelId]
+        : [...new Set(Object.values(models.effort).flat())];
+      // Some compatible model registries do not publish effort options. In
+      // that case there is no current-schema value against which to validate
+      // the restored setting; preserve it until the server can validate the
+      // submitted payload.
+      if (allowed.length === 0) return;
+      if (!allowed.includes(value as string)) add(path);
+    };
+    const checkModel = (path: string, value: unknown) => {
+      if (!models || value === undefined || value === null || value === "") return;
+      if (typeof value !== "string" || !models.allowed.includes(value)) add(path);
+    };
+
+    const validateConfigRows = (
+      rowPrefix: string,
+      row: Record<string, unknown>,
+      rowLearningContent: SchemaEntry[],
+      rowLearningPerformance: SchemaEntry[],
+    ) => {
+      const configs = parseSubquestionConfigs(row.subquestion_configs);
+      configs.forEach((config, subquestionIndex) => {
+        const configRecord = config as Record<string, unknown>;
+        const prefix = `${rowPrefix}subquestion_configs[${subquestionIndex}].`;
+        checkValues(`${prefix}question_type`, configRecord.question_type, questionTypes);
+        checkContentType(`${prefix}content_type`, configRecord.content_type, schemas.題目內容類型 ?? []);
+        checkValues(`${prefix}cognitive_process`, configRecord.cognitive_process, schemas.認知歷程 ?? []);
+        checkValues(`${prefix}reporting_scale`, configRecord.reporting_scale, reportingScales);
+        checkValues(`${prefix}learning_content`, configRecord.learning_content, rowLearningContent);
+        checkValues(`${prefix}learning_performance`, configRecord.learning_performance, rowLearningPerformance);
+        if (subject === "social_studies" || subject === "natural_sciences") {
+          const figureKind = configRecord.figure_kind;
+          const figureKinds = schemas.figure_kinds;
+          if (
+            typeof figureKind === "string" &&
+            figureKind !== "" &&
+            figureKinds !== undefined &&
+            figureKinds.length > 0 &&
+            !figureKinds.includes(figureKind)
+          ) {
+            add(`${prefix}figure_kind`);
+          }
+        }
+        if (configRecord.image_generation_mode !== undefined &&
+          configRecord.image_generation_mode !== "" &&
+          configRecord.image_generation_mode !== "html" &&
+          configRecord.image_generation_mode !== "gpt_image") {
+          add(`${prefix}image_generation_mode`);
+        }
+        checkNumbers(`${prefix}question_word_limit`, configRecord.question_word_limit);
+        checkNumbers(`${prefix}option_word_limit`, configRecord.option_word_limit);
+      });
+    };
+
+    const topRow = params;
+    if (
+      topRow.grade !== undefined &&
+      (typeof topRow.grade !== "number" || !schemas.grades.includes(topRow.grade))
+    ) {
+      add("confirmation.grade");
+    }
+    checkValues("confirmation.context", topRow.context, schemas.情境);
+    checkValues("confirmation.set_type", topRow.set_type, schemas.題型種類);
+    checkValues("confirmation.q_type", topRow.q_type, questionTypes);
+    checkContentType("confirmation.content_type", topRow.content_type, schemas.題目內容類型 ?? []);
+    checkValues("confirmation.subject_filter", topRow.subject_filter, schemas.科目 ?? []);
+    checkValues(
+      "confirmation.sub_context",
+      topRow.sub_context,
+      admittedValues(schemas.情境子類別 ?? [], "情境", topRow.context),
+    );
+    checkValues("confirmation.science_competency", topRow.science_competency, schemas.科學能力 ?? []);
+    checkValues("confirmation.content_domain", topRow.content_domain, schemas.內容領域 ?? []);
+    checkValues("confirmation.reporting_scale", topRow.reporting_scale, reportingScales);
+    checkValues("confirmation.core_competency", topRow.core_competency, schemas.核心素養 ?? []);
+    checkValues("confirmation.math_thinking", topRow.math_thinking, schemas.數學思考);
+    checkValues("confirmation.style", topRow.style, schemas.question_style ?? []);
+    const topLearningContent = curriculumEntriesFor(topRow, schemas.學習內容 ?? []);
+    const topLearningPerformance = curriculumEntriesFor(topRow, schemas.學習表現 ?? []);
+    checkValues("confirmation.learning_content", topRow.learning_content, topLearningContent);
+    checkValues("confirmation.learning_performance", topRow.learning_performance, topLearningPerformance);
+    validateConfigRows("confirmation.", topRow, topLearningContent, topLearningPerformance);
+    checkValues("confirmation.image_generation_mode", topRow.image_generation_mode, imageModes);
+    checkNumbers("confirmation.count", topRow.count);
+    if (topRow.sub_question_count !== undefined && topRow.sub_question_count !== null &&
+      (typeof topRow.sub_question_count !== "number" ||
+        !Number.isInteger(topRow.sub_question_count) ||
+        topRow.sub_question_count < 3 || topRow.sub_question_count > 7)) {
+      add("confirmation.sub_question_count");
+    }
+    checkNumbers("confirmation.text_word_limit", topRow.text_word_limit);
+    checkBoolean("confirmation.skip_verify", topRow.skip_verify);
+    checkBoolean("confirmation.disable_reference_fewshot", topRow.disable_reference_fewshot);
+    checkBoolean("confirmation.core_question_callback", topRow.core_question_callback);
+    checkBoolean("confirmation.allow_duplicate_figure_kinds", topRow.allow_duplicate_figure_kinds);
+    if (subject === "social_studies" && topRow.target_surface !== undefined &&
+      topRow.target_surface !== "紙本" && topRow.target_surface !== "數位") {
+      add("confirmation.target_surface");
+    }
+    if (typeof topRow.difficulty === "string" && topRow.difficulty !== "" &&
+      !["easy", "medium", "hard"].includes(topRow.difficulty)) {
+      add("confirmation.difficulty");
+    }
+
+    if (models) {
+      for (const key of ["model_plan", "model_execute", "model_verify", "model_correct"]) {
+        checkModel(`confirmation.${key}`, topRow[key]);
+      }
+      checkEffort("confirmation.effort_plan", topRow.effort_plan, topRow.model_plan, models.defaults.plan);
+      checkEffort("confirmation.effort_execute", topRow.effort_execute, topRow.model_execute, models.defaults.execute);
+      const executeModel = typeof topRow.model_execute === "string" && topRow.model_execute !== ""
+        ? topRow.model_execute
+        : models.defaults.execute;
+      checkEffort("confirmation.effort_verify", topRow.effort_verify, topRow.model_verify, executeModel);
+      checkEffort("confirmation.effort_correct", topRow.effort_correct, topRow.model_correct, executeModel);
+    }
+
+    const rows = pendingPerQuestionParams ?? parsePerQuestionParams(params.per_question_params);
+    rows.forEach((row, index) => {
+      const rowPrefix = `per_question_params[${index}].`;
+      const rowRecord = row as Record<string, unknown>;
+      if (
+        rowRecord.grade !== undefined && rowRecord.grade !== null &&
+        (typeof rowRecord.grade !== "number" || !Number.isInteger(rowRecord.grade) ||
+          !schemas.grades.includes(rowRecord.grade))
+      ) {
+        add(`${rowPrefix}grade`);
+      }
+      for (const key of ["model_plan", "model_execute", "model_verify", "model_correct"]) {
+        checkModel(`${rowPrefix}${key}`, rowRecord[key]);
+      }
+      checkValues(`${rowPrefix}style`, rowRecord.style, schemas.question_style ?? []);
+      checkContentType(`${rowPrefix}content_type`, rowRecord.content_type, schemas.題目內容類型 ?? []);
+      checkValues(`${rowPrefix}context`, rowRecord.context, schemas.情境);
+      checkValues(`${rowPrefix}set_type`, rowRecord.set_type, schemas.題型種類);
+      checkValues(`${rowPrefix}q_type`, rowRecord.q_type, questionTypes);
+      checkValues(`${rowPrefix}subject_filter`, rowRecord.subject_filter, schemas.科目 ?? []);
+      checkValues(
+        `${rowPrefix}sub_context`,
+        rowRecord.sub_context,
+        admittedValues(schemas.情境子類別 ?? [], "情境", rowRecord.context ?? topRow.context),
+      );
+      checkValues(`${rowPrefix}science_competency`, rowRecord.science_competency, schemas.科學能力 ?? []);
+      checkValues(`${rowPrefix}內容領域`, rowRecord.content_domain, schemas.內容領域 ?? []);
+      checkValues(`${rowPrefix}核心素養`, rowRecord.core_competency, schemas.核心素養 ?? []);
+      checkValues(`${rowPrefix}數學思考`, rowRecord.math_thinking, schemas.數學思考);
+      checkValues(`${rowPrefix}認知歷程`, rowRecord.cognitive_process, schemas.認知歷程 ?? []);
+      checkValues(`${rowPrefix}reporting_scale`, rowRecord.reporting_scale, reportingScales);
+      if (rowRecord.sub_question_count !== undefined && rowRecord.sub_question_count !== null &&
+        (typeof rowRecord.sub_question_count !== "number" ||
+          !Number.isInteger(rowRecord.sub_question_count) || rowRecord.sub_question_count < 3 || rowRecord.sub_question_count > 7)) {
+        add(`${rowPrefix}sub_question_count`);
+      }
+      checkEffort(`${rowPrefix}effort_plan`, rowRecord.effort_plan, rowRecord.model_plan, topRow.model_plan ?? models?.defaults.plan);
+      checkEffort(`${rowPrefix}effort_execute`, rowRecord.effort_execute, rowRecord.model_execute, topRow.model_execute ?? models?.defaults.execute);
+      const rowExecuteModel = rowRecord.model_execute ?? topRow.model_execute ?? models?.defaults.execute;
+      checkEffort(`${rowPrefix}effort_verify`, rowRecord.effort_verify, rowRecord.model_verify, rowExecuteModel);
+      checkEffort(`${rowPrefix}effort_correct`, rowRecord.effort_correct, rowRecord.model_correct, rowExecuteModel);
+      const rowLearningContent = curriculumEntriesFor(rowRecord, schemas.學習內容 ?? []);
+      const rowLearningPerformance = curriculumEntriesFor(rowRecord, schemas.學習表現 ?? []);
+      checkValues(`${rowPrefix}learning_content`, rowRecord.learning_content, rowLearningContent);
+      checkValues(`${rowPrefix}learning_performance`, rowRecord.learning_performance, rowLearningPerformance);
+      validateConfigRows(rowPrefix, rowRecord, rowLearningContent, rowLearningPerformance);
+      checkValues(`${rowPrefix}image_generation_mode`, rowRecord.image_generation_mode, imageModes);
+    });
+
+    return invalid;
+  }, [models, pendingParams, pendingPerQuestionParams, recoveryConfirmation, schemas, subject]);
+  const confirmationHasInvalidFields =
+    confirmInvalidFields.size > 0 || confirmationInvalidFields.size > 0;
+  const confirmationHydrating = recoveryConfirmation !== undefined && formReadiness !== "ready";
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
+    if (recoveryForm) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the editor row count synchronized with the selected count
     setField("subquestionConfigs", (prev) => rebuildSubquestionSlots(prev, subQuestionCount));
-  }, [subQuestionCount, setField]);
+  }, [recoveryForm, subQuestionCount, setField]);
 
   function updateSubquestionConfig(index: number, patch: Partial<SubQuestionConfig>) {
     const editedFields = editedSubquestionFieldsRef.current.get(index) ?? new Set();
@@ -2399,8 +3135,10 @@ export default function ParamForm({
     setResolverError(null);
     setHasPendingConfirmationEdits(preserveConfirmationEdits);
     setStalePreviewIndices(new Set());
+    setPreviewError(null);
     pendingEditedIndicesRef.current = new Set();
     previewRequestedRef.current = false;
+    restoredConfirmationEffectsSuppressedRef.current = false;
     setPromptPreviews([]);
   }
 
@@ -2442,11 +3180,7 @@ export default function ParamForm({
       op.end("failed");
       if (resolveOperationRef.current === op) resolveOperationRef.current = null;
       setResolverLoading(false);
-      setResolverError(
-        cause instanceof Error && cause.message
-          ? cause.message
-          : t("form.confirm_resolve_error"),
-      );
+      setResolverError(resolveDisplayError(cause, lang, t("form.confirm_resolve_error")));
     }
   }
 
@@ -2463,6 +3197,7 @@ export default function ParamForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    restoredConfirmationEffectsSuppressedRef.current = false;
     previewRequestedRef.current = false;
     setPromptPreviews([]);
     setPendingParams(null);
@@ -2471,6 +3206,7 @@ export default function ParamForm({
     pendingPerQuestionParamsRef.current = null;
     setClearedPaths([]);
     setResolverError(null);
+    setPreviewError(null);
     if (grade === "") return;
     if (!setType.trim()) {
       setValidationError(t("form.error_set_type_required"));
@@ -2484,11 +3220,12 @@ export default function ParamForm({
       ? (contentType === "customized" ? customContentType.trim() : contentType)
       : undefined;
     if (isCurriculumSubject && !effectiveContentType) return;
-    const selectedLearningPerformance = restrictCodesToIccsDomain(learningPerformance);
-    const lcPoolValues = filteredLcPool ?? availableLearningContent.map((entry) => entry.value);
-    const selectedLearningContent = filteredLcPool === undefined
-      ? restrictCodesToIccsDomain(learningContent)
-      : learningContent.filter((code) => lcPoolValues.includes(code));
+    // #833: 學習表現 is never restricted by 內容領域; submit it unchanged.
+    const selectedLearningPerformance = [...learningPerformance];
+    // #840: no submit-time 內容領域 filtering of 學習內容 — the request carries
+    // exactly what is selected; disabling (never dropping) happens in the
+    // pickers themselves.
+    const selectedLearningContent = [...learningContent];
     const historyDrawn = Array.isArray(ip.drawn)
       ? ip.drawn.filter((path): path is string => typeof path === "string")
       : undefined;
@@ -2640,6 +3377,9 @@ export default function ParamForm({
       draftSaveTimeoutRef.current = null;
     }
     if (userId) clearDraft(userId);
+    // Explicit submission acknowledges a restored snapshot without touching
+    // the already-captured confirmation payload or ordinary form fields.
+    if (showRecoveryBanner) acknowledgeRecoveryBanner();
     resolveRequestSeqRef.current += 1;
     resolveOperationRef.current?.end("superseded");
     resolveOperationRef.current = null;
@@ -2674,6 +3414,7 @@ export default function ParamForm({
     value: unknown,
     redraw = false,
   ) {
+    restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
@@ -2747,6 +3488,7 @@ export default function ParamForm({
     subquestionIndex: number,
     patch: Partial<SubQuestionConfig>,
   ) {
+    restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
@@ -2881,6 +3623,7 @@ export default function ParamForm({
     questionIndex: number,
     value: string,
   ) {
+    restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
@@ -2937,6 +3680,7 @@ export default function ParamForm({
     subquestionIndex: number,
     field: string,
   ) {
+    restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
@@ -3037,15 +3781,17 @@ export default function ParamForm({
           setPromptPreviews(prompts);
         }
         setPreviewRefetchLoading(false);
+        setPreviewError(null);
         setStalePreviewIndices(new Set());
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         if (seq !== previewRefetchSeqRef.current) {
           op.end("superseded");
           return;
         }
         op.end("failed");
         setPreviewRefetchLoading(false);
+        setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
         // Leave stale badge in place so the user can retry again
       });
   }
@@ -3064,12 +3810,49 @@ export default function ParamForm({
     resubmitSubquestionResolution(questionIndex, subquestionIndex, "learning_performance");
   }
 
+  function acknowledgeRecoveryBanner() {
+    const result = onRecoveryAcknowledge?.();
+    if (result !== false) setRecoveryBannerDismissed(true);
+  }
+
+  function discardRecoveryBanner() {
+    const result = onRecoveryDiscard?.();
+    if (result !== false) setRecoveryBannerDismissed(true);
+  }
+
+  const recoveryBanner = showRecoveryBanner ? (
+    <section
+      role="status"
+      className="sentry-unmask rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
+    >
+      <p className="font-medium">
+        {pendingParams
+          ? t("recovery.banner.confirmation_title")
+          : t("recovery.banner.title")}
+      </p>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          onClick={acknowledgeRecoveryBanner}
+          className="underline cursor-pointer"
+        >
+          {t("recovery.banner.acknowledge")}
+        </button>
+        <button
+          type="button"
+          onClick={discardRecoveryBanner}
+          className="underline cursor-pointer"
+        >
+          {t("recovery.banner.discard")}
+        </button>
+      </div>
+    </section>
+  ) : null;
+
   if (pendingParams) {
     const p = pendingParams;
     const drawnPaths = Array.isArray(p.drawn) ? p.drawn : [];
-    const resolvedPerQuestionParams = pendingPerQuestionParams ?? (p.per_question_params
-      ? JSON.parse(p.per_question_params) as Record<string, unknown>[]
-      : []);
+    const resolvedPerQuestionParams = pendingPerQuestionParams ?? parsePerQuestionParams(p.per_question_params);
     const allLpEntries = schemas?.學習表現 ?? [];
     const allLcEntries = schemas?.學習內容 ?? [];
     const lcEntryByCode = new Map(allLcEntries.map((e) => [e.value, e]));
@@ -3176,6 +3959,7 @@ export default function ParamForm({
     return (
       <div className="space-y-4">
         <ConfirmationParticipation exportWorkspace={exportConfirmation} />
+        {recoveryBanner}
         <div>
           <h2 className="text-base font-semibold">{t("form.confirm_title")}</h2>
           <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
@@ -3197,6 +3981,11 @@ export default function ParamForm({
               {t("form.confirm_resolve_retry")}
             </button>
           </div>
+        )}
+        {confirmationInvalidFields.size > 0 && (
+          <p role="alert" className="sentry-unmask text-sm text-red-700">
+            {t("recovery.confirmation_invalid_fields")}
+          </p>
         )}
         <section role="region" aria-label={t("form.confirm_shared_heading")}>
           <h3 className="mb-3 font-semibold text-gray-800">{t("form.confirm_shared_heading")}</h3>
@@ -3274,6 +4063,11 @@ export default function ParamForm({
         {previewRefetchLoading && (
           <p className="text-sm text-amber-700">{t("form.confirm_preview_loading")}</p>
         )}
+        {previewError && (
+          <div role="alert" className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+            {previewError}
+          </div>
+        )}
         <div className="space-y-4">
           {resolvedPerQuestionParams.map((questionParams, index) => {
             const heading = t("form.confirm_question_block").replace("{n}", String(index + 1));
@@ -3318,13 +4112,9 @@ export default function ParamForm({
               : typeof p.content_domain === "string"
                 ? p.content_domain
                 : undefined;
-            const questionLpEntries = filterLearningContentEntriesByDomain(
-              questionLpEntriesBySubject,
-              subject,
-              resolvedQuestionSubject,
-              questionContentDomain,
-              schemas?.內容領域_mapping,
-            );
+            // #833: 學習表現 has no 內容領域 parent — offer the subject-filtered pool
+            // unfiltered by domain. 學習內容 domain filtering below is unchanged.
+            const questionLpEntries = questionLpEntriesBySubject;
             const questionLcEntries = filterLearningContentEntriesByDomain(
               questionLcEntriesBySubject,
               subject,
@@ -3332,8 +4122,8 @@ export default function ParamForm({
               questionContentDomain,
               schemas?.內容領域_mapping,
             );
-            const questionLpDisplayEntries = questionLpEntries.filter((entry) => questionLpCodes.includes(entry.value));
-            const questionLcDisplayEntries = questionLcEntries.filter((entry) => questionLcCodes.includes(entry.value));
+            const questionLpDisplayEntries = entriesForValues(questionLpEntries, questionLpCodes);
+            const questionLcDisplayEntries = entriesForValues(questionLcEntries, questionLcCodes);
             const questionSubquestionConfigs = parseSubquestionConfigs(
               questionParams.subquestion_configs,
             ) as ResolvedSubQuestionConfig[];
@@ -3936,7 +4726,9 @@ export default function ParamForm({
           <button
             type="button"
             onClick={handleConfirmSend}
-            disabled={disabled || resolverLoading || resolverError !== null || confirmInvalidFields.size > 0}
+            disabled={disabled || resolverLoading || resolverError !== null || confirmationHydrating ||
+              (recoveryConfirmation !== undefined && coreQuestionResolution === "loading") ||
+              confirmationHasInvalidFields}
             className="inline-flex items-center gap-2 rounded bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("form.btn_confirm_send")}
@@ -4011,6 +4803,7 @@ export default function ParamForm({
 
   return (
     <form onSubmit={handleSubmit} onChange={markUnsubmittedInput} className="space-y-4">
+      {recoveryBanner}
       {draftToRestore && (showDraftPrompt || showDraftHistoryChoice) && (
         <section
           role={showDraftHistoryChoice ? "dialog" : "status"}
@@ -4216,7 +5009,7 @@ export default function ParamForm({
 
       {schemas.科目 && schemas.科目.length > 0 && (
         <div>
-          <label className="block text-sm font-medium">
+          <label htmlFor="subject-filter-select" className="block text-sm font-medium">
             {t(
               subject === "natural_sciences"
                 ? "form.subject_filter_natural_sciences"
@@ -4224,16 +5017,23 @@ export default function ParamForm({
             )}
           </label>
           <select
+            id="subject-filter-select"
             value={subjectFilter}
             onChange={(e) => {
               markUserChosen("subject_filter");
               setField("subjectFilter", e.target.value);
             }}
+            aria-describedby={subjectFilterHint ? "subject-filter-hint" : undefined}
+            aria-invalid={subjectFilterConflict || undefined}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.subject_filter.all")}</option>
             {schemas.科目.map((s) => (
-              <option key={s.value} value={s.value}>
+              <option
+                key={s.value}
+                value={s.value}
+                disabled={subjectFilterNarrowing.disabledValues.has(s.value)}
+              >
                 {s.value}
               </option>
             ))}
@@ -4241,6 +5041,11 @@ export default function ParamForm({
           {subject === "natural_sciences" && (
             <p className="mt-1 text-sm text-gray-500">
               {t("form.subject_filter_natural_sciences_help")}
+            </p>
+          )}
+          {subjectFilterHint && (
+            <p id="subject-filter-hint" className="mt-1 text-sm text-gray-500">
+              {subjectFilterHint}
             </p>
           )}
         </div>
@@ -4258,15 +5063,26 @@ export default function ParamForm({
               markUserChosen("content_domain");
               setField("contentDomain", e.target.value);
             }}
+            aria-describedby={contentDomainHint ? "content-domain-hint" : undefined}
+            aria-invalid={contentDomainConflict || undefined}
             className="mt-1 block w-full border rounded px-2 py-1"
           >
             <option value="">{t("form.content_domain_random")}</option>
             {(schemas.內容領域 ?? []).map((entry) => (
-              <option key={entry.value} value={entry.value}>
+              <option
+                key={entry.value}
+                value={entry.value}
+                disabled={contentDomainNarrowing.disabledValues.has(entry.value)}
+              >
                 {entry.value}
               </option>
             ))}
           </select>
+          {contentDomainHint && (
+            <p id="content-domain-hint" className="mt-1 text-sm text-gray-500">
+              {contentDomainHint}
+            </p>
+          )}
         </div>
       )}
 
@@ -4576,33 +5392,50 @@ export default function ParamForm({
                     markUnsubmittedInput();
                   }}
                   placeholder="搜尋學習內容..."
+                  disabledValues={learningContentDomainDisabled}
+                  hint={learningContentDomainHint}
                 />
               </div>
             ) : (
-              <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {availableLearningContent.map((entry) => (
-                  <label key={entry.value} className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={learningContent.includes(entry.value)}
-                      onChange={() => {
-                        markUserChosen("learning_content");
-                        setField("learningContent", (prev) => toggleMulti(prev, entry.value));
-                      }}
-                      className="mt-1"
-                    />
-                    <span className="text-sm">
-                      <span className="font-medium">{entry.value}</span>
-                      {entry.instruction && (
-                        <span className="text-gray-600">：{entry.instruction}</span>
-                      )}
-                    </span>
-                  </label>
-                ))}
+              <div
+                className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2"
+                role="group"
+                aria-label={t("form.learning_content")}
+                aria-describedby={learningContentDomainHint ? "learning-content-checkbox-hint" : undefined}
+              >
+                {availableLearningContent.map((entry) => {
+                  const isSelected = learningContent.includes(entry.value);
+                  const isDisabled = !isSelected && learningContentDomainDisabled.has(entry.value);
+                  return (
+                    <label key={entry.value} className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={isDisabled}
+                        onChange={() => {
+                          markUserChosen("learning_content");
+                          setField("learningContent", (prev) => toggleMulti(prev, entry.value));
+                        }}
+                        className="mt-1"
+                      />
+                      <span className={`text-sm ${isDisabled ? "text-gray-400" : ""}`}>
+                        <span className="font-medium">{entry.value}</span>
+                        {entry.instruction && (
+                          <span className="text-gray-600">：{entry.instruction}</span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             )
           ) : (
             <p className="mt-1 text-sm text-gray-500">{t("form.learning_content_empty")}</p>
+          )}
+          {!useCurriculumSearch && learningContentDomainHint && (
+            <p id="learning-content-checkbox-hint" className="mt-1 text-xs text-amber-700">
+              {learningContentDomainHint}
+            </p>
           )}
         </div>
       )}
@@ -4684,8 +5517,8 @@ export default function ParamForm({
                   <SubQuestionCurriculumPickers
                     availableLearningPerformance={availableLearningPerformance}
                     availableLearningContent={availableLearningContent}
-                    filteredLpPool={filteredLpPool}
-                    filteredLcPool={filteredLcPool}
+                    learningContentDisabledValues={learningContentDomainDisabled}
+                    learningContentHint={learningContentDomainHint}
                     learningPerformance={cfg.learning_performance}
                     learningContent={cfg.learning_content}
                     onLearningPerformanceChange={(values) =>
@@ -5044,9 +5877,17 @@ export default function ParamForm({
         </div>
       )}
 
+      {recoveredInvalidFields.size > 0 && (
+        <p
+          role="alert"
+          className="sentry-unmask text-sm text-red-700"
+        >
+          {t("recovery.invalid_fields")}
+        </p>
+      )}
       <button
         type="submit"
-        disabled={disabled || resolverLoading}
+        disabled={disabled || resolverLoading || recoveredInvalidFields.size > 0 || hasParentNarrowingConflict}
         className="inline-flex w-full items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
         {disabled && (
