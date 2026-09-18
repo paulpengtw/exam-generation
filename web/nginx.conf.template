@@ -38,13 +38,17 @@ server {
 
   # Artifact metadata — must never be cached (issue #770)
   location = /release/policy.json {
-    try_files $uri =404;
-    add_header Cache-Control 'no-store';
+    proxy_pass $backend/release/policy.json;
+    proxy_set_header Host "${BACKEND_HOST}";
+    proxy_ssl_server_name on;
+    add_header Cache-Control 'no-store' always;
   }
 
   location = /build-meta.json {
-    try_files $uri =404;
-    add_header Cache-Control 'no-store';
+    proxy_pass $backend/build-meta.json;
+    proxy_set_header Host "${BACKEND_HOST}";
+    proxy_ssl_server_name on;
+    add_header Cache-Control 'no-store' always;
   }
 
   # Hashed static assets — immutable, 1-year cache (issue #770)

@@ -120,10 +120,11 @@ def test_active_runs_nonzero_while_running(tmp_path: Path) -> None:
         # Consume until pipeline_start so the worker is submitted.
         # v2 publisher uses "payload" (not "data") for event content.
         async for event in stream:
+            payload = event.get("payload", event.get("data"))
             if (
                 event.get("event") == "pipeline"
-                and isinstance(event.get("payload"), dict)
-                and event["payload"].get("event_name") == "pipeline_start"
+                and isinstance(payload, dict)
+                and payload.get("event_name") == "pipeline_start"
             ):
                 break
         # Wait for worker to enter do_generate (blocking)
@@ -226,10 +227,11 @@ def test_disconnect_while_worker_blocked_keeps_active_workers_nonzero(
         # v2 publisher uses "payload" (not "data") for event content.
         async for event in gen:
             events_before_close.append(event)
+            payload = event.get("payload", event.get("data"))
             if (
                 event.get("event") == "pipeline"
-                and isinstance(event.get("payload"), dict)
-                and event["payload"].get("event_name") == "pipeline_start"
+                and isinstance(payload, dict)
+                and payload.get("event_name") == "pipeline_start"
             ):
                 break
 

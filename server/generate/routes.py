@@ -404,6 +404,7 @@ async def generate_endpoint(
         if resp := await check_build_admission(
             request.headers.get("x-frontend-build-id"),
             getattr(request.app.state, "release_authority_source", None),
+            expected_environment=config.release_environment or None,
         ):
             return resp
         _check_generation_admission(params, config)
@@ -436,6 +437,7 @@ async def generate_body_endpoint(
     if resp := await check_build_admission(
         request.headers.get("x-frontend-build-id"),
         getattr(request.app.state, "release_authority_source", None),
+        expected_environment=config.release_environment or None,
     ):
         return resp
     _check_generation_admission(params, config)

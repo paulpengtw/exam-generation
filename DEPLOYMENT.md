@@ -156,8 +156,9 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `JWT_EXPIRE_DAYS` | `7` | Keeps each login token valid for 7 days |
 | `SESSION_RENEWAL_THRESHOLD_MINUTES` | `360` | Renews a login session when less than 360 minutes remain on the token |
 | `FRONTEND_URL` | The frontend URL you copied in Step 7.3, with `https://` in front | Tells the backend which website is allowed to call it |
-| `RELEASE_AUTHORITY_URL` | `https://<your-frontend-domain>/release/policy.json` | Recommended for separate Railway services; the backend reads the frontend's current release policy on each generation request |
+| `RELEASE_AUTHORITY_URL` | `https://<your-gateway-domain>/release/policy.json` | The backend reads the live controller policy through the independent gateway on every generation request |
 | `RELEASE_AUTHORITY_PATH` | *(optional local path)* | Alternative for deployments where the backend can read a local policy file; ignored when `RELEASE_AUTHORITY_URL` is set |
+| `RELEASE_ENVIRONMENT` | `production` | Must match the controller's policy environment; a mismatch fails closed |
 | `EMAIL_BACKEND` | `console` | `console` prints magic-link login emails to backend logs — fine for your own first login; switch to `ses` after following **Step 13** so other teachers receive real emails |
 | `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |
 | `SENTRY_DSN` | *(leave blank, or paste the backend project's DSN)* | Sends backend errors and traces to Sentry. Leave it unset or blank to disable backend Sentry completely. |
@@ -207,12 +208,15 @@ The frontend will redeploy. Wait 1-2 minutes.
 
 ### 8.3 Docker Compose
 
-The included `docker-compose.yml` wires the backend to the frontend container
-with `RELEASE_AUTHORITY_URL=http://frontend/release/policy.json`; the frontend
-serves that endpoint on its internal port 80 with `no-store` caching. If you
-override the backend environment, keep this URL (or set a readable
-`RELEASE_AUTHORITY_PATH`). Leaving both authority variables unset causes
-generation to return the retryable `503 AUTHORITY_UNAVAILABLE`.
+The included `docker-compose.yml` wires the backend directly to the gateway
+with `RELEASE_AUTHORITY_URL=http://gateway:8000/release/policy.json`. The
+frontend nginx `/release/policy.json` and `/build-meta.json` locations proxy to
+that same gateway, so browser version reporting and backend generation
+admission cannot observe different artifacts. If you override the backend
+environment, point `RELEASE_AUTHORITY_URL` at the controller/gateway policy
+route (or use a readable `RELEASE_AUTHORITY_PATH` for a deliberately local
+fixture). Leaving both authority variables unset causes generation to return
+the retryable `503 AUTHORITY_UNAVAILABLE`.
 
 ---
 
@@ -314,6 +318,7 @@ Key properties:
 - **Fail-closed on first install.** A fresh state directory (no `admission.json`) is treated as paused, so the gate is always safe to add even before it has been explicitly opened.
 - **State lives on its own volume.** The `admission.json` file is written atomically on a named Docker volume (`gate-state`) or a Railway volume.  Rolling the frontend or backend back to a previous image does not affect the gate state.
 - **Survives frontend/backend rollback.**  Because the state file is outside every application container, an operator can pause generation, roll back the backend, and the gate stays paused until explicitly opened again.
+- **The live release controller uses the same record.**  When controller mode is enabled, `admission.json` also carries the `exam-generation.release-policy/1` contract (`environment`, increasing `release_revision`, `released_build_id`, `admission`, `supported_recovery_formats`, reader/artifact metadata).  The gateway serves `/release/policy.json` and gates every generation entry from fresh reads of that record; there is no positive process-local policy cache and no second pause switch.
 
 ### Compose usage
 
@@ -338,6 +343,11 @@ docker compose exec gateway python scripts/admission_gate.py status --require OP
 3. Set the following environment variables on the gateway service:
    - `GATEWAY_BACKEND_URL` → `http://backend.railway.internal:8000` (the backend's internal Railway hostname)
    - `GATEWAY_CONTROL_TOKEN` → a long random secret of your choice (keep this safe)
+   - `RELEASE_ENVIRONMENT` → `production` (must match the release policy)
+   - `GATEWAY_RELEASED_BUILD_ID` → the first deployed frontend build ID; omit it only while deliberately keeping the fresh controller fail-closed
+   - `GATEWAY_RELEASE_REVISION` → `1` for the first controller record
+   - `GATEWAY_READER_VERSION` → the recovery-reader version, for example `reader-1`
+   - `GATEWAY_SUPPORTED_RECOVERY_FORMATS` → comma-separated formats accepted during recovery, default `exam-generation.recovery/1`. The web client's 儲存草稿並更新 requires the published policy to list `exam-generation.recovery/1`.
    - `PORT` → `8000` (Railway injects this automatically; no action needed)
 4. Give the gateway service a **public domain** (Railway → Settings → Networking → Generate Domain).
 5. Update the **frontend** service: change `BACKEND_HOST` from the backend's domain to the gateway's new domain.
@@ -426,7 +436,11 @@ instance and the gateway:
     "gateway": {
         "url": "https://<gateway-domain>",
         "token_env": "GATEWAY_CONTROL_TOKEN"
-    }
+    },
+    "routes": [
+        {"name": "frontend", "policy_url": "https://<frontend-domain>/release/policy.json"},
+        {"name": "gateway", "policy_url": "https://<gateway-domain>/release/policy.json"}
+    ]
 }
 ```
 
@@ -455,22 +469,80 @@ python scripts/release_control.py reopen --inventory inventory.json
 # Combined readiness check (preflight + compat + quiescence)
 python scripts/release_control.py readiness --inventory inventory.json \
     --require-version 1
+
+# Prepare a target. This sets admission=preparing and does not open the gate.
+python scripts/release_control.py prepare --inventory inventory.json \
+    --target target-release.json
+
+# Publish only when every inventory instance has fresh positive drain evidence
+# and every serving route reports the target build/revision/reader metadata.
+python scripts/release_control.py publish --inventory inventory.json \
+    --max-age-seconds 15
+
+# Retire a transition asset only after another positive drain observation.
+python scripts/release_control.py retire --inventory inventory.json \
+    --artifact schema-v1 --max-age-seconds 15
 ```
 
 ### Recommended release runbook
 
-1. `python scripts/release_control.py preflight` — confirm instances reachable.
+1. `python scripts/release_control.py preflight` — confirm every instance is reachable.
 2. `python scripts/release_control.py compat-check --require-version 1` — confirm compatibility.
-3. `python scripts/release_control.py pause-and-drain --timeout 120 --reason "release"` — pause gate and wait for drain.
-4. Deploy new backend image.
-5. `python scripts/release_control.py readiness --require-version 1` — confirm new instances are healthy.
-6. `python scripts/release_control.py reopen` — reopen gate.
+3. `python scripts/release_control.py prepare --target target-release.json` — enter `preparing`; the independent gate remains closed.
+4. Deploy/roll the target artifact without exposing a backend public domain.
+5. `python scripts/release_control.py publish` — require fresh positive drain evidence, zero in-flight gateway admissions, and matching policy/reader metadata on every route.
+6. `python scripts/release_control.py readiness --require-version 1` — record post-switch server evidence.
+7. `python scripts/release_control.py reopen` — use the same durable gate only after readiness passes.
+8. Retain the current artifact, prepared rollback artifact, and transition assets until a later `retire` command has positive retirement evidence. An application rollback cannot reopen the gate or replace the controller record.
 
 > **Gateway privacy rule**: `/internal/` paths are never proxied by the gateway.
 > The drain endpoint is reachable only from internal network (Railway internal
 > hostnames, VPN, or direct container exec) — never via the public gateway URL.
 
 ---
+
+## Live release controller and admission evidence (issue #778)
+
+The controller is a gateway-owned file-backed state machine. It extends the
+existing `admission.json`; it does not introduce another pause file or a
+frontend-controlled override. The public policy response is
+`exam-generation.release-policy/1` and includes:
+
+- `environment`, monotonically increasing `release_revision`, and
+  `released_build_id`;
+- `admission`: `open`, `paused`, or `preparing`;
+- `supported_recovery_formats` and `reader_version`;
+- `artifacts.current`, `artifacts.prepared_rollback`, and transition assets.
+
+The backend uses `RELEASE_AUTHORITY_URL` to read the gateway's policy on every
+GET/POST generation admission. The browser's `/release/policy.json` and
+`/build-meta.json` requests are proxied to the same gateway. A missing,
+unreadable, malformed, paused, or preparing record fails closed; a missing or
+outdated `X-Frontend-Build-ID` gets `426 CLIENT_UPDATE_REQUIRED` before the
+backend dispatch seam, and authority/maintenance failures get retryable 503.
+
+Target publication is deliberately separate from reopening. The controller
+rejects stale/unreachable/nonzero drain evidence, incomplete route metadata,
+nonzero in-flight gateway admissions, and non-increasing revisions. The
+gateway counts an admission from its decision through response delivery, so a
+policy transition cannot overtake an already admitted stream. Existing streams
+and read-only routes continue while new admissions are closed. Restarting or
+rolling back the application leaves the controller volume and gate unchanged.
+
+For a local, no-deployment rehearsal covering two backend instances, every
+route in the #740 inventory, both nginx files, zero-dispatch rejection, stream
+continuity, and a pending transition, run:
+
+```bash
+uv run python scripts/release_admission_rehearsal.py \
+  --output docs/research/2026-09-17-778-release-admission/evidence.json
+```
+
+The committed README and JSON evidence under
+`docs/research/2026-09-17-778-release-admission/` record observed route
+responses and backend/provider dispatch counts. This is a controlled readiness
+checkpoint only; it does not deploy or perform the final teacher-facing A→B→A
+rollout.
 
 
 ## Error reporting (Sentry, optional)

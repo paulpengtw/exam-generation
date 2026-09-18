@@ -101,13 +101,25 @@ class HttpAuthoritySource:
             return None
 
 
+class LiveControllerAuthoritySource(HttpAuthoritySource):
+    """Read the live policy from the independently owned release controller.
+
+    This is intentionally a named adapter rather than a new cache or client
+    pool.  The inherited implementation creates a fresh bounded HTTP client
+    for every read, which means a policy transition is visible to the next
+    admission request immediately.
+    """
+
+    pass
+
+
 def build_authority_source(
     url: str | None,
     path: Path | None,
 ) -> AuthoritySource | None:
-    """Select one authority source, preferring the deployment URL."""
+    """Select the live controller URL, preferring it over a local fixture."""
     if url and url.strip():
-        return HttpAuthoritySource(url.strip())
+        return LiveControllerAuthoritySource(url.strip())
     if path is not None:
         return FileAuthoritySource(path)
     return None
@@ -116,6 +128,8 @@ def build_authority_source(
 async def check_build_admission(
     build_id_header: str | None,
     source: AuthoritySource | None,
+    *,
+    expected_environment: str | None = None,
 ) -> JSONResponse | None:
     """Check the X-Frontend-Build-ID header against the authority.
 
@@ -145,9 +159,10 @@ async def check_build_admission(
             headers={"Retry-After": "30"},
         )
 
-    # Unknown schema — treat as unavailable
-    schema = raw.get("schema")
-    if schema != SCHEMA:
+    # The live controller contract is deliberately validated before the
+    # admission value is interpreted.  A malformed record must never fall
+    # through to the open path.
+    if not _valid_policy_contract(raw, expected_environment=expected_environment):
         return JSONResponse(
             status_code=503,
             content={
@@ -161,7 +176,7 @@ async def check_build_admission(
         )
 
     # Paused / preparing — maintenance mode
-    admission = raw.get("admission", "open")
+    admission = raw["admission"]
     if admission in ("paused", "preparing"):
         return JSONResponse(
             status_code=503,
@@ -175,19 +190,7 @@ async def check_build_admission(
             headers={"Retry-After": "60"},
         )
 
-    released_build_id: object = raw.get("released_build_id", "")
-    if not isinstance(released_build_id, str) or not released_build_id:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "detail": (
-                    "版本授權缺少 released_build_id，請稍後再試。"
-                    " / Release authority missing released_build_id; please retry."
-                ),
-                "code": AUTHORITY_UNAVAILABLE,
-            },
-            headers={"Retry-After": "30"},
-        )
+    released_build_id: str = raw["released_build_id"]
 
     # Build ID comparison — missing, malformed, or outdated → 426
     header = (build_id_header or "").strip()
@@ -205,3 +208,31 @@ async def check_build_admission(
         )
 
     return None  # pass
+
+
+def _valid_policy_contract(raw: dict, *, expected_environment: str | None) -> bool:
+    """Return whether the authority has the complete release contract."""
+    if raw.get("schema") != SCHEMA:
+        return False
+    environment = raw.get("environment")
+    if not isinstance(environment, str) or not environment.strip():
+        return False
+    if expected_environment is not None and environment != expected_environment:
+        return False
+    revision = raw.get("release_revision")
+    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+        return False
+    build_id = raw.get("released_build_id")
+    if not isinstance(build_id, str) or not build_id.strip():
+        return False
+    if raw.get("admission") not in {"open", "paused", "preparing"}:
+        return False
+    formats = raw.get("supported_recovery_formats")
+    if not isinstance(formats, list) or any(not isinstance(item, str) for item in formats):
+        return False
+    reader_version = raw.get("reader_version")
+    if reader_version is not None and (
+        not isinstance(reader_version, str) or not reader_version.strip()
+    ):
+        return False
+    return True

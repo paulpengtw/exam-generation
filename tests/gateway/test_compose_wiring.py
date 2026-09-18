@@ -33,6 +33,14 @@ def test_gateway_environment(compose):
     assert env.get("GATEWAY_STATE_DIR") == "/var/lib/examgen-gate"
     # GATEWAY_CONTROL_TOKEN may use shell variable syntax
     assert "GATEWAY_CONTROL_TOKEN" in env
+    assert "RELEASE_ENVIRONMENT" in env
+    assert "GATEWAY_RELEASED_BUILD_ID" in env
+    assert env.get("GATEWAY_SUPPORTED_RECOVERY_FORMATS") == (
+        "${SUPPORTED_RECOVERY_FORMATS:-exam-generation.recovery/1}"
+    ), (
+        f"docker-compose gateway GATEWAY_SUPPORTED_RECOVERY_FORMATS default must be "
+        f"exam-generation.recovery/1, got {env.get('GATEWAY_SUPPORTED_RECOVERY_FORMATS')}"
+    )
 
 
 def test_gateway_ports(compose):
@@ -80,6 +88,13 @@ def test_frontend_backend_host_is_gateway(compose):
     assert env.get("BACKEND_HOST") == "gateway:8000", (
         f"frontend BACKEND_HOST must be gateway:8000, got {env.get('BACKEND_HOST')}"
     )
+
+
+def test_backend_reads_policy_from_gateway_not_frontend(compose):
+    backend = compose["services"]["backend"]
+    env = backend.get("environment", {})
+    assert env.get("RELEASE_AUTHORITY_URL") == "http://gateway:8000/release/policy.json"
+    assert "RELEASE_ENVIRONMENT" in env
 
 
 def test_frontend_depends_on_gateway(compose):

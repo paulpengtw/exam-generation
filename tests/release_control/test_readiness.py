@@ -7,21 +7,20 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import release_control  # noqa: E402
 
-# Use a fresh timestamp so the snapshot is never stale in the test suite.
-_NOW_ISO = datetime.now(timezone.utc).isoformat()
+_FRESH_CAPTURED_AT = datetime.now(UTC).isoformat()
 
 _QUIESCENT_SNAP = {
     "instance_id": "abc",
     "hostname": "host1",
     "pid": 1,
-    "started_at": _NOW_ISO,
+    "started_at": _FRESH_CAPTURED_AT,
     "app_version": "v1.0",
     "supported_stream_versions": [1],
     "active_runs": 0,
@@ -31,7 +30,7 @@ _QUIESCENT_SNAP = {
     "pending_persistence": 0,
     "renderer_leases_held": 0,
     "quiescent": True,
-    "captured_at": _NOW_ISO,
+    "captured_at": _FRESH_CAPTURED_AT,
 }
 
 _BUSY_SNAP = {**_QUIESCENT_SNAP, "active_runs": 2, "quiescent": False}

@@ -22,7 +22,8 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://examgen:${DB_PASSWORD}@db/examgen
-      RELEASE_AUTHORITY_URL: http://frontend/release/policy.json
+      RELEASE_AUTHORITY_URL: http://gateway:8000/release/policy.json
+      RELEASE_ENVIRONMENT: ${RELEASE_ENVIRONMENT:-production}
     depends_on:
       db:
         condition: service_healthy
@@ -37,6 +38,11 @@ services:
       GATEWAY_BACKEND_URL: http://backend:8000
       GATEWAY_STATE_DIR: /var/lib/examgen-gate
       GATEWAY_CONTROL_TOKEN: ${GATEWAY_CONTROL_TOKEN:-}
+      RELEASE_ENVIRONMENT: ${RELEASE_ENVIRONMENT:-production}
+      GATEWAY_RELEASED_BUILD_ID: ${RELEASED_BUILD_ID:-}
+      GATEWAY_RELEASE_REVISION: ${RELEASE_REVISION:-1}
+      GATEWAY_READER_VERSION: ${RELEASE_READER_VERSION:-reader-1}
+      GATEWAY_SUPPORTED_RECOVERY_FORMATS: ${SUPPORTED_RECOVERY_FORMATS:-exam-generation.recovery/1}
     ports:
       - "8000:8000"
     volumes:

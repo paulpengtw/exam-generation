@@ -82,6 +82,33 @@ Each mounted surface declares its readiness, editable state, received results an
 Generation and 人工審題修正 expose 受理 beside their existing `status`, acknowledged by the SSE `started` event or a returned `run_id`, while guards and 發送前確認 timing remain unchanged.
 The store never receives an AbortController, promise or callback that can cancel work; see [ADR 0030](docs/adr/0030-workspace-participation-is-declared-by-each-surface.md) when extending participation, observed operations or admission for the updater.
 
+### Release version detection (issue #770)
+
+`web/buildIdentity.ts` computes a deterministic build ID (SHA-256 over commit + canonical public VITE_* config) and emits two static assets at build time:
+- `dist/build-meta.json` (`exam-generation.build-meta/1`) — build provenance.
+- `dist/release/policy.json` (`exam-generation.release-policy/1`) — deterministic authority fixture (starts as `admission: 'open'`, `released_build_id` = this artifact's id).
+
+`web/src/lib/release/releaseStore.ts` is a zustand store that polls `GET /release/policy.json` (cache: no-store, 5 s timeout, coalesced) and sets one of: `checking | current | update-required | paused | unavailable`. A previously known update requirement is sticky — it survives transient failures. `web/src/lib/release/useReleaseStatus.ts` installs the event-driven triggers (pageshow, popstate, online, visibilitychange, 60 s interval gated by visibility).
+
+`web/src/components/ReleaseNotice.tsx` is a persistent bar (mounted in `RootLayout` under `StagingBanner`) that shows the localized state. `checking/current/unavailable` → `role=status`; `update-required/paused` → `role=alert`. A "重新檢查 / Check again" button calls `checkNow()`. Focus is never moved by state changes. Reduced-motion is respected.
+
+The store never calls `location.reload`, never touches workspace operations, and never submits anything. Generation enforcement (#771), save-and-update (#772+), and scheduling (#777) remain separate tickets; the live controller integration is described below.
+
+Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
+
+### Build admission (issue #771)
+
+Every `GET` and `POST /api/generate` request must carry an `X-Frontend-Build-ID` header whose value equals the authority fixture's `released_build_id`.
+
+`server/generate/release_authority.py` provides async `LiveControllerAuthoritySource`, `HttpAuthoritySource`, and `FileAuthoritySource` implementations plus the injectable `AuthoritySource` seam. `RELEASE_AUTHORITY_URL` is preferred; otherwise `RELEASE_AUTHORITY_PATH` is used; with neither configured, the source is absent and generation fails closed with retryable 503 `AUTHORITY_UNAVAILABLE`. HTTP reads are bounded to 2 seconds and every request reads afresh — there is no positive process-local cache. `check_build_admission(header, source) → JSONResponse | None` returns 426 `CLIENT_UPDATE_REQUIRED` (missing/outdated build) or 503 `AUTHORITY_UNAVAILABLE`/`SERVICE_PAUSED` (source unreachable or paused), and `None` on pass. Check order: FastAPI `get_current_user` (auth) → `stream_version` 426 → build-ID 426/503 → `_check_generation_admission` (model/effort/provider). The source is built once in FastAPI app state and deployments must point it at the gateway/controller policy route.
+
+`web/src/hooks/useGenerate.ts`: preflight `await useReleaseStore.getState().checkNow()` before each `fetchEventSource` call; `X-Frontend-Build-ID: __BUILD_ID__` header on the stream request; `setResults([])` / `setEvidence(null)` moved to the `started` event handler so previous output is preserved on pre-stream errors (426/503/timeout).
+
+Preview, resolve, history, modification API, and CLI pipeline are excluded.
+
+### Live release controller (issue #778)
+
+`gateway/release_controller.py` extends the existing `admission.json` gate with the `exam-generation.release-policy/1` contract: environment, increasing release revision, released build, `open|paused|preparing` admission, recovery formats, reader metadata, and current/prepared-rollback/transition artifacts. `gateway/app.py` serves `/release/policy.json` and `/build-meta.json` from that same record, gates both generation spellings before proxy dispatch, and counts pending admissions through response delivery. It never keeps a positive policy cache. Target publication requires fresh positive #741 drain evidence (all inventory instances and gauges, including pending admissions) plus matching metadata from every serving route; publication leaves admission paused. Application rollback cannot reopen the gateway volume. Use `scripts/release_admission_rehearsal.py` and the committed evidence under `docs/research/2026-09-17-778-release-admission/` for the controlled two-instance checkpoint.
 
 ### Evidence profiles (issue #739)
 
@@ -119,30 +146,6 @@ The backend implements stream protocol v2. Clients **must** send `stream_version
 - `web/src/components/QuestionCard.tsx`: `EvidenceStatusLine`; placeholder branch for `content.receipt === 'none'`.
 
 **Fixture.** `tests/fixtures/generation_v2/math_single_interleaved.jsonl` — a masked recording of a count=2 interleaved math run (run_id→'RUN', ts→0.0, generation_log_id→'LOG', ISO timestamps→'TS'). Regenerate with `GENERATE_V2_FIXTURE=1 uv run pytest tests/server/test_742_fixture.py::test_interleaved_fixture`.
-### Release version detection (issue #770)
-
-`web/buildIdentity.ts` computes a deterministic build ID (SHA-256 over commit + canonical public VITE_* config) and emits two static assets at build time:
-- `dist/build-meta.json` (`exam-generation.build-meta/1`) — build provenance.
-- `dist/release/policy.json` (`exam-generation.release-policy/1`) — deterministic authority fixture (starts as `admission: 'open'`, `released_build_id` = this artifact's id).
-
-`web/src/lib/release/releaseStore.ts` is a zustand store that polls `GET /release/policy.json` (cache: no-store, 5 s timeout, coalesced) and sets one of: `checking | current | update-required | paused | unavailable`. A previously known update requirement is sticky — it survives transient failures. `web/src/lib/release/useReleaseStatus.ts` installs the event-driven triggers (pageshow, popstate, online, visibilitychange, 60 s interval gated by visibility).
-
-`web/src/components/ReleaseNotice.tsx` is a persistent bar (mounted in `RootLayout` under `StagingBanner`) that shows the localized state. `checking/current/unavailable` → `role=status`; `update-required/paused` → `role=alert`. A "重新檢查 / Check again" button calls `checkNow()`. Focus is never moved by state changes. Reduced-motion is respected.
-
-The store never calls `location.reload`, never touches workspace operations, and never submits anything. Generation enforcement (#771), save-and-update (#772+), scheduling (#777), and the live release controller (#778) are separate tickets.
-
-Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
-
-### Build admission (issue #771)
-
-Every `GET` and `POST /api/generate` request must carry an `X-Frontend-Build-ID` header whose value equals the authority fixture's `released_build_id`.
-
-`server/generate/release_authority.py` provides async `HttpAuthoritySource` and `FileAuthoritySource` implementations plus the injectable `AuthoritySource` seam. `RELEASE_AUTHORITY_URL` is preferred; otherwise `RELEASE_AUTHORITY_PATH` is used; with neither configured, the source is absent and generation fails closed with retryable 503 `AUTHORITY_UNAVAILABLE`. HTTP reads are bounded to 2 seconds and every request reads afresh — there is no positive process-local cache. `check_build_admission(header, source) → JSONResponse | None` returns 426 `CLIENT_UPDATE_REQUIRED` (missing/outdated build) or 503 `AUTHORITY_UNAVAILABLE`/`SERVICE_PAUSED` (source unreachable or paused), and `None` on pass. Check order: FastAPI `get_current_user` (auth) → `stream_version` 426 → build-ID 426/503 → `_check_generation_admission` (model/effort/provider). The source is built once in FastAPI app state and deployments must set one of the two authority variables.
-
-`web/src/hooks/useGenerate.ts`: preflight `await useReleaseStore.getState().checkNow()` before each `fetchEventSource` call; `X-Frontend-Build-ID: __BUILD_ID__` header on the stream request; `setResults([])` / `setEvidence(null)` moved to the `started` event handler so previous output is preserved on pre-stream errors (426/503/timeout).
-
-Preview, resolve, history, modification API, and CLI pipeline are excluded.
-
 ### Save draft and update (issue #772)
 
 `web/src/lib/recovery/format.ts` defines `RecoverySnapshotV1` (schema `exam-generation.recovery/1`) with `parseRecoverySnapshot` for strict validation (account, origin, environment, form shape).
@@ -225,7 +228,8 @@ State is file-backed (`admission.json` on a dedicated volume), fail-closed (miss
 Key files:
 - `gateway/admission.py` — `is_generation_entry(method, path)`, `PAUSED_DETAIL`, `PAUSED_CODE`
 - `gateway/state.py` — `AdmissionState`, `read_state`, `pause`, `open_gate`
-- `gateway/app.py` — `create_app(*, backend_url, state_dir, control_token)` → Starlette app
+- `gateway/app.py` — `create_app(*, backend_url, state_dir, control_token, release_controller)` → Starlette app
+- `gateway/release_controller.py` — live policy contract, revision/asset state, evidence-gated transitions
 - `gateway/__main__.py` — uvicorn entry point (env: `GATEWAY_BACKEND_URL`, `GATEWAY_STATE_DIR`, `GATEWAY_CONTROL_TOKEN`, `PORT`)
 - `scripts/admission_gate.py` — CLI (`pause`, `open`, `status --require PAUSED|OPEN`)
 - `Dockerfile.gateway`, `docker-compose.yml` (gateway service)

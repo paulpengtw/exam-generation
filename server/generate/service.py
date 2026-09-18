@@ -685,6 +685,38 @@ def _worker_one_body(
         )
 
 
+def _track_active_run(
+    stream_fn: Callable[..., AsyncIterator[dict[str, Any]]],
+) -> Callable[..., AsyncIterator[dict[str, Any]]]:
+    """Track the whole async stream, including all setup before its first yield."""
+
+    @functools.wraps(stream_fn)
+    async def tracked_stream(
+        params: GenerateParams,
+        config: ServerConfig,
+        app_state: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        drain = get_drain(app_state)
+        with drain.ctx_active_run():
+            inner_stream = stream_fn(
+                params,
+                config,
+                app_state,
+                *args,
+                **kwargs,
+            )
+            try:
+                async for event in inner_stream:
+                    yield event
+            finally:
+                await inner_stream.aclose()
+
+    return tracked_stream
+
+
+@_track_active_run
 async def generate_question_stream(
     params: GenerateParams,
     config: ServerConfig,
@@ -711,7 +743,6 @@ async def generate_question_stream(
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     _drain = get_drain(app_state)
     _drain.register_queue(queue)
-    _drain._inc("_active_runs")
     renderer_pool = getattr(app_state, "renderer_pool", None)
 
     # Per-render lease: a renderer is borrowed only for the duration of one HTML
@@ -978,4 +1009,3 @@ async def generate_question_stream(
                 if ctx.reference_example_recorder is not None:
                     await ctx.reference_example_recorder.flush()
             _drain.unregister_queue(queue)
-            _drain._dec("_active_runs")

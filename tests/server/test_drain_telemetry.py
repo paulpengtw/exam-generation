@@ -237,6 +237,63 @@ def test_raising_worker_still_decrements(tmp_path):
     assert snap["active_runs"] == 0
 
 
+def test_worker_setup_failure_still_reports_quiescent_drain(tmp_path):
+    """Worker setup failures must release active_workers before the stream ends."""
+    drain = DrainTelemetry()
+
+    class _ObserverSetupFailure:
+        def set_observer(self, _observer):
+            raise RuntimeError("observer setup failed")
+
+    spec = _fast_spec()
+    app_state = _app_state(drain)
+
+    async def run_stream():
+        async for _ in generate_question_stream(
+            _params(count=1),
+            _config(tmp_path),
+            app_state,
+            subjects={"fake": spec},
+            client_factory=lambda _config: _ObserverSetupFailure(),
+        ):
+            pass
+
+    asyncio.run(run_stream())
+
+    snap = drain.snapshot()
+    assert snap["active_workers"] == 0, (
+        f"worker setup failure left active_workers nonzero: {snap}"
+    )
+    assert snap["quiescent"] is True, f"drain evidence is not quiescent: {snap}"
+
+
+def test_run_setup_failure_still_releases_active_run(tmp_path):
+    """Run setup failures must release active_runs before propagating."""
+    drain = DrainTelemetry()
+    spec = _fast_spec()
+
+    def fail_coerce_overrides(_params, _app_state):
+        raise RuntimeError("run setup failed")
+
+    spec.coerce_overrides = fail_coerce_overrides
+
+    async def run_stream():
+        async for _ in generate_question_stream(
+            _params(count=1),
+            _config(tmp_path),
+            _app_state(drain),
+            subjects={"fake": spec},
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="run setup failed"):
+        asyncio.run(run_stream())
+
+    snap = drain.snapshot()
+    assert snap["active_runs"] == 0, f"run setup failure leaked active_runs: {snap}"
+    assert snap["quiescent"] is True, f"drain evidence is not quiescent: {snap}"
+
+
 # ---------------------------------------------------------------------------
 # (d) A recorder flush that raises in the run's finally still releases active_runs
 # ---------------------------------------------------------------------------

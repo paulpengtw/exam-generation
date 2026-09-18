@@ -33,9 +33,9 @@ for (const { label, content } of CONFIGS) {
       expect(content).toContain("Cache-Control 'no-store'");
     });
 
-    it("/release/policy.json uses try_files $uri =404 (not index.html fallback)", () => {
+    it("/release/policy.json is served by the live controller", () => {
       expect(content).toMatch(
-        /location\s*=\s*\/release\/policy\.json[^}]*try_files\s+\$uri\s+=404/s,
+        /location\s*=\s*\/release\/policy\.json[^}]*proxy_pass/s,
       );
     });
 
@@ -47,9 +47,9 @@ for (const { label, content } of CONFIGS) {
       expect(noStoreMatches).toBeGreaterThanOrEqual(2);
     });
 
-    it("/build-meta.json uses try_files $uri =404", () => {
+    it("/build-meta.json is served by the live controller", () => {
       expect(content).toMatch(
-        /location\s*=\s*\/build-meta\.json[^}]*try_files\s+\$uri\s+=404/s,
+        /location\s*=\s*\/build-meta\.json[^}]*proxy_pass/s,
       );
     });
 

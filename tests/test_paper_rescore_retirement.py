@@ -41,8 +41,11 @@ class _CurrentBuildAuthority:
     async def read(self) -> dict[str, object]:
         return {
             "schema": "exam-generation.release-policy/1",
+            "environment": "production",
+            "release_revision": 1,
             "released_build_id": "test-build-x",
             "admission": "open",
+            "supported_recovery_formats": [],
         }
 
 
