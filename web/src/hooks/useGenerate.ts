@@ -3,8 +3,13 @@ import { fetchEventSource } from "@microsoft/fetch-event-source";
 import * as Sentry from "@sentry/react";
 
 import { useAuthStore } from "../store/authStore";
+import { useLangStore } from "../store/langStore";
 import { isSentryEnabled } from "../sentry";
-import type { GenerateParams, ResolveFieldError } from "../api/generated/contract";
+import type { GenerateParams } from "../api/generated/contract";
+import {
+  formatResolverFieldErrors,
+  isResolverFieldErrorLike,
+} from "../lib/resolverErrorMessages";
 
 import { useWorkspaceStore, type OperationHandle, type OperationOutcome } from "../lib/workspace/workspaceStore";
 import { importResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
@@ -379,15 +384,16 @@ function formatHttpErrorDetail(detail: unknown): string | null {
   if (typeof detail === "string" && detail !== "") return detail;
   if (!Array.isArray(detail)) return null;
 
-  const fieldErrors = detail.filter(
-    (item): item is ResolveFieldError => (
-      item !== null
-      && typeof item === "object"
-      && typeof (item as Record<string, unknown>).field === "string"
-      && typeof (item as Record<string, unknown>).code === "string"
-    ),
-  );
+  const fieldErrors = detail.filter(isResolverFieldErrorLike);
   if (fieldErrors.length > 0) {
+    // #835: incompatible_parent / no_admitting_parent get a readable
+    // sentence via the shared formatter; `unresolved` (and any other/
+    // unknown code) keeps its pre-#835 "field (code)" text — the formatter
+    // returns null for a batch containing any of those, and this falls
+    // back to the original join.
+    const lang = useLangStore.getState().lang;
+    const readable = formatResolverFieldErrors(fieldErrors, lang);
+    if (readable !== null) return readable;
     return `Incomplete request: ${fieldErrors
       .map(({ field, code }) => `${field} (${code})`)
       .join("; ")}`;
