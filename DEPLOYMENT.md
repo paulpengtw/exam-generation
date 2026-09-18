@@ -514,3 +514,23 @@ When asking for help, include:
 1. Which step number you're stuck on.
 2. The exact error message you see.
 3. A screenshot if possible.
+
+---
+
+## Note: production builds require a commit SHA (issue #770)
+
+When deploying a production frontend build (`npm run build` with `NODE_ENV=production`),
+the build will fail unless a real commit SHA is available via one of these environment
+variables (checked in priority order):
+
+1. `RAILWAY_GIT_COMMIT_SHA` — set automatically by Railway.
+2. `RENDER_GIT_COMMIT` — set automatically by Render.
+3. `GIT_COMMIT_SHA` — set manually if using another CI/CD platform.
+4. `BUILD_ID` — set this to any unique identifier (e.g. a Docker image digest or CI run ID)
+   if none of the above are available.
+
+Placeholder values (`unknown`, `dev`, `local`, `HEAD`, empty string) are rejected and
+cause the build to fail with a descriptive error naming the fix.
+
+Optionally set `RELEASE_REVISION` (integer) to increase the release revision number in
+`dist/release/policy.json`. Defaults to `1` if not set.
