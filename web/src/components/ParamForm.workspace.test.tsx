@@ -197,6 +197,7 @@ async function openConfirmationWithSubquestions(initialParams = INITIAL_PARAMS) 
   const view = await renderForm(initialParams);
   fireEvent.click(screen.getByRole("button", { name: "產生" }));
   await screen.findByRole("heading", { name: "發送前確認設定" });
+  await waitFor(() => expect(confirmationSurface()).toBeDefined());
   return view;
 }
 function editInstruction(value: string) {
@@ -299,7 +300,7 @@ describe("ParamForm 工作區參與", () => {
     if (choice !== "draft") expect(formSurface()?.hasEditableState).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "產生" }));
     await screen.findByRole("heading", { name: "發送前確認設定" });
-    expect(confirmation()?.historyDraftChoice).toBe(choice);
+    await waitFor(() => expect(confirmation()?.historyDraftChoice).toBe(choice));
   });
 
   it.each(["確定發送", "返回修改"])("registers confirmation only while open, unregistering on %s", async (button) => {
@@ -408,6 +409,7 @@ describe("ParamForm 可觀察作業", () => {
     const preview = deferred<{ prompts: never[] }>();
     previewGenerateMock.mockReturnValueOnce(preview.promise);
     const { unmount } = await openConfirmationWithSubquestions();
+    await waitFor(() => expect(observed.some(({ kind }) => kind === "prompt_preview")).toBe(true));
     const op = operation("prompt_preview");
     expectActive(op);
     if (outcome === "superseded") unmount();
