@@ -33,6 +33,11 @@ web = [
     "boto3",
     "slowapi",
 ]
+gateway = [
+    "starlette",
+    "uvicorn[standard]",
+    "httpx",
+]
 
 [tool.ruff]
 target-version = "py311"

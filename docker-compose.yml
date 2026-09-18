@@ -25,8 +25,23 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    expose:
+      - "8000"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    environment:
+      GATEWAY_BACKEND_URL: http://backend:8000
+      GATEWAY_STATE_DIR: /var/lib/examgen-gate
+      GATEWAY_CONTROL_TOKEN: ${GATEWAY_CONTROL_TOKEN:-}
     ports:
       - "8000:8000"
+    volumes:
+      - gate-state:/var/lib/examgen-gate
+    depends_on:
+      - backend
 
   frontend:
     build:
@@ -36,12 +51,13 @@ services:
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
         VITE_SENTRY_RELEASE: ${VITE_SENTRY_RELEASE:-}
     environment:
-      BACKEND_HOST: backend:8000
+      BACKEND_HOST: gateway:8000
       BACKEND_SCHEME: http
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      - gateway
 
 volumes:
   pgdata:
+  gate-state:

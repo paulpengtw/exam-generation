@@ -288,6 +288,174 @@ Render's free tier puts services to sleep after 15 minutes of inactivity. The fi
 
 ---
 
+## Generation admission gateway (pause new generation)
+
+The **generation admission gateway** is a small ASGI reverse proxy that sits in front of the backend.  It lets an operator pause **all new generation requests** (`GET /api/generate` and `POST /api/generate`) from a single control point — completely independent of the frontend and backend deployment units — while established SSE streams keep delivering and result/history reads keep working.
+
+Key properties:
+
+- **Fail-closed on first install.** A fresh state directory (no `admission.json`) is treated as paused, so the gate is always safe to add even before it has been explicitly opened.
+- **State lives on its own volume.** The `admission.json` file is written atomically on a named Docker volume (`gate-state`) or a Railway volume.  Rolling the frontend or backend back to a previous image does not affect the gate state.
+- **Survives frontend/backend rollback.**  Because the state file is outside every application container, an operator can pause generation, roll back the backend, and the gate stays paused until explicitly opened again.
+
+### Compose usage
+
+With the gateway service in docker-compose.yml, the gateway is the only service that binds host port 8000.  The backend becomes internal-only.
+
+```bash
+# Pause all new generation
+docker compose exec gateway python scripts/admission_gate.py pause --reason "v2 rollout in progress"
+
+# Open the gate again
+docker compose exec gateway python scripts/admission_gate.py open
+
+# Check current state (exits 3 if the gate does not match --require)
+docker compose exec gateway python scripts/admission_gate.py status
+docker compose exec gateway python scripts/admission_gate.py status --require OPEN
+```
+
+### Railway deployment steps
+
+1. Add a fourth service in your Railway project: name it **gateway**, set the source to your fork, and choose `Dockerfile.gateway` as the Dockerfile.
+2. Attach a **volume** to the gateway service at `/var/lib/examgen-gate`.  This is where the state file lives.
+3. Set the following environment variables on the gateway service:
+   - `GATEWAY_BACKEND_URL` → `http://backend.railway.internal:8000` (the backend's internal Railway hostname)
+   - `GATEWAY_CONTROL_TOKEN` → a long random secret of your choice (keep this safe)
+   - `PORT` → `8000` (Railway injects this automatically; no action needed)
+4. Give the gateway service a **public domain** (Railway → Settings → Networking → Generate Domain).
+5. Update the **frontend** service: change `BACKEND_HOST` from the backend's domain to the gateway's new domain.
+6. **Remove the backend's public domain** so nothing can bypass the gate.  The backend is now reachable only via the gateway.
+
+#### Control endpoint examples (curl)
+
+```bash
+# Pause
+curl -X POST https://<gateway-domain>/gateway/admission \
+  -H "X-Gateway-Control-Token: <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"state": "paused", "reason": "planned maintenance"}'
+
+# Open
+curl -X POST https://<gateway-domain>/gateway/admission \
+  -H "X-Gateway-Control-Token: <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"state": "open"}'
+
+# Health / current state
+curl https://<gateway-domain>/gateway/health
+```
+
+> **Note:** This work (issue #740) establishes the operational capability — the gateway is wired, the state is durable, and new generation can be paused instantly.  Drain evidence (confirming in-flight streams complete before a deployment) and the stream-version protocol upgrade are tracked separately in issues #741 and #742.
+
+---
+
+## Drain telemetry and release control (issue #741)
+
+Drain telemetry extends the gateway pause capability by letting operators
+**confirm that all in-flight generation work has truly ended** before reopening
+admission after a pause.  Without this you must guess whether active SSE
+streams have finished; with drain telemetry you can poll a single endpoint and
+get a machine-readable `quiescent: true/false` signal.
+
+### How it works
+
+Each backend instance maintains a set of thread-safe gauges:
+
+| Gauge | What it counts |
+|---|---|
+| `active_runs` | `generate_question_stream` calls currently live |
+| `active_workers` | worker threads currently executing inside `_worker_one` |
+| `open_streams` | SSE event generators currently open to a client |
+| `renderer_leases_held` | Playwright renderer borrows currently in progress |
+| `pending_deliveries` | items queued in the stream's asyncio.Queue |
+| `pending_persistence` | pending DB-write operations |
+
+`quiescent: true` means all six gauges are zero simultaneously — the instance
+is idle and safe to take out of rotation.
+
+### Drain endpoint: GET /internal/drain
+
+The backend exposes a restricted telemetry endpoint at `GET /internal/drain`.
+
+**Security:**
+- The gateway blocks all `/internal/*` paths — they never reach the public internet.
+- The endpoint itself requires an `X-Drain-Token` header matching `DRAIN_TELEMETRY_TOKEN`.
+- Set `DRAIN_TELEMETRY_TOKEN` to a long random secret on the backend service.
+- If the environment variable is empty, the endpoint returns `404`.
+
+**Example:**
+```bash
+curl -s https://<backend-internal-url>/internal/drain \
+  -H "X-Drain-Token: <DRAIN_TELEMETRY_TOKEN>" | python3 -m json.tool
+```
+
+Response fields: `instance_id`, `hostname`, `pid`, `started_at`, `app_version`,
+`supported_stream_versions`, all six gauges, `captured_at`, and `quiescent`.
+
+### Inventory file
+
+`scripts/release_control.py` reads an **inventory.json** that lists every backend
+instance and the gateway:
+
+```json
+{
+    "instances": [
+        {
+            "name": "backend-1",
+            "url": "http://backend1.railway.internal:8000",
+            "token_env": "DRAIN_TOKEN_1"
+        }
+    ],
+    "gateway": {
+        "url": "https://<gateway-domain>",
+        "token_env": "GATEWAY_CONTROL_TOKEN"
+    }
+}
+```
+
+Each `token_env` names an environment variable that holds the secret token.
+
+### Release control subcommands
+
+```bash
+# Check all instances are reachable and drain endpoints respond
+python scripts/release_control.py preflight --inventory inventory.json
+
+# Poll until all instances report quiescent: true (or timeout)
+python scripts/release_control.py drain-check --inventory inventory.json --timeout 120
+
+# Pause gateway THEN wait for all in-flight work to finish
+python scripts/release_control.py pause-and-drain --inventory inventory.json \
+    --timeout 120 --reason "release v2.3"
+
+# Verify all instances support stream version 1 (or your required version)
+python scripts/release_control.py compat-check --inventory inventory.json \
+    --require-version 1
+
+# Reopen the gateway after deployment
+python scripts/release_control.py reopen --inventory inventory.json
+
+# Combined readiness check (preflight + compat + quiescence)
+python scripts/release_control.py readiness --inventory inventory.json \
+    --require-version 1
+```
+
+### Recommended release runbook
+
+1. `python scripts/release_control.py preflight` — confirm instances reachable.
+2. `python scripts/release_control.py compat-check --require-version 1` — confirm compatibility.
+3. `python scripts/release_control.py pause-and-drain --timeout 120 --reason "release"` — pause gate and wait for drain.
+4. Deploy new backend image.
+5. `python scripts/release_control.py readiness --require-version 1` — confirm new instances are healthy.
+6. `python scripts/release_control.py reopen` — reopen gate.
+
+> **Gateway privacy rule**: `/internal/` paths are never proxied by the gateway.
+> The drain endpoint is reachable only from internal network (Railway internal
+> hostnames, VPN, or direct container exec) — never via the public gateway URL.
+
+---
+
+
 ## Error reporting (Sentry, optional)
 
 The web app has a bottom-right "?" button that lets users report problems.

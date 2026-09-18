@@ -205,6 +205,42 @@ Both `apiFetch` 401 and `useGenerate` stream 401 now also call `saveSignoutReaso
 New storage key: `localStorage exam_recovery_claim_<snapshot_id>`. No snapshot contents in any telemetry or log call.
 See `docs/research/2026-09-18-776-recovery-identity.md`.
 
+### Generation admission gateway (issue #740)
+
+`gateway/` is an independent ASGI reverse proxy that lets an operator pause all new `GET /api/generate` and `POST /api/generate` requests from a single control point, independent of the frontend and backend deployment units.
+
+State is file-backed (`admission.json` on a dedicated volume), fail-closed (missing or unreadable file = paused), and survives application rollbacks.  The proxy is transparent to every other route — preview, resolve, planning, modification stream, history, auth, health — only the two generation entry-points are gated.
+
+Key files:
+- `gateway/admission.py` — `is_generation_entry(method, path)`, `PAUSED_DETAIL`, `PAUSED_CODE`
+- `gateway/state.py` — `AdmissionState`, `read_state`, `pause`, `open_gate`
+- `gateway/app.py` — `create_app(*, backend_url, state_dir, control_token)` → Starlette app
+- `gateway/__main__.py` — uvicorn entry point (env: `GATEWAY_BACKEND_URL`, `GATEWAY_STATE_DIR`, `GATEWAY_CONTROL_TOKEN`, `PORT`)
+- `scripts/admission_gate.py` — CLI (`pause`, `open`, `status --require PAUSED|OPEN`)
+- `Dockerfile.gateway`, `docker-compose.yml` (gateway service)
+- `DEPLOYMENT.md` § "Generation admission gateway" for Compose and Railway instructions
+
+Drain evidence (#741) is implemented (see `### Drain telemetry and release control` below). Stream-version/426 upgrade (#742) is implemented (see `### Generation stream protocol v2` above).
+
+### Drain telemetry and release control (issue #741)
+
+`server/generate/drain.py` exports `DrainTelemetry`, `_NoopDrainTelemetry`, `NOOP_DRAIN`, and `get_drain(app_state)`.  `DrainTelemetry` maintains six thread-safe gauges (`active_runs`, `active_workers`, `open_streams`, `pending_deliveries`, `pending_persistence`, `renderer_leases_held`) plus instance-identity fields.  `snapshot()` returns a JSON-serialisable dict including `quiescent: bool` (all six gauges are zero).
+
+Key files:
+- `server/generate/drain.py` — `DrainTelemetry`, `_NoopDrainTelemetry`, `NOOP_DRAIN`, `get_drain`
+- `server/internal/routes.py` — `GET /internal/drain` (requires `X-Drain-Token` header matching `DRAIN_TELEMETRY_TOKEN` env; missing token → 404)
+- `server/config.py` — `drain_telemetry_token` field (`DRAIN_TELEMETRY_TOKEN` env)
+- `gateway/admission.py` — `is_private_path(path)` helper; `/internal/*` never proxied
+- `gateway/app.py` — blocks `/internal/*` before forwarding to backend
+- `scripts/release_control.py` — `preflight`, `drain-check`, `pause-and-drain`, `compat-check`, `reopen`, `readiness` subcommands; reads `inventory.json`
+- `DEPLOYMENT.md` § "Drain telemetry and release control" for runbook
+
+Integration points in `service.py`:
+- `generate_question_stream` registers the stream's queue with `drain.register_queue(queue)` and increments `_active_runs` at entry; a `with anyio.CancelScope(shield=True)` in the finally block ensures decrements run even on GeneratorExit.
+- `_worker_one` body is wrapped with `with ctx.drain_telemetry.ctx_active_worker():`.
+- `RendererLease.__init__` accepts an optional `drain_telemetry` parameter and increments/decrements `_renderer_leases_held` inside `render()`.
+- `event_generator` in `routes.py` increments/decrements `_open_streams` around the SSE loop.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.

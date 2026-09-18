@@ -566,43 +566,47 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("seed",          _MA): (_svc.resolved_payload_for_index, "params.seed"),
     ("seed",          _SS): (_svc.resolved_payload_for_index, "params.seed"),
     ("seed",          _NS): (_svc.resolved_payload_for_index, "params.seed"),
-    # skip_verify — forwarded in _worker_one from ctx.params
-    ("skip_verify",       _MA): (_svc._worker_one, "ctx.params.skip_verify"),
-    ("skip_verify",       _SS): (_svc._worker_one, "ctx.params.skip_verify"),
-    ("skip_verify",       _NS): (_svc._worker_one, "ctx.params.skip_verify"),
-    # image_generation_mode — forwarded in _worker_one from ctx.params
-    ("image_generation_mode", _MA): (_svc._worker_one, "ctx.params.image_generation_mode"),
-    ("image_generation_mode", _SS): (_svc._worker_one, "ctx.params.image_generation_mode"),
-    ("image_generation_mode", _NS): (_svc._worker_one, "ctx.params.image_generation_mode"),
-    # passage — forwarded in _worker_one as user_passage
-    ("passage", _MA): (_svc._worker_one, "ctx.params.passage"),
-    ("passage", _SS): (_svc._worker_one, "ctx.params.passage"),
-    ("passage", _NS): (_svc._worker_one, "ctx.params.passage"),
-    # options — forwarded in _worker_one as user_options
-    ("options", _MA): (_svc._worker_one, "ctx.params.options"),
-    ("options", _SS): (_svc._worker_one, "ctx.params.options"),
-    ("options", _NS): (_svc._worker_one, "ctx.params.options"),
-    # topic — forwarded in _worker_one as user_topic
-    ("topic", _MA): (_svc._worker_one, "ctx.params.topic"),
-    ("topic", _SS): (_svc._worker_one, "ctx.params.topic"),
-    ("topic", _NS): (_svc._worker_one, "ctx.params.topic"),
-    # core_question — forwarded in _worker_one as user_core_question
-    ("core_question", _MA): (_svc._worker_one, "ctx.params.core_question"),
-    ("core_question", _SS): (_svc._worker_one, "ctx.params.core_question"),
-    ("core_question", _NS): (_svc._worker_one, "ctx.params.core_question"),
+    # skip_verify — forwarded in _worker_one_body from ctx.params
+    ("skip_verify",       _MA): (_svc._worker_one_body, "ctx.params.skip_verify"),
+    ("skip_verify",       _SS): (_svc._worker_one_body, "ctx.params.skip_verify"),
+    ("skip_verify",       _NS): (_svc._worker_one_body, "ctx.params.skip_verify"),
+    # image_generation_mode — forwarded in _worker_one_body from ctx.params
+    ("image_generation_mode", _MA): (_svc._worker_one_body, "ctx.params.image_generation_mode"),
+    ("image_generation_mode", _SS): (_svc._worker_one_body, "ctx.params.image_generation_mode"),
+    ("image_generation_mode", _NS): (_svc._worker_one_body, "ctx.params.image_generation_mode"),
+    # passage — forwarded in _worker_one_body as user_passage
+    ("passage", _MA): (_svc._worker_one_body, "ctx.params.passage"),
+    ("passage", _SS): (_svc._worker_one_body, "ctx.params.passage"),
+    ("passage", _NS): (_svc._worker_one_body, "ctx.params.passage"),
+    # options — forwarded in _worker_one_body as user_options
+    ("options", _MA): (_svc._worker_one_body, "ctx.params.options"),
+    ("options", _SS): (_svc._worker_one_body, "ctx.params.options"),
+    ("options", _NS): (_svc._worker_one_body, "ctx.params.options"),
+    # topic — forwarded in _worker_one_body as user_topic
+    ("topic", _MA): (_svc._worker_one_body, "ctx.params.topic"),
+    ("topic", _SS): (_svc._worker_one_body, "ctx.params.topic"),
+    ("topic", _NS): (_svc._worker_one_body, "ctx.params.topic"),
+    # core_question — forwarded in _worker_one_body as user_core_question
+    ("core_question", _MA): (_svc._worker_one_body, "ctx.params.core_question"),
+    ("core_question", _SS): (_svc._worker_one_body, "ctx.params.core_question"),
+    ("core_question", _NS): (_svc._worker_one_body, "ctx.params.core_question"),
     # text_instruction — routed via _per_question_text_instruction for per-row override (#637)
-    ("text_instruction", _SS): (_svc._worker_one, "_per_question_text_instruction"),
-    ("text_instruction", _NS): (_svc._worker_one, "_per_question_text_instruction"),
-    # text_word_limit — forwarded in _worker_one (SS/NS) and into math's canonical sampler value
+    ("text_instruction", _SS): (_svc._worker_one_body, "_per_question_text_instruction"),
+    ("text_instruction", _NS): (_svc._worker_one_body, "_per_question_text_instruction"),
+    # text_word_limit — forwarded in _worker_one_body (SS/NS) and into math's sampler value
     ("text_word_limit", _MA): (
         _math_params_from_resolved_payload,
         'payload.get("text_word_limit")',
     ),
-    ("text_word_limit", _SS): (_svc._worker_one, "ctx.params.text_word_limit"),
-    ("text_word_limit", _NS): (_svc._worker_one, "ctx.params.text_word_limit"),
-    # disable_reference_fewshot — forwarded in _worker_one (SS/NS)
-    ("disable_reference_fewshot", _SS): (_svc._worker_one, "ctx.params.disable_reference_fewshot"),
-    ("disable_reference_fewshot", _NS): (_svc._worker_one, "ctx.params.disable_reference_fewshot"),
+    ("text_word_limit", _SS): (_svc._worker_one_body, "ctx.params.text_word_limit"),
+    ("text_word_limit", _NS): (_svc._worker_one_body, "ctx.params.text_word_limit"),
+    # disable_reference_fewshot — forwarded in _worker_one_body (SS/NS)
+    ("disable_reference_fewshot", _SS): (
+        _svc._worker_one_body, "ctx.params.disable_reference_fewshot"
+    ),
+    ("disable_reference_fewshot", _NS): (
+        _svc._worker_one_body, "ctx.params.disable_reference_fewshot"
+    ),
     # grade — forwarded directly in each sampler adapter
     ("grade", _MA): (_math_params_from_resolved_payload, 'payload["grade"]'),
     ("grade", _SS): (_ss_params_from_resolved_payload,   'payload["grade"]'),
@@ -702,7 +706,7 @@ FORWARDING_PROOFS: dict[tuple[str, str], tuple[Callable[..., Any], str]] = {
     ("coverage_mode", _NS): (_svc._build_run_context, "params.coverage_mode"),
     # core_question_callback — forwarded to the SS/NS generator adapters
     ("core_question_callback", _SS): (
-        _svc._worker_one,
+        _svc._worker_one_body,
         "ctx.params.core_question_callback",
     ),
     ("core_question_callback", _NS): (_ns_do_generate, "core_question_callback"),
