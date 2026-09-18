@@ -301,10 +301,12 @@ describe("ParamForm 工作區參與", () => {
     if (choice !== "draft") expect(formSurface()?.hasEditableState).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "產生" }));
     await screen.findByRole("heading", { name: "發送前確認設定" });
-    await waitFor(() => expect(confirmation()?.historyDraftChoice).toBe(choice));
-    expect(confirmation()?.pendingPrefill).toEqual(
-      choice === "draft" ? SAVED_FIELDS : choice === "history" ? historyPrefill : null,
-    );
+    await waitFor(() => {
+      expect(confirmation()?.historyDraftChoice).toBe(choice);
+      expect(confirmation()?.pendingPrefill).toEqual(
+        choice === "draft" ? SAVED_FIELDS : choice === "history" ? historyPrefill : null,
+      );
+    });
   });
 
   it.each(["確定發送", "返回修改"])("registers confirmation only while open, unregistering on %s", async (button) => {

@@ -42,7 +42,6 @@ export default function SubquestionConfigCards({
   lpEntryByCode,
   availableLc,
   availableLp,
-  filteredLcPool,
   filteredLpPool,
   onInstructionChange,
   onQuestionTypeChange,
@@ -82,8 +81,6 @@ export default function SubquestionConfigCards({
   availableLc?: SearchPickerEntry[];
   /** Full subject-filtered LP pool for the SearchPicker. Required when onLpChange is provided. */
   availableLp?: SearchPickerEntry[];
-  /** Optional ICCS domain-filtered LC codes for 公民/跨科 confirmation pickers. */
-  filteredLcPool?: string[];
   /** Optional ICCS domain-filtered LP codes for 公民/跨科 confirmation pickers. */
   filteredLpPool?: string[];
   onInstructionChange?: (subquestionIndex: number, instruction: string) => void;
@@ -114,9 +111,7 @@ export default function SubquestionConfigCards({
   // Base ID for associating labels with SearchPicker inputs — forward-compat hook
   // for #506 which will add a domain-scoped pool filter on top of this picker.
   const baseId = useId();
-  const visibleAvailableLc = filteredLcPool === undefined
-    ? availableLc ?? []
-    : (availableLc ?? []).filter((entry) => filteredLcPool.includes(entry.value));
+  const visibleAvailableLc = availableLc ?? [];
   const visibleAvailableLp = filteredLpPool === undefined
     ? availableLp ?? []
     : (availableLp ?? []).filter((entry) => filteredLpPool.includes(entry.value));
