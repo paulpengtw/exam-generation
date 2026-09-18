@@ -435,7 +435,13 @@ describe("GeneratePage restored results acceptance boundaries", () => {
   });
 
   it("disables save-and-update in the real page while generation is active", async () => {
-    setRelease("update-required");
+    // Use a mock that never resolves so the SSE stream stays "open" and the
+    // generation operation remains registered for the duration of the check.
+    // We must start with "current" release status so 771's preflight check does
+    // not abort generation before beginOperation is called; we switch to
+    // "update-required" only after the operation is confirmed active.
+    fetchEventSourceMock.mockReturnValue(new Promise<void>(() => {}));
+    setRelease("current");
     const { unmount } = renderRecoveryPage();
     fireEvent.click(await screen.findByRole("button", { name: "Start generation" }));
     await waitFor(() => {
@@ -443,6 +449,9 @@ describe("GeneratePage restored results acceptance boundaries", () => {
         expect.objectContaining({ kind: "generation", surface: "generate.results" }),
       ]);
     });
+    // Now that generation is active, expose the save-and-update button by
+    // switching to update-required.
+    act(() => { setRelease("update-required"); });
     const saveButton = screen.getByRole("button", { name: /Save Draft & Update|儲存草稿並更新/i });
     expect(saveButton).toBeDisabled();
     expect(saveButton).toHaveAttribute("title", "Cannot update while generating");

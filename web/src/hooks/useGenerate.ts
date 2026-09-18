@@ -20,6 +20,7 @@ import {
   isResolverFieldErrorLike,
 } from "../lib/resolverErrorMessages";
 
+import { useReleaseStore } from "../lib/release/releaseStore";
 import { useWorkspaceStore, type OperationHandle, type OperationOutcome } from "../lib/workspace/workspaceStore";
 import { importResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
 import type { ResultsCompletion, ResultsWorkspaceSnapshot } from "../lib/workspace/adapters/types";
@@ -605,6 +606,10 @@ export function useGenerate(): UseGenerateReturn {
   const terminalQuestionKeysRef = useRef(new Set<string>());
   const expectedQuestionTotalRef = useRef<number | null>(null);
   const paramsRef = useRef<GenerateParams | null>(null);
+  // Tracks whether a `started` event was received for the current generate() call.
+  // Used to guard setResultsCompletion("error") so pre-stream failures (426, 503,
+  // preflight) do not clobber the previous run's completion state.  See #771/#774.
+  const startedRef = useRef(false);
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
@@ -640,10 +645,6 @@ export function useGenerate(): UseGenerateReturn {
     controllerRef.current?.abort();
     controllerRef.current = null;
     setProgressLines([]);
-    setResults([]);
-    setDisplayResults([]);
-    setEvidence(null);
-    evidenceRef.current = null;
     setLlmCalls([]);
     setErrorMessage(null);
     setStartedAt(null);
@@ -688,14 +689,14 @@ export function useGenerate(): UseGenerateReturn {
     return true;
   }, []);
 
-  const generate = useCallback((params: GenerateParams): Promise<AdmissionOutcome> => {
-    admissionResolveRef.current?.({ outcome: "rejected", reason: "superseded" });
-    endOperation("superseded");
+  const generate = useCallback(async (params: GenerateParams): Promise<AdmissionOutcome> => {
+    if (controllerRef.current !== null) {
+      return { outcome: "rejected", reason: "generation already in progress" };
+    }
     const admissionPromise = new Promise<AdmissionOutcome>((resolve) => {
       admissionResolveRef.current = resolve;
     });
     paramsRef.current = params;
-    controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
 
@@ -714,18 +715,16 @@ export function useGenerate(): UseGenerateReturn {
     setAdmission("submitting");
     setAdmissionError(null);
     setProgressLines([]);
-    setResults([]);
-    setDisplayResults([]);
-    setEvidence(null);
-    evidenceRef.current = null;
+    // Results, displayResults, and evidence are cleared only when the 'started'
+    // event establishes admission — so previous output is preserved on pre-stream
+    // errors (426 / 503 / preflight failure).  See issue #771.
     setLlmCalls([]);
     setErrorMessage(null);
     setStartedAt(streamContext.startedAt);
     setFinishedAt(null);
     setGenerationLogId(null);
     setSubQuestionTotal(null);
-    setResultsCompletion(null);
-    setTerminalEvidence(false);
+    startedRef.current = false;
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
@@ -741,8 +740,15 @@ export function useGenerate(): UseGenerateReturn {
 
       switch (name) {
         case "started": {
+          setResults([]);
+          setDisplayResults([]);
+          setEvidence(null);
+          evidenceRef.current = null;
           setStatus("generating");
           settleAdmission({ outcome: "admitted" });
+          setResultsCompletion(null);
+          setTerminalEvidence(false);
+          startedRef.current = true;
           // Build evidence from decoder's manifest
           if (decoder.run) {
             const initial = createRunEvidence(decoder.run);
@@ -896,8 +902,10 @@ export function useGenerate(): UseGenerateReturn {
           }
           setErrorMessage(msg);
           setStatus("error");
-          setResultsCompletion("error");
-          setTerminalEvidence(false);
+          if (startedRef.current) {
+            setResultsCompletion("error");
+            setTerminalEvidence(false);
+          }
           setFinishedAt(Date.now());
           endOperation("failed");
           break;
@@ -936,8 +944,15 @@ export function useGenerate(): UseGenerateReturn {
     function handleLegacyEvent(eventName: string, data: string) {
       switch (eventName) {
         case "started":
+          setResults([]);
+          setDisplayResults([]);
+          setEvidence(null);
+          evidenceRef.current = null;
           setStatus("generating");
           settleAdmission({ outcome: "admitted" });
+          setResultsCompletion(null);
+          setTerminalEvidence(false);
+          startedRef.current = true;
           {
             const payload = parseStartedEventData(data);
             if (payload) setGenerationLogId(payload.generation_log_id);
@@ -1127,8 +1142,10 @@ export function useGenerate(): UseGenerateReturn {
         case "error":
           setErrorMessage(parseErrorEventData(data ?? ""));
           setStatus("error");
-          setResultsCompletion("error");
-          setTerminalEvidence(false);
+          if (startedRef.current) {
+            setResultsCompletion("error");
+            setTerminalEvidence(false);
+          }
           setFinishedAt(Date.now());
           endOperation("failed");
           break;
@@ -1149,6 +1166,31 @@ export function useGenerate(): UseGenerateReturn {
       }
     }
 
+    // Preflight: ensure we have a current release status before submission.
+    // Only trigger a network check when the store is in the initial "checking"
+    // state (no check has run yet).  When the background poller already set a
+    // definitive status, use it directly — this keeps generate() synchronous in
+    // the common case and avoids a microtask deferral that would break tests
+    // using a synchronous act().
+    if (useReleaseStore.getState().status === "checking") {
+      await useReleaseStore.getState().checkNow();
+    }
+    const preflightStatus = useReleaseStore.getState().status;
+    if (preflightStatus === "update-required" || preflightStatus === "paused" || preflightStatus === "unavailable") {
+      const msgKey =
+        preflightStatus === "update-required"
+          ? "generate.preflight_update_required"
+          : preflightStatus === "paused"
+            ? "generate.preflight_paused"
+            : "generate.preflight_unavailable";
+      const msg = MESSAGES["zh-TW"][msgKey] ?? msgKey;
+      setAdmission("idle");
+      setAdmissionError(msg);
+      settleAdmission({ outcome: "rejected", reason: msg });
+      controller.abort();
+      controllerRef.current = null;
+      return admissionPromise;
+    }
     operationRef.current = useWorkspaceStore.getState().beginOperation("generation", "generate.results");
     fetchEventSource("/api/generate", {
       method: "POST",
@@ -1156,6 +1198,7 @@ export function useGenerate(): UseGenerateReturn {
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
+        "X-Frontend-Build-ID": __BUILD_ID__,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       openWhenHidden: true,
@@ -1179,8 +1222,6 @@ export function useGenerate(): UseGenerateReturn {
             const msg = "Session expired — please sign in again";
             setErrorMessage(msg);
             setStatus("error");
-            setResultsCompletion("error");
-            setTerminalEvidence(false);
             setFinishedAt(Date.now());
             settleAdmission({ outcome: "rejected", reason: msg });
             endOperation("failed");
@@ -1202,8 +1243,6 @@ export function useGenerate(): UseGenerateReturn {
           if (controllerRef.current !== controller) return;
           setErrorMessage(msg);
           setStatus("error");
-          setResultsCompletion("error");
-          setTerminalEvidence(false);
           setFinishedAt(Date.now());
           settleAdmission({ outcome: "rejected", reason: msg });
           endOperation("failed");
@@ -1228,8 +1267,10 @@ export function useGenerate(): UseGenerateReturn {
             const msg = MESSAGES["zh-TW"][reasonKey] ?? reasonKey;
             setErrorMessage(msg);
             setStatus("error");
-            setResultsCompletion("error");
-            setTerminalEvidence(false);
+            if (startedRef.current) {
+              setResultsCompletion("error");
+              setTerminalEvidence(false);
+            }
             setFinishedAt(Date.now());
             settleAdmission({ outcome: "rejected", reason: reasonKey });
             endOperation("failed");
@@ -1257,8 +1298,10 @@ export function useGenerate(): UseGenerateReturn {
         const message = err instanceof Error ? err.message : String(err);
         setErrorMessage(message);
         setStatus("error");
-        setResultsCompletion("error");
-        setTerminalEvidence(false);
+        if (startedRef.current) {
+          setResultsCompletion("error");
+          setTerminalEvidence(false);
+        }
         setFinishedAt(Date.now());
         settleAdmission({ outcome: "rejected", reason: message });
         endOperation("failed");
@@ -1280,6 +1323,9 @@ export function useGenerate(): UseGenerateReturn {
             },
           },
         });
+      }
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
       }
       // Stream terminated (abort or fatal error). State already updated.
     });

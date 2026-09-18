@@ -156,6 +156,8 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `JWT_EXPIRE_DAYS` | `7` | Keeps each login token valid for 7 days |
 | `SESSION_RENEWAL_THRESHOLD_MINUTES` | `360` | Renews a login session when less than 360 minutes remain on the token |
 | `FRONTEND_URL` | The frontend URL you copied in Step 7.3, with `https://` in front | Tells the backend which website is allowed to call it |
+| `RELEASE_AUTHORITY_URL` | `https://<your-frontend-domain>/release/policy.json` | Recommended for separate Railway services; the backend reads the frontend's current release policy on each generation request |
+| `RELEASE_AUTHORITY_PATH` | *(optional local path)* | Alternative for deployments where the backend can read a local policy file; ignored when `RELEASE_AUTHORITY_URL` is set |
 | `EMAIL_BACKEND` | `console` | `console` prints magic-link login emails to backend logs — fine for your own first login; switch to `ses` after following **Step 13** so other teachers receive real emails |
 | `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |
 | `SENTRY_DSN` | *(leave blank, or paste the backend project's DSN)* | Sends backend errors and traces to Sentry. Leave it unset or blank to disable backend Sentry completely. |
@@ -165,6 +167,12 @@ The model and effort values above are the code defaults when their variables are
 unset. Opus 4.6 calls enable adaptive thinking with a 16,384-token output ceiling
 shared by thinking and the response; `LLM_TEMPERATURE` is ignored for this model.
 Planning and 驗證 therefore spend thinking tokens at Opus output rates.
+
+Set exactly one of `RELEASE_AUTHORITY_URL` or `RELEASE_AUTHORITY_PATH` for the
+backend. `RELEASE_AUTHORITY_URL` takes precedence when both are present. If
+neither is set, generation fails closed with a retryable `503 AUTHORITY_UNAVAILABLE`;
+the backend does not assume that a separately deployed
+frontend's `web/dist` directory is available locally.
 
 **How to generate `JWT_SECRET`:** open `https://passwordsgenerator.net` in a new tab, set length to 64, click **Generate**, and paste the result.
 
@@ -196,6 +204,15 @@ Open the **frontend** service, click **Variables**, and add:
 | `BACKEND_SCHEME` | `https` | Use HTTPS when forwarding to the backend |
 
 The frontend will redeploy. Wait 1-2 minutes.
+
+### 8.3 Docker Compose
+
+The included `docker-compose.yml` wires the backend to the frontend container
+with `RELEASE_AUTHORITY_URL=http://frontend/release/policy.json`; the frontend
+serves that endpoint on its internal port 80 with `no-store` caching. If you
+override the backend environment, keep this URL (or set a readable
+`RELEASE_AUTHORITY_PATH`). Leaving both authority variables unset causes
+generation to return the retryable `503 AUTHORITY_UNAVAILABLE`.
 
 ---
 

@@ -82,6 +82,7 @@ Each mounted surface declares its readiness, editable state, received results an
 Generation and 人工審題修正 expose 受理 beside their existing `status`, acknowledged by the SSE `started` event or a returned `run_id`, while guards and 發送前確認 timing remain unchanged.
 The store never receives an AbortController, promise or callback that can cancel work; see [ADR 0030](docs/adr/0030-workspace-participation-is-declared-by-each-surface.md) when extending participation, observed operations or admission for the updater.
 
+
 ### Evidence profiles (issue #739)
 
 `web/src/lib/runEvidence.ts` defines the `generate-legacy`, `modification`, and reserved `generate-v2` profiles. The shared status bar on GeneratePage and inside QuestionCard consumes a profile-tagged evidence object. `generationStream.ts` projects legacy stage events and the five generation card fields; `modificationStream.ts` projects modification steps and decodes its existing SSE events. Modification never requires a generation manifest. `generate-v2` is the generation-only entry point for OpenSpec `per-question-live-progress` (issue #742). The frontend decoder (`createGenerationStreamDecoder` in `generationStream.ts`) routes v2 SSE events through the `RunEvidenceState` reducer (`generationEvidence.ts`), which tracks per-question processing, content receipt, terminal status, and review. `GenerationStatusBar` renders a live 已結束/收到最終結果 counts line; `QuestionCard` renders a compact placeholder when `content.receipt === 'none'` and an evidence status line when content is available. `GeneratePage` renders cards in manifest order with live placeholders. HistoryDetail retains its stored-record card props.
@@ -131,6 +132,16 @@ The backend implements stream protocol v2. Clients **must** send `stream_version
 The store never calls `location.reload`, never touches workspace operations, and never submits anything. Generation enforcement (#771), save-and-update (#772+), scheduling (#777), and the live release controller (#778) are separate tickets.
 
 Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
+
+### Build admission (issue #771)
+
+Every `GET` and `POST /api/generate` request must carry an `X-Frontend-Build-ID` header whose value equals the authority fixture's `released_build_id`.
+
+`server/generate/release_authority.py` provides async `HttpAuthoritySource` and `FileAuthoritySource` implementations plus the injectable `AuthoritySource` seam. `RELEASE_AUTHORITY_URL` is preferred; otherwise `RELEASE_AUTHORITY_PATH` is used; with neither configured, the source is absent and generation fails closed with retryable 503 `AUTHORITY_UNAVAILABLE`. HTTP reads are bounded to 2 seconds and every request reads afresh — there is no positive process-local cache. `check_build_admission(header, source) → JSONResponse | None` returns 426 `CLIENT_UPDATE_REQUIRED` (missing/outdated build) or 503 `AUTHORITY_UNAVAILABLE`/`SERVICE_PAUSED` (source unreachable or paused), and `None` on pass. Check order: FastAPI `get_current_user` (auth) → `stream_version` 426 → build-ID 426/503 → `_check_generation_admission` (model/effort/provider). The source is built once in FastAPI app state and deployments must set one of the two authority variables.
+
+`web/src/hooks/useGenerate.ts`: preflight `await useReleaseStore.getState().checkNow()` before each `fetchEventSource` call; `X-Frontend-Build-ID: __BUILD_ID__` header on the stream request; `setResults([])` / `setEvidence(null)` moved to the `started` event handler so previous output is preserved on pre-stream errors (426/503/timeout).
+
+Preview, resolve, history, modification API, and CLI pipeline are excluded.
 
 ### Save draft and update (issue #772)
 
@@ -240,6 +251,7 @@ Integration points in `service.py`:
 - `_worker_one` body is wrapped with `with ctx.drain_telemetry.ctx_active_worker():`.
 - `RendererLease.__init__` accepts an optional `drain_telemetry` parameter and increments/decrements `_renderer_leases_held` inside `render()`.
 - `event_generator` in `routes.py` increments/decrements `_open_streams` around the SSE loop.
+
 
 ### 出題模式 is a prompt-level hint
 

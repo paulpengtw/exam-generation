@@ -183,7 +183,7 @@ def test_ns_server_stamps_coverage_mode_used_on_metadata(tmp_path) -> None:
             events.append(ev)
 
     asyncio.run(collect())
-    results = [e.get("payload", e.get("data")) for e in events if e["event"] == "result"]
+    results = [e["payload"] for e in events if e["event"] == "result"]
     assert len(results) == 3
     assert all(r["metadata"]["coverage_mode_used"] == "balanced" for r in results)
 

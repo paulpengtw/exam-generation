@@ -193,6 +193,23 @@ describe("ParamForm difficulty dropdown", () => {
     const [payload] = onSubmit.mock.calls[0];
     expect(payload.difficulty).toBe("hard");
   });
+
+  it("keeps the confirmation editable when generation admission rejects before streaming", async () => {
+    const onSubmit = vi.fn().mockResolvedValue({
+      outcome: "rejected",
+      reason: "client build is outdated",
+    });
+    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+
+    await screen.findByRole("button", { name: /generate/i });
+    fireEvent.click(screen.getByRole("button", { name: /generate/i }));
+    await screen.findByRole("button", { name: /confirm/i });
+    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", { name: "form.btn_back_edit" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /confirm/i })).toBeEnabled();
+  });
 });
 
 describe("ParamForm top-level text word limit", () => {

@@ -794,7 +794,7 @@ describe("recovery flow — scenario 1b: restore settled confirmation workspaces
       expect(screen.getAllByDisplayValue("third subquestion instruction").length).toBeGreaterThan(0);
     }
     expect(screen.getAllByText("claude-opus-4-6").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("high").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("high")).length).toBeGreaterThan(0);
     expect(screen.getAllByText(subject === "math" ? "數學-內容-1" : subject === "social_studies" ? "社會-內容-1" : "自然-內容-1").length).toBeGreaterThan(0);
     expect(screen.getByText("gpt_image")).toBeInTheDocument();
     expect(screen.getAllByText(/各小題配置|Per-sub-question configuration/i).length).toBeGreaterThan(0);
@@ -1159,6 +1159,13 @@ describe("recovery flow — scenario 3: unsupported format", () => {
       {},
       { timeout: 5000 },
     );
+    // Wait for schemas (and model list) to finish loading so the form surface
+    // transitions from "hydrating" to "ready" before evaluateSaveAndUpdate
+    // is called; otherwise the earliest check ("hydrating") would shadow the
+    // intended check ("unsupported_target_reader").
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().surfaces["generate.form"]?.readiness).toBe("ready");
+    });
 
     const result = await runSaveAndUpdate({
       navigate: navigateSpy,
