@@ -76,9 +76,9 @@ def test_balanced_and_random_draw_identically_for_the_same_seed(tmp_path) -> Non
     balanced_events = _run_stream(balanced_params, tmp_path)
     random_events = _run_stream(random_params, tmp_path)
     balanced_results = [
-        e["data"] for e in balanced_events if e["event"] == "result"
+        e.get("payload", e.get("data", {})) for e in balanced_events if e["event"] == "result"
     ]
-    random_results = [e["data"] for e in random_events if e["event"] == "result"]
+    random_results = [e.get("payload", e.get("data", {})) for e in random_events if e["event"] == "result"]  # noqa: E501
 
     assert len(balanced_results) == 4
     assert len(random_results) == 4
@@ -105,7 +105,7 @@ def test_random_mode_stamps_metadata(tmp_path) -> None:
         count=3, skip_verify=True, coverage_mode="random", seed=13
     )
     events = _run_stream(params, tmp_path)
-    results = [e["data"] for e in events if e["event"] == "result"]
+    results = [e.get("payload", e.get("data", {})) for e in events if e["event"] == "result"]
     assert len(results) == 3
     assert all(r["metadata"]["coverage_mode_used"] == "random" for r in results)
 
@@ -120,9 +120,9 @@ def test_count_one_stamps_the_requested_mode(tmp_path) -> None:
     balanced_events = _run_stream(balanced_params, tmp_path)
     random_events = _run_stream(random_params, tmp_path)
     balanced_results = [
-        e["data"] for e in balanced_events if e["event"] == "result"
+        e.get("payload", e.get("data", {})) for e in balanced_events if e["event"] == "result"
     ]
-    random_results = [e["data"] for e in random_events if e["event"] == "result"]
+    random_results = [e.get("payload", e.get("data", {})) for e in random_events if e["event"] == "result"]  # noqa: E501
 
     assert len(balanced_results) == 1
     assert len(random_results) == 1
@@ -140,9 +140,9 @@ def test_coverage_mode_used_reflects_the_requested_mode_for_a_batch(tmp_path) ->
     balanced_events = _run_stream(balanced_params, tmp_path)
     random_events = _run_stream(random_params, tmp_path)
     balanced_results = [
-        e["data"] for e in balanced_events if e["event"] == "result"
+        e.get("payload", e.get("data", {})) for e in balanced_events if e["event"] == "result"
     ]
-    random_results = [e["data"] for e in random_events if e["event"] == "result"]
+    random_results = [e.get("payload", e.get("data", {})) for e in random_events if e["event"] == "result"]  # noqa: E501
 
     assert len(balanced_results) == 3
     assert len(random_results) == 3
@@ -165,7 +165,7 @@ def test_user_q_type_pool_wins_over_balanced_assignment(tmp_path) -> None:
         seed=13,
     )
     events = _run_stream(params, tmp_path)
-    results = [e["data"] for e in events if e["event"] == "result"]
+    results = [e.get("payload", e.get("data", {})) for e in events if e["event"] == "result"]
     assert {r["題型"] for r in results} == {"開放式建構反應題"}
 
 
@@ -179,6 +179,6 @@ def test_user_learning_content_wins_over_balanced_assignment(tmp_path) -> None:
         seed=13,
     )
     events = _run_stream(params, tmp_path)
-    results = [e["data"] for e in events if e["event"] == "result"]
+    results = [e.get("payload", e.get("data", {})) for e in events if e["event"] == "result"]
     assert len(results) == 2
     assert all(r["取材來源"] == ["公Aa-Ⅳ-1"] for r in results)

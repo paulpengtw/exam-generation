@@ -8,6 +8,13 @@ import { isSentryEnabled } from "../sentry";
 import { saveSignoutReason } from "../lib/signoutReason";
 import { saveReturnDestination } from "../lib/returnDestination";
 import type { GenerateParams } from "../api/generated/contract";
+import { MESSAGES } from "../i18n/messages";
+import { createGenerationStreamDecoder } from "../lib/generationStream";
+import {
+  createRunEvidence,
+  applyV2Event,
+  type RunEvidenceState,
+} from "../lib/generationEvidence";
 import {
   formatResolverFieldErrors,
   isResolverFieldErrorLike,
@@ -260,6 +267,8 @@ export type LlmCallEvent =
   | { type: "response"; purpose: string; agent: string; model: string; usage?: unknown }
   | { type: "stage"; agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
 
+export type StageEvent = Extract<LlmCallEvent, { type: "stage" }>;
+
 export type AgentStatus = "idle" | "running" | "done" | "error";
 
 export interface AgentLane {
@@ -296,6 +305,7 @@ export interface UseGenerateReturn {
   progressLines: string[];
   results: ExamQuestion[];
   displayResults: GeneratedQuestion[];
+  evidence: RunEvidenceState | null;
   llmCalls: LlmCallEvent[];
   agentLanes: AgentLane[];
   errorMessage: string | null;
@@ -418,6 +428,7 @@ function formatHttpErrorDetail(detail: unknown): string | null {
 
 export function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
+  qs.append("stream_version", "2");
   if (params.subject !== undefined) qs.append("subject", params.subject);
   if (params.grade !== undefined) qs.append("grade", String(params.grade));
   if (params.content_type !== undefined) qs.append("content_type", params.content_type);
@@ -572,6 +583,8 @@ export function useGenerate(): UseGenerateReturn {
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [results, setResults] = useState<ExamQuestion[]>([]);
   const [displayResults, setDisplayResults] = useState<GeneratedQuestion[]>([]);
+  const [evidence, setEvidence] = useState<RunEvidenceState | null>(null);
+  const evidenceRef = useRef<RunEvidenceState | null>(null);
   const [llmCalls, setLlmCalls] = useState<LlmCallEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -629,6 +642,8 @@ export function useGenerate(): UseGenerateReturn {
     setProgressLines([]);
     setResults([]);
     setDisplayResults([]);
+    setEvidence(null);
+    evidenceRef.current = null;
     setLlmCalls([]);
     setErrorMessage(null);
     setStartedAt(null);
@@ -692,12 +707,17 @@ export function useGenerate(): UseGenerateReturn {
 
     const token = useAuthStore.getState().token;
 
+    // Create a fresh decoder for this connection
+    const decoder = createGenerationStreamDecoder();
+
     setStatus("generating");
     setAdmission("submitting");
     setAdmissionError(null);
     setProgressLines([]);
     setResults([]);
     setDisplayResults([]);
+    setEvidence(null);
+    evidenceRef.current = null;
     setLlmCalls([]);
     setErrorMessage(null);
     setStartedAt(streamContext.startedAt);
@@ -713,10 +733,426 @@ export function useGenerate(): UseGenerateReturn {
     terminalQuestionKeysRef.current.clear();
     expectedQuestionTotalRef.current = typeof params.count === "number" ? params.count : null;
 
+    // ---------------------------------------------------------------------------
+    // V2 event handler — routes decoded v2 events to evidence + llmCalls
+    // ---------------------------------------------------------------------------
+    function handleV2Event(name: string, context: Record<string, unknown>, payload: unknown) {
+      const p = payload as Record<string, unknown>;
+
+      switch (name) {
+        case "started": {
+          setStatus("generating");
+          settleAdmission({ outcome: "admitted" });
+          // Build evidence from decoder's manifest
+          if (decoder.run) {
+            const initial = createRunEvidence(decoder.run);
+            evidenceRef.current = initial;
+            setEvidence(initial);
+          }
+          break;
+        }
+        case "llm_request": {
+          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
+          setLlmCalls((prev) => [...prev, {
+            type: "request",
+            purpose: (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "",
+            agent,
+            model: (p.model as string) ?? "",
+            messages: (p.messages as unknown[]) ?? [],
+            params: p.params,
+          }]);
+          break;
+        }
+        case "llm_thinking": {
+          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
+          const purpose = (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "";
+          const text = (p.text as string) ?? "";
+          setLlmCalls((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.type === "thinking" && last.purpose === purpose) {
+              return [...prev.slice(0, -1), { ...last, text: last.text + text }];
+            }
+            return [...prev, { type: "thinking", purpose, agent, text }];
+          });
+          break;
+        }
+        case "llm_content": {
+          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
+          const purpose = (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "";
+          const text = (p.text as string) ?? "";
+          setLlmCalls((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.type === "content" && last.purpose === purpose) {
+              return [...prev.slice(0, -1), { ...last, text: last.text + text }];
+            }
+            return [...prev, { type: "content", purpose, agent, text }];
+          });
+          break;
+        }
+        case "llm_response": {
+          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
+          setLlmCalls((prev) => [...prev, {
+            type: "response",
+            purpose: (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "",
+            agent,
+            model: (p.model as string) ?? "",
+            usage: p.usage,
+          }]);
+          break;
+        }
+        case "stage": {
+          setLlmCalls((prev) => [...prev, {
+            type: "stage",
+            agent: (p.agent as string) ?? "",
+            stage: (p.stage as string) ?? "",
+            status: (p.status as "start" | "end" | "error") ?? "start",
+            ts: (p.ts as number) ?? 0,
+            retry: p.retry as number | undefined,
+            message: p.message as string | undefined,
+          }]);
+          break;
+        }
+        case "plan": {
+          const total = p.sub_question_total;
+          if (typeof total === "number") setSubQuestionTotal(total);
+          break;
+        }
+        case "trail": {
+          const parsed = p as unknown as VerificationTrailEntry | FigurePolicyTrailEntry | ReferenceExampleEntryShape;
+          if (!parsed.question_id) break;
+          if (parsed.code === "verification_trail") {
+            const previous = trailByQuestionRef.current.get(parsed.question_id) ?? [];
+            const trail = [...previous, parsed as VerificationTrailEntry];
+            trailByQuestionRef.current.set(parsed.question_id, trail);
+          } else if (parsed.code === "figure_policy") {
+            const previous = figurePolicyTrailByQuestionRef.current.get(parsed.question_id) ?? [];
+            const fpt = [...previous, parsed as FigurePolicyTrailEntry];
+            figurePolicyTrailByQuestionRef.current.set(parsed.question_id, fpt);
+          } else if (parsed.code === "reference_example") {
+            const previous = referenceExampleEntriesByQuestionRef.current.get(parsed.question_id) ?? [];
+            const entries = [...previous, parsed as ReferenceExampleEntryShape];
+            referenceExampleEntriesByQuestionRef.current.set(parsed.question_id, entries);
+          }
+          break;
+        }
+        case "question_update":
+        case "result":
+        case "question_terminal":
+        case "pipeline": {
+          // Route to evidence reducer
+          const prev = evidenceRef.current;
+          if (!prev) break;
+          const next = applyV2Event(prev, { kind: "v2", event: { name, context, payload } });
+          evidenceRef.current = next;
+          setEvidence(next);
+          // Track question_terminal for terminalEvidence settlement
+          if (name === "question_terminal") {
+            const questionId = typeof context.question_id === "string" ? context.question_id : null;
+            if (questionId !== null) terminalQuestionKeysRef.current.add(questionId);
+          }
+          // In v2 mode, also update displayResults and results from evidence
+          if (name === "result" || name === "question_update") {
+            // Derive displayResults from evidence manifest order
+            const newDisplay: GeneratedQuestion[] = [];
+            for (const entry of next.order) {
+              const qev = next.questions[entry];
+              if (qev && qev.content.question) {
+                const qid = qev.questionId;
+                const laneKey = qid;
+                const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
+                newDisplay.push({
+                  index: qev.index,
+                  question: qev.content.question,
+                  phase: (qev.content.phase ?? "draft") as DraftPhase,
+                  isFinal: qev.content.receipt === "final",
+                  stableId: qev.questionId,
+                  contentRevision: typeof qev.content.revision === "number" && qev.content.revision > 0
+                    ? qev.content.revision
+                    : null,
+                  trail: trailByQuestionRef.current.get(laneKey) ?? [],
+                  figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
+                  referenceExampleRecord: refEntries
+                    ? { disabled: false, entries: refEntries }
+                    : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
+                });
+              }
+            }
+            setDisplayResults(newDisplay);
+            // results = unique finals in manifest order
+            const newResults = next.order
+              .map((qid) => next.questions[qid])
+              .filter((qev) => qev?.content.receipt === "final" && qev.content.question)
+              .map((qev) => qev.content.question!);
+            setResults(newResults);
+          }
+          break;
+        }
+        case "error": {
+          const errPayload = payload as { message?: string; code?: string } | string | null;
+          let msg = "Unknown error";
+          if (typeof errPayload === "string") msg = errPayload;
+          else if (errPayload && typeof errPayload === "object" && typeof errPayload.message === "string") {
+            msg = errPayload.message;
+          }
+          setErrorMessage(msg);
+          setStatus("error");
+          setResultsCompletion("error");
+          setTerminalEvidence(false);
+          setFinishedAt(Date.now());
+          endOperation("failed");
+          break;
+        }
+        case "done": {
+          // Apply done to close the evidence run
+          const prev = evidenceRef.current;
+          if (prev) {
+            const closed = applyV2Event(prev, { kind: "v2", event: { name, context, payload } });
+            evidenceRef.current = closed;
+            setEvidence(closed);
+          }
+          {
+            const expected = expectedQuestionTotalRef.current;
+            const hasTerminalEvidence = expected === null
+              ? terminalQuestionKeysRef.current.size > 0
+              : expected > 0 && terminalQuestionKeysRef.current.size >= expected;
+            setTerminalEvidence(hasTerminalEvidence);
+            setResultsCompletion(hasTerminalEvidence ? "settled" : "unknown");
+          }
+          setStatus("idle");
+          setFinishedAt(Date.now());
+          endOperation("completed");
+          controller.abort();
+          controllerRef.current = null;
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Legacy event handler — existing switch statement logic unchanged
+    // ---------------------------------------------------------------------------
+    function handleLegacyEvent(eventName: string, data: string) {
+      switch (eventName) {
+        case "started":
+          setStatus("generating");
+          settleAdmission({ outcome: "admitted" });
+          {
+            const payload = parseStartedEventData(data);
+            if (payload) setGenerationLogId(payload.generation_log_id);
+          }
+          break;
+        case "progress":
+          setProgressLines((prev) => [...prev, data]);
+          break;
+        case "llm_request": {
+          try {
+            const d = JSON.parse(data) as { purpose: string; agent?: string; model: string; messages: unknown[]; params?: unknown };
+            const agent = d.agent ?? purposeToAgent(d.purpose);
+            setLlmCalls((prev) => [...prev, { type: "request", purpose: d.purpose, agent, model: d.model, messages: d.messages, params: d.params }]);
+          } catch { /* ignore */ }
+          break;
+        }
+        case "llm_thinking": {
+          try {
+            const d = JSON.parse(data) as { purpose: string; agent?: string; text: string };
+            const agent = d.agent ?? purposeToAgent(d.purpose);
+            setLlmCalls((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.type === "thinking" && last.purpose === d.purpose) {
+                return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
+              }
+              return [...prev, { type: "thinking", purpose: d.purpose, agent, text: d.text }];
+            });
+          } catch { /* ignore */ }
+          break;
+        }
+        case "llm_content": {
+          try {
+            const d = JSON.parse(data) as { purpose: string; agent?: string; text: string };
+            const agent = d.agent ?? purposeToAgent(d.purpose);
+            setLlmCalls((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.type === "content" && last.purpose === d.purpose) {
+                return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
+              }
+              return [...prev, { type: "content", purpose: d.purpose, agent, text: d.text }];
+            });
+          } catch { /* ignore */ }
+          break;
+        }
+        case "llm_response": {
+          try {
+            const d = JSON.parse(data) as { purpose: string; agent?: string; model: string; usage?: unknown };
+            const agent = d.agent ?? purposeToAgent(d.purpose);
+            setLlmCalls((prev) => [...prev, { type: "response", purpose: d.purpose, agent, model: d.model, usage: d.usage }]);
+          } catch { /* ignore */ }
+          break;
+        }
+        case "stage": {
+          try {
+            const d = JSON.parse(data) as { agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
+            setLlmCalls((prev) => [...prev, { type: "stage", agent: d.agent, stage: d.stage, status: d.status, ts: d.ts, retry: d.retry, message: d.message }]);
+          } catch { /* ignore */ }
+          break;
+        }
+        case "plan": {
+          try {
+            const d = JSON.parse(data) as { sub_question_total: number };
+            setSubQuestionTotal(d.sub_question_total);
+          } catch { /* ignore */ }
+          break;
+        }
+        case "pipeline":
+          // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
+          break;
+        case "question_update": {
+          try {
+            const parsed = JSON.parse(data) as {
+              index: number;
+              phase: DraftPhase;
+              question: ExamQuestion;
+              stable_id?: string;
+              content_revision?: number | null;
+            };
+            const laneKey = questionKey(parsed.question, parsed.index);
+            const draftEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey) ?? [];
+            const draftRefRecord: ReferenceExampleRecordShape = draftEntries.length > 0
+              ? { disabled: false, entries: draftEntries }
+              : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] };
+            setDisplayResults((prev) => upsertDisplayResult(prev, {
+              index: parsed.index,
+              question: parsed.question,
+              phase: parsed.phase,
+              isFinal: false,
+              stableId: parsed.stable_id ?? questionKey(parsed.question, parsed.index),
+              contentRevision: typeof parsed.content_revision === "number" && parsed.content_revision > 0
+                ? parsed.content_revision
+                : null,
+              trail: trailByQuestionRef.current.get(laneKey) ?? [],
+              figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
+              referenceExampleRecord: draftRefRecord,
+            }));
+          } catch { /* ignore malformed draft updates */ }
+          break;
+        }
+        case "trail": {
+          try {
+            const parsed = JSON.parse(data) as
+              | VerificationTrailEntry
+              | FigurePolicyTrailEntry
+              | ReferenceExampleEntryShape;
+            if (!parsed.question_id) break;
+            if (parsed.code === "verification_trail") {
+              const previous = trailByQuestionRef.current.get(parsed.question_id) ?? [];
+              const trail = [...previous, parsed as VerificationTrailEntry];
+              trailByQuestionRef.current.set(parsed.question_id, trail);
+              setDisplayResults((prev) => prev.map((item) => (
+                questionKey(item.question, item.index) === parsed.question_id
+                  ? { ...item, trail }
+                  : item
+              )));
+            } else if (parsed.code === "figure_policy") {
+              const previous = figurePolicyTrailByQuestionRef.current.get(parsed.question_id) ?? [];
+              const figurePolicyTrail = [...previous, parsed as FigurePolicyTrailEntry];
+              figurePolicyTrailByQuestionRef.current.set(parsed.question_id, figurePolicyTrail);
+              setDisplayResults((prev) => prev.map((item) => (
+                questionKey(item.question, item.index) === parsed.question_id
+                  ? { ...item, figurePolicyTrail }
+                  : item
+              )));
+            } else if (parsed.code === "reference_example") {
+              const previous = referenceExampleEntriesByQuestionRef.current.get(parsed.question_id) ?? [];
+              const entries = [...previous, parsed as ReferenceExampleEntryShape];
+              referenceExampleEntriesByQuestionRef.current.set(parsed.question_id, entries);
+              setDisplayResults((prev) => prev.map((item) => (
+                questionKey(item.question, item.index) === parsed.question_id
+                  ? { ...item, referenceExampleRecord: { disabled: false, entries } }
+                  : item
+              )));
+            }
+          } catch { /* ignore malformed trail events */ }
+          break;
+        }
+        case "question_terminal":
+          try {
+            const parsed = JSON.parse(data) as Record<string, unknown>;
+            const ctx = parsed.context && typeof parsed.context === "object"
+              ? parsed.context as Record<string, unknown>
+              : null;
+            const questionId = typeof parsed.question_id === "string"
+              ? parsed.question_id
+              : typeof ctx?.question_id === "string"
+                ? ctx.question_id
+                : Number.isInteger(parsed.index) ? `index-${parsed.index}` : null;
+            if (questionId !== null) terminalQuestionKeysRef.current.add(questionId);
+          } catch { /* legacy streams may not send JSON terminal envelopes */ }
+          break;
+        case "result":
+          try {
+            const raw = JSON.parse(data) as ExamQuestion & {
+              stable_id?: string;
+              question_id?: string;
+              content_revision?: number | null;
+              question?: ExamQuestion;
+            };
+            const parsed = raw.question !== undefined && typeof raw.question === "object" && raw.question !== null
+              ? raw.question
+              : raw;
+            const index = nextFinalIndexRef.current;
+            nextFinalIndexRef.current += 1;
+            setResults((prev) => [...prev, parsed]);
+            const laneKey = questionKey(parsed, index);
+            const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
+            setDisplayResults((prev) => upsertDisplayResult(prev, {
+              index,
+              question: parsed,
+              phase: "verified",
+              isFinal: true,
+              stableId: raw.stable_id ?? raw.question_id ?? questionKey(parsed, index),
+              contentRevision: typeof raw.content_revision === "number" && raw.content_revision > 0
+                ? raw.content_revision
+                : null,
+              trail: trailByQuestionRef.current.get(laneKey) ?? [],
+              figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
+              referenceExampleRecord: refEntries
+                ? { disabled: false, entries: refEntries }
+                : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
+            }));
+          } catch {
+            setStatus("error");
+          }
+          break;
+        case "error":
+          setErrorMessage(parseErrorEventData(data ?? ""));
+          setStatus("error");
+          setResultsCompletion("error");
+          setTerminalEvidence(false);
+          setFinishedAt(Date.now());
+          endOperation("failed");
+          break;
+        case "done": {
+          const expected = expectedQuestionTotalRef.current;
+          const hasTerminalEvidence = expected === null
+            ? terminalQuestionKeysRef.current.size > 0
+            : expected > 0 && terminalQuestionKeysRef.current.size >= expected;
+          setTerminalEvidence(hasTerminalEvidence);
+          setResultsCompletion(hasTerminalEvidence ? "settled" : "unknown");
+          setStatus("idle");
+          setFinishedAt(Date.now());
+          endOperation("completed");
+          controller.abort();
+          controllerRef.current = null;
+          break;
+        }
+      }
+    }
+
     operationRef.current = useWorkspaceStore.getState().beginOperation("generation", "generate.results");
     fetchEventSource("/api/generate", {
       method: "POST",
-      body: JSON.stringify(params),
+      body: JSON.stringify({ ...params, stream_version: 2 }),
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
@@ -779,220 +1215,41 @@ export function useGenerate(): UseGenerateReturn {
         streamContext.messageCount += 1;
         streamContext.lastEventType = ev.event || "none";
 
-        switch (ev.event) {
-          case "started":
-            setStatus("generating");
-            settleAdmission({ outcome: "admitted" });
-            {
-              const payload = parseStartedEventData(ev.data);
-              if (payload) setGenerationLogId(payload.generation_log_id);
-            }
-            break;
-          case "progress":
-            setProgressLines((prev) => [...prev, ev.data]);
-            break;
-          case "llm_request": {
-            try {
-              const d = JSON.parse(ev.data) as { purpose: string; agent?: string; model: string; messages: unknown[]; params?: unknown };
-              const agent = d.agent ?? purposeToAgent(d.purpose);
-              setLlmCalls((prev) => [...prev, { type: "request", purpose: d.purpose, agent, model: d.model, messages: d.messages, params: d.params }]);
-            } catch { /* ignore */ }
-            break;
-          }
-          case "llm_thinking": {
-            try {
-              const d = JSON.parse(ev.data) as { purpose: string; agent?: string; text: string };
-              const agent = d.agent ?? purposeToAgent(d.purpose);
-              setLlmCalls((prev) => {
-                const last = prev[prev.length - 1];
-                if (last && last.type === "thinking" && last.purpose === d.purpose) {
-                  return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
-                }
-                return [...prev, { type: "thinking", purpose: d.purpose, agent, text: d.text }];
-              });
-            } catch { /* ignore */ }
-            break;
-          }
-          case "llm_content": {
-            try {
-              const d = JSON.parse(ev.data) as { purpose: string; agent?: string; text: string };
-              const agent = d.agent ?? purposeToAgent(d.purpose);
-              setLlmCalls((prev) => {
-                const last = prev[prev.length - 1];
-                if (last && last.type === "content" && last.purpose === d.purpose) {
-                  return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
-                }
-                return [...prev, { type: "content", purpose: d.purpose, agent, text: d.text }];
-              });
-            } catch { /* ignore */ }
-            break;
-          }
-          case "llm_response": {
-            try {
-              const d = JSON.parse(ev.data) as { purpose: string; agent?: string; model: string; usage?: unknown };
-              const agent = d.agent ?? purposeToAgent(d.purpose);
-              setLlmCalls((prev) => [...prev, { type: "response", purpose: d.purpose, agent, model: d.model, usage: d.usage }]);
-            } catch { /* ignore */ }
-            break;
-          }
-          case "stage": {
-            try {
-              const d = JSON.parse(ev.data) as { agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
-              setLlmCalls((prev) => [...prev, { type: "stage", agent: d.agent, stage: d.stage, status: d.status, ts: d.ts, retry: d.retry, message: d.message }]);
-            } catch { /* ignore */ }
-            break;
-          }
-          case "plan": {
-            try {
-              const d = JSON.parse(ev.data) as { sub_question_total: number };
-              setSubQuestionTotal(d.sub_question_total);
-            } catch { /* ignore */ }
-            break;
-          }
-          case "pipeline":
-            // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
-            break;
-          case "question_update": {
-            try {
-              const parsed = JSON.parse(ev.data) as {
-                index: number;
-                phase: DraftPhase;
-                question: ExamQuestion;
-                stable_id?: string;
-                content_revision?: number | null;
-              };
-              const laneKey = questionKey(parsed.question, parsed.index);
-              const draftEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey) ?? [];
-              const draftRefRecord: ReferenceExampleRecordShape = draftEntries.length > 0
-                ? { disabled: false, entries: draftEntries }
-                : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] };
-              setDisplayResults((prev) => upsertDisplayResult(prev, {
-                index: parsed.index,
-                question: parsed.question,
-                phase: parsed.phase,
-                isFinal: false,
-                stableId: parsed.stable_id ?? questionKey(parsed.question, parsed.index),
-                contentRevision: typeof parsed.content_revision === "number" && parsed.content_revision > 0
-                  ? parsed.content_revision
-                  : null,
-                trail: trailByQuestionRef.current.get(laneKey) ?? [],
-                figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
-                referenceExampleRecord: draftRefRecord,
-              }));
-            } catch { /* ignore malformed draft updates */ }
-            break;
-          }
-          case "trail": {
-            try {
-              const parsed = JSON.parse(ev.data) as
-                | VerificationTrailEntry
-                | FigurePolicyTrailEntry
-                | ReferenceExampleEntryShape;
-              if (!parsed.question_id) break;
-              if (parsed.code === "verification_trail") {
-                const previous = trailByQuestionRef.current.get(parsed.question_id) ?? [];
-                const trail = [...previous, parsed as VerificationTrailEntry];
-                trailByQuestionRef.current.set(parsed.question_id, trail);
-                setDisplayResults((prev) => prev.map((item) => (
-                  questionKey(item.question, item.index) === parsed.question_id
-                    ? { ...item, trail }
-                    : item
-                )));
-              } else if (parsed.code === "figure_policy") {
-                const previous = figurePolicyTrailByQuestionRef.current.get(parsed.question_id) ?? [];
-                const figurePolicyTrail = [...previous, parsed as FigurePolicyTrailEntry];
-                figurePolicyTrailByQuestionRef.current.set(parsed.question_id, figurePolicyTrail);
-                setDisplayResults((prev) => prev.map((item) => (
-                  questionKey(item.question, item.index) === parsed.question_id
-                    ? { ...item, figurePolicyTrail }
-                    : item
-                )));
-              } else if (parsed.code === "reference_example") {
-                const previous = referenceExampleEntriesByQuestionRef.current.get(parsed.question_id) ?? [];
-                const entries = [...previous, parsed as ReferenceExampleEntryShape];
-                referenceExampleEntriesByQuestionRef.current.set(parsed.question_id, entries);
-                setDisplayResults((prev) => prev.map((item) => (
-                  questionKey(item.question, item.index) === parsed.question_id
-                    ? { ...item, referenceExampleRecord: { disabled: false, entries } }
-                    : item
-                )));
-              }
-            } catch { /* ignore malformed trail events */ }
-            break;
-          }
-          case "result":
-            try {
-              const raw = JSON.parse(ev.data) as ExamQuestion & {
-                stable_id?: string;
-                question_id?: string;
-                content_revision?: number | null;
-                question?: ExamQuestion;
-              };
-              const parsed = raw.question !== undefined && typeof raw.question === "object" && raw.question !== null
-                ? raw.question
-                : raw;
-              const index = nextFinalIndexRef.current;
-              nextFinalIndexRef.current += 1;
-              setResults((prev) => [...prev, parsed]);
-              const laneKey = questionKey(parsed, index);
-              const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
-              setDisplayResults((prev) => upsertDisplayResult(prev, {
-                index,
-                question: parsed,
-                phase: "verified",
-                isFinal: true,
-                stableId: raw.stable_id ?? raw.question_id ?? questionKey(parsed, index),
-                contentRevision: typeof raw.content_revision === "number" && raw.content_revision > 0
-                  ? raw.content_revision
-                  : null,
-                trail: trailByQuestionRef.current.get(laneKey) ?? [],
-                figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
-                referenceExampleRecord: refEntries
-                  ? { disabled: false, entries: refEntries }
-                  : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
-              }));
-            } catch {
-              setStatus("error");
-            }
-            break;
-          case "error":
-            setErrorMessage(parseErrorEventData(ev.data ?? ""));
+        // Decode through the connection's decoder
+        const decoded = decoder.decode(ev.event ?? "", ev.data ?? "");
+        for (const d of decoded) {
+          if (d.kind === "mode" && d.mode === "unsupported") {
+            // Unknown protocol or bad manifest: abort, set error
+            const reasonKey = d.reason === "unknown_protocol"
+              ? "stream.unsupported_unknown_protocol"
+              : d.reason === "invalid_manifest"
+                ? "stream.unsupported_invalid_manifest"
+                : "stream.unsupported_missing_started";
+            const msg = MESSAGES["zh-TW"][reasonKey] ?? reasonKey;
+            setErrorMessage(msg);
             setStatus("error");
             setResultsCompletion("error");
             setTerminalEvidence(false);
             setFinishedAt(Date.now());
+            settleAdmission({ outcome: "rejected", reason: reasonKey });
             endOperation("failed");
-            break;
-          case "question_terminal": {
-            try {
-              const parsed = JSON.parse(ev.data) as Record<string, unknown>;
-              const context = parsed.context && typeof parsed.context === "object"
-                ? parsed.context as Record<string, unknown>
-                : null;
-              const questionId = typeof parsed.question_id === "string"
-                ? parsed.question_id
-                : typeof context?.question_id === "string"
-                  ? context.question_id
-                  : Number.isInteger(parsed.index) ? `index-${parsed.index}` : null;
-              if (questionId !== null) terminalQuestionKeysRef.current.add(questionId);
-            } catch { /* legacy streams may not send JSON terminal envelopes */ }
-            break;
-          }
-          case "done":
-            setStatus("idle");
-            {
-              const expected = expectedQuestionTotalRef.current;
-              const hasTerminalEvidence = expected === null
-                ? terminalQuestionKeysRef.current.size > 0
-                : expected > 0 && terminalQuestionKeysRef.current.size >= expected;
-              setTerminalEvidence(hasTerminalEvidence);
-              setResultsCompletion(hasTerminalEvidence ? "settled" : "unknown");
-            }
-            setFinishedAt(Date.now());
-            endOperation("completed");
             controller.abort();
             controllerRef.current = null;
-            break;
+            return;
+          }
+
+          if (d.kind === "v2") {
+            // V2 mode: route decoded event
+            handleV2Event(d.event.name, d.event.context, d.event.payload);
+          } else if (d.kind === "legacy") {
+            // Legacy mode: use existing switch handler
+            handleLegacyEvent(d.name, d.data);
+          } else if (d.kind === "held") {
+            // Event held pending started: immediately process as legacy so existing
+            // tests (which don't send started first) continue to work.
+            handleLegacyEvent(ev.event ?? "", ev.data ?? "");
+          }
+          // ignore: no action
         }
       },
       onerror(err) {
@@ -1037,6 +1294,7 @@ export function useGenerate(): UseGenerateReturn {
     progressLines,
     results,
     displayResults,
+    evidence,
     llmCalls,
     agentLanes,
     errorMessage,

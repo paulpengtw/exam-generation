@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
@@ -20,6 +20,7 @@ import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
+import { projectGenerationCardEvidence, projectGenerationEvidence } from "../lib/generationStream";
 import {
   initRecoveryStore,
   initRecoveryStoreAsync,
@@ -81,6 +82,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     generate,
     restoreResults: restoreSavedResults,
     reset,
+    evidence: runEvidence,
   } = useGenerate();
   // Recovery must be resolved before ParamForm mounts. Otherwise its schema,
   // model, draft, and default effects can observe an empty form and replace a
@@ -173,6 +175,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [requestedTotal, setRequestedTotal] = useState(0);
   const [submittedSubQuestionCount, setSubmittedSubQuestionCount] =
     useState<number | null>(null);
+  const evidence = useMemo(
+    () => projectGenerationEvidence(llmCalls, submittedSubQuestionCount ?? subQuestionTotal),
+    [llmCalls, submittedSubQuestionCount, subQuestionTotal],
+  );
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const { pending: pendingRecovery, discardRecovery } = useRecoveryStore();
@@ -224,7 +230,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     discardRecovery();
     return true;
   }, [discardRecovery, recoveryResults, restoreReceivedResults, resultsRestoreVerified]);
-  const hasResults = displayResults.length > 0;
+  const hasResults = displayResults.length > 0 || (runEvidence != null && runEvidence.total > 0);
   const exportWorkspace = useCallback(() => exportResultsWorkspace({
     status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
     subQuestionTotal, requestedTotal, submittedSubQuestionCount,
@@ -555,17 +561,31 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
               </div>
             </div>
             <div className="space-y-3">
-              {displayResults.map((item) => (
-                <QuestionCard
-                  key={item.question.id ?? `q-${item.index}`}
-                  question={item.question}
-                  phase={item.phase}
-                  isFinal={item.isFinal}
-                  trail={item.trail}
-                  figurePolicyTrail={item.figurePolicyTrail}
-                  referenceExampleRecord={item.referenceExampleRecord}
-                />
-              ))}
+              {runEvidence
+                ? runEvidence.order.map((qid, idx) => {
+                    const qEvidence = runEvidence.questions[qid];
+                    const displayItem = displayResults.find(
+                      (r) => (r.question.id ?? "") === qid
+                    );
+                    if (!qEvidence) return null;
+                    const cardProps = displayItem ? projectGenerationCardEvidence(displayItem) : {};
+                    return (
+                      <QuestionCard
+                        key={qid}
+                        index={idx}
+                        evidence={qEvidence}
+                        question={displayItem?.question}
+                        {...cardProps}
+                      />
+                    );
+                  })
+                : displayResults.map((item) => (
+                    <QuestionCard
+                      key={item.question.id ?? `q-${item.index}`}
+                      question={item.question}
+                      {...projectGenerationCardEvidence(item)}
+                    />
+                  ))}
             </div>
           </section>
         )}
@@ -583,8 +603,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         completedCount={results.length}
         requestedTotal={requestedTotal}
         subject={subject}
-        stageEvents={llmCalls}
-        subQuestionCount={submittedSubQuestionCount ?? subQuestionTotal}
+        evidence={evidence}
         startedAt={startedAt}
         finishedAt={finishedAt}
         availableTargets={availableTargets}

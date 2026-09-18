@@ -23,13 +23,13 @@ import anyio
 
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
+from server.generate.event_protocol import QuestionTerminalPayload
 from server.generate.marshalling import (
     SSEEventName,
     make_combined_observer,
-    make_pipeline_emitter,
-    make_question_update_emitter,
-    make_queue_observer,
-    make_trail_emitter,
+    make_publisher_observer,
+    make_publisher_pipeline_emitter,
+    make_publisher_trail_emitter,
     question_to_event,
 )
 from server.generate.models import (
@@ -42,6 +42,8 @@ from server.generate.persistence import (
     make_reference_example_record_recorder,
     persist_generation_record,
 )
+from server.generate.publisher import GenerationPublisher
+from server.generate.snapshot_ledger import QuestionSnapshotLedger
 from server.generate.subjects import (
     SUBJECTS,
     SubjectSpec,
@@ -49,6 +51,7 @@ from server.generate.subjects import (
 )
 from server.observability import record_generation_outcome
 from src.common.generation_core import GenerationCancelled
+from src.common.generation_events import QuestionContext, allocate_manifest, new_run_id
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -214,6 +217,10 @@ class _RunContext:
     config: ServerConfig
     balanced_batch: bool
     cancel_event: threading.Event
+    run_id: str
+    manifest: tuple[QuestionContext, ...]
+    publisher: GenerationPublisher
+    snapshot_ledger: QuestionSnapshotLedger
 
 
 def _build_run_context(
@@ -229,6 +236,8 @@ def _build_run_context(
     html_renderer: Any,
     on_error: Callable[[str], None] | None = None,
     cancel_event: threading.Event | None = None,
+    publisher: GenerationPublisher | None = None,
+    run_id: str | None = None,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -246,6 +255,16 @@ def _build_run_context(
     order_counter = itertools.count(1)
     order_lock = threading.Lock()
     balanced_batch = params.coverage_mode == "balanced" and params.count > 1
+    _run_id = (
+        run_id
+        if run_id is not None
+        else (str(generation_log_id) if generation_log_id is not None else new_run_id())
+    )
+    _manifest = allocate_manifest(spec.question_id_prefix, _run_id, max(1, params.count))
+    _publisher = publisher if publisher is not None else GenerationPublisher(
+        run_id=_run_id, loop=loop, queue=queue
+    )
+    _snapshot_ledger = QuestionSnapshotLedger()
     figure_policy_recorder = make_figure_policy_trail_recorder(
         generation_log_id=generation_log_id,
         loop=loop,
@@ -281,7 +300,7 @@ def _build_run_context(
         queue=queue,
         prior_scopes=[],
         prior_scopes_lock=threading.Lock(),
-        emit_pipeline=make_pipeline_emitter(loop, queue),
+        emit_pipeline=make_publisher_pipeline_emitter(_publisher, _manifest),
         generation_log_id=generation_log_id,
         figure_policy_recorder=figure_policy_recorder,
         reference_example_recorder=reference_example_recorder,
@@ -291,7 +310,133 @@ def _build_run_context(
         config=config,
         balanced_batch=balanced_batch,
         cancel_event=cancel_event if cancel_event is not None else threading.Event(),
+        run_id=_run_id,
+        manifest=_manifest,
+        publisher=_publisher,
+        snapshot_ledger=_snapshot_ledger,
     )
+
+
+def _build_question_terminal_payload(
+    *,
+    question_id: str,
+    termination_reason: str,
+    has_final: bool,
+    final_revision: int | None,
+    question: Any | None,
+    params: GenerateParams,
+    output_dir: Any,  # Path | None
+    unknown_reason: str | None = None,
+) -> dict[str, Any]:
+    """Build a QuestionTerminalPayload dict; validated before returning.
+
+    On any validation failure, returns a minimal 'unknown' delivery payload
+    so the worker never crashes.
+
+    Spec notes:
+    - grouped subjects (SS/NS) get expected=[] for now (fixed slots are #744).
+    - operation/call ids are #743; sibling-independent error handling is #747.
+    """
+    from pathlib import Path as _Path
+
+    # --- review ---
+    if not has_final:
+        review: dict[str, Any] = {
+            "status": "unknown",
+            "reason": unknown_reason or "no final content",
+        }
+    elif params.skip_verify:
+        review = {
+            "status": "skipped",
+            "content_revision": final_revision,
+        }
+    elif question is not None and getattr(question, "verification", None) is not None:
+        passed = question.verification.passed
+        review = {
+            "status": "passed" if passed else "failed",
+            "content_revision": final_revision,
+        }
+    else:
+        review = {
+            "status": "unknown",
+            "reason": "no verification evidence",
+            "content_revision": final_revision,
+        }
+
+    # --- image slots (flat math only; #744 will handle grouped slots) ---
+    expected: list[dict] = []
+    delivered: list[dict] = []
+    missing: list[dict] = []
+
+    if has_final and question is not None:
+        # An image slot exists when the pipeline adopted an image
+        # (i.e. chart_spec or image_spec is non-None on the final question)
+        has_image_spec = (
+            getattr(question, "chart_spec", None) is not None
+            or getattr(question, "image_spec", None) is not None
+        )
+        # Also check 圖片 field — it's set when pipeline wrote the PNG path
+        img_filename: str | None = getattr(question, "圖片", None)
+
+        if has_image_spec or img_filename:
+            slot = {"kind": "image", "question_id": question_id, "subquestion_id": None}
+            expected.append(slot)
+            if img_filename and output_dir is not None:
+                img_path = _Path(output_dir) / img_filename
+                if img_path.exists():
+                    delivered.append(slot)
+                else:
+                    missing.append(slot)
+            else:
+                missing.append(slot)
+
+    # --- delivery_status ---
+    if not has_final:
+        if termination_reason == "cancelled":
+            delivery_status = "unknown"
+        else:
+            delivery_status = "none"
+    elif missing:
+        delivery_status = "partial"
+    else:
+        delivery_status = "complete"
+
+    raw_payload: dict[str, Any] = {
+        "termination_reason": termination_reason,
+        "has_final": has_final,
+        "final_revision": final_revision,
+        "delivery_status": delivery_status,
+        "expected": expected,
+        "delivered": delivered,
+        "missing": missing,
+        "review": review,
+    }
+    if unknown_reason is not None:
+        raw_payload["unknown_reason"] = unknown_reason
+
+    try:
+        QuestionTerminalPayload.model_validate(raw_payload)
+        return raw_payload
+    except Exception as exc:  # ValidationError
+        logger.warning(
+            "question_terminal validation failed for %s (%s): %s",
+            question_id,
+            termination_reason,
+            exc,
+        )
+        # Fall back to a minimal unknown-delivery terminal
+        fallback: dict[str, Any] = {
+            "termination_reason": termination_reason,
+            "has_final": False,
+            "final_revision": None,
+            "delivery_status": "unknown",
+            "expected": [],
+            "delivered": [],
+            "missing": [],
+            "review": {"status": "unknown", "reason": "terminal evidence inconsistent"},
+            "unknown_reason": "terminal evidence inconsistent",
+        }
+        return fallback
 
 
 def _worker_one(
@@ -311,10 +456,33 @@ def _worker_one(
     figure_policy_recorder = ctx.figure_policy_recorder
     reference_example_recorder = ctx.reference_example_recorder
     question_client.set_observer(
-        make_combined_observer(make_queue_observer(ctx.loop, ctx.queue), worker_recorder)
+        make_combined_observer(
+            make_publisher_observer(ctx.publisher, ctx.manifest[i]),
+            worker_recorder,
+        )
     )
-    emit_question_update = make_question_update_emitter(i, ctx.loop, ctx.queue, ctx.config)
-    emit_trail_entry = make_trail_emitter(ctx.loop, ctx.queue)
+    # Wrap emit_question_update to commit to the snapshot ledger and carry
+    # content_revision in every question_update context (slice 5).
+    _revision_tracker: list[int] = [0]  # mutable container so the closure can write back
+
+    def emit_question_update(question: Any, phase: str) -> None:
+        q_dict = json.loads(question.model_dump_json(exclude_none=True))
+        rev, _ = ctx.snapshot_ledger.commit(q_dict, ctx.config.output_dir)
+        _revision_tracker[0] = rev
+        _upd_payload: dict[str, Any] = {
+            "index": ctx.manifest[i].index,
+            "phase": phase,
+            "question": question_to_event(question, ctx.config),
+        }
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_UPDATE,
+            question_id=ctx.manifest[i].question_id,
+            index=ctx.manifest[i].index,
+            content_revision=rev,
+            payload=_upd_payload,
+        )
+
+    emit_trail_entry = make_publisher_trail_emitter(ctx.publisher, ctx.manifest[i])
     verification_trail: list[dict[str, Any]] = []
     figure_policy_trail: list[dict[str, Any]] = []
     reference_example_entries: list[dict[str, Any]] = []
@@ -353,6 +521,7 @@ def _worker_one(
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
+    _terminal_status = "failed"  # updated before each exit
     try:
         rng_params = _resolved_worker_params(
             i,
@@ -368,7 +537,7 @@ def _worker_one(
             )
 
         # Site 3: generate via registry (replaces if/elif generate calls)
-        question_id = f"{ctx.spec.question_id_prefix}{ctx.timestamp}_{i+1:03d}"
+        question_id = ctx.manifest[i].question_id
         question = ctx.spec.do_generate(
             rng_params,
             ctx.overrides,
@@ -413,38 +582,93 @@ def _worker_one(
                 ctx.prior_scopes.append(new_scope)
         ctx.emit_pipeline("question_end", index=i, total=ctx.count)
         record_generation_outcome(ctx.params.subject, "success")
-        result_event: dict[str, Any] = {
-            "event": SSEEventName.RESULT,
-            "data": question_to_event(question, ctx.config),
+        sidecars: dict[str, Any] = {
+            "reference_example_record": {
+                "disabled": bool(ctx.params.disable_reference_fewshot),
+                "entries": reference_example_entries,
+            },
         }
         if verification_trail:
-            result_event["verification_trail"] = verification_trail
+            sidecars["verification_trail"] = verification_trail
         if figure_policy_trail:
-            result_event["figure_policy_trail"] = figure_policy_trail
-        result_event["reference_example_record"] = {
-            "disabled": bool(ctx.params.disable_reference_fewshot),
-            "entries": reference_example_entries,
-        }
-        ctx.loop.call_soon_threadsafe(
-            ctx.queue.put_nowait,
-            result_event,
+            sidecars["figure_policy_trail"] = figure_policy_trail
+        # Commit the final question to the ledger (unchanged content keeps revision).
+        _q_final_dict = json.loads(question.model_dump_json(exclude_none=True))
+        _final_revision, _ = ctx.snapshot_ledger.commit(
+            _q_final_dict, ctx.config.output_dir
+        )
+        _revision_tracker[0] = _final_revision
+        ctx.publisher.publish(
+            SSEEventName.RESULT,
+            question_id=question_id,
+            index=i,
+            content_revision=_final_revision,
+            payload=question_to_event(question, ctx.config),
+            sidecars=sidecars,
+        )
+        # Normal terminal – published AFTER the result event.
+        _terminal_payload = _build_question_terminal_payload(
+            question_id=question_id,
+            termination_reason="normal",
+            has_final=True,
+            final_revision=_final_revision,
+            question=question,
+            params=ctx.params,
+            output_dir=ctx.config.output_dir,
+        )
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_TERMINAL,
+            question_id=question_id,
+            index=i,
+            payload=_terminal_payload,
         )
     except GenerationCancelled:
         # Client disconnected; exit cleanly without emitting an error event.
-        pass
+        _qid_cancel = ctx.manifest[i].question_id
+        _cancel_payload = _build_question_terminal_payload(
+            question_id=_qid_cancel,
+            termination_reason="cancelled",
+            has_final=False,
+            final_revision=None,
+            question=None,
+            params=ctx.params,
+            output_dir=ctx.config.output_dir,
+            unknown_reason="cancelled before completion",
+        )
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_TERMINAL,
+            question_id=_qid_cancel,
+            index=i,
+            payload=_cancel_payload,
+        )
     except Exception as exc:
         record_generation_outcome(ctx.params.subject, "failure")
-        ctx.loop.call_soon_threadsafe(
-            ctx.queue.put_nowait,
-            {
-                "event": SSEEventName.ERROR,
-                "data": build_sse_error(
-                    "generation_failed",
-                    f"Question generation failed ({type(exc).__name__})",
-                ),
-            },
+        ctx.publisher.publish(
+            SSEEventName.ERROR,
+            question_id=question_id,
+            index=i,
+            payload=build_sse_error(
+                "generation_failed",
+                f"Question generation failed ({type(exc).__name__})",
+            ),
         )
         logger.exception("worker_one error (index=%d)", i)
+        _failed_payload = _build_question_terminal_payload(
+            question_id=question_id,
+            termination_reason="failed",
+            has_final=False,
+            final_revision=None,
+            question=None,
+            params=ctx.params,
+            output_dir=ctx.config.output_dir,
+            unknown_reason="no final content",
+        )
+        ctx.publisher.publish(
+            SSEEventName.QUESTION_TERMINAL,
+            question_id=question_id,
+            index=i,
+            payload=_failed_payload,
+        )
 
 
 async def generate_question_stream(
@@ -469,13 +693,6 @@ async def generate_question_stream(
     _session_factory = session_factory if session_factory is not None else AsyncSessionLocal
     _client_factory = client_factory if client_factory is not None else LLMClient
 
-    yield {
-        "event": SSEEventName.STARTED,
-        "data": {
-            "generation_log_id": str(generation_log_id) if generation_log_id is not None else None,
-        },
-    }
-
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     renderer_pool = getattr(app_state, "renderer_pool", None)
@@ -486,10 +703,14 @@ async def generate_question_stream(
     # render call, not when its worker thread exits (issue #700 option 2).
     # The cancel_event is created here so it can be shared with the lease object
     # before _build_run_context is called.
+    _run_id = str(generation_log_id) if generation_log_id is not None else new_run_id()
+    _publisher = GenerationPublisher(run_id=_run_id, loop=loop, queue=queue)
     _cancel_event = threading.Event()
     if renderer_pool is not None:
         from server.generate.renderer_lease import RendererLease  # noqa: PLC0415
-        html_renderer: Any = RendererLease(renderer_pool, loop, _cancel_event, queue)
+        html_renderer: Any = RendererLease(
+            renderer_pool, loop, _cancel_event, queue, publisher=_publisher
+        )
     else:
         html_renderer = None
 
@@ -497,18 +718,10 @@ async def generate_question_stream(
     config.output_dir.mkdir(parents=True, exist_ok=True)
     spec = _subjects[params.subject]
 
-    def _emit_sq_config_error(msg: str) -> None:
-        queue.put_nowait({
-            "event": SSEEventName.STAGE,
-            "data": {
-                "type": "stage",
-                "agent": "generator",
-                "stage": "subquestion_configs",
-                "status": "error",
-                "message": msg,
-                "ts": time.time(),
-            },
-        })
+    _sq_config_error_msgs: list[str] = []
+
+    def _collect_sq_config_error(msg: str) -> None:
+        _sq_config_error_msgs.append(msg)
 
     ctx = _build_run_context(
         params, config, app_state,
@@ -518,9 +731,40 @@ async def generate_question_stream(
         loop=loop,
         queue=queue,
         html_renderer=html_renderer,
-        on_error=_emit_sq_config_error,
+        on_error=_collect_sq_config_error,
         cancel_event=_cancel_event,
+        publisher=_publisher,
+        run_id=_run_id,
     )
+
+    ctx.publisher.publish(
+        SSEEventName.STARTED,
+        payload={
+            "protocol_version": 2,
+            "total": ctx.count,
+            "questions": [
+                {"index": qc.index, "question_id": qc.question_id}
+                for qc in ctx.manifest
+            ],
+            "generation_log_id": str(generation_log_id) if generation_log_id is not None else None,
+        },
+    )
+    await asyncio.sleep(0)
+    yield queue.get_nowait()
+
+    # Emit any deferred sq_config errors (collected during _build_run_context) via publisher.
+    for _sq_msg in _sq_config_error_msgs:
+        ctx.publisher.publish(
+            SSEEventName.STAGE,
+            payload={
+                "type": "stage",
+                "agent": "generator",
+                "stage": "subquestion_configs",
+                "status": "error",
+                "message": _sq_msg,
+                "ts": time.time(),
+            },
+        )
 
     # Site 2 (creative-brief / coverage planning): delegated to spec.
     # SS: plans briefs when creative_planning=True; returns [None]*count otherwise.
@@ -528,16 +772,16 @@ async def generate_question_stream(
     # Run in a worker thread so a synchronous LLM planning call (e.g. Opus for
     # 社會領域 with creative_planning=True, ~14 s) does not block the event loop
     # and freeze pings, /health, and other requests (issue #701).
-    yield {
-        "event": SSEEventName.STAGE,
-        "data": {
+    ctx.publisher.publish(
+        SSEEventName.STAGE,
+        payload={
             "type": "stage",
             "agent": "planner",
             "stage": "batch_briefs",
             "status": "start",
             "ts": time.time(),
         },
-    }
+    )
 
     # The planner uses the same exchange order allocator as workers.  Its
     # observer must be installed before the provider call so request,
@@ -552,13 +796,13 @@ async def generate_question_stream(
         next_order=ctx.next_order,
     )
     planner_events_enabled = True
-    queue_observer = make_queue_observer(ctx.loop, ctx.queue)
+    _planner_publisher_observer = make_publisher_observer(ctx.publisher, None)
 
     def _planner_queue_observer(event: dict[str, Any]) -> None:
         # Once the stream is cancelled/closed, preserve recorder callbacks for
         # a late response but stop enqueueing events that no consumer can read.
         if planner_events_enabled:
-            queue_observer(event)
+            _planner_publisher_observer(event)
 
     planner_observer = make_combined_observer(
         _planner_queue_observer, planner_recorder,
@@ -637,16 +881,16 @@ async def generate_question_stream(
         # disabled the gate in _cleanup_planning().
         planner_events_enabled = False
 
-    yield {
-        "event": SSEEventName.STAGE,
-        "data": {
+    ctx.publisher.publish(
+        SSEEventName.STAGE,
+        payload={
             "type": "stage",
             "agent": "planner",
             "stage": "batch_briefs",
             "status": "end",
             "ts": time.time(),
         },
-    }
+    )
 
     # Guard: if the request was cancelled while planning ran in its thread
     # (e.g. the client disconnected), do not submit workers.  This is an extra
@@ -666,33 +910,35 @@ async def generate_question_stream(
 
     async def _wait_and_signal() -> None:
         await asyncio.gather(*futures, return_exceptions=True)
-        # _direct=True: already on the event loop — call_soon_threadsafe would
-        # defer pipeline_end by one tick, placing it after done in the queue.
-        ctx.emit_pipeline("pipeline_end", total=ctx.count, _direct=True)
-        queue.put_nowait({"event": SSEEventName.DONE, "data": ""})
+        ctx.emit_pipeline("pipeline_end", total=ctx.count)
+        ctx.publisher.publish(SSEEventName.DONE, payload={})
 
     signal_task = asyncio.create_task(_wait_and_signal())
     try:
         while True:
             event = await queue.get()
+            # v2 envelopes use {context, payload} shape — no top-level "event" key.
+            # Route them through unchanged; persistence and stop-sentinel checks
+            # operate only on v1 events.
+            event_name = event.get("event")
             if (
-                event["event"] == SSEEventName.RESULT
+                event_name == SSEEventName.RESULT
                 and user_id is not None
-                and isinstance(event["data"], dict)
+                and isinstance(event.get("payload"), dict)
             ):
                 await persist_generation_record(
                     user_id=user_id,
                     generation_log_id=generation_log_id,
                     subject=params.subject,
                     params=params,
-                    payload=event["data"],
+                    payload=event["payload"],
                     session_factory=_session_factory,
                     verification_trail_json=event.get("verification_trail"),
                     figure_policy_trail_json=event.get("figure_policy_trail"),
                     reference_example_record_json=event.get("reference_example_record"),
                 )
             yield event
-            if event["event"] in (SSEEventName.DONE, SSEEventName.ERROR):
+            if event_name in (SSEEventName.DONE, SSEEventName.ERROR):
                 break
     finally:
         ctx.cancel_event.set()

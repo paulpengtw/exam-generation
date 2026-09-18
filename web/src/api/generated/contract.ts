@@ -120,6 +120,7 @@ export type SSEEventName =
   | "stage"
   | "plan"
   | "trail"
+  | "question_terminal"
   ;
 
 /**
@@ -141,6 +142,7 @@ export const SSE_EMITTED_EVENT_NAMES = [
   "stage",
   "plan",
   "trail",
+  "question_terminal",
 ] as const;
 
 export type SSEEmittedEventName = (typeof SSE_EMITTED_EVENT_NAMES)[number];

@@ -58,6 +58,7 @@ class SSEEventName(str, Enum):
     STAGE = "stage"
     PLAN = "plan"
     TRAIL = "trail"
+    QUESTION_TERMINAL = "question_terminal"
 
 
 # Canonical set of event names the server actually emits at runtime.
@@ -78,6 +79,7 @@ EMITTED_EVENT_NAMES: frozenset[str] = frozenset({
     "stage",
     "plan",
     "trail",
+    "question_terminal",
 })
 
 
@@ -220,6 +222,32 @@ def make_combined_observer(
     return observer
 
 
+def make_publisher_observer(
+    publisher: Any,
+    question_context: Any | None,
+) -> LLMObserver:
+    """Return an LLMObserver that publishes through *publisher* using v2 envelopes.
+
+    When *question_context* (a QuestionContext) is given, every event carries
+    question_id and index (question scope).  When None, events are batch-scope.
+    """
+    def observer(event: dict) -> None:
+        sse_event = _OBSERVER_TYPE_MAP.get(event.get("type", ""))
+        if not sse_event:
+            return
+        if question_context is not None:
+            publisher.publish(
+                sse_event,
+                question_id=question_context.question_id,
+                index=question_context.index,
+                payload=dict(event),
+            )
+        else:
+            publisher.publish(sse_event, payload=dict(event))
+
+    return observer
+
+
 # ---------------------------------------------------------------------------
 # Queue-write helpers
 # ---------------------------------------------------------------------------
@@ -279,6 +307,87 @@ def make_trail_emitter(
         loop.call_soon_threadsafe(
             queue.put_nowait,
             {"event": SSEEventName.TRAIL, "data": payload},
+        )
+
+    return emit_trail
+
+
+# ---------------------------------------------------------------------------
+# Publisher-based emitter factories (v2 envelopes — slice 4b)
+# ---------------------------------------------------------------------------
+
+def make_publisher_pipeline_emitter(
+    publisher: Any,
+    manifest: Any,
+) -> Callable[..., None]:
+    """Return _emit_pipeline(name, *, index=None, total=None, **extra) via publisher.
+
+    When *index* is given, emits a question-scoped pipeline event carrying
+    question_id and index from *manifest*.  Otherwise emits batch-scope.
+    """
+    def _emit_pipeline(
+        name: str,
+        *,
+        index: int | None = None,
+        total: int | None = None,
+        **extra: object,
+    ) -> None:
+        payload: dict[str, Any] = {"event_name": name, "ts": time.time(), **extra}
+        if index is not None:
+            payload["index"] = index
+        if total is not None:
+            payload["total"] = total
+        if index is not None:
+            publisher.publish(
+                SSEEventName.PIPELINE,
+                question_id=manifest[index].question_id,
+                index=index,
+                payload=payload,
+            )
+        else:
+            publisher.publish(SSEEventName.PIPELINE, payload=payload)
+
+    return _emit_pipeline
+
+
+def make_publisher_question_update_emitter(
+    publisher: Any,
+    question_context: Any,
+    config: Any,
+) -> Callable[[Any, str], None]:
+    """Return emit_question_update(question, phase) via publisher for question_context."""
+    def emit_question_update(question: Any, phase: str) -> None:
+        payload: dict[str, Any] = {
+            "index": question_context.index,
+            "phase": phase,
+            "question": question_to_event(question, config),
+        }
+        publisher.publish(
+            SSEEventName.QUESTION_UPDATE,
+            question_id=question_context.question_id,
+            index=question_context.index,
+            payload=payload,
+        )
+
+    return emit_question_update
+
+
+def make_publisher_trail_emitter(
+    publisher: Any,
+    question_context: Any,
+) -> Callable[[Any], None]:
+    """Return a thread-safe emitter for one typed trail entry via publisher."""
+    def emit_trail(entry: Any) -> None:
+        payload = (
+            entry.model_dump(mode="json")
+            if hasattr(entry, "model_dump")
+            else entry
+        )
+        publisher.publish(
+            SSEEventName.TRAIL,
+            question_id=question_context.question_id,
+            index=question_context.index,
+            payload=payload,
         )
 
     return emit_trail
