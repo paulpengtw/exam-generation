@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
@@ -20,7 +20,18 @@ import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
-import { useRecoveryStore } from "../lib/recovery/recoveryStore";
+import {
+  initRecoveryStore,
+  initRecoveryStoreAsync,
+  useRecoveryStore,
+} from "../lib/recovery/recoveryStore";
+import {
+  peekTabId,
+  getOrCreateTabId,
+  detectTabCollision,
+  startTabCollisionListener,
+  resetTabIdForCollision,
+} from "../lib/recovery/storage";
 
 export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
@@ -52,7 +63,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       ?.prefillParams ?? null;
   const t = useT();
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const logoutExplicit = useAuthStore((s) => s.logoutExplicit);
   const {
     status,
     progressLines,
@@ -63,10 +74,98 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     errorMessage,
     startedAt,
     finishedAt,
+    generationLogId,
     subQuestionTotal,
+    resultsCompletion,
+    terminalEvidence,
     generate,
+    restoreResults: restoreSavedResults,
     reset,
   } = useGenerate();
+  // Recovery must be resolved before ParamForm mounts. Otherwise its schema,
+  // model, draft, and default effects can observe an empty form and replace a
+  // confirmation that is still being restored. The layout gate also means a
+  // store update from initRecoveryStore cannot arrive as a late prop that the
+  // form has to reconcile after hydration has begun.
+  const recoveryRoute = location.pathname ?? window.location.pathname;
+  const recoveryBootKey = `${recoveryRoute}:${user?.id ?? ""}`;
+  const [recoveryBootedKey, setRecoveryBootedKey] = useState<string | null>(null);
+
+  // Phase 1: synchronous boot — restores pending snapshot immediately so the
+  // form can render without waiting for async identity-hardening work.  This
+  // keeps all rendering synchronous and avoids macro-task delays (setTimeout)
+  // that would block test assertions inside act().
+  useLayoutEffect(() => {
+    const environment =
+      typeof __BUILD_ENVIRONMENT__ === "undefined"
+        ? "development"
+        : __BUILD_ENVIRONMENT__;
+    initRecoveryStore({
+      currentRoute: recoveryRoute,
+      origin: window.location.origin,
+      environment,
+    });
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRecoveryBootedKey(recoveryBootKey);
+  }, [recoveryBootKey, recoveryRoute]);
+
+  // Phase 2: async identity hardening (issue #776) — runs after the first
+  // render.  Performs tab-collision detection, transactional snapshot claim,
+  // and starts the BroadcastChannel collision listener.  If the claim is lost
+  // (another tab won the race) the optimistic pending state from Phase 1 is
+  // cleared so this tab does not show stale recovery content.
+  useEffect(() => {
+    let cancelled = false;
+    let stopCollisionListener: (() => void) | null = null;
+    const environment =
+      typeof __BUILD_ENVIRONMENT__ === "undefined"
+        ? "development"
+        : __BUILD_ENVIRONMENT__;
+
+    async function hardenIdentity(): Promise<void> {
+      const existingTabId = peekTabId();
+      if (existingTabId !== null) {
+        const isDuplicate = await detectTabCollision(existingTabId, 100);
+        if (cancelled) return;
+        if (isDuplicate) {
+          // This tab is a duplicate — mint a fresh identity and discard the
+          // Phase-1 optimistic recovery so the form starts empty.
+          const freshId = resetTabIdForCollision();
+          stopCollisionListener = startTabCollisionListener(freshId);
+          useRecoveryStore.getState().discardRecovery();
+          return;
+        }
+      }
+      if (cancelled) return;
+      // Upgrade Phase-1 pending with a transactional claim so two tabs cannot
+      // both hydrate the same snapshot.
+      await initRecoveryStoreAsync({
+        currentRoute: recoveryRoute,
+        origin: window.location.origin,
+        environment,
+      });
+      if (cancelled) return;
+      // If another tab won the claim, clear the Phase-1 optimistic state.
+      if (
+        useRecoveryStore.getState().claimedSnapshotId === null &&
+        useRecoveryStore.getState().pending !== null
+      ) {
+        useRecoveryStore.setState({ pending: null, blocked: null });
+      }
+      const tabId = getOrCreateTabId();
+      stopCollisionListener = startTabCollisionListener(tabId);
+    }
+
+    hardenIdentity().catch(() => {
+      // Hardening failed: Phase-1 sync state remains in effect.
+      // No claim is held, but the form is already rendered.
+    });
+
+    return () => {
+      cancelled = true;
+      if (stopCollisionListener) stopCollisionListener();
+    };
+  }, [recoveryBootKey, recoveryRoute]);
   const { enabled, open } = useFeedbackDialog();
   const formRef = useRef<HTMLElement | null>(null);
   const progressRef = useRef<HTMLElement | null>(null);
@@ -77,12 +176,62 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const { pending: pendingRecovery, discardRecovery } = useRecoveryStore();
+  const pendingRecoveryForRoute = pendingRecovery?.route === recoveryRoute &&
+    pendingRecovery.subject === subject
+    ? pendingRecovery
+    : null;
+  const recoveryResults = pendingRecoveryForRoute?.results;
+  const recoverySnapshotId = pendingRecoveryForRoute?.snapshot_id ?? null;
+  const [resultsRestoreError, setResultsRestoreError] = useState(false);
+  const [resultsRestoreVerified, setResultsRestoreVerified] = useState(false);
+  const restoredResultsKeyRef = useRef<string | null>(null);
+  const restoreReceivedResults = useCallback((): boolean => {
+    if (!recoveryResults) {
+      setResultsRestoreError(false);
+      setResultsRestoreVerified(true);
+      return true;
+    }
+    const restored = restoreSavedResults(recoveryResults);
+    if (!restored) {
+      setResultsRestoreError(true);
+      setResultsRestoreVerified(false);
+      return false;
+    }
+    setRequestedTotal(recoveryResults.requestedTotal);
+    setSubmittedSubQuestionCount(recoveryResults.submittedSubQuestionCount);
+    setResultsRestoreError(false);
+    setResultsRestoreVerified(true);
+    return true;
+  }, [recoveryResults, restoreSavedResults]);
+  useLayoutEffect(() => {
+    if (!recoveryResults) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- recovery has no result payload to hydrate
+      setResultsRestoreVerified(true);
+      restoredResultsKeyRef.current = null;
+      return;
+    }
+    if (restoredResultsKeyRef.current === recoverySnapshotId) return;
+    restoredResultsKeyRef.current = recoverySnapshotId;
+    restoreReceivedResults();
+  }, [recoveryResults, recoverySnapshotId, restoreReceivedResults]);
+  const handleRecoveryAcknowledge = useCallback((): boolean => {
+    if (recoveryResults && !resultsRestoreVerified && !restoreReceivedResults()) return false;
+    discardRecovery();
+    return true;
+  }, [discardRecovery, recoveryResults, restoreReceivedResults, resultsRestoreVerified]);
+  const handleRecoveryDiscard = useCallback((): boolean => {
+    if (recoveryResults && !resultsRestoreVerified && !restoreReceivedResults()) return false;
+    discardRecovery();
+    return true;
+  }, [discardRecovery, recoveryResults, restoreReceivedResults, resultsRestoreVerified]);
   const hasResults = displayResults.length > 0;
   const exportWorkspace = useCallback(() => exportResultsWorkspace({
     status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
     subQuestionTotal, requestedTotal, submittedSubQuestionCount,
+    runId: generationLogId,
+    terminalEvidence: terminalEvidence ?? false,
   }), [status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
-    subQuestionTotal, requestedTotal, submittedSubQuestionCount]);
+    subQuestionTotal, requestedTotal, submittedSubQuestionCount, generationLogId, terminalEvidence]);
   useSurfaceParticipation("generate.results", {
     readiness: "ready",
     hasEditableState: false,
@@ -123,7 +272,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   }, [hasUnsubmittedInput, hasResults]);
 
   const handleLogout = () => {
-    logout();
+    logoutExplicit();
     navigate("/");
   };
 
@@ -180,6 +329,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const runState: RunState =
     status === "error"
       ? "error"
+      : resultsCompletion === "unknown"
+        ? "unknown"
       : status === "generating"
         ? "running"
         : startedAt !== null && finishedAt !== null
@@ -200,6 +351,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     ...(hasUnsubmittedInput ? ["confirm.navigate_away_body_params"] : []),
     ...(hasResults ? ["confirm.navigate_away_body_results"] : []),
   ];
+
+  if (recoveryBootedKey !== recoveryBootKey) {
+    return <div className="min-h-screen bg-gray-50" aria-busy="true" />;
+  }
 
   // Derive dialog props from the single effective pending action.
   const dialogProps = (() => {
@@ -328,6 +483,18 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-6 px-3 pt-4 pb-20 sm:px-4 sm:pt-6">
+        {resultsRestoreError ? (
+          <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+            <span>{t("recovery.results_restore_failed")}</span>{" "}
+            <button
+              type="button"
+              onClick={restoreReceivedResults}
+              className="font-medium underline"
+            >
+              {t("recovery.retry")}
+            </button>
+          </div>
+        ) : null}
         <section ref={formRef} className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
           <ParamForm
             subject={subject}
@@ -335,9 +502,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             disabled={status === "generating"}
             initialParams={prefillParams ?? undefined}
             onUnsubmittedInput={() => setHasUnsubmittedInput(true)}
-            recoveredForm={pendingRecovery?.form}
-            onRecoveryAcknowledge={discardRecovery}
-            onRecoveryDiscard={discardRecovery}
+            recoveredForm={pendingRecoveryForRoute?.form}
+            recoveredConfirmation={pendingRecoveryForRoute?.confirmation}
+            onRecoveryAcknowledge={handleRecoveryAcknowledge}
+            onRecoveryDiscard={handleRecoveryDiscard}
           />
         </section>
 

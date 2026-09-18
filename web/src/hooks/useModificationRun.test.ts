@@ -3,7 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { submitModificationBatch, type ModificationBatchRequest } from "../api/client";
 import { resetWorkspaceStoreForTests, useWorkspaceStore } from "../lib/workspace/workspaceStore";
-import { useModificationRun } from "./useModificationRun";
+import { useModificationRun, type ModificationRunResult } from "./useModificationRun";
 
 vi.mock("../api/client", () => ({ submitModificationBatch: vi.fn() }));
 const fetchEventSourceMock = vi.hoisted(() => vi.fn<(url: string, init: FetchEventSourceInit) => Promise<void>>());
@@ -18,9 +18,12 @@ function deferred<T>() {
 
 const batch: ModificationBatchRequest = { annotations: [] };
 const completedResult = {
-  record_id: "replacement", question: { id: "q1", 題目: ["changed"] },
+  record_id: "replacement",
+  question: {
+    id: "q1", 情境: [], 題型種類: "single", 題型: "choice", 題目: ["changed"], 正確解題分析: ["answer"],
+  },
   ripple_report: [], verified: true, verification: null, failure_details: null,
-};
+} satisfies ModificationRunResult;
 const beginOperation = useWorkspaceStore.getState().beginOperation;
 let end: ReturnType<typeof vi.fn>;
 
@@ -47,6 +50,17 @@ afterEach(() => {
 });
 
 describe("modification admission", () => {
+  it("hydrates a settled result without admission or stream work", () => {
+    const { result } = renderHook(() => useModificationRun("record-1", completedResult));
+
+    expect(result.current.status).toBe("completed");
+    expect(result.current.admission).toBe("idle");
+    expect(result.current.result).toEqual(completedResult);
+    expect(submitModificationBatch).not.toHaveBeenCalled();
+    expect(fetchEventSourceMock).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().operations).toEqual([]);
+  });
+
   it("is submitting until the POST returns a run id, with an operation covering both phases", async () => {
     const pending = deferred<Awaited<ReturnType<typeof submitModificationBatch>>>();
     vi.mocked(submitModificationBatch).mockReturnValue(pending.promise);

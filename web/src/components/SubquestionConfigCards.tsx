@@ -16,6 +16,14 @@ import {
 
 export type ResolvedSubQuestionConfig = SubQuestionConfig;
 
+function entriesWithCurrentValue(
+  entries: readonly SchemaEntry[],
+  value: string | undefined,
+): SchemaEntry[] {
+  if (!value || entries.some((entry) => entry.value === value)) return [...entries];
+  return [...entries, { value, instruction: "" }];
+}
+
 export default function SubquestionConfigCards({
   configs,
   subject,
@@ -133,10 +141,11 @@ export default function SubquestionConfigCards({
         const cognitivePath = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].認知歷程`;
         const reportingScalePath = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].reporting_scale`;
         const slotPathPrefix = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].`;
+        // Keep captured codes visible even when the current schema/domain pool
+        // no longer admits them. The parent confirmation gate marks them
+        // invalid; filtering here would silently hide the value to correct.
         const visibleLearningContent = row.learning_content ?? [];
-        const visibleLearningPerformance = filteredLpPool === undefined
-          ? row.learning_performance ?? []
-          : (row.learning_performance ?? []).filter((code) => filteredLpPool.includes(code));
+        const visibleLearningPerformance = row.learning_performance ?? [];
 
         return (
           <li key={subquestionIndex} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -161,7 +170,10 @@ export default function SubquestionConfigCards({
                     className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
                   >
                     <option value="">{t("form.confirm_not_filled")}</option>
-                    {(cognitiveProcesses ?? []).map((entry) => (
+                    {entriesWithCurrentValue(
+                      cognitiveProcesses ?? [],
+                      typeof value === "string" ? value : undefined,
+                    ).map((entry) => (
                       <option key={entry.value} value={entry.value}>{entry.value}</option>
                     ))}
                   </select>

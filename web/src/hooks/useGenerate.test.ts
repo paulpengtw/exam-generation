@@ -1092,7 +1092,8 @@ describe("restoreResults", () => {
       status: completion === "error" ? "error" : "idle", admission: "idle", admissionError: null, llmCalls: [],
     });
     expect(exportResultsWorkspace({ ...result.current, requestedTotal: 2, submittedSubQuestionCount: 3 })).toMatchObject({
-      ...snapshot, completion: completion === "error" ? "error" : "settled",
+      ...snapshot,
+      completion: completion === "settled" ? "unknown" : completion,
     });
   });
 

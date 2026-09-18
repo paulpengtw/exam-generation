@@ -57,6 +57,9 @@ export interface WorkspaceState {
   approveNavigation(target: string): void;
   clearNavigationApproval(): void;
   setFreezeInput(frozen: boolean): void;
+  updateIntent: { kind: "queued" } | { kind: "active" } | null;
+  queueUpdateIntent(): void;
+  cancelUpdateIntent(): void;
 }
 
 export type RefreshBlocker =
@@ -73,6 +76,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   workspace_revision: 0,
   navigationApproved: null,
   freezeInput: false,
+  updateIntent: null,
 
   registerSurface(participation) {
     const entry = { ...participation };
@@ -115,10 +119,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       end() {
         if (ended) return;
         ended = true;
-        set((state) => ({
-          operations: state.operations.filter((op) => op.id !== id),
-          workspace_revision: state.workspace_revision + 1,
-        }));
+        set((state) => {
+          const newOperations = state.operations.filter((op) => op.id !== id);
+          const updateIntent =
+            newOperations.length === 0 && state.updateIntent?.kind === "queued"
+              ? { kind: "active" as const }
+              : state.updateIntent;
+          return {
+            operations: newOperations,
+            workspace_revision: state.workspace_revision + 1,
+            updateIntent,
+          };
+        });
       },
     };
   },
@@ -130,6 +142,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   },
   setFreezeInput(frozen) {
     set({ freezeInput: frozen });
+  },
+  queueUpdateIntent() {
+    set((state) => {
+      if (state.operations.length === 0) return state;
+      return { updateIntent: { kind: "queued" } };
+    });
+  },
+  cancelUpdateIntent() {
+    set({ updateIntent: null });
   },
 }));
 
@@ -160,5 +181,6 @@ export function resetWorkspaceStoreForTests(): void {
     workspace_revision: 0,
     navigationApproved: null,
     freezeInput: false,
+    updateIntent: null,
   });
 }

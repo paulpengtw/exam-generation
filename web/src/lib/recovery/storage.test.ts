@@ -2,7 +2,7 @@
  * Tests for recovery storage — issue #772.
  * Written BEFORE the implementation (red phase).
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   getOrCreateTabId,
   saveSnapshotTransactionally,
@@ -72,6 +72,19 @@ describe("saveSnapshotTransactionally", () => {
     await saveSnapshotTransactionally(snap);
     const key = "exam_recovery_user-1_snap-001";
     expect(localStorage.getItem(key)).not.toBeNull();
+  });
+
+  it("removes a partial write when the storage engine throws quota after writing", async () => {
+    const nativeSetItem = localStorage.setItem.bind(localStorage);
+    vi.spyOn(localStorage, "setItem").mockImplementationOnce((key, value) => {
+      nativeSetItem(key, value);
+      throw new DOMException("QuotaExceededError", "QuotaExceededError");
+    });
+
+    const result = await saveSnapshotTransactionally(makeSnapshot());
+
+    expect(result).toEqual({ ok: false, reason: "quota" });
+    expect(localStorage.getItem("exam_recovery_user-1_snap-001")).toBeNull();
   });
 });
 

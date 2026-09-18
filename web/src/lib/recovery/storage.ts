@@ -1,8 +1,9 @@
 /**
- * Recovery storage — issue #772.
+ * Recovery storage — issue #772, hardened in issue #776.
  *
  * Keys:
  *   localStorage  `exam_recovery_<account_id>_<snapshot_id>`  — snapshot
+ *   localStorage  `exam_recovery_claim_<snapshot_id>`          — transactional claim (#776)
  *   sessionStorage `exam_recovery_tab`                          — tab pointer
  *   sessionStorage `exam_tab_id`                               — stable per-tab id
  *
@@ -10,6 +11,7 @@
  * Storage failures are surfaced as typed error results so callers can decide.
  *
  * Draft / snapshot CONTENTS must never be unmasked or logged.
+ * Tab IDs, account IDs, and claim nonces are structural only — never contents.
  */
 import type { RecoverySnapshotV1 } from "./format";
 
@@ -51,6 +53,34 @@ export function getOrCreateTabId(): string {
 }
 
 /**
+ * Returns the current tab ID from sessionStorage without creating one.
+ * Returns null if no tab ID has been persisted yet.
+ * Use this to check whether collision detection is needed (a tab with no ID
+ * cannot be a duplicate).
+ */
+export function peekTabId(): string | null {
+  try {
+    return sessionStorage.getItem(TAB_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clears the current tab ID from sessionStorage and mints a fresh one.
+ * Called when a duplicate-tab collision is detected so the duplicate gets a
+ * unique identity without carrying the original tab's snapshot claim.
+ */
+export function resetTabIdForCollision(): string {
+  try {
+    sessionStorage.removeItem(TAB_ID_KEY);
+  } catch {
+    // best-effort
+  }
+  return getOrCreateTabId();
+}
+
+/**
  * Save a recovery snapshot transactionally.
  * Writes to localStorage and immediately reads back to verify integrity.
  */
@@ -72,8 +102,13 @@ export async function saveSnapshotTransactionally(
       e instanceof DOMException &&
       (e.name === "QuotaExceededError" || e.code === 22)
     ) {
+      // Some storage implementations can commit part of a write before
+      // reporting quota. Remove that candidate so a later boot cannot mistake
+      // it for a verified snapshot.
+      try { localStorage.removeItem(key); } catch { /* best effort */ }
       return { ok: false, reason: "quota" };
     }
+    try { localStorage.removeItem(key); } catch { /* best effort */ }
     return { ok: false, reason: "storage_denied" };
   }
 
@@ -115,8 +150,10 @@ export async function persistTabPointer(pointer: TabPointer): Promise<SaveResult
       e instanceof DOMException &&
       (e.name === "QuotaExceededError" || e.code === 22)
     ) {
+      try { sessionStorage.removeItem(TAB_POINTER_KEY); } catch { /* best effort */ }
       return { ok: false, reason: "quota" };
     }
+    try { sessionStorage.removeItem(TAB_POINTER_KEY); } catch { /* best effort */ }
     return { ok: false, reason: "storage_denied" };
   }
 
@@ -187,4 +224,165 @@ export function clearTabPointer(): void {
   } catch {
     // Best-effort
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Issue #776 — Identity hardening
+// ────────────────────────────────────────────────────────────────────────────
+
+const CLAIM_KEY_PREFIX = "exam_recovery_claim_";
+const COLLISION_CHANNEL_NAME = "exam_tab_collision";
+
+export interface RestorationClaim {
+  tab_id: string;
+  nonce: string;
+  snapshot_id: string;
+  claimed_at: string;
+}
+
+/**
+ * Write a transactional restoration claim for the given snapshot.
+ * Returns {won: true} only when the claim read-back confirms this tab's nonce.
+ * Two tabs racing to claim the same snapshot will produce different nonces;
+ * the loser reads the winner's nonce back and yields.
+ * Does not log or expose snapshot contents.
+ */
+export async function claimSnapshot(
+  tabId: string,
+  snapshotId: string,
+): Promise<{ won: boolean }> {
+  const nonce = crypto.randomUUID();
+  const claim: RestorationClaim = {
+    tab_id: tabId,
+    snapshot_id: snapshotId,
+    nonce,
+    claimed_at: new Date().toISOString(),
+  };
+  const key = `${CLAIM_KEY_PREFIX}${snapshotId}`;
+  const serialized = JSON.stringify(claim);
+  try {
+    localStorage.setItem(key, serialized);
+  } catch {
+    return { won: false };
+  }
+  // Read back: confirm our nonce is in place (no other tab overwrote it)
+  try {
+    const readBack = localStorage.getItem(key);
+    if (!readBack) return { won: false };
+    const parsed = JSON.parse(readBack) as Record<string, unknown>;
+    return { won: parsed.nonce === nonce && parsed.tab_id === tabId };
+  } catch {
+    return { won: false };
+  }
+}
+
+/**
+ * Release a transactional claim after the snapshot is consumed or hydration
+ * fails. Best-effort: never throws.
+ */
+export function releaseSnapshotClaim(snapshotId: string): void {
+  try {
+    localStorage.removeItem(`${CLAIM_KEY_PREFIX}${snapshotId}`);
+  } catch {
+    // best-effort
+  }
+}
+
+/**
+ * Delete all recovery snapshots and stale claims for the given account.
+ * Called on explicit user logout so a different account cannot see prior work.
+ * Does not log or enumerate snapshot contents.
+ */
+export function deleteAllSnapshotsForAccount(accountId: string): void {
+  const snapshotPrefix = `exam_recovery_${accountId}_`;
+  try {
+    const keysToDelete: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(snapshotPrefix)) keysToDelete.push(key);
+    }
+    for (const key of keysToDelete) {
+      try { localStorage.removeItem(key); } catch { /* best-effort per key */ }
+    }
+  } catch {
+    // best-effort
+  }
+  // Clean up orphaned claims regardless of account
+  try {
+    const claimKeys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(CLAIM_KEY_PREFIX)) claimKeys.push(key);
+    }
+    for (const key of claimKeys) {
+      try { localStorage.removeItem(key); } catch { /* best-effort per key */ }
+    }
+  } catch {
+    // best-effort
+  }
+}
+
+/**
+ * Start a BroadcastChannel listener that responds to probe messages sent by
+ * potential duplicate tabs. A tab should call this after resolving its
+ * identity so it can defend its ID against newcomers.
+ *
+ * Returns a cleanup function that closes the channel.
+ */
+export function startTabCollisionListener(myTabId: string): () => void {
+  if (typeof BroadcastChannel === "undefined") return () => {};
+  const channel = new BroadcastChannel(COLLISION_CHANNEL_NAME);
+  channel.onmessage = (e: MessageEvent) => {
+    const data = e.data as Record<string, unknown> | null;
+    if (
+      data !== null &&
+      typeof data === "object" &&
+      data.type === "probe" &&
+      data.tabId === myTabId
+    ) {
+      channel.postMessage({ type: "alive", tabId: myTabId });
+    }
+  };
+  return () => { try { channel.close(); } catch { /* best-effort */ } };
+}
+
+/**
+ * Probe whether another tab is already live with the given tab ID.
+ * Sends a "probe" message over BroadcastChannel and waits up to timeoutMs
+ * for an "alive" reply.  Returns true when a collision is detected.
+ *
+ * In environments without BroadcastChannel (e.g. older jsdom builds), the
+ * check is skipped and returns false.
+ */
+export async function detectTabCollision(
+  tabId: string,
+  timeoutMs = 500,
+): Promise<boolean> {
+  if (typeof BroadcastChannel === "undefined") return false;
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const channel = new BroadcastChannel(COLLISION_CHANNEL_NAME);
+    channel.onmessage = (e: MessageEvent) => {
+      const data = e.data as Record<string, unknown> | null;
+      if (
+        !settled &&
+        data !== null &&
+        typeof data === "object" &&
+        data.type === "alive" &&
+        data.tabId === tabId
+      ) {
+        settled = true;
+        try { channel.close(); } catch { /* best-effort */ }
+        resolve(true);
+      }
+    };
+    channel.postMessage({ type: "probe", tabId });
+    setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        try { channel.close(); } catch { /* best-effort */ }
+        resolve(false);
+      }
+    }, timeoutMs);
+  });
 }

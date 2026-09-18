@@ -8,6 +8,9 @@ import {
   RECOVERY_FORMAT_V1,
 } from "./format";
 import type { RecoverySnapshotV1 } from "./format";
+import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
+import type { ResultsWorkspaceSnapshot } from "../workspace/adapters/types";
+import type { ModificationWorkspaceSnapshot } from "../workspace/adapters/types";
 
 function makeValidSnapshot(): RecoverySnapshotV1 {
   return {
@@ -29,6 +32,78 @@ function makeValidSnapshot(): RecoverySnapshotV1 {
   };
 }
 
+function makeValidConfirmation(): ConfirmationWorkspaceSnapshot {
+  return {
+    kind: "confirmation",
+    version: 1,
+    pendingParams: {
+      subject: "math",
+      grade: 8,
+      context: ["生活情境"],
+      set_type: "單一題",
+      q_type: ["選擇題"],
+      count: 1,
+      skip_verify: false,
+      image_generation_mode: "html",
+      seed: 17,
+      drawn: ["context"],
+    } as never,
+    pendingPerQuestionParams: null,
+    clearedPaths: [],
+    redraws: {},
+    hasPendingConfirmationEdits: false,
+    coreQuestionResolution: "generated",
+    historyDraftChoice: "history",
+    pendingPrefill: {
+      topic: "保留的歷史預填",
+      model_execute: "gemini-3.1-pro-preview",
+    },
+  };
+}
+
+function makeValidResults(): ResultsWorkspaceSnapshot {
+  return {
+    kind: "results",
+    version: 1,
+    results: [{ id: "q-1", 情境: [], 題型種類: "single", 題型: "multiple_choice", 題目: ["q"], 正確解題分析: ["a"] }],
+    displayResults: [{ index: 0, question: { id: "q-1", 情境: [], 題型種類: "single", 題型: "multiple_choice", 題目: ["q"], 正確解題分析: ["a"] }, phase: "verified", isFinal: true }],
+    progressLines: ["done"],
+    errorMessage: null,
+    startedAt: 1,
+    finishedAt: 2,
+    subQuestionTotal: null,
+    requestedTotal: 1,
+    submittedSubQuestionCount: null,
+    completion: "unknown",
+    processing: "unknown",
+    terminalEvidence: false,
+    evidence: [{
+      stableId: "q-1", index: 0, receipt: "final", processing: "unknown",
+      contentRevision: null, terminal: "unknown",
+      review: { status: "unknown", contentRevision: null },
+    }],
+  };
+}
+
+function makeValidModification(): ModificationWorkspaceSnapshot {
+  return {
+    kind: "modification",
+    version: 1,
+    route: "/history/history-record",
+    subject: "social_studies",
+    recordId: "history-record",
+    questionId: "history-question",
+    contentIdentity: "canonical-history-question",
+    contentRevision: null,
+    eligibility: { status: "completed", verified: true, eligible: true },
+    annotations: [{
+      segments: [{ field_path: "文本", start: 0, end: 4, quoted_text: "passage" }],
+      instruction: "Clarify this passage",
+    }],
+    replacement: null,
+  };
+}
+
 const OPTS = {
   expectedAccountId: "user-1",
   expectedOrigin: "https://example.com",
@@ -39,6 +114,69 @@ describe("parseRecoverySnapshot", () => {
   it("accepts a valid snapshot", () => {
     const result = parseRecoverySnapshot(makeValidSnapshot(), OPTS);
     expect(result.ok).toBe(true);
+  });
+
+  it("accepts an exact optional confirmation snapshot", () => {
+    const confirmation = makeValidConfirmation();
+    const result = parseRecoverySnapshot(
+      { ...makeValidSnapshot(), confirmation },
+      OPTS,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.snapshot.confirmation).toEqual(confirmation);
+  });
+
+  it("accepts an exact optional received-results snapshot", () => {
+    const results = makeValidResults();
+    const result = parseRecoverySnapshot({ ...makeValidSnapshot(), results }, OPTS);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.snapshot.results).toEqual(results);
+  });
+
+  it("accepts an exact optional modification snapshot", () => {
+    const modification = makeValidModification();
+    const result = parseRecoverySnapshot(
+      { ...makeValidSnapshot(), modification },
+      OPTS,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.snapshot.modification).toEqual(modification);
+  });
+
+  it("rejects a malformed optional received-results snapshot", () => {
+    const result = parseRecoverySnapshot({
+      ...makeValidSnapshot(),
+      results: { kind: "results", version: 1 },
+    }, OPTS);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_form");
+  });
+
+  it("rejects a malformed optional confirmation snapshot", () => {
+    const result = parseRecoverySnapshot(
+      {
+        ...makeValidSnapshot(),
+        confirmation: { ...makeValidConfirmation(), pendingPrefill: [] },
+      },
+      OPTS,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_form");
+  });
+
+  it("rejects a malformed optional modification snapshot", () => {
+    const result = parseRecoverySnapshot({
+      ...makeValidSnapshot(),
+      modification: { ...makeValidModification(), eligibility: null },
+    }, OPTS);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("invalid_form");
   });
 
   it("rejects null", () => {

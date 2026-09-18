@@ -26,6 +26,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FormFields } from "./ParamForm";
+import type {
+  ConfirmationWorkspaceSnapshot,
+  FormWorkspaceSnapshot,
+} from "../lib/workspace/adapters/types";
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
@@ -359,5 +363,126 @@ describe("#841 restored drafts and history/Regenerate prefills keep and flag 科
     expect(card.queryByText(LC_HIST)).not.toBeInTheDocument();
     fireEvent.change(lcInput, { target: { value: "地" } });
     expect(await card.findByText(LC_GEO)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Semantic interaction test: #773 recovered confirmation × #843 narrowing
+ *
+ * A confirmation saved under the old schema (before #843 admission rules) may
+ * carry LC codes that are now incompatible with the stored subject_filter. On
+ * recovery the confirmation must stay visible AND the 確定發送 button must be
+ * blocked (confirmationInvalidFields catches the mismatched LC) — the codes
+ * must NOT be silently dropped or rewritten.
+ */
+describe("#773 + #843 — recovered confirmation with narrowing-conflicting LC codes is visible but blocked", () => {
+  const confirmedSubjectFilter = "地理"; // only 地Aa-Ⅳ-1 is admitted for 地理
+  const conflictingLC = LC_HIST; // 歷Ka-Ⅳ-1 admits 歷史/跨科 only — conflicts with 地理
+
+  function makeRecoveredForm(): FormWorkspaceSnapshot {
+    return {
+      kind: "form",
+      version: 1,
+      fields: {
+        grade: 7,
+        style: "",
+        contentType: "純文字",
+        customContentType: "",
+        context: [],
+        setType: "題組題",
+        qType: ["選擇題"],
+        count: 1,
+        coverageMode: "balanced",
+        skipVerify: false,
+        disableReferenceFewshot: false,
+        coreQuestionCallback: true,
+        imageGenerationMode: "gpt_image",
+        difficulty: "",
+        reportingScale: "",
+        subjectFilter: confirmedSubjectFilter,
+        passage: "",
+        textWordLimit: null,
+        textInstruction: "",
+        options: ["", "", "", ""],
+        topic: "",
+        coreQuestion: null,
+        subContext: "",
+        scienceCompetency: [],
+        learningPerformance: [],
+        learningContent: [conflictingLC],
+        subQuestionCount: 1,
+        subquestionConfigs: [{}],
+        modelPlan: "",
+        modelExecute: "",
+        modelVerify: "",
+        modelCorrect: "",
+        effortPlan: "",
+        effortExecute: "",
+        effortVerify: "",
+        effortCorrect: "",
+        allowDuplicateFigureKinds: false,
+      },
+    };
+  }
+
+  function makeRecoveredConfirmation(): ConfirmationWorkspaceSnapshot {
+    const row = {
+      subject: "social_studies",
+      grade: 7,
+      count: 1,
+      subject_filter: confirmedSubjectFilter,
+      learning_content: [conflictingLC],
+      sub_question_count: 1,
+      subquestion_configs: JSON.stringify([
+        { question_type: "選擇題", learning_content: [conflictingLC] },
+      ]),
+      seed: 42,
+    };
+    return {
+      kind: "confirmation",
+      version: 1,
+      pendingParams: row as Record<string, unknown>,
+      pendingPerQuestionParams: [row as Record<string, unknown>],
+      clearedPaths: [],
+      hasPendingConfirmationEdits: false,
+      redraws: {},
+      historyDraftChoice: null,
+      pendingPrefill: null,
+      coreQuestionResolution: "idle",
+    };
+  }
+
+  beforeEach(() => {
+    mockCollaborators();
+  });
+
+  it("shows the confirmation section with the conflicting code visible, 確定發送 disabled", async () => {
+    render(
+      <ParamForm
+        subject="social_studies"
+        onSubmit={vi.fn()}
+        disabled={false}
+        recoveredForm={makeRecoveredForm()}
+        recoveredConfirmation={makeRecoveredConfirmation()}
+      />,
+    );
+
+    // The confirmation section is mounted from the recovered snapshot.
+    // Wait for schemas to load so confirmationInvalidFields can be computed.
+    await screen.findByRole("heading", { name: "發送前確認設定" });
+
+    // The conflicting LC code must be visible — not silently removed (may
+    // appear multiple times: top-level and per-subquestion rows).
+    const codeElements = screen.getAllByText(conflictingLC);
+    expect(codeElements.length).toBeGreaterThan(0);
+
+    // The 確定發送 button must be disabled because the LC code is incompatible
+    // with the stored subject_filter under the current #843 admission rules.
+    // confirmationInvalidFields detects this and sets confirmationHasInvalidFields=true.
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "確定發送" }),
+      ).toBeDisabled();
+    });
   });
 });

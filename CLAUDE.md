@@ -120,6 +120,55 @@ Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_CO
 
 See `docs/research/2026-09-15-772-save-draft-and-update.md`.
 
+Issue #773 extends the same `exam-generation.recovery/1` envelope with an
+optional settled `confirmation` workspace. Save-and-update captures the
+ordinary form and the exact 發送前確認 payload independently before its
+release recheck; restore mounts that confirmation before schema/model
+hydration, never re-runs resolver/planner/preview work, and keeps invalid
+current-schema values visible and blocked until an explicit correction.
+Confirmation-only edits, per-題組/per-小題 rows, seed/drawn/redraw/cleared
+provenance, pending prefill, and draft-versus-History choice are not folded
+back into the form. Active operations, results, and modification drafts remain
+refused for their owning issues.
+See `docs/research/2026-09-17-773-preserve-confirmation.md`.
+
+### Received results recovery (issue #774)
+
+The same v1 recovery envelope may also carry an optional `results` workspace.
+Save is allowed only after observed work settles; it preserves final and
+visible partial content, evidence, progress, totals, errors, and raw PNG
+base64. Missing terminal evidence remains `unknown`, and result hydration must
+finish before the snapshot/pointer is acknowledged or deleted. Quota,
+read-back, persistence, or hydration failures leave the live cards and their
+existing JSON/ODT exports available; no object URLs, provider diagnostics,
+credentials, draft-export feature, or History-only modification eligibility is
+introduced. Active generation and modification drafts remain refusals.
+See `docs/research/2026-09-17-774-preserve-results.md`.
+
+### Manual-review modification draft recovery (issue #775)
+
+The v1 recovery envelope may also carry an optional settled `modification`
+workspace from History detail: unsent 圈選/instructions, route and exact
+record/question/content identity, known revision, eligibility evidence, and a
+received replacement. Restore re-fetches the authorized History record and
+blocks changed descendants, content/revision, authorization, or eligibility;
+it never replays admission or SSE. Active modification operations still refuse
+Save Draft & Update, while settled replacements are captured for a later save.
+See `docs/research/2026-09-17-775-preserve-modification-drafts.md`.
+
+### Recovery identity hardening (issue #776)
+
+Two 401 paths and explicit logout are now distinct. `authStore.logout()` (called on API/stream 401s) clears credentials only — recovery snapshot preserved. `authStore.logoutExplicit()` (called on UI logout) calls `deleteAllSnapshotsForAccount(userId)` + `clearTabPointer()` first so a different account signing in next sees no prior snapshot.
+
+Both `apiFetch` 401 and `useGenerate` stream 401 now also call `saveSignoutReason("session_expired", userId)` and `saveReturnDestination(pathname)` so the login page can navigate back and restore.
+
+`web/src/lib/recovery/storage.ts` adds: `claimSnapshot(tabId, snapshotId)` (write+read-back nonce claim, structural fields only), `releaseSnapshotClaim(snapshotId)`, `deleteAllSnapshotsForAccount(accountId)`, `startTabCollisionListener(myTabId)` (BroadcastChannel probe responder), `detectTabCollision(tabId, timeoutMs)` (async probe — returns true if another live tab has same ID).
+
+`web/src/lib/recovery/recoveryStore.ts` adds `initRecoveryStoreAsync` (claims snapshot before hydrating; sets `claimedTabId`/`claimedSnapshotId` in state), and `acknowledgeRecovery`/`discardRecovery` now release the claim. Synchronous `initRecoveryStore` unchanged.
+
+New storage key: `localStorage exam_recovery_claim_<snapshot_id>`. No snapshot contents in any telemetry or log call.
+See `docs/research/2026-09-18-776-recovery-identity.md`.
+
 ### 出題模式 is a prompt-level hint
 
 `coverage_mode` remains an accepted request parameter but affects no mechanical draw. For 均衡 with `count > 1`, each question's 文本生成器 user prompt gains one `## 出題模式：均衡` instruction asking the model to spread 題型 and 取材角度 across the batch and avoid scopes listed in the `已生成題目` block from issue #111. 隨機 injects nothing, and `count = 1` prompts remain byte-identical. Response metadata reports the requested mode as `coverage_mode_used`.
