@@ -125,6 +125,11 @@ function renderApp(initialEntry = "/generate/math") {
 }
 
 beforeEach(() => {
+  // Restore any vi.spyOn() overrides from the previous test before clearing.
+  // vi.clearAllMocks() only resets call counts; it leaves mockImplementation in
+  // place, which can pollute later tests (e.g. localStorage.setItem spy leaking
+  // into the next test that expects the real implementation).
+  vi.restoreAllMocks();
   localStorage.clear();
   sessionStorage.clear();
   vi.clearAllMocks();
@@ -271,9 +276,17 @@ describe("recovery flow — scenario 2: quota failure", () => {
       { timeout: 5000 },
     );
 
-    // Make localStorage.setItem throw on snapshot write
-    vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
-      throw new DOMException("QuotaExceededError", "QuotaExceededError");
+    // Make localStorage.setItem throw only on the recovery-snapshot write.
+    // Using mockImplementation with a key guard instead of mockImplementationOnce
+    // prevents background React effects (model/effort useEffect writes such as
+    // "effort_plan", "model_plan", etc.) from consuming the injected failure
+    // before saveSnapshotTransactionally reaches its setItem call.
+    const originalSetItem = localStorage.setItem.bind(localStorage);
+    vi.spyOn(localStorage, "setItem").mockImplementation((key: string, value: string) => {
+      if (key.startsWith("exam_recovery_u1_")) {
+        throw new DOMException("QuotaExceededError", "QuotaExceededError");
+      }
+      return originalSetItem(key, value);
     });
 
     const result = await runSaveAndUpdate({
@@ -315,9 +328,15 @@ describe("recovery flow — scenario 2: quota failure", () => {
       { timeout: 5000 },
     );
 
-    // Spy on setItem to make the save fail
-    vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
-      throw new DOMException("QuotaExceededError", "QuotaExceededError");
+    // Spy on setItem to make the save fail, targeting only the snapshot write so
+    // background React effects (model/effort useEffect writes) cannot consume
+    // the injected failure before saveSnapshotTransactionally.
+    const originalSetItemRetry = localStorage.setItem.bind(localStorage);
+    vi.spyOn(localStorage, "setItem").mockImplementation((key: string, value: string) => {
+      if (key.startsWith("exam_recovery_u1_")) {
+        throw new DOMException("QuotaExceededError", "QuotaExceededError");
+      }
+      return originalSetItemRetry(key, value);
     });
 
     // Click the 儲存草稿並更新 button in ReleaseNotice
