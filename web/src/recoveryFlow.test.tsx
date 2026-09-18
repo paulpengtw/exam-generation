@@ -794,7 +794,7 @@ describe("recovery flow — scenario 1b: restore settled confirmation workspaces
       expect(screen.getAllByDisplayValue("third subquestion instruction").length).toBeGreaterThan(0);
     }
     expect(screen.getAllByText("claude-opus-4-6").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("high").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("high")).length).toBeGreaterThan(0);
     expect(screen.getAllByText(subject === "math" ? "數學-內容-1" : subject === "social_studies" ? "社會-內容-1" : "自然-內容-1").length).toBeGreaterThan(0);
     expect(screen.getByText("gpt_image")).toBeInTheDocument();
     expect(screen.getAllByText(/各小題配置|Per-sub-question configuration/i).length).toBeGreaterThan(0);
