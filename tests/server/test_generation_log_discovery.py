@@ -119,7 +119,7 @@ def test_started_and_history_advertise_the_same_readable_generation_log(
     assert response.status_code == 200
     events = stream_events(response)
     assert events[0][0] == "started"
-    log_id = events[0][1]["generation_log_id"]
+    log_id = events[0][1]["payload"]["generation_log_id"]
     assert str(uuid.UUID(log_id)) == log_id
     assert any(name == "result" for name, _ in events), events
 
@@ -162,12 +162,13 @@ def test_advertised_log_is_readable_before_results_and_survives_disconnect(
                 try:
                     name, started = await asyncio.wait_for(events.get(), timeout=5)
                     assert name == "started"
-                    log_id = started["generation_log_id"]
+                    log_id = started["payload"]["generation_log_id"]
                     seen = []
                     while True:
                         name, data = await asyncio.wait_for(events.get(), timeout=5)
                         seen.append(name)
-                        if name == "llm_request" and data["agent"] == "verifier":
+                        agent = data.get("payload", data).get("agent")
+                        if name == "llm_request" and agent == "verifier":
                             break
                     assert "result" not in seen
                     assert not release.is_set()
@@ -214,7 +215,7 @@ def test_log_is_advertised_before_the_first_provider_response(
                     base_url="http://testserver", headers=math_client.headers,
                 ) as reader:
                     response = await reader.get(
-                        f"/api/generation-logs/{started['generation_log_id']}/exchanges",
+                        f"/api/generation-logs/{started['payload']['generation_log_id']}/exchanges",
                     )
                     assert response.status_code == 200
                     assert response.json() == []
@@ -243,7 +244,7 @@ def test_failed_generation_keeps_its_advertised_log_and_completed_exchange(
         "/api/generate", json=complete_math_query_params(model_verify="gpt-4.1"),
     )
     events = stream_events(response)
-    log_id = events[0][1]["generation_log_id"]
+    log_id = events[0][1]["payload"]["generation_log_id"]
     assert "error" in [name for name, _ in events]
     history = math_client.get("/api/history").json()
     detail = math_client.get(f"/api/history/{history['items'][0]['id']}").json()
@@ -282,7 +283,7 @@ def test_advertising_log_id_preserves_authentication_and_existence_hiding(
     response = math_client.post(
         "/api/generate", json=complete_math_query_params(skip_verify=True),
     )
-    log_id = stream_events(response)[0][1]["generation_log_id"]
+    log_id = stream_events(response)[0][1]["payload"]["generation_log_id"]
     other_id = uuid.uuid4()
 
     async def seed() -> None:

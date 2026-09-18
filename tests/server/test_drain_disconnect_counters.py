@@ -118,11 +118,12 @@ def test_active_runs_nonzero_while_running(tmp_path: Path) -> None:
             params, config, app_state, subjects={"fake": spec}
         )
         # Consume until pipeline_start so the worker is submitted.
+        # v2 publisher uses "payload" (not "data") for event content.
         async for event in stream:
             if (
                 event.get("event") == "pipeline"
-                and isinstance(event.get("data"), dict)
-                and event["data"].get("event_name") == "pipeline_start"
+                and isinstance(event.get("payload"), dict)
+                and event["payload"].get("event_name") == "pipeline_start"
             ):
                 break
         # Wait for worker to enter do_generate (blocking)
@@ -221,13 +222,14 @@ def test_disconnect_while_worker_blocked_keeps_active_workers_nonzero(
         gen = generate_question_stream(
             params, config, app_state, subjects={"fake": spec}
         )
-        # Consume until pipeline_start so workers are submitted
+        # Consume until pipeline_start so workers are submitted.
+        # v2 publisher uses "payload" (not "data") for event content.
         async for event in gen:
             events_before_close.append(event)
             if (
                 event.get("event") == "pipeline"
-                and isinstance(event.get("data"), dict)
-                and event["data"].get("event_name") == "pipeline_start"
+                and isinstance(event.get("payload"), dict)
+                and event["payload"].get("event_name") == "pipeline_start"
             ):
                 break
 
@@ -417,10 +419,11 @@ def test_no_cancel_success_events_on_disconnect(tmp_path: Path, caplog) -> None:
         )
         async for event in gen:
             collected_events.append(event)
+            # v2 publisher uses "payload" (not "data") for event content.
             if (
                 event.get("event") == "pipeline"
-                and isinstance(event.get("data"), dict)
-                and event["data"].get("event_name") == "pipeline_start"
+                and isinstance(event.get("payload"), dict)
+                and event["payload"].get("event_name") == "pipeline_start"
             ):
                 break
 

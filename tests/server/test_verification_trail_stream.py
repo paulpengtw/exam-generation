@@ -102,6 +102,6 @@ def test_generate_stream_emits_each_trail_entry_with_its_exact_payload(
 
     assert len(trail_events) == expected_trail_count
     if expected_trail_count:
-        assert [event["data"] for event in trail_events] == [
+        assert [event.get("payload", event.get("data")) for event in trail_events] == [
             item.model_dump(mode="json") for item in entries
         ]

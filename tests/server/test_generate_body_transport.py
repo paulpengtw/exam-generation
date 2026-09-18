@@ -146,6 +146,7 @@ def test_post_generation_rejects_an_unresolved_batch_before_saving_history(trans
             "learning_content": ["A-7-7"],
             "learning_performance": ["s-IV-12"],
             "core_competency": ["數-J-A2"],
+            "stream_version": 2,
         },
     )
     assert response.status_code == 422, response.text[:1000]
@@ -186,13 +187,15 @@ def test_nested_body_validation_preserves_field_paths_without_stringifying_input
 
 @pytest.mark.parametrize(("endpoint", "limit"), [("generate", 10), ("generate/preview", 30)])
 def test_switching_transport_cannot_double_the_request_allowance(transport_client, endpoint, limit):
+    # stream_version=2 so the 426 gate passes; the check here is about rate-limiting
+    _sv_params = {"stream_version": 2}
     for index in range(limit):
         if index % 2:
-            response = transport_client.post(f"/api/{endpoint}", json={})
+            response = transport_client.post(f"/api/{endpoint}", json=_sv_params)
         else:
-            response = transport_client.get(f"/api/{endpoint}")
+            response = transport_client.get(f"/api/{endpoint}", params=_sv_params)
         assert response.status_code == 422
-    response = transport_client.post(f"/api/{endpoint}", json={})
+    response = transport_client.post(f"/api/{endpoint}", json=_sv_params)
     assert response.status_code == 429
 
 
@@ -234,6 +237,7 @@ def test_complete_batch_survives_generation_history_and_unchanged_reload(
     payload = json.loads(
         (Path(__file__).parents[1] / f"fixtures/transport-{fixture_name}-batch.json").read_text()
     )
+    payload.setdefault("stream_version", 2)  # #742: stream_version gate
     payload["text_instruction"] = "請保留完整批次和各小題的證據比較要求。" * 100
     assert len("/api/generate?" + urlencode(payload, doseq=True)) > 9489
 
@@ -259,6 +263,8 @@ def test_complete_batch_survives_generation_history_and_unchanged_reload(
         assert len(detail["question_json"]["subquestions"]) == 3
         saved = detail["params_json"]
         for field, value in payload.items():
+            if field == "stream_version":
+                continue  # server-only transport field; not stored in params_json (#742)
             if field in {"per_question_params", "subquestion_configs"} and value is not None:
                 expected_rows = json.loads(value)
                 if field == "per_question_params":
@@ -276,7 +282,8 @@ def test_complete_batch_survives_generation_history_and_unchanged_reload(
     assert reloaded.status_code == 200, reloaded.text
     assert reloaded.json()["drawn"] == []
     assert semantic_params(reloaded.json()["payload"]) == semantic_params(saved)
-    repeated = send("/api/generate", {k: v for k, v in saved.items() if v is not None})
+    gated_saved = {k: v for k, v in saved.items() if v is not None} | {"stream_version": 2}
+    repeated = send("/api/generate", gated_saved)
     assert repeated.status_code == 200
     assert "event: error" not in repeated.text, repeated.text[:1000]
     assert repeated.text.count("event: result\r\n") == 2
@@ -305,6 +312,7 @@ def test_body_and_legacy_requests_enforce_validation_before_generation(
     payload = json.loads(
         (Path(__file__).parents[1] / "fixtures/transport-social-batch.json").read_text()
     )
+    payload.setdefault("stream_version", 2)  # #742: stream_version gate
     payload.update(override)
     response = (
         transport_client.post(f"/api/{endpoint}", json=payload)
@@ -339,6 +347,7 @@ def test_post_reports_the_nested_field_that_prevents_generation(
     payload = json.loads(
         (Path(__file__).parents[1] / "fixtures/transport-natural-batch.json").read_text()
     )
+    payload.setdefault("stream_version", 2)  # #742: stream_version gate
     rows = json.loads(payload["per_question_params"])
     if problem == "unresolved":
         configs = json.loads(rows[0]["subquestion_configs"])
@@ -425,6 +434,7 @@ def test_legacy_get_keeps_admission_errors_ahead_of_subject_validation(
         params={
             "subject": "math",
             "subquestion_configs": "[]",
+            "stream_version": 2,  # #742: stream_version gate
             **admission,
         },
     )

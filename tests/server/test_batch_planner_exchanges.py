@@ -191,7 +191,7 @@ def test_planner_streams_thinking_and_persists_before_generation(
     assert not any(event["event"] == SSEEventName.ERROR for event in events)
     assert any(
         event["event"] == SSEEventName.LLM_RESPONSE
-        and event["data"].get("purpose") == "plan_context_angles"
+        and event.get("payload", event.get("data", {})).get("purpose") == "plan_context_angles"
         for event in events
     )
     assert rows

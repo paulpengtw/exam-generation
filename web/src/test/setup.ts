@@ -40,6 +40,13 @@ Object.defineProperty(globalThis, "localStorage", {
   writable: true,
 });
 
+// sessionStorage: same polyfill strategy as localStorage above.
+Object.defineProperty(globalThis, "sessionStorage", {
+  value: new MemoryStorage(),
+  configurable: true,
+  writable: true,
+});
+
 // jsdom 29.1.1 does not implement the native dialog methods. Emulate the
 // browser behavior used by the app: showModal() opens the dialog, close()
 // closes it and emits `close`, and Escape emits a cancelable `cancel` event

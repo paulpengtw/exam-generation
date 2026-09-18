@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
-import type { LlmCallEvent } from "../hooks/useGenerate";
+import type { StageEvent } from "../hooks/useGenerate";
 import type { ModificationStageEvent } from "../hooks/useModificationRun";
+import type { GenerationLegacyEvidence, GenerationV2Evidence, ModificationEvidence, RunEvidence } from "../lib/runEvidence";
 
 function formatDuration(
   durationMs: number,
@@ -41,10 +42,9 @@ function ElapsedTime({ startedAt }: { startedAt: number }) {
   );
 }
 
-export type RunState = "idle" | "running" | "done" | "error";
+export type RunState = "idle" | "running" | "done" | "error" | "unknown";
 export type JumpTarget = "form" | "progress" | "results";
 type Subject = "math" | "social_studies" | "natural_sciences";
-type StageEvent = Extract<LlmCallEvent, { type: "stage" }>;
 type StepState = "complete" | "live" | "pending";
 
 interface GenerationStep {
@@ -150,17 +150,13 @@ function completedSubQuestionWorkers(events: readonly StageEvent[]): number {
 
 function GenerationStepBreadcrumb({
   subject,
-  stageEvents,
-  subQuestionCount,
+  evidence,
 }: {
   subject: Subject;
-  stageEvents: readonly LlmCallEvent[];
-  subQuestionCount: number | null;
+  evidence: GenerationLegacyEvidence;
 }) {
   const t = useT();
-  const events = stageEvents.filter(
-    (event): event is StageEvent => event.type === "stage",
-  );
+  const { stageEvents: events, subQuestionCount } = evidence;
   const steps = subject === "math" ? MATH_STEPS : GROUPED_SUBJECT_STEPS;
   const relevantEvents = events.filter((event) =>
     steps.some((step) => step.matches(event)),
@@ -233,12 +229,12 @@ function visibleModificationSteps(
 }
 
 function ModificationStepBreadcrumb({
-  stageEvents,
+  evidence,
 }: {
-  stageEvents: readonly ModificationStageEvent[];
+  evidence: ModificationEvidence;
 }) {
   const t = useT();
-  const steps = visibleModificationSteps(stageEvents);
+  const steps = visibleModificationSteps(evidence.steps);
   const labels: Record<ModificationStageEvent["stage"], string> = {
     modification: t("statusbar.step_modify"),
     verify: t("statusbar.step_verify"),
@@ -270,6 +266,22 @@ function ModificationStepBreadcrumb({
   );
 }
 
+function GenerationV2StatusLine({ evidence }: { evidence: GenerationV2Evidence }) {
+  const t = useT();
+  const endedLabel = (t("statusbar.v2_ended") as string)
+    .replace("{x}", String(evidence.endedCount))
+    .replace("{n}", String(evidence.total));
+  const finalLabel = (t("statusbar.v2_final_received") as string)
+    .replace("{y}", String(evidence.finalReceivedCount));
+  return (
+    <span className="sentry-unmask">
+      <span data-testid="statusbar-v2-ended">{endedLabel}</span>
+      {" · "}
+      <span data-testid="statusbar-v2-final">{finalLabel}</span>
+    </span>
+  );
+}
+
 const JUMP_BUTTONS: readonly {
   target: JumpTarget;
   labelKey: string;
@@ -283,16 +295,13 @@ export interface GenerationStatusBarProps {
   runState: RunState;
   completedCount: number;
   requestedTotal: number;
-  subject: Subject;
-  stageEvents: LlmCallEvent[];
-  subQuestionCount: number | null;
+  subject?: Subject;
+  evidence: RunEvidence;
   startedAt: number | null;
   finishedAt: number | null;
   availableTargets: readonly JumpTarget[];
   onJump: (target: JumpTarget) => void;
   onFeedback: (() => void) | null;
-  mode?: "generation" | "modification";
-  modificationStageEvents?: readonly ModificationStageEvent[];
 }
 
 export default function GenerationStatusBar({
@@ -300,20 +309,18 @@ export default function GenerationStatusBar({
   completedCount,
   requestedTotal,
   subject = "math",
-  stageEvents = [],
-  subQuestionCount = null,
+  evidence,
   startedAt,
   finishedAt,
   availableTargets,
   onJump,
   onFeedback,
-  mode = "generation",
-  modificationStageEvents = [],
 }: GenerationStatusBarProps) {
   const t = useT();
   const showGenerationSteps =
-    mode === "generation" && runState === "running" && requestedTotal === 1;
-  const showModificationSteps = mode === "modification" && runState === "running";
+    evidence.profile === "generate-legacy" && runState === "running" && requestedTotal === 1;
+  const showModificationSteps = evidence.profile === "modification" && runState === "running";
+  const showV2Status = evidence.profile === "generate-v2";
 
   return (
     <div
@@ -329,7 +336,9 @@ export default function GenerationStatusBar({
                 ? "text-green-600"
                 : runState === "error"
                   ? "text-red-600"
-                  : "text-gray-500"
+                  : runState === "unknown"
+                    ? "text-amber-700"
+                    : "text-gray-500"
           }`}
         >
           <span data-testid="statusbar-status" className="truncate">
@@ -340,13 +349,17 @@ export default function GenerationStatusBar({
             ) : null}
             {runState === "running" ? (
               showModificationSteps ? (
-                <ModificationStepBreadcrumb stageEvents={modificationStageEvents} />
+                <ModificationStepBreadcrumb evidence={evidence} />
               ) : showGenerationSteps ? (
                 <GenerationStepBreadcrumb
                   subject={subject}
-                  stageEvents={stageEvents}
-                  subQuestionCount={subQuestionCount}
+                  evidence={evidence}
                 />
+              ) : showV2Status ? (
+                <>
+                  <span className="sentry-unmask">◐ {t("statusbar.running")} · </span>
+                  <GenerationV2StatusLine evidence={evidence as GenerationV2Evidence} />
+                </>
               ) : (
                 <>
                   <span className="sentry-unmask">
@@ -360,24 +373,36 @@ export default function GenerationStatusBar({
             {runState === "done" &&
             startedAt !== null &&
             finishedAt !== null ? (
-              <>
-                <span className="sentry-unmask">
-                  ✓ {t("statusbar.done")}
-                </span>{" "}
-                {completedCount}{" "}
-                <span className="sentry-unmask">
-                  {t("statusbar.unit_question")} ·
-                </span>{" "}
-                {formatDuration(
-                  finishedAt - startedAt,
-                  t("statusbar.unit_minute"),
-                  t("statusbar.unit_second"),
-                )}
-              </>
+              showV2Status ? (
+                <>
+                  <span className="sentry-unmask">✓ {t("statusbar.done")} · </span>
+                  <GenerationV2StatusLine evidence={evidence as GenerationV2Evidence} />
+                </>
+              ) : (
+                <>
+                  <span className="sentry-unmask">
+                    ✓ {t("statusbar.done")}
+                  </span>{" "}
+                  {completedCount}{" "}
+                  <span className="sentry-unmask">
+                    {t("statusbar.unit_question")} ·
+                  </span>{" "}
+                  {formatDuration(
+                    finishedAt - startedAt,
+                    t("statusbar.unit_minute"),
+                    t("statusbar.unit_second"),
+                  )}
+                </>
+              )
             ) : null}
             {runState === "error" ? (
               <span className="sentry-unmask">
                 ✕ {t("statusbar.error")}
+              </span>
+            ) : null}
+            {runState === "unknown" ? (
+              <span className="sentry-unmask">
+                ? {t("statusbar.unknown")}
               </span>
             ) : null}
           </span>

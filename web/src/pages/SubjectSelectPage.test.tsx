@@ -12,12 +12,12 @@ vi.mock("../store/authStore", () => ({
   useAuthStore: (
     selector: (state: {
       user: { email: string };
-      logout: () => void;
+      logoutExplicit: () => void;
     }) => unknown,
   ) =>
     selector({
       user: { email: "teacher@example.com" },
-      logout: logoutMock,
+      logoutExplicit: logoutMock,
     }),
 }));
 

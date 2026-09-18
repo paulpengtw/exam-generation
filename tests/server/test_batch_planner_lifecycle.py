@@ -100,7 +100,7 @@ def planner_case(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
     payload = json.loads(
         (Path(__file__).parents[1] / "fixtures/transport-social-batch.json").read_text(),
     )
-    payload.update(model_plan="claude-opus-4-6", effort_plan="max")
+    payload.update(model_plan="claude-opus-4-6", effort_plan="max", stream_version=2)
     try:
         yield client, probe, payload
     finally:
@@ -133,11 +133,11 @@ def test_disconnect_during_planning_returns_before_provider_and_preserves_late_e
             async with live_generation(client, payload) as (events, disconnect, task):
                 try:
                     _, started = await asyncio.wait_for(events.get(), timeout=5)
-                    log_id = started["generation_log_id"]
+                    log_id = started["payload"]["generation_log_id"]
                     while True:
                         name, data = await asyncio.wait_for(events.get(), timeout=5)
                         if name == "llm_thinking":
-                            assert data["agent"] == "planner"
+                            assert data.get("payload", data).get("agent") == "planner"
                             break
                     assert not probe.release.is_set()
                     disconnect.set()
@@ -172,7 +172,7 @@ def test_completed_planner_exchange_survives_later_generation_failure(planner_ca
     events = stream_events(client.post("/api/generate", json=payload))
     assert any(name == "error" for name, _ in events)
     assert not any(name == "result" for name, _ in events)
-    log_id = events[0][1]["generation_log_id"]
+    log_id = events[0][1]["payload"]["generation_log_id"]
     response = client.get(f"/api/generation-logs/{log_id}/exchanges")
     assert response.status_code == 200
     rows = response.json()
@@ -193,8 +193,8 @@ def test_failed_planner_falls_back_to_generation_without_fabricating_exchange(
     events = stream_events(client.post("/api/generate", json=payload))
     assert any(name == "result" for name, _ in events)
     assert not any(name == "error" for name, _ in events)
-    assert any(name == "llm_thinking" and data["agent"] == "planner" for name, data in events)
-    log_id = events[0][1]["generation_log_id"]
+    assert any(name == "llm_thinking" and data.get("payload", data).get("agent") == "planner" for name, data in events)  # noqa: E501
+    log_id = events[0][1]["payload"]["generation_log_id"]
     response = client.get(f"/api/generation-logs/{log_id}/exchanges")
     assert response.status_code == 200
     rows = response.json()
@@ -210,8 +210,8 @@ def test_disabled_recording_keeps_planner_activity_and_results(planner_case: Any
     events = stream_events(client.post("/api/generate", json=payload))
     assert any(name == "result" for name, _ in events)
     assert not any(name == "error" for name, _ in events)
-    assert any(name == "llm_thinking" and data["agent"] == "planner" for name, data in events)
-    log_id = events[0][1]["generation_log_id"]
+    assert any(name == "llm_thinking" and data.get("payload", data).get("agent") == "planner" for name, data in events)  # noqa: E501
+    log_id = events[0][1]["payload"]["generation_log_id"]
     response = client.get(f"/api/generation-logs/{log_id}/exchanges")
     assert response.status_code == 200
     assert response.json() == []
@@ -225,9 +225,9 @@ def test_skipped_planning_does_not_fabricate_planner_events_or_exchanges(planner
     assert not any(name == "error" for name, _ in events)
     assert probe.plan_calls == []
     assert not any(
-        name.startswith("llm_") and data["agent"] == "planner" for name, data in events
+        name.startswith("llm_") and data.get("payload", data).get("agent") == "planner" for name, data in events  # noqa: E501
     )
-    log_id = events[0][1]["generation_log_id"]
+    log_id = events[0][1]["payload"]["generation_log_id"]
     response = client.get(f"/api/generation-logs/{log_id}/exchanges")
     assert response.status_code == 200
     rows = response.json()
@@ -251,8 +251,8 @@ def test_planner_recording_failure_does_not_interrupt_generation(planner_case: A
     events = stream_events(client.post("/api/generate", json=payload))
     assert any(name == "result" for name, _ in events)
     assert not any(name == "error" for name, _ in events)
-    assert any(name == "llm_response" and data["agent"] == "planner" for name, data in events)
-    log_id = events[0][1]["generation_log_id"]
+    assert any(name == "llm_response" and data.get("payload", data).get("agent") == "planner" for name, data in events)  # noqa: E501
+    log_id = events[0][1]["payload"]["generation_log_id"]
     response = client.get(f"/api/generation-logs/{log_id}/exchanges")
     assert response.status_code == 200
     assert response.json() == []

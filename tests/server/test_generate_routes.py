@@ -35,7 +35,8 @@ from src.common.resolver import resolve
 
 def _complete_query_params(payload: dict[str, Any]) -> dict[str, Any]:
     """Encode a resolver-complete payload for the GET route's wire shape."""
-    completed = resolve(payload).payload
+    completed = dict(resolve(payload).payload)
+    completed["stream_version"] = 2
     rows = completed.get("per_question_params")
     if isinstance(rows, list):
         for row in rows:
@@ -82,6 +83,7 @@ def test_generate_route_rejects_unresolved_top_level_field() -> None:
                     "learning_content": "A-7-7",
                     "learning_performance": "s-IV-12",
                     "core_competency": "數-J-A2",
+                    "stream_version": 2,
                 },
             )
     finally:
@@ -135,6 +137,7 @@ def test_generate_route_rejects_unresolved_per_question_field() -> None:
                     "subject": "math",
                     "seed": 41,
                     "count": 2,
+                    "stream_version": 2,
                     "per_question_params": json.dumps(rows, ensure_ascii=False),
                 },
             )
@@ -183,6 +186,7 @@ def test_generate_route_rejects_unresolved_subquestion_field() -> None:
                     "subject": "natural_sciences",
                     "seed": 41,
                     "grade": 8,
+                    "stream_version": 2,
                     "context": "Personal",
                     "sub_context": "Maintenance of health",
                     "set_type": "題組題",
@@ -322,6 +326,7 @@ def test_generate_route_reports_incompatible_parent_with_resolver_shape() -> Non
                     "subject": "natural_sciences",
                     "seed": 1,
                     "grade": 8,
+                    "stream_version": 2,
                     "context": "Global",
                     "sub_context": "Maintenance of health",
                     "set_type": "單一題",
@@ -343,6 +348,191 @@ def test_generate_route_reports_incompatible_parent_with_resolver_shape() -> Non
             "parent": "Personal",
         }
     ]
+
+
+@pytest.mark.parametrize("route", ["/api/generate", "/api/generate/preview"])
+def test_generate_and_preview_reject_the_empty_narrowed_civic_domain(route: str) -> None:
+    """#835 production reproduction: preview and generation reject the same
+
+    impossible 學習內容 combination /resolve rejects (issue #834's
+    production repro, now caught before any downstream call).
+    """
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=uuid.uuid4(), email="u@example.com"
+    )
+    app.dependency_overrides[get_async_session] = lambda: None
+    app.dependency_overrides[get_config] = lambda: ServerConfig(api_key="x", gemini_api_key="x")
+    limiter.reset()
+
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.get(
+                route,
+                params={
+                    "subject": "social_studies",
+                    "seed": 1,
+                    "grade": 8,
+                    "context": "個人",
+                    "set_type": "題組題",
+                    "subject_filter": "公民與社會",
+                    "learning_content": ["公Aa-Ⅳ-1", "公Ab-Ⅳ-1"],
+                    "stream_version": 2,
+                },
+            )
+    finally:
+        limiter.reset()
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {"field": "learning_content", "code": "no_admitting_parent", "parent": "內容領域"}
+    ]
+
+
+def _accept_narrowed_payload_via_route(
+    route: str, partial: dict[str, Any]
+) -> tuple[int, dict[str, Any]]:
+    """Resolve *partial*, submit it to *route*, and re-resolve the result.
+
+    Shared by the #834/#836 "preview and generation accept the narrowed
+    payload" reproductions below: builds a throwaway in-memory DB + app with
+    ``generate_question_stream``/``build_prompt_previews`` faked out (no LLM
+    call), submits the resolver-completed payload as a GET request, and
+    returns ``(route_status_code, re_resolved_json)`` so callers can assert
+    both the route accepted it and re-resolving is a no-op.
+    """
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init_db() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(init_db())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    user = User(id=uuid.uuid4(), email="narrowed-accept@example.com")
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as session:
+            yield session
+
+    async def add_user() -> None:
+        async with SessionLocal() as session:
+            session.add(user)
+            await session.commit()
+
+    asyncio.run(add_user())
+
+    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
+    from server.generate import routes as gen_routes
+
+    async def fake_stream(params, *_args, **_kwargs):
+        yield {"event": "done", "data": ""}
+
+    def fake_previews(params, *_args, **_kwargs):
+        return []
+
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    original_stream = gen_routes.generate_question_stream
+    original_previews = gen_routes.build_prompt_previews
+    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    gen_routes.build_prompt_previews = fake_previews  # type: ignore[assignment]
+    limiter.reset()
+
+    try:
+        query = _complete_query_params(partial)
+        with TestClient(app) as client:
+            response = client.get(route, params=query)
+            re_resolved = client.post("/api/generate/resolve", json=query)
+    finally:
+        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
+        gen_routes.build_prompt_previews = original_previews  # type: ignore[assignment]
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    return response.status_code, re_resolved.json()
+
+
+@pytest.mark.parametrize("route", ["/api/generate", "/api/generate/preview"])
+@pytest.mark.parametrize(
+    "partial",
+    [
+        pytest.param(
+            {
+                "subject": "social_studies",
+                "seed": 1,
+                "grade": 7,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "content_type": "純文字",
+                "target_surface": "紙本",
+                "core_competency": ["社-J-A1"],
+                "subject_filter": ["公民與社會"],
+                "learning_content": ["公Bn-Ⅳ-3"],
+            },
+            id="single-subject-blank-domain-narrowed",
+        ),
+        pytest.param(
+            {
+                "subject": "social_studies",
+                "seed": 1,
+                "grade": 7,
+                "context": ["個人"],
+                "set_type": "題組題",
+                "content_type": "純文字",
+                "target_surface": "紙本",
+                "core_competency": ["社-J-A1"],
+                "subject_filter": ["公民與社會", "地理"],
+                "learning_content": ["公Bj-Ⅳ-1"],
+            },
+            id="multi-subject-narrowed-to-single-candidate",
+        ),
+    ],
+)
+def test_generate_and_preview_accept_the_834_narrowed_reproductions(
+    route: str, partial: dict[str, Any]
+) -> None:
+    """#834 production reproduction (its own acceptance bullets): preview
+
+    and generation accept the same 科目/內容領域-narrowed payload /resolve
+    completes, and re-resolving the completed payload draws nothing new.
+    """
+    status_code, re_resolved = _accept_narrowed_payload_via_route(route, partial)
+
+    assert status_code == 200
+    assert re_resolved["drawn"] == []
+    assert re_resolved["cleared"] == []
+
+
+@pytest.mark.parametrize("route", ["/api/generate", "/api/generate/preview"])
+def test_generate_and_preview_accept_the_row_pinned_civic_content(route: str) -> None:
+    """#836 acceptance bullet 1: preview and generation accept a payload
+
+    narrowed by a 各小題配置 row's own 學習內容 pin (not just a question-level
+    pin), and re-resolving the completed payload draws nothing new.
+    """
+    partial = {
+        "subject": "social_studies",
+        "seed": 3,
+        "grade": 8,
+        "context": ["個人"],
+        "set_type": "題組題",
+        "content_type": "純文字",
+        "target_surface": "紙本",
+        "core_competency": ["社-J-A1"],
+        "sub_question_count": 3,
+        "subquestion_configs": [{}, {"learning_content": ["公Aa-Ⅳ-1"]}, {}],
+    }
+
+    status_code, re_resolved = _accept_narrowed_payload_via_route(route, partial)
+
+    assert status_code == 200
+    assert re_resolved["payload"]["subject_filter"][0] in {"公民與社會", "跨科"}
+    assert re_resolved["payload"]["content_domain"] == "Civic Roles and Identities"
+    assert re_resolved["drawn"] == []
+    assert re_resolved["cleared"] == []
 
 
 def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
@@ -421,6 +611,7 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
                 if value is not None
             }
 
+            wire_payload["stream_version"] = 2
             generate_response = client.get("/api/generate", params=wire_payload)
             preview_response = client.get("/api/generate/preview", params=wire_payload)
     finally:
@@ -432,8 +623,13 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
     assert generate_response.status_code == 200, generate_response.text
     assert preview_response.status_code == 200, preview_response.text
     expected = submitted.model_dump(mode="json")
-    assert captured["generate"].model_dump(mode="json") == expected
-    assert captured["preview"].model_dump(mode="json") == expected
+    # stream_version is a server-only transport field; exclude from the round-trip check
+    captured_generate = captured["generate"].model_dump(mode="json")
+    captured_preview = captured["preview"].model_dump(mode="json")
+    for d in (captured_generate, captured_preview, expected):
+        d.pop("stream_version", None)
+    assert captured_generate == expected
+    assert captured_preview == expected
 
 
 def test_generate_route_returns_422_for_empty_enum_value() -> None:
@@ -468,7 +664,7 @@ def test_generate_route_rejects_malformed_per_question_params() -> None:
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.get(
                 "/api/generate",
-                params={"per_question_params": "{not-json"},
+                params={"per_question_params": "{not-json", "stream_version": 2},
             )
     finally:
         limiter.reset()
@@ -490,7 +686,7 @@ def test_generate_route_rejects_count_above_ten(count: int) -> None:
 
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
-            response = client.get("/api/generate", params={"count": count})
+            response = client.get("/api/generate", params={"count": count, "stream_version": 2})
     finally:
         limiter.reset()
 
@@ -811,11 +1007,11 @@ def test_generate_stream_emits_question_update_with_image_base64(tmp_path) -> No
     results = [event for event in events if event["event"] == "result"]
 
     assert len(updates) == 1
-    assert updates[0]["data"]["index"] == 0
-    assert updates[0]["data"]["phase"] == "draft"
-    assert updates[0]["data"]["question"]["image_base64"] == "ZHJhZnQtcG5n"
+    assert updates[0]["payload"]["index"] == 0
+    assert updates[0]["payload"]["phase"] == "draft"
+    assert updates[0]["payload"]["question"]["image_base64"] == "ZHJhZnQtcG5n"
     assert len(results) == 1
-    assert results[0]["data"]["image_base64"] == "ZHJhZnQtcG5n"
+    assert results[0]["payload"]["image_base64"] == "ZHJhZnQtcG5n"
 
 
 def test_generate_route_accepts_difficulty_query_param() -> None:
@@ -1339,7 +1535,7 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
     assert len({entry["question_id"] for entry in log.figure_policy_trail_json}) == 2
     policy_events = [event for event in emitted_events if event["event"] == "trail"]
     assert len(policy_events) == 2
-    assert all(event["data"]["code"] == "figure_policy" for event in policy_events)
+    assert all(event["payload"]["code"] == "figure_policy" for event in policy_events)
 
 
 def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_path) -> None:
@@ -1618,7 +1814,8 @@ def test_generate_route_rejects_unknown_subject_422() -> None:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
             response = client.get(
-                "/api/generate?subject=typo",
+                "/api/generate",
+                params={"subject": "typo", "stream_version": 2},
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -1743,8 +1940,8 @@ def test_service_worker_error_event_is_structured(tmp_path) -> None:
 
     error_events = [e for e in events if e["event"] == "error"]
     assert len(error_events) == 1, f"expected 1 error event, got: {error_events}"
-    data = error_events[0]["data"]
-    # data must be a dict with code and message
+    data = error_events[0]["payload"]
+    # payload must be a dict with code and message
     assert isinstance(data, dict), f"expected dict, got {type(data)}: {data!r}"
     assert data["code"] == "generation_failed"
     assert "message" in data
@@ -2035,7 +2232,7 @@ def test_generate_422_emits_warning_free_of_user_content(caplog) -> None:
                     # Malformed JSON with embedded sentinel so any echo would be detectable.
                     response = client.get(
                         "/api/generate",
-                        params={"per_question_params": f"{{{SENTINEL}"},
+                        params={"per_question_params": f"{{{SENTINEL}", "stream_version": 2},
                     )
         finally:
             gen_routes.logger.removeHandler(caplog.handler)

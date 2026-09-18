@@ -22,11 +22,14 @@ import release_control  # noqa: E402  (after sys.path patch)
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Use a fresh timestamp so the snapshot is never stale in the test suite.
+_NOW_ISO = _dt.datetime.now(_dt.timezone.utc).isoformat()
+
 _QUIESCENT_SNAP = {
     "instance_id": "abc",
     "hostname": "host1",
     "pid": 1,
-    "started_at": "2026-09-15T00:00:00+00:00",
+    "started_at": _NOW_ISO,
     "app_version": None,
     "supported_stream_versions": [1],
     "active_runs": 0,
@@ -36,7 +39,7 @@ _QUIESCENT_SNAP = {
     "pending_persistence": 0,
     "renderer_leases_held": 0,
     "quiescent": True,
-    "captured_at": "2026-09-15T00:00:00+00:00",
+    "captured_at": _NOW_ISO,
 }
 
 _BUSY_SNAP = {**_QUIESCENT_SNAP, "active_runs": 1, "quiescent": False}
@@ -70,7 +73,9 @@ def test_preflight_all_reachable(tmp_path, monkeypatch):
     mock_get.return_value.json.return_value = _QUIESCENT_SNAP
 
     with patch("release_control.httpx.get", mock_get):
-        rc = release_control.main(["preflight", "--inventory", str(inv_path)])
+        rc = release_control.main(
+            ["preflight", "--inventory", str(inv_path), "--max-age-seconds", "3600"]
+        )
     assert rc == 0
 
 
@@ -101,7 +106,8 @@ def test_drain_check_already_quiescent(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(
-            ["drain-check", "--inventory", str(inv_path), "--timeout", "5"]
+            ["drain-check", "--inventory", str(inv_path), "--timeout", "5",
+             "--max-age-seconds", "3600"]
         )
     assert rc == 0
 
@@ -146,7 +152,7 @@ def test_pause_and_drain_success(tmp_path, monkeypatch):
          patch("release_control.httpx.get", mock_get):
         rc = release_control.main(
             ["pause-and-drain", "--inventory", str(inv_path), "--timeout", "10",
-             "--reason", "release test"]
+             "--reason", "release test", "--max-age-seconds", "3600"]
         )
     assert rc == 0
     # gateway pause call was made
@@ -185,7 +191,8 @@ def test_compat_check_pass(tmp_path, monkeypatch):
 
     with patch("release_control.httpx.get", mock_get):
         rc = release_control.main(
-            ["compat-check", "--inventory", str(inv_path), "--require-version", "1"]
+            ["compat-check", "--inventory", str(inv_path), "--require-version", "1",
+             "--max-age-seconds", "3600"]
         )
     assert rc == 0
 

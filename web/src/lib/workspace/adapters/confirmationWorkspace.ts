@@ -14,6 +14,9 @@ export function importConfirmationWorkspace(raw: unknown): ConfirmationWorkspace
     !isRecord(raw.pendingParams) || typeof raw.pendingParams.subject !== "string" ||
     !(raw.pendingPerQuestionParams === null ||
       (Array.isArray(raw.pendingPerQuestionParams) && raw.pendingPerQuestionParams.every(isRecord))) ||
+    (Object.hasOwn(raw, "pendingPrefill") &&
+      raw.pendingPrefill !== null &&
+      !isRecord(raw.pendingPrefill)) ||
     !isStringArray(raw.clearedPaths) ||
     !isRecord(raw.redraws) || !Object.values(raw.redraws).every(isFiniteNumber) ||
     typeof raw.hasPendingConfirmationEdits !== "boolean" ||
@@ -27,6 +30,9 @@ export function importConfirmationWorkspace(raw: unknown): ConfirmationWorkspace
     // The resolver carries subject at runtime even though FormParams omits it.
     pendingParams: raw.pendingParams as unknown as FormParams,
     pendingPerQuestionParams: raw.pendingPerQuestionParams,
+    ...(Object.hasOwn(raw, "pendingPrefill")
+      ? { pendingPrefill: raw.pendingPrefill as Record<string, unknown> | null }
+      : {}),
     clearedPaths: raw.clearedPaths,
     redraws: raw.redraws as Record<string, number>,
     hasPendingConfirmationEdits: raw.hasPendingConfirmationEdits,
