@@ -20,7 +20,18 @@ import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
-import { initRecoveryStore, useRecoveryStore } from "../lib/recovery/recoveryStore";
+import {
+  initRecoveryStore,
+  initRecoveryStoreAsync,
+  useRecoveryStore,
+} from "../lib/recovery/recoveryStore";
+import {
+  peekTabId,
+  getOrCreateTabId,
+  detectTabCollision,
+  startTabCollisionListener,
+  resetTabIdForCollision,
+} from "../lib/recovery/storage";
 
 export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
@@ -52,7 +63,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       ?.prefillParams ?? null;
   const t = useT();
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const logoutExplicit = useAuthStore((s) => s.logoutExplicit);
   const {
     status,
     progressLines,
@@ -79,17 +90,81 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const recoveryRoute = location.pathname ?? window.location.pathname;
   const recoveryBootKey = `${recoveryRoute}:${user?.id ?? ""}`;
   const [recoveryBootedKey, setRecoveryBootedKey] = useState<string | null>(null);
+
+  // Phase 1: synchronous boot — restores pending snapshot immediately so the
+  // form can render without waiting for async identity-hardening work.  This
+  // keeps all rendering synchronous and avoids macro-task delays (setTimeout)
+  // that would block test assertions inside act().
   useLayoutEffect(() => {
+    const environment =
+      typeof __BUILD_ENVIRONMENT__ === "undefined"
+        ? "development"
+        : __BUILD_ENVIRONMENT__;
     initRecoveryStore({
       currentRoute: recoveryRoute,
       origin: window.location.origin,
-      environment:
-        typeof __BUILD_ENVIRONMENT__ === "undefined"
-          ? "development"
-          : __BUILD_ENVIRONMENT__,
+      environment,
     });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the gate deliberately waits for synchronous recovery-store hydration before mounting the form
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRecoveryBootedKey(recoveryBootKey);
+  }, [recoveryBootKey, recoveryRoute]);
+
+  // Phase 2: async identity hardening (issue #776) — runs after the first
+  // render.  Performs tab-collision detection, transactional snapshot claim,
+  // and starts the BroadcastChannel collision listener.  If the claim is lost
+  // (another tab won the race) the optimistic pending state from Phase 1 is
+  // cleared so this tab does not show stale recovery content.
+  useEffect(() => {
+    let cancelled = false;
+    let stopCollisionListener: (() => void) | null = null;
+    const environment =
+      typeof __BUILD_ENVIRONMENT__ === "undefined"
+        ? "development"
+        : __BUILD_ENVIRONMENT__;
+
+    async function hardenIdentity(): Promise<void> {
+      const existingTabId = peekTabId();
+      if (existingTabId !== null) {
+        const isDuplicate = await detectTabCollision(existingTabId, 100);
+        if (cancelled) return;
+        if (isDuplicate) {
+          // This tab is a duplicate — mint a fresh identity and discard the
+          // Phase-1 optimistic recovery so the form starts empty.
+          const freshId = resetTabIdForCollision();
+          stopCollisionListener = startTabCollisionListener(freshId);
+          useRecoveryStore.getState().discardRecovery();
+          return;
+        }
+      }
+      if (cancelled) return;
+      // Upgrade Phase-1 pending with a transactional claim so two tabs cannot
+      // both hydrate the same snapshot.
+      await initRecoveryStoreAsync({
+        currentRoute: recoveryRoute,
+        origin: window.location.origin,
+        environment,
+      });
+      if (cancelled) return;
+      // If another tab won the claim, clear the Phase-1 optimistic state.
+      if (
+        useRecoveryStore.getState().claimedSnapshotId === null &&
+        useRecoveryStore.getState().pending !== null
+      ) {
+        useRecoveryStore.setState({ pending: null, blocked: null });
+      }
+      const tabId = getOrCreateTabId();
+      stopCollisionListener = startTabCollisionListener(tabId);
+    }
+
+    hardenIdentity().catch(() => {
+      // Hardening failed: Phase-1 sync state remains in effect.
+      // No claim is held, but the form is already rendered.
+    });
+
+    return () => {
+      cancelled = true;
+      if (stopCollisionListener) stopCollisionListener();
+    };
   }, [recoveryBootKey, recoveryRoute]);
   const { enabled, open } = useFeedbackDialog();
   const formRef = useRef<HTMLElement | null>(null);
@@ -197,7 +272,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   }, [hasUnsubmittedInput, hasResults]);
 
   const handleLogout = () => {
-    logout();
+    logoutExplicit();
     navigate("/");
   };
 

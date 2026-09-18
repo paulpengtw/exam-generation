@@ -694,3 +694,57 @@ describe("ParamForm — recovery restore T2", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// T3: sparse/minimal snapshot regression — fix for passage.trim() crash (#776)
+// ---------------------------------------------------------------------------
+
+describe("ParamForm — sparse snapshot crash regression (#776)", () => {
+  it("renders without crashing when recoveredForm.fields omits optional keys like passage", () => {
+    // This is the regression test for the bug fixed in commit 39fe0a9:
+    // recoveryForm.fields spread directly into FormFields left required fields
+    // (notably `passage`) as undefined, causing `passage.trim()` to crash.
+    // seedSnapshot() in recoveryFlow.test.tsx creates { topic: "..." } as never —
+    // the same minimal shape — so this test covers the exact case that broke.
+    const sparseSnapshot = {
+      kind: "form" as const,
+      version: 1 as const,
+      // Only `topic` provided — passage, textInstruction, options, etc. all absent.
+      fields: { topic: "sparse-recovery-topic" } as never,
+    };
+
+    expect(() =>
+      render(
+        <ParamForm
+          subject="math"
+          onSubmit={() => undefined}
+          disabled={false}
+          recoveredForm={sparseSnapshot}
+        />,
+      ),
+    ).not.toThrow();
+  });
+
+  it("shows recovery banner when recoveredForm has only topic (sparse fields)", async () => {
+    const sparseSnapshot = {
+      kind: "form" as const,
+      version: 1 as const,
+      fields: { topic: "sparse-recovery-topic" } as never,
+    };
+
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={() => undefined}
+        disabled={false}
+        recoveredForm={sparseSnapshot}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/已還原更新前的表單|Form restored from before update/i),
+      ).toBeInTheDocument();
+    });
+  });
+});

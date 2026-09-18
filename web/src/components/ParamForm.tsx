@@ -1472,10 +1472,50 @@ export default function ParamForm({
     // When a recovered form is present, use its fields directly (issues #772/#773).
     // This takes precedence over initialParams / localStorage defaults.
     if (recoveryForm) {
+      // Defensively fill in every required FormFields key so that downstream
+      // code (e.g. passage.trim()) never sees undefined even when the snapshot
+      // was created with a minimal/partial fields object (issue #776 tests).
+      const f = recoveryForm.fields;
       return {
-        ...recoveryForm.fields,
-        contentDomain: recoveryForm.fields.contentDomain ?? "",
-        targetSurface: recoveryForm.fields.targetSurface ?? "紙本",
+        grade: typeof f.grade === "number" || f.grade === "" ? f.grade : "",
+        style: typeof f.style === "string" ? f.style : "",
+        contentType: typeof f.contentType === "string" ? f.contentType : DEFAULT_CONTENT_TYPE,
+        customContentType: typeof f.customContentType === "string" ? f.customContentType : "",
+        context: Array.isArray(f.context) ? f.context : [],
+        setType: typeof f.setType === "string" ? f.setType : "",
+        qType: Array.isArray(f.qType) ? f.qType : [],
+        count: typeof f.count === "number" ? f.count : 1,
+        coverageMode: f.coverageMode === "random" ? "random" : "balanced",
+        skipVerify: typeof f.skipVerify === "boolean" ? f.skipVerify : false,
+        disableReferenceFewshot: typeof f.disableReferenceFewshot === "boolean" ? f.disableReferenceFewshot : false,
+        coreQuestionCallback: typeof f.coreQuestionCallback === "boolean" ? f.coreQuestionCallback : true,
+        imageGenerationMode: f.imageGenerationMode === "html" || f.imageGenerationMode === "gpt_image" ? f.imageGenerationMode : "gpt_image",
+        difficulty: f.difficulty === "easy" || f.difficulty === "medium" || f.difficulty === "hard" ? f.difficulty : "",
+        reportingScale: typeof f.reportingScale === "string" ? f.reportingScale : "",
+        subjectFilter: typeof f.subjectFilter === "string" ? f.subjectFilter : "",
+        passage: typeof f.passage === "string" ? f.passage : TEXT_HINT,
+        textWordLimit: typeof f.textWordLimit === "number" ? f.textWordLimit : null,
+        textInstruction: typeof f.textInstruction === "string" ? f.textInstruction : "",
+        options: Array.isArray(f.options) ? f.options : [OPTION_HINT, OPTION_HINT, OPTION_HINT, OPTION_HINT],
+        topic: typeof f.topic === "string" ? f.topic : "",
+        coreQuestion: typeof f.coreQuestion === "string" || f.coreQuestion === null ? f.coreQuestion : null,
+        subContext: typeof f.subContext === "string" ? f.subContext : "",
+        scienceCompetency: Array.isArray(f.scienceCompetency) ? f.scienceCompetency : [],
+        learningPerformance: Array.isArray(f.learningPerformance) ? f.learningPerformance : [],
+        learningContent: Array.isArray(f.learningContent) ? f.learningContent : [],
+        subQuestionCount: typeof f.subQuestionCount === "number" || f.subQuestionCount === "" ? f.subQuestionCount : "",
+        subquestionConfigs: Array.isArray(f.subquestionConfigs) ? f.subquestionConfigs : [],
+        contentDomain: f.contentDomain ?? "",
+        targetSurface: f.targetSurface === "數位" ? "數位" : "紙本",
+        modelPlan: typeof f.modelPlan === "string" ? f.modelPlan : "",
+        modelExecute: typeof f.modelExecute === "string" ? f.modelExecute : "",
+        modelVerify: typeof f.modelVerify === "string" ? f.modelVerify : "",
+        modelCorrect: typeof f.modelCorrect === "string" ? f.modelCorrect : "",
+        effortPlan: typeof f.effortPlan === "string" ? f.effortPlan : "",
+        effortExecute: typeof f.effortExecute === "string" ? f.effortExecute : "",
+        effortVerify: typeof f.effortVerify === "string" ? f.effortVerify : "",
+        effortCorrect: typeof f.effortCorrect === "string" ? f.effortCorrect : "",
+        allowDuplicateFigureKinds: typeof f.allowDuplicateFigureKinds === "boolean" ? f.allowDuplicateFigureKinds : false,
       };
     }
     return {

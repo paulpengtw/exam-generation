@@ -83,6 +83,11 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.invalid_fields": "Some recovered values are not valid for the current curriculum. Please correct them before submitting.",
     "recovery.confirmation_invalid_fields": "Some restored confirmation values are not valid for the current schema. Please correct them before sending.",
 
+    "recovery.identity.session_expired_notice": "Your session expired. Sign in to restore your saved work.",
+    "recovery.identity.wrong_account_blocked": "This saved snapshot belongs to a different account and cannot be shown here.",
+    "recovery.identity.explicit_logout_cleared": "Your saved work was cleared on sign-out.",
+    "recovery.identity.tab_collision": "Another tab is already using this session ID. Starting with a fresh identity.",
+
     "feedback.button_aria": "Report a problem",
     "feedback.form_title": "Report a problem",
     "feedback.name_label": "Name",
@@ -632,6 +637,11 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.results_restore_failed": "已收到的題目無法還原。保存的內容仍保留，請重試。",
     "recovery.invalid_fields": "部分還原的值不在目前課綱的允許清單中，請修正後再送出。",
     "recovery.confirmation_invalid_fields": "部分還原的發送前確認值不在目前設定允許清單中，請修正後再送出。",
+
+    "recovery.identity.session_expired_notice": "您的工作階段已過期，請重新登入以還原已儲存的工作。",
+    "recovery.identity.wrong_account_blocked": "此已儲存的快照屬於其他帳號，無法在此顯示。",
+    "recovery.identity.explicit_logout_cleared": "您的已儲存工作已在登出時清除。",
+    "recovery.identity.tab_collision": "另一個分頁正在使用相同的工作階段 ID，將以全新身分繼續。",
 
     "feedback.button_aria": "回報問題",
     "feedback.form_title": "回報問題",

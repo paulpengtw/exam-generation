@@ -16,7 +16,18 @@ import {
   type HistoryDetail as HistoryDetailPayload,
 } from "../api/client";
 import { useAuthStore } from "../store/authStore";
-import { initRecoveryStore, useRecoveryStore } from "../lib/recovery/recoveryStore";
+import {
+  initRecoveryStore,
+  initRecoveryStoreAsync,
+  useRecoveryStore,
+} from "../lib/recovery/recoveryStore";
+import {
+  peekTabId,
+  getOrCreateTabId,
+  detectTabCollision,
+  startTabCollisionListener,
+  resetTabIdForCollision,
+} from "../lib/recovery/storage";
 import type { ModificationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 import {
   validateModificationBase,
@@ -326,17 +337,68 @@ export default function HistoryDetail({ recordId }: HistoryDetailProps) {
   const recoveryBootKey = `${route}:${userId}`;
   const [recoveryBootedKey, setRecoveryBootedKey] = useState<string | null>(null);
 
+  // Phase 1: synchronous boot — restores pending snapshot immediately so the
+  // page can render without waiting for async identity-hardening work.
   useLayoutEffect(() => {
+    const environment =
+      typeof __BUILD_ENVIRONMENT__ === "undefined"
+        ? "development"
+        : __BUILD_ENVIRONMENT__;
     initRecoveryStore({
       currentRoute: route,
       origin: window.location.origin,
-      environment:
-        typeof __BUILD_ENVIRONMENT__ === "undefined"
-          ? "development"
-          : __BUILD_ENVIRONMENT__,
+      environment,
     });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the gate deliberately waits for synchronous recovery-store hydration before mounting the detail surface
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRecoveryBootedKey(recoveryBootKey);
+  }, [recoveryBootKey, route]);
+
+  // Phase 2: async identity hardening (issue #776) — runs after first render.
+  useEffect(() => {
+    let cancelled = false;
+    let stopCollisionListener: (() => void) | null = null;
+    const environment =
+      typeof __BUILD_ENVIRONMENT__ === "undefined"
+        ? "development"
+        : __BUILD_ENVIRONMENT__;
+
+    async function hardenIdentity(): Promise<void> {
+      const existingTabId = peekTabId();
+      if (existingTabId !== null) {
+        const isDuplicate = await detectTabCollision(existingTabId, 100);
+        if (cancelled) return;
+        if (isDuplicate) {
+          const freshId = resetTabIdForCollision();
+          stopCollisionListener = startTabCollisionListener(freshId);
+          useRecoveryStore.getState().discardRecovery();
+          return;
+        }
+      }
+      if (cancelled) return;
+      await initRecoveryStoreAsync({
+        currentRoute: route,
+        origin: window.location.origin,
+        environment,
+      });
+      if (cancelled) return;
+      if (
+        useRecoveryStore.getState().claimedSnapshotId === null &&
+        useRecoveryStore.getState().pending !== null
+      ) {
+        useRecoveryStore.setState({ pending: null, blocked: null });
+      }
+      const tabId = getOrCreateTabId();
+      stopCollisionListener = startTabCollisionListener(tabId);
+    }
+
+    hardenIdentity().catch(() => {
+      // Hardening failed: Phase-1 sync state remains in effect.
+    });
+
+    return () => {
+      cancelled = true;
+      if (stopCollisionListener) stopCollisionListener();
+    };
   }, [recoveryBootKey, route]);
 
   const pendingRecovery = useRecoveryStore((state) => state.pending);

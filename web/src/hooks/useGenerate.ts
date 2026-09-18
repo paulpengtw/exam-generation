@@ -5,6 +5,8 @@ import * as Sentry from "@sentry/react";
 import { useAuthStore } from "../store/authStore";
 import { useLangStore } from "../store/langStore";
 import { isSentryEnabled } from "../sentry";
+import { saveSignoutReason } from "../lib/signoutReason";
+import { saveReturnDestination } from "../lib/returnDestination";
 import type { GenerateParams } from "../api/generated/contract";
 import {
   formatResolverFieldErrors,
@@ -725,7 +727,19 @@ export function useGenerate(): UseGenerateReturn {
         if (controllerRef.current !== controller) return;
         if (!res.ok) {
           if (res.status === 401) {
-            useAuthStore.getState().logout();
+            // Classify as credential expiry — recovery snapshot is preserved
+            // so the teacher can restore after re-authenticating (#776).
+            const authState = useAuthStore.getState();
+            const userId = authState.user?.id ?? null;
+            if (userId !== null) {
+              saveSignoutReason("session_expired", userId);
+            }
+            const currentPath =
+              typeof window !== "undefined" ? window.location.pathname : null;
+            if (currentPath !== null) {
+              saveReturnDestination(currentPath);
+            }
+            authState.logout();
             const msg = "Session expired — please sign in again";
             setErrorMessage(msg);
             setStatus("error");

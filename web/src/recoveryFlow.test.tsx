@@ -62,13 +62,17 @@ vi.mock("./utils/odt", () => ({ buildExamOdt: vi.fn(), formatTimestamp: vi.fn(()
 // ---- Mock API client (schemas + models) ----
 const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn());
-vi.mock("./api/client", () => ({
-  getSchemas: getSchemasMock,
-  getAvailableModels: getAvailableModelsMock,
-  planCoreQuestions: planCoreQuestionsMock,
-  previewGenerate: previewGenerateMock,
-  resolveGenerate: resolveGenerateMock,
-}));
+vi.mock("./api/client", async (importActual) => {
+  const actual = await importActual<typeof import("./api/client")>();
+  return {
+    ...actual,
+    getSchemas: getSchemasMock,
+    getAvailableModels: getAvailableModelsMock,
+    planCoreQuestions: planCoreQuestionsMock,
+    previewGenerate: previewGenerateMock,
+    resolveGenerate: resolveGenerateMock,
+  };
+});
 
 const MATH_SCHEMA = {
   學習階段: "第四學習階段",
@@ -303,6 +307,7 @@ import {
   useRecoveryStore,
   resetRecoveryStoreForTests,
   initRecoveryStore,
+  initRecoveryStoreAsync,
 } from "./lib/recovery/recoveryStore";
 import { evaluateSaveAndUpdate, runSaveAndUpdate } from "./lib/recovery/saveAndUpdate";
 import {
@@ -311,6 +316,11 @@ import {
   saveSnapshotTransactionally,
   persistTabPointer,
   getOrCreateTabId,
+  claimSnapshot,
+  releaseSnapshotClaim,
+  deleteAllSnapshotsForAccount,
+  detectTabCollision,
+  startTabCollisionListener,
 } from "./lib/recovery/storage";
 import { RECOVERY_FORMAT_V1 } from "./lib/recovery/format";
 import { importResultsWorkspace } from "./lib/workspace/adapters/resultsWorkspace";
@@ -498,6 +508,11 @@ async function persistResultsFixture(
 }
 
 beforeEach(() => {
+  // Restore any vi.spyOn() overrides from the previous test before clearing.
+  // vi.clearAllMocks() only resets call counts; it leaves mockImplementation in
+  // place, which can pollute later tests (e.g. localStorage.setItem spy from
+  // identity g leaking into identity h).
+  vi.restoreAllMocks();
   localStorage.clear();
   sessionStorage.clear();
   vi.clearAllMocks();
@@ -1249,5 +1264,422 @@ describe("recovery store flow — existing tests", () => {
     });
 
     expect(result.allowed).toBe(true);
+  });
+});
+
+// ── Recovery identity — router-driven flow tests (issue #776) ─────────────────
+//
+// These tests verify the eight acceptance criteria of the recovery-identity
+// feature through the real router layer (renderApp / direct auth-store calls
+// after a rendered session), complementing the unit-level tests in
+// recoveryIdentity.test.ts.
+
+// Helper: write a snapshot + pointer for the default user and route.
+async function seedSnapshot(
+  opts: {
+    snapshotId?: string;
+    accountId?: string;
+    route?: string;
+    subject?: "math" | "social_studies" | "natural_sciences";
+  } = {},
+): Promise<string> {
+  const snapshotId = opts.snapshotId ?? "flow-776-snap";
+  const accountId = opts.accountId ?? USER.id;
+  const route = opts.route ?? "/generate/math";
+  const subject = opts.subject ?? "math";
+  const tabId = getOrCreateTabId();
+  await saveSnapshotTransactionally({
+    schema: RECOVERY_FORMAT_V1,
+    snapshot_id: snapshotId,
+    tab_id: tabId,
+    route,
+    subject,
+    account_id: accountId,
+    origin: "https://test.example.com",
+    environment: "production",
+    source_build_id: "build-A",
+    target_build_id: "build-B",
+    source_release_revision: 1,
+    target_release_revision: 2,
+    saved_at: new Date().toISOString(),
+    workspace_revision: 0,
+    form: {
+      kind: "form",
+      version: 1,
+      fields: { topic: "recovery-776-topic" } as never,
+    },
+  });
+  await persistTabPointer({
+    account_id: accountId,
+    snapshot_id: snapshotId,
+    route,
+    tab_id: tabId,
+    attempted_target_build_id: "build-B",
+    attempted_target_release_revision: 2,
+  });
+  return snapshotId;
+}
+
+// a. Expired-session restore via same-tab sign-in ─────────────────────────────
+
+describe("identity a: expired-session restore via same-tab sign-in (router-driven)", () => {
+  it("recovery banner appears after the user re-signs-in on the same tab following a 401 logout", async () => {
+    // Arrange: snapshot exists for user u1
+    const snapshotId = await seedSnapshot();
+
+    // Simulate 401-path logout: clears credentials, leaves snapshot intact
+    useAuthStore.getState().logout();
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(loadSnapshot(USER.id, snapshotId)).not.toBeNull(); // snapshot preserved
+
+    // User re-signs in with the same account
+    useAuthStore.setState({ token: "tok", user: USER });
+
+    // Boot recovery as the app would on remount after sign-in
+    initRecoveryStore({
+      currentRoute: "/generate/math",
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+    expect(useRecoveryStore.getState().pending?.snapshot_id).toBe(snapshotId);
+
+    // Render the app — recovery banner should appear
+    const { unmount } = renderApp("/generate/math");
+    await waitFor(
+      () =>
+        expect(
+          screen.queryByText(/Form restored from before update|已還原更新前的表單/i),
+        ).toBeInTheDocument(),
+      { timeout: 5000 },
+    );
+    unmount();
+  });
+
+  it("credential-clearing logout preserves snapshot in storage", async () => {
+    const snapshotId = await seedSnapshot();
+    // 401-path logout
+    useAuthStore.getState().logout();
+    // Snapshot still on disk
+    expect(loadSnapshot(USER.id, snapshotId)).not.toBeNull();
+    // Tab pointer still in sessionStorage
+    expect(loadTabPointer()).not.toBeNull();
+  });
+});
+
+// b. Different account logging in — refused, content never rendered ─────────────
+
+describe("identity b: different-account login — refused", () => {
+  // Unit-level: both tests call initRecoveryStore / initRecoveryStoreAsync directly and
+  // assert on useRecoveryStore state. The "refused" outcome is a store state check;
+  // the user-visible UI (a warning banner) requires a router render and is not tested here.
+  // Router-driven coverage would render the app after a wrong-account boot and assert on DOM.
+  it("sets blocked:wrong_account when user-B signs in with user-A's snapshot", async () => {
+    // Snapshot for user-A
+    await seedSnapshot({ accountId: "user-A" });
+
+    // user-B signs in
+    useAuthStore.setState({
+      token: "tok",
+      user: { id: "user-B", email: "b@example.com", created_at: "2024-01-01T00:00:00Z" },
+    });
+
+    // Boot recovery
+    initRecoveryStore({
+      currentRoute: "/generate/math",
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+
+    const state = useRecoveryStore.getState();
+    // Content must not be exposed
+    expect(state.pending).toBeNull();
+    expect(state.blocked).toBe("wrong_account");
+  });
+
+  it("async init also blocks different-account snapshots", async () => {
+    await seedSnapshot({ accountId: "user-A" });
+    useAuthStore.setState({
+      token: "tok",
+      user: { id: "user-B", email: "b@example.com", created_at: "2024-01-01T00:00:00Z" },
+    });
+    await initRecoveryStoreAsync({
+      currentRoute: "/generate/math",
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+    expect(useRecoveryStore.getState().pending).toBeNull();
+    expect(useRecoveryStore.getState().blocked).toBe("wrong_account");
+  });
+});
+
+// c. Explicit logout invalidates recovery (router-driven) ─────────────────────
+
+describe("identity c: explicit logout — snapshot invalidated (router-driven)", () => {
+  it("clicking logout in SubjectSelectPage deletes the snapshot from storage", async () => {
+    const { SubjectSelectPage } = await import("./pages/SubjectSelectPage");
+    const snapshotId = await seedSnapshot();
+    expect(loadSnapshot(USER.id, snapshotId)).not.toBeNull();
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/generate"] });
+    const { unmount } = render(<RouterProvider router={router} />);
+
+    // Wait for the page to render the logout button
+    const logoutBtn = await screen.findByRole("button", {
+      name: /logout|登出/i,
+    });
+    await act(async () => {
+      fireEvent.click(logoutBtn);
+    });
+    // Confirm the destructive dialog
+    const confirmBtn = await screen.findByRole("button", {
+      name: /^Sign out$|^登出$/, // confirm.logout_confirm ("Sign out" in en-US, "登出" in zh-TW)
+    });
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    // Snapshot must be gone
+    await waitFor(() => {
+      expect(loadSnapshot(USER.id, snapshotId)).toBeNull();
+    });
+
+    unmount();
+    // silence unused import lint
+    void SubjectSelectPage;
+  });
+
+  it("logoutExplicit (the call behind the UI button) deletes snapshots and clears pointer", async () => {
+    const snapshotId = await seedSnapshot();
+    expect(loadSnapshot(USER.id, snapshotId)).not.toBeNull();
+
+    useAuthStore.getState().logoutExplicit();
+
+    expect(loadSnapshot(USER.id, snapshotId)).toBeNull();
+    expect(loadTabPointer()).toBeNull();
+    expect(useAuthStore.getState().user).toBeNull();
+  });
+});
+
+// d. Both 401 paths preserve snapshot ─────────────────────────────────────────
+
+describe("identity d: both 401 paths preserve snapshot", () => {
+  // Unit-level: apiFetch 401 is tested by spying on globalThis.fetch directly (no router
+  // render). The useGenerate stream 401 path is covered by the real-hook test in
+  // hooks/useGenerate.401.test.ts. Router-driven coverage of the full UI 401→redirect flow
+  // would require E2E tests (the auth redirect happens at the browser level after logout).
+  it("apiFetch 401 clears auth but leaves snapshot on disk", async () => {
+    const snapshotId = await seedSnapshot();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Unauthorized" }), { status: 401 }),
+    );
+    window.history.pushState({}, "", "/generate/math");
+    const { apiFetch } = await import("./api/client");
+    await expect(apiFetch("/api/test")).rejects.toThrow();
+
+    // Auth cleared via logout() — NOT logoutExplicit()
+    expect(useAuthStore.getState().token).toBeNull();
+    // Snapshot intact
+    expect(loadSnapshot(USER.id, snapshotId)).not.toBeNull();
+    // Signout reason saved as session_expired
+    const raw = localStorage.getItem("exam_signout_reason");
+    expect(raw).not.toBeNull();
+    expect(JSON.parse(raw!).reason).toBe("session_expired");
+  });
+
+  // identity d — useGenerate stream 401 path tested in hooks/useGenerate.401.test.ts
+});
+
+// e. Two independent tabs each keep their own snapshot ─────────────────────────
+
+describe("identity e: two independent tabs each keep their own snapshot", () => {
+  // Unit-level: tests call claimSnapshot / releaseSnapshotClaim and initRecoveryStore
+  // directly, verifying storage-level isolation between snapshots. There is no React
+  // render; tab independence in the real UI (each tab showing its own form) would require
+  // two concurrent browser tabs, which jsdom cannot model — use E2E tests for that.
+  it("tab-1 and tab-2 can each claim their own distinct snapshot", async () => {
+    // Simulate two different snapshots for the same user (different routes)
+    const snapA = await seedSnapshot({ snapshotId: "snap-tab1-A", route: "/generate/math" });
+    sessionStorage.clear(); // simulate second tab context
+    const snapB = await seedSnapshot({ snapshotId: "snap-tab2-B", route: "/generate/social_studies" });
+
+    const resultA = await claimSnapshot("tab-id-1", snapA);
+    const resultB = await claimSnapshot("tab-id-2", snapB);
+
+    expect(resultA.won).toBe(true);
+    expect(resultB.won).toBe(true);
+
+    releaseSnapshotClaim(snapA);
+    releaseSnapshotClaim(snapB);
+  });
+
+  it("two app renders with different routes each boot independently without cross-claiming", async () => {
+    // Render first tab context — math snapshot
+    sessionStorage.setItem("exam_tab_id", "tab-math-111");
+    await seedSnapshot({ snapshotId: "snap-math-tab", route: "/generate/math" });
+    initRecoveryStore({
+      currentRoute: "/generate/math",
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+    expect(useRecoveryStore.getState().pending?.snapshot_id).toBe("snap-math-tab");
+
+    // Reset and simulate second tab context — social snapshot (different tab_id)
+    resetRecoveryStoreForTests();
+    sessionStorage.setItem("exam_tab_id", "tab-ss-222");
+    const snapshotId2 = await seedSnapshot({
+      snapshotId: "snap-ss-tab",
+      route: "/generate/social_studies",
+    });
+    await persistTabPointer({
+      account_id: USER.id,
+      snapshot_id: snapshotId2,
+      route: "/generate/social_studies",
+    });
+    initRecoveryStore({
+      currentRoute: "/generate/social_studies",
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+    expect(useRecoveryStore.getState().pending?.snapshot_id).toBe("snap-ss-tab");
+  });
+});
+
+// f. Duplicate-tab collision ──────────────────────────────────────────────────
+
+describe("identity f: duplicate-tab collision detection", () => {
+  // Unit-level: tests call detectTabCollision and initRecoveryStoreAsync directly.
+  // BroadcastChannel-based collision detection works in jsdom for same-origin tests, but
+  // real duplicate-tab behaviour (Ctrl+Drag opening a tab with a copied sessionStorage)
+  // cannot be reproduced in jsdom. The UI outcome (duplicate tab sees empty form instead
+  // of recovery banner) requires an E2E test.
+  it("detectTabCollision returns true when another tab listener is active with the same ID", async () => {
+    const tabId = "dup-tab-776-id";
+    const stopListener = startTabCollisionListener(tabId);
+    await new Promise<void>((r) => setTimeout(r, 10));
+    const collision = await detectTabCollision(tabId, 300);
+    expect(collision).toBe(true);
+    stopListener();
+  });
+
+  it("detectTabCollision returns false for a fresh tab (unique ID)", async () => {
+    const tabId = "fresh-unique-tab-id-" + crypto.randomUUID();
+    const collision = await detectTabCollision(tabId, 100);
+    expect(collision).toBe(false);
+  });
+
+  it("initRecoveryStoreAsync sets claimedTabId after winning claim", async () => {
+    await seedSnapshot();
+    sessionStorage.setItem("exam_tab_id", "claim-test-tab");
+    await initRecoveryStoreAsync({
+      currentRoute: "/generate/math",
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+    const state = useRecoveryStore.getState();
+    expect(state.pending).not.toBeNull();
+    expect(state.claimedTabId).toBe("claim-test-tab");
+    expect(state.claimedSnapshotId).toBe("flow-776-snap");
+  });
+});
+
+// g. Denied marker storage blocking save-and-update (router-driven) ───────────
+
+describe("identity g: denied marker storage blocks save-and-update (router-driven)", () => {
+  it("save-and-update returns snapshot_failed when localStorage.setItem is denied", async () => {
+    setUpUpdateRequired();
+    const { unmount } = renderApp("/generate/math");
+    const topicInput = await screen.findByPlaceholderText(
+      /e\.g\. Climate change|例如：氣候變遷/i,
+      {},
+      { timeout: 5000 },
+    );
+    await act(async () => {
+      fireEvent.change(topicInput, { target: { value: "storage-denied-test" } });
+    });
+
+    // Mock all localStorage writes to throw
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("QuotaExceededError", "QuotaExceededError");
+    });
+
+    const result = await runSaveAndUpdate({
+      navigate: vi.fn(),
+      origin: "https://test.example.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(["snapshot_failed", "pointer_failed", "quota"]).toContain(result.reason);
+    }
+
+    unmount();
+  });
+
+  it("claimSnapshot returns won:false when localStorage throws on write", async () => {
+    vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
+      throw new DOMException("StorageError", "StorageError");
+    });
+    const result = await claimSnapshot("tab-g", "snap-g");
+    expect(result.won).toBe(false);
+  });
+});
+
+// h. Telemetry exclusion ──────────────────────────────────────────────────────
+
+describe("identity h: telemetry exclusion — recovery contents never in logs", () => {
+  // Unit-level: tests call logoutExplicit(), deleteAllSnapshotsForAccount(), and apiFetch()
+  // directly and spy on console methods. No React render is needed because telemetry
+  // exclusion is a property of the storage / auth functions, not the UI layer.
+  it("logoutExplicit does not log account ID or snapshot contents to console", async () => {
+    await seedSnapshot({ snapshotId: "snap-priv-h" });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    useAuthStore.getState().logoutExplicit();
+
+    for (const call of [
+      ...logSpy.mock.calls,
+      ...warnSpy.mock.calls,
+      ...errorSpy.mock.calls,
+    ]) {
+      const asString = JSON.stringify(call);
+      expect(asString).not.toContain(USER.id);
+      expect(asString).not.toContain("snap-priv-h");
+    }
+  });
+
+  it("deleteAllSnapshotsForAccount does not log account ID to console", async () => {
+    const snap = await seedSnapshot({ accountId: "user-h-secret", snapshotId: "snap-h-secret" });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    deleteAllSnapshotsForAccount("user-h-secret");
+
+    for (const call of [...logSpy.mock.calls, ...errorSpy.mock.calls]) {
+      const asString = JSON.stringify(call);
+      expect(asString).not.toContain("user-h-secret");
+      expect(asString).not.toContain(snap);
+    }
+  });
+
+  it("apiFetch 401 signout reason contains only reason+userId — no snapshot form fields", async () => {
+    await seedSnapshot({ snapshotId: "snap-telem" });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Unauthorized" }), { status: 401 }),
+    );
+    window.history.pushState({}, "", "/generate/math");
+    const { apiFetch } = await import("./api/client");
+    await expect(apiFetch("/api/schemas")).rejects.toThrow();
+
+    const raw = localStorage.getItem("exam_signout_reason");
+    expect(raw).not.toBeNull();
+    const parsed = JSON.parse(raw!) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual(expect.arrayContaining(["reason", "userId"]));
+    expect(raw).not.toContain("recovery-776-topic");
+    expect(raw).not.toContain("form");
   });
 });
