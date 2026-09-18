@@ -290,7 +290,8 @@ describe("ParamForm 工作區參與", () => {
   ])("reports restoring during draft vs History and exports the %s choice", async (button, choice) => {
     storeDraft();
     getSchemasMock.mockResolvedValue(MATH_SCHEMA);
-    await renderForm({ topic: "歷史主題", core_question: "歷史核心問題" }, "math");
+    const historyPrefill = { topic: "歷史主題", core_question: "歷史核心問題" };
+    await renderForm(historyPrefill, "math");
     const dialog = await screen.findByRole("dialog");
     expect(formSurface()?.readiness).toBe("restoring");
     fireEvent.change(screen.getByPlaceholderText("例如：氣候變遷與都市規劃"), { target: { value: "編輯" } });
@@ -300,7 +301,12 @@ describe("ParamForm 工作區參與", () => {
     if (choice !== "draft") expect(formSurface()?.hasEditableState).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "產生" }));
     await screen.findByRole("heading", { name: "發送前確認設定" });
-    await waitFor(() => expect(confirmation()?.historyDraftChoice).toBe(choice));
+    await waitFor(() => {
+      expect(confirmation()?.historyDraftChoice).toBe(choice);
+      expect(confirmation()?.pendingPrefill).toEqual(
+        choice === "draft" ? SAVED_FIELDS : choice === "history" ? historyPrefill : null,
+      );
+    });
   });
 
   it.each(["確定發送", "返回修改"])("registers confirmation only while open, unregistering on %s", async (button) => {
@@ -325,6 +331,7 @@ describe("ParamForm 工作區參與", () => {
     expect(confirmation()).toEqual({
       pendingParams: { ...resolved.payload, drawn: resolved.drawn },
       pendingPerQuestionParams: JSON.parse(resolved.payload.per_question_params),
+      pendingPrefill: INITIAL_PARAMS,
       clearedPaths: [], redraws: {}, hasPendingConfirmationEdits: false,
       coreQuestionResolution: "idle", historyDraftChoice: null,
     });
@@ -393,6 +400,9 @@ describe("ParamForm 可觀察作業", () => {
     const planning = deferred<{ candidates: string[] }>();
     planCoreQuestionsMock.mockReturnValue(planning.promise);
     const { unmount } = await openConfirmationWithSubquestions({ ...INITIAL_PARAMS, core_question: "" });
+    await waitFor(() => {
+      expect(observed.some(({ kind }) => kind === "core_question_planning")).toBe(true);
+    });
     const op = operation("core_question_planning");
     expectActive(op);
     expect(confirmation()?.coreQuestionResolution).toBe("loading");
@@ -447,6 +457,10 @@ describe("ParamForm 可觀察作業", () => {
 
   it.each(["completed", "failed", "superseded-success", "superseded-failure"])("observes failed refetch and manual preview retry ending %s", async (result) => {
     await openConfirmationWithSubquestions();
+    // Let the confirmation's initial preview settle before replacing the mock
+    // for the debounced refetch. Otherwise the initial promise can race the
+    // first operation assertion under the full suite.
+    await waitFor(() => expect(operation("prompt_preview").outcomes[0]).toBe("completed"));
     vi.useFakeTimers();
     previewGenerateMock.mockRejectedValueOnce(new Error("refetch failed"));
     editInstruction("失敗的指示");

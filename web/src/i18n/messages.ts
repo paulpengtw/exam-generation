@@ -50,7 +50,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.disabled.hydrating": "Form loading, please wait",
     "recovery.disabled.restoring": "Form restoring, please wait",
     "recovery.disabled.results_present": "Results present",
-    "recovery.disabled.confirmation_open": "Please complete or clear confirmation",
+    "recovery.disabled.confirmation_open": "Confirmation is still settling; please wait",
     "recovery.disabled.operation_active": "Cannot update while generating",
     "recovery.disabled.not_signed_in": "Please sign in",
     "recovery.disabled.no_update": "No update required",
@@ -62,10 +62,12 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.disabled.workspace_changed": "Workspace changed",
 
     "recovery.banner.title": "Form restored from before update",
+    "recovery.banner.confirmation_title": "Confirmation restored from before update",
     "recovery.banner.acknowledge": "Acknowledge",
     "recovery.banner.discard": "Discard",
     "recovery.banner.error": "Restore failed",
     "recovery.invalid_fields": "Some recovered values are not valid for the current curriculum. Please correct them before submitting.",
+    "recovery.confirmation_invalid_fields": "Some restored confirmation values are not valid for the current schema. Please correct them before sending.",
 
     "feedback.button_aria": "Report a problem",
     "feedback.form_title": "Report a problem",
@@ -583,7 +585,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.disabled.hydrating": "表單載入中，請稍候",
     "recovery.disabled.restoring": "表單還原中，請稍候",
     "recovery.disabled.results_present": "有已收到的結果",
-    "recovery.disabled.confirmation_open": "請先送出或清除發送前確認",
+    "recovery.disabled.confirmation_open": "發送前確認仍在處理中，請稍候",
     "recovery.disabled.operation_active": "產生中無法更新",
     "recovery.disabled.not_signed_in": "請先登入",
     "recovery.disabled.no_update": "目前不需要更新",
@@ -595,10 +597,12 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "recovery.disabled.workspace_changed": "工作區已變更",
 
     "recovery.banner.title": "已還原更新前的表單",
+    "recovery.banner.confirmation_title": "已還原更新前的發送前確認",
     "recovery.banner.acknowledge": "確認",
     "recovery.banner.discard": "捨棄",
     "recovery.banner.error": "還原失敗",
     "recovery.invalid_fields": "部分還原的值不在目前課綱的允許清單中，請修正後再送出。",
+    "recovery.confirmation_invalid_fields": "部分還原的發送前確認值不在目前設定允許清單中，請修正後再送出。",
 
     "feedback.button_aria": "回報問題",
     "feedback.form_title": "回報問題",

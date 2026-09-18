@@ -2,6 +2,8 @@
  * Recovery snapshot format definitions — issue #772.
  */
 import type { FormWorkspaceSnapshot } from "../workspace/adapters/types";
+import { importConfirmationWorkspace } from "../workspace/adapters/confirmationWorkspace";
+import type { ConfirmationWorkspaceSnapshot } from "../workspace/adapters/types";
 
 export const RECOVERY_FORMAT_V1 = "exam-generation.recovery/1" as const;
 export type RecoveryFormatV1 = typeof RECOVERY_FORMAT_V1;
@@ -22,6 +24,8 @@ export interface RecoverySnapshotV1 {
   saved_at: string; // ISO
   workspace_revision: number;
   form: FormWorkspaceSnapshot;
+  /** Optional so snapshots written by #772 remain readable. */
+  confirmation?: ConfirmationWorkspaceSnapshot;
 }
 
 export type ParseRecoveryResult =
@@ -110,6 +114,13 @@ export function parseRecoverySnapshot(
 
   // Form validation: must be { kind: "form", version: 1 }
   if (!isRecord(raw.form) || raw.form.kind !== "form" || raw.form.version !== 1) {
+    return { ok: false, reason: "invalid_form" };
+  }
+
+  // Confirmation is an optional v1 extension. Validate it through the same
+  // adapter used by the live workspace so malformed pending state never wins
+  // over normal form hydration.
+  if (Object.hasOwn(raw, "confirmation") && !importConfirmationWorkspace(raw.confirmation)) {
     return { ok: false, reason: "invalid_form" };
   }
 

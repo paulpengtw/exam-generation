@@ -18,6 +18,7 @@ import {
 import { renewSessionIfNeeded } from "../lib/sessionRenewal";
 import { exportFormWorkspace } from "../lib/workspace/adapters/formWorkspace";
 import { exportConfirmationWorkspace } from "../lib/workspace/adapters/confirmationWorkspace";
+import type { ConfirmationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore, type OperationHandle, type SurfaceParticipation, type SurfaceReadiness } from "../lib/workspace/workspaceStore";
 import { useAuthStore } from "../store/authStore";
@@ -366,6 +367,8 @@ export interface ParamFormProps {
   onUnsubmittedInput?: () => void;
   /** When present, takes precedence over loadDraft and history prefill (issue #772). */
   recoveredForm?: import("../lib/workspace/adapters/types").FormWorkspaceSnapshot;
+  /** When present, reopens the exact settled pre-send confirmation (issue #773). */
+  recoveredConfirmation?: ConfirmationWorkspaceSnapshot;
   /** Called when the user clicks 確認 on the recovery banner (issue #772). */
   onRecoveryAcknowledge?: () => void;
   /** Called when the user clicks 捨棄 on the recovery banner (issue #772). */
@@ -458,6 +461,10 @@ function jsonDeepEqual(left: unknown, right: unknown): boolean {
   );
 }
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 type ConfirmationValueKind = "absent" | "sampled" | "defaulted";
 
 type ConfirmationRow = {
@@ -524,6 +531,14 @@ function confirmationEntries(
       .filter((value) => value !== "" && !known.has(value))
       .map((value) => ({ value, instruction: "" })),
   ];
+}
+
+function entriesForValues(
+  entries: readonly SchemaEntry[],
+  values: readonly string[],
+): SchemaEntry[] {
+  const byValue = new Map(entries.map((entry) => [entry.value, entry]));
+  return values.map((value) => byValue.get(value) ?? { value, instruction: "" });
 }
 
 function ConfirmationSingleSelect({
@@ -1172,6 +1187,7 @@ function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
   subject: string,
   resolvedSubject: string | readonly string[] | undefined,
   contentDomain: string | undefined,
+  contentDomainMapping: Record<string, string[]> | undefined,
 ): T[] {
   if (subject !== "social_studies" || !contentDomain) return [...entries];
   const subjectValues = typeof resolvedSubject === "string"
@@ -1186,9 +1202,20 @@ function filterLearningContentEntriesByDomain<T extends SchemaEntry>(
   const domainAdmittedEntries = new Set(
     filterEntriesByAdmittedParent(domainTaggedEntries, "內容領域", contentDomain),
   );
-  return entries.filter((entry) =>
-    !Object.hasOwn(entry.admitted_by ?? {}, "內容領域") || domainAdmittedEntries.has(entry),
+  const mappedCodes = new Set(
+    Object.entries(contentDomainMapping ?? {})
+      .filter(([, domains]) => domains.includes(contentDomain))
+      .map(([code]) => code),
   );
+  return entries.filter((entry) =>
+    Object.hasOwn(entry.admitted_by ?? {}, "內容領域")
+      ? domainAdmittedEntries.has(entry)
+      : !isPublicSocialStudiesCode(entry.value) || mappedCodes.has(entry.value),
+  );
+}
+
+function isPublicSocialStudiesCode(code: string): boolean {
+  return code.startsWith("公");
 }
 
 const PIN_RULE_MESSAGE_KEYS: Record<SocialStudiesPinRuleViolation, string> = {
@@ -1292,18 +1319,29 @@ export default function ParamForm({
   initialParams,
   onUnsubmittedInput,
   recoveredForm,
+  recoveredConfirmation,
   onRecoveryAcknowledge,
   onRecoveryDiscard,
 }: ParamFormProps) {
+  // Recovery props are a one-shot snapshot. Latching them prevents the store's
+  // acknowledgement update (or a late hydration render) from rebuilding the
+  // ordinary form or confirmation from defaults/history.
+  const [recoverySource] = useState(() => ({
+    form: recoveredForm,
+    confirmation: recoveredConfirmation,
+  }));
+  const recoveryForm = recoverySource.form;
+  const recoveryConfirmation = recoverySource.confirmation;
+  const hasRecovery = recoveryForm !== undefined || recoveryConfirmation !== undefined;
   const generationStartedRef = useRef(false);
   // When recovering, treat the form as already user-edited so autosave/guards work.
-  const hasUserEditedRef = useRef(recoveredForm !== undefined);
-  const [hasUserEdited, setHasUserEdited] = useState(recoveredForm !== undefined);
+  const hasUserEditedRef = useRef(recoveryForm !== undefined);
+  const [hasUserEdited, setHasUserEdited] = useState(recoveryForm !== undefined);
   // Recovery banner state (issue #772)
   const [recoveryBannerDismissed, setRecoveryBannerDismissed] = useState(false);
   // Invalid recovered fields: populated after schemas/models load (issue #772)
   const [recoveredInvalidFields, setRecoveredInvalidFields] = useState<Set<string>>(new Set());
-  const showRecoveryBanner = recoveredForm !== undefined && !recoveryBannerDismissed;
+  const showRecoveryBanner = hasRecovery && !recoveryBannerDismissed;
   const markUnsubmittedInput = () => {
     generationStartedRef.current = false;
     hasUserEditedRef.current = true;
@@ -1319,15 +1357,27 @@ export default function ParamForm({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [prefillNotice, setPrefillNotice] = useState<string | null>(null);
   const [surfaceQuestionTypeNotice, setSurfaceQuestionTypeNotice] = useState<string[]>([]);
-  const [pendingParams, setPendingParams] = useState<FormParams | null>(null);
-  const [pendingPerQuestionParams, setPendingPerQuestionParams] = useState<Record<string, unknown>[] | null>(null);
-  const [clearedPaths, setClearedPaths] = useState<string[]>([]);
-  const [hasPendingConfirmationEdits, setHasPendingConfirmationEdits] = useState(false);
+  const [pendingParams, setPendingParams] = useState<FormParams | null>(() =>
+    recoveryConfirmation ? cloneJson(recoveryConfirmation.pendingParams) : null,
+  );
+  const [pendingPerQuestionParams, setPendingPerQuestionParams] = useState<Record<string, unknown>[] | null>(() =>
+    recoveryConfirmation?.pendingPerQuestionParams
+      ? cloneJson(recoveryConfirmation.pendingPerQuestionParams)
+      : null,
+  );
+  const [clearedPaths, setClearedPaths] = useState<string[]>(() =>
+    recoveryConfirmation ? [...recoveryConfirmation.clearedPaths] : [],
+  );
+  const [hasPendingConfirmationEdits, setHasPendingConfirmationEdits] = useState(() =>
+    recoveryConfirmation?.hasPendingConfirmationEdits ?? false,
+  );
   const [resolverLoading, setResolverLoading] = useState(false);
   const [resolverError, setResolverError] = useState<string | null>(null);
   // Generic gate: keyed by "${questionIndex}-${subquestionIndex}-${field}". Any truthy entry disables 確認送出.
   const [confirmInvalidFields, setConfirmInvalidFields] = useState<Map<string, true>>(new Map());
-  const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">("idle");
+  const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">(() =>
+    recoveryConfirmation?.coreQuestionResolution ?? "idle",
+  );
   const [promptPreviews, setPromptPreviews] = useState<PromptPreview[]>([]);
   // #835: readable message for the most recent prompt-preview failure (initial
   // fetch, debounced 確認頁修改 re-fetch, or manual retry) — shares
@@ -1336,7 +1386,11 @@ export default function ParamForm({
   const [models, setModels] = useState<AvailableModels | null>(null);
   const [modelsResolved, setModelsResolved] = useState(false);
   const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(true);
-  const previewRequestedRef = useRef(false);
+  // Restored confirmation state is display-only until a teacher explicitly
+  // edits/resubmits a field. This guard suppresses both preview effects until
+  // one of the edit handlers deliberately releases it.
+  const restoredConfirmationEffectsSuppressedRef = useRef(recoveryConfirmation !== undefined);
+  const previewRequestedRef = useRef(recoveryConfirmation !== undefined);
   const previewRefetchSeqRef = useRef(0);
   const [previewRefetchLoading, setPreviewRefetchLoading] = useState(false);
   // #446: per-題組 stale-preview tracking. Keyed by 題組 index.
@@ -1351,19 +1405,36 @@ export default function ParamForm({
   } | null>(null);
   const resolveRequestSeqRef = useRef(0);
   const resolveOperationRef = useRef<OperationHandle | null>(null);
-  const redrawsRef = useRef<Record<string, number>>({});
-  const pendingParamsRef = useRef<FormParams | null>(null);
-  const pendingPerQuestionParamsRef = useRef<Record<string, unknown>[] | null>(null);
+  const redrawsRef = useRef<Record<string, number>>(
+    recoveryConfirmation ? cloneJson(recoveryConfirmation.redraws) : {},
+  );
+  const pendingParamsRef = useRef<FormParams | null>(
+    pendingParams ? cloneJson(pendingParams) : null,
+  );
+  const pendingPerQuestionParamsRef = useRef<Record<string, unknown>[] | null>(
+    pendingPerQuestionParams ? cloneJson(pendingPerQuestionParams) : null,
+  );
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
-  // When recoveredForm is provided, suppress the draft prompt entirely (issue #772).
+  const initialPendingPrefill = (() => {
+    if (recoveryConfirmation && Object.hasOwn(recoveryConfirmation, "pendingPrefill")) {
+      return recoveryConfirmation.pendingPrefill === null
+        ? null
+        : cloneJson(recoveryConfirmation.pendingPrefill);
+    }
+    return hasInitialParams
+      ? cloneJson(initialParams as Record<string, unknown>)
+      : undefined;
+  })();
+  const pendingPrefillRef = useRef<Record<string, unknown> | null | undefined>(initialPendingPrefill);
+  // When recovery is provided, suppress the draft prompt entirely (issues #772/#773).
   const [draftToRestore, setDraftToRestore] = useState<FormDraft | null>(() =>
-    recoveredForm ? null : (userId ? loadDraft(userId) : null),
+    hasRecovery ? null : (userId ? loadDraft(userId) : null),
   );
   const [historyDraftChoice, setHistoryDraftChoice] = useState<
     "draft" | "history" | "defaults" | null
-  >(null);
+  >(() => recoveryConfirmation?.historyDraftChoice ?? null);
 
   const normalisedHistoryPrefill = useMemo(
     () => normaliseHistoryPrefill(subject, initialParams),
@@ -1398,13 +1469,13 @@ export default function ParamForm({
   }
 
   const [formFields, setFormFields] = useState<FormFields>(() => {
-    // When recoveredForm is present, use its fields directly (issue #772).
+    // When a recovered form is present, use its fields directly (issues #772/#773).
     // This takes precedence over initialParams / localStorage defaults.
-    if (recoveredForm) {
+    if (recoveryForm) {
       return {
-        ...recoveredForm.fields,
-        contentDomain: recoveredForm.fields.contentDomain ?? "",
-        targetSurface: recoveredForm.fields.targetSurface ?? "紙本",
+        ...recoveryForm.fields,
+        contentDomain: recoveryForm.fields.contentDomain ?? "",
+        targetSurface: recoveryForm.fields.targetSurface ?? "紙本",
       };
     }
     return {
@@ -1600,9 +1671,10 @@ export default function ParamForm({
     hasDraftHistoryConflict &&
     defaultsReady;
 
-  // While recovery banner is visible, report 'restoring' to block a second
-  // save-and-update until the user acknowledges or discards (issue #772).
-  const formReadiness: SurfaceReadiness = showRecoveryBanner
+  // An ordinary form recovery remains restoring until acknowledged. A settled
+  // confirmation recovery is deliberately saveable once hydration finishes;
+  // #773 lifts the old #772 refusal for that independent workspace.
+  const formReadiness: SurfaceReadiness = showRecoveryBanner && !recoveryConfirmation
     ? "restoring"
     : hasDraftHistoryConflict || showDraftPrompt
     ? "restoring"
@@ -1617,6 +1689,9 @@ export default function ParamForm({
   const exportConfirmation = useCallback(() => pendingParams === null ? null : exportConfirmationWorkspace({
     pendingParams,
     pendingPerQuestionParams,
+    ...(pendingPrefillRef.current !== undefined
+      ? { pendingPrefill: pendingPrefillRef.current }
+      : {}),
     clearedPaths,
     redraws: redrawsRef.current,
     hasPendingConfirmationEdits,
@@ -1627,6 +1702,7 @@ export default function ParamForm({
   function handleRestoreDraft() {
     if (!draftToRestore) return;
     const fields = draftToRestore.fields;
+    pendingPrefillRef.current = cloneJson(fields as unknown as Record<string, unknown>);
     if (hasInitialParams) {
       setHistoryDraftChoice("draft");
       setPrefillNotice(null);
@@ -1643,6 +1719,9 @@ export default function ParamForm({
     hasUserEditedRef.current = false;
     setHasUserEdited(false);
     setHistoryDraftChoice("history");
+    pendingPrefillRef.current = hasInitialParams
+      ? cloneJson(initialParams as Record<string, unknown>)
+      : null;
     setDraftToRestore(null);
     if (defaultsSnapshotRef.current !== null) {
       restoreFormSnapshot(defaultsSnapshotRef.current);
@@ -1654,6 +1733,7 @@ export default function ParamForm({
     hasUserEditedRef.current = false;
     setHasUserEdited(false);
     setHistoryDraftChoice("defaults");
+    pendingPrefillRef.current = null;
     setDraftToRestore(null);
     setPrefillNotice(null);
     userChosenFields.current.clear();
@@ -1668,7 +1748,12 @@ export default function ParamForm({
   }
 
   useEffect(() => {
-    if (!pendingParams || coreQuestionResolution === "loading" || previewRequestedRef.current) return;
+    if (
+      restoredConfirmationEffectsSuppressedRef.current ||
+      !pendingParams ||
+      coreQuestionResolution === "loading" ||
+      previewRequestedRef.current
+    ) return;
     let cancelled = false;
     previewRequestedRef.current = true;
     const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
@@ -1695,7 +1780,12 @@ export default function ParamForm({
   // (which sets pendingPerQuestionParams) does not schedule a spurious second fetch.
   // #446: captures which 題組 indices were edited so failures can be scoped per-題組.
   useEffect(() => {
-    if (!pendingParams || !pendingPerQuestionParams || !hasPendingConfirmationEdits) return;
+    if (
+      restoredConfirmationEffectsSuppressedRef.current ||
+      !pendingParams ||
+      !pendingPerQuestionParams ||
+      !hasPendingConfirmationEdits
+    ) return;
 
     // Snapshot the edited indices accumulated since the last effect run, then
     // reset the accumulator so the next edit cycle starts fresh.
@@ -1746,7 +1836,11 @@ export default function ParamForm({
   }, [hasPendingConfirmationEdits, pendingPerQuestionParams, pendingParams, subject]);
 
   useEffect(() => {
-    if (!pendingParams || coreQuestionResolution !== "loading") return;
+    if (
+      restoredConfirmationEffectsSuppressedRef.current ||
+      !pendingParams ||
+      coreQuestionResolution !== "loading"
+    ) return;
     let cancelled = false;
     const pendingSubjectFilter = Array.isArray(pendingParams.subject_filter)
       ? pendingParams.subject_filter
@@ -1823,7 +1917,7 @@ export default function ParamForm({
     // When recovering, keep the recovered field values — do not reset to
     // initialParams / schema defaults (issue #772). Schema is still fetched
     // for display and validation purposes.
-    if (!recoveredForm) {
+    if (!recoveryForm) {
       restoreFormSnapshot((current) => ({
         ...current,
         context: fromInit<string[]>("context", []),
@@ -1875,53 +1969,55 @@ export default function ParamForm({
           setSchemas(s);
           if (s.poolGrade !== null) latestGradePoolSeq.current = seq;
         }
-        if (s.grades.length > 0 && ip.grade === undefined) setField("grade", s.grades[0]);
-        if (
-          subject === "natural_sciences" &&
-          s.情境.length > 0 &&
-          ip.context === undefined
-        ) {
-          if (ip.sub_context !== undefined) {
-            const admittedContexts = s.情境子類別?.find(
-              (entry) => entry.value === ip.sub_context,
-            )?.admitted_by?.["情境"] ?? [];
-            if (admittedContexts.length > 0) {
-              setField("context", admittedContexts);
-              userChosenFields.current.add("context");
+        if (!recoveryForm) {
+          if (s.grades.length > 0 && ip.grade === undefined) setField("grade", s.grades[0]);
+          if (
+            subject === "natural_sciences" &&
+            s.情境.length > 0 &&
+            ip.context === undefined
+          ) {
+            if (ip.sub_context !== undefined) {
+              const admittedContexts = s.情境子類別?.find(
+                (entry) => entry.value === ip.sub_context,
+              )?.admitted_by?.["情境"] ?? [];
+              if (admittedContexts.length > 0) {
+                setField("context", admittedContexts);
+                userChosenFields.current.add("context");
+              }
+            } else {
+              setField("context", [s.情境[0].value]);
+              const firstSub = filterEntriesByAdmittedParent(
+                s.情境子類別 ?? [],
+                "情境",
+                s.情境[0].value,
+              )[0];
+              setField("subContext", firstSub?.value ?? "");
             }
-          } else {
-            setField("context", [s.情境[0].value]);
-            const firstSub = filterEntriesByAdmittedParent(
-              s.情境子類別 ?? [],
-              "情境",
-              s.情境[0].value,
-            )[0];
-            setField("subContext", firstSub?.value ?? "");
           }
-        }
-        const questionStyles = s.question_style ?? [];
-        if (ip.style === undefined) {
-          if (subject === "math" && questionStyles.length > 0) {
-            setField("style", questionStyles[0].value);
-          } else {
-            setField("style", "");
+          const questionStyles = s.question_style ?? [];
+          if (ip.style === undefined) {
+            if (subject === "math" && questionStyles.length > 0) {
+              setField("style", questionStyles[0].value);
+            } else {
+              setField("style", "");
+            }
           }
+          if (ip.content_type === undefined) {
+            const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
+            setField(
+              "contentType",
+              isCurriculumSubject &&
+                Array.isArray(contentTypes) &&
+                contentTypes.length > 0
+                ? (contentTypes.find((t) => t.value === DEFAULT_CONTENT_TYPE)?.value ??
+                    contentTypes[0].value)
+                : "純文字",
+            );
+            markUserChosen("content_type");
+          }
+          setField("customContentType", "");
+          if (s.題型種類.length > 0 && ip.set_type === undefined) setField("setType", s.題型種類[0].value);
         }
-        if (ip.content_type === undefined) {
-          const contentTypes = s.題目內容類型 as Schemas["題目內容類型"] | undefined;
-          setField(
-            "contentType",
-            isCurriculumSubject &&
-              Array.isArray(contentTypes) &&
-              contentTypes.length > 0
-              ? (contentTypes.find((t) => t.value === DEFAULT_CONTENT_TYPE)?.value ??
-                  contentTypes[0].value)
-              : "純文字",
-          );
-          markUserChosen("content_type");
-        }
-        setField("customContentType", "");
-        if (s.題型種類.length > 0 && ip.set_type === undefined) setField("setType", s.題型種類[0].value);
       })
       .catch((e: Error) => {
         if (!cancelled) setError(e.message);
@@ -1938,6 +2034,10 @@ export default function ParamForm({
       .then((m) => {
         if (cancelled) return;
         setModels(m);
+        if (recoveryForm) {
+          setModelsResolved(true);
+          return;
+        }
         // Reconcile any localStorage-hydrated selection against the live
         // allowlist — a stale value (e.g. a model that was removed server
         // side) must never be silently submitted.
@@ -2089,6 +2189,13 @@ export default function ParamForm({
         // when /api/models fails, even for a returning user with a
         // persisted choice.
         setModels(null);
+        if (recoveryForm && recoveryConfirmation) {
+          // A recovered confirmation cannot be submitted without knowing
+          // whether its model/effort values still belong to the current
+          // registry. Keep the surface hydrating so the captured values stay
+          // visible but remain explicitly blocked until discovery succeeds.
+          return;
+        }
         if (defaultsSnapshotRef.current) {
           defaultsSnapshotRef.current = {
             ...defaultsSnapshotRef.current,
@@ -2115,7 +2222,7 @@ export default function ParamForm({
     return () => {
       cancelled = true;
     };
-  }, [restoreFormSnapshot, setField]);
+  }, [recoveryConfirmation, recoveryForm, restoreFormSnapshot, setField]);
 
   useEffect(() => {
     window.localStorage.setItem("model_plan", modelPlan);
@@ -2194,7 +2301,7 @@ export default function ParamForm({
   }, [schemas, subject, subquestionConfigs, targetSurface]);
 
   useEffect(() => {
-    if (invalidDigitalOnlyPins.length === 0) return;
+    if (recoveryForm || invalidDigitalOnlyPins.length === 0) return;
     // A schema update or a surface flip can expose a stale history pin. Clear
     // it before submit so the backend never receives a known 422 combination.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -2204,7 +2311,7 @@ export default function ParamForm({
         : config,
     ));
     setSurfaceQuestionTypeNotice(invalidDigitalOnlyPins);
-  }, [invalidDigitalOnlyPins, setField]);
+  }, [invalidDigitalOnlyPins, recoveryForm, setField]);
 
   const availableLearningContent = useMemo(() => {
     const entries = schemas?.學習內容 ?? [];
@@ -2224,7 +2331,7 @@ export default function ParamForm({
   }, [schemas, subjectFilter, subject]);
 
   useEffect(() => {
-    if (!schemas || !initialParams) return;
+    if (!schemas || !initialParams || recoveryForm) return;
     const missing: string[] = [];
     const arr = (key: string): string[] => {
       const raw = ip[key];
@@ -2311,7 +2418,7 @@ export default function ParamForm({
       const allowedDomains = new Set(schemas.內容領域?.map((s) => s.value));
       setField("contentDomain", (prev) => (prev && allowedDomains.has(prev) ? prev : ""));
     }
-  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade]);
+  }, [schemas, initialParams, ip, normalisedHistoryPrefill, t, setField, grade, recoveryForm]);
 
   // #839: the 釘選 codes narrowing 科目/內容領域 are the 題組-level 學習內容 +
   // 學習表現 selections plus each 各小題配置 row's own pins. Admission comes
@@ -2467,16 +2574,16 @@ export default function ParamForm({
   }, [models, modelCorrect, modelExecute]);
 
   useEffect(() => {
-    if (subject !== "natural_sciences" || !schemas || availableSubContexts.length === 0) return;
+    if (recoveryForm || subject !== "natural_sciences" || !schemas || availableSubContexts.length === 0) return;
     const allowed = new Set(availableSubContexts.map((entry) => entry.value));
     if (!subContext || !allowed.has(subContext)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- fill the first valid dependent sub-context after schema load
       setField("subContext", availableSubContexts[0]?.value ?? "");
     }
-  }, [availableSubContexts, schemas, subContext, subject, setField]);
+  }, [availableSubContexts, recoveryForm, schemas, subContext, subject, setField]);
 
   useEffect(() => {
-    if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
+    if (recoveryForm || !schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
     // #841: absence is judged against the grade's whole 學習表現 pool, not
     // `availableLearningPerformance` (科目-filtered) — a code merely excluded
     // by the restored/current 科目 is kept selected and flagged as a conflict
@@ -2497,10 +2604,10 @@ export default function ParamForm({
         ),
       };
     });
-  }, [grade, schemas, restoreFormSnapshot]);
+  }, [grade, recoveryForm, schemas, restoreFormSnapshot]);
 
   useEffect(() => {
-    if (!schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
+    if (recoveryForm || !schemas || schemas.poolGrade !== (grade === "" ? null : grade)) return;
     // #841: same whole-pool rule as above, for 學習內容 — a code merely
     // excluded by the restored/current 科目 or 內容領域 is kept selected and
     // flagged on the conflicting parent control, never silently dropped here.
@@ -2513,28 +2620,435 @@ export default function ParamForm({
         learningContent: current.learningContent.filter((value) => allowed.has(value)),
       };
     });
-  }, [grade, schemas, restoreFormSnapshot]);
+  }, [grade, recoveryForm, schemas, restoreFormSnapshot]);
 
-  // Compute recovered invalid fields after schemas / models load (issue #772).
-  // Only relevant when a recoveredForm was provided.
+  // Compute recovered invalid fields after schemas / models load (issues #772/#773).
+  // Only relevant when an ordinary form was recovered; confirmation validity is
+  // tracked independently below so the two workspaces remain distinct.
   useEffect(() => {
-    if (!recoveredForm || !schemas) return;
+    if (!recoveryForm || !schemas) return;
     const invalid = new Set<string>();
-    const allowedQTypes = new Set(schemas.題型?.map((s) => s.value) ?? []);
-    if (qType.some((v) => !allowedQTypes.has(v))) invalid.add("qType");
-    const allowedContexts = new Set(schemas.情境?.map((s) => s.value) ?? []);
-    if (context.some((v) => !allowedContexts.has(v))) invalid.add("context");
-    const allowedSetTypes = new Set(schemas.題型種類?.map((s) => s.value) ?? []);
-    if (setType && !allowedSetTypes.has(setType)) invalid.add("setType");
+    const hasInvalid = (values: readonly string[], entries: readonly SchemaEntry[] | undefined) =>
+      values.some((value) => value !== "" && !(entries ?? []).some((entry) => entry.value === value));
+    const allowedGrade = schemas.grades.includes(grade as number);
+    if (grade !== "" && !allowedGrade) invalid.add("grade");
+    if (hasInvalid(qType, schemas.題型)) invalid.add("qType");
+    if (hasInvalid(context, schemas.情境)) invalid.add("context");
+    if (setType && hasInvalid([setType], schemas.題型種類)) invalid.add("setType");
+    if (contentType && hasInvalid([contentType], schemas.題目內容類型)) invalid.add("contentType");
+    if (subjectFilter && hasInvalid([subjectFilter], schemas.科目)) invalid.add("subjectFilter");
+    if (contentDomain && hasInvalid([contentDomain], schemas.內容領域)) invalid.add("contentDomain");
+    if (style && hasInvalid([style], schemas.question_style)) invalid.add("style");
+    if (difficulty && !["easy", "medium", "hard"].includes(difficulty)) invalid.add("difficulty");
+    if (imageGenerationMode !== "html" && imageGenerationMode !== "gpt_image") {
+      invalid.add("imageGenerationMode");
+    }
+    if (reportingScale && hasInvalid([reportingScale], schemas.reporting_scale)) {
+      invalid.add("reportingScale");
+    }
+    if (subContext && hasInvalid([subContext], availableSubContexts)) invalid.add("subContext");
+    if (hasInvalid(scienceCompetency, schemas.科學能力)) invalid.add("scienceCompetency");
+
+    const gradePoolReady = schemas.poolGrade === null || schemas.poolGrade === grade;
+    if (gradePoolReady) {
+      if (hasInvalid(learningPerformance, availableLearningPerformance)) invalid.add("learningPerformance");
+      if (hasInvalid(learningContent, availableLearningContent)) invalid.add("learningContent");
+      const configs = subquestionConfigs;
+      configs.forEach((config, index) => {
+        if (config.question_type && hasInvalid([config.question_type], availableQuestionTypes)) {
+          invalid.add(`subquestionConfigs[${index}].question_type`);
+        }
+        if (config.content_type && hasInvalid([config.content_type], schemas.題目內容類型)) {
+          invalid.add(`subquestionConfigs[${index}].content_type`);
+        }
+        if (config.learning_content && hasInvalid(config.learning_content, availableLearningContent)) {
+          invalid.add(`subquestionConfigs[${index}].learning_content`);
+        }
+        if (config.learning_performance && hasInvalid(config.learning_performance, availableLearningPerformance)) {
+          invalid.add(`subquestionConfigs[${index}].learning_performance`);
+        }
+      });
+    }
+
+    if (subQuestionCount !== "" &&
+      (!Number.isInteger(subQuestionCount) || subQuestionCount < 3 || subQuestionCount > 7)) {
+      invalid.add("subQuestionCount");
+    }
+    if (textWordLimit !== null && textWordLimit !== undefined &&
+      (!Number.isInteger(textWordLimit) || textWordLimit < 1)) {
+      invalid.add("textWordLimit");
+    }
+
+    if (models?.effort) {
+      const modelValues: Array<[keyof AvailableModels["defaults"], string]> = [
+        ["plan", modelPlan],
+        ["execute", modelExecute],
+        ["verify", modelVerify],
+        ["correct", modelCorrect],
+      ];
+      const allowedModels = new Set(models.allowed);
+      for (const [, model] of modelValues) {
+        if (model && !allowedModels.has(model)) invalid.add("models");
+      }
+      const effectiveModel = (tierModel: string, fallback: string) =>
+        tierModel || fallback;
+      const effortChecks: Array<[string, string, string]> = [
+        ["effortPlan", effortPlan, effectiveModel(modelPlan, models.defaults.plan)],
+        ["effortExecute", effortExecute, effectiveModel(modelExecute, models.defaults.execute)],
+        [
+          "effortVerify",
+          effortVerify,
+          effectiveModel(modelVerify, modelExecute || models.defaults.execute),
+        ],
+        [
+          "effortCorrect",
+          effortCorrect,
+          effectiveModel(modelCorrect, modelExecute || models.defaults.execute),
+        ],
+      ];
+      for (const [field, effort, model] of effortChecks) {
+        if (effort && models.effort[model] && !models.effort[model].includes(effort)) {
+          invalid.add(field);
+        }
+      }
+    }
+
     // eslint-disable-next-line react-hooks/set-state-in-effect -- stable setter; no loop risk (deps don't include the state it sets)
     setRecoveredInvalidFields(invalid);
-  }, [recoveredForm, schemas, qType, context, setType]);
+  }, [
+    availableLearningContent,
+    availableLearningPerformance,
+    availableQuestionTypes,
+    availableSubContexts,
+    contentDomain,
+    contentType,
+    context,
+    difficulty,
+    effortCorrect,
+    effortExecute,
+    effortPlan,
+    effortVerify,
+    grade,
+    imageGenerationMode,
+    learningContent,
+    learningPerformance,
+    models,
+    modelCorrect,
+    modelExecute,
+    modelPlan,
+    modelVerify,
+    qType,
+    recoveryForm,
+    reportingScale,
+    schemas,
+    scienceCompetency,
+    setType,
+    style,
+    subContext,
+    subQuestionCount,
+    subquestionConfigs,
+    subjectFilter,
+    textWordLimit,
+  ]);
+
+  const confirmationInvalidFields = useMemo(() => {
+    const invalid = new Map<string, true>();
+    if (!recoveryConfirmation || !pendingParams || !schemas) return invalid;
+
+    const add = (path: string) => invalid.set(path, true);
+    const valuesOf = (value: unknown): string[] => {
+      if (Array.isArray(value)) {
+        return value.filter((item): item is string => typeof item === "string" && item !== "");
+      }
+      return typeof value === "string" && value !== "" ? [value] : [];
+    };
+    const checkValues = (
+      path: string,
+      value: unknown,
+      entries: readonly SchemaEntry[],
+    ) => {
+      if (
+        value !== null && value !== undefined &&
+        (Array.isArray(value)
+          ? value.some((item) => typeof item !== "string")
+          : typeof value !== "string")
+      ) {
+        add(path);
+        return;
+      }
+      const allowed = new Set(entries.map((entry) => entry.value));
+      if (valuesOf(value).some((item) => !allowed.has(item))) add(path);
+    };
+    const checkContentType = (
+      path: string,
+      value: unknown,
+      entries: readonly SchemaEntry[],
+    ) => {
+      if (
+        value !== null && value !== undefined &&
+        (Array.isArray(value)
+          ? value.some((item) => typeof item !== "string")
+          : typeof value !== "string")
+      ) {
+        add(path);
+        return;
+      }
+      const allowed = new Set(entries.map((entry) => entry.value));
+      const customAllowed = allowed.has("customized");
+      if (valuesOf(value).some((item) => !allowed.has(item) && !(customAllowed && item === "customized"))) {
+        add(path);
+      }
+    };
+    const checkNumbers = (path: string, value: unknown, minimum = 1) => {
+      if (value !== undefined && value !== null &&
+        (typeof value !== "number" || !Number.isInteger(value) || value < minimum)) {
+        add(path);
+      }
+    };
+    const checkBoolean = (path: string, value: unknown) => {
+      if (value !== undefined && typeof value !== "boolean") add(path);
+    };
+    const admittedValues = (
+      entries: readonly SchemaEntry[],
+      parentKey: string,
+      parentValue: unknown,
+    ): SchemaEntry[] => {
+      const parents = valuesOf(parentValue);
+      if (parents.length === 0) return entries.filter((entry) => !entry.admitted_by?.[parentKey]);
+      return entries.filter((entry) => {
+        const admitted = entry.admitted_by?.[parentKey];
+        if (Array.isArray(admitted)) return parents.some((parent) => admitted.includes(parent));
+        return entry.parent === undefined || parents.includes(entry.parent);
+      });
+    };
+    const params = pendingParams as unknown as Record<string, unknown>;
+    const allSubjectValues = schemas.科目?.map((entry) => entry.value) ?? [];
+    const subjectFor = (row: Record<string, unknown>) =>
+      row.subject_filter ?? params.subject_filter;
+    const domainFor = (row: Record<string, unknown>) =>
+      typeof row.content_domain === "string"
+        ? row.content_domain
+        : typeof params.content_domain === "string"
+          ? params.content_domain
+          : undefined;
+    const curriculumEntriesFor = (
+      row: Record<string, unknown>,
+      entries: SchemaEntry[],
+    ) => filterLearningContentEntriesByDomain(
+      filterCurriculumEntriesBySubject(
+        entries,
+        subject,
+        subjectFor(row) as string | readonly string[] | undefined,
+        allSubjectValues,
+      ),
+      subject,
+      subjectFor(row) as string | readonly string[] | undefined,
+      domainFor(row),
+      schemas.內容領域_mapping,
+    );
+
+    const naturalQuestionTypes = [
+      ...schemas.題型,
+      ...["Simple multiple-choice", "Complex multiple-choice", "Constructed response"]
+        .filter((value) => !schemas.題型.some((entry) => entry.value === value))
+        .map((value) => ({ value, instruction: "" })),
+    ];
+    const questionTypes = subject === "natural_sciences"
+      ? naturalQuestionTypes
+      : schemas.題型;
+    const reportingScales = schemas.reporting_scale ??
+      ["1c", "1b", "1a", "2", "3", "4", "5", "6"].map((value) => ({ value, instruction: "" }));
+    const imageModes = ["html", "gpt_image"].map((value) => ({ value, instruction: "" }));
+
+    const checkEffort = (
+      path: string,
+      value: unknown,
+      model: unknown,
+      fallbackModel: unknown,
+    ) => {
+      if (!models?.effort || value === undefined || value === "") return;
+      const modelId = typeof model === "string" && model !== ""
+        ? model
+        : typeof fallbackModel === "string" ? fallbackModel : "";
+      const allowed = modelId && models.effort[modelId]
+        ? models.effort[modelId]
+        : [...new Set(Object.values(models.effort).flat())];
+      // Some compatible model registries do not publish effort options. In
+      // that case there is no current-schema value against which to validate
+      // the restored setting; preserve it until the server can validate the
+      // submitted payload.
+      if (allowed.length === 0) return;
+      if (!allowed.includes(value as string)) add(path);
+    };
+    const checkModel = (path: string, value: unknown) => {
+      if (!models || value === undefined || value === null || value === "") return;
+      if (typeof value !== "string" || !models.allowed.includes(value)) add(path);
+    };
+
+    const validateConfigRows = (
+      rowPrefix: string,
+      row: Record<string, unknown>,
+      rowLearningContent: SchemaEntry[],
+      rowLearningPerformance: SchemaEntry[],
+    ) => {
+      const configs = parseSubquestionConfigs(row.subquestion_configs);
+      configs.forEach((config, subquestionIndex) => {
+        const configRecord = config as Record<string, unknown>;
+        const prefix = `${rowPrefix}subquestion_configs[${subquestionIndex}].`;
+        checkValues(`${prefix}question_type`, configRecord.question_type, questionTypes);
+        checkContentType(`${prefix}content_type`, configRecord.content_type, schemas.題目內容類型 ?? []);
+        checkValues(`${prefix}cognitive_process`, configRecord.cognitive_process, schemas.認知歷程 ?? []);
+        checkValues(`${prefix}reporting_scale`, configRecord.reporting_scale, reportingScales);
+        checkValues(`${prefix}learning_content`, configRecord.learning_content, rowLearningContent);
+        checkValues(`${prefix}learning_performance`, configRecord.learning_performance, rowLearningPerformance);
+        if (subject === "social_studies" || subject === "natural_sciences") {
+          const figureKind = configRecord.figure_kind;
+          const figureKinds = schemas.figure_kinds;
+          if (
+            typeof figureKind === "string" &&
+            figureKind !== "" &&
+            figureKinds !== undefined &&
+            figureKinds.length > 0 &&
+            !figureKinds.includes(figureKind)
+          ) {
+            add(`${prefix}figure_kind`);
+          }
+        }
+        if (configRecord.image_generation_mode !== undefined &&
+          configRecord.image_generation_mode !== "" &&
+          configRecord.image_generation_mode !== "html" &&
+          configRecord.image_generation_mode !== "gpt_image") {
+          add(`${prefix}image_generation_mode`);
+        }
+        checkNumbers(`${prefix}question_word_limit`, configRecord.question_word_limit);
+        checkNumbers(`${prefix}option_word_limit`, configRecord.option_word_limit);
+      });
+    };
+
+    const topRow = params;
+    if (
+      topRow.grade !== undefined &&
+      (typeof topRow.grade !== "number" || !schemas.grades.includes(topRow.grade))
+    ) {
+      add("confirmation.grade");
+    }
+    checkValues("confirmation.context", topRow.context, schemas.情境);
+    checkValues("confirmation.set_type", topRow.set_type, schemas.題型種類);
+    checkValues("confirmation.q_type", topRow.q_type, questionTypes);
+    checkContentType("confirmation.content_type", topRow.content_type, schemas.題目內容類型 ?? []);
+    checkValues("confirmation.subject_filter", topRow.subject_filter, schemas.科目 ?? []);
+    checkValues(
+      "confirmation.sub_context",
+      topRow.sub_context,
+      admittedValues(schemas.情境子類別 ?? [], "情境", topRow.context),
+    );
+    checkValues("confirmation.science_competency", topRow.science_competency, schemas.科學能力 ?? []);
+    checkValues("confirmation.content_domain", topRow.content_domain, schemas.內容領域 ?? []);
+    checkValues("confirmation.reporting_scale", topRow.reporting_scale, reportingScales);
+    checkValues("confirmation.core_competency", topRow.core_competency, schemas.核心素養 ?? []);
+    checkValues("confirmation.math_thinking", topRow.math_thinking, schemas.數學思考);
+    checkValues("confirmation.style", topRow.style, schemas.question_style ?? []);
+    const topLearningContent = curriculumEntriesFor(topRow, schemas.學習內容 ?? []);
+    const topLearningPerformance = curriculumEntriesFor(topRow, schemas.學習表現 ?? []);
+    checkValues("confirmation.learning_content", topRow.learning_content, topLearningContent);
+    checkValues("confirmation.learning_performance", topRow.learning_performance, topLearningPerformance);
+    validateConfigRows("confirmation.", topRow, topLearningContent, topLearningPerformance);
+    checkValues("confirmation.image_generation_mode", topRow.image_generation_mode, imageModes);
+    checkNumbers("confirmation.count", topRow.count);
+    if (topRow.sub_question_count !== undefined && topRow.sub_question_count !== null &&
+      (typeof topRow.sub_question_count !== "number" ||
+        !Number.isInteger(topRow.sub_question_count) ||
+        topRow.sub_question_count < 3 || topRow.sub_question_count > 7)) {
+      add("confirmation.sub_question_count");
+    }
+    checkNumbers("confirmation.text_word_limit", topRow.text_word_limit);
+    checkBoolean("confirmation.skip_verify", topRow.skip_verify);
+    checkBoolean("confirmation.disable_reference_fewshot", topRow.disable_reference_fewshot);
+    checkBoolean("confirmation.core_question_callback", topRow.core_question_callback);
+    checkBoolean("confirmation.allow_duplicate_figure_kinds", topRow.allow_duplicate_figure_kinds);
+    if (subject === "social_studies" && topRow.target_surface !== undefined &&
+      topRow.target_surface !== "紙本" && topRow.target_surface !== "數位") {
+      add("confirmation.target_surface");
+    }
+    if (typeof topRow.difficulty === "string" && topRow.difficulty !== "" &&
+      !["easy", "medium", "hard"].includes(topRow.difficulty)) {
+      add("confirmation.difficulty");
+    }
+
+    if (models) {
+      for (const key of ["model_plan", "model_execute", "model_verify", "model_correct"]) {
+        checkModel(`confirmation.${key}`, topRow[key]);
+      }
+      checkEffort("confirmation.effort_plan", topRow.effort_plan, topRow.model_plan, models.defaults.plan);
+      checkEffort("confirmation.effort_execute", topRow.effort_execute, topRow.model_execute, models.defaults.execute);
+      const executeModel = typeof topRow.model_execute === "string" && topRow.model_execute !== ""
+        ? topRow.model_execute
+        : models.defaults.execute;
+      checkEffort("confirmation.effort_verify", topRow.effort_verify, topRow.model_verify, executeModel);
+      checkEffort("confirmation.effort_correct", topRow.effort_correct, topRow.model_correct, executeModel);
+    }
+
+    const rows = pendingPerQuestionParams ?? parsePerQuestionParams(params.per_question_params);
+    rows.forEach((row, index) => {
+      const rowPrefix = `per_question_params[${index}].`;
+      const rowRecord = row as Record<string, unknown>;
+      if (
+        rowRecord.grade !== undefined && rowRecord.grade !== null &&
+        (typeof rowRecord.grade !== "number" || !Number.isInteger(rowRecord.grade) ||
+          !schemas.grades.includes(rowRecord.grade))
+      ) {
+        add(`${rowPrefix}grade`);
+      }
+      for (const key of ["model_plan", "model_execute", "model_verify", "model_correct"]) {
+        checkModel(`${rowPrefix}${key}`, rowRecord[key]);
+      }
+      checkValues(`${rowPrefix}style`, rowRecord.style, schemas.question_style ?? []);
+      checkContentType(`${rowPrefix}content_type`, rowRecord.content_type, schemas.題目內容類型 ?? []);
+      checkValues(`${rowPrefix}context`, rowRecord.context, schemas.情境);
+      checkValues(`${rowPrefix}set_type`, rowRecord.set_type, schemas.題型種類);
+      checkValues(`${rowPrefix}q_type`, rowRecord.q_type, questionTypes);
+      checkValues(`${rowPrefix}subject_filter`, rowRecord.subject_filter, schemas.科目 ?? []);
+      checkValues(
+        `${rowPrefix}sub_context`,
+        rowRecord.sub_context,
+        admittedValues(schemas.情境子類別 ?? [], "情境", rowRecord.context ?? topRow.context),
+      );
+      checkValues(`${rowPrefix}science_competency`, rowRecord.science_competency, schemas.科學能力 ?? []);
+      checkValues(`${rowPrefix}內容領域`, rowRecord.content_domain, schemas.內容領域 ?? []);
+      checkValues(`${rowPrefix}核心素養`, rowRecord.core_competency, schemas.核心素養 ?? []);
+      checkValues(`${rowPrefix}數學思考`, rowRecord.math_thinking, schemas.數學思考);
+      checkValues(`${rowPrefix}認知歷程`, rowRecord.cognitive_process, schemas.認知歷程 ?? []);
+      checkValues(`${rowPrefix}reporting_scale`, rowRecord.reporting_scale, reportingScales);
+      if (rowRecord.sub_question_count !== undefined && rowRecord.sub_question_count !== null &&
+        (typeof rowRecord.sub_question_count !== "number" ||
+          !Number.isInteger(rowRecord.sub_question_count) || rowRecord.sub_question_count < 3 || rowRecord.sub_question_count > 7)) {
+        add(`${rowPrefix}sub_question_count`);
+      }
+      checkEffort(`${rowPrefix}effort_plan`, rowRecord.effort_plan, rowRecord.model_plan, topRow.model_plan ?? models?.defaults.plan);
+      checkEffort(`${rowPrefix}effort_execute`, rowRecord.effort_execute, rowRecord.model_execute, topRow.model_execute ?? models?.defaults.execute);
+      const rowExecuteModel = rowRecord.model_execute ?? topRow.model_execute ?? models?.defaults.execute;
+      checkEffort(`${rowPrefix}effort_verify`, rowRecord.effort_verify, rowRecord.model_verify, rowExecuteModel);
+      checkEffort(`${rowPrefix}effort_correct`, rowRecord.effort_correct, rowRecord.model_correct, rowExecuteModel);
+      const rowLearningContent = curriculumEntriesFor(rowRecord, schemas.學習內容 ?? []);
+      const rowLearningPerformance = curriculumEntriesFor(rowRecord, schemas.學習表現 ?? []);
+      checkValues(`${rowPrefix}learning_content`, rowRecord.learning_content, rowLearningContent);
+      checkValues(`${rowPrefix}learning_performance`, rowRecord.learning_performance, rowLearningPerformance);
+      validateConfigRows(rowPrefix, rowRecord, rowLearningContent, rowLearningPerformance);
+      checkValues(`${rowPrefix}image_generation_mode`, rowRecord.image_generation_mode, imageModes);
+    });
+
+    return invalid;
+  }, [models, pendingParams, pendingPerQuestionParams, recoveryConfirmation, schemas, subject]);
+  const confirmationHasInvalidFields =
+    confirmInvalidFields.size > 0 || confirmationInvalidFields.size > 0;
+  const confirmationHydrating = recoveryConfirmation !== undefined && formReadiness !== "ready";
 
   // Sync per-subquestion config rows with the selected count.
   useEffect(() => {
+    if (recoveryForm) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the editor row count synchronized with the selected count
     setField("subquestionConfigs", (prev) => rebuildSubquestionSlots(prev, subQuestionCount));
-  }, [subQuestionCount, setField]);
+  }, [recoveryForm, subQuestionCount, setField]);
 
   function updateSubquestionConfig(index: number, patch: Partial<SubQuestionConfig>) {
     const editedFields = editedSubquestionFieldsRef.current.get(index) ?? new Set();
@@ -2578,6 +3092,7 @@ export default function ParamForm({
     setPreviewError(null);
     pendingEditedIndicesRef.current = new Set();
     previewRequestedRef.current = false;
+    restoredConfirmationEffectsSuppressedRef.current = false;
     setPromptPreviews([]);
   }
 
@@ -2636,6 +3151,7 @@ export default function ParamForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    restoredConfirmationEffectsSuppressedRef.current = false;
     previewRequestedRef.current = false;
     setPromptPreviews([]);
     setPendingParams(null);
@@ -2805,6 +3321,9 @@ export default function ParamForm({
       draftSaveTimeoutRef.current = null;
     }
     if (userId) clearDraft(userId);
+    // Explicit submission acknowledges a restored snapshot without touching
+    // the already-captured confirmation payload or ordinary form fields.
+    if (showRecoveryBanner) acknowledgeRecoveryBanner();
     resolveRequestSeqRef.current += 1;
     resolveOperationRef.current?.end("superseded");
     resolveOperationRef.current = null;
@@ -2826,6 +3345,7 @@ export default function ParamForm({
     value: unknown,
     redraw = false,
   ) {
+    restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
@@ -2899,6 +3419,7 @@ export default function ParamForm({
     subquestionIndex: number,
     patch: Partial<SubQuestionConfig>,
   ) {
+    restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
@@ -3033,6 +3554,7 @@ export default function ParamForm({
     questionIndex: number,
     value: string,
   ) {
+    restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
@@ -3089,6 +3611,7 @@ export default function ParamForm({
     subquestionIndex: number,
     field: string,
   ) {
+    restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
@@ -3218,12 +3741,49 @@ export default function ParamForm({
     resubmitSubquestionResolution(questionIndex, subquestionIndex, "learning_performance");
   }
 
+  function acknowledgeRecoveryBanner() {
+    setRecoveryBannerDismissed(true);
+    onRecoveryAcknowledge?.();
+  }
+
+  function discardRecoveryBanner() {
+    setRecoveryBannerDismissed(true);
+    onRecoveryDiscard?.();
+  }
+
+  const recoveryBanner = showRecoveryBanner ? (
+    <section
+      role="status"
+      className="sentry-unmask rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
+    >
+      <p className="font-medium">
+        {pendingParams
+          ? t("recovery.banner.confirmation_title")
+          : t("recovery.banner.title")}
+      </p>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          onClick={acknowledgeRecoveryBanner}
+          className="underline cursor-pointer"
+        >
+          {t("recovery.banner.acknowledge")}
+        </button>
+        <button
+          type="button"
+          onClick={discardRecoveryBanner}
+          className="underline cursor-pointer"
+        >
+          {t("recovery.banner.discard")}
+        </button>
+      </div>
+    </section>
+  ) : null;
+
   if (pendingParams) {
     const p = pendingParams;
     const drawnPaths = Array.isArray(p.drawn) ? p.drawn : [];
-    const resolvedPerQuestionParams = pendingPerQuestionParams ?? (p.per_question_params
-      ? JSON.parse(p.per_question_params) as Record<string, unknown>[]
-      : []);
+    const resolvedPerQuestionParams = pendingPerQuestionParams ?? parsePerQuestionParams(p.per_question_params);
     const allLpEntries = schemas?.學習表現 ?? [];
     const allLcEntries = schemas?.學習內容 ?? [];
     const lcEntryByCode = new Map(allLcEntries.map((e) => [e.value, e]));
@@ -3330,6 +3890,7 @@ export default function ParamForm({
     return (
       <div className="space-y-4">
         <ConfirmationParticipation exportWorkspace={exportConfirmation} />
+        {recoveryBanner}
         <div>
           <h2 className="text-base font-semibold">{t("form.confirm_title")}</h2>
           <p className="mt-1 text-sm text-gray-500">{t("form.confirm_subtitle")}</p>
@@ -3351,6 +3912,11 @@ export default function ParamForm({
               {t("form.confirm_resolve_retry")}
             </button>
           </div>
+        )}
+        {confirmationInvalidFields.size > 0 && (
+          <p role="alert" className="sentry-unmask text-sm text-red-700">
+            {t("recovery.confirmation_invalid_fields")}
+          </p>
         )}
         <section role="region" aria-label={t("form.confirm_shared_heading")}>
           <h3 className="mb-3 font-semibold text-gray-800">{t("form.confirm_shared_heading")}</h3>
@@ -3485,9 +4051,10 @@ export default function ParamForm({
               subject,
               resolvedQuestionSubject,
               questionContentDomain,
+              schemas?.內容領域_mapping,
             );
-            const questionLpDisplayEntries = questionLpEntries.filter((entry) => questionLpCodes.includes(entry.value));
-            const questionLcDisplayEntries = questionLcEntries.filter((entry) => questionLcCodes.includes(entry.value));
+            const questionLpDisplayEntries = entriesForValues(questionLpEntries, questionLpCodes);
+            const questionLcDisplayEntries = entriesForValues(questionLcEntries, questionLcCodes);
             const questionSubquestionConfigs = parseSubquestionConfigs(
               questionParams.subquestion_configs,
             ) as ResolvedSubQuestionConfig[];
@@ -4090,7 +4657,9 @@ export default function ParamForm({
           <button
             type="button"
             onClick={handleConfirmSend}
-            disabled={disabled || resolverLoading || resolverError !== null || confirmInvalidFields.size > 0}
+            disabled={disabled || resolverLoading || resolverError !== null || confirmationHydrating ||
+              (recoveryConfirmation !== undefined && coreQuestionResolution === "loading") ||
+              confirmationHasInvalidFields}
             className="inline-flex items-center gap-2 rounded bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t("form.btn_confirm_send")}
@@ -4165,38 +4734,7 @@ export default function ParamForm({
 
   return (
     <form onSubmit={handleSubmit} onChange={markUnsubmittedInput} className="space-y-4">
-      {showRecoveryBanner && (
-        <section
-          role="status"
-          className="sentry-unmask rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
-        >
-          <p className="font-medium">{t("recovery.banner.title")}</p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setRecoveryBannerDismissed(true);
-                setRecoveredInvalidFields(new Set());
-                onRecoveryAcknowledge?.();
-              }}
-              className="underline cursor-pointer"
-            >
-              {t("recovery.banner.acknowledge")}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setRecoveryBannerDismissed(true);
-                setRecoveredInvalidFields(new Set());
-                onRecoveryDiscard?.();
-              }}
-              className="underline cursor-pointer"
-            >
-              {t("recovery.banner.discard")}
-            </button>
-          </div>
-        </section>
-      )}
+      {recoveryBanner}
       {draftToRestore && (showDraftPrompt || showDraftHistoryChoice) && (
         <section
           role={showDraftHistoryChoice ? "dialog" : "status"}

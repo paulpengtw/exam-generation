@@ -17,6 +17,8 @@ export interface ConfirmationWorkspaceSnapshot {
   version: 1;
   pendingParams: FormParams;
   pendingPerQuestionParams: Record<string, unknown>[] | null;
+  /** The exact form/history prefill that produced this confirmation, if any. */
+  pendingPrefill?: Record<string, unknown> | null;
   clearedPaths: string[];
   redraws: Record<string, number>;
   hasPendingConfirmationEdits: boolean;

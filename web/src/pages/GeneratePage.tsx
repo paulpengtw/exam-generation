@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
@@ -20,7 +20,7 @@ import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
-import { useRecoveryStore } from "../lib/recovery/recoveryStore";
+import { initRecoveryStore, useRecoveryStore } from "../lib/recovery/recoveryStore";
 
 export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
@@ -67,6 +67,26 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     generate,
     reset,
   } = useGenerate();
+  // Recovery must be resolved before ParamForm mounts. Otherwise its schema,
+  // model, draft, and default effects can observe an empty form and replace a
+  // confirmation that is still being restored. The layout gate also means a
+  // store update from initRecoveryStore cannot arrive as a late prop that the
+  // form has to reconcile after hydration has begun.
+  const recoveryRoute = location.pathname ?? window.location.pathname;
+  const recoveryBootKey = `${recoveryRoute}:${user?.id ?? ""}`;
+  const [recoveryBootedKey, setRecoveryBootedKey] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    initRecoveryStore({
+      currentRoute: recoveryRoute,
+      origin: window.location.origin,
+      environment:
+        typeof __BUILD_ENVIRONMENT__ === "undefined"
+          ? "development"
+          : __BUILD_ENVIRONMENT__,
+    });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the gate deliberately waits for synchronous recovery-store hydration before mounting the form
+    setRecoveryBootedKey(recoveryBootKey);
+  }, [recoveryBootKey, recoveryRoute]);
   const { enabled, open } = useFeedbackDialog();
   const formRef = useRef<HTMLElement | null>(null);
   const progressRef = useRef<HTMLElement | null>(null);
@@ -77,6 +97,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const { pending: pendingRecovery, discardRecovery } = useRecoveryStore();
+  const pendingRecoveryForRoute = pendingRecovery?.route === recoveryRoute &&
+    pendingRecovery.subject === subject
+    ? pendingRecovery
+    : null;
   const hasResults = displayResults.length > 0;
   const exportWorkspace = useCallback(() => exportResultsWorkspace({
     status, results, displayResults, progressLines, errorMessage, startedAt, finishedAt,
@@ -200,6 +224,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     ...(hasUnsubmittedInput ? ["confirm.navigate_away_body_params"] : []),
     ...(hasResults ? ["confirm.navigate_away_body_results"] : []),
   ];
+
+  if (recoveryBootedKey !== recoveryBootKey) {
+    return <div className="min-h-screen bg-gray-50" aria-busy="true" />;
+  }
 
   // Derive dialog props from the single effective pending action.
   const dialogProps = (() => {
@@ -335,7 +363,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             disabled={status === "generating"}
             initialParams={prefillParams ?? undefined}
             onUnsubmittedInput={() => setHasUnsubmittedInput(true)}
-            recoveredForm={pendingRecovery?.form}
+            recoveredForm={pendingRecoveryForRoute?.form}
+            recoveredConfirmation={pendingRecoveryForRoute?.confirmation}
             onRecoveryAcknowledge={discardRecovery}
             onRecoveryDiscard={discardRecovery}
           />

@@ -1,15 +1,17 @@
 /**
- * Recovery flow integration test — issue #772.
+ * Recovery flow integration test — issues #772/#773.
  *
  * Drives the real App router (routes array with createMemoryRouter) to prove
  * the save → persist → restore → confirm cycle end-to-end.
  *
  * Scenarios:
- *   1. Full flow: type topic → 儲存草稿並更新 → reload → restore → 確認 → deleted
- *   2. Quota failure: reload not called, form preserved, 重試 button shown
- *   3. Unsupported format: refused before saving, nothing in storage
+ *   1. Full form flow: type topic → 儲存草稿並更新 → reload → restore → 確認 → deleted
+ *   2. Confirmation flow: settled multi-group workspaces restore for all subjects, including
+ *      per-subquestion settings, text instructions, curriculum, models/efforts, media, and draws
+ *   3. Quota failure: reload not called, form preserved, 重試 button shown
+ *   4. Unsupported format / changed target: refused before saving, nothing in storage
  */
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -18,6 +20,9 @@ vi.stubGlobal("__BUILD_ENVIRONMENT__", "production");
 
 // ---- Mock heavy page dependencies ----
 const generateMock = vi.hoisted(() => vi.fn());
+const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
+const previewGenerateMock = vi.hoisted(() => vi.fn());
+const resolveGenerateMock = vi.hoisted(() => vi.fn());
 vi.mock("./hooks/useGenerate", () => ({
   useGenerate: () => ({
     status: "idle" as const,
@@ -44,30 +49,236 @@ const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 vi.mock("./api/client", () => ({
   getSchemas: getSchemasMock,
   getAvailableModels: getAvailableModelsMock,
-  planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
-  previewGenerate: vi.fn(async () => ({ prompts: [] })),
-  resolveGenerate: vi.fn(async (payload: Record<string, unknown>) => ({ payload, drawn: [] })),
+  planCoreQuestions: planCoreQuestionsMock,
+  previewGenerate: previewGenerateMock,
+  resolveGenerate: resolveGenerateMock,
 }));
 
 const MATH_SCHEMA = {
   學習階段: "第四學習階段",
   grades: [7, 8, 9],
   情境: [{ value: "個人", instruction: "" }],
-  題型種類: [{ value: "單一題", instruction: "" }],
-  題型: [{ value: "選擇題", instruction: "" }],
-  數學思考: [],
+  題型種類: [
+    { value: "單一題", instruction: "" },
+    { value: "題組題", instruction: "" },
+  ],
+  題型: [{ value: "選擇題", instruction: "" }, { value: "填充題", instruction: "" }],
+  數學思考: [{ value: "推理", instruction: "" }],
   question_style: [{ value: "課本", instruction: "" }],
   題目內容類型: [{ value: "純文字", instruction: "" }],
+  科目: [{ value: "數與量", instruction: "" }],
+  核心素養: [{ value: "A1", instruction: "" }],
+  學習表現: [{ value: "數學-表現-1", instruction: "", 科目: "數與量", admitted_by: { 科目: ["數與量"] } }],
+  學習內容: [{ value: "數學-內容-1", instruction: "", admitted_by: { 科目: ["數與量"] } }],
+};
+
+const SOCIAL_SCHEMA = {
+  學習階段: "第四學習階段",
+  grades: [7, 8, 9],
+  情境: [{ value: "校園", instruction: "" }],
+  題型種類: [{ value: "題組題", instruction: "" }],
+  題型: [{ value: "選擇題", instruction: "" }],
+  認知歷程: [{ value: "理解", instruction: "" }],
+  內容領域: [{ value: "民主政治", instruction: "" }],
+  核心素養: [{ value: "社-A1", instruction: "" }],
+  題目內容類型: [{ value: "文章", instruction: "" }],
+  科目: [{ value: "歷史", instruction: "" }],
+  question_style: [],
+  數學思考: [],
+  學習表現: [{ value: "社會-表現-1", instruction: "", 科目: "歷史", admitted_by: { 科目: ["歷史"] } }],
+  學習內容: [{ value: "社會-內容-1", instruction: "", admitted_by: { 科目: ["歷史"] } }],
+};
+
+const NATURAL_SCHEMA = {
+  學習階段: "第四學習階段",
+  grades: [7, 8, 9],
+  情境: [{ value: "個人", instruction: "" }],
+  情境子類別: [{ value: "健康", instruction: "", admitted_by: { 情境: ["個人"] } }],
+  題型種類: [{ value: "題組題", instruction: "" }],
+  題型: [{ value: "Simple multiple-choice", instruction: "" }],
+  reporting_scale: [{ value: "3", instruction: "Level 3" }],
+  科學能力: [{ value: "能力一", instruction: "" }],
+  題目內容類型: [{ value: "文章", instruction: "" }],
   科目: [],
-  學習表現: [],
-  學習內容: [],
+  question_style: [],
+  數學思考: [],
+  學習表現: [{ value: "自然-表現-1", instruction: "", 科目: "自然科學" }],
+  學習內容: [{ value: "自然-內容-1", instruction: "", 科目: "自然科學" }],
 };
 
 const AVAILABLE_MODELS = {
-  allowed: ["claude-sonnet-4-6"],
-  defaults: { plan: "claude-sonnet-4-6", execute: "claude-sonnet-4-6" },
-  effort: {} as Record<string, string[]>,
+  allowed: ["claude-sonnet-4-6", "claude-opus-4-6"],
+  defaults: {
+    plan: "claude-sonnet-4-6",
+    execute: "claude-sonnet-4-6",
+    verify: "claude-sonnet-4-6",
+    correct: "claude-sonnet-4-6",
+    effort_plan: "medium",
+    effort_execute: "medium",
+    effort_verify: "medium",
+    effort_correct: "medium",
+  },
+  effort: {
+    "claude-sonnet-4-6": ["low", "medium", "high"],
+    "claude-opus-4-6": ["medium", "high"],
+  } as Record<string, string[]>,
 };
+
+const RECOVERY_FORM_FIELDS = {
+  grade: 8,
+  style: "課本",
+  contentType: "文章",
+  customContentType: "",
+  context: ["校園"],
+  setType: "題組題",
+  qType: ["選擇題"],
+  count: 2,
+  coverageMode: "balanced" as const,
+  skipVerify: false,
+  disableReferenceFewshot: false,
+  coreQuestionCallback: true,
+  imageGenerationMode: "gpt_image" as const,
+  difficulty: "medium" as const,
+  reportingScale: "3",
+  subjectFilter: "歷史",
+  passage: "captured passage",
+  textWordLimit: 180,
+  textInstruction: "captured text instruction",
+  options: ["A", "B", "C", "D"],
+  topic: "captured ordinary form",
+  coreQuestion: null,
+  subContext: "健康",
+  scienceCompetency: ["能力一"],
+  learningPerformance: ["社會-表現-1"],
+  learningContent: ["社會-內容-1"],
+  subQuestionCount: 3,
+  subquestionConfigs: [],
+  contentDomain: "民主政治",
+  targetSurface: "紙本" as const,
+  modelPlan: "claude-opus-4-6",
+  modelExecute: "claude-opus-4-6",
+  modelVerify: "claude-sonnet-4-6",
+  modelCorrect: "claude-sonnet-4-6",
+  effortPlan: "high",
+  effortExecute: "high",
+  effortVerify: "medium",
+  effortCorrect: "medium",
+  allowDuplicateFigureKinds: false,
+};
+
+function recoveredForm(subject: "math" | "social_studies" | "natural_sciences"): FormWorkspaceSnapshot {
+  const fields = {
+    ...RECOVERY_FORM_FIELDS,
+    subjectFilter: subject === "social_studies" ? "歷史" : "",
+    context: subject === "natural_sciences" ? ["個人"] : subject === "math" ? ["個人"] : ["校園"],
+    setType: "題組題",
+    contentType: subject === "math" ? "純文字" : "文章",
+    style: subject === "math" ? "課本" : "",
+    subContext: subject === "natural_sciences" ? "健康" : "",
+    scienceCompetency: subject === "natural_sciences" ? ["能力一"] : [],
+    learningPerformance: subject === "math" ? ["數學-表現-1"] : subject === "social_studies" ? ["社會-表現-1"] : ["自然-表現-1"],
+    learningContent: subject === "math" ? ["數學-內容-1"] : subject === "social_studies" ? ["社會-內容-1"] : ["自然-內容-1"],
+    contentDomain: subject === "social_studies" ? "民主政治" : "",
+  };
+  return { kind: "form", version: 1, fields } as FormWorkspaceSnapshot;
+}
+
+function confirmationSnapshot(
+  subject: "math" | "social_studies" | "natural_sciences",
+): ConfirmationWorkspaceSnapshot {
+  const configs = [
+    {
+      question_type: subject === "natural_sciences" ? "Simple multiple-choice" : "選擇題",
+      instruction: "first subquestion instruction",
+      content_type: subject === "math" ? "純文字" : "文章",
+      image_generation_mode: "html" as const,
+      question_word_limit: 40,
+      option_word_limit: 12,
+      ...(subject === "social_studies" ? { cognitive_process: "理解" } : {}),
+      ...(subject === "natural_sciences" ? { reporting_scale: "3" } : {}),
+      learning_content: [subject === "math" ? "數學-內容-1" : subject === "social_studies" ? "社會-內容-1" : "自然-內容-1"],
+      learning_performance: [subject === "math" ? "數學-表現-1" : subject === "social_studies" ? "社會-表現-1" : "自然-表現-1"],
+    },
+    {
+      question_type: subject === "natural_sciences" ? "Simple multiple-choice" : "選擇題",
+      instruction: "second subquestion instruction",
+      content_type: subject === "math" ? "純文字" : "文章",
+      ...(subject === "social_studies" ? { cognitive_process: "理解" } : {}),
+      ...(subject === "natural_sciences" ? { reporting_scale: "3" } : {}),
+      learning_content: [subject === "math" ? "數學-內容-1" : subject === "social_studies" ? "社會-內容-1" : "自然-內容-1"],
+      learning_performance: [subject === "math" ? "數學-表現-1" : subject === "social_studies" ? "社會-表現-1" : "自然-表現-1"],
+    },
+    {
+      question_type: subject === "natural_sciences" ? "Simple multiple-choice" : "選擇題",
+      instruction: "third subquestion instruction",
+      content_type: subject === "math" ? "純文字" : "文章",
+      ...(subject === "social_studies" ? { cognitive_process: "理解" } : {}),
+      ...(subject === "natural_sciences" ? { reporting_scale: "3" } : {}),
+    },
+  ];
+  const rows = [0, 1].map((index) => ({
+    context: subject === "natural_sciences" ? ["個人"] : subject === "math" ? ["個人"] : ["校園"],
+    set_type: "題組題",
+    q_type: subject === "social_studies" ? [] : [subject === "natural_sciences" ? "Simple multiple-choice" : "選擇題"],
+    topic: `${subject}-captured-group-${index + 1}`,
+    text_instruction: `group ${index + 1} text instruction`,
+    content_type: subject === "math" ? "純文字" : "文章",
+    ...(subject === "math" ? { style: "課本", math_thinking: ["推理"], core_competency: ["A1"] } : {}),
+    ...(subject === "social_studies" ? { subject_filter: "歷史", content_domain: "民主政治", cognitive_process: ["理解"], core_competency: ["社-A1"] } : {}),
+    ...(subject === "natural_sciences" ? { sub_context: "健康", science_competency: ["能力一"], reporting_scale: "3" } : {}),
+    learning_content: [subject === "math" ? "數學-內容-1" : subject === "social_studies" ? "社會-內容-1" : "自然-內容-1"],
+    learning_performance: [subject === "math" ? "數學-表現-1" : subject === "social_studies" ? "社會-表現-1" : "自然-表現-1"],
+    sub_question_count: 3,
+    subquestion_configs: JSON.stringify(configs),
+  }));
+  const pendingParams = {
+    subject,
+    grade: 8,
+    count: 2,
+    set_type: "題組題",
+    q_type: subject === "social_studies" ? [] : [subject === "natural_sciences" ? "Simple multiple-choice" : "選擇題"],
+    context: subject === "natural_sciences" ? ["個人"] : subject === "math" ? ["個人"] : ["校園"],
+    topic: `${subject}-captured-core-topic`,
+    passage: `${subject} captured passage`,
+    text_instruction: "captured request text instruction",
+    image_generation_mode: "gpt_image",
+    model_plan: "claude-opus-4-6",
+    model_execute: "claude-opus-4-6",
+    model_verify: "claude-sonnet-4-6",
+    model_correct: "claude-sonnet-4-6",
+    effort_plan: "high",
+    effort_execute: "high",
+    effort_verify: "medium",
+    effort_correct: "medium",
+    seed: 20260917,
+    drawn: [
+      "seed",
+      "per_question_params[0].context",
+      "per_question_params[1].learning_content",
+      subject === "social_studies"
+        ? "per_question_params[1].subquestion_configs[2].認知歷程"
+        : subject === "natural_sciences"
+          ? "per_question_params[1].subquestion_configs[2].reporting_scale"
+          : "per_question_params[1].subquestion_configs[2].question_type",
+    ],
+    ...(subject === "math" ? { style: "課本", math_thinking: ["推理"], core_competency: ["A1"] } : {}),
+    ...(subject === "social_studies" ? { subject_filter: "歷史", content_domain: "民主政治", core_competency: ["社-A1"] } : {}),
+    ...(subject === "natural_sciences" ? { sub_context: "健康", science_competency: ["能力一"], reporting_scale: "3" } : {}),
+    per_question_params: JSON.stringify(rows),
+  };
+  return {
+    kind: "confirmation",
+    version: 1,
+    pendingParams: pendingParams as never,
+    pendingPerQuestionParams: rows,
+    pendingPrefill: { topic: `${subject}-history-prefill`, count: 2 },
+    clearedPaths: ["per_question_params[1].learning_content"],
+    redraws: { "per_question_params[1].learning_content": 1 },
+    hasPendingConfirmationEdits: true,
+    coreQuestionResolution: "generated",
+    historyDraftChoice: "history",
+  };
+}
 
 import { useAuthStore } from "./store/authStore";
 import { useReleaseStore, resetReleaseDetector } from "./lib/release/releaseStore";
@@ -88,6 +299,7 @@ import {
 import { RECOVERY_FORMAT_V1 } from "./lib/recovery/format";
 import { routes } from "./routes";
 import type { ReleaseState } from "./lib/release/releaseStore";
+import type { ConfirmationWorkspaceSnapshot, FormWorkspaceSnapshot } from "./lib/workspace/adapters/types";
 
 const USER = { id: "u1", email: "u@test.com", created_at: "2024-01-01T00:00:00Z" };
 
@@ -115,21 +327,116 @@ function setUpCurrent() {
   } as ReleaseState);
 }
 
-function renderApp(initialEntry = "/generate/math") {
+function renderApp(
+  initialEntry = "/generate/math",
+  state?: { prefillParams?: Record<string, unknown> },
+) {
   const router = createMemoryRouter(routes, {
-    initialEntries: [initialEntry],
+    initialEntries: [state === undefined ? initialEntry : { pathname: initialEntry, state }],
     initialIndex: 0,
   });
   const { unmount } = render(<RouterProvider router={router} />);
   return { router, unmount };
 }
 
+function realMathConfirmationPrefill(): Record<string, unknown> {
+  const rows = [0, 1].map((index) => ({
+    context: ["個人"],
+    set_type: "題組題",
+    q_type: ["選擇題"],
+    topic: `real-flow-group-${index + 1}`,
+    core_question: "real-flow-core-question",
+    style: ["課本"],
+    math_thinking: ["推理"],
+    core_competency: ["A1"],
+    learning_content: ["數學-內容-1"],
+    learning_performance: ["數學-表現-1"],
+  }));
+  return {
+    grade: 8,
+    context: ["個人"],
+    set_type: "題組題",
+    q_type: ["選擇題"],
+    count: 2,
+    content_type: "純文字",
+    image_generation_mode: "gpt_image",
+    style: "課本",
+    math_thinking: ["推理"],
+    core_competency: ["A1"],
+    subject_filter: ["數與量"],
+    topic: "real-flow-core-topic",
+    core_question: "real-flow-core-question",
+    passage: "real-flow-passage",
+    options: ["甲", "乙", "丙", "丁"],
+    learning_content: ["數學-內容-1"],
+    learning_performance: ["數學-表現-1"],
+    sub_question_count: 3,
+    model_plan: "claude-opus-4-6",
+    model_execute: "claude-opus-4-6",
+    model_verify: "claude-sonnet-4-6",
+    model_correct: "claude-sonnet-4-6",
+    effort_plan: "high",
+    effort_execute: "high",
+    effort_verify: "medium",
+    effort_correct: "medium",
+    skip_verify: false,
+    disable_reference_fewshot: false,
+    drawn: ["per_question_params[0].context"],
+    per_question_params: JSON.stringify(rows),
+  };
+}
+
+async function persistRecoveryFixture(
+  subject: "math" | "social_studies" | "natural_sciences",
+  confirmation: ConfirmationWorkspaceSnapshot,
+): Promise<string> {
+  const route = `/generate/${subject}`;
+  const snapshotId = `confirmation-${subject}`;
+  const tabId = getOrCreateTabId();
+  const result = await saveSnapshotTransactionally({
+    schema: RECOVERY_FORMAT_V1,
+    snapshot_id: snapshotId,
+    tab_id: tabId,
+    route,
+    subject,
+    account_id: USER.id,
+    origin: "https://test.example.com",
+    environment: "production",
+    source_build_id: "build-A",
+    target_build_id: "build-B",
+    source_release_revision: 1,
+    target_release_revision: 2,
+    saved_at: new Date(0).toISOString(),
+    workspace_revision: 7,
+    form: recoveredForm(subject),
+    confirmation,
+  });
+  expect(result.ok).toBe(true);
+  const pointer = await persistTabPointer({
+    tab_id: tabId,
+    snapshot_id: snapshotId,
+    account_id: USER.id,
+    route,
+    attempted_target_build_id: "build-B",
+    attempted_target_release_revision: 2,
+  });
+  expect(pointer.ok).toBe(true);
+  return snapshotId;
+}
+
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   vi.clearAllMocks();
-  getSchemasMock.mockResolvedValue(MATH_SCHEMA);
+  getSchemasMock.mockImplementation(async (subject = "math") => {
+    if (subject === "social_studies") return SOCIAL_SCHEMA;
+    if (subject === "natural_sciences") return NATURAL_SCHEMA;
+    return MATH_SCHEMA;
+  });
   getAvailableModelsMock.mockResolvedValue(AVAILABLE_MODELS);
+  planCoreQuestionsMock.mockResolvedValue({ candidates: [] });
+  previewGenerateMock.mockResolvedValue({ prompts: [] });
+  resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) => ({ payload, drawn: [] }));
   resetWorkspaceStoreForTests();
   resetRecoveryStoreForTests();
   resetReleaseDetector();
@@ -256,6 +563,229 @@ describe("recovery flow — scenario 1: full save → restore → confirm", () =
 
     unmount2();
   });
+
+  it("creates the settled confirmation through the visible save control and reopens the exact payload", async () => {
+    setUpUpdateRequired();
+    window.history.replaceState({}, "", "/generate/math");
+    const resolvedSeed = 20260917;
+    resolveGenerateMock.mockImplementation(async (payload: Record<string, unknown>) => {
+      const sourceRows = JSON.parse(String(payload.per_question_params)) as Record<string, unknown>[];
+      const resolvedRows = sourceRows.map((row, index) => ({ ...row, seed: resolvedSeed + index }));
+      return {
+        payload: {
+          ...payload,
+          seed: resolvedSeed,
+          per_question_params: JSON.stringify(resolvedRows),
+        },
+        drawn: ["seed", "per_question_params[0].context"],
+      };
+    });
+    const reloadSpy = vi.spyOn(window.location, "reload").mockImplementation(() => undefined);
+
+    const prefillParams = realMathConfirmationPrefill();
+    const { unmount } = renderApp("/generate/math", { prefillParams });
+    fireEvent.click(await screen.findByRole("button", { name: /^(Generate|產生)$/i }));
+    await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledOnce());
+    await screen.findByRole("heading", { name: /Review settings|發送前確認設定/i });
+
+    const capturedConfirmation = useWorkspaceStore
+      .getState()
+      .surfaces["generate.confirmation"]
+      ?.exportWorkspace?.();
+    expect(capturedConfirmation?.kind).toBe("confirmation");
+    if (!capturedConfirmation || capturedConfirmation.kind !== "confirmation") {
+      throw new Error("expected a settled confirmation workspace");
+    }
+    expect(capturedConfirmation.pendingParams.seed).toBe(resolvedSeed);
+    expect(capturedConfirmation.pendingPerQuestionParams).toHaveLength(2);
+
+    const saveButton = screen.getByRole("button", { name: /儲存草稿並更新|Save Draft & Update/i });
+    expect(saveButton).not.toBeDisabled();
+    await act(async () => {
+      fireEvent.click(saveButton);
+    });
+    await waitFor(() => expect(reloadSpy).toHaveBeenCalledOnce());
+
+    const pointer = loadTabPointer();
+    expect(pointer?.snapshot_id).toBeTruthy();
+    const saved = loadSnapshot(USER.id, pointer!.snapshot_id!);
+    expect(saved?.confirmation).toEqual(capturedConfirmation);
+    expect(saved?.confirmation?.pendingPrefill).toEqual(prefillParams);
+    const previewCallsBeforeRestore = previewGenerateMock.mock.calls.length;
+
+    unmount();
+    reloadSpy.mockRestore();
+    vi.stubGlobal("__BUILD_ID__", "build-B");
+    setUpCurrent();
+    resetWorkspaceStoreForTests();
+    initRecoveryStore({
+      currentRoute: "/generate/math",
+      origin: window.location.origin,
+      environment: "production",
+    });
+
+    const { unmount: unmountRestored } = renderApp();
+    await screen.findByText("real-flow-core-topic");
+    expect(screen.getByText("real-flow-passage")).toBeInTheDocument();
+    expect(planCoreQuestionsMock).not.toHaveBeenCalled();
+    expect(previewGenerateMock).toHaveBeenCalledTimes(previewCallsBeforeRestore);
+    expect(resolveGenerateMock).toHaveBeenCalledOnce();
+
+    const confirmButton = await screen.findByRole("button", { name: /確認送出|Confirm & Generate/i });
+    await waitFor(() => expect(confirmButton).not.toBeDisabled());
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
+    await waitFor(() => expect(generateMock).toHaveBeenCalledOnce());
+    expect(generateMock.mock.calls[0][0]).toMatchObject(capturedConfirmation.pendingParams);
+    expect(generateMock.mock.calls[0][0].per_question_params).toBe(
+      capturedConfirmation.pendingParams.per_question_params,
+    );
+    unmountRestored();
+  });
+});
+
+describe("recovery flow — scenario 1b: restore settled confirmation workspaces", () => {
+  it.each([
+    ["math", "/generate/math"],
+    ["social_studies", "/generate/social_studies"],
+    ["natural_sciences", "/generate/natural_sciences"],
+  ] as const)("restores the complete %s confirmation without rebuilding it", async (subject, route) => {
+    setUpCurrent();
+    vi.stubGlobal("__BUILD_ID__", "build-B");
+    const confirmation = confirmationSnapshot(subject);
+    const snapshotId = await persistRecoveryFixture(subject, confirmation);
+    initRecoveryStore({
+      currentRoute: route,
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+
+    expect(useRecoveryStore.getState().pending?.confirmation).toEqual(confirmation);
+    const { unmount } = renderApp(route);
+
+    expect(await screen.findByText(`${subject}-captured-core-topic`)).toBeInTheDocument();
+    if (subject === "social_studies") {
+      expect(screen.getByText("captured request text instruction")).toBeInTheDocument();
+    } else if (subject === "natural_sciences") {
+      expect(screen.getAllByDisplayValue("group 1 text instruction").length).toBeGreaterThan(0);
+    }
+    if (subject !== "math") {
+      expect(screen.getAllByDisplayValue("first subquestion instruction").length).toBeGreaterThan(0);
+      expect(screen.getAllByDisplayValue("second subquestion instruction").length).toBeGreaterThan(0);
+      expect(screen.getAllByDisplayValue("third subquestion instruction").length).toBeGreaterThan(0);
+    }
+    expect(screen.getAllByText("claude-opus-4-6").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("high").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(subject === "math" ? "數學-內容-1" : subject === "social_studies" ? "社會-內容-1" : "自然-內容-1").length).toBeGreaterThan(0);
+    expect(screen.getByText("gpt_image")).toBeInTheDocument();
+    expect(screen.getAllByText(/各小題配置|Per-sub-question configuration/i).length).toBeGreaterThan(0);
+
+    const confirmationBanner = screen.getByText(/Confirmation restored from before update|已還原更新前的發送前確認/i);
+    expect(confirmationBanner).toBeInTheDocument();
+    expect(planCoreQuestionsMock).not.toHaveBeenCalled();
+    expect(previewGenerateMock).not.toHaveBeenCalled();
+    expect(resolveGenerateMock).not.toHaveBeenCalled();
+
+    // A captured parent draw remains editable and supports an explicit redraw.
+    const firstQuestion = screen.getByRole("region", { name: /Question 1|第 1 題/i });
+    const redrawButtons = within(firstQuestion).getAllByRole("button", { name: /Redraw|重抽/i });
+    expect(redrawButtons.length).toBeGreaterThan(0);
+    await act(async () => {
+      fireEvent.click(redrawButtons[0]);
+    });
+    await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledOnce());
+    if (subject === "social_studies") {
+      const secondQuestion = screen.getByRole("region", { name: /Question 2|第 2 題/i });
+      const childRedrawButtons = within(secondQuestion).getAllByRole("button", { name: /Redraw|重抽/i });
+      await act(async () => {
+        fireEvent.click(childRedrawButtons[childRedrawButtons.length - 1]);
+      });
+      await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(2));
+    }
+
+    // The confirmation-only operation does not rewrite the ordinary form workspace.
+    const form = useWorkspaceStore.getState().surfaces["generate.form"]?.exportWorkspace?.();
+    expect(form?.kind === "form" && form.fields.topic).toBe("captured ordinary form");
+    expect(useRecoveryStore.getState().pending?.confirmation?.pendingPrefill).toEqual({
+      topic: `${subject}-history-prefill`,
+      count: 2,
+    });
+
+    // Acknowledgement clears the store/storage, but the mounted form keeps the
+    // latched confirmation long enough for the teacher to continue or submit.
+    const acknowledgeButton = screen.getAllByRole("button").find((button) =>
+      /^(Acknowledge|確認)$/i.test(button.textContent?.trim() ?? ""),
+    );
+    expect(acknowledgeButton).toBeDefined();
+    await act(async () => {
+      fireEvent.click(acknowledgeButton!);
+    });
+    await waitFor(() => expect(useRecoveryStore.getState().pending).toBeNull());
+    expect(loadSnapshot(USER.id, snapshotId)).toBeNull();
+    expect(screen.getByText(`${subject}-captured-core-topic`)).toBeInTheDocument();
+    const confirmButton = screen.getByRole("button", { name: /Confirm & Generate|確認送出/i });
+    expect(confirmButton).not.toBeDisabled();
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
+    await waitFor(() => expect(generateMock).toHaveBeenCalledOnce());
+    expect(generateMock.mock.calls[0][0]).toMatchObject({
+      subject,
+      topic: `${subject}-captured-core-topic`,
+    });
+    const submittedRows = JSON.parse(
+      generateMock.mock.calls[0][0].per_question_params as string,
+    ) as Array<Record<string, unknown>>;
+    const latestResolveCall = resolveGenerateMock.mock.calls.at(-1);
+    const resolvedRows = JSON.parse(
+      latestResolveCall?.[0].per_question_params as string,
+    ) as Array<Record<string, unknown>>;
+    expect(submittedRows).toEqual(resolvedRows);
+    expect(submittedRows[1]).toMatchObject({
+      topic: confirmation.pendingPerQuestionParams![1].topic,
+      text_instruction: confirmation.pendingPerQuestionParams![1].text_instruction,
+      learning_content: confirmation.pendingPerQuestionParams![1].learning_content,
+    });
+    unmount();
+  });
+
+  it("restores confirmation before delayed schema/model discovery and keeps hydration inert", async () => {
+    setUpCurrent();
+    const confirmation = confirmationSnapshot("social_studies");
+    await persistRecoveryFixture("social_studies", confirmation);
+    initRecoveryStore({
+      currentRoute: "/generate/social_studies",
+      origin: "https://test.example.com",
+      environment: "production",
+    });
+    let resolveSchema!: (value: typeof SOCIAL_SCHEMA) => void;
+    let resolveModels!: (value: typeof AVAILABLE_MODELS) => void;
+    getSchemasMock.mockReturnValue(new Promise<typeof SOCIAL_SCHEMA>((resolve) => {
+      resolveSchema = resolve;
+    }));
+    getAvailableModelsMock.mockReturnValue(new Promise<typeof AVAILABLE_MODELS>((resolve) => {
+      resolveModels = resolve;
+    }));
+
+    const { unmount } = renderApp("/generate/social_studies");
+    expect(screen.getByText("social_studies-captured-core-topic")).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue("first subquestion instruction").length).toBeGreaterThan(0);
+    expect(planCoreQuestionsMock).not.toHaveBeenCalled();
+    expect(previewGenerateMock).not.toHaveBeenCalled();
+    expect(resolveGenerateMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSchema(SOCIAL_SCHEMA);
+      resolveModels(AVAILABLE_MODELS);
+    });
+    await waitFor(() => expect(screen.getByText("social_studies-captured-core-topic")).toBeInTheDocument());
+    expect(planCoreQuestionsMock).not.toHaveBeenCalled();
+    expect(previewGenerateMock).not.toHaveBeenCalled();
+    expect(resolveGenerateMock).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().operations).toHaveLength(0);
+    unmount();
+  });
 });
 
 describe("recovery flow — scenario 2: quota failure", () => {
@@ -302,6 +832,40 @@ describe("recovery flow — scenario 2: quota failure", () => {
     // freezeInput reset to false after failure
     expect(useWorkspaceStore.getState().freezeInput).toBe(false);
 
+    unmount();
+  });
+
+  it("captures settled workspaces before the recheck and refuses when the target changes", async () => {
+    setUpUpdateRequired();
+    const navigateSpy = vi.fn();
+    const { unmount } = renderApp();
+    await screen.findByPlaceholderText(
+      /e\.g\. Climate change|例如：氣候變遷/i,
+      {},
+      { timeout: 5000 },
+    );
+    useReleaseStore.setState({
+      checkNow: async () => {
+        useReleaseStore.setState({ requiredBuildId: "build-C" });
+      },
+    });
+
+    const result = await runSaveAndUpdate({
+      navigate: navigateSpy,
+      origin: "https://test.example.com",
+      environment: "production",
+      buildId: "build-A",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "target_changed", retryable: false });
+    expect(navigateSpy).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().freezeInput).toBe(false);
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key) keys.push(key);
+    }
+    expect(keys.some((key) => key.startsWith("exam_recovery_u1_"))).toBe(false);
     unmount();
   });
 
