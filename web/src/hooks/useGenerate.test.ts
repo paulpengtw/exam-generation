@@ -37,6 +37,7 @@ import {
   useGenerate,
   type VerificationTrailEntry,
 } from "./useGenerate";
+import { useLangStore } from "../store/langStore";
 
 function latestStreamOptions(): FetchEventSourceInit {
   const call = fetchEventSourceMock.mock.lastCall;
@@ -755,6 +756,79 @@ describe("useGenerate — stream open error detail", () => {
     expect(result.current.errorMessage).toBe(
       "Incomplete request: per_question_params[0].學習內容 (unresolved)",
     );
+  });
+
+  // #835: incompatible_parent / no_admitting_parent format through the
+  // shared web/src/lib/resolverErrorMessages.ts formatter instead of the
+  // legacy "field (code)" text — unlike `unresolved` above, which is
+  // unchanged by #835.
+  it("surfaces a readable incompatible_parent sentence (zh-TW) instead of the legacy code text", async () => {
+    const originalLang = useLangStore.getState().lang;
+    useLangStore.getState().setLang("zh-TW");
+    try {
+      const { result } = renderStartedRun();
+      let thrown: unknown;
+
+      await act(async () => {
+        try {
+          await latestStreamOptions().onopen?.(
+            new Response(
+              JSON.stringify({
+                detail: [
+                  { field: "learning_content", code: "incompatible_parent", parent: "地理" },
+                ],
+              }),
+              { status: 422, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        } catch (error) {
+          thrown = error;
+        }
+      });
+
+      expect(thrown).toEqual(new Error("所選的學習內容不屬於科目「地理」。"));
+      expect(result.current.errorMessage).toBe("所選的學習內容不屬於科目「地理」。");
+    } finally {
+      useLangStore.getState().setLang(originalLang);
+    }
+  });
+
+  it("surfaces a readable no_admitting_parent sentence (en-US) naming the question/小題 position", async () => {
+    const originalLang = useLangStore.getState().lang;
+    useLangStore.getState().setLang("en-US");
+    try {
+      const { result } = renderStartedRun();
+      let thrown: unknown;
+
+      await act(async () => {
+        try {
+          await latestStreamOptions().onopen?.(
+            new Response(
+              JSON.stringify({
+                detail: [
+                  {
+                    field: "per_question_params[1].subquestion_configs[0].learning_content",
+                    code: "no_admitting_parent",
+                    parent: "科目",
+                  },
+                ],
+              }),
+              { status: 422, headers: { "Content-Type": "application/json" } },
+            ),
+          );
+        } catch (error) {
+          thrown = error;
+        }
+      });
+
+      const expected =
+        "In question 2, sub-question 1, the selected learning content has no common subject "
+        + "available; remove some of the selected codes.";
+      expect(thrown).toEqual(new Error(expected));
+      expect(result.current.errorMessage).toBe(expected);
+    } finally {
+      useLangStore.getState().setLang(originalLang);
+    }
   });
 
   it("falls back to the generic message when the body is not valid JSON", async () => {
