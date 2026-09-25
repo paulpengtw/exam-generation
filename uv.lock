@@ -552,12 +552,18 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+gateway = [
+    { name = "httpx" },
+    { name = "starlette" },
+    { name = "uvicorn", extra = ["standard"] },
+]
 web = [
     { name = "aiosqlite" },
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "boto3" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "python-jose", extra = ["cryptography"] },
     { name = "sentry-sdk", extra = ["fastapi"] },
     { name = "slowapi" },
@@ -581,6 +587,8 @@ requires-dist = [
     { name = "asyncpg", marker = "extra == 'web'" },
     { name = "boto3", marker = "extra == 'web'" },
     { name = "fastapi", marker = "extra == 'web'" },
+    { name = "httpx", marker = "extra == 'gateway'" },
+    { name = "httpx", marker = "extra == 'web'", specifier = ">=0.27" },
     { name = "json-repair", specifier = ">=0.30" },
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "openai", specifier = ">=1.0" },
@@ -595,9 +603,11 @@ requires-dist = [
     { name = "slowapi", marker = "extra == 'web'" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'web'" },
     { name = "sse-starlette", marker = "extra == 'web'" },
+    { name = "starlette", marker = "extra == 'gateway'" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'gateway'" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'" },
 ]
-provides-extras = ["dev", "web"]
+provides-extras = ["dev", "web", "gateway"]
 
 [package.metadata.requires-dev]
 dev = [

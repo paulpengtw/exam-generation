@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import Field, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,8 +22,11 @@ from sse_starlette.sse import EventSourceResponse
 from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
+from server.generate.drain import get_drain
+from server.generate.event_protocol import SUPPORTED_STREAM_VERSIONS, client_update_required_body
 from server.generate.models import (
     ALLOWED_SUBJECTS,
+    SERVER_ONLY_GENERATE_FIELDS,
     CoverageMode,
     GenerateParams,
     ImageGenerationMode,
@@ -36,6 +40,7 @@ from server.generate.persistence import (
     persist_aborted_generation_record,
     persist_failed_generation_record,
 )
+from server.generate.release_authority import check_build_admission
 from server.generate.service import build_prompt_previews, generate_question_stream
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
@@ -51,7 +56,14 @@ GenerateQuery = Annotated[GenerateParams, Query()]
 def _require_complete_generate_params(params: GenerateParams) -> GenerateParams:
     """Reject unresolved or incompatible payloads before any generation side effect."""
     try:
-        result = resolve(params.model_dump(mode="json", exclude_none=True))
+        # Exclude server-only fields (e.g. stream_version) from the resolver payload
+        # so they are never forwarded into per_question_params rows.
+        resolver_input = {
+            k: v
+            for k, v in params.model_dump(mode="json", exclude_none=True).items()
+            if k not in SERVER_ONLY_GENERATE_FIELDS
+        }
+        result = resolve(resolver_input)
     except ResolveConflictError as exc:
         raise HTTPException(status_code=422, detail=exc.errors) from exc
     except (TypeError, ValueError) as exc:
@@ -168,7 +180,19 @@ async def resolve_generate_endpoint(
 
 
 def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
-    """Convert internal event dict to sse_starlette ServerSentEvent fields."""
+    """Convert internal event dict to sse_starlette ServerSentEvent fields.
+
+    Supports both v1 events ({event, data}) and v2 envelopes (dual-key: top-level
+    "event" plus {context, payload}).  V2 envelopes serialize the full envelope as
+    JSON in the data field so the client receives the context+payload structure.
+    """
+    if "context" in event:
+        # v2 envelope: includes both top-level "event" and context/payload structure.
+        event_name = event.get("event") or event["context"].get("event", "unknown")
+        # Serialize full envelope (context + payload) so client gets v2 metadata.
+        envelope_for_wire = {"context": event["context"], "payload": event.get("payload", {})}
+        data = json.dumps(envelope_for_wire, ensure_ascii=False)
+        return {"event": event_name, "data": data}
     data = event.get("data", "")
     if not isinstance(data, str):
         data = json.dumps(data, ensure_ascii=False)
@@ -313,6 +337,7 @@ async def generate_endpoint(
     effort_verify: str | None = Query(default=None),   # #377: per-request tier effort override
     effort_correct: str | None = Query(default=None),  # #377: per-request tier effort override
     reporting_scale: str | None = Query(default=None),
+    stream_version: int | None = Query(default=None),  # #742: stream protocol version gate
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -374,6 +399,14 @@ async def generate_endpoint(
             effort_correct=effort_correct,  # #377
             reporting_scale=reporting_scale,
         )
+        if stream_version is None or stream_version not in SUPPORTED_STREAM_VERSIONS:
+            return JSONResponse(status_code=426, content=client_update_required_body())
+        if resp := await check_build_admission(
+            request.headers.get("x-frontend-build-id"),
+            getattr(request.app.state, "release_authority_source", None),
+            expected_environment=config.release_environment or None,
+        ):
+            return resp
         _check_generation_admission(params, config)
         params = GenerateParams.model_validate(params.model_dump())
     except ValidationError as exc:
@@ -399,6 +432,14 @@ async def generate_body_endpoint(
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
 ) -> EventSourceResponse:
+    if params.stream_version is None or params.stream_version not in SUPPORTED_STREAM_VERSIONS:
+        return JSONResponse(status_code=426, content=client_update_required_body())
+    if resp := await check_build_admission(
+        request.headers.get("x-frontend-build-id"),
+        getattr(request.app.state, "release_authority_source", None),
+        expected_environment=config.release_environment or None,
+    ):
+        return resp
     _check_generation_admission(params, config)
     return await _generate(request, params, user, session, config)
 
@@ -495,6 +536,8 @@ async def _generate(
                 session_factory=AsyncSessionLocal,
             )
 
+        _drain = get_drain(app_state)
+        _drain._inc("_open_streams")
         stream = generate_question_stream(
             params,
             config,
@@ -505,9 +548,10 @@ async def _generate(
         )
         try:
             async for event in stream:
-                if event["event"] == "error":
+                if event.get("event") == "error":
                     status = "failed"
-                    data = event.get("data", "")
+                    # v2 envelopes use "payload"; fall back to v1 "data" for compat.
+                    data = event.get("payload", event.get("data", ""))
                     error_msg = (
                         data.get("message", str(data)) if isinstance(data, dict) else str(data)
                     )
@@ -548,6 +592,7 @@ async def _generate(
                         )
                     )
                     await s.commit()
+            _drain._dec("_open_streams")
 
     return EventSourceResponse(
         event_generator(),

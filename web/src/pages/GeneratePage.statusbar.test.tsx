@@ -226,8 +226,11 @@ describe("GeneratePage — 生成步驟 wiring", () => {
     expect(statusBar.props).toEqual(
       expect.objectContaining({
         subject: "social_studies",
-        stageEvents: generateState.llmCalls,
-        subQuestionCount: 5,
+        evidence: {
+          profile: "generate-legacy",
+          stageEvents: generateState.llmCalls,
+          subQuestionCount: 5,
+        },
       }),
     );
   });
@@ -245,8 +248,11 @@ describe("GeneratePage — 生成步驟 wiring", () => {
     expect(statusBar.props).toEqual(
       expect.objectContaining({
         subject: "social_studies",
-        stageEvents: generateState.llmCalls,
-        subQuestionCount: 4,
+        evidence: {
+          profile: "generate-legacy",
+          stageEvents: generateState.llmCalls,
+          subQuestionCount: 4,
+        },
       }),
     );
   });

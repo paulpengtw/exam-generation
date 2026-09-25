@@ -1,4 +1,25 @@
 import "@testing-library/jest-dom";
+import { resetReleaseDetector, useReleaseStore } from "../lib/release/releaseStore";
+
+// Default release-store state for all tests: status "current".
+// The real checkNow() is preserved so tests in the release/ subtree that need
+// it can still function.  The preflight in useGenerate() skips checkNow() when
+// status is already non-"checking", so generate() remains synchronous in the
+// common test path.
+beforeEach(() => {
+  resetReleaseDetector();
+  useReleaseStore.setState({
+    status: "current",
+    requiredBuildId: null,
+    releaseRevision: null,
+    lastCheckedAt: Date.now(),
+    lastFailure: null,
+  });
+});
+
+afterEach(() => {
+  resetReleaseDetector();
+});
 
 // Node 26+ ships an experimental global `localStorage` that shadows jsdom's
 // implementation inside vitest's jsdom environment (vitest only re-exposes
@@ -35,6 +56,13 @@ class MemoryStorage implements Storage {
 }
 
 Object.defineProperty(globalThis, "localStorage", {
+  value: new MemoryStorage(),
+  configurable: true,
+  writable: true,
+});
+
+// sessionStorage: same polyfill strategy as localStorage above.
+Object.defineProperty(globalThis, "sessionStorage", {
   value: new MemoryStorage(),
   configurable: true,
   writable: true,

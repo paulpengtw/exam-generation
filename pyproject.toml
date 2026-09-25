@@ -22,6 +22,7 @@ dev = [
 ]
 web = [
     "fastapi",
+    "httpx>=0.27",
     "sentry-sdk[fastapi]",
     "uvicorn[standard]",
     "sse-starlette",
@@ -32,6 +33,11 @@ web = [
     "python-jose[cryptography]",
     "boto3",
     "slowapi",
+]
+gateway = [
+    "starlette",
+    "uvicorn[standard]",
+    "httpx",
 ]
 
 [tool.ruff]

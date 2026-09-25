@@ -156,6 +156,9 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `JWT_EXPIRE_DAYS` | `7` | Keeps each login token valid for 7 days |
 | `SESSION_RENEWAL_THRESHOLD_MINUTES` | `360` | Renews a login session when less than 360 minutes remain on the token |
 | `FRONTEND_URL` | The frontend URL you copied in Step 7.3, with `https://` in front | Tells the backend which website is allowed to call it |
+| `RELEASE_AUTHORITY_URL` | `https://<your-gateway-domain>/release/policy.json` | The backend reads the live controller policy through the independent gateway on every generation request |
+| `RELEASE_AUTHORITY_PATH` | *(optional local path)* | Alternative for deployments where the backend can read a local policy file; ignored when `RELEASE_AUTHORITY_URL` is set |
+| `RELEASE_ENVIRONMENT` | `production` | Must match the controller's policy environment; a mismatch fails closed |
 | `EMAIL_BACKEND` | `console` | `console` prints magic-link login emails to backend logs — fine for your own first login; switch to `ses` after following **Step 13** so other teachers receive real emails |
 | `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |
 | `SENTRY_DSN` | *(leave blank, or paste the backend project's DSN)* | Sends backend errors and traces to Sentry. Leave it unset or blank to disable backend Sentry completely. |
@@ -165,6 +168,12 @@ The model and effort values above are the code defaults when their variables are
 unset. Opus 4.6 calls enable adaptive thinking with a 16,384-token output ceiling
 shared by thinking and the response; `LLM_TEMPERATURE` is ignored for this model.
 Planning and 驗證 therefore spend thinking tokens at Opus output rates.
+
+Set exactly one of `RELEASE_AUTHORITY_URL` or `RELEASE_AUTHORITY_PATH` for the
+backend. `RELEASE_AUTHORITY_URL` takes precedence when both are present. If
+neither is set, generation fails closed with a retryable `503 AUTHORITY_UNAVAILABLE`;
+the backend does not assume that a separately deployed
+frontend's `web/dist` directory is available locally.
 
 **How to generate `JWT_SECRET`:** open `https://passwordsgenerator.net` in a new tab, set length to 64, click **Generate**, and paste the result.
 
@@ -196,6 +205,18 @@ Open the **frontend** service, click **Variables**, and add:
 | `BACKEND_SCHEME` | `https` | Use HTTPS when forwarding to the backend |
 
 The frontend will redeploy. Wait 1-2 minutes.
+
+### 8.3 Docker Compose
+
+The included `docker-compose.yml` wires the backend directly to the gateway
+with `RELEASE_AUTHORITY_URL=http://gateway:8000/release/policy.json`. The
+frontend nginx `/release/policy.json` and `/build-meta.json` locations proxy to
+that same gateway, so browser version reporting and backend generation
+admission cannot observe different artifacts. If you override the backend
+environment, point `RELEASE_AUTHORITY_URL` at the controller/gateway policy
+route (or use a readable `RELEASE_AUTHORITY_PATH` for a deliberately local
+fixture). Leaving both authority variables unset causes generation to return
+the retryable `503 AUTHORITY_UNAVAILABLE`.
 
 ---
 
@@ -287,6 +308,242 @@ If you prefer **Render** (`https://render.com`) over Railway, the flow is very s
 Render's free tier puts services to sleep after 15 minutes of inactivity. The first request after a sleep takes ~30 seconds to wake up. The paid tier (US$7/month per service) keeps services running 24/7.
 
 ---
+
+## Generation admission gateway (pause new generation)
+
+The **generation admission gateway** is a small ASGI reverse proxy that sits in front of the backend.  It lets an operator pause **all new generation requests** (`GET /api/generate` and `POST /api/generate`) from a single control point — completely independent of the frontend and backend deployment units — while established SSE streams keep delivering and result/history reads keep working.
+
+Key properties:
+
+- **Fail-closed on first install.** A fresh state directory (no `admission.json`) is treated as paused, so the gate is always safe to add even before it has been explicitly opened.
+- **State lives on its own volume.** The `admission.json` file is written atomically on a named Docker volume (`gate-state`) or a Railway volume.  Rolling the frontend or backend back to a previous image does not affect the gate state.
+- **Survives frontend/backend rollback.**  Because the state file is outside every application container, an operator can pause generation, roll back the backend, and the gate stays paused until explicitly opened again.
+- **The live release controller uses the same record.**  When controller mode is enabled, `admission.json` also carries the `exam-generation.release-policy/1` contract (`environment`, increasing `release_revision`, `released_build_id`, `admission`, `supported_recovery_formats`, reader/artifact metadata).  The gateway serves `/release/policy.json` and gates every generation entry from fresh reads of that record; there is no positive process-local policy cache and no second pause switch.
+
+### Compose usage
+
+With the gateway service in docker-compose.yml, the gateway is the only service that binds host port 8000.  The backend becomes internal-only.
+
+```bash
+# Pause all new generation
+docker compose exec gateway python scripts/admission_gate.py pause --reason "v2 rollout in progress"
+
+# Open the gate again
+docker compose exec gateway python scripts/admission_gate.py open
+
+# Check current state (exits 3 if the gate does not match --require)
+docker compose exec gateway python scripts/admission_gate.py status
+docker compose exec gateway python scripts/admission_gate.py status --require OPEN
+```
+
+### Railway deployment steps
+
+1. Add a fourth service in your Railway project: name it **gateway**, set the source to your fork, and choose `Dockerfile.gateway` as the Dockerfile.
+2. Attach a **volume** to the gateway service at `/var/lib/examgen-gate`.  This is where the state file lives.
+3. Set the following environment variables on the gateway service:
+   - `GATEWAY_BACKEND_URL` → `http://backend.railway.internal:8000` (the backend's internal Railway hostname)
+   - `GATEWAY_CONTROL_TOKEN` → a long random secret of your choice (keep this safe)
+   - `RELEASE_ENVIRONMENT` → `production` (must match the release policy)
+   - `GATEWAY_RELEASED_BUILD_ID` → the first deployed frontend build ID; omit it only while deliberately keeping the fresh controller fail-closed
+   - `GATEWAY_RELEASE_REVISION` → `1` for the first controller record
+   - `GATEWAY_READER_VERSION` → the recovery-reader version, for example `reader-1`
+   - `GATEWAY_SUPPORTED_RECOVERY_FORMATS` → comma-separated formats accepted during recovery, default `exam-generation.recovery/1`. The web client's 儲存草稿並更新 requires the published policy to list `exam-generation.recovery/1`.
+   - `PORT` → `8000` (Railway injects this automatically; no action needed)
+4. Give the gateway service a **public domain** (Railway → Settings → Networking → Generate Domain).
+5. Update the **frontend** service: change `BACKEND_HOST` from the backend's domain to the gateway's new domain.
+6. **Remove the backend's public domain** so nothing can bypass the gate.  The backend is now reachable only via the gateway.
+
+#### Control endpoint examples (curl)
+
+```bash
+# Pause
+curl -X POST https://<gateway-domain>/gateway/admission \
+  -H "X-Gateway-Control-Token: <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"state": "paused", "reason": "planned maintenance"}'
+
+# Open
+curl -X POST https://<gateway-domain>/gateway/admission \
+  -H "X-Gateway-Control-Token: <your-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"state": "open"}'
+
+# Health / current state
+curl https://<gateway-domain>/gateway/health
+```
+
+> **Note:** This work (issue #740) establishes the operational capability — the gateway is wired, the state is durable, and new generation can be paused instantly.  Drain evidence (confirming in-flight streams complete before a deployment) and the stream-version protocol upgrade are tracked separately in issues #741 and #742.
+
+---
+
+## Drain telemetry and release control (issue #741)
+
+Drain telemetry extends the gateway pause capability by letting operators
+**confirm that all in-flight generation work has truly ended** before reopening
+admission after a pause.  Without this you must guess whether active SSE
+streams have finished; with drain telemetry you can poll a single endpoint and
+get a machine-readable `quiescent: true/false` signal.
+
+### How it works
+
+Each backend instance maintains a set of thread-safe gauges:
+
+| Gauge | What it counts |
+|---|---|
+| `active_runs` | `generate_question_stream` calls currently live |
+| `active_workers` | worker threads currently executing inside `_worker_one` |
+| `open_streams` | SSE event generators currently open to a client |
+| `renderer_leases_held` | Playwright renderer borrows currently in progress |
+| `pending_deliveries` | items queued in the stream's asyncio.Queue |
+| `pending_persistence` | pending DB-write operations |
+
+`quiescent: true` means all six gauges are zero simultaneously — the instance
+is idle and safe to take out of rotation.
+
+### Drain endpoint: GET /internal/drain
+
+The backend exposes a restricted telemetry endpoint at `GET /internal/drain`.
+
+**Security:**
+- The gateway blocks all `/internal/*` paths — they never reach the public internet.
+- The endpoint itself requires an `X-Drain-Token` header matching `DRAIN_TELEMETRY_TOKEN`.
+- Set `DRAIN_TELEMETRY_TOKEN` to a long random secret on the backend service.
+- If the environment variable is empty, the endpoint returns `404`.
+
+**Example:**
+```bash
+curl -s https://<backend-internal-url>/internal/drain \
+  -H "X-Drain-Token: <DRAIN_TELEMETRY_TOKEN>" | python3 -m json.tool
+```
+
+Response fields: `instance_id`, `hostname`, `pid`, `started_at`, `app_version`,
+`supported_stream_versions`, all six gauges, `captured_at`, and `quiescent`.
+
+### Inventory file
+
+`scripts/release_control.py` reads an **inventory.json** that lists every backend
+instance and the gateway:
+
+```json
+{
+    "instances": [
+        {
+            "name": "backend-1",
+            "url": "http://backend1.railway.internal:8000",
+            "token_env": "DRAIN_TOKEN_1"
+        }
+    ],
+    "gateway": {
+        "url": "https://<gateway-domain>",
+        "token_env": "GATEWAY_CONTROL_TOKEN"
+    },
+    "routes": [
+        {"name": "frontend", "policy_url": "https://<frontend-domain>/release/policy.json"},
+        {"name": "gateway", "policy_url": "https://<gateway-domain>/release/policy.json"}
+    ]
+}
+```
+
+Each `token_env` names an environment variable that holds the secret token.
+
+### Release control subcommands
+
+```bash
+# Check all instances are reachable and drain endpoints respond
+python scripts/release_control.py preflight --inventory inventory.json
+
+# Poll until all instances report quiescent: true (or timeout)
+python scripts/release_control.py drain-check --inventory inventory.json --timeout 120
+
+# Pause gateway THEN wait for all in-flight work to finish
+python scripts/release_control.py pause-and-drain --inventory inventory.json \
+    --timeout 120 --reason "release v2.3"
+
+# Verify all instances support stream version 1 (or your required version)
+python scripts/release_control.py compat-check --inventory inventory.json \
+    --require-version 1
+
+# Reopen the gateway after deployment
+python scripts/release_control.py reopen --inventory inventory.json
+
+# Combined readiness check (preflight + compat + quiescence)
+python scripts/release_control.py readiness --inventory inventory.json \
+    --require-version 1
+
+# Prepare a target. This sets admission=preparing and does not open the gate.
+python scripts/release_control.py prepare --inventory inventory.json \
+    --target target-release.json
+
+# Publish only when every inventory instance has fresh positive drain evidence
+# and every serving route reports the target build/revision/reader metadata.
+python scripts/release_control.py publish --inventory inventory.json \
+    --max-age-seconds 15
+
+# Retire a transition asset only after another positive drain observation.
+python scripts/release_control.py retire --inventory inventory.json \
+    --artifact schema-v1 --max-age-seconds 15
+```
+
+### Recommended release runbook
+
+1. `python scripts/release_control.py preflight` — confirm every instance is reachable.
+2. `python scripts/release_control.py compat-check --require-version 1` — confirm compatibility.
+3. `python scripts/release_control.py prepare --target target-release.json` — enter `preparing`; the independent gate remains closed.
+4. Deploy/roll the target artifact without exposing a backend public domain.
+5. `python scripts/release_control.py publish` — require fresh positive drain evidence, zero in-flight gateway admissions, and matching policy/reader metadata on every route.
+6. `python scripts/release_control.py readiness --require-version 1` — record post-switch server evidence.
+7. `python scripts/release_control.py reopen` — use the same durable gate only after readiness passes.
+8. Retain the current artifact, prepared rollback artifact, and transition assets until a later `retire` command has positive retirement evidence. An application rollback cannot reopen the gate or replace the controller record.
+
+> **Gateway privacy rule**: `/internal/` paths are never proxied by the gateway.
+> The drain endpoint is reachable only from internal network (Railway internal
+> hostnames, VPN, or direct container exec) — never via the public gateway URL.
+
+---
+
+## Live release controller and admission evidence (issue #778)
+
+The controller is a gateway-owned file-backed state machine. It extends the
+existing `admission.json`; it does not introduce another pause file or a
+frontend-controlled override. The public policy response is
+`exam-generation.release-policy/1` and includes:
+
+- `environment`, monotonically increasing `release_revision`, and
+  `released_build_id`;
+- `admission`: `open`, `paused`, or `preparing`;
+- `supported_recovery_formats` and `reader_version`;
+- `artifacts.current`, `artifacts.prepared_rollback`, and transition assets.
+
+The backend uses `RELEASE_AUTHORITY_URL` to read the gateway's policy on every
+GET/POST generation admission. The browser's `/release/policy.json` and
+`/build-meta.json` requests are proxied to the same gateway. A missing,
+unreadable, malformed, paused, or preparing record fails closed; a missing or
+outdated `X-Frontend-Build-ID` gets `426 CLIENT_UPDATE_REQUIRED` before the
+backend dispatch seam, and authority/maintenance failures get retryable 503.
+
+Target publication is deliberately separate from reopening. The controller
+rejects stale/unreachable/nonzero drain evidence, incomplete route metadata,
+nonzero in-flight gateway admissions, and non-increasing revisions. The
+gateway counts an admission from its decision through response delivery, so a
+policy transition cannot overtake an already admitted stream. Existing streams
+and read-only routes continue while new admissions are closed. Restarting or
+rolling back the application leaves the controller volume and gate unchanged.
+
+For a local, no-deployment rehearsal covering two backend instances, every
+route in the #740 inventory, both nginx files, zero-dispatch rejection, stream
+continuity, and a pending transition, run:
+
+```bash
+uv run python scripts/release_admission_rehearsal.py \
+  --output docs/research/2026-09-17-778-release-admission/evidence.json
+```
+
+The committed README and JSON evidence under
+`docs/research/2026-09-17-778-release-admission/` record observed route
+responses and backend/provider dispatch counts. This is a controlled readiness
+checkpoint only; it does not deploy or perform the final teacher-facing A→B→A
+rollout.
+
 
 ## Error reporting (Sentry, optional)
 
@@ -514,3 +771,23 @@ When asking for help, include:
 1. Which step number you're stuck on.
 2. The exact error message you see.
 3. A screenshot if possible.
+
+---
+
+## Note: production builds require a commit SHA (issue #770)
+
+When deploying a production frontend build (`npm run build` with `NODE_ENV=production`),
+the build will fail unless a real commit SHA is available via one of these environment
+variables (checked in priority order):
+
+1. `RAILWAY_GIT_COMMIT_SHA` — set automatically by Railway.
+2. `RENDER_GIT_COMMIT` — set automatically by Render.
+3. `GIT_COMMIT_SHA` — set manually if using another CI/CD platform.
+4. `BUILD_ID` — set this to any unique identifier (e.g. a Docker image digest or CI run ID)
+   if none of the above are available.
+
+Placeholder values (`unknown`, `dev`, `local`, `HEAD`, empty string) are rejected and
+cause the build to fail with a descriptive error naming the fix.
+
+Optionally set `RELEASE_REVISION` (integer) to increase the release revision number in
+`dist/release/policy.json`. Defaults to `1` if not set.

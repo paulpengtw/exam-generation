@@ -202,6 +202,7 @@ def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
     }
     resolved = _resolve(partial).payload
     wire: dict[str, Any] = {k: v for k, v in resolved.items() if v is not None}
+    wire["stream_version"] = 2  # #742: stream_version gate
     qs_bytes = urllib.parse.urlencode(wire, doseq=True).encode()
 
     original_stream = _gen_routes.generate_question_stream

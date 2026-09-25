@@ -307,6 +307,7 @@ describe("useGenerate — generation log identity", () => {
     expect(result.current.generationLogId).toBe("old-log");
 
     act(() => {
+      oldStream.onmessage?.({ id: "", event: "done", data: "{}" });
       result.current.generate({ subject: "social_studies", count: 1 });
     });
     expect(result.current.generationLogId).toBeNull();
@@ -387,6 +388,7 @@ describe("useGenerate — resolved sub-question total", () => {
     expect(result.current.subQuestionTotal).toBe(5);
 
     act(() => {
+      latestStreamOptions().onmessage?.({ id: "", event: "done", data: "{}" });
       result.current.generate({ subject: "social_studies", count: 1 });
     });
 
@@ -670,9 +672,7 @@ describe("useGenerate — stream open error detail", () => {
     vi.useRealTimers();
   });
 
-  it.each(["new run", "reset"] as const)(
-    "does not let a stale non-2xx open response update state after %s",
-    async (transition) => {
+  it("does not let a stale non-2xx open response update state after reset", async () => {
       const { result } = renderStartedRun();
       let resolveBody!: (body: unknown) => void;
       const bodyPromise = new Promise<unknown>((resolve) => {
@@ -690,11 +690,7 @@ describe("useGenerate — stream open error detail", () => {
       });
 
       act(() => {
-        if (transition === "new run") {
-          result.current.generate({ subject: "social_studies", count: 1 });
-        } else {
-          result.current.reset();
-        }
+        result.current.reset();
       });
 
       await act(async () => {
@@ -704,9 +700,8 @@ describe("useGenerate — stream open error detail", () => {
 
       expect(result.current.errorMessage).toBeNull();
       expect(result.current.finishedAt).toBeNull();
-      expect(result.current.status).toBe(transition === "new run" ? "generating" : "idle");
-    },
-  );
+      expect(result.current.status).toBe("idle");
+    });
 
   it("surfaces the JSON detail field from the response body on a non-2xx open", async () => {
     const { result } = renderStartedRun();
@@ -1045,16 +1040,23 @@ describe("admission", () => {
       ? { outcome: "admitted" } : { outcome: "rejected", reason: "connection lost" });
   });
 
-  it("settles a superseded run and ignores its late callbacks", async () => {
+  it("ignores a duplicate run and keeps the active stream", async () => {
     const { result } = renderHook(() => useGenerate());
     let first!: Promise<AdmissionOutcome>;
     act(() => { first = result.current.generate({ subject: "math" }); });
-    const stale = latestStreamOptions();
-    act(() => { result.current.generate({ subject: "math" }); });
-    await expect(first).resolves.toEqual({ outcome: "rejected", reason: "superseded" });
-    act(() => { stale.onmessage?.({ id: "", event: "started", data: "{}" }); });
-    expect(result.current.admission).toBe("submitting");
+    const active = latestStreamOptions();
+    let duplicate!: Promise<AdmissionOutcome>;
+    act(() => { duplicate = result.current.generate({ subject: "math" }); });
+    await expect(duplicate).resolves.toEqual({
+      outcome: "rejected",
+      reason: "generation already in progress",
+    });
+    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
+    act(() => { active.onmessage?.({ id: "", event: "started", data: "{}" }); });
+    expect(result.current.admission).toBe("admitted");
     expect(result.current.admissionError).toBeNull();
+    act(() => { result.current.reset(); });
+    await expect(first).resolves.toEqual({ outcome: "admitted" });
   });
 
   it("settles a pending admission on reset and unmount", async () => {
@@ -1092,7 +1094,8 @@ describe("restoreResults", () => {
       status: completion === "error" ? "error" : "idle", admission: "idle", admissionError: null, llmCalls: [],
     });
     expect(exportResultsWorkspace({ ...result.current, requestedTotal: 2, submittedSubQuestionCount: 3 })).toMatchObject({
-      ...snapshot, completion: completion === "error" ? "error" : "settled",
+      ...snapshot,
+      completion: completion === "settled" ? "unknown" : completion,
     });
   });
 
@@ -1115,7 +1118,7 @@ describe("workspace operation", () => {
 
   it.each([
     ["done", "completed"], ["error", "failed"], ["onerror", "failed"],
-    ["onopen", "failed"], ["reset", "aborted"], ["unmount", "aborted"], ["superseded", "superseded"],
+    ["onopen", "failed"], ["reset", "aborted"], ["unmount", "aborted"],
   ] as const)("ends generation on %s as %s", async (event, outcome) => {
     const begin = useWorkspaceStore.getState().beginOperation;
     const end = vi.fn();
@@ -1129,12 +1132,344 @@ describe("workspace operation", () => {
     ]);
     if (event === "reset") act(() => { result.current.reset(); });
     else if (event === "unmount") unmount();
-    else if (event === "superseded") act(() => { result.current.generate({ subject: "math" }); });
     else if (event === "onerror") act(() => { expect(() => latestStreamOptions().onerror?.(new Error("lost"))).toThrow(); });
     else if (event === "onopen") await act(async () => { await expect(latestStreamOptions().onopen?.(new Response("", { status: 500 }))).rejects.toThrow(); });
     else sendWorkspaceEvent(event);
     expect(end).toHaveBeenCalledWith(outcome);
-    expect(useWorkspaceStore.getState().operations).toHaveLength(event === "superseded" ? 1 : 0);
+    expect(useWorkspaceStore.getState().operations).toHaveLength(0);
     unmount();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F3: Generation stream v2 — hook integration tests
+// ---------------------------------------------------------------------------
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { RunEvidenceState } from "../lib/generationEvidence";
+
+function sendV2Event(event: string, context: Record<string, unknown>, payload: unknown) {
+  act(() => {
+    latestStreamOptions().onmessage?.({
+      id: "",
+      event,
+      data: JSON.stringify({ context, payload }),
+    });
+  });
+}
+
+const V2_STARTED_DATA = {
+  context: { run_id: "RUN", event_seq: 1 },
+  payload: {
+    protocol_version: 2,
+    total: 2,
+    questions: [
+      { index: 0, question_id: "q_RUN_001" },
+      { index: 1, question_id: "q_RUN_002" },
+    ],
+    generation_log_id: null,
+  },
+};
+
+const sampleQ = (id: string) => ({
+  id,
+  情境: ["個人"],
+  題型種類: "單一題",
+  題型: "選擇題",
+  題目: [`question for ${id}`],
+  正確解題分析: ["answer"],
+  出題概念: "",
+  誘答分析: {},
+});
+
+describe("F3: stream_version 2 in POST body", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sends stream_version 2 in the POST body", () => {
+    renderStartedRun();
+    const opts = latestStreamOptions();
+    const body = JSON.parse(opts.body as string);
+    expect(body.stream_version).toBe(2);
+  });
+});
+
+describe("F3: v2 fixture replay", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("replays math_single_interleaved.jsonl: 2 placeholders after started, B filled first, 2/2 at done", () => {
+    const fixtureLines = readFileSync(
+      resolve(__dirname, "../../../tests/fixtures/generation_v2/math_single_interleaved.jsonl"),
+      "utf-8",
+    ).trim().split("\n").map((l) => JSON.parse(l) as {
+      event: string;
+      context: Record<string, unknown>;
+      payload: unknown;
+    });
+
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math", count: 2 }); });
+
+    // Assert stream_version 2 in body
+    const body = JSON.parse(latestStreamOptions().body as string);
+    expect(body.stream_version).toBe(2);
+
+    let bFilledBeforeA = false;
+    let aFilled = false;
+
+    for (const line of fixtureLines) {
+      act(() => {
+        latestStreamOptions().onmessage?.({
+          id: "",
+          event: line.event,
+          data: JSON.stringify({ context: line.context, payload: line.payload }),
+        });
+      });
+      const ev = result.current as unknown as { evidence: RunEvidenceState | null };
+      const evState = ev.evidence;
+      if (!evState) continue;
+
+      // Check placeholders after started
+      if (line.event === "started") {
+        expect(evState.total).toBe(2);
+        expect(evState.order).toEqual(["q_RUN_001", "q_RUN_002"]);
+        expect(evState.questions["q_RUN_001"].content.receipt).toBe("none");
+        expect(evState.questions["q_RUN_002"].content.receipt).toBe("none");
+      }
+
+      // Check B filled before A (B is index 1, result arrives at seq 18)
+      if (evState.questions["q_RUN_002"].content.receipt === "final" && evState.questions["q_RUN_001"].content.receipt !== "final") {
+        bFilledBeforeA = true;
+      }
+      if (evState.questions["q_RUN_001"].content.receipt === "final") {
+        aFilled = true;
+      }
+    }
+
+    expect(bFilledBeforeA).toBe(true);
+    expect(aFilled).toBe(true);
+
+    const finalEv = result.current as unknown as { evidence: RunEvidenceState | null };
+    const finalState = finalEv.evidence!;
+    expect(finalState.closed).toBe(true);
+    // Both questions have terminals (ended count)
+    const endedCount = Object.values(finalState.questions).filter((q) => q.terminal !== null).length;
+    expect(endedCount).toBe(2);
+    // Both have final receipt
+    const finalCount = Object.values(finalState.questions).filter((q) => q.content.receipt === "final").length;
+    expect(finalCount).toBe(2);
+  });
+});
+
+describe("F3: unknown protocol → abort and error", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets status error on unknown_protocol and does not call generate a second time", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({
+          context: { run_id: "RUN", event_seq: 1 },
+          payload: { protocol_version: 99, total: 1, questions: [{ index: 0, question_id: "q1" }] },
+        }),
+      });
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toBeTruthy();
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1); // no retry
+  });
+});
+
+describe("F3: missing started then done → no placeholders, error", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets status error and no evidence when done arrives before started", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "done",
+        data: JSON.stringify({ context: { run_id: "RUN", event_seq: 1 }, payload: {} }),
+      });
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toBeTruthy();
+    const ev = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev.evidence).toBeNull();
+  });
+});
+
+describe("F3: stale started from previous generation ignored", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("ignores a duplicate without replacing the active generation", async () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+    const activeOpts = latestStreamOptions();
+
+    let duplicate!: Promise<AdmissionOutcome>;
+    act(() => { duplicate = result.current.generate({ subject: "math" }); });
+    await expect(duplicate).resolves.toEqual({
+      outcome: "rejected",
+      reason: "generation already in progress",
+    });
+    expect(result.current.admission).toBe("submitting");
+
+    // The active connection remains the only connection.
+    act(() => {
+      activeOpts.onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // Evidence is accepted from the active connection.
+    const ev = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev.evidence).not.toBeNull();
+    expect(result.current.admission).toBe("admitted");
+  });
+});
+
+describe("F3: terminal-before-final then final fills", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("shows finalPending then cleared when final arrives after terminal", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    // v2 started
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "", event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // terminal arrives for q_RUN_001 before result
+    sendV2Event("question_terminal", { run_id: "RUN", event_seq: 5, question_id: "q_RUN_001", index: 0 }, {
+      termination_reason: "normal", has_final: true, final_revision: 1,
+      delivery_status: "complete", expected: [], delivered: [], missing: [],
+      review: { status: "passed", content_revision: 1 },
+    });
+
+    const ev1 = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev1.evidence?.questions["q_RUN_001"].finalPending).toBe(true);
+
+    // now result arrives
+    sendV2Event("result", { run_id: "RUN", event_seq: 6, question_id: "q_RUN_001", index: 0, content_revision: 1 }, sampleQ("q_RUN_001"));
+
+    const ev2 = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev2.evidence?.questions["q_RUN_001"].finalPending).toBe(false);
+    expect(ev2.evidence?.questions["q_RUN_001"].content.receipt).toBe("final");
+  });
+});
+
+describe("F3: final without terminal then done → processing unknown", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("leaves processing unknown when stream closes without terminal", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({ id: "", event: "started", data: JSON.stringify(V2_STARTED_DATA) });
+    });
+
+    // result for q_RUN_001 without terminal
+    sendV2Event("result", { run_id: "RUN", event_seq: 5, question_id: "q_RUN_001", index: 0, content_revision: 1 }, sampleQ("q_RUN_001"));
+
+    // done
+    sendV2Event("done", { run_id: "RUN", event_seq: 6 }, {});
+
+    const ev = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev.evidence?.questions["q_RUN_001"].processing).toBe("unknown");
+    expect(ev.evidence?.questions["q_RUN_001"].content.receipt).toBe("final");
+    expect(ev.evidence?.closed).toBe(true);
+  });
+});
+
+describe("F3: v2 displayResults carry stableId and contentRevision", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets stableId = question_id and contentRevision from context.content_revision on question_update", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "", event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // Send question_update for q_RUN_001 with content_revision 3
+    // payload must have { question, phase } — the evidence reducer reads payload.question
+    sendV2Event(
+      "question_update",
+      { run_id: "RUN", event_seq: 2, question_id: "q_RUN_001", index: 0, content_revision: 3 },
+      { question: sampleQ("q_RUN_001"), phase: "draft" },
+    );
+
+    const dr = result.current.displayResults;
+    expect(dr).toHaveLength(1);
+    expect(dr[0].stableId).toBe("q_RUN_001");
+    expect(dr[0].contentRevision).toBe(3);
+  });
+
+  it("sets stableId = question_id and contentRevision from context.content_revision on result", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "", event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // Send result for q_RUN_001 with content_revision 5
+    sendV2Event(
+      "result",
+      { run_id: "RUN", event_seq: 3, question_id: "q_RUN_001", index: 0, content_revision: 5 },
+      sampleQ("q_RUN_001"),
+    );
+
+    const dr = result.current.displayResults;
+    expect(dr).toHaveLength(1);
+    expect(dr[0].stableId).toBe("q_RUN_001");
+    expect(dr[0].contentRevision).toBe(5);
+  });
+
+});
+
+describe("F3: v2 error event sets resultsCompletion to 'error'", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets resultsCompletion to 'error' when a v2 error event arrives", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "", event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    sendV2Event("error", { run_id: "RUN", event_seq: 4 }, { message: "something went wrong" });
+
+    const r = result.current as unknown as { resultsCompletion: string | null; terminalEvidence: boolean };
+    expect(result.current.status).toBe("error");
+    expect(r.resultsCompletion).toBe("error");
+    expect(r.terminalEvidence).toBe(false);
   });
 });
