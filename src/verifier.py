@@ -74,6 +74,7 @@ def verify_question(
     curriculum_context: CurriculumContext | None = None,
     *,
     scope: OperationScope | None = None,
+    content_revision: int | None = None,
 ) -> VerificationResult:
     """Run a second LLM pass to independently verify the question and answer.
 

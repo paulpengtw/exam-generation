@@ -5,6 +5,8 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from src.common.generation_events import OperationScope
+
 
 class PlaywrightRenderer:
     """Manages Playwright browser lifecycle for HTML-to-PNG rendering.
@@ -97,12 +99,20 @@ class PlaywrightRenderer:
             page.close()
         return str(output_path)
 
-    def render(self, html: str, output_path: str | Path, width: int = 800) -> str:
+    def render(
+        self,
+        html: str,
+        output_path: str | Path,
+        width: int = 800,
+        *,
+        scope: OperationScope | None = None,
+    ) -> str:
         """Render an HTML string to a PNG file.
 
         Auto-sizes the viewport height to fit the full content.
         Returns the output path as a string.
         """
+        del scope  # ownership is carried by the caller's provider seam
         return self._executor.submit(self._render_impl, html, Path(output_path), width).result()
 
     def __enter__(self) -> PlaywrightRenderer:

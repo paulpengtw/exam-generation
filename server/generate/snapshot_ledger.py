@@ -8,7 +8,8 @@ question_id.
 Content signature: stable JSON (sort_keys, ensure_ascii=False) of the question
 dict with these keys removed at every depth:
   verification, verification_trail, figure_policy_trail,
-  reference_example_record, image_base64, metadata
+  reference_example_record, image_base64, metadata, review, progress,
+  export and _export
 PLUS the sha256 hex of bytes of each image file named by the top-level '圖片'
 key and each 'subquestions[*].圖片' key, resolved under ``output_dir``.
 A missing file contributes the literal string 'missing'.
@@ -18,6 +19,7 @@ This class is shared across worker threads and is therefore thread-safe.
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
@@ -34,6 +36,10 @@ _EXCLUDED_KEYS: frozenset[str] = frozenset(
         "reference_example_record",
         "image_base64",
         "metadata",
+        "review",
+        "progress",
+        "export",
+        "_export",
     ]
 )
 
@@ -63,6 +69,71 @@ def _image_hash(filename: str | None, output_dir: Path | None) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _embedded_image_bytes(value: Any) -> bytes:
+    """Decode an embedded image while ignoring presentation-only formatting."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value)
+    if not isinstance(value, str):
+        return json.dumps(value, sort_keys=True, ensure_ascii=False).encode()
+
+    encoded = value.strip()
+    if encoded.startswith("data:") and "," in encoded:
+        encoded = encoded.split(",", 1)[1]
+    encoded = "".join(encoded.split())
+    try:
+        padded = encoded + "=" * ((4 - len(encoded) % 4) % 4)
+        return base64.b64decode(padded, validate=True)
+    except (ValueError, TypeError):
+        # Malformed provider output is still content.  Hash its normalized
+        # transport value so an actual change cannot be hidden by exclusion.
+        return encoded.encode()
+
+
+def _embedded_image_hashes(
+    obj: Any,
+    *,
+    path: tuple[str, ...] = (),
+    excluded_parent: bool = False,
+) -> list[str]:
+    """Return stable hashes for content-bearing embedded image fields."""
+    if isinstance(obj, dict):
+        hashes: list[str] = []
+        for key, value in obj.items():
+            key_text = str(key)
+            if key_text in _EXCLUDED_KEYS and key_text != "image_base64":
+                continue
+            if key_text == "image_base64" and not excluded_parent:
+                digest = hashlib.sha256(_embedded_image_bytes(value)).hexdigest()
+                hashes.append(f"embedded:{'.'.join(path + (key_text,))}:{digest}")
+                continue
+            hashes.extend(
+                _embedded_image_hashes(
+                    value,
+                    path=path + (key_text,),
+                    excluded_parent=excluded_parent or key_text in {
+                        "verification",
+                        "verification_trail",
+                        "figure_policy_trail",
+                        "reference_example_record",
+                        "metadata",
+                    },
+                )
+            )
+        return hashes
+    if isinstance(obj, list):
+        hashes: list[str] = []
+        for index, value in enumerate(obj):
+            hashes.extend(
+                _embedded_image_hashes(
+                    value,
+                    path=path + (str(index),),
+                    excluded_parent=excluded_parent,
+                )
+            )
+        return hashes
+    return []
+
+
 def _content_signature(question: dict[str, Any], output_dir: Path | None) -> str:
     """Compute a stable string signature for the question content."""
     stripped = _strip_excluded(question)
@@ -79,8 +150,10 @@ def _content_signature(question: dict[str, Any], output_dir: Path | None) -> str
             if sub_img:
                 image_hashes.append(f"sub:{_image_hash(sub_img, output_dir)}")
 
-    if image_hashes:
-        return json_part + "|" + "|".join(image_hashes)
+    embedded_hashes = sorted(_embedded_image_hashes(question))
+    all_hashes = image_hashes + embedded_hashes
+    if all_hashes:
+        return json_part + "|" + "|".join(all_hashes)
     return json_part
 
 
@@ -88,7 +161,9 @@ class QuestionSnapshotLedger:
     """Thread-safe per-question content revision and slot tracker.
 
     ``commit(question_dict, output_dir)`` returns ``(revision, snapshot)``
-    where revision only increments when the effective content changes.
+    where revision only increments when the effective content changes.  The
+    returned snapshot is a caller-owned copy; committed snapshots are not
+    retained by the ledger.
     The first announced fixed-slot manifest is retained separately from content
     revisions so terminal evidence can use the plan as its source of truth.
     """
@@ -111,16 +186,19 @@ class QuestionSnapshotLedger:
         question: dict[str, Any],
         output_dir: Path | None,
     ) -> tuple[int, dict[str, Any]]:
-        """Record a content snapshot; return (revision, deep_copy_snapshot).
+        """Record a content signature; return (revision, deep_copy_snapshot).
 
-        The revision only increments when the content signature changes.
-        The returned snapshot is a deep copy of ``question``.
+        The revision only increments when the content signature changes.  The
+        returned snapshot is a deep copy of ``question`` and is not retained.
         """
-        question_id: str = question["id"]
-        sig = _content_signature(question, output_dir)
         snapshot = copy.deepcopy(question)
+        question_id: str = snapshot["id"]
 
         with self._lock:
+            # Compute the signature from the same copied object that is
+            # returned/stored.  This keeps concurrent queued mutations from
+            # assigning a revision to content other than the snapshot.
+            sig = _content_signature(snapshot, output_dir)
             prev_sig = self._signatures.get(question_id)
             if prev_sig is None or sig != prev_sig:
                 rev = self._revisions.get(question_id, 0) + 1

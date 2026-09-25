@@ -201,6 +201,48 @@ def test_terminal_rejects_review_revision_mismatch():
         )
 
 
+def test_terminal_rejects_boolean_review_revision():
+    with pytest.raises(Exception):
+        QuestionTerminalPayload(
+            termination_reason="normal",
+            has_final=True,
+            final_revision=1,
+            delivery_status="complete",
+            expected=[],
+            delivered=[],
+            missing=[],
+            review={"status": "passed", "content_revision": True},
+        )
+
+
+def test_terminal_rejects_definitive_review_without_a_final():
+    with pytest.raises(Exception):
+        QuestionTerminalPayload(
+            termination_reason="failed",
+            has_final=False,
+            final_revision=None,
+            delivery_status="none",
+            expected=[],
+            delivered=[],
+            missing=[],
+            review={"status": "passed", "content_revision": None},
+        )
+
+
+def test_terminal_rejects_unknown_review_without_reason_for_a_final():
+    with pytest.raises(Exception):
+        QuestionTerminalPayload(
+            termination_reason="normal",
+            has_final=True,
+            final_revision=1,
+            delivery_status="complete",
+            expected=[],
+            delivered=[],
+            missing=[],
+            review={"status": "unknown"},
+        )
+
+
 def test_terminal_rejects_unknown_without_reason():
     with pytest.raises(Exception):
         QuestionTerminalPayload(

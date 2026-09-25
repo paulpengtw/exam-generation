@@ -339,6 +339,7 @@ def _build_question_terminal_payload(
     output_dir: Any,  # Path | None
     unknown_reason: str | None = None,
     announced_slots: list[dict[str, Any]] | None = None,
+    verification_trail: list[dict[str, Any]] | None = None,
     resolved_subquestion_configs: list[Any] | None | object = _UNSET_SUBQUESTION_RESOLUTION,
     resolved_subquestion_count: int | None | object = _UNSET_SUBQUESTION_RESOLUTION,
 ) -> dict[str, Any]:
@@ -367,16 +368,39 @@ def _build_question_terminal_payload(
             "content_revision": final_revision,
         }
     elif question is not None and getattr(question, "verification", None) is not None:
-        passed = question.verification.passed
-        review = {
-            "status": "passed" if passed else "failed",
-            "content_revision": final_revision,
-        }
+        verification_entries = [
+            entry
+            for entry in reversed(verification_trail or [])
+            if isinstance(entry, Mapping) and entry.get("kind") == "verification"
+        ]
+        verification_revision = (
+            verification_entries[0].get("content_revision")
+            if verification_entries
+            else None
+        )
+        if (
+            isinstance(verification_revision, int)
+            and not isinstance(verification_revision, bool)
+            and verification_revision == final_revision
+        ):
+            passed = question.verification.passed
+            review = {
+                "status": "passed" if passed else "failed",
+                "content_revision": final_revision,
+            }
+        else:
+            review = {
+                "status": "unknown",
+                "reason": (
+                    "no matching verification evidence"
+                    if verification_entries
+                    else "no verification evidence"
+                ),
+            }
     else:
         review = {
             "status": "unknown",
             "reason": "no verification evidence",
-            "content_revision": final_revision,
         }
 
     # --- fixed grouped slots and image assets ---
@@ -643,9 +667,9 @@ def _worker_one_body(
     )
     # Wrap emit_question_update to commit to the snapshot ledger and carry
     # content_revision in every question_update context (slice 5).
-    _revision_tracker: list[int] = [0]  # mutable container so the closure can write back
+    _revision_tracker: list[int | None] = [None]  # mutable container for core revision binding
 
-    def emit_question_update(question: Any, phase: str) -> None:
+    def emit_question_update(question: Any, phase: str) -> int:
         q_dict = json.loads(question.model_dump_json(exclude_none=True))
         rev, _ = ctx.snapshot_ledger.commit(q_dict, ctx.config.output_dir)
         _revision_tracker[0] = rev
@@ -661,13 +685,21 @@ def _worker_one_body(
             content_revision=rev,
             payload=_upd_payload,
         )
+        return rev
 
     emit_trail_entry = make_publisher_trail_emitter(ctx.publisher, ctx.manifest[i])
     verification_trail: list[dict[str, Any]] = []
     figure_policy_trail: list[dict[str, Any]] = []
     reference_example_entries: list[dict[str, Any]] = []
 
-    def capture_trail_entry(entry: Any, *, scope: Any = None) -> None:
+    def capture_trail_entry(
+        entry: Any,
+        *,
+        scope: Any = None,
+        content_revision: int | None = None,
+    ) -> None:
+        if content_revision is not None and hasattr(entry, "model_copy"):
+            entry = entry.model_copy(update={"content_revision": content_revision})
         payload = (
             entry.model_dump(mode="json")
             if hasattr(entry, "model_dump")
@@ -676,7 +708,14 @@ def _worker_one_body(
         verification_trail.append(payload)
         emit_trail_entry(entry, scope=scope)
 
-    def capture_figure_policy_entry(entry: Any, *, scope: Any = None) -> None:
+    def capture_figure_policy_entry(
+        entry: Any,
+        *,
+        scope: Any = None,
+        content_revision: int | None = None,
+    ) -> None:
+        if content_revision is not None and hasattr(entry, "model_copy"):
+            entry = entry.model_copy(update={"content_revision": content_revision})
         payload = (
             entry.model_dump(mode="json")
             if hasattr(entry, "model_dump")
@@ -798,6 +837,7 @@ def _worker_one_body(
             params=ctx.params,
             output_dir=ctx.config.output_dir,
             announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
+            verification_trail=verification_trail,
             resolved_subquestion_configs=getattr(rng_params, "subquestion_configs", None),
             resolved_subquestion_count=getattr(rng_params, "sub_question_count", None),
         )

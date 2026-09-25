@@ -145,6 +145,7 @@ def verify_question(
     curriculum_context: CurriculumContext | None = None,
     *,
     scope: OperationScope | None = None,
+    content_revision: int | None = None,
 ) -> VerificationResult:
     # Fall back to text-only when the image file is absent or unreadable.
     if chart_image_path is not None and not Path(chart_image_path).exists():
@@ -188,4 +189,5 @@ def verify_question(
         chart_image_path=chart_image_path,
         post_verify_hooks=_NS_POST_VERIFY_HOOKS,
         scope=scope,
+        content_revision=content_revision,
     )

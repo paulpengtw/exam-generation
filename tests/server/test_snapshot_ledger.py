@@ -4,13 +4,15 @@ The ledger tracks per-question content revisions using a content-signature
 comparison: revision only increments when the effective content changes.
 Signature = stable JSON of the question (keys removed at any depth:
 verification, verification_trail, figure_policy_trail,
-reference_example_record, image_base64, metadata) PLUS sha256 of referenced
+reference_example_record, image_base64, metadata, review, progress, export,
+_export) PLUS sha256 of referenced
 image files (missing files contribute 'missing').
 
 API: commit(question_dict, output_dir) -> (revision: int, snapshot: dict)
 """
 from __future__ import annotations
 
+import base64
 import threading
 from pathlib import Path
 
@@ -75,6 +77,35 @@ def test_metadata_only_change_does_not_increment(tmp_path: Path) -> None:
     assert rev2 == 1
 
 
+def test_review_progress_and_export_markers_do_not_increment_revision(tmp_path: Path) -> None:
+    from server.generate.snapshot_ledger import QuestionSnapshotLedger
+
+    ledger = QuestionSnapshotLedger()
+    rev1, _ = ledger.commit(
+        {
+            "id": "q_abc_001",
+            "題目": "stable text",
+            "review": {"status": "unknown"},
+            "progress": {"phase": "draft"},
+            "_export": {"format_version": 1, "is_draft": True},
+        },
+        tmp_path,
+    )
+    rev2, _ = ledger.commit(
+        {
+            "id": "q_abc_001",
+            "題目": "stable text",
+            "review": {"status": "passed"},
+            "progress": {"phase": "verified"},
+            "_export": {"format_version": 1, "is_draft": False},
+        },
+        tmp_path,
+    )
+
+    assert rev1 == 1
+    assert rev2 == 1
+
+
 def test_image_bytes_changed_increments_revision(tmp_path: Path) -> None:
     from server.generate.snapshot_ledger import QuestionSnapshotLedger
 
@@ -87,6 +118,69 @@ def test_image_bytes_changed_increments_revision(tmp_path: Path) -> None:
     rev2, _ = ledger.commit(q, tmp_path)
     assert rev1 == 1
     assert rev2 == 2
+
+
+def test_embedded_image_base64_formatting_is_transport_only(tmp_path: Path) -> None:
+    """Whitespace/data-URL differences do not create a content revision."""
+    from server.generate.snapshot_ledger import QuestionSnapshotLedger
+
+    raw = base64.b64encode(b"same image bytes").decode()
+    formatted = "data:image/png;base64," + "\n".join(
+        raw[index:index + 4] for index in range(0, len(raw), 4)
+    )
+    ledger = QuestionSnapshotLedger()
+    rev1, _ = ledger.commit(
+        {"id": "q_abc_001", "題目": "text", "image_base64": raw},
+        tmp_path,
+    )
+    rev2, _ = ledger.commit(
+        {"id": "q_abc_001", "題目": "text", "image_base64": formatted},
+        tmp_path,
+    )
+
+    assert (rev1, rev2) == (1, 1)
+
+
+def test_embedded_image_bytes_change_increments_revision(tmp_path: Path) -> None:
+    """The embedded image itself is content even when its transport encoding is excluded."""
+    from server.generate.snapshot_ledger import QuestionSnapshotLedger
+
+    ledger = QuestionSnapshotLedger()
+    rev1, _ = ledger.commit(
+        {
+            "id": "q_abc_001",
+            "題目": "text",
+            "image_base64": base64.b64encode(b"image v1").decode(),
+        },
+        tmp_path,
+    )
+    rev2, _ = ledger.commit(
+        {
+            "id": "q_abc_001",
+            "題目": "text",
+            "image_base64": base64.b64encode(b"image v2").decode(),
+        },
+        tmp_path,
+    )
+
+    assert (rev1, rev2) == (1, 2)
+
+
+def test_commit_copies_question_before_signature_and_returns_immutable_snapshot(
+    tmp_path: Path,
+) -> None:
+    """A caller mutating a queued question cannot alter the committed revision."""
+    from server.generate.snapshot_ledger import QuestionSnapshotLedger
+
+    ledger = QuestionSnapshotLedger()
+    question = {"id": "q_abc_001", "題目": {"text": "before"}}
+    revision, snapshot = ledger.commit(question, tmp_path)
+    question["題目"]["text"] = "after"
+
+    assert revision == 1
+    assert snapshot["題目"] == {"text": "before"}
+    next_revision, _ = ledger.commit({"id": "q_abc_001", "題目": {"text": "before"}}, tmp_path)
+    assert next_revision == 1
 
 
 def test_missing_image_contributes_missing_string(tmp_path: Path) -> None:
@@ -206,6 +300,16 @@ def test_snapshot_result_excludes_excluded_keys(tmp_path: Path) -> None:
     _, snap = ledger.commit(q, tmp_path)
     # Snapshot preserves the original content (including excluded keys)
     assert snap.get("verification") == {"passed": True}
+
+
+def test_ledger_does_not_retain_per_revision_snapshots(tmp_path: Path) -> None:
+    from server.generate.snapshot_ledger import QuestionSnapshotLedger
+
+    ledger = QuestionSnapshotLedger()
+    ledger.commit({"id": "q_abc_001", "題目": "text"}, tmp_path)
+
+    assert not hasattr(ledger, "_snapshots")
+    assert not hasattr(ledger, "get_snapshot")
 
 
 def test_run_context_has_snapshot_ledger_field() -> None:

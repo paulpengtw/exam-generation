@@ -48,6 +48,7 @@ describe("VerificationTrailTimeline", () => {
       chart_verification: null,
       model: "verify-model",
       timestamp: "2026-08-24T00:00:01Z",
+      content_revision: 2,
     };
     const correction: VerificationTrailEntry = {
       code: "verification_trail",
@@ -82,6 +83,8 @@ describe("VerificationTrailTimeline", () => {
     expect(screen.getByText("Retry index")).toBeInTheDocument();
     expect(screen.getByText("2026-08-24T00:00:02Z")).toBeInTheDocument();
     expect(screen.getByText("The retries were exhausted.")).toBeInTheDocument();
+    expect(screen.getAllByText("Content version")).toHaveLength(2);
+    expect(screen.getAllByText("2")).toHaveLength(2);
 
     const snapshotButtons = screen.getAllByRole("button", { name: "Show snapshot" });
     expect(snapshotButtons).toHaveLength(2);

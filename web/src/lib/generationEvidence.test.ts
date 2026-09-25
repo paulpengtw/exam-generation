@@ -143,6 +143,26 @@ describe("applyV2Event — result", () => {
     expect(next.questions["q_001"].content.question).toEqual(qHigh);
   });
 
+  it("does not promote an older result over a newer draft revision", () => {
+    let state = freshRun();
+    const newerDraft = { ...sampleQuestion("q_001"), 題目: ["new draft"] };
+    state = applyV2Event(state, makeEvent(
+      "question_update",
+      { run_id: RUN_ID, event_seq: 3, question_id: "q_001", index: 0, content_revision: 2 },
+      { index: 0, phase: "image", question: newerDraft },
+    ));
+    const olderResult = { ...sampleQuestion("q_001"), 題目: ["old result"] };
+    const next = applyV2Event(state, makeEvent(
+      "result",
+      { run_id: RUN_ID, event_seq: 4, question_id: "q_001", index: 0, content_revision: 1 },
+      olderResult,
+    ));
+
+    expect(next.questions["q_001"].content.receipt).toBe("draft");
+    expect(next.questions["q_001"].content.revision).toBe(2);
+    expect(next.questions["q_001"].content.question).toEqual(newerDraft);
+  });
+
   it("B final before A keeps both at their manifest positions", () => {
     const state = freshRun();
     const qB = sampleQuestion("q_002");
@@ -162,7 +182,12 @@ describe("applyV2Event — result", () => {
 
 describe("applyV2Event — question_terminal", () => {
   it("sets ended processing and review from terminal", () => {
-    const state = freshRun();
+    let state = freshRun();
+    state = applyV2Event(state, makeEvent(
+      "result",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0, content_revision: 1 },
+      sampleQuestion("q_001"),
+    ));
     const ev = makeEvent("question_terminal", { run_id: RUN_ID, event_seq: 6, question_id: "q_001", index: 0 }, {
       termination_reason: "normal", has_final: true, final_revision: 1,
       delivery_status: "complete", expected: [], delivered: [], missing: [],
@@ -183,6 +208,8 @@ describe("applyV2Event — question_terminal", () => {
     });
     const next = applyV2Event(state, ev);
     expect(next.questions["q_001"].finalPending).toBe(true);
+    expect(next.questions["q_001"].review.status).toBe("unknown");
+    expect(next.questions["q_001"].review.pending).toBe(true);
   });
 
   it("keeps fixed delivered 1/3 content and the missing slot identity", () => {
@@ -264,8 +291,38 @@ describe("applyV2Event — question_terminal", () => {
     // Then final
     const next = applyV2Event(state, makeEvent("result", { run_id: RUN_ID, event_seq: 6, question_id: "q_001", index: 0, content_revision: 2 }, sampleQuestion("q_001")));
     expect(next.questions["q_001"].finalPending).toBe(false);
+    expect(next.questions["q_001"].review.status).toBe("passed");
+    expect(next.questions["q_001"].review.pending).toBe(false);
     // processing should remain ended
     expect(next.questions["q_001"].processing).toBe("ended");
+  });
+
+  it("does not apply a newer terminal verdict to an older final draft", () => {
+    let state = freshRun();
+    state = applyV2Event(state, makeEvent(
+      "result",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0, content_revision: 1 },
+      sampleQuestion("q_001"),
+    ));
+    const next = applyV2Event(state, makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 6, question_id: "q_001", index: 0 },
+      {
+        termination_reason: "normal",
+        has_final: true,
+        final_revision: 2,
+        delivery_status: "complete",
+        expected: [],
+        delivered: [],
+        missing: [],
+        review: { status: "passed", content_revision: 2 },
+      },
+    ));
+
+    expect(next.questions["q_001"].content.revision).toBe(1);
+    expect(next.questions["q_001"].review.status).toBe("unknown");
+    expect(next.questions["q_001"].review.pending).toBe(true);
+    expect(next.questions["q_001"].finalPending).toBe(true);
   });
 
   it("does not double count a second terminal for the same question", () => {
@@ -281,7 +338,12 @@ describe("applyV2Event — question_terminal", () => {
   });
 
   it("sets review.status to skipped for skipped review", () => {
-    const state = freshRun();
+    let state = freshRun();
+    state = applyV2Event(state, makeEvent(
+      "result",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0, content_revision: 1 },
+      sampleQuestion("q_001"),
+    ));
     const ev = makeEvent("question_terminal", { run_id: RUN_ID, event_seq: 6, question_id: "q_001", index: 0 }, {
       termination_reason: "normal", has_final: true, final_revision: 1,
       delivery_status: "complete", expected: [], delivered: [], missing: [],
@@ -321,6 +383,8 @@ describe("closeRun and done event", () => {
     const closed = closeRun(state);
     expect(closed.questions["q_001"].finalMissing).toBe(true);
     expect(closed.questions["q_001"].finalPending).toBe(false);
+    expect(closed.questions["q_001"].review.status).toBe("unknown");
+    expect(closed.questions["q_001"].review.pending).toBe(false);
   });
 
   it("done event via applyV2Event closes the run", () => {

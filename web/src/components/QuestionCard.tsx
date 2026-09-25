@@ -501,8 +501,9 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
   const t = useT();
   const procLabel = processingLabel(evidence.processing, t);
   const reviewStatus = evidence.review.status;
-  const reviewLabel =
-    reviewStatus === "passed" ? t("card.review_passed")
+  const reviewLabel = evidence.review.pending
+    ? t("card.review_pending")
+    : reviewStatus === "passed" ? t("card.review_passed")
     : reviewStatus === "failed" ? t("card.review_failed")
     : reviewStatus === "skipped" ? t("card.review_skipped")
     : t("card.review_unknown");

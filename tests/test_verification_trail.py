@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
 from types import SimpleNamespace
 
 from src.common.generation_core import generate_with_corrections_core
 from src.common.subject_spec import SubjectGenerationSpec
 from src.config import Config
+from src.natural_sciences.schemas import VerificationResult as NaturalSciencesVerificationResult
 from src.schemas import ChartVerificationResult, VerificationResult
+from src.social_studies.schemas import VerificationResult as SocialStudiesVerificationResult
 
 
 class _StubClient:
@@ -48,6 +51,23 @@ class _SnapshotQuestion(SimpleNamespace):
             for field in exclude:
                 payload.pop(field, None)
         return payload
+
+
+def test_verification_result_schemas_do_not_own_run_revision_bindings() -> None:
+    payload = {
+        "passed": True,
+        "answer_match": True,
+        "details": "同一版本。",
+        "content_revision": 7,
+    }
+
+    for result_cls in (
+        VerificationResult,
+        SocialStudiesVerificationResult,
+        NaturalSciencesVerificationResult,
+    ):
+        result = result_cls.model_validate(payload)
+        assert "content_revision" not in result.model_dump()
 
 
 def _stub_spec(verification: VerificationResult) -> SubjectGenerationSpec:
@@ -155,6 +175,42 @@ def test_verify_pass_captures_typed_verdict_entry_with_resolved_model_and_timest
         "model": "verify-model",
     }
     datetime.fromisoformat(payload["timestamp"])
+
+
+def test_verification_trail_verdict_targets_the_content_revision(tmp_path) -> None:
+    verdict = VerificationResult(
+        passed=True,
+        details="同一版本。",
+        my_answer="A",
+        provided_answer="A",
+        answer_match=True,
+    )
+    seen_revisions: list[int | None] = []
+
+    def verify(*_args, content_revision=None, **_kwargs):
+        seen_revisions.append(content_revision)
+        return verdict
+
+    spec = dataclasses.replace(_stub_spec(verdict), verify_fn=verify)
+    trail = []
+
+    generate_with_corrections_core(
+        config=Config(
+            output_dir=tmp_path,
+            model_execute="execute-model",
+            model_verify="verify-model",
+        ),
+        client=_StubClient(),
+        params=SimpleNamespace(sub_question_count=1, subquestion_configs=[]),
+        question_id="q-revision-binding",
+        spec=spec,
+        on_question_update=lambda _question, _phase: 7,
+        on_trail_entry=trail.append,
+    )
+
+    assert seen_revisions == [7]
+    assert trail[0].content_revision == 7
+    assert trail[1].content_revision == 7
 
 
 def test_failed_verification_emits_initial_correction_and_reverification_in_order(

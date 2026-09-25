@@ -87,6 +87,12 @@ function SnapshotTrailItem({
       </div>
       {isCorrection && (
         <dl className="mt-2 space-y-1">
+          {entry.content_revision !== undefined && entry.content_revision !== null && (
+            <DetailRow
+              label={t("card.content_revision")}
+              value={String(entry.content_revision)}
+            />
+          )}
           <DetailRow
             label={t("card.trailRetryIndex")}
             value={String(entry.retry_index)}
@@ -94,6 +100,14 @@ function SnapshotTrailItem({
           <DetailRow
             label={t("card.trailCorrectorModel")}
             value={entry.model}
+          />
+        </dl>
+      )}
+      {!isCorrection && entry.content_revision !== undefined && entry.content_revision !== null && (
+        <dl className="mt-2 space-y-1">
+          <DetailRow
+            label={t("card.content_revision")}
+            value={String(entry.content_revision)}
           />
         </dl>
       )}
@@ -282,6 +296,12 @@ export default function VerificationTrailTimeline({
                 </div>
                 <p className="mt-2 whitespace-pre-wrap">{entry.details}</p>
                 <dl className="mt-2 space-y-1">
+                  {entry.content_revision !== undefined && entry.content_revision !== null && (
+                    <DetailRow
+                      label={t("card.content_revision")}
+                      value={String(entry.content_revision)}
+                    />
+                  )}
                   <DetailRow label={t("card.trailMyAnswer")} value={entry.my_answer} />
                   <DetailRow
                     label={t("card.trailProvidedAnswer")}

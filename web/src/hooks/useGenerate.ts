@@ -134,6 +134,7 @@ export interface VerificationTrailVerificationEntry {
   chart_verification: ChartVerificationTrail | null;
   model: string;
   timestamp: string;
+  content_revision?: number | null;
 }
 
 export interface VerificationTrailInitialEntry {
@@ -142,6 +143,7 @@ export interface VerificationTrailInitialEntry {
   question_id: string;
   timestamp: string;
   snapshot: Record<string, unknown>;
+  content_revision?: number | null;
 }
 
 export interface VerificationTrailRejectionReason {
@@ -160,6 +162,7 @@ export interface VerificationTrailCorrectionEntry {
   snapshot: Record<string, unknown>;
   outcome?: "accepted" | "rejected";
   reason?: VerificationTrailRejectionReason;
+  content_revision?: number | null;
 }
 
 export type VerificationTrailEntry =
@@ -174,6 +177,7 @@ export interface FigurePolicySpecEntry {
   label: string;
   effective_figure_kind: string;
   timestamp: string;
+  content_revision?: number | null;
 }
 
 export interface FigurePolicyCollisionEntry {
@@ -184,6 +188,7 @@ export interface FigurePolicyCollisionEntry {
   right: string;
   effective_figure_kind: string;
   timestamp: string;
+  content_revision?: number | null;
 }
 
 export interface FigurePolicyRepairEntry {
@@ -197,6 +202,7 @@ export interface FigurePolicyRepairEntry {
   succeeded: boolean;
   error?: string | null;
   timestamp: string;
+  content_revision?: number | null;
 }
 
 export interface FigurePolicyWarningEntry {
@@ -209,6 +215,7 @@ export interface FigurePolicyWarningEntry {
   right?: string | null;
   effective_figure_kind?: string | null;
   timestamp: string;
+  content_revision?: number | null;
 }
 
 export interface FigurePolicyDataInconsistencyEntry {
@@ -226,6 +233,7 @@ export interface FigurePolicyDataInconsistencyEntry {
   duplicate_image_shipped: boolean;
   message: string;
   timestamp: string;
+  content_revision?: number | null;
 }
 
 export type FigurePolicyTrailEntry =

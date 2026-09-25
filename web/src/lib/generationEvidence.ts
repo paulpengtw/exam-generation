@@ -37,6 +37,7 @@ export interface QuestionTerminalPayload {
     status: "passed" | "failed" | "skipped" | "unknown";
     content_revision?: number | null;
     unknown_reason?: string;
+    reason?: string;
   };
   unknown_reason?: string;
 }
@@ -89,6 +90,8 @@ export interface QuestionEvidence {
   review: {
     status: "passed" | "failed" | "skipped" | "unknown";
     revision: number | null;
+    pending?: boolean;
+    reason?: string;
   };
   trail: VerificationTrailEntry[];
   figurePolicyTrail: FigurePolicyTrailEntry[];
@@ -119,7 +122,7 @@ function emptyQuestionEvidence(questionId: string, index: number): QuestionEvide
     terminal: null,
     finalPending: false,
     finalMissing: false,
-    review: { status: "unknown", revision: null },
+    review: { status: "unknown", revision: null, pending: false },
     trail: [],
     figurePolicyTrail: [],
     referenceExampleRecord: undefined,
@@ -202,6 +205,10 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
     case "question_update": {
       const contentRevision = typeof ctx.content_revision === "number" ? ctx.content_revision : null;
       if (contentRevision === null) return state;
+      if (qev.terminal !== null) {
+        if (!qev.terminal.has_final || qev.terminal.final_revision === null) return state;
+        if (contentRevision > qev.terminal.final_revision) return state;
+      }
       // Ignore older revisions
       if (qev.content.revision !== null && contentRevision < qev.content.revision) return state;
       // Only update if this is not a final receipt, or if revision is higher
@@ -210,21 +217,30 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
       }
       const question = p.question as ExamQuestion | null | undefined;
       const phase = p.phase as DraftPhase | null | undefined;
+      const content = {
+        receipt: qev.content.receipt === "final" ? "final" : "draft",
+        revision: contentRevision,
+        question: question ?? qev.content.question,
+        phase: phase ?? qev.content.phase,
+      } as QuestionEvidence["content"];
+      const nextQuestion = { ...qev, content };
       return updateQuestion(state, questionId, {
-        content: {
-          receipt: qev.content.receipt === "final" ? "final" : "draft",
-          revision: contentRevision,
-          question: question ?? qev.content.question,
-          phase: phase ?? qev.content.phase,
-        },
+        content,
+        review: qev.terminal ? reviewForContent(nextQuestion) : qev.review,
       });
     }
 
     case "result": {
       const contentRevision = typeof ctx.content_revision === "number" ? ctx.content_revision : null;
       if (contentRevision === null) return state;
-      // Ignore lower revisions than already-received final
-      if (qev.content.receipt === "final" && qev.content.revision !== null && contentRevision < qev.content.revision) {
+      if (qev.terminal !== null) {
+        if (!qev.terminal.has_final || qev.terminal.final_revision !== contentRevision) return state;
+      }
+      // Ignore lower revisions than any already-received content.
+      if (qev.content.revision !== null && contentRevision < qev.content.revision) {
+        return state;
+      }
+      if (qev.content.receipt === "final" && qev.content.revision !== null && contentRevision <= qev.content.revision) {
         return state;
       }
       const question = payload as ExamQuestion;
@@ -232,9 +248,12 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
       const newFinalPending = qev.finalPending && qev.terminal !== null
         ? qev.terminal.final_revision !== contentRevision
         : false;
+      const content = { receipt: "final" as const, revision: contentRevision, question, phase: "verified" as const };
+      const nextQuestion = { ...qev, content };
       return updateQuestion(state, questionId, {
-        content: { receipt: "final", revision: contentRevision, question, phase: "verified" },
+        content,
         finalPending: newFinalPending,
+        review: qev.terminal ? reviewForContent(nextQuestion) : qev.review,
       });
     }
 
@@ -242,17 +261,15 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
       // A second terminal for the same question is ignored
       if (qev.terminal !== null) return state;
       const terminal = payload as QuestionTerminalPayload;
-      const review = terminal.review ?? {};
-      const reviewStatus = (review.status ?? "unknown") as QuestionEvidence["review"]["status"];
-      const reviewRevision = typeof review.content_revision === "number" ? review.content_revision : null;
       // finalPending: terminal says has_final but we haven't received the final_revision yet
       const finalPending = terminal.has_final &&
         terminal.final_revision !== null &&
         !(qev.content.receipt === "final" && qev.content.revision === terminal.final_revision);
+      const nextQuestion = { ...qev, terminal, finalPending };
       return updateQuestion(state, questionId, {
         processing: "ended",
         terminal,
-        review: { status: reviewStatus, revision: reviewRevision },
+        review: reviewForContent(nextQuestion),
         finalPending,
       });
     }
@@ -388,6 +405,36 @@ function updateQuestion(
   };
 }
 
+function reviewForContent(qev: QuestionEvidence): QuestionEvidence["review"] {
+  const terminal = qev.terminal;
+  if (terminal === null) return qev.review;
+  const review = terminal.review ?? {};
+  const reviewStatus = (review.status ?? "unknown") as QuestionEvidence["review"]["status"];
+  const reviewRevision = typeof review.content_revision === "number" ? review.content_revision : null;
+  const definitive = reviewStatus === "passed" || reviewStatus === "failed" || reviewStatus === "skipped";
+  const matchesFinal = terminal.has_final
+    && terminal.final_revision !== null
+    && qev.content.receipt === "final"
+    && qev.content.revision === terminal.final_revision
+    && reviewRevision === terminal.final_revision;
+  if (definitive && !matchesFinal) {
+    return {
+      status: "unknown",
+      revision: reviewRevision,
+      pending: true,
+      reason: "waiting for matching final content",
+    };
+  }
+  return {
+    status: reviewStatus,
+    revision: reviewRevision,
+    pending: false,
+    reason: typeof review.reason === "string"
+      ? review.reason
+      : typeof review.unknown_reason === "string" ? review.unknown_reason : undefined,
+  };
+}
+
 export function closeRun(state: RunEvidenceState): RunEvidenceState {
   const questions: Record<string, QuestionEvidence> = {};
   for (const [qid, qev] of Object.entries(state.questions)) {
@@ -398,6 +445,14 @@ export function closeRun(state: RunEvidenceState): RunEvidenceState {
       processing: noTerminal ? "unknown" : qev.processing,
       finalPending: false,
       finalMissing: hadFinalPending,
+      review: hadFinalPending
+        ? {
+          status: "unknown",
+          revision: qev.review.revision,
+          pending: false,
+          reason: "final content missing",
+        }
+        : qev.review,
     };
   }
   return { ...state, questions, closed: true };

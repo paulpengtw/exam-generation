@@ -124,11 +124,26 @@ class QuestionTerminalPayload(BaseModel):
             raise ValueError("delivery_status='unknown' requires unknown_reason")
 
         review_status = self.review.get("status")
+        if review_status not in ("passed", "failed", "skipped", "unknown"):
+            raise ValueError("review.status must be passed, failed, skipped, or unknown")
+        if not self.has_final and review_status != "unknown":
+            raise ValueError("has_final=False requires review.status='unknown'")
+        if self.has_final and review_status == "unknown":
+            reason = self.review.get("reason") or self.review.get("unknown_reason")
+            if not reason:
+                raise ValueError("unknown review requires a reason")
         if review_status in ("passed", "failed", "skipped"):
-            if self.review.get("content_revision") != self.final_revision:
+            if not self.has_final:
+                raise ValueError("definitive review requires final content")
+            review_revision = self.review.get("content_revision")
+            if (
+                not isinstance(review_revision, int)
+                or isinstance(review_revision, bool)
+                or review_revision != self.final_revision
+            ):
                 raise ValueError(
                     f"review.content_revision must equal final_revision "
-                    f"({self.review.get('content_revision')!r} != {self.final_revision!r})"
+                    f"({review_revision!r} != {self.final_revision!r})"
                 )
 
         return self

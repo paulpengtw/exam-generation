@@ -137,6 +137,7 @@ def test_detail_returns_the_persisted_verification_trail_without_listing_it(
             "answer_match": False,
             "chart_verification": None,
             "model": "verify-model",
+            "content_revision": 3,
             "timestamp": "2026-08-24T00:00:00Z",
         }
     ]
@@ -214,6 +215,7 @@ def test_list_and_detail_return_the_persisted_figure_policy_trail(tmp_path) -> N
             "question_id": "ss_a_0",
             "label": "題幹",
             "effective_figure_kind": "地圖",
+            "content_revision": 3,
             "timestamp": "2026-08-25T00:00:00Z",
         }
     ]

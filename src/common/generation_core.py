@@ -48,6 +48,29 @@ from src.renderer import render_image
 logger = logging.getLogger(__name__)
 
 
+def _visual_content_marker(question: Any) -> tuple[Any, ...]:
+    """Return the visual fields figure policy may mutate in-place."""
+    def dump(value: Any) -> Any:
+        if value is None:
+            return None
+        if hasattr(value, "model_dump"):
+            return value.model_dump(mode="json", exclude_none=True)
+        return value
+
+    return (
+        dump(getattr(question, "chart_spec", None)),
+        getattr(question, "圖片", None),
+        tuple(
+            (
+                dump(getattr(subquestion, "chart_spec", None)),
+                getattr(subquestion, "圖片", None),
+                getattr(subquestion, "image_generation_mode", None),
+            )
+            for subquestion in getattr(question, "subquestions", [])
+        ),
+    )
+
+
 @contextmanager
 def _client_scope_binding(client: Any, scope: OperationScope | None):
     """Temporarily bind the immutable operation to nested client helpers."""
@@ -76,18 +99,26 @@ def _call_with_optional_scope(
     preserves those adapters without catching ``TypeError`` from the hook
     body, while production hooks receive ownership explicitly.
     """
-    if scope is not None:
+    if scope is not None or "content_revision" in kwargs:
         try:
             signature = inspect.signature(function)
             parameters = signature.parameters.values()
-            accepts_scope = "scope" in signature.parameters or any(
+            accepts_kwargs = any(
                 parameter.kind is inspect.Parameter.VAR_KEYWORD
                 for parameter in parameters
             )
         except (TypeError, ValueError):
-            accepts_scope = False
-        if accepts_scope:
+            accepts_kwargs = False
+            signature = None
+        if scope is not None and (
+            accepts_kwargs or (signature is not None and "scope" in signature.parameters)
+        ):
             kwargs["scope"] = scope
+        if "content_revision" in kwargs and (
+            accepts_kwargs
+            or (signature is not None and "content_revision" in signature.parameters)
+        ) is False:
+            kwargs.pop("content_revision")
     nested_client = next(
         (argument for argument in args if hasattr(argument, "set_scope")),
         None,
@@ -105,18 +136,26 @@ def _callback_with_optional_scope(
     """Invoke an event callback with scope when its seam supports it."""
     if callback is None:
         return None
-    if scope is not None:
+    if scope is not None or "content_revision" in kwargs:
         try:
             signature = inspect.signature(callback)
             parameters = signature.parameters.values()
-            accepts_scope = "scope" in signature.parameters or any(
+            accepts_kwargs = any(
                 parameter.kind is inspect.Parameter.VAR_KEYWORD
                 for parameter in parameters
             )
         except (TypeError, ValueError):
-            accepts_scope = False
-        if accepts_scope:
+            accepts_kwargs = False
+            signature = None
+        if scope is not None and (
+            accepts_kwargs or (signature is not None and "scope" in signature.parameters)
+        ):
             kwargs["scope"] = scope
+        if "content_revision" in kwargs and (
+            accepts_kwargs
+            or (signature is not None and "content_revision" in signature.parameters)
+        ) is False:
+            kwargs.pop("content_revision")
     return callback(*args, **kwargs)
 
 
@@ -162,9 +201,26 @@ class SubquestionParseError(ValueError):
         return cls(f"子題欄位「{field}」驗證失敗（{error_type}）")
 
 
-def _emit_update(callback: Callable | None, question: Any, phase: str) -> None:
+def _emit_update(callback: Callable | None, question: Any, phase: str) -> Any:
     if callback is not None:
-        callback(question, phase)
+        return callback(question, phase)
+    return None
+
+
+def _record_update_revision(
+    callback: Callable | None,
+    question: Any,
+    phase: str,
+    current_revision: int | None,
+    revision_state: list[int | None] | None,
+) -> int | None:
+    """Forward a snapshot update and retain a server-provided revision."""
+    result = _emit_update(callback, question, phase)
+    if isinstance(result, int) and not isinstance(result, bool):
+        current_revision = result
+        if revision_state is not None:
+            revision_state[0] = result
+    return current_revision
 
 
 def _apply_fixed_subquestion_identity(
@@ -194,11 +250,17 @@ def _emit_trail(
     verification: Any,
     model: str,
     scope: OperationScope | None = None,
+    content_revision: int | None = None,
 ) -> None:
     if callback is not None:
         _callback_with_optional_scope(
             callback,
-            make_verification_trail_entry(question_id, verification, model),
+            make_verification_trail_entry(
+                question_id,
+                verification,
+                model,
+                content_revision=content_revision,
+            ),
             scope=scope,
         )
 
@@ -208,11 +270,16 @@ def _emit_initial_trail(
     question_id: str,
     question: Any,
     scope: OperationScope | None = None,
+    content_revision: int | None = None,
 ) -> None:
     if callback is not None:
         _callback_with_optional_scope(
             callback,
-            make_initial_trail_entry(question_id, question),
+            make_initial_trail_entry(
+                question_id,
+                question,
+                content_revision=content_revision,
+            ),
             scope=scope,
         )
 
@@ -225,6 +292,7 @@ def _emit_correction_trail(
     model: str,
     decision: CorrectionDecision | None = None,
     scope: OperationScope | None = None,
+    content_revision: int | None = None,
 ) -> None:
     if callback is not None:
         _callback_with_optional_scope(
@@ -233,6 +301,7 @@ def _emit_correction_trail(
                 question_id, question, retry_index, model,
                 outcome=decision.outcome if decision is not None else None,
                 reason=decision.reason if decision is not None else None,
+                content_revision=content_revision,
             ),
             scope=scope,
         )
@@ -241,6 +310,7 @@ def _emit_correction_trail(
 def _scoped_callback(
     callback: Callable | None,
     scope: OperationScope | None,
+    content_revision_provider: Callable[[], int | None] | None = None,
 ) -> Callable | None:
     """Bind a callback's event ownership without changing its legacy shape."""
     if callback is None:
@@ -255,6 +325,14 @@ def _scoped_callback(
         # an unbound wrapper preserves an inherited scope.
         inherited_scope = kwargs.pop("scope", None)
         bound_scope = scope if scope is not None else inherited_scope
+        inherited_revision = kwargs.pop("content_revision", None)
+        bound_revision = (
+            content_revision_provider()
+            if content_revision_provider is not None
+            else inherited_revision
+        )
+        if bound_revision is not None:
+            kwargs["content_revision"] = bound_revision
         return _callback_with_optional_scope(
             callback, *args, scope=bound_scope, **kwargs
         )
@@ -387,11 +465,13 @@ def generate_one_core(
     curriculum_context: CurriculumContext | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     question_context: QuestionContext | None = None,
+    _revision_state: list[int | None] | None = None,
 ) -> Any:
     """Shared 文本生成器 → N-parallel-子題產生器 pipeline for NS and SS."""
     owner = question_context or QuestionContext(
         run_id=new_run_id(), question_id=question_id, index=0
     )
+    content_revision = _revision_state[0] if _revision_state is not None else None
     text_scope = new_operation_scope(owner, kind="text")
     # ── Text-prompt build (dry-run returns early) ─────────────────────────
     text_system, text_user, text_images, stage_ctx, text_ref_draws = build_text_generation_prompts(
@@ -484,7 +564,13 @@ def generate_one_core(
             for plan_position in range(len(sq_plans))
         ]
     emit_plan(obs, len(sq_plans), scope=text_scope, slots=slot_manifest)
-    _emit_update(on_question_update, question, "draft")
+    content_revision = _record_update_revision(
+        on_question_update,
+        question,
+        "draft",
+        content_revision,
+        _revision_state,
+    )
 
     sub_system = spec.build_subquestion_system_fn(stage_ctx)
     few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
@@ -708,7 +794,13 @@ def generate_one_core(
             if result is not None:
                 sq_results[idx] = result
                 question.subquestions = [sq_results[k] for k in sorted(sq_results)]
-                _emit_update(on_question_update, question, "draft")
+                content_revision = _record_update_revision(
+                    on_question_update,
+                    question,
+                    "draft",
+                    content_revision,
+                    _revision_state,
+                )
 
     question.subquestions = [sq_results[k] for k in sorted(sq_results)]
 
@@ -728,9 +820,31 @@ def generate_one_core(
             scope=visual_spec_scope,
         )
         if question.chart_spec != prior_chart_spec:
-            _emit_update(on_question_update, question, "corrected")
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "corrected",
+                content_revision,
+                _revision_state,
+            )
 
     visual_policy_scope = new_operation_scope(owner, kind="image_policy")
+    visual_marker = _visual_content_marker(question)
+
+    def _commit_visual_policy_revision() -> int | None:
+        nonlocal content_revision, visual_marker
+        current_marker = _visual_content_marker(question)
+        if current_marker != visual_marker:
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "corrected",
+                content_revision,
+                _revision_state,
+            )
+            visual_marker = current_marker
+        return content_revision
+
     if spec.prepare_visual_policy_fn is not None:
         _call_with_optional_scope(
             spec.prepare_visual_policy_fn,
@@ -740,9 +854,14 @@ def generate_one_core(
             on_figure_policy_entry=_scoped_callback(
                 on_figure_policy_entry,
                 visual_policy_scope,
+                _commit_visual_policy_revision,
             ),
             scope=visual_policy_scope,
         )
+        # Figure policy may repair a chart_spec or subquestion spec after the
+        # ordinary visual-spec hook.  Commit that content before the image
+        # renderer and verifier consume it.
+        _commit_visual_policy_revision()
 
     # ── Top-level image rendering ─────────────────────────────────────────
     chart_image_path: str | None = None
@@ -767,7 +886,13 @@ def generate_one_core(
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
-            _emit_update(on_question_update, question, "image")
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "image",
+                content_revision,
+                _revision_state,
+            )
 
     # ── Subquestion image rendering ────────────────────────────────────────
     if spec.render_subquestion_images_fn is not None:
@@ -784,13 +909,20 @@ def generate_one_core(
             on_figure_policy_entry=_scoped_callback(
                 on_figure_policy_entry,
                 subquestion_image_scope,
+                _commit_visual_policy_revision,
             ),
             scope=subquestion_image_scope,
         )
         if chart_image_path is None and subquestion_image_paths:
             chart_image_path = subquestion_image_paths[0]
         if subquestion_image_paths:
-            _emit_update(on_question_update, question, "image")
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "image",
+                content_revision,
+                _revision_state,
+            )
 
     # ── Cancel boundary: after image rendering, before verification ───────
     if is_cancelled is not None and is_cancelled():
@@ -804,6 +936,7 @@ def generate_one_core(
             question_id,
             question,
             scope=verify_scope,
+            content_revision=content_revision,
         )
         print(f"  Verifying question {question_id}...", file=sys.stderr)
         emit_stage(obs, "verifier", "verify", "start", scope=verify_scope)
@@ -812,6 +945,7 @@ def generate_one_core(
             client, question,
             chart_image_path=chart_image_path,
             curriculum_context=curriculum_context,
+            content_revision=content_revision,
             scope=verify_scope,
         )
         emit_stage(obs, "verifier", "verify", "end", scope=verify_scope)
@@ -822,8 +956,15 @@ def generate_one_core(
             result,
             config.model_verify or config.model_execute,
             scope=verify_scope,
+            content_revision=content_revision,
         )
-        _emit_update(on_question_update, question, "verified")
+        content_revision = _record_update_revision(
+            on_question_update,
+            question,
+            "verified",
+            content_revision,
+            _revision_state,
+        )
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
 
@@ -859,11 +1000,13 @@ def generate_with_corrections_core(
     curriculum_context: CurriculumContext | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     question_context: QuestionContext | None = None,
+    _revision_state: list[int | None] | None = None,
 ) -> Any:
     """generate_one_core followed by up to max_retries correction passes."""
     owner = question_context or QuestionContext(
         run_id=new_run_id(), question_id=question_id, index=0
     )
+    revision_state = _revision_state if _revision_state is not None else [None]
     question = generate_one_core(
         config=config,
         client=client,
@@ -891,6 +1034,7 @@ def generate_with_corrections_core(
         curriculum_context=curriculum_context,
         is_cancelled=is_cancelled,
         question_context=owner,
+        _revision_state=revision_state,
     )
 
     if dry_run or not hasattr(question, "verification"):
@@ -900,6 +1044,22 @@ def generate_with_corrections_core(
     previous_correction_operation_id: str | None = None
     previous_image_operation_id: str | None = None
     previous_verify_operation_id: str | None = None
+    content_revision = revision_state[0]
+    visual_marker = _visual_content_marker(question)
+
+    def _commit_visual_policy_revision() -> int | None:
+        nonlocal content_revision, visual_marker
+        current_marker = _visual_content_marker(question)
+        if current_marker != visual_marker:
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "corrected",
+                content_revision,
+                revision_state,
+            )
+            visual_marker = current_marker
+        return content_revision
 
     for attempt in range(max_retries):
         if is_cancelled is not None and is_cancelled():
@@ -966,7 +1126,13 @@ def generate_with_corrections_core(
                 retry=attempt + 1, question_id=question_id,
                 scope=correction_scope,
             )
-            _emit_update(on_question_update, question, "corrected")
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "corrected",
+                content_revision,
+                revision_state,
+            )
 
         new_chart_image_path: str | None = None
         if rejected:
@@ -998,7 +1164,13 @@ def generate_with_corrections_core(
                 if rendered:
                     question.圖片 = f"{question_id}.png"
                     new_chart_image_path = rendered
-                    _emit_update(on_question_update, question, "image")
+                    content_revision = _record_update_revision(
+                        on_question_update,
+                        question,
+                        "image",
+                        content_revision,
+                        revision_state,
+                    )
             elif question.圖片:
                 p = config.output_dir / question.圖片
                 new_chart_image_path = str(p) if p.exists() else None
@@ -1021,6 +1193,7 @@ def generate_with_corrections_core(
                     kind="image_policy",
                     supersedes_operation_id=previous_image_operation_id,
                 )
+                visual_marker = _visual_content_marker(question)
                 _call_with_optional_scope(
                     spec.post_correction_visual_policy_fn,
                     question,
@@ -1033,9 +1206,13 @@ def generate_with_corrections_core(
                     on_figure_policy_entry=_scoped_callback(
                         on_figure_policy_entry,
                         visual_policy_scope,
+                        _commit_visual_policy_revision,
                     ),
                     scope=visual_policy_scope,
                 )
+                # The post-correction policy can alter a visual spec or
+                # attach a replacement subquestion image before reverify.
+                _commit_visual_policy_revision()
                 if question.圖片:
                     new_chart_image_path = str(config.output_dir / question.圖片)
 
@@ -1047,6 +1224,7 @@ def generate_with_corrections_core(
             config.model_correct or config.model_execute,
             decision,
             scope=correction_scope,
+            content_revision=content_revision,
         )
 
         if not skip_verify:
@@ -1069,6 +1247,7 @@ def generate_with_corrections_core(
                 client, question,
                 chart_image_path=new_chart_image_path,
                 curriculum_context=curriculum_context,
+                content_revision=content_revision,
                 scope=verify_scope,
             )
             emit_stage(
@@ -1086,8 +1265,15 @@ def generate_with_corrections_core(
                 result,
                 config.model_verify or config.model_execute,
                 scope=verify_scope,
+                content_revision=content_revision,
             )
-            _emit_update(on_question_update, question, "verified")
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "verified",
+                content_revision,
+                revision_state,
+            )
             status = "PASSED" if result.passed else "FAILED"
             print(f"  Re-verification {status}: {result.details[:100]}", file=sys.stderr)
 

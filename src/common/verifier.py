@@ -84,6 +84,7 @@ def verify_question_common(
     chart_image_path: str | None = None,
     post_verify_hooks: list[PostVerifyHook] | None = None,
     scope: OperationScope | None = None,
+    content_revision: int | None = None,
 ) -> Any:
     """Shared verifier core for questions with subquestions.
 

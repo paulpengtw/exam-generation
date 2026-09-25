@@ -138,6 +138,30 @@ describe("QuestionCard — with content (evidence has question)", () => {
     expect(screen.getByTestId("evidence-receipt-status")).toHaveTextContent("結果待接收");
   });
 
+  it("does not show a newer terminal verdict on an older draft", () => {
+    const ev = makeEvidence({
+      processing: "ended",
+      content: { receipt: "draft", revision: 1, question: sampleQuestion, phase: "image" },
+      terminal: {
+        termination_reason: "normal", has_final: true, final_revision: 2,
+        delivery_status: "complete", expected: [], delivered: [], missing: [],
+        review: { status: "passed", content_revision: 2 },
+      },
+      review: {
+        status: "unknown",
+        revision: 2,
+        pending: true,
+        reason: "waiting for matching final content",
+      },
+      finalPending: true,
+    });
+    render(<QuestionCard evidence={ev} question={sampleQuestion} index={0} />);
+    expect(screen.getByTestId("evidence-review-status")).toHaveTextContent(
+      /審題結果待對應內容版本|Review pending matching content version/,
+    );
+    expect(screen.getByTestId("evidence-review-status")).not.toHaveTextContent("審題通過");
+  });
+
   it("shows 狀態未知 processing and renders the question when closed without terminal", () => {
     const ev = makeEvidence({
       processing: "unknown",

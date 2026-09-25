@@ -11,17 +11,20 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
+from server.generate.marshalling import question_to_event
 from server.generate.models import GenerateParams
 from server.generate.persistence import (
     make_exchange_recorder,
@@ -29,6 +32,7 @@ from server.generate.persistence import (
     persist_generation_record,
 )
 from server.models import GenerationRecord, LLMExchange
+from src.schemas import VerificationResult
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Session-factory helpers
@@ -160,6 +164,95 @@ def test_persist_generation_record_collects_image_files() -> None:
     assert rows[0].image_files == ["q3.png", "sq1.png"]
 
 
+def test_persist_generation_record_keeps_v2_envelope_out_of_question_and_sidecars() -> None:
+    """The stored question stays payload-only while revisioned trails remain sidecars."""
+    rows: list = []
+    params = GenerateParams(subject="math", skip_verify=False)
+    payload: dict[str, Any] = {
+        "id": "q-v2-persistence",
+        "題目": ["題幹"],
+        "image_base64": "transport-only",
+        "subquestions": [],
+    }
+    verification_trail = [
+        {"code": "verification_trail", "kind": "verification", "content_revision": 3}
+    ]
+    figure_policy_trail = [
+        {"code": "figure_policy", "kind": "spec", "content_revision": 3}
+    ]
+
+    asyncio.run(
+        persist_generation_record(
+            user_id=uuid.uuid4(),
+            generation_log_id=None,
+            subject="math",
+            params=params,
+            payload=payload,
+            verification_trail_json=verification_trail,
+            figure_policy_trail_json=figure_policy_trail,
+            session_factory=_make_factory(rows),
+        )
+    )
+
+    record = rows[0]
+    assert "image_base64" not in record.question_json
+    assert not {
+        "event",
+        "context",
+        "payload",
+        "event_seq",
+        "operation_id",
+        "call_id",
+    } & record.question_json.keys()
+    assert record.verification_trail_json == verification_trail
+    assert record.figure_policy_trail_json == figure_policy_trail
+
+
+def _contains_key(value: Any, key: str) -> bool:
+    if isinstance(value, dict):
+        return key in value or any(_contains_key(item, key) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_key(item, key) for item in value)
+    return False
+
+
+def test_revision_binding_stays_out_of_result_and_persisted_question_payloads(
+    tmp_path,
+) -> None:
+    rows: list = []
+    verification = VerificationResult.model_validate(
+        {
+            "passed": True,
+            "answer_match": True,
+            "details": "同一版本。",
+            "content_revision": 9,
+        }
+    )
+    question_payload = {
+        "id": "q-no-revision-leak",
+        "verification": verification.model_dump(mode="json"),
+    }
+    question = SimpleNamespace(
+        model_dump_json=lambda **_kwargs: json.dumps(question_payload),
+        圖片=None,
+        subquestions=[],
+    )
+
+    result_payload = question_to_event(question, SimpleNamespace(output_dir=tmp_path))
+
+    asyncio.run(
+        persist_generation_record(
+            user_id=uuid.uuid4(),
+            generation_log_id=None,
+            subject="math",
+            params=GenerateParams(subject="math"),
+            payload=result_payload,
+            session_factory=_make_factory(rows),
+        )
+    )
+
+    assert not _contains_key(result_payload, "content_revision")
+    assert not _contains_key(rows[0].question_json, "content_revision")
 def test_persist_generation_record_swallows_db_failure(caplog: pytest.LogCaptureFixture) -> None:
     """A broken session factory must not propagate — generation must continue."""
     params = GenerateParams(subject="math", skip_verify=True)

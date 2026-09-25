@@ -34,6 +34,10 @@ class VerificationTrailEntry(BaseModel):
     chart_verification: ChartVerificationTrail | None = None
     model: str
     timestamp: datetime
+    content_revision: int | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class VerificationTrailInitialEntry(BaseModel):
@@ -44,6 +48,10 @@ class VerificationTrailInitialEntry(BaseModel):
     question_id: str
     timestamp: datetime
     snapshot: dict[str, Any]
+    content_revision: int | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class VerificationTrailCorrectionEntry(BaseModel):
@@ -61,6 +69,10 @@ class VerificationTrailCorrectionEntry(BaseModel):
     )
     reason: CorrectionRejection | None = Field(
         default=None, exclude_if=lambda value: value is None,
+    )
+    content_revision: int | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
     )
 
 
@@ -130,12 +142,15 @@ def make_question_snapshot(question: Any) -> dict[str, Any]:
 def make_initial_trail_entry(
     question_id: str,
     question: Any,
+    *,
+    content_revision: int | None = None,
 ) -> VerificationTrailInitialEntry:
     """Build the initial snapshot entry for a question."""
     return VerificationTrailInitialEntry(
         question_id=question_id,
         timestamp=datetime.now(timezone.utc),
         snapshot=make_question_snapshot(question),
+        content_revision=content_revision,
     )
 
 
@@ -147,6 +162,7 @@ def make_correction_trail_entry(
     *,
     outcome: Literal["accepted", "rejected"] | None = None,
     reason: CorrectionRejection | None = None,
+    content_revision: int | None = None,
 ) -> VerificationTrailCorrectionEntry:
     """Build a correction snapshot entry for a completed retry pass."""
     return VerificationTrailCorrectionEntry(
@@ -157,6 +173,7 @@ def make_correction_trail_entry(
         snapshot=make_question_snapshot(question),
         outcome=outcome,
         reason=reason,
+        content_revision=content_revision,
     )
 
 
@@ -164,6 +181,8 @@ def make_verification_trail_entry(
     question_id: str,
     verification: Any,
     model: str,
+    *,
+    content_revision: int | None = None,
 ) -> VerificationTrailEntry:
     """Copy a parsed subject verifier result into the shared trail shape."""
     chart_verification = getattr(verification, "chart_verification", None)
@@ -184,4 +203,9 @@ def make_verification_trail_entry(
         chart_verification=chart_verification,
         model=model,
         timestamp=datetime.now(timezone.utc),
+        content_revision=(
+            content_revision
+            if content_revision is not None
+            else getattr(verification, "content_revision", None)
+        ),
     )

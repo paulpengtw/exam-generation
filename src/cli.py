@@ -18,6 +18,7 @@ from src.common.generation_core import (
     GenerationCancelled,
     _call_with_optional_scope,
     _callback_with_optional_scope,
+    _record_update_revision,
     generate_one_core,
     generate_with_corrections_core,
 )
@@ -76,7 +77,7 @@ from src.verifier import verify_question
 
 _GRADES: list[int] = load_grades(load_schemas())
 
-QuestionUpdateCallback = Callable[[ExamQuestion, str], None]
+QuestionUpdateCallback = Callable[[ExamQuestion, str], Any]
 VerificationTrailCallback = Callable[[VerificationTrailEntry], None]
 
 
@@ -84,10 +85,10 @@ def _emit_question_update(
     callback: QuestionUpdateCallback | None,
     question: ExamQuestion,
     phase: str,
-) -> None:
+) -> Any:
     if callback is None:
-        return
-    callback(question, phase)
+        return None
+    return callback(question, phase)
 
 
 def _emit_verification_trail(
@@ -96,6 +97,7 @@ def _emit_verification_trail(
     verification: Any,
     config: Config,
     scope: Any = None,
+    content_revision: int | None = None,
 ) -> None:
     if callback is not None:
         _callback_with_optional_scope(
@@ -104,6 +106,7 @@ def _emit_verification_trail(
                 question_id,
                 verification,
                 config.model_verify or config.model_execute,
+                content_revision=content_revision,
             ),
             scope=scope,
         )
@@ -525,6 +528,7 @@ def generate_one(
     curriculum_context: CurriculumContext | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     question_context: Any | None = None,
+    _revision_state: list[int | None] | None = None,
 ) -> ExamQuestion | str:
     """Generate a single exam question.
 
@@ -560,6 +564,7 @@ def generate_one(
             curriculum_context=curriculum_context,
             is_cancelled=is_cancelled,
             question_context=question_context,
+            _revision_state=_revision_state,
         )
 
     # Build prompts using the canonical math curriculum corpus.
@@ -589,6 +594,7 @@ def generate_one(
     owner = question_context or GenerationQuestionContext(
         run_id=new_run_id(), question_id=question_id, index=0
     )
+    content_revision = _revision_state[0] if _revision_state is not None else None
     text_scope = new_operation_scope(owner, kind="text")
 
     # Generate question via LLM
@@ -603,7 +609,13 @@ def generate_one(
 
     # Parse into ExamQuestion
     question = _parse_question(raw_json, question_id, params, config.model_execute)
-    _emit_question_update(on_question_update, question, "draft")
+    content_revision = _record_update_revision(
+        on_question_update,
+        question,
+        "draft",
+        content_revision,
+        _revision_state,
+    )
 
     # Render image before verification so verifier can see the PNG
     chart_image_path: str | None = None
@@ -629,7 +641,13 @@ def generate_one(
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
-            _emit_question_update(on_question_update, question, "image")
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "image",
+                content_revision,
+                _revision_state,
+            )
 
     # Cancel boundary: check before verify.
     if is_cancelled is not None and is_cancelled():
@@ -641,7 +659,11 @@ def generate_one(
         if on_trail_entry is not None:
             _callback_with_optional_scope(
                 on_trail_entry,
-                make_initial_trail_entry(question_id, question),
+                make_initial_trail_entry(
+                    question_id,
+                    question,
+                    content_revision=content_revision,
+                ),
                 scope=verify_scope,
             )
         print(f"  Verifying question {question_id}...", file=sys.stderr)
@@ -652,14 +674,26 @@ def generate_one(
             question,
             chart_image_path=chart_image_path,
             curriculum_context=curriculum_context,
+            content_revision=content_revision,
             scope=verify_scope,
         )
         emit_stage(obs, "verifier", "verify", "end", scope=verify_scope)
         question.verification = result
         _emit_verification_trail(
-            on_trail_entry, question_id, result, config, scope=verify_scope
+            on_trail_entry,
+            question_id,
+            result,
+            config,
+            scope=verify_scope,
+            content_revision=content_revision,
         )
-        _emit_question_update(on_question_update, question, "verified")
+        content_revision = _record_update_revision(
+            on_question_update,
+            question,
+            "verified",
+            content_revision,
+            _revision_state,
+        )
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
 
@@ -738,6 +772,7 @@ def generate_with_corrections(
     curriculum_context: CurriculumContext | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     question_context: Any | None = None,
+    _revision_state: list[int | None] | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
@@ -776,11 +811,13 @@ def generate_with_corrections(
             curriculum_context=curriculum_context,
             is_cancelled=is_cancelled,
             question_context=question_context,
+            _revision_state=_revision_state,
         )
 
     owner = question_context or GenerationQuestionContext(
         run_id=new_run_id(), question_id=question_id, index=0
     )
+    revision_state = _revision_state if _revision_state is not None else [None]
     question = generate_one(
         config=config,
         client=client,
@@ -807,6 +844,7 @@ def generate_with_corrections(
         curriculum_context=curriculum_context,
         is_cancelled=is_cancelled,
         question_context=owner,
+        _revision_state=revision_state,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
@@ -816,6 +854,7 @@ def generate_with_corrections(
     previous_correction_operation_id: str | None = None
     previous_image_operation_id: str | None = None
     previous_verify_operation_id: str | None = None
+    content_revision = revision_state[0]
 
     for attempt in range(max_retries):
         if is_cancelled is not None and is_cancelled():
@@ -867,7 +906,13 @@ def generate_with_corrections(
             retry=attempt + 1,
             scope=correction_scope,
         )
-        _emit_question_update(on_question_update, question, "corrected")
+        content_revision = _record_update_revision(
+            on_question_update,
+            question,
+            "corrected",
+            content_revision,
+            revision_state,
+        )
 
         # Re-render only when chart_spec actually changed
         new_chart_image_path: str | None = None
@@ -897,7 +942,13 @@ def generate_with_corrections(
             if rendered:
                 question.圖片 = f"{question_id}.png"
                 new_chart_image_path = rendered
-                _emit_question_update(on_question_update, question, "image")
+                content_revision = _record_update_revision(
+                    on_question_update,
+                    question,
+                    "image",
+                    content_revision,
+                    revision_state,
+                )
         elif question.圖片:
             p = config.output_dir / question.圖片
             new_chart_image_path = str(p) if p.exists() else None
@@ -910,6 +961,7 @@ def generate_with_corrections(
                     question,
                     attempt + 1,
                     config.model_correct or config.model_execute,
+                    content_revision=content_revision,
                 ),
                 scope=correction_scope,
             )
@@ -934,6 +986,7 @@ def generate_with_corrections(
                 client, question,
                 chart_image_path=new_chart_image_path,
                 curriculum_context=curriculum_context,
+                content_revision=content_revision,
                 scope=verify_scope,
             )
             emit_stage(
@@ -946,9 +999,20 @@ def generate_with_corrections(
             )
             question.verification = result
             _emit_verification_trail(
-                on_trail_entry, question_id, result, config, scope=verify_scope
+                on_trail_entry,
+                question_id,
+                result,
+                config,
+                scope=verify_scope,
+                content_revision=content_revision,
             )
-            _emit_question_update(on_question_update, question, "verified")
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "verified",
+                content_revision,
+                revision_state,
+            )
             status = "PASSED" if result.passed else "FAILED"
             print(
                 f"  Re-verification {status}: {result.details[:100]}",

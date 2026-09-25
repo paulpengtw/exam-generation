@@ -19,6 +19,10 @@ class FigurePolicySpecEntry(BaseModel):
     label: str
     effective_figure_kind: str
     timestamp: datetime
+    content_revision: int | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class FigurePolicyCollisionEntry(BaseModel):
@@ -31,6 +35,10 @@ class FigurePolicyCollisionEntry(BaseModel):
     right: str
     effective_figure_kind: str
     timestamp: datetime
+    content_revision: int | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class FigurePolicyRepairEntry(BaseModel):
@@ -46,6 +54,10 @@ class FigurePolicyRepairEntry(BaseModel):
     succeeded: bool
     error: str | None = None
     timestamp: datetime
+    content_revision: int | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class FigurePolicyWarningEntry(BaseModel):
@@ -60,6 +72,10 @@ class FigurePolicyWarningEntry(BaseModel):
     right: str | None = None
     effective_figure_kind: str | None = None
     timestamp: datetime
+    content_revision: int | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class FigurePolicyDataInconsistencyEntry(BaseModel):
@@ -79,6 +95,10 @@ class FigurePolicyDataInconsistencyEntry(BaseModel):
     duplicate_image_shipped: bool = True
     message: str
     timestamp: datetime
+    content_revision: int | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 FigurePolicyTrailEvent = Annotated[
@@ -95,12 +115,19 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def make_spec_entry(question_id: str, label: str, spec: Any) -> FigurePolicySpecEntry:
+def make_spec_entry(
+    question_id: str,
+    label: str,
+    spec: Any,
+    *,
+    content_revision: int | None = None,
+) -> FigurePolicySpecEntry:
     return FigurePolicySpecEntry(
         question_id=question_id,
         label=label,
         effective_figure_kind=effective_figure_kind(spec),
         timestamp=_now(),
+        content_revision=content_revision,
     )
 
 
@@ -109,6 +136,8 @@ def make_collision_entry(
     left: str,
     right: str,
     effective_kind: str,
+    *,
+    content_revision: int | None = None,
 ) -> FigurePolicyCollisionEntry:
     return FigurePolicyCollisionEntry(
         question_id=question_id,
@@ -116,6 +145,7 @@ def make_collision_entry(
         right=right,
         effective_figure_kind=effective_kind,
         timestamp=_now(),
+        content_revision=content_revision,
     )
 
 
@@ -127,6 +157,8 @@ def make_repair_entry(
     forbidden_kinds: list[str],
     succeeded: bool,
     error: str | None = None,
+    *,
+    content_revision: int | None = None,
 ) -> FigurePolicyRepairEntry:
     return FigurePolicyRepairEntry(
         question_id=question_id,
@@ -137,6 +169,7 @@ def make_repair_entry(
         succeeded=succeeded,
         error=error,
         timestamp=_now(),
+        content_revision=content_revision,
     )
 
 
@@ -148,6 +181,7 @@ def make_warning_entry(
     left: str | None = None,
     right: str | None = None,
     effective_kind: str | None = None,
+    content_revision: int | None = None,
 ) -> FigurePolicyWarningEntry:
     return FigurePolicyWarningEntry(
         question_id=question_id,
@@ -157,6 +191,7 @@ def make_warning_entry(
         right=right,
         effective_figure_kind=effective_kind,
         timestamp=_now(),
+        content_revision=content_revision,
     )
 
 
@@ -165,6 +200,8 @@ def make_data_inconsistency_entry(
     left: str,
     right: str,
     conflict: FigureDataInconsistency,
+    *,
+    content_revision: int | None = None,
 ) -> FigurePolicyDataInconsistencyEntry:
     message = (
         f"Warning: cross-figure data inconsistency for {conflict.series} at "
@@ -187,4 +224,5 @@ def make_data_inconsistency_entry(
         unit=conflict.unit,
         message=message,
         timestamp=_now(),
+        content_revision=content_revision,
     )

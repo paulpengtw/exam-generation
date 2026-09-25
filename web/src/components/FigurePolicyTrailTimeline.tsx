@@ -60,6 +60,11 @@ export default function FigurePolicyTrailTimeline({
                 <p className="mt-1 whitespace-pre-wrap text-amber-800">{entry.message}</p>
               </>
             )}
+            {entry.content_revision !== undefined && entry.content_revision !== null && (
+              <p className="mt-1">
+                {t("card.content_revision")}：{entry.content_revision}
+              </p>
+            )}
             <time dateTime={entry.timestamp} className="mt-1 block text-xs text-gray-500">
               {entry.timestamp}
             </time>

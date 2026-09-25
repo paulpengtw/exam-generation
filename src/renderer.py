@@ -416,7 +416,12 @@ def render_image(
                 on_error(_msg)
             return None
         try:
-            return html_renderer.render(html, output_path)
+            return _call_with_optional_scope(
+                html_renderer.render,
+                html,
+                output_path,
+                scope=scope,
+            )
         except Exception as e:
             _msg = f"Playwright render failed: {e}"
             print(f"  Warning: {_msg}", file=sys.stderr)

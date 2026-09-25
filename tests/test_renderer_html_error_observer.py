@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 
+from src.common.generation_events import OperationScope, QuestionContext, new_operation_scope
 from src.renderer import render_image
 
 
@@ -65,3 +66,26 @@ def test_html_mode_on_error_none_does_not_crash(tmp_path: pathlib.Path) -> None:
         llm_client=None,
     )
     assert result is None
+
+
+def test_html_provider_receives_the_image_operation_scope(tmp_path: pathlib.Path) -> None:
+    received: list[OperationScope | None] = []
+
+    class ScopedRenderer:
+        def render(self, html: str, output_path, width: int = 800, *, scope=None) -> str:
+            del html, width
+            received.append(scope)
+            pathlib.Path(output_path).write_bytes(b"png")
+            return str(output_path)
+
+    question = QuestionContext(run_id="RUN", question_id="q-1", index=0)
+    scope = new_operation_scope(question, kind="image")
+    result = render_image(
+        {"render_mode": "html", "html": "<html><body>test</body></html>"},
+        tmp_path / "out.png",
+        html_renderer=ScopedRenderer(),
+        scope=scope,
+    )
+
+    assert result == str(tmp_path / "out.png")
+    assert received == [scope]

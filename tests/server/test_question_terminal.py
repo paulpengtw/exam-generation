@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -991,8 +992,12 @@ def test_terminal_verification_failed_review() -> None:
     q.verification = MagicMock()
     q.verification.passed = False
 
+    def generate_with_trail(*_args: Any, **kwargs: Any) -> Any:
+        kwargs["on_trail_entry"]({"kind": "verification", "content_revision": 1})
+        return q
+
     with (
-        patch.object(ctx.spec, "do_generate", return_value=q),
+        patch.object(ctx.spec, "do_generate", side_effect=generate_with_trail),
         patch.object(ctx.spec, "extract_prior_scope", return_value=None),
         patch.object(observability_mod, "record_generation_outcome"),
     ):
@@ -1030,8 +1035,12 @@ def test_terminal_verification_passed_review() -> None:
     q.verification = MagicMock()
     q.verification.passed = True
 
+    def generate_with_trail(*_args: Any, **kwargs: Any) -> Any:
+        kwargs["on_trail_entry"]({"kind": "verification", "content_revision": 1})
+        return q
+
     with (
-        patch.object(ctx.spec, "do_generate", return_value=q),
+        patch.object(ctx.spec, "do_generate", side_effect=generate_with_trail),
         patch.object(ctx.spec, "extract_prior_scope", return_value=None),
         patch.object(observability_mod, "record_generation_outcome"),
     ):
@@ -1046,3 +1055,94 @@ def test_terminal_verification_passed_review() -> None:
     payload = terminal["payload"]
     review = payload["review"]
     assert review["status"] == "passed", f"expected passed, got {review['status']!r}"
+
+
+@pytest.mark.parametrize(
+    ("skip_verify", "passed", "trail_revision", "question_revision", "expected_status"),
+    [
+        (True, False, None, 4, "skipped"),
+        (False, True, 4, 99, "passed"),
+        (False, False, 4, 99, "failed"),
+        (False, True, None, 4, "unknown"),
+        (False, True, 3, 4, "unknown"),
+    ],
+)
+def test_terminal_review_uses_latest_verification_trail_revision(
+    skip_verify: bool,
+    passed: bool,
+    trail_revision: int | None,
+    question_revision: int,
+    expected_status: str,
+) -> None:
+    from server.generate.service import _build_question_terminal_payload
+
+    question = SimpleNamespace(
+        verification=SimpleNamespace(passed=passed, content_revision=question_revision),
+        圖片=None,
+        chart_spec=None,
+        subquestions=[],
+    )
+    params = SimpleNamespace(
+        subject="math",
+        skip_verify=skip_verify,
+        sub_question_count=None,
+        subquestion_configs=None,
+    )
+    verification_trail = (
+        []
+        if trail_revision is None
+        else [{"kind": "verification", "content_revision": trail_revision}]
+    )
+
+    payload = _build_question_terminal_payload(
+        question_id="q-trail-review",
+        termination_reason="normal",
+        has_final=True,
+        final_revision=4,
+        question=question,
+        params=params,
+        output_dir=None,
+        verification_trail=verification_trail,
+    )
+
+    assert payload["review"]["status"] == expected_status
+    if expected_status in {"passed", "failed", "skipped"}:
+        assert payload["review"]["content_revision"] == 4
+    else:
+        assert payload["review"]["reason"] in {
+            "no verification evidence",
+            "no matching verification evidence",
+        }
+
+
+def test_terminal_does_not_reuse_verdict_from_an_older_content_revision() -> None:
+    from server.generate.service import _build_question_terminal_payload
+
+    question = SimpleNamespace(
+        verification=SimpleNamespace(passed=True, content_revision=2),
+        圖片=None,
+        chart_spec=None,
+        subquestions=[],
+    )
+    params = SimpleNamespace(
+        subject="math",
+        skip_verify=False,
+        sub_question_count=None,
+        subquestion_configs=None,
+    )
+
+    payload = _build_question_terminal_payload(
+        question_id="q-stale-review",
+        termination_reason="normal",
+        has_final=True,
+        final_revision=2,
+        question=question,
+        params=params,
+        output_dir=None,
+        verification_trail=[{"kind": "verification", "content_revision": 1}],
+    )
+
+    assert payload["review"] == {
+        "status": "unknown",
+        "reason": "no matching verification evidence",
+    }
