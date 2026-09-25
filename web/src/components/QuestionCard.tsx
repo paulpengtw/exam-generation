@@ -11,9 +11,13 @@ import type {
   ReferenceExampleRecordShape,
 } from "../hooks/useGenerate";
 import { useModificationRun } from "../hooks/useModificationRun";
+import { projectModificationEvidence } from "../lib/modificationStream";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
-import { exportModificationWorkspace } from "../lib/workspace/adapters/modificationWorkspace";
+import {
+  canonicalQuestionIdentity,
+  exportModificationWorkspace,
+} from "../lib/workspace/adapters/modificationWorkspace";
 import type { ModificationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 import { useT } from "../i18n/useT";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
@@ -28,16 +32,25 @@ import VerificationTrailTimeline from "./VerificationTrailTimeline";
 import FigurePolicyTrailTimeline from "./FigurePolicyTrailTimeline";
 import ReferenceExampleRecordSection from "./ReferenceExampleRecordSection";
 import InteractiveItemViewer, { type InteractionSubmission } from "./InteractiveItemViewer";
+import type { QuestionEvidence } from "../lib/generationEvidence";
 
 export interface QuestionCardProps {
-  question: ExamQuestion;
+  question?: ExamQuestion;
+  /** Manifest position index (0-based); required when evidence is provided */
+  index?: number;
+  /** Per-question evidence from the v2 stream */
+  evidence?: QuestionEvidence;
   recordId?: string;
+  route?: string;
+  subject?: string;
   phase?: DraftPhase;
   isFinal?: boolean;
   trail?: VerificationTrailEntry[] | null;
   figurePolicyTrail?: FigurePolicyTrailEntry[] | null;
   referenceExampleRecord?: ReferenceExampleRecordShape | null;
   onInteractionSubmit?: (submission: InteractionSubmission) => void;
+  recoveredModification?: ModificationWorkspaceSnapshot;
+  modificationRestoreEligible?: boolean;
 }
 
 interface VerificationShape {
@@ -83,6 +96,13 @@ function getModificationSubmitError(error: unknown, fallback: string): Modificat
 
 function getQuestionId(question: ExamQuestion): string {
   return question.id && question.id.length > 0 ? question.id : "question";
+}
+
+function getContentRevision(question: ExamQuestion): number | null {
+  const revision = (question as ExamQuestion & { content_revision?: unknown }).content_revision;
+  return typeof revision === "number" && Number.isInteger(revision) && revision > 0
+    ? revision
+    : null;
 }
 
 function comparePoints(
@@ -420,13 +440,14 @@ function SubQuestionBlock({
 }
 
 function ModificationParticipation({
-  recordId, questionId, annotations, replacement,
+  route, subject, recordId, questionId, contentIdentity, contentRevision, eligibility,
+  annotations, replacement,
 }: Omit<ModificationWorkspaceSnapshot, "kind" | "version">) {
   const exportWorkspace = useCallback(() => exportModificationWorkspace({
-    recordId, questionId,
+    route, subject, recordId, questionId, contentIdentity, contentRevision, eligibility,
     annotations: annotations.map(({ segments, instruction }) => ({ segments, instruction })),
     replacement,
-  }), [recordId, questionId, annotations, replacement]);
+  }), [route, subject, recordId, questionId, contentIdentity, contentRevision, eligibility, annotations, replacement]);
   useSurfaceParticipation("history.modification", {
     readiness: "ready",
     hasEditableState: annotations.length > 0,
@@ -436,41 +457,200 @@ function ModificationParticipation({
   return null;
 }
 
+function processingLabel(processing: QuestionEvidence["processing"], t: (k: string) => string): string {
+  switch (processing) {
+    case "waiting": return t("card.waiting");
+    case "running": return t("card.generating");
+    case "ended": return t("card.ended");
+    case "unknown": return t("card.unknown");
+    default: return t("card.unknown");
+  }
+}
+
+function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
+  const t = useT();
+  const procLabel = processingLabel(evidence.processing, t);
+  const reviewStatus = evidence.review.status;
+  const reviewLabel =
+    reviewStatus === "passed" ? t("card.review_passed")
+    : reviewStatus === "failed" ? t("card.review_failed")
+    : reviewStatus === "skipped" ? t("card.review_skipped")
+    : t("card.review_unknown");
+
+  let receiptLabel: string;
+  if (evidence.finalPending) {
+    receiptLabel = t("card.receipt_pending");
+  } else if (evidence.finalMissing) {
+    receiptLabel = t("card.receipt_missing");
+  } else if (evidence.content.receipt === "final") {
+    receiptLabel = t("card.receipt_final");
+  } else if (evidence.content.receipt === "draft") {
+    receiptLabel = t("card.receipt_draft");
+  } else {
+    receiptLabel = t("card.receipt_missing");
+  }
+
+  const terminationLabel = evidence.terminal
+    ? evidence.terminal.termination_reason === "normal" ? t("card.termination_normal")
+      : evidence.terminal.termination_reason === "failed" ? t("card.termination_failed")
+      : t("card.termination_cancelled")
+    : null;
+
+  return (
+    <div className="sentry-unmask flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
+      <span data-testid="evidence-processing-status">{procLabel}</span>
+      {terminationLabel && <span>{terminationLabel}</span>}
+      <span data-testid="evidence-review-status">{reviewLabel}</span>
+      <span data-testid="evidence-receipt-status">{receiptLabel}</span>
+    </div>
+  );
+}
+
 export default function QuestionCard({
   question: initialQuestion,
+  index,
+  evidence,
   recordId,
+  route,
+  subject,
   phase = "verified",
   isFinal = true,
   trail = [],
   figurePolicyTrail = [],
   referenceExampleRecord,
   onInteractionSubmit,
+  recoveredModification,
+  modificationRestoreEligible,
 }: QuestionCardProps) {
   const t = useT();
+
   const [showSolution, setShowSolution] = useState(!isFinal);
   const cardRef = useRef<HTMLDivElement>(null);
-  const nextAnnotationId = useRef(0);
-  const [annotations, setAnnotations] = useState<ModificationAnnotation[]>([]);
+  const [latchedRecoveredModification] = useState(recoveredModification);
+  const recoveredAnnotations = latchedRecoveredModification?.annotations ?? [];
+  const nextAnnotationId = useRef(recoveredAnnotations.length);
+  const [annotations, setAnnotations] = useState<ModificationAnnotation[]>(() =>
+    recoveredAnnotations.map((annotation, id) => ({ ...annotation, id })),
+  );
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<ModificationSubmitError | null>(null);
-  const modificationRun = useModificationRun(recordId);
+  const modificationRun = useModificationRun(
+    recordId,
+    latchedRecoveredModification?.replacement ?? null,
+  );
   const modificationResult = modificationRun.result;
   const isRunInFlight = modificationRun.status === "running";
+  const restoredEligibility = latchedRecoveredModification === undefined || modificationRestoreEligible === true;
 
+  const previousResultRef = useRef(modificationResult);
   useEffect(() => {
-    if (modificationRun.result === null) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the prior review round when the SSE stream publishes a replacement question
+    if (
+      modificationRun.result === null ||
+      modificationRun.result === previousResultRef.current
+    ) {
+      previousResultRef.current = modificationRun.result;
+      return;
+    }
     setAnnotations([]);
     setSelectionError(null);
     setSubmitError(null);
+    previousResultRef.current = modificationRun.result;
   }, [modificationRun.result]);
 
-  const question = modificationResult?.question ?? initialQuestion;
-  const verification = question.verification as VerificationShape | undefined;
+
+  // Non-hook derived values needed by hooks below (may be null before early returns)
+  const resolvedQuestion = initialQuestion ?? evidence?.content.question ?? null;
+  const _question = (modificationResult?.question ?? resolvedQuestion) as ExamQuestion | null;
+  const isSocialStudies = (_question?.subquestions?.length ?? 0) > 0;
+  const verification = _question?.verification as VerificationShape | undefined;
   const passed = Boolean(verification?.passed);
-  const selectionEnabled = isFinal && (passed || modificationResult !== null);
+  const selectionEnabled = restoredEligibility && isFinal && (passed || modificationResult !== null);
+
+  const mathCodes = useMemo(() => _question ? getLearningContentCodes(_question) : [], [_question]);
+
+  const ssGrades = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => [s.年級]) : [],
+    [_question, isSocialStudies]
+  );
+  const ssSubjects = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.科目) : [],
+    [_question, isSocialStudies]
+  );
+  const ssCoreComp = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.核心素養) : [],
+    [_question, isSocialStudies]
+  );
+  const ssScienceComp = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.科學能力 ?? []) : [],
+    [_question, isSocialStudies]
+  );
+  const ssLcCodes = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.學習內容.map((lc) => lc.編碼)) : [],
+    [_question, isSocialStudies]
+  );
+  const ssLpCodes = useMemo(
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.學習表現.map((lp) => lp.編碼)) : [],
+    [_question, isSocialStudies]
+  );
+
+  const contentIdentity = useMemo(() => canonicalQuestionIdentity(_question), [_question]);
+  const modificationEligibility = useMemo(() => ({
+    status: "completed" as const,
+    verified: passed,
+    eligible: selectionEnabled,
+  }), [passed, selectionEnabled]);
+  const showModificationWorkspace = Boolean(
+    selectionEnabled || annotations.length > 0 || latchedRecoveredModification,
+  );
+
+  const handleSelectionMouseUp = useCallback(() => {
+    if (!selectionEnabled || isRunInFlight || !cardRef.current) return;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+
+    const segments = serializeSelection(cardRef.current, selection.getRangeAt(0));
+    if (segments.length === 0) {
+      setSelectionError(t("card.emptySelection"));
+      selection.removeAllRanges();
+      return;
+    }
+
+    setSelectionError(null);
+    setSubmitError(null);
+    setAnnotations((previous) => [
+      ...previous,
+      {
+        id: nextAnnotationId.current++,
+        segments,
+        instruction: "",
+      },
+    ]);
+    selection.removeAllRanges();
+  }, [isRunInFlight, selectionEnabled, t]);
+
+
+  // Placeholder: evidence provided but no content yet
+  if (evidence && evidence.content.receipt === "none") {
+    const posLabel = index !== undefined
+      ? (t("card.position") as string).replace("{n}", String(index + 1))
+      : `${index ?? ""}`;
+    const procLabel = processingLabel(evidence.processing, t);
+    return (
+      <div
+        data-testid="question-card-placeholder"
+        className="rounded-lg border bg-white p-3 shadow-sm text-sm sentry-unmask"
+      >
+        <div className="font-medium text-gray-500">{posLabel}</div>
+        <div className="text-gray-400 mt-1">{procLabel}</div>
+      </div>
+    );
+  }
+
+  if (!resolvedQuestion) return null;
+
+  // At this point resolvedQuestion and _question are guaranteed non-null
+  const question = _question!;
   const questionId = getQuestionId(question);
-  const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
   const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
   const figurePolicyWarnings = (figurePolicyTrail ?? []).filter(
     (
@@ -486,32 +666,6 @@ export default function QuestionCard({
     ? t("card.final")
     : t(`card.phase_${phase}` as Parameters<typeof t>[0]);
 
-  const mathCodes = useMemo(() => getLearningContentCodes(question), [question]);
-
-  const ssGrades = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => [s.年級]) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssSubjects = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.科目) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssCoreComp = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.核心素養) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssScienceComp = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.科學能力 ?? []) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssLcCodes = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.學習內容.map((lc) => lc.編碼)) : [],
-    [question.subquestions, isSocialStudies]
-  );
-  const ssLpCodes = useMemo(
-    () => isSocialStudies ? aggregateUnique(question.subquestions!, (s) => s.學習表現.map((lp) => lp.編碼)) : [],
-    [question.subquestions, isSocialStudies]
-  );
   const eraTags = isIccsEra ? (
     <>
       {question.內容領域 && <Chip label={question.內容領域} tone="blue" />}
@@ -554,30 +708,6 @@ export default function QuestionCard({
     }).catch(() => op.end("failed"));
   };
 
-  const handleSelectionMouseUp = useCallback(() => {
-    if (!selectionEnabled || isRunInFlight || !cardRef.current) return;
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
-
-    const segments = serializeSelection(cardRef.current, selection.getRangeAt(0));
-    if (segments.length === 0) {
-      setSelectionError(t("card.emptySelection"));
-      selection.removeAllRanges();
-      return;
-    }
-
-    setSelectionError(null);
-    setSubmitError(null);
-    setAnnotations((previous) => [
-      ...previous,
-      {
-        id: nextAnnotationId.current++,
-        segments,
-        instruction: "",
-      },
-    ]);
-    selection.removeAllRanges();
-  }, [isRunInFlight, selectionEnabled, t]);
 
   const handleInstructionChange = (annotationId: number, instruction: string) => {
     setAnnotations((previous) => previous.map((annotation) => (
@@ -593,6 +723,7 @@ export default function QuestionCard({
 
   const canSubmit = Boolean(
     recordId &&
+    restoredEligibility &&
     !isRunInFlight &&
     annotations.length > 0 &&
     annotations.every((annotation) => annotation.instruction.trim().length > 0),
@@ -617,14 +748,21 @@ export default function QuestionCard({
 
   return (
     <div
+      data-testid="question-card-content"
       ref={cardRef}
       onMouseUp={handleSelectionMouseUp}
       className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3"
     >
+      {evidence && <EvidenceStatusLine evidence={evidence} />}
       {recordId && (
         <ModificationParticipation
-          recordId={recordId}
+          route={route ?? window.location.pathname}
+          subject={subject ?? (isSocialStudies ? "social_studies" : "math")}
+          recordId={modificationResult?.record_id ?? recordId}
           questionId={questionId}
+          contentIdentity={contentIdentity}
+          contentRevision={getContentRevision(question)}
+          eligibility={modificationEligibility}
           annotations={annotations}
           replacement={modificationResult}
         />
@@ -634,16 +772,12 @@ export default function QuestionCard({
           runState="running"
           completedCount={0}
           requestedTotal={1}
-          subject="math"
-          stageEvents={[]}
-          subQuestionCount={null}
+          evidence={projectModificationEvidence(modificationRun.stageEvents)}
           startedAt={null}
           finishedAt={null}
           availableTargets={[]}
           onJump={() => {}}
           onFeedback={null}
-          mode="modification"
-          modificationStageEvents={modificationRun.stageEvents}
         />
       )}
 
@@ -875,7 +1009,7 @@ export default function QuestionCard({
         </>
       )}
 
-      {selectionEnabled && (
+      {showModificationWorkspace && (
         <section aria-label={t("card.annotations")} className="space-y-2 border-t border-gray-100 pt-2">
           {annotations.length > 0 && (
             <ul aria-label={t("card.annotations")} className="flex flex-wrap gap-1.5">
@@ -896,10 +1030,11 @@ export default function QuestionCard({
                       <span>{segment.field_path}</span>
                       <span>{segment.start}–{segment.end}</span>
                       <span>「{segment.quoted_text}」</span>
-                      {segmentIndex === 0 && (
+                      {recordId && segmentIndex === 0 && (
                         <button
                           type="button"
                           onClick={() => handleDeleteAnnotation(annotation.id)}
+                          disabled={!restoredEligibility || isRunInFlight}
                           aria-label={`${t("card.deleteAnnotation")} ${annotationIndex + 1}`}
                           className="ml-auto rounded px-1 text-indigo-700 hover:bg-indigo-200"
                         >
@@ -907,7 +1042,7 @@ export default function QuestionCard({
                         </button>
                       )}
                     </div>
-                    {segmentIndex === 0 && (
+                    {recordId && segmentIndex === 0 && (
                       <div className="space-y-1">
                         <label
                           htmlFor={`modification-instruction-${annotation.id}`}
@@ -920,6 +1055,7 @@ export default function QuestionCard({
                           aria-label={`${t("card.modificationInstruction")} ${annotationIndex + 1}`}
                           value={annotation.instruction}
                           onChange={(event) => handleInstructionChange(annotation.id, event.target.value)}
+                          disabled={!restoredEligibility || isRunInFlight}
                           placeholder={t("card.modificationInstructionPlaceholder")}
                           rows={2}
                           className="w-full rounded border border-indigo-200 bg-white px-2 py-1 text-sm font-normal text-gray-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
@@ -934,37 +1070,39 @@ export default function QuestionCard({
           {selectionError && (
             <p role="alert" className="text-sm text-red-700">{selectionError}</p>
           )}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!canSubmit || isRunInFlight}
-              className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isRunInFlight ? t("card.submittingModifications") : t("card.submitModifications")}
-            </button>
-            {displayedSubmitError && (() => {
-              const isStaleBase = displayedSubmitError.code === "stale_base";
-              const titleKey = displayedSubmitError.code
-                ? MODIFICATION_ERROR_TITLE_KEYS[displayedSubmitError.code]
-                : undefined;
-              return (
-                <div
-                  role="alert"
-                  data-error-code={displayedSubmitError.code}
-                  data-severity={isStaleBase ? "warning" : "error"}
-                  className={isStaleBase
-                    ? "rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-                    : "rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800"}
-                >
-                  <p className="font-semibold">
-                    {t(titleKey ?? "card.modificationErrorTitle")}
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap">{displayedSubmitError.message}</p>
-                </div>
-              );
-            })()}
-          </div>
+          {recordId && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!canSubmit || isRunInFlight}
+                className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isRunInFlight ? t("card.submittingModifications") : t("card.submitModifications")}
+              </button>
+              {displayedSubmitError && (() => {
+                const isStaleBase = displayedSubmitError.code === "stale_base";
+                const titleKey = displayedSubmitError.code
+                  ? MODIFICATION_ERROR_TITLE_KEYS[displayedSubmitError.code]
+                  : undefined;
+                return (
+                  <div
+                    role="alert"
+                    data-error-code={displayedSubmitError.code}
+                    data-severity={isStaleBase ? "warning" : "error"}
+                    className={isStaleBase
+                      ? "rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                      : "rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800"}
+                  >
+                    <p className="font-semibold">
+                      {t(titleKey ?? "card.modificationErrorTitle")}
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap">{displayedSubmitError.message}</p>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </section>
       )}
 

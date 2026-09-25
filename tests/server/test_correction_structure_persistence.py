@@ -28,7 +28,25 @@ def _stream_events(response: Any) -> list[tuple[str, dict[str, Any]]]:
         }
         if "event" in fields:
             raw_data = fields.get("data", "").strip() or "{}"
-            events.append((fields["event"].strip(), json.loads(raw_data)))
+            data = json.loads(raw_data)
+            if isinstance(data, dict) and "context" in data and "payload" in data:
+                # The merged stream protocol wraps every v2 event. Keep the
+                # assertions below focused on the event payload while exposing
+                # question-scoped context fields (for example question_id).
+                context = data["context"]
+                payload = data["payload"]
+                if isinstance(context, dict) and isinstance(payload, dict):
+                    data = payload
+                    if fields["event"].strip() in {"stage", "trail"}:
+                        data = {
+                            **payload,
+                            **(
+                                {"question_id": context["question_id"]}
+                                if "question_id" in context
+                                else {}
+                            ),
+                        }
+            events.append((fields["event"].strip(), data))
     return events
 
 
@@ -262,6 +280,7 @@ def _resolved_payload(
     body = response.json()
     payload = body["payload"]
     payload["drawn"] = body["drawn"]
+    payload["stream_version"] = 2
     configs = payload.get("subquestion_configs")
     if isinstance(configs, list):
         payload["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)

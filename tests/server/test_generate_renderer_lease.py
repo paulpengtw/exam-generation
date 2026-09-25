@@ -235,8 +235,8 @@ def test_slice1_aborted_run_does_not_hold_renderer(tmp_path: Path) -> None:
         async for evt in stream:
             if (
                 evt["event"] == "pipeline"
-                and isinstance(evt.get("data"), dict)
-                and evt["data"].get("event_name") == "pipeline_start"
+                and isinstance(evt.get("payload"), dict)
+                and evt["payload"].get("event_name") == "pipeline_start"
             ):
                 break
 
@@ -414,8 +414,8 @@ def test_slice3_two_non_rendering_streams_start_promptly(tmp_path: Path) -> None
             ):
                 if (
                     evt["event"] == "pipeline"
-                    and isinstance(evt.get("data"), dict)
-                    and evt["data"].get("event_name") == "pipeline_start"
+                    and isinstance(evt.get("payload"), dict)
+                    and evt["payload"].get("event_name") == "pipeline_start"
                 ):
                     t_pipeline_start.append(time.monotonic() - t0)
                     break
@@ -488,12 +488,12 @@ def test_slice4_empty_pool_emits_acquire_events_and_warning(
         ):
             if (
                 evt["event"] == "stage"
-                and isinstance(evt.get("data"), dict)
-                and evt["data"].get("agent") == "renderer"
+                and isinstance(evt.get("payload"), dict)
+                and evt["payload"].get("agent") == "renderer"
             ):
-                if evt["data"]["status"] == "start":
+                if evt["payload"]["status"] == "start":
                     acquire_start_times.append(time.monotonic() - t0)
-                elif evt["data"]["status"] == "end":
+                elif evt["payload"]["status"] == "end":
                     acquire_end_times.append(time.monotonic() - t0)
 
         await putter
@@ -598,8 +598,8 @@ def test_slice5_cancel_during_pool_wait_skips_render_no_lost_renderer(
         async for evt in stream:
             if (
                 evt["event"] == "pipeline"
-                and isinstance(evt.get("data"), dict)
-                and evt["data"].get("event_name") == "pipeline_start"
+                and isinstance(evt.get("payload"), dict)
+                and evt["payload"].get("event_name") == "pipeline_start"
             ):
                 break
 
@@ -728,8 +728,8 @@ def test_slice6_busy_loop_does_not_lose_renderer(tmp_path: Path) -> None:
         async for evt in stream:
             if (
                 evt["event"] == "pipeline"
-                and isinstance(evt.get("data"), dict)
-                and evt["data"].get("event_name") == "pipeline_start"
+                and isinstance(evt.get("payload"), dict)
+                and evt["payload"].get("event_name") == "pipeline_start"
             ):
                 break
 
@@ -758,6 +758,111 @@ def test_slice6_busy_loop_does_not_lose_renderer(tmp_path: Path) -> None:
         assert pool.qsize() == N_RENDERERS, (
             f"pool must hold all {N_RENDERERS} renderers after render completes; "
             f"got {pool.qsize()} -- Race 1 leaks one, leaving pool at {N_RENDERERS - 1}"
+        )
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Slice 7 — publisher kwarg: stage events are v2 envelopes, batch-scoped
+# ---------------------------------------------------------------------------
+
+
+def test_slice7_renderer_lease_stage_events_are_v2_envelopes(tmp_path: Path) -> None:
+    """RendererLease with a publisher emits v2 envelopes for acquire events.
+
+    Constructs a RendererLease directly with a GenerationPublisher and an empty
+    pool so the acquire wait fires.  Asserts the queued items are v2 envelopes
+    {event, context, payload} with no question_id (batch scope) and no legacy
+    'data' key.
+    """
+
+    class _TrivialRenderer:
+        def render(self, html: str, output_path: Any, width: int = 800) -> str:
+            return str(output_path)
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        run_id = "test-run-v2-7"
+        from server.generate.publisher import GenerationPublisher  # noqa: PLC0415
+        from server.generate.renderer_lease import RendererLease  # noqa: PLC0415
+
+        publisher = GenerationPublisher(run_id=run_id, loop=loop, queue=queue)
+        pool: asyncio.Queue = asyncio.Queue()  # empty — forces acquire/start
+        cancel_event = threading.Event()
+
+        lease = RendererLease(pool, loop, cancel_event, queue, publisher=publisher)
+        real_renderer = _TrivialRenderer()
+
+        # Put the renderer into the pool after a short delay.
+        async def put_renderer() -> None:
+            await asyncio.sleep(0.15)
+            await pool.put(real_renderer)
+
+        putter = asyncio.create_task(put_renderer())
+
+        # lease.render() is blocking; run it in a thread executor.
+        await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: lease.render("<p>v2test</p>", Path("/tmp/v2test.png")),
+        )
+        await putter
+
+        # Collect items from queue.
+        items: list[dict] = []
+        while not queue.empty():
+            items.append(queue.get_nowait())
+
+        # Filter to stage events from the renderer acquire.
+        stage_items = [
+            it for it in items
+            if it.get("event") == "stage"
+            and isinstance(it.get("payload"), dict)
+            and it["payload"].get("agent") == "renderer"
+        ]
+
+        assert len(stage_items) >= 2, (
+            f"expected at least 2 stage events (start + end); "
+            f"got {len(stage_items)}: {[it.get('payload') for it in stage_items]}"
+        )
+
+        for item in stage_items:
+            # Must be v2 envelope shape.
+            assert "event" in item, f"missing 'event' key: {item}"
+            assert "context" in item, f"missing 'context' key (v2 required): {item}"
+            assert "payload" in item, f"missing 'payload' key (v2 required): {item}"
+            assert "data" not in item, (
+                f"legacy 'data' key must NOT be present in v2 envelope: {item}"
+            )
+
+            ctx = item["context"]
+            assert ctx["run_id"] == run_id, (
+                f"context.run_id must be {run_id!r}; got {ctx['run_id']!r}"
+            )
+            assert isinstance(ctx["event_seq"], int) and ctx["event_seq"] >= 1, (
+                f"context.event_seq must be a positive int; got {ctx['event_seq']!r}"
+            )
+            assert "question_id" not in ctx, (
+                "stage events are batch-scoped; question_id must NOT appear "
+                f"in context: {ctx}"
+            )
+
+            pl = item["payload"]
+            assert pl.get("type") == "stage", f"payload.type must be 'stage': {pl}"
+            assert pl.get("agent") == "renderer", f"payload.agent must be 'renderer': {pl}"
+            assert pl.get("stage") == "acquire", f"payload.stage must be 'acquire': {pl}"
+            assert pl.get("status") in ("start", "end"), (
+                f"payload.status must be 'start' or 'end': {pl}"
+            )
+            assert isinstance(pl.get("ts"), float), (
+                f"payload.ts must be a float timestamp: {pl}"
+            )
+
+        # Verify monotonic event_seq.
+        seqs = [it["context"]["event_seq"] for it in stage_items]
+        assert seqs == sorted(seqs), (
+            f"event_seq must be monotonically increasing; got {seqs}"
         )
 
     asyncio.run(run())

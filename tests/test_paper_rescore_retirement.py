@@ -37,8 +37,22 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RETIRED_TYPE = "封閉式建構反應題"
 
 
+class _CurrentBuildAuthority:
+    async def read(self) -> dict[str, object]:
+        return {
+            "schema": "exam-generation.release-policy/1",
+            "environment": "production",
+            "release_revision": 1,
+            "released_build_id": "test-build-x",
+            "admission": "open",
+            "supported_recovery_formats": [],
+        }
+
+
 def _social_generate_request(**params: str) -> object:
-    app = create_app()
+    app = create_app(
+        release_authority_source=_CurrentBuildAuthority(),  # type: ignore[arg-type]
+    )
     app.dependency_overrides[get_current_user] = lambda: User(
         id=uuid.uuid4(), email="paper-rescore@example.com"
     )
@@ -49,7 +63,12 @@ def _social_generate_request(**params: str) -> object:
     limiter.reset()
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
-            return client.get("/api/generate", params={"subject": "social_studies", **params})
+            gate_params = {"subject": "social_studies", "stream_version": 2, **params}
+            return client.get(
+                "/api/generate",
+                params=gate_params,
+                headers={"X-Frontend-Build-ID": "test-build-x"},
+            )
     finally:
         limiter.reset()
 

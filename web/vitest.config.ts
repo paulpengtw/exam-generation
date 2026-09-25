@@ -6,6 +6,10 @@ export default defineConfig({
   define: {
     // Ensure React picks up the development build (which exports act)
     "process.env.NODE_ENV": JSON.stringify("development"),
+    // Vite build-time defines — tests use stable placeholder values.
+    // Individual test files that need specific values use vi.stubGlobal().
+    __BUILD_ID__: JSON.stringify("test-build-id"),
+    __BUILD_ENVIRONMENT__: JSON.stringify("test"),
   },
   resolve: {
     dedupe: ["react", "react-dom"],

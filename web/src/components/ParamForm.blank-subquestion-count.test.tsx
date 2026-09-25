@@ -327,9 +327,11 @@ describe("ParamForm blank 小題數 confirmation", () => {
     expect(redrawPayload.drawn).toContain(
       "per_question_params[0].subquestion_configs[1].learning_content",
     );
-    expect(countRow()).toHaveTextContent("5");
-    expect(configSection()?.getAllByRole("listitem")).toHaveLength(5);
-    expect(screen.queryByText("FIRST-LC-1")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(countRow()).toHaveTextContent("5");
+      expect(configSection()?.getAllByRole("listitem")).toHaveLength(5);
+      expect(screen.queryByText("FIRST-LC-1")).not.toBeInTheDocument();
+    });
   });
 
   it("edits the resolved count and rebuilds slots through the resolver", async () => {
@@ -380,8 +382,10 @@ describe("ParamForm blank 小題數 confirmation", () => {
       expect.objectContaining(pinned),
     );
     expect(redraws).toEqual({ "per_question_params[0].sub_question_count": 1 });
-    expect(countRow()).toHaveTextContent("5");
-    expect(configSection()?.getAllByRole("listitem")).toHaveLength(5);
+    await waitFor(() => {
+      expect(countRow()).toHaveTextContent("5");
+      expect(configSection()?.getAllByRole("listitem")).toHaveLength(5);
+    });
   });
 
   it("shows the same drawn count row for natural-sciences slots", async () => {

@@ -130,11 +130,11 @@ def test_reference_example_entries_emitted_as_live_trail_events(tmp_path) -> Non
     trail_events = [ev for ev in events if ev["event"] == "trail"]
     ref_trail_events = [
         ev for ev in trail_events
-        if isinstance(ev.get("data"), dict)
-        and ev["data"].get("code") == "reference_example"
+        if isinstance(ev.get("payload"), dict)
+        and ev["payload"].get("code") == "reference_example"
     ]
     assert len(ref_trail_events) == len(entries)
-    emitted_payloads = [ev["data"] for ev in ref_trail_events]
+    emitted_payloads = [ev["payload"] for ev in ref_trail_events]
     assert emitted_payloads == entries
 
 
@@ -161,7 +161,7 @@ def test_cli_result_json_does_not_include_reference_example_record(tmp_path) -> 
     events = asyncio.run(collect())
     result_events = [ev for ev in events if ev["event"] == "result"]
     assert len(result_events) == 1
-    question_data = result_events[0]["data"]
+    question_data = result_events[0]["payload"]
     # The question JSON sent to the client must not include internal trail fields.
     assert "reference_example_record" not in question_data
     assert "reference_example_entries" not in question_data
