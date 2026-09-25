@@ -34,6 +34,7 @@ import ReferenceExampleRecordSection from "./ReferenceExampleRecordSection";
 import InteractiveItemViewer, { type InteractionSubmission } from "./InteractiveItemViewer";
 import {
   selectGenerationSteps,
+  type GenerationSlotReference,
   type QuestionEvidence,
   type GenerationOperationEvidence,
 } from "../lib/generationEvidence";
@@ -443,6 +444,31 @@ function SubQuestionBlock({
   );
 }
 
+function MissingSubQuestionBlock({
+  slot,
+}: {
+  slot: GenerationSlotReference;
+}) {
+  const t = useT();
+  const slotNumber = (slot.subquestion_index ?? 0) + 1;
+  const reason = slot.reason
+    ? t("card.missing_reason").replace("{reason}", slot.reason)
+    : null;
+  return (
+    <div
+      data-testid={`missing-subquestion-${slotNumber}`}
+      role="status"
+      className="rounded border border-dashed border-amber-300 bg-amber-50 p-3 space-y-1 text-sm text-amber-900"
+    >
+      <div className="font-semibold">
+        {t("card.subquestion")}{slotNumber}題
+      </div>
+      <div>{t("card.missing_subquestion")}</div>
+      {reason && <div className="text-xs">{reason}</div>}
+    </div>
+  );
+}
+
 function ModificationParticipation({
   route, subject, recordId, questionId, contentIdentity, contentRevision, eligibility,
   annotations, replacement,
@@ -499,11 +525,21 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
       : evidence.terminal.termination_reason === "failed" ? t("card.termination_failed")
       : t("card.termination_cancelled")
     : null;
+  const deliveryLabel = evidence.terminal
+    ? t(`card.delivery_${evidence.terminal.delivery_status}`)
+    : null;
+  const missingSlotCount = evidence.terminal?.missing.length ?? 0;
 
   return (
     <div className="sentry-unmask flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
       <span data-testid="evidence-processing-status">{procLabel}</span>
       {terminationLabel && <span>{terminationLabel}</span>}
+      {deliveryLabel && <span data-testid="evidence-delivery-status">{deliveryLabel}</span>}
+      {missingSlotCount > 0 && (
+        <span data-testid="evidence-missing-slots">
+          {t("card.delivery_missing_slots").replace("{n}", String(missingSlotCount))}
+        </span>
+      )}
       <span data-testid="evidence-review-status">{reviewLabel}</span>
       <span data-testid="evidence-receipt-status">{receiptLabel}</span>
     </div>
@@ -635,7 +671,13 @@ export default function QuestionCard({
   // Non-hook derived values needed by hooks below (may be null before early returns)
   const resolvedQuestion = initialQuestion ?? evidence?.content.question ?? null;
   const _question = (modificationResult?.question ?? resolvedQuestion) as ExamQuestion | null;
-  const isSocialStudies = (_question?.subquestions?.length ?? 0) > 0;
+  const isSocialStudies = Boolean(
+    _question && (
+      (_question.subquestions?.length ?? 0) > 0
+      || typeof _question.核心問題 === "string"
+      || typeof _question.文本 === "string"
+    ),
+  );
   const verification = _question?.verification as VerificationShape | undefined;
   const passed = Boolean(verification?.passed);
   const selectionEnabled = restoredEligibility && isFinal && (passed || modificationResult !== null);
@@ -742,6 +784,36 @@ export default function QuestionCard({
   const phaseLabel = isFinal
     ? t("card.final")
     : t(`card.phase_${phase}` as Parameters<typeof t>[0]);
+  const fixedSubquestionSlots = evidence?.terminal
+    ? [...evidence.terminal.expected]
+      .filter((slot) => slot.kind === "subquestion")
+      .sort((left, right) =>
+        (left.subquestion_index ?? Number.MAX_SAFE_INTEGER)
+        - (right.subquestion_index ?? Number.MAX_SAFE_INTEGER),
+      )
+    : [];
+  const subquestionRows = fixedSubquestionSlots.length > 0
+    ? fixedSubquestionSlots.map((slot) => {
+      const sub = (question.subquestions ?? []).find((candidate) => (
+        slot.subquestion_id !== undefined
+        && slot.subquestion_id !== null
+        && candidate.id === slot.subquestion_id
+      )) ?? (question.subquestions ?? []).find((candidate) => (
+        slot.subquestion_index !== undefined
+        && slot.subquestion_index !== null
+        && candidate.序號 === slot.subquestion_index + 1
+      ));
+      return {
+        slot,
+        sub,
+        index: slot.subquestion_index ?? Math.max(0, (sub?.序號 ?? 1) - 1),
+      };
+    })
+    : (question.subquestions ?? []).map((sub, index) => ({
+      slot: null,
+      sub,
+      index,
+    }));
 
   const eraTags = isIccsEra ? (
     <>
@@ -993,15 +1065,22 @@ export default function QuestionCard({
             </div>
           )}
           <div className="space-y-2">
-            {question.subquestions!.map((sub, index) => (
-              <SubQuestionBlock
-                key={sub.id}
-                sub={sub}
-                index={index}
-                showAnswersByDefault={!isFinal}
-                selectionEnabled={selectionEnabled}
-                onInteractionSubmit={onInteractionSubmit}
-              />
+            {subquestionRows.map(({ slot, sub, index }) => (
+              sub ? (
+                <SubQuestionBlock
+                  key={sub.id}
+                  sub={sub}
+                  index={index}
+                  showAnswersByDefault={!isFinal}
+                  selectionEnabled={selectionEnabled}
+                  onInteractionSubmit={onInteractionSubmit}
+                />
+              ) : slot ? (
+                <MissingSubQuestionBlock
+                  key={slot.subquestion_id ?? `slot-${index}`}
+                  slot={slot}
+                />
+              ) : null
             ))}
           </div>
         </div>

@@ -5,7 +5,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { RunEvidenceState } from "../lib/generationEvidence";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { applyV2Event, createRunEvidence, type RunEvidenceState } from "../lib/generationEvidence";
 import type { ExamQuestion } from "../lib/generationEvidence";
 
 // Build minimal RunEvidenceState with 2 questions, q_RUN_002 filled, q_RUN_001 waiting
@@ -143,5 +145,98 @@ describe("GeneratePage — v2 evidence rendering", () => {
     render(<GeneratePage subject="math" />);
     const placeholder = screen.getByTestId("question-card-placeholder");
     expect(placeholder).toHaveTextContent("card.generating");
+  });
+
+  it("keeps a partial grouped card in its manifest position with a fixed missing slot", () => {
+    const base = makeRunEvidence();
+    const partialQuestion = {
+      ...base.questions.q_RUN_002.content.question,
+      id: "q_RUN_002",
+      核心問題: "group core",
+      文本: "group passage",
+      題目: [],
+      正確解題分析: [],
+      subquestions: [
+        {
+          id: "q_RUN_002-sq001", 序號: 1, 年級: 8, 科目: [], 核心素養: [],
+          學習內容: [], 學習表現: [], 題型: "選擇題", 題目: "first",
+        },
+        {
+          id: "q_RUN_002-sq003", 序號: 3, 年級: 8, 科目: [], 核心素養: [],
+          學習內容: [], 學習表現: [], 題型: "選擇題", 題目: "third",
+        },
+      ],
+    } as unknown as ExamQuestion;
+    const q2 = base.questions.q_RUN_002;
+    generateState.runEvidence = {
+      ...base,
+      questions: {
+        ...base.questions,
+        q_RUN_002: {
+          ...q2,
+          content: { receipt: "final", revision: 3, question: partialQuestion, phase: "verified" },
+          terminal: {
+            termination_reason: "normal",
+            has_final: true,
+            final_revision: 3,
+            delivery_status: "partial",
+            expected: [
+              { kind: "subquestion", question_id: "q_RUN_002", subquestion_id: "q_RUN_002-sq001", subquestion_index: 0 },
+              { kind: "subquestion", question_id: "q_RUN_002", subquestion_id: "q_RUN_002-sq002", subquestion_index: 1 },
+              { kind: "subquestion", question_id: "q_RUN_002", subquestion_id: "q_RUN_002-sq003", subquestion_index: 2 },
+            ],
+            delivered: [
+              { kind: "subquestion", question_id: "q_RUN_002", subquestion_id: "q_RUN_002-sq001", subquestion_index: 0 },
+              { kind: "subquestion", question_id: "q_RUN_002", subquestion_id: "q_RUN_002-sq003", subquestion_index: 2 },
+            ],
+            missing: [
+              { kind: "subquestion", question_id: "q_RUN_002", subquestion_id: "q_RUN_002-sq002", subquestion_index: 1, reason: "subquestion not delivered" },
+            ],
+            review: { status: "skipped", content_revision: 3 },
+          },
+          review: { status: "skipped", revision: 3 },
+        },
+      },
+    };
+
+    render(<GeneratePage subject="social_studies" />);
+
+    expect(screen.getByTestId("question-card-placeholder")).toBeInTheDocument();
+    expect(screen.getByTestId("missing-subquestion-2")).toBeInTheDocument();
+    expect(screen.getByText("third")).toBeInTheDocument();
+  });
+
+  it("renders both fixed-position cards from the real social fixture replay", () => {
+    const lines = readFileSync(
+      resolve(__dirname, "../../../tests/fixtures/generation_v2/social_groups_interleaved.jsonl"),
+      "utf-8",
+    ).trim().split("\n").map((line) => JSON.parse(line) as {
+      event: string;
+      context: Record<string, unknown>;
+      payload: Record<string, unknown>;
+    });
+    const started = lines[0];
+    let state = createRunEvidence({
+      runId: String(started.context.run_id),
+      total: Number(started.payload.total),
+      manifest: (started.payload.questions as Array<Record<string, unknown>>).map((question) => ({
+        index: Number(question.index),
+        questionId: String(question.question_id),
+      })),
+    });
+    for (const line of lines.slice(1)) {
+      state = applyV2Event(state, {
+        kind: "v2",
+        event: { name: line.event, context: line.context, payload: line.payload },
+      });
+    }
+    generateState.runEvidence = state;
+
+    render(<GeneratePage subject="social_studies" />);
+
+    expect(screen.getAllByTestId("question-card-content")).toHaveLength(2);
+    expect(screen.getByTestId("missing-subquestion-2")).toBeInTheDocument();
+    expect(screen.getByText("文本 A")).toBeInTheDocument();
+    expect(screen.getByText("文本 B")).toBeInTheDocument();
   });
 });

@@ -490,6 +490,240 @@ def test_terminal_image_slot_missing(tmp_path: Path) -> None:
     assert len(payload["missing"]) == 1
 
 
+def test_terminal_social_group_keeps_fixed_missing_subquestion_slot() -> None:
+    """A grouped final preserves slot 2 as missing between delivered 1 and 3."""
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    question_id = "social-group-fixed"
+    question = SimpleNamespace(
+        chart_spec=None,
+        image_spec=None,
+        圖片=None,
+        verification=None,
+        subquestions=[
+            SimpleNamespace(
+                id=f"{question_id}-sq001",
+                序號=1,
+                _plan_index=1,
+                chart_spec=None,
+                圖片=None,
+            ),
+            SimpleNamespace(
+                id=f"{question_id}-sq003",
+                序號=3,
+                _plan_index=3,
+                chart_spec=None,
+                圖片=None,
+            ),
+        ],
+    )
+    params = SimpleNamespace(
+        subject="social_studies",
+        skip_verify=True,
+        sub_question_count=3,
+        subquestion_configs=[SimpleNamespace(content_type=None) for _ in range(3)],
+    )
+
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason="normal",
+        has_final=True,
+        final_revision=3,
+        question=question,
+        params=params,
+        output_dir=None,
+        announced_slots=[
+            {"subquestion_index": 0, "id": f"{question_id}-sq001", "序號": 1},
+            {"subquestion_index": 1, "id": f"{question_id}-sq002", "序號": 2},
+            {"subquestion_index": 2, "id": f"{question_id}-sq003", "序號": 3},
+        ],
+    )
+
+    assert payload["delivery_status"] == "partial"
+    assert [slot["kind"] for slot in payload["expected"]] == [
+        "subquestion",
+        "subquestion",
+        "subquestion",
+    ]
+    assert [slot["subquestion_id"] for slot in payload["delivered"]] == [
+        f"{question_id}-sq001",
+        f"{question_id}-sq003",
+    ]
+    assert [slot["subquestion_id"] for slot in payload["missing"]] == [
+        f"{question_id}-sq002",
+    ]
+
+
+def test_terminal_social_group_uses_announced_manifest_over_resolved_count() -> None:
+    """A plan manifest, rather than the resolved count, defines fixed slots."""
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    question_id = "social-group-announced"
+    question = SimpleNamespace(
+        chart_spec=None,
+        image_spec=None,
+        圖片=None,
+        verification=None,
+        subquestions=[
+            SimpleNamespace(
+                id=f"{question_id}-sq001",
+                序號=1,
+                _plan_index=1,
+                chart_spec=None,
+                圖片=None,
+            ),
+            SimpleNamespace(
+                id=f"{question_id}-sq003",
+                序號=3,
+                _plan_index=3,
+                chart_spec=None,
+                圖片=None,
+            ),
+        ],
+    )
+    params = SimpleNamespace(
+        subject="social_studies",
+        skip_verify=True,
+        sub_question_count=3,
+        subquestion_configs=[SimpleNamespace(content_type=None) for _ in range(3)],
+    )
+    announced_slots = [
+        {"subquestion_index": 0, "id": f"{question_id}-sq001", "序號": 1},
+        {"subquestion_index": 2, "id": f"{question_id}-sq003", "序號": 3},
+    ]
+
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason="normal",
+        has_final=True,
+        final_revision=3,
+        question=question,
+        params=params,
+        output_dir=None,
+        announced_slots=announced_slots,
+        resolved_subquestion_count=3,
+    )
+
+    assert [slot["subquestion_id"] for slot in payload["expected"]] == [
+        f"{question_id}-sq001",
+        f"{question_id}-sq003",
+    ]
+    assert [slot["subquestion_index"] for slot in payload["expected"]] == [0, 2]
+    assert payload["missing"] == []
+
+
+def test_terminal_failed_before_plan_falls_back_to_resolved_count() -> None:
+    """A draftless failed group still attributes its resolved fixed slots."""
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    question_id = "social-group-no-plan"
+    params = SimpleNamespace(
+        subject="social_studies",
+        skip_verify=True,
+        sub_question_count=2,
+        subquestion_configs=[SimpleNamespace(content_type=None) for _ in range(2)],
+    )
+
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason="failed",
+        has_final=False,
+        final_revision=None,
+        question=None,
+        params=params,
+        output_dir=None,
+        announced_slots=None,
+        resolved_subquestion_count=2,
+    )
+
+    assert payload["delivery_status"] == "none"
+    assert [slot["subquestion_id"] for slot in payload["expected"]] == [
+        f"{question_id}-sq001",
+        f"{question_id}-sq002",
+    ]
+    assert [slot["subquestion_id"] for slot in payload["missing"]] == [
+        f"{question_id}-sq001",
+        f"{question_id}-sq002",
+    ]
+
+
+def test_terminal_social_group_tracks_adopted_image_by_fixed_slot() -> None:
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    question_id = "social-group-image"
+    question = SimpleNamespace(
+        chart_spec=None,
+        image_spec=None,
+        圖片=None,
+        verification=None,
+        subquestions=[
+            SimpleNamespace(
+                id=f"{question_id}-sq001",
+                序號=1,
+                _plan_index=1,
+                chart_spec=object(),
+                圖片="social-group-image_sq1.png",
+            ),
+            SimpleNamespace(
+                id=f"{question_id}-sq002",
+                序號=2,
+                _plan_index=2,
+                chart_spec=None,
+                圖片=None,
+            ),
+            SimpleNamespace(
+                id=f"{question_id}-sq003",
+                序號=3,
+                _plan_index=3,
+                chart_spec=None,
+                圖片=None,
+            ),
+        ],
+    )
+    params = SimpleNamespace(
+        subject="social_studies",
+        skip_verify=True,
+        sub_question_count=3,
+        subquestion_configs=[
+            SimpleNamespace(content_type="純文字", image_generation_mode="gpt_image"),
+            SimpleNamespace(content_type="純文字", image_generation_mode="html"),
+            SimpleNamespace(content_type="純文字", image_generation_mode="html"),
+        ],
+    )
+
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason="normal",
+        has_final=True,
+        final_revision=4,
+        question=question,
+        params=params,
+        output_dir=None,
+        announced_slots=[
+            {"subquestion_index": 0, "id": f"{question_id}-sq001", "序號": 1},
+            {"subquestion_index": 1, "id": f"{question_id}-sq002", "序號": 2},
+            {"subquestion_index": 2, "id": f"{question_id}-sq003", "序號": 3},
+        ],
+    )
+
+    assert payload["delivery_status"] == "partial"
+    assert payload["missing"] == [{
+        "kind": "image",
+        "question_id": question_id,
+        "subquestion_id": f"{question_id}-sq001",
+        "subquestion_index": 0,
+        "reason": "image not delivered",
+    }]
+
+
 # ---------------------------------------------------------------------------
 # Verification status reflected in review
 # ---------------------------------------------------------------------------

@@ -535,8 +535,10 @@ def _parse_subquestion(
         if raw_question_type not in tuple(member.value for member in QuestionType):
             raise SubquestionParseError("題型欄位不是可辨識的題型")
         result = SubQuestion(
-            id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
-            序號=sq_raw.get("序號", i),
+            # The model may describe the slot, but it never owns its identity.
+            # The normalized plan position is the only routing source.
+            id=f"{question_id}-sq{i:03d}",
+            序號=i,
             年級=sq_raw.get("年級", params.grade),
             科目=sq_raw.get("科目", [params.科目.value]),
             核心素養=sq_raw.get("核心素養", []),
@@ -865,7 +867,11 @@ def _render_subquestion_images(
         )
         print(f"  Rendering subquestion image: {img_path}", file=sys.stderr)
         image_scope = (
-            new_operation_scope(scope, kind="image", subquestion_index=plan_index)
+            new_operation_scope(
+                scope,
+                kind="image",
+                subquestion_index=plan_index - 1,
+            )
             if scope is not None else None
         )
         _on_render_error, _render_failed = make_render_error_sink(obs, scope=image_scope)
@@ -1587,6 +1593,7 @@ _SS_SPEC = SubjectGenerationSpec(
     image_question_text_fn=lambda q: "\n".join(q.題目) or q.文本,
     verify_fn=verify_question,
     correct_fn=correct_question,
+    fixed_subquestion_identity=True,
 )
 
 

@@ -215,3 +215,21 @@ def test_run_context_has_snapshot_ledger_field() -> None:
 
     fields = {f.name for f in dataclasses.fields(_RunContext)}
     assert "snapshot_ledger" in fields
+
+
+def test_slot_manifest_is_deep_copied_and_first_manifest_wins() -> None:
+    from server.generate.snapshot_ledger import QuestionSnapshotLedger
+
+    ledger = QuestionSnapshotLedger()
+    slots = [{"subquestion_index": 0, "id": "q_abc_001-sq001", "序號": 1}]
+
+    ledger.record_slot_manifest("q_abc_001", slots)
+    slots[0]["id"] = "mutated"
+    ledger.record_slot_manifest(
+        "q_abc_001",
+        [{"subquestion_index": 0, "id": "replacement", "序號": 1}],
+    )
+
+    assert ledger.get_slot_manifest("q_abc_001") == [
+        {"subquestion_index": 0, "id": "q_abc_001-sq001", "序號": 1}
+    ]

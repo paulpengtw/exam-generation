@@ -305,8 +305,9 @@ def emit_plan(
     sub_question_total: int,
     *,
     scope: OperationScope | None = None,
+    slots: list[dict[str, object]] | None = None,
 ) -> None:
-    """Emit the resolved sub-question plan total to the observer (if any)."""
+    """Emit the resolved sub-question plan and optional fixed slot manifest."""
     if observer is None:
         return
     try:
@@ -316,6 +317,8 @@ def emit_plan(
             "sub_question_total": sub_question_total,
             "ts": time.time(),
         }
+        if slots is not None:
+            event["slots"] = slots
         if scope is not None:
             event.update({
                 "run_id": scope.run_id,

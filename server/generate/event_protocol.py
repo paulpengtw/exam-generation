@@ -51,6 +51,7 @@ class SlotRef(BaseModel):
     kind: Literal["subquestion", "image"]
     question_id: str
     subquestion_id: str | None = None
+    subquestion_index: int | None = None
     reason: str | None = None
 
 

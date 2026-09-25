@@ -17,6 +17,7 @@ import type {
   FigurePolicyTrailEntry,
   VerificationTrailEntry,
 } from "../hooks/useGenerate";
+import type { QuestionEvidence } from "../lib/generationEvidence";
 
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (s: { lang: string }) => unknown) =>
@@ -355,6 +356,57 @@ const ssQuestion: ExamQuestion = {
   正確解題分析: ["B"],
   verification: { passed: true },
 };
+
+describe("QuestionCard fixed social-studies slots", () => {
+  it("renders a missing middle slot and partial delivery evidence without compacting survivors", () => {
+    const thirdSub: SubQuestion = { ...ssSub, id: "ss1-sq003", 序號: 3, 題目: "Third question" };
+    const partialQuestion = { ...ssQuestion, subquestions: [ssSub, thirdSub] };
+    const evidence: QuestionEvidence = {
+      questionId: "ss1",
+      index: 0,
+      processing: "ended",
+      content: { receipt: "final", revision: 3, question: partialQuestion, phase: "verified" },
+      terminal: {
+        termination_reason: "normal",
+        has_final: true,
+        final_revision: 3,
+        delivery_status: "partial",
+        expected: [
+          { kind: "subquestion", question_id: "ss1", subquestion_id: "ss1-sq001", subquestion_index: 0 },
+          { kind: "subquestion", question_id: "ss1", subquestion_id: "ss1-sq002", subquestion_index: 1 },
+          { kind: "subquestion", question_id: "ss1", subquestion_id: "ss1-sq003", subquestion_index: 2 },
+        ],
+        delivered: [
+          { kind: "subquestion", question_id: "ss1", subquestion_id: "ss1-sq001", subquestion_index: 0 },
+          { kind: "subquestion", question_id: "ss1", subquestion_id: "ss1-sq003", subquestion_index: 2 },
+        ],
+        missing: [
+          {
+            kind: "subquestion",
+            question_id: "ss1",
+            subquestion_id: "ss1-sq002",
+            subquestion_index: 1,
+            reason: "subquestion not delivered",
+          },
+        ],
+        review: { status: "skipped", content_revision: 3 },
+      },
+      finalPending: false,
+      finalMissing: false,
+      review: { status: "skipped", revision: 3 },
+      trail: [],
+      figurePolicyTrail: [],
+      referenceExampleRecord: undefined,
+    };
+
+    render(<QuestionCard question={partialQuestion} evidence={evidence} isFinal />);
+
+    expect(screen.getByTestId("evidence-delivery-status")).toHaveTextContent("部分");
+    expect(screen.getByTestId("missing-subquestion-2")).toHaveTextContent("Sub-question unavailable");
+    expect(screen.getByText("Third question")).toBeInTheDocument();
+    expect(screen.getByText("Q3題")).toBeInTheDocument();
+  });
+});
 
 describe("QuestionCard rubric eras and legacy display", () => {
   it("renders legacy axis tags for a legacy social-studies record", () => {

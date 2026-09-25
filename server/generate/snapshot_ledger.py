@@ -85,10 +85,12 @@ def _content_signature(question: dict[str, Any], output_dir: Path | None) -> str
 
 
 class QuestionSnapshotLedger:
-    """Thread-safe per-question content revision tracker.
+    """Thread-safe per-question content revision and slot tracker.
 
     ``commit(question_dict, output_dir)`` returns ``(revision, snapshot)``
     where revision only increments when the effective content changes.
+    The first announced fixed-slot manifest is retained separately from content
+    revisions so terminal evidence can use the plan as its source of truth.
     """
 
     def __init__(self) -> None:
@@ -97,6 +99,8 @@ class QuestionSnapshotLedger:
         self._revisions: dict[str, int] = {}
         # question_id -> last-seen content signature
         self._signatures: dict[str, str] = {}
+        # question_id -> first announced fixed-slot manifest
+        self._slot_manifests: dict[str, list[dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------
     # Primary API
@@ -126,6 +130,27 @@ class QuestionSnapshotLedger:
                 rev = self._revisions[question_id]
 
         return rev, snapshot
+
+    def record_slot_manifest(
+        self,
+        question_id: str,
+        slots: list[dict[str, Any]],
+    ) -> None:
+        """Record the first plan slot manifest for *question_id*.
+
+        Plan announcements are authoritative and immutable for one question.
+        Store a deep copy so a producer cannot mutate terminal evidence after
+        the event has been observed.
+        """
+        manifest = copy.deepcopy(slots)
+        with self._lock:
+            self._slot_manifests.setdefault(question_id, manifest)
+
+    def get_slot_manifest(self, question_id: str) -> list[dict[str, Any]] | None:
+        """Return a deep copy of the announced slot manifest, if any."""
+        with self._lock:
+            manifest = self._slot_manifests.get(question_id)
+            return copy.deepcopy(manifest) if manifest is not None else None
 
     # ------------------------------------------------------------------
     # Legacy / compat helpers (kept for tests that pre-date commit())

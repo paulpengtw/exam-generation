@@ -17,12 +17,12 @@ def test_operation_and_call_scopes_are_run_unique_and_immutable() -> None:
     operation = new_operation_scope(
         question,
         kind="subquestion",
-        subquestion_index=2,
+        subquestion_index=0,
     )
     retry_operation = new_operation_scope(
         question,
         kind="subquestion",
-        subquestion_index=2,
+        subquestion_index=0,
         supersedes_operation_id=operation.operation_id,
     )
     first_call = new_call_scope(operation)
@@ -34,7 +34,7 @@ def test_operation_and_call_scopes_are_run_unique_and_immutable() -> None:
     assert first_call.call_id != retry_call.call_id
     assert first_call.call_id.startswith("RUN:")
     assert retry_call.retry_of_call_id == first_call.call_id
+    assert operation.subquestion_index == retry_operation.subquestion_index == 0
     assert retry_operation.supersedes_operation_id == operation.operation_id
     with pytest.raises(dataclasses.FrozenInstanceError):
         operation.operation_id = "mutated"  # type: ignore[misc]
-

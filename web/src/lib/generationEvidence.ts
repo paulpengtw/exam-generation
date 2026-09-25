@@ -17,14 +17,22 @@ import type { RunManifest, DecodedEvent } from "./generationStream";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface GenerationSlotReference {
+  kind: "subquestion" | "image";
+  question_id: string;
+  subquestion_id?: string | null;
+  subquestion_index?: number | null;
+  reason?: string;
+}
+
 export interface QuestionTerminalPayload {
   termination_reason: "normal" | "failed" | "cancelled";
   has_final: boolean;
   final_revision: number | null;
   delivery_status: "complete" | "partial" | "none" | "unknown";
-  expected: unknown[];
-  delivered: unknown[];
-  missing: unknown[];
+  expected: GenerationSlotReference[];
+  delivered: GenerationSlotReference[];
+  missing: GenerationSlotReference[];
   review: {
     status: "passed" | "failed" | "skipped" | "unknown";
     content_revision?: number | null;

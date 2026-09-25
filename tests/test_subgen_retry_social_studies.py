@@ -118,7 +118,8 @@ def test_failed_slot_is_retried_and_recovered() -> None:
     assert state.factory_calls == 4
     scopes = [scope for scope in state.scopes if scope is not None]
     assert len(scopes) == 4
-    slot_two = [scope for scope in scopes if scope.subquestion_index == 2]
+    assert {scope.subquestion_index for scope in scopes} == {0, 1, 2}
+    slot_two = [scope for scope in scopes if scope.subquestion_index == 1]
     assert len(slot_two) == 2
     assert slot_two[0].operation_id != slot_two[1].operation_id
     assert slot_two[1].supersedes_operation_id == slot_two[0].operation_id
@@ -181,3 +182,124 @@ def test_dropped_slot_logged_to_stderr(capsys) -> None:
     _generate(state, flaky, subgen_retries=2)
     captured = capsys.readouterr()
     assert "Sub-generator sub_generator#2 dropped after 3 attempt(s)" in captured.err
+
+
+def test_model_identity_is_ignored_and_slots_are_emitted_incrementally() -> None:
+    """The resolver-owned slot identity survives arbitrary model metadata."""
+
+    class _WrongIdentityClient(_FlakySubClient):
+        def generate_json(self, system, user, images=None, agent_override=None, **kwargs):
+            raw = super().generate_json(
+                system,
+                user,
+                images=images,
+                agent_override=agent_override,
+                **kwargs,
+            )
+            idx = _slot(agent_override)
+            raw["id"] = f"model-chosen-{idx}"
+            raw["序號"] = "model-not-an-integer"
+            return raw
+
+    state = _State()
+    updates: list[tuple[str, list[tuple[str, int, int | None]]]] = []
+
+    def capture(question: ExamQuestion, phase: str) -> None:
+        updates.append(
+            (
+                phase,
+                [
+                    (sub.id, sub.序號, sub._plan_index)
+                    for sub in question.subquestions
+                ],
+            )
+        )
+
+    config = Config(data_dir=Path("data"), subgen_retries=0)
+    params = sample_params(seed=11, content_type="純文字")
+    question = generate_one(
+        config=config,
+        client=_FakeTextClient(),
+        params=params,
+        question_id="ss_fixed_identity",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _WrongIdentityClient(state, 0, 0),
+        on_question_update=capture,
+    )
+
+    assert isinstance(question, ExamQuestion)
+    assert [sub.id for sub in question.subquestions] == [
+        "ss_fixed_identity-sq001",
+        "ss_fixed_identity-sq002",
+        "ss_fixed_identity-sq003",
+    ]
+    assert [sub.序號 for sub in question.subquestions] == [1, 2, 3]
+    assert [sub._plan_index for sub in question.subquestions] == [1, 2, 3]
+    assert len(updates) == 4
+    assert len(updates[0][1]) == 0
+    assert sorted(len(rows) for _phase, rows in updates) == [0, 1, 2, 3]
+
+
+def test_middle_slot_failure_keeps_fixed_identity_in_updates() -> None:
+    state = _State()
+    updates: list[list[tuple[str, int, int | None]]] = []
+
+    def capture(question: ExamQuestion, _phase: str) -> None:
+        updates.append(
+            [
+                (sub.id, sub.序號, sub._plan_index)
+                for sub in question.subquestions
+            ]
+        )
+
+    config = Config(data_dir=Path("data"), subgen_retries=0)
+    question = generate_one(
+        config=config,
+        client=_FakeTextClient(),
+        params=sample_params(seed=11, content_type="純文字"),
+        question_id="ss_fixed_gap",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _FlakySubClient(state, failing_slot=2, fail_times=99),
+        on_question_update=capture,
+    )
+
+    assert isinstance(question, ExamQuestion)
+    assert [sub.id for sub in question.subquestions] == [
+        "ss_fixed_gap-sq001",
+        "ss_fixed_gap-sq003",
+    ]
+    assert [sub.序號 for sub in question.subquestions] == [1, 3]
+    assert [sub._plan_index for sub in question.subquestions] == [1, 3]
+    assert updates[-1] == [
+        ("ss_fixed_gap-sq001", 1, 1),
+        ("ss_fixed_gap-sq003", 3, 3),
+    ]
+
+
+def test_plan_announces_zero_based_fixed_slot_manifest_before_subgenerators() -> None:
+    events: list[dict] = []
+
+    class _ObservedTextClient(_FakeTextClient):
+        def get_observer(self):
+            return events.append
+
+    state = _State()
+    question = generate_one(
+        config=Config(data_dir=Path("data"), subgen_retries=0),
+        client=_ObservedTextClient(),
+        params=sample_params(seed=11, content_type="純文字"),
+        question_id="ss_manifest",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _FlakySubClient(state, 0, 0),
+    )
+
+    assert isinstance(question, ExamQuestion)
+    plan = next(event for event in events if event["type"] == "plan")
+    assert plan["slots"] == [
+        {"subquestion_index": 0, "id": "ss_manifest-sq001", "序號": 1},
+        {"subquestion_index": 1, "id": "ss_manifest-sq002", "序號": 2},
+        {"subquestion_index": 2, "id": "ss_manifest-sq003", "序號": 3},
+    ]

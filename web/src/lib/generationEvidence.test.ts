@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   createRunEvidence,
   applyV2Event,
@@ -181,6 +183,60 @@ describe("applyV2Event — question_terminal", () => {
     });
     const next = applyV2Event(state, ev);
     expect(next.questions["q_001"].finalPending).toBe(true);
+  });
+
+  it("keeps fixed delivered 1/3 content and the missing slot identity", () => {
+    const state = freshRun();
+    const partialQuestion = {
+      ...sampleQuestion("q_001"),
+      核心問題: "core",
+      文本: "passage",
+      subquestions: [
+        { id: "q_001-sq001", 序號: 1, 題目: "first" },
+        { id: "q_001-sq003", 序號: 3, 題目: "third" },
+      ],
+    };
+    let next = applyV2Event(state, makeEvent(
+      "question_update",
+      { run_id: RUN_ID, event_seq: 7, question_id: "q_001", index: 0, content_revision: 3 },
+      { phase: "draft", question: partialQuestion },
+    ));
+    next = applyV2Event(next, makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 8, question_id: "q_001", index: 0 },
+      {
+        termination_reason: "normal",
+        has_final: true,
+        final_revision: 3,
+        delivery_status: "partial",
+        expected: [
+          { kind: "subquestion", question_id: "q_001", subquestion_id: "q_001-sq001", subquestion_index: 0 },
+          { kind: "subquestion", question_id: "q_001", subquestion_id: "q_001-sq002", subquestion_index: 1 },
+          { kind: "subquestion", question_id: "q_001", subquestion_id: "q_001-sq003", subquestion_index: 2 },
+        ],
+        delivered: [
+          { kind: "subquestion", question_id: "q_001", subquestion_id: "q_001-sq001", subquestion_index: 0 },
+          { kind: "subquestion", question_id: "q_001", subquestion_id: "q_001-sq003", subquestion_index: 2 },
+        ],
+        missing: [
+          {
+            kind: "subquestion",
+            question_id: "q_001",
+            subquestion_id: "q_001-sq002",
+            subquestion_index: 1,
+            reason: "subquestion not delivered",
+          },
+        ],
+        review: { status: "skipped", content_revision: 3 },
+      },
+    ));
+
+    expect(next.questions["q_001"].content.question?.subquestions?.map((sub) => sub.id)).toEqual([
+      "q_001-sq001",
+      "q_001-sq003",
+    ]);
+    expect(next.questions["q_001"].terminal?.missing[0].subquestion_id).toBe("q_001-sq002");
+    expect(next.questions["q_001"].terminal?.missing[0].subquestion_index).toBe(1);
   });
 
   it("does not set finalPending when terminal matches received final revision", () => {
@@ -424,5 +480,61 @@ describe("operation-scoped live activity", () => {
     expect(state.questions["q_001"].activity?.operations["O1"].status).toBe("superseded");
     expect(state.questions["q_001"].activity?.operations["O2"].status).toBe("active");
     expect(selectGenerationSteps(state.questions["q_001"])).toHaveLength(1);
+  });
+});
+
+describe("social fixed-slot fixture replay", () => {
+  it("keeps A's 1/3 draft, B's earlier final, and A's superseded retry activity", () => {
+    const lines = readFileSync(
+      resolve(__dirname, "../../../tests/fixtures/generation_v2/social_groups_interleaved.jsonl"),
+      "utf-8",
+    ).trim().split("\n").map((line) => JSON.parse(line) as {
+      event: string;
+      context: Record<string, unknown>;
+      payload: Record<string, unknown>;
+    });
+    const started = lines[0];
+    const startedPayload = started.payload;
+    let state = createRunEvidence({
+      runId: String(started.context.run_id),
+      total: Number(startedPayload.total),
+      manifest: (startedPayload.questions as Array<Record<string, unknown>>).map((question) => ({
+        index: Number(question.index),
+        questionId: String(question.question_id),
+      })),
+    });
+    let bFinalBeforeA = false;
+
+    for (const line of lines.slice(1)) {
+      state = applyV2Event(state, {
+        kind: "v2",
+        event: { name: line.event, context: line.context, payload: line.payload },
+      });
+      if (
+        state.questions["ss_RUN_002"]?.content.receipt === "final"
+        && state.questions["ss_RUN_001"]?.content.receipt !== "final"
+      ) {
+        bFinalBeforeA = true;
+      }
+    }
+
+    const a = state.questions["ss_RUN_001"];
+    expect(bFinalBeforeA).toBe(true);
+    expect(a.content.question?.subquestions?.map((sub) => sub.id)).toEqual([
+      "ss_RUN_001-sq001",
+      "ss_RUN_001-sq003",
+    ]);
+    expect(a.terminal?.delivery_status).toBe("partial");
+    expect(a.terminal?.missing.map((slot) => slot.subquestion_id)).toEqual([
+      "ss_RUN_001-sq002",
+    ]);
+    expect(Object.values(a.activity?.operations ?? {}).some(
+      (operation) => operation.supersedesOperationId !== null,
+    )).toBe(true);
+    expect(Object.values(a.activity?.calls ?? {}).some(
+      (call) => call.retryOfCallId !== null,
+    )).toBe(true);
+    expect(selectEndedCount(state)).toBe(2);
+    expect(selectFinalReceivedCount(state)).toBe(2);
   });
 });

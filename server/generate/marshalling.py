@@ -244,6 +244,7 @@ def make_publisher_observer(
                 sse_event,
                 question_id=question_context.question_id,
                 index=question_context.index,
+                subquestion_index=event.get("subquestion_index"),
                 operation_id=event.get("operation_id"),
                 call_id=event.get("call_id"),
                 retry_of_call_id=event.get("retry_of_call_id"),

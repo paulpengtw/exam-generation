@@ -167,6 +167,27 @@ def _emit_update(callback: Callable | None, question: Any, phase: str) -> None:
         callback(question, phase)
 
 
+def _apply_fixed_subquestion_identity(
+    subquestion: Any,
+    question_id: str,
+    plan_position: int,
+    *,
+    enabled: bool,
+) -> Any:
+    """Apply the program-owned identity for one normalized grouped slot."""
+    if not enabled:
+        return subquestion
+    slot_number = plan_position + 1
+    subquestion.id = f"{question_id}-sq{slot_number:03d}"
+    subquestion.序號 = slot_number
+    # ``_plan_index`` is intentionally one-based because subject config lists
+    # and the existing renderer filenames are one-based.  It is independent
+    # from the zero-based transport ``subquestion_index`` in the manifest.
+    if hasattr(subquestion, "_plan_index"):
+        subquestion._plan_index = slot_number
+    return subquestion
+
+
 def _emit_trail(
     callback: Callable[[VerificationTrailEvent], None] | None,
     question_id: str,
@@ -295,7 +316,7 @@ def build_subquestion_generation_prompts(
         prior_scopes=prior_scopes,
         core_question_callback=core_question_callback,
     )
-    subquestion_configs = getattr(params, "subquestion_configs", [])
+    subquestion_configs = getattr(params, "subquestion_configs", []) or []
     slot_count = params.sub_question_count or len(subquestion_configs) or 3
     plans = spec.make_fallback_sq_plans_fn(params, slot_count)
     sub_system = spec.build_subquestion_system_fn(stage_ctx)
@@ -413,7 +434,23 @@ def generate_one_core(
     question = spec.parse_text_shell_fn(text_raw, question_id, params, config.model_execute)
 
     sq_plans: list[dict] = text_raw.get("subquestions", [])
-    if params.sub_question_count is not None:
+    subquestion_configs = getattr(params, "subquestion_configs", [])
+    resolved_slot_count = (
+        params.sub_question_count
+        or len(subquestion_configs)
+        or len(sq_plans)
+        or 3
+    )
+    if spec.fixed_subquestion_identity:
+        sq_plans = sq_plans[:resolved_slot_count]
+        if len(sq_plans) < resolved_slot_count:
+            fallback_plans = spec.make_fallback_sq_plans_fn(
+                params, resolved_slot_count,
+            )
+            # Known limitation: padded 小題 skip the 文本生成器 coherence pass,
+            # so their angle may overlap a sibling 小題.
+            sq_plans.extend(fallback_plans[len(sq_plans):])
+    elif params.sub_question_count is not None:
         sq_plans = sq_plans[:params.sub_question_count]
         if len(sq_plans) < params.sub_question_count:
             fallback_plans = spec.make_fallback_sq_plans_fn(
@@ -423,10 +460,21 @@ def generate_one_core(
             # so their angle may overlap a sibling 小題.
             sq_plans.extend(fallback_plans[len(sq_plans):])
     if not sq_plans:
-        n = params.sub_question_count or 3
+        n = resolved_slot_count
         sq_plans = spec.make_fallback_sq_plans_fn(params, n)
 
-    emit_plan(obs, len(sq_plans), scope=text_scope)
+    slot_manifest = None
+    if spec.fixed_subquestion_identity:
+        slot_manifest = [
+            {
+                "subquestion_index": plan_position,
+                "id": f"{question_id}-sq{plan_position + 1:03d}",
+                "序號": plan_position + 1,
+            }
+            for plan_position in range(len(sq_plans))
+        ]
+    emit_plan(obs, len(sq_plans), scope=text_scope, slots=slot_manifest)
+    _emit_update(on_question_update, question, "draft")
 
     sub_system = spec.build_subquestion_system_fn(stage_ctx)
     few_shot_dir = config.data_dir / spec.few_shot_subdir / "few_shot"
@@ -441,7 +489,13 @@ def generate_one_core(
         agent_id = f"sub_generator#{idx}"
         if use_embedded_subquestions:
             try:
-                return spec.parse_subquestion_fn(sq_plan, question_id, params, idx)
+                parsed = spec.parse_subquestion_fn(sq_plan, question_id, params, idx)
+                return _apply_fixed_subquestion_identity(
+                    parsed,
+                    question_id,
+                    plan_position,
+                    enabled=spec.fixed_subquestion_identity,
+                )
             except SubquestionParseError as exc:
                 # Embedded responses predate the retrying LLM path; preserve
                 # their existing drop-on-parse-failure behavior while keeping
@@ -454,7 +508,6 @@ def generate_one_core(
                 )
                 return None
 
-        subquestion_configs = getattr(params, "subquestion_configs", [])
         slot_cfg = subquestion_configs[idx - 1] if 1 <= idx <= len(subquestion_configs) else None
         sub_user, sub_images, sub_ref_draws = spec.build_subquestion_user_fn(
             text_raw, params, few_shot_dir, sq_plan, slot_cfg,
@@ -465,7 +518,7 @@ def generate_one_core(
         first_sub_scope = new_operation_scope(
             owner,
             kind="subquestion",
-            subquestion_index=idx,
+            subquestion_index=plan_position,
         )
         if on_reference_example_entry is not None:
             _sub_now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
@@ -491,7 +544,7 @@ def generate_one_core(
                 else new_operation_scope(
                     owner,
                     kind="subquestion",
-                    subquestion_index=idx,
+                    subquestion_index=plan_position,
                     supersedes_operation_id=superseded_operation_id,
                 )
             )
@@ -539,6 +592,13 @@ def generate_one_core(
                         f"subquestion parser raised {type(e).__name__}"
                     )
                     result = None
+                if result is not None:
+                    result = _apply_fixed_subquestion_identity(
+                        result,
+                        question_id,
+                        plan_position,
+                        enabled=spec.fixed_subquestion_identity,
+                    )
                 if result is None and not last_failure_reason:
                     last_failure_reason = (
                         "subquestion response did not satisfy the expected schema"
@@ -637,9 +697,10 @@ def generate_one_core(
             result = future.result()
             if result is not None:
                 sq_results[idx] = result
+                question.subquestions = [sq_results[k] for k in sorted(sq_results)]
+                _emit_update(on_question_update, question, "draft")
 
     question.subquestions = [sq_results[k] for k in sorted(sq_results)]
-    _emit_update(on_question_update, question, "draft")
 
     # ── Cancel boundary: after subquestion generation, before image/verify ─
     if is_cancelled is not None and is_cancelled():

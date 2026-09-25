@@ -337,15 +337,19 @@ def _build_question_terminal_payload(
     params: GenerateParams,
     output_dir: Any,  # Path | None
     unknown_reason: str | None = None,
+    announced_slots: list[dict[str, Any]] | None = None,
+    resolved_subquestion_configs: list[Any] | None = None,
+    resolved_subquestion_count: int | None = None,
 ) -> dict[str, Any]:
     """Build a QuestionTerminalPayload dict; validated before returning.
 
     On any validation failure, returns a minimal 'unknown' delivery payload
     so the worker never crashes.
 
-    Spec notes:
-    - grouped subjects (SS/NS) get expected=[] for now (fixed slots are #744).
-    - operation/call ids are #743; sibling-independent error handling is #747.
+    Grouped social-studies slots are fixed by the resolved plan.  The helper
+    deliberately keeps renderer mode out of the obligation set: only an
+    adopted chart/image or an explicitly visual subquestion configuration
+    creates an image slot.
     """
     from pathlib import Path as _Path
 
@@ -373,32 +377,154 @@ def _build_question_terminal_payload(
             "content_revision": final_revision,
         }
 
-    # --- image slots (flat math only; #744 will handle grouped slots) ---
+    # --- fixed social-studies slots and image assets ---
     expected: list[dict] = []
     delivered: list[dict] = []
     missing: list[dict] = []
 
-    if has_final and question is not None:
+    is_social_group = getattr(params, "subject", None) == "social_studies"
+
+    def add_image_slot(
+        *,
+        subquestion_id: str | None,
+        filename: str | None,
+        adopted: bool,
+        reason: str,
+        subquestion_index: int | None = None,
+    ) -> None:
+        if not adopted and not filename:
+            return
+        slot: dict[str, Any] = {
+            "kind": "image",
+            "question_id": question_id,
+            "subquestion_id": subquestion_id,
+        }
+        if subquestion_index is not None:
+            slot["subquestion_index"] = subquestion_index
+        expected.append(slot)
+        if filename and output_dir is not None:
+            img_path = _Path(output_dir) / filename
+            if img_path.exists():
+                delivered.append(slot)
+                return
+        missing.append({**slot, "reason": reason})
+
+    if is_social_group:
+        configs = resolved_subquestion_configs
+        if configs is None:
+            configs = getattr(params, "subquestion_configs", None) or []
+            if isinstance(configs, str):
+                try:
+                    decoded_configs = json.loads(configs)
+                except (TypeError, json.JSONDecodeError):
+                    decoded_configs = []
+                configs = decoded_configs if isinstance(decoded_configs, list) else []
+
+        slot_manifest = announced_slots
+        if slot_manifest is None and not has_final and termination_reason == "failed":
+            slot_count = (
+                resolved_subquestion_count
+                or getattr(params, "sub_question_count", None)
+                or len(configs)
+                or 0
+            )
+            slot_manifest = [
+                {
+                    "subquestion_index": slot_index,
+                    "id": f"{question_id}-sq{slot_index + 1:03d}",
+                    "序號": slot_index + 1,
+                }
+                for slot_index in range(slot_count)
+            ]
+
+        visual_types = {"含圖片", "graphs/charts/tables"}
+
+        def config_value(config: Any, key: str) -> Any:
+            if isinstance(config, dict):
+                return config.get(key)
+            return getattr(config, key, None)
+
+        if slot_manifest is not None:
+            subquestions = (
+                list(getattr(question, "subquestions", []) or [])
+                if question is not None
+                else []
+            )
+            by_id = {
+                getattr(sub, "id", None): sub
+                for sub in subquestions
+                if getattr(sub, "id", None)
+            }
+            for position, raw_slot in enumerate(slot_manifest):
+                slot_index = raw_slot.get("subquestion_index")
+                if not isinstance(slot_index, int) or slot_index < 0:
+                    slot_index = position
+                raw_id = raw_slot.get("id") or raw_slot.get("subquestion_id")
+                subquestion_id = (
+                    raw_id
+                    if isinstance(raw_id, str) and raw_id
+                    else f"{question_id}-sq{slot_index + 1:03d}"
+                )
+                sub_slot = {
+                    "kind": "subquestion",
+                    "question_id": question_id,
+                    "subquestion_id": subquestion_id,
+                    "subquestion_index": slot_index,
+                }
+                expected.append(sub_slot)
+                sub = by_id.get(subquestion_id)
+                if sub is None:
+                    missing.append({**sub_slot, "reason": "subquestion not delivered"})
+                else:
+                    delivered.append(sub_slot)
+
+                if has_final and question is not None:
+                    config = configs[slot_index] if slot_index < len(configs) else None
+                    adopted = bool(
+                        sub is not None
+                        and (
+                            getattr(sub, "chart_spec", None) is not None
+                            or getattr(sub, "image_spec", None) is not None
+                        )
+                    )
+                    explicitly_visual = bool(
+                        config is not None
+                        and (
+                            config_value(config, "content_type") in visual_types
+                            or config_value(config, "figure_kind")
+                        )
+                    )
+                    add_image_slot(
+                        subquestion_id=subquestion_id,
+                        filename=getattr(sub, "圖片", None) if sub is not None else None,
+                        adopted=adopted or explicitly_visual,
+                        reason="image not delivered",
+                        subquestion_index=slot_index,
+                    )
+
+        if has_final and question is not None:
+            add_image_slot(
+                subquestion_id=None,
+                filename=getattr(question, "圖片", None),
+                adopted=(
+                    getattr(question, "chart_spec", None) is not None
+                    or getattr(question, "image_spec", None) is not None
+                ),
+                reason="image not delivered",
+            )
+    elif has_final and question is not None:
         # An image slot exists when the pipeline adopted an image
         # (i.e. chart_spec or image_spec is non-None on the final question)
         has_image_spec = (
             getattr(question, "chart_spec", None) is not None
             or getattr(question, "image_spec", None) is not None
         )
-        # Also check 圖片 field — it's set when pipeline wrote the PNG path
-        img_filename: str | None = getattr(question, "圖片", None)
-
-        if has_image_spec or img_filename:
-            slot = {"kind": "image", "question_id": question_id, "subquestion_id": None}
-            expected.append(slot)
-            if img_filename and output_dir is not None:
-                img_path = _Path(output_dir) / img_filename
-                if img_path.exists():
-                    delivered.append(slot)
-                else:
-                    missing.append(slot)
-            else:
-                missing.append(slot)
+        add_image_slot(
+            subquestion_id=None,
+            filename=getattr(question, "圖片", None),
+            adopted=has_image_spec,
+            reason="image not delivered",
+        )
 
     # --- delivery_status ---
     if not has_final:
@@ -476,11 +602,20 @@ def _worker_one_body(
     )
     figure_policy_recorder = ctx.figure_policy_recorder
     reference_example_recorder = ctx.reference_example_recorder
+    publisher_observer = make_publisher_observer(ctx.publisher, ctx.manifest[i])
+
+    def observe_worker_event(event: dict[str, Any]) -> None:
+        if event.get("type") == "plan":
+            slots = event.get("slots")
+            if isinstance(slots, list) and all(isinstance(slot, dict) for slot in slots):
+                ctx.snapshot_ledger.record_slot_manifest(
+                    ctx.manifest[i].question_id,
+                    slots,
+                )
+        publisher_observer(event)
+
     question_client.set_observer(
-        make_combined_observer(
-            make_publisher_observer(ctx.publisher, ctx.manifest[i]),
-            worker_recorder,
-        )
+        make_combined_observer(observe_worker_event, worker_recorder)
     )
     # Wrap emit_question_update to commit to the snapshot ledger and carry
     # content_revision in every question_update context (slice 5).
@@ -543,6 +678,8 @@ def _worker_one_body(
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
     _terminal_status = "failed"  # updated before each exit
+    question_id = ctx.manifest[i].question_id
+    rng_params: Any | None = None
     try:
         rng_params = _resolved_worker_params(
             i,
@@ -558,7 +695,6 @@ def _worker_one_body(
             )
 
         # Site 3: generate via registry (replaces if/elif generate calls)
-        question_id = ctx.manifest[i].question_id
         question = ctx.spec.do_generate(
             rng_params,
             ctx.overrides,
@@ -637,6 +773,9 @@ def _worker_one_body(
             question=question,
             params=ctx.params,
             output_dir=ctx.config.output_dir,
+            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
+            resolved_subquestion_configs=getattr(rng_params, "subquestion_configs", None),
+            resolved_subquestion_count=getattr(rng_params, "sub_question_count", None),
         )
         ctx.publisher.publish(
             SSEEventName.QUESTION_TERMINAL,
@@ -655,6 +794,7 @@ def _worker_one_body(
             question=None,
             params=ctx.params,
             output_dir=ctx.config.output_dir,
+            announced_slots=ctx.snapshot_ledger.get_slot_manifest(_qid_cancel),
             unknown_reason="cancelled before completion",
         )
         ctx.publisher.publish(
@@ -675,6 +815,7 @@ def _worker_one_body(
             ),
         )
         logger.exception("worker_one error (index=%d)", i)
+        terminal_params = rng_params if rng_params is not None else ctx.params
         _failed_payload = _build_question_terminal_payload(
             question_id=question_id,
             termination_reason="failed",
@@ -683,6 +824,13 @@ def _worker_one_body(
             question=None,
             params=ctx.params,
             output_dir=ctx.config.output_dir,
+            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
+            resolved_subquestion_configs=getattr(
+                terminal_params, "subquestion_configs", None
+            ),
+            resolved_subquestion_count=getattr(
+                terminal_params, "sub_question_count", None
+            ),
             unknown_reason="no final content",
         )
         ctx.publisher.publish(
@@ -1009,7 +1157,10 @@ async def generate_question_stream(
                     reference_example_record_json=event.get("reference_example_record"),
                 )
             yield event
-            if event_name in (SSEEventName.DONE, SSEEventName.ERROR):
+            # A question error is terminal only for that manifest slot.  Keep
+            # draining the shared queue so sibling questions can still publish
+            # their drafts, results, and terminals.
+            if event_name == SSEEventName.DONE:
                 break
     finally:
         ctx.cancel_event.set()

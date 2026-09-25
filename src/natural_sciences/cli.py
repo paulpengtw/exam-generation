@@ -1369,7 +1369,11 @@ def _ns_render_subquestion_images(
         )
         print(f"  Rendering subquestion image: {img_path}", file=sys.stderr)
         image_scope = (
-            new_operation_scope(scope, kind="image", subquestion_index=plan_index)
+            new_operation_scope(
+                scope,
+                kind="image",
+                subquestion_index=plan_index - 1,
+            )
             if scope is not None else None
         )
         on_render_error, render_failed = make_render_error_sink(obs, scope=image_scope)

@@ -219,3 +219,8 @@ class SubjectGenerationSpec:
     # Signature: (question, config, client, html_renderer, image_generation_mode,
     #             obs, params, on_figure_policy_entry=...) -> None
     post_correction_visual_policy_fn: Callable | None = None
+
+    # Grouped subjects can opt into fixed, program-owned subquestion slots.
+    # Keeping this switch on the shared spec lets the core implementation be
+    # reused by another grouped subject without changing flat-question IDs.
+    fixed_subquestion_identity: bool = False
