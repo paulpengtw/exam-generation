@@ -202,6 +202,81 @@ describe("ParamForm blank 小題數 confirmation", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it("submits existing per-subquestion configs when the count is left blank for the resolver", async () => {
+    const onSubmit = vi.fn();
+    const configs = [
+      {
+        question_type: "選擇題",
+        content_type: "含圖片",
+        image_generation_mode: "gpt_image",
+        figure_kind: "直方圖",
+        question_word_limit: 21,
+        option_word_limit: 31,
+      },
+      {
+        question_type: "選擇題",
+        content_type: "純文字",
+        image_generation_mode: "html",
+        figure_kind: "表格",
+        question_word_limit: 22,
+        option_word_limit: 32,
+      },
+      {
+        question_type: "選擇題",
+        content_type: "含圖片",
+        image_generation_mode: "html",
+        figure_kind: "折線圖",
+        question_word_limit: 23,
+        option_word_limit: 33,
+      },
+    ];
+    resolveGenerateMock.mockImplementationOnce(async (payload: Record<string, unknown>) => ({
+      payload: {
+        ...payload,
+        sub_question_count: configs.length,
+        per_question_params: JSON.stringify([{
+          sub_question_count: configs.length,
+          subquestion_configs: payload.subquestion_configs,
+        }]),
+      },
+      drawn: ["per_question_params[0].sub_question_count"],
+    }));
+
+    render(
+      <ParamForm
+        subject="social_studies"
+        initialParams={{
+          grade: 8,
+          context: ["個人"],
+          set_type: "題組題",
+          q_type: [],
+          count: 1,
+          content_type: "純文字",
+          image_generation_mode: "html",
+          subject_filter: ["歷史"],
+          sub_question_count: configs.length,
+          subquestion_configs: configs,
+        }}
+        onSubmit={onSubmit}
+        disabled={false}
+      />,
+    );
+
+    await screen.findByText("第1小題");
+    fireEvent.change(screen.getByLabelText("小題數"), { target: { value: "" } });
+
+    fireEvent.submit(screen.getByText("產生").closest("form")!);
+    await waitFor(() => expect(resolveGenerateMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByText("確定發送"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    const submitted = onSubmit.mock.calls[0][0] as { per_question_params: string };
+    const rows = JSON.parse(submitted.per_question_params) as Array<{
+      subquestion_configs: string;
+    }>;
+    expect(JSON.parse(rows[0].subquestion_configs)).toEqual(configs);
+  });
+
   it("clears and redraws the count, preserves the request rows, and renders the rebuilt slots", async () => {
     const pinned = {
       ...slot("FIRST", 0),

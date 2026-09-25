@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import logging
 import random
 import sys
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from pydantic import ValidationError
 
 from src.common.batch_dedup import PriorScope, extract_ns_prior_scope
 from src.common.cli_resolver import resolve_and_print
@@ -28,8 +31,12 @@ from src.common.figure_policy_trail import (
     make_spec_entry,
     make_warning_entry,
 )
-from src.common.generation_core import generate_one_core, generate_with_corrections_core
-from src.common.image_spec_parsing import parse_image_spec
+from src.common.generation_core import (
+    SubquestionParseError,
+    generate_one_core,
+    generate_with_corrections_core,
+)
+from src.common.image_spec_parsing import image_spec_failure_reason, parse_image_spec
 from src.common.subject_spec import NATURAL_SCIENCES, SubjectGenerationSpec
 from src.common.subquestion_forcing import force_grade
 from src.common.verification_trail import VerificationTrailEntry
@@ -68,6 +75,8 @@ from src.natural_sciences.schemas import (
 from src.natural_sciences.verifier import verify_question
 from src.renderer import render_image
 from src.social_studies.figure_kind_loader import CANONICAL_FIGURE_KINDS
+
+logger = logging.getLogger(__name__)
 
 _GRADES: list[int] = load_grades(load_schemas())
 _VISUAL_CONTENT_TYPES = {"含圖片", "graphs/charts/tables"}
@@ -372,11 +381,14 @@ def _parse_subquestion(
     question_id: str,
     params: SampledParams,
     i: int,
-) -> SubQuestion | None:
+) -> SubQuestion:
     if not isinstance(sq_raw, dict):
-        return None
+        raise SubquestionParseError("子題回應不是 JSON 物件")
     try:
-        cfg = params.subquestion_configs[i - 1] if i - 1 < len(params.subquestion_configs) else None
+        cfg = (
+            params.subquestion_configs[i - 1]
+            if 1 <= i <= len(params.subquestion_configs) else None
+        )
         lc_refs = [
             LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
             for r in sq_raw.get("學習內容", [])
@@ -419,8 +431,19 @@ def _parse_subquestion(
             distractor = {str(k): str(v) for k, v in raw_distractor.items()}
         else:
             distractor = {}
-        raw_sq_spec = sq_raw.get("image_spec") or sq_raw.get("chart_spec")
-        sq_chart_spec = parse_image_spec(raw_sq_spec, ImageSpec) if raw_sq_spec else None
+        primary_spec = sq_raw.get("image_spec")
+        fallback_spec = sq_raw.get("chart_spec")
+        raw_sq_spec = primary_spec or fallback_spec
+        if raw_sq_spec is None:
+            raw_sq_spec = primary_spec
+        sq_chart_spec = (
+            parse_image_spec(raw_sq_spec, ImageSpec)
+            if raw_sq_spec is not None
+            else None
+        )
+        raw_question_type = sq_raw.get("題型", params.題型.value)
+        if raw_question_type not in tuple(member.value for member in QuestionType):
+            raise SubquestionParseError("題型欄位不是可辨識的題型")
         result = SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
@@ -432,7 +455,7 @@ def _parse_subquestion(
             學習表現=lp_refs,
             出題概念=sq_raw.get("出題概念", ""),
             reporting_scale=sq_raw.get("reporting_scale") or (cfg.reporting_scale if cfg else None),
-            題型=sq_raw.get("題型", params.題型.value),
+            題型=raw_question_type,
             題目=sq_raw.get("題目", ""),
             答案=sq_raw.get("答案", ""),
             答案解析=sq_raw.get("答案解析", ""),
@@ -455,9 +478,21 @@ def _parse_subquestion(
                 update={"figure_kind": cfg.figure_kind.strip()}
             )
         result._plan_index = i
+        if raw_sq_spec is not None and sq_chart_spec is None:
+            logger.warning(
+                "Discarded natural-sciences subquestion visual specification: "
+                "question_id=%s slot=%d reason=%s",
+                question_id,
+                i,
+                image_spec_failure_reason(raw_sq_spec),
+            )
         return result
-    except Exception:
-        return None
+    except SubquestionParseError:
+        raise
+    except ValidationError as exc:
+        raise SubquestionParseError.from_validation(exc) from None
+    except Exception as exc:
+        raise SubquestionParseError(f"子題解析失敗（{type(exc).__name__}）") from None
 
 
 def _parse_text_shell(
@@ -845,6 +880,7 @@ def _ns_ensure_visual_spec(
     client: Any,
 ) -> None:
     """Repair missing NS visual specs before the rendering stage."""
+    _ns_ensure_top_level_visual_spec(question, params, client)
     for sub in question.subquestions:
         cfg = _ns_subquestion_config_for(params, sub)
         if cfg is None or (

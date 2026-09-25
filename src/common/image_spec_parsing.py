@@ -39,6 +39,15 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="BaseModel")
 
 
+def image_spec_failure_reason(raw_spec: object) -> str:
+    """Return a static reason suitable for warning logs when parsing fails."""
+    if not isinstance(raw_spec, dict):
+        return "visual specification is not an object"
+    if raw_spec.get("chart_type"):
+        return "visual specification failed chart validation after fallback"
+    return "visual specification could not be parsed as chart or HTML"
+
+
 def parse_image_spec(raw_spec: object, model_cls: type[T]) -> T | None:
     """Parse *raw_spec* into *model_cls*, falling back gracefully on bad fields.
 

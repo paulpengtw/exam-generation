@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from src.common.batch_dedup import PriorScope, extract_ss_prior_scope
 from src.common.cli_resolver import resolve_and_print
 from src.common.difficulty import DEFAULT_DIFFICULTY
@@ -31,8 +33,12 @@ from src.common.figure_policy_trail import (
     make_spec_entry,
     make_warning_entry,
 )
-from src.common.generation_core import generate_one_core, generate_with_corrections_core
-from src.common.image_spec_parsing import parse_image_spec
+from src.common.generation_core import (
+    SubquestionParseError,
+    generate_one_core,
+    generate_with_corrections_core,
+)
+from src.common.image_spec_parsing import image_spec_failure_reason, parse_image_spec
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
 from src.common.subquestion_forcing import force_grade
 from src.common.verification_trail import VerificationTrailEntry
@@ -458,14 +464,14 @@ def _parse_subquestion(
     question_id: str,
     params: SampledParams,
     i: int,
-) -> SubQuestion | None:
-    """Parse one raw sub-question dict from 子題產生器 output. Returns None on error."""
+) -> SubQuestion:
+    """Parse one raw sub-question dict from 子題產生器 output."""
     if not isinstance(sq_raw, dict):
-        return None
+        raise SubquestionParseError("子題回應不是 JSON 物件")
     try:
         cfg = (
             params.subquestion_configs[i - 1]
-            if i - 1 < len(params.subquestion_configs) else None
+            if 1 <= i <= len(params.subquestion_configs) else None
         )
         lc_refs = [
             LearningContentRef(編碼=r.get("編碼", ""), 說明=r.get("說明", ""))
@@ -492,7 +498,7 @@ def _parse_subquestion(
             if cfg is not None and cfg.認知歷程 is not None
             else (
                 params.認知歷程_pool[i - 1]
-                if i - 1 < len(params.認知歷程_pool)
+                if 1 <= i <= len(params.認知歷程_pool)
                 else sq_raw.get("認知歷程")
             )
         )
@@ -505,8 +511,16 @@ def _parse_subquestion(
             for r in (sq_raw.get("評分規準") or sq_raw.get("評分標準") or [])
             if isinstance(r, dict)
         ]
-        raw_sq_spec = sq_raw.get("image_spec") or sq_raw.get("chart_spec")
-        sq_chart_spec = parse_image_spec(raw_sq_spec, ImageSpec) if raw_sq_spec else None
+        primary_spec = sq_raw.get("image_spec")
+        fallback_spec = sq_raw.get("chart_spec")
+        raw_sq_spec = primary_spec or fallback_spec
+        if raw_sq_spec is None:
+            raw_sq_spec = primary_spec
+        sq_chart_spec = (
+            parse_image_spec(raw_sq_spec, ImageSpec)
+            if raw_sq_spec is not None
+            else None
+        )
         raw_distractor = sq_raw.get("誘答分析", {})
         if isinstance(raw_distractor, dict):
             distractor = {str(k): str(v) for k, v in raw_distractor.items()}
@@ -515,8 +529,8 @@ def _parse_subquestion(
         raw_question_type = sq_raw.get(
             "題型", params.題型[0].value if params.題型 else "選擇題"
         )
-        if raw_question_type not in {member.value for member in QuestionType}:
-            return None
+        if raw_question_type not in tuple(member.value for member in QuestionType):
+            raise SubquestionParseError("題型欄位不是可辨識的題型")
         result = SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
@@ -554,9 +568,21 @@ def _parse_subquestion(
         # above; 年級 gets the same treatment via the shared helper so that both
         # social studies and natural sciences share one authoritative rule.
         force_grade(result, params.grade)
+        if raw_sq_spec is not None and sq_chart_spec is None:
+            logger.warning(
+                "Discarded social-studies subquestion visual specification: "
+                "question_id=%s slot=%d reason=%s",
+                question_id,
+                i,
+                image_spec_failure_reason(raw_sq_spec),
+            )
         return result
-    except Exception:
-        return None
+    except SubquestionParseError:
+        raise
+    except ValidationError as exc:
+        raise SubquestionParseError.from_validation(exc) from None
+    except Exception as exc:
+        raise SubquestionParseError(f"子題解析失敗（{type(exc).__name__}）") from None
 
 
 def _parse_text_shell(
@@ -817,8 +843,8 @@ def _render_subquestion_images(
     for sub in question.subquestions:
         if not sub.chart_spec:
             continue
-        img_path = config.output_dir / f"{question.id}_sq{sub.序號}.png"
         plan_index = sub._plan_index if sub._plan_index is not None else sub.序號
+        img_path = config.output_dir / f"{question.id}_sq{plan_index}.png"
         mode = (subquestion_image_modes or {}).get(plan_index, image_generation_mode)
         sub.image_generation_mode = mode
         question_text = "\n\n".join(

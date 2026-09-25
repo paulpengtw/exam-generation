@@ -259,7 +259,7 @@ def test_planner_recording_failure_does_not_interrupt_generation(planner_case: A
     history = client.get("/api/history").json()
     detail = client.get(f"/api/history/{history['items'][0]['id']}").json()
     assert detail["status"] == "completed"
-    assert detail["generation_log_id"] == log_id
+    assert detail["generation_log_id"] is None
 
 
 def test_closing_planner_iterator_returns_before_provider_and_preserves_late_exchange(

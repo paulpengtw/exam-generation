@@ -3093,7 +3093,9 @@ export default function ParamForm({
   useEffect(() => {
     if (recoveryForm) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the editor row count synchronized with the selected count
-    setField("subquestionConfigs", (prev) => rebuildSubquestionSlots(prev, subQuestionCount));
+    setField("subquestionConfigs", (prev) => subQuestionCount === ""
+      ? prev
+      : rebuildSubquestionSlots(prev, subQuestionCount));
   }, [recoveryForm, subQuestionCount, setField]);
 
   function updateSubquestionConfig(index: number, patch: Partial<SubQuestionConfig>) {
@@ -3231,9 +3233,13 @@ export default function ParamForm({
       : undefined;
     const hasHistoryPerQuestionParams = historyPerQuestionParams.length === count;
     const shouldSendSubquestionConfigs =
-      (subject === "social_studies" || subject === "natural_sciences") && subQuestionCount !== "" && (
-        subquestionConfigs.length > 0 || subQuestionCount > 0
+      (subject === "social_studies" || subject === "natural_sciences") && (
+        subquestionConfigs.length > 0 ||
+        (typeof subQuestionCount === "number" && subQuestionCount > 0)
       );
+    const subquestionConfigsForSubmission = subQuestionCount === ""
+      ? subquestionConfigs
+      : subquestionConfigs.slice(0, subQuestionCount);
 
     const hasHistoryCoreQuestion = hasHistoryPerQuestionParams &&
       historyPerQuestionParams.some(
@@ -3293,7 +3299,7 @@ export default function ParamForm({
         : undefined,
       sub_question_count: subQuestionCount !== "" ? subQuestionCount : undefined,
       subquestion_configs: shouldSendSubquestionConfigs
-        ? JSON.stringify(subquestionConfigs.slice(0, subQuestionCount as number).map(serialisableSubquestionConfig))
+        ? JSON.stringify(subquestionConfigsForSubmission.map(serialisableSubquestionConfig))
         : undefined,
       model_plan: modelPlan || undefined,
       model_execute: modelExecute || undefined,
@@ -3332,7 +3338,7 @@ export default function ParamForm({
             ...questionParams,
             subquestion_configs: mergeLiveSubquestionConfigs(
               params.subquestion_configs,
-              subquestionConfigs.slice(0, subQuestionCount as number).map(serialisableSubquestionConfig),
+              subquestionConfigsForSubmission.map(serialisableSubquestionConfig),
               editedSubquestionFieldsRef.current,
               historyDraftChoice === "draft" || historyDraftChoice === "defaults",
             ),

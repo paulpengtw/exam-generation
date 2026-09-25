@@ -999,6 +999,18 @@ describe("recovery flow — scenario 2: quota failure", () => {
       {},
       { timeout: 5000 },
     );
+    // Wait for schemas and model list to finish loading so the form surface
+    // transitions from "hydrating" to "ready" before evaluateSaveAndUpdate
+    // is called; otherwise the "hydrating" check would shadow "quota".
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().surfaces["generate.form"]?.readiness).toBe("ready");
+    });
+    // Flush any React effects still queued after the readiness transition
+    // (e.g. the subquestion-config sync effect). Without this flush they run
+    // during "await checkNow()" inside runSaveAndUpdate, incrementing
+    // workspace_revision between the snapshot and the recheck, which returns
+    // "workspace_changed" before the quota path is reached.
+    await act(async () => {});
 
     // Make localStorage.setItem throw only on the recovery-snapshot write.
     // Using mockImplementation with a key guard instead of mockImplementationOnce

@@ -1,7 +1,7 @@
 """Dropped 子題 slot emits a stage error event (issue #257 slice 1).
 
 When all retry attempts for a slot are exhausted, an error stage event is
-emitted to the observer with the exception text and slot identity.
+emitted to the observer with the safe exception class and slot identity.
 When a slot eventually succeeds (possibly after retries), no error event is emitted.
 """
 
@@ -126,9 +126,10 @@ def test_exhausted_slot_emits_error_stage_event() -> None:
     errors = observer.error_events()
     # All N_SLOTS should have emitted error events
     assert len(errors) == N_SLOTS
-    # Each error event must contain "boom" (the exception text)
+    # Raw provider text is not exposed; the safe exception class identifies
+    # the provider failure without leaking request/response content.
     for e in errors:
-        assert "boom" in e.get("message", ""), f"Missing exception text in: {e}"
+        assert "RuntimeError" in e.get("message", ""), f"Missing exception cause in: {e}"
 
 
 def test_error_event_contains_slot_identity() -> None:

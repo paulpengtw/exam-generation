@@ -8,6 +8,7 @@ import threading
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -17,10 +18,12 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from server.app import prune_expired_llm_exchanges
 from server.auth.dependencies import get_config
 from server.auth.tokens import create_jwt
 from server.db import get_async_session
-from server.models import GenerationLog, GenerationRecord, User
+from server.generate import routes as generate_routes
+from server.models import GenerationLog, GenerationRecord, LLMExchange, User
 from src.data_loader import (
     get_grade_content,
     load_curriculum,
@@ -323,9 +326,230 @@ def test_history_advertises_the_log_of_the_returned_latest_version(
                 parent_record_id=parent_id, generation_log_id=child_log_id,
                 params_json={}, question_json={"id": "child"},
             ))
+            session.add(LLMExchange(
+                generation_log_id=child_log_id,
+                exchange_order=1,
+                agent="corrector",
+                purpose="correct",
+                request_body=None,
+                response_body={"content": "child"},
+                model_used="gpt-4.1",
+            ))
             await session.commit()
 
     asyncio.run(seed())
     detail = math_client.get(f"/api/history/{parent_id}").json()
     assert detail["id"] == str(child_id)
     assert detail["generation_log_id"] == str(child_log_id)
+
+
+async def _seed_log_and_record(
+    client: TestClient,
+    *,
+    user_id: uuid.UUID,
+    record_id: uuid.UUID,
+    log_id: uuid.UUID,
+    question_id: str,
+    exchange: LLMExchange | None = None,
+    parent_record_id: uuid.UUID | None = None,
+) -> None:
+    """Seed only the rows needed by a public history readback scenario."""
+    async for session in client.app.dependency_overrides[get_async_session]():
+        session.add(GenerationLog(id=log_id, user_id=user_id, params_json={}))
+        session.add(GenerationRecord(
+            id=record_id,
+            user_id=user_id,
+            parent_record_id=parent_record_id,
+            subject="math",
+            question_id=question_id,
+            generation_log_id=log_id,
+            params_json={"subject": "math"},
+            question_json={"id": question_id},
+            image_files=[],
+        ))
+        if exchange is not None:
+            session.add(exchange)
+        await session.commit()
+
+
+def test_history_detail_advertises_available_exchange_evidence(
+    math_client: TestClient,
+) -> None:
+    user_id = uuid.UUID(math_client.get("/auth/me").json()["id"])
+    record_id = uuid.uuid4()
+    log_id = uuid.uuid4()
+    exchange = LLMExchange(
+        generation_log_id=log_id,
+        exchange_order=1,
+        agent="generator",
+        purpose="generate",
+        request_body={"messages": []},
+        response_body={"content": "evidence"},
+        model_used="gpt-4.1",
+    )
+    asyncio.run(_seed_log_and_record(
+        math_client,
+        user_id=user_id,
+        record_id=record_id,
+        log_id=log_id,
+        question_id="evidence-available",
+        exchange=exchange,
+    ))
+
+    detail = math_client.get(f"/api/history/{record_id}")
+    assert detail.status_code == 200
+    assert detail.json()["generation_log_id"] == str(log_id)
+
+    exchanges = math_client.get(f"/api/generation-logs/{log_id}/exchanges")
+    assert exchanges.status_code == 200
+    assert exchanges.json()[0]["response_body"] == {"content": "evidence"}
+
+
+def test_history_detail_reports_no_evidence_when_exchanges_were_never_persisted(
+    math_client: TestClient,
+) -> None:
+    user_id = uuid.UUID(math_client.get("/auth/me").json()["id"])
+    record_id = uuid.uuid4()
+    log_id = uuid.uuid4()
+    asyncio.run(_seed_log_and_record(
+        math_client,
+        user_id=user_id,
+        record_id=record_id,
+        log_id=log_id,
+        question_id="evidence-never-recorded",
+    ))
+
+    detail = math_client.get(f"/api/history/{record_id}")
+    assert detail.status_code == 200
+    assert detail.json()["generation_log_id"] is None
+
+
+def test_history_detail_reports_no_evidence_after_exchange_retention_pruning(
+    math_client: TestClient,
+) -> None:
+    user_id = uuid.UUID(math_client.get("/auth/me").json()["id"])
+    record_id = uuid.uuid4()
+    log_id = uuid.uuid4()
+    old_exchange = LLMExchange(
+        generation_log_id=log_id,
+        exchange_order=1,
+        agent="generator",
+        purpose="generate",
+        request_body={"messages": []},
+        response_body={"content": "expired"},
+        model_used="gpt-4.1",
+        created_at=datetime.now(timezone.utc) - timedelta(days=45),
+    )
+    asyncio.run(_seed_log_and_record(
+        math_client,
+        user_id=user_id,
+        record_id=record_id,
+        log_id=log_id,
+        question_id="evidence-pruned",
+        exchange=old_exchange,
+    ))
+
+    config = math_client.app.dependency_overrides[get_config]()
+    asyncio.run(prune_expired_llm_exchanges(
+        config,
+        session_maker=generate_routes.AsyncSessionLocal,
+    ))
+
+    detail = math_client.get(f"/api/history/{record_id}")
+    assert detail.status_code == 200
+    assert detail.json()["generation_log_id"] is None
+
+
+def test_history_detail_keeps_exchange_evidence_owner_scoped(
+    math_client: TestClient,
+) -> None:
+    owner_id = uuid.UUID(math_client.get("/auth/me").json()["id"])
+    record_id = uuid.uuid4()
+    log_id = uuid.uuid4()
+    asyncio.run(_seed_log_and_record(
+        math_client,
+        user_id=owner_id,
+        record_id=record_id,
+        log_id=log_id,
+        question_id="evidence-owner-only",
+        exchange=LLMExchange(
+            generation_log_id=log_id,
+            exchange_order=1,
+            agent="generator",
+            purpose="generate",
+            request_body=None,
+            response_body=None,
+            model_used="gpt-4.1",
+        ),
+    ))
+    other_id = uuid.uuid4()
+
+    async def add_other_user() -> None:
+        async for session in math_client.app.dependency_overrides[get_async_session]():
+            session.add(User(id=other_id, email="evidence-other@example.com"))
+            await session.commit()
+
+    asyncio.run(add_other_user())
+    config = math_client.app.dependency_overrides[get_config]()
+    other_token = create_jwt(other_id, "evidence-other@example.com", config=config)
+    headers = {"Authorization": f"Bearer {other_token}"}
+
+    detail = math_client.get(f"/api/history/{record_id}", headers=headers)
+    exchange_read = math_client.get(
+        f"/api/generation-logs/{log_id}/exchanges",
+        headers=headers,
+    )
+    assert detail.status_code == 404
+    assert exchange_read.status_code == 404
+
+
+def test_history_detail_uses_the_returned_descendant_log_with_exchange_evidence(
+    math_client: TestClient,
+) -> None:
+    user_id = uuid.UUID(math_client.get("/auth/me").json()["id"])
+    parent_id = uuid.uuid4()
+    parent_log_id = uuid.uuid4()
+    child_id = uuid.uuid4()
+    child_log_id = uuid.uuid4()
+    asyncio.run(_seed_log_and_record(
+        math_client,
+        user_id=user_id,
+        record_id=parent_id,
+        log_id=parent_log_id,
+        question_id="evidence-parent",
+        exchange=LLMExchange(
+            generation_log_id=parent_log_id,
+            exchange_order=1,
+            agent="generator",
+            purpose="generate",
+            request_body=None,
+            response_body={"content": "parent"},
+            model_used="gpt-4.1",
+        ),
+    ))
+    asyncio.run(_seed_log_and_record(
+        math_client,
+        user_id=user_id,
+        record_id=child_id,
+        log_id=child_log_id,
+        question_id="evidence-child",
+        parent_record_id=parent_id,
+        exchange=LLMExchange(
+            generation_log_id=child_log_id,
+            exchange_order=1,
+            agent="corrector",
+            purpose="correct",
+            request_body=None,
+            response_body={"content": "child"},
+            model_used="gpt-4.1",
+        ),
+    ))
+
+    detail = math_client.get(f"/api/history/{parent_id}")
+    assert detail.status_code == 200
+    assert detail.json()["id"] == str(child_id)
+    assert detail.json()["generation_log_id"] == str(child_log_id)
+
+    exchanges = math_client.get(f"/api/generation-logs/{child_log_id}/exchanges")
+    assert exchanges.status_code == 200
+    assert [row["purpose"] for row in exchanges.json()] == ["correct"]
