@@ -399,12 +399,24 @@ export default function GenerationStatusBar({
                 </>
               )
             ) : null}
-            {runState === "error" ? (
+            {runState === "error" && showV2Status ? (
+              <>
+                <span className="sentry-unmask">✕ {t("statusbar.error")} · </span>
+                <GenerationV2StatusLine evidence={evidence as GenerationV2Evidence} />
+              </>
+            ) : null}
+            {runState === "error" && !showV2Status ? (
               <span className="sentry-unmask">
                 ✕ {t("statusbar.error")}
               </span>
             ) : null}
-            {runState === "unknown" ? (
+            {runState === "unknown" && showV2Status ? (
+              <>
+                <span className="sentry-unmask">? {t("statusbar.unknown")} · </span>
+                <GenerationV2StatusLine evidence={evidence as GenerationV2Evidence} />
+              </>
+            ) : null}
+            {runState === "unknown" && !showV2Status ? (
               <span className="sentry-unmask">
                 ? {t("statusbar.unknown")}
               </span>

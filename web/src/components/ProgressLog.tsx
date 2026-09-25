@@ -1,15 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/useT";
 import type { LlmCallEvent } from "../hooks/useGenerate";
+import {
+  selectEndedCount,
+  selectFinalReceivedCount,
+  type RunEvidenceState,
+} from "../lib/generationEvidence";
 
 export interface ProgressLogProps {
   lines: string[];
   status: "idle" | "generating" | "error";
   errorMessage?: string | null;
   llmCalls?: LlmCallEvent[];
+  evidence?: RunEvidenceState | null;
 }
 
-export default function ProgressLog({ lines, status, errorMessage, llmCalls = [] }: ProgressLogProps) {
+export default function ProgressLog({
+  lines,
+  status,
+  errorMessage,
+  llmCalls = [],
+  evidence = null,
+}: ProgressLogProps) {
   const t = useT();
   const preRef = useRef<HTMLPreElement>(null);
   const traceRef = useRef<HTMLDivElement>(null);
@@ -26,7 +38,7 @@ export default function ProgressLog({ lines, status, errorMessage, llmCalls = []
     }
   }, [llmCalls, showTrace]);
 
-  if (lines.length === 0 && status === "idle" && llmCalls.length === 0) {
+  if (lines.length === 0 && status === "idle" && llmCalls.length === 0 && evidence === null) {
     return (
       <div className="text-sm text-gray-500 italic">
         {t("progress.empty")}
@@ -90,7 +102,21 @@ export default function ProgressLog({ lines, status, errorMessage, llmCalls = []
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-sm">
-        {status === "generating" && (
+        {evidence && (
+          <div data-testid="progress-v2-counts" role="status" className="sentry-unmask">
+            <span data-testid="progress-v2-ended">
+              {t("statusbar.v2_ended")
+                .replace("{x}", String(selectEndedCount(evidence)))
+                .replace("{n}", String(evidence.total))}
+            </span>
+            <span aria-hidden="true"> · </span>
+            <span data-testid="progress-v2-final">
+              {t("statusbar.v2_final_received")
+                .replace("{y}", String(selectFinalReceivedCount(evidence)))}
+            </span>
+          </div>
+        )}
+        {status === "generating" && !evidence?.closed && (
           <>
             <span
               className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500"

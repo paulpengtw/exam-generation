@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import itertools
 import threading
 import uuid
+from concurrent.futures import Future
 from typing import Any
 
 import pytest
@@ -231,3 +233,66 @@ def test_non_llm_events_are_ignored(sink):
     rec({"type": "stage", "agent": "generator", "stage": "llm_generate", "status": "start"})
     rec({"type": "llm_content_delta", "agent": "generator", "text": "hi"})
     assert rows == []
+
+
+def test_flush_isolates_failed_pending_write_from_sibling(sink, caplog):
+    first = Future()
+    second = Future()
+    writes = iter((first, second))
+
+    def write(_row):
+        return next(writes)
+
+    rec = ExchangeRecorder(uuid.uuid4(), write)
+    rec(_req("generator"))
+    rec(_resp("generator"))
+    rec(_req("verifier"))
+    rec(_resp("verifier"))
+
+    async def complete_writes() -> None:
+        await asyncio.sleep(0.01)
+        first.set_exception(RuntimeError("db down"))
+        second.set_result(None)
+
+    async def drain() -> None:
+        await asyncio.gather(rec.flush(), complete_writes())
+
+    with caplog.at_level("WARNING"):
+        asyncio.run(drain())
+
+    assert any("drain failed" in record.getMessage() for record in caplog.records)
+
+
+def test_flush_bounds_pending_writes_and_allows_late_completion(
+    monkeypatch, caplog
+):
+    from server.generate import persistence
+
+    pending = Future()
+
+    def write(_row):
+        return pending
+
+    rec = ExchangeRecorder(uuid.uuid4(), write)
+    rec(_req("generator"))
+    rec(_resp("generator"))
+    monkeypatch.setattr(persistence, "EXCHANGE_WRITE_TIMEOUT_SECONDS", 0.01)
+
+    async def complete_later() -> None:
+        await asyncio.sleep(0.05)
+        pending.set_result(None)
+
+    async def drain() -> None:
+        late_completion = asyncio.create_task(complete_later())
+        await rec.flush()
+        assert not pending.done()
+        await late_completion
+        await asyncio.sleep(0)
+
+    with caplog.at_level("WARNING", logger="server.generate.exchange_recorder"):
+        asyncio.run(drain())
+
+    timeout_logs = [
+        record.getMessage() for record in caplog.records if "timed out" in record.getMessage()
+    ]
+    assert any("pending_writes=1" in message for message in timeout_logs)

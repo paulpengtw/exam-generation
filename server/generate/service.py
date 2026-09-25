@@ -220,12 +220,15 @@ class _RunContext:
     generation_log_id: uuid.UUID | None
     figure_policy_recorder: Any
     reference_example_recorder: Any
+    exchange_recorders: list[Any]
+    exchange_recorders_lock: threading.Lock
     retention_days: int
     session_factory: Any
     next_order: Any  # Callable[[], int]
     config: ServerConfig
     balanced_batch: bool
     cancel_event: threading.Event
+    confirmed_cancel_event: threading.Event
     run_id: str
     manifest: tuple[QuestionContext, ...]
     publisher: GenerationPublisher
@@ -248,6 +251,7 @@ def _build_run_context(
     cancel_event: threading.Event | None = None,
     publisher: GenerationPublisher | None = None,
     run_id: str | None = None,
+    confirmed_cancel_event: threading.Event | None = None,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -314,12 +318,19 @@ def _build_run_context(
         generation_log_id=generation_log_id,
         figure_policy_recorder=figure_policy_recorder,
         reference_example_recorder=reference_example_recorder,
+        exchange_recorders=[],
+        exchange_recorders_lock=threading.Lock(),
         retention_days=config.llm_exchange_retention_days,
         session_factory=session_factory,
         next_order=_next_order,
         config=config,
         balanced_batch=balanced_batch,
         cancel_event=cancel_event if cancel_event is not None else threading.Event(),
+        confirmed_cancel_event=(
+            confirmed_cancel_event
+            if confirmed_cancel_event is not None
+            else threading.Event()
+        ),
         run_id=_run_id,
         manifest=_manifest,
         publisher=_publisher,
@@ -623,6 +634,23 @@ def _build_question_terminal_payload(
         return fallback
 
 
+def _publish_question_terminal(
+    ctx: _RunContext,
+    *,
+    index: int,
+    payload: dict[str, Any],
+) -> None:
+    """Seal ledger and publisher before delivering one terminal summary."""
+    question = ctx.manifest[index]
+    ctx.snapshot_ledger.seal_terminal(question.question_id, payload)
+    ctx.publisher.publish(
+        SSEEventName.QUESTION_TERMINAL,
+        question_id=question.question_id,
+        index=index,
+        payload=payload,
+    )
+
+
 def _worker_one(
     i: int,
     question_client: LLMClient,
@@ -641,6 +669,11 @@ def _worker_one_body(
     batch_briefs: list,
 ) -> None:
     """Run the v2 worker body inside the drain telemetry wrapper."""
+    question_id = ctx.manifest[i].question_id
+    if ctx.publisher.is_terminal_sealed(question_id):
+        logger.warning("worker %s was submitted after terminal sealing", question_id)
+        return
+
     worker_recorder = make_exchange_recorder(
         generation_log_id=ctx.generation_log_id,
         retention_days=ctx.retention_days,
@@ -648,6 +681,9 @@ def _worker_one_body(
         session_factory=ctx.session_factory,
         next_order=ctx.next_order,
     )
+    if worker_recorder is not None:
+        with ctx.exchange_recorders_lock:
+            ctx.exchange_recorders.append(worker_recorder)
     figure_policy_recorder = ctx.figure_policy_recorder
     reference_example_recorder = ctx.reference_example_recorder
     publisher_observer = make_publisher_observer(ctx.publisher, ctx.manifest[i])
@@ -740,9 +776,9 @@ def _worker_one_body(
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
-    _terminal_status = "failed"  # updated before each exit
-    question_id = ctx.manifest[i].question_id
     rng_params: Any | None = None
+    question: Any | None = None
+    final_published_revision: int | None = None
     try:
         rng_params = _resolved_worker_params(
             i,
@@ -827,6 +863,7 @@ def _worker_one_body(
             payload=question_to_event(question, ctx.config),
             sidecars=sidecars,
         )
+        final_published_revision = _final_revision
         # Normal terminal – published AFTER the result event.
         _terminal_payload = _build_question_terminal_payload(
             question_id=question_id,
@@ -841,14 +878,13 @@ def _worker_one_body(
             resolved_subquestion_configs=getattr(rng_params, "subquestion_configs", None),
             resolved_subquestion_count=getattr(rng_params, "sub_question_count", None),
         )
-        ctx.publisher.publish(
-            SSEEventName.QUESTION_TERMINAL,
-            question_id=question_id,
-            index=i,
-            payload=_terminal_payload,
-        )
+        _publish_question_terminal(ctx, index=i, payload=_terminal_payload)
     except GenerationCancelled:
-        # Client disconnected; exit cleanly without emitting an error event.
+        # A client disconnect is not proof that cancellation was confirmed by
+        # the generation boundary.  Only an explicit internal confirmation may
+        # produce the cancelled terminal conclusion.
+        if not ctx.confirmed_cancel_event.is_set():
+            return
         _qid_cancel = ctx.manifest[i].question_id
         _cancel_resolution_kwargs: dict[str, Any] = {}
         if rng_params is not None:
@@ -872,13 +908,36 @@ def _worker_one_body(
             **_cancel_resolution_kwargs,
             unknown_reason="cancelled before completion",
         )
-        ctx.publisher.publish(
-            SSEEventName.QUESTION_TERMINAL,
-            question_id=_qid_cancel,
-            index=i,
-            payload=_cancel_payload,
-        )
+        _publish_question_terminal(ctx, index=i, payload=_cancel_payload)
     except Exception as exc:
+        if ctx.publisher.is_terminal_sealed(question_id):
+            logger.warning(
+                "worker %s raised after its terminal was sealed: %s",
+                question_id,
+                type(exc).__name__,
+            )
+            return
+        if ctx.snapshot_ledger.is_terminal_sealed(question_id):
+            # The ledger and publisher are separate guards.  If the publisher
+            # failed after the ledger sealed, retry the exact immutable summary
+            # once so a transient enqueue failure cannot turn a normal final
+            # into a contradictory failure.  No new error event is emitted.
+            sealed_payload = ctx.snapshot_ledger.get_terminal(question_id)
+            if sealed_payload is not None:
+                try:
+                    ctx.publisher.publish(
+                        SSEEventName.QUESTION_TERMINAL,
+                        question_id=question_id,
+                        index=i,
+                        payload=sealed_payload,
+                    )
+                except Exception as retry_exc:  # noqa: BLE001 — terminal remains sealed
+                    logger.warning(
+                        "sealed terminal delivery failed for %s: %s",
+                        question_id,
+                        type(retry_exc).__name__,
+                    )
+            return
         record_generation_outcome(ctx.params.subject, "failure")
         ctx.publisher.publish(
             SSEEventName.ERROR,
@@ -903,21 +962,21 @@ def _worker_one_body(
         _failed_payload = _build_question_terminal_payload(
             question_id=question_id,
             termination_reason="failed",
-            has_final=False,
-            final_revision=None,
-            question=None,
+            has_final=final_published_revision is not None,
+            final_revision=final_published_revision,
+            question=question if final_published_revision is not None else None,
             params=ctx.params,
             output_dir=ctx.config.output_dir,
             announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
+            verification_trail=verification_trail,
             **_failed_resolution_kwargs,
-            unknown_reason="no final content",
+            unknown_reason=(
+                "no final content"
+                if final_published_revision is None
+                else "terminal completion failed after final delivery"
+            ),
         )
-        ctx.publisher.publish(
-            SSEEventName.QUESTION_TERMINAL,
-            question_id=question_id,
-            index=i,
-            payload=_failed_payload,
-        )
+        _publish_question_terminal(ctx, index=i, payload=_failed_payload)
 
 
 def _track_active_run(
@@ -962,6 +1021,7 @@ async def generate_question_stream(
     subjects: Mapping[str, SubjectSpec] | None = None,
     session_factory: Any = None,
     client_factory: Callable[..., LLMClient] | None = None,
+    confirmed_cancel_event: threading.Event | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Async generator yielding SSE event dicts for one or more questions.
 
@@ -969,6 +1029,8 @@ async def generate_question_stream(
       subjects        — the subject-spec registry; defaults to SUBJECTS.
       session_factory — async session maker; defaults to AsyncSessionLocal.
       client_factory  — LLMClient constructor; defaults to LLMClient.
+      confirmed_cancel_event — internal cancellation confirmation seam; unset
+        for ordinary disconnects.
     """
     _subjects = subjects if subjects is not None else SUBJECTS
     _session_factory = session_factory if session_factory is not None else AsyncSessionLocal
@@ -1021,6 +1083,7 @@ async def generate_question_stream(
         html_renderer=html_renderer,
         on_error=_collect_sq_config_error,
         cancel_event=_cancel_event,
+        confirmed_cancel_event=confirmed_cancel_event,
         publisher=_publisher,
         run_id=_run_id,
     )
@@ -1088,6 +1151,9 @@ async def generate_question_stream(
         session_factory=ctx.session_factory,
         next_order=ctx.next_order,
     )
+    if planner_recorder is not None:
+        with ctx.exchange_recorders_lock:
+            ctx.exchange_recorders.append(planner_recorder)
     planner_events_enabled = True
     _planner_publisher_observer = make_publisher_observer(ctx.publisher, None)
 
@@ -1123,6 +1189,7 @@ async def generate_question_stream(
             planning_task.cancel()
             await asyncio.gather(planning_task, return_exceptions=True)
 
+    batch_fatal_error: Exception | None = None
     try:
         # Consume observer events while the synchronous planner remains in its
         # worker thread.  The queue-get task is always cancelled and awaited
@@ -1152,7 +1219,10 @@ async def generate_question_stream(
             await asyncio.sleep(0)
             while not queue.empty():
                 yield queue.get_nowait()
-            batch_briefs = await planning_task
+            try:
+                batch_briefs = await planning_task
+            except Exception as exc:  # noqa: BLE001 — batch failure is explicit below
+                batch_fatal_error = exc
             break
     except asyncio.CancelledError:
         # Cancelling the asyncio wrapper around to_thread does not stop the
@@ -1175,17 +1245,31 @@ async def generate_question_stream(
         # disabled the gate in _cleanup_planning().
         planner_events_enabled = False
 
-    ctx.publisher.publish(
-        SSEEventName.STAGE,
-        operation_id=planner_scope.operation_id,
-        payload={
-            "type": "stage",
-            "agent": "planner",
-            "stage": "batch_briefs",
-            "status": "end",
-            "ts": time.time(),
-        },
-    )
+    if batch_fatal_error is None:
+        ctx.publisher.publish(
+            SSEEventName.STAGE,
+            operation_id=planner_scope.operation_id,
+            payload={
+                "type": "stage",
+                "agent": "planner",
+                "stage": "batch_briefs",
+                "status": "end",
+                "ts": time.time(),
+            },
+        )
+    else:
+        ctx.publisher.publish(
+            SSEEventName.STAGE,
+            operation_id=planner_scope.operation_id,
+            payload={
+                "type": "stage",
+                "agent": "planner",
+                "stage": "batch_briefs",
+                "status": "error",
+                "message": f"Batch planning failed ({type(batch_fatal_error).__name__})",
+                "ts": time.time(),
+            },
+        )
 
     # Guard: if the request was cancelled while planning ran in its thread
     # (e.g. the client disconnected), do not submit workers.  This is an extra
@@ -1195,19 +1279,101 @@ async def generate_question_stream(
         return
 
     ctx.emit_pipeline("pipeline_start", total=ctx.count)
-    question_clients = [
-        _scoped_client(_client_factory, ctx.client_config, ctx.manifest[i])
-        for i in range(ctx.count)
-    ]
-    futures = [
-        loop.run_in_executor(
-            None, functools.partial(_worker_one, i, question_clients[i], ctx, batch_briefs),
+    if batch_fatal_error is None:
+        question_clients = [
+            _scoped_client(_client_factory, ctx.client_config, ctx.manifest[i])
+            for i in range(ctx.count)
+        ]
+        futures = [
+            loop.run_in_executor(
+                None, functools.partial(_worker_one, i, question_clients[i], ctx, batch_briefs),
+            )
+            for i in range(ctx.count)
+        ]
+    else:
+        futures = []
+
+    async def _flush_generation_recorders() -> None:
+        """Finish best-effort generation-log staging before publishing done."""
+        with ctx.exchange_recorders_lock:
+            exchange_recorders = tuple(ctx.exchange_recorders)
+        recorders = tuple(
+            recorder
+            for recorder in (
+                ctx.figure_policy_recorder,
+                ctx.reference_example_recorder,
+                *exchange_recorders,
+            )
+            if recorder is not None
         )
-        for i in range(ctx.count)
-    ]
+        outcomes = await asyncio.gather(
+            *(recorder.flush() for recorder in recorders),
+            return_exceptions=True,
+        )
+        for outcome in outcomes:
+            if isinstance(outcome, Exception):
+                logger.warning("generation recorder flush failed: %s", type(outcome).__name__)
+        # Publisher callbacks use call_soon_threadsafe; let the event loop run
+        # them before the final pipeline/done markers are enqueued.
+        await asyncio.sleep(0)
 
     async def _wait_and_signal() -> None:
-        await asyncio.gather(*futures, return_exceptions=True)
+        if batch_fatal_error is not None:
+            ctx.publisher.publish(
+                SSEEventName.ERROR,
+                payload=build_sse_error(
+                    "batch_generation_failed",
+                    f"Batch planning failed ({type(batch_fatal_error).__name__})",
+                ),
+            )
+            for i, question in enumerate(ctx.manifest):
+                terminal = _build_question_terminal_payload(
+                    question_id=question.question_id,
+                    termination_reason="failed",
+                    has_final=False,
+                    final_revision=None,
+                    question=None,
+                    params=ctx.params,
+                    output_dir=ctx.config.output_dir,
+                    announced_slots=None,
+                    unknown_reason="batch failed before question generation",
+                )
+                _publish_question_terminal(ctx, index=i, payload=terminal)
+        else:
+            outcomes = await asyncio.gather(*futures, return_exceptions=True)
+            for i, outcome in enumerate(outcomes):
+                if not isinstance(outcome, BaseException):
+                    continue
+                question = ctx.manifest[i]
+                if ctx.publisher.is_terminal_sealed(question.question_id):
+                    continue
+                logger.error(
+                    "question worker exited outside its boundary (index=%d, type=%s)",
+                    i,
+                    type(outcome).__name__,
+                )
+                ctx.publisher.publish(
+                    SSEEventName.ERROR,
+                    question_id=question.question_id,
+                    index=i,
+                    payload=build_sse_error(
+                        "generation_failed",
+                        f"Question generation failed ({type(outcome).__name__})",
+                    ),
+                )
+                terminal = _build_question_terminal_payload(
+                    question_id=question.question_id,
+                    termination_reason="failed",
+                    has_final=False,
+                    final_revision=None,
+                    question=None,
+                    params=ctx.params,
+                    output_dir=ctx.config.output_dir,
+                    announced_slots=ctx.snapshot_ledger.get_slot_manifest(question.question_id),
+                    unknown_reason="question worker exited before final content",
+                )
+                _publish_question_terminal(ctx, index=i, payload=terminal)
+        await _flush_generation_recorders()
         ctx.emit_pipeline("pipeline_end", total=ctx.count)
         ctx.publisher.publish(SSEEventName.DONE, payload={})
 
@@ -1250,10 +1416,13 @@ async def generate_question_stream(
         # (per-render lease; see RendererLease.render()).
         with anyio.CancelScope(shield=True):
             try:
-                await signal_task
+                if signal_task is not None:
+                    await signal_task
+            except Exception as exc:  # noqa: BLE001 — cleanup must continue
+                logger.warning("generation signal cleanup failed: %s", type(exc).__name__)
             finally:
-                if ctx.figure_policy_recorder is not None:
-                    await ctx.figure_policy_recorder.flush()
-                if ctx.reference_example_recorder is not None:
-                    await ctx.reference_example_recorder.flush()
-            _drain.unregister_queue(queue)
+                try:
+                    await _flush_generation_recorders()
+                except Exception as exc:  # noqa: BLE001 — defensive cleanup boundary
+                    logger.warning("generation recorder cleanup failed: %s", type(exc).__name__)
+                _drain.unregister_queue(queue)

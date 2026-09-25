@@ -56,6 +56,33 @@ function makeRunEvidence(overrides: Partial<RunEvidenceState> = {}): RunEvidence
   };
 }
 
+function replayFixture(fixtureName: string): RunEvidenceState {
+  const lines = readFileSync(
+    resolve(__dirname, `../../../tests/fixtures/generation_v2/${fixtureName}`),
+    "utf-8",
+  ).trim().split("\n").map((line) => JSON.parse(line) as {
+    event: string;
+    context: Record<string, unknown>;
+    payload: Record<string, unknown>;
+  });
+  const started = lines[0];
+  let state = createRunEvidence({
+    runId: String(started.context.run_id),
+    total: Number(started.payload.total),
+    manifest: (started.payload.questions as Array<Record<string, unknown>>).map((question) => ({
+      index: Number(question.index),
+      questionId: String(question.question_id),
+    })),
+  });
+  for (const line of lines.slice(1)) {
+    state = applyV2Event(state, {
+      kind: "v2",
+      event: { name: line.event, context: line.context, payload: line.payload },
+    });
+  }
+  return state;
+}
+
 // Mock useGenerate to return runEvidence
 const generateState = vi.hoisted(() => ({
   runEvidence: null as RunEvidenceState | null,
@@ -276,5 +303,18 @@ describe("GeneratePage — v2 evidence rendering", () => {
     expect(screen.getByText("文本 A")).toBeInTheDocument();
     expect(screen.getByText("文本 B")).toBeInTheDocument();
     expect(screen.getByText("文本 C")).toBeInTheDocument();
+  });
+
+  it("replays the real A/B/C/D transport fixture with draft and terminal gaps preserved", () => {
+    generateState.runEvidence = replayFixture("math_abcd_transport.jsonl");
+
+    render(<GeneratePage subject="math" />);
+
+    expect(screen.getAllByTestId("question-card-content")).toHaveLength(4);
+    expect(screen.getByText("question 3")).toBeInTheDocument();
+    expect(screen.getByText("card.termination_failed")).toBeInTheDocument();
+    expect(screen.getByText("card.receipt_draft")).toBeInTheDocument();
+    expect(screen.getByText("question 4")).toBeInTheDocument();
+    expect(screen.getAllByText("card.unknown")).toHaveLength(1);
   });
 });

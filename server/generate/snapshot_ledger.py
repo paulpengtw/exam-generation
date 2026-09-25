@@ -27,6 +27,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from server.generate.event_protocol import QuestionTerminalPayload
+
 # Keys to strip from the question at any depth before computing the signature.
 _EXCLUDED_KEYS: frozenset[str] = frozenset(
     [
@@ -176,6 +178,8 @@ class QuestionSnapshotLedger:
         self._signatures: dict[str, str] = {}
         # question_id -> first announced fixed-slot manifest
         self._slot_manifests: dict[str, list[dict[str, Any]]] = {}
+        # question_id -> immutable terminal seal (current signature, summary)
+        self._terminal_seals: dict[str, tuple[str, dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------
     # Primary API
@@ -199,6 +203,11 @@ class QuestionSnapshotLedger:
             # returned/stored.  This keeps concurrent queued mutations from
             # assigning a revision to content other than the snapshot.
             sig = _content_signature(snapshot, output_dir)
+            sealed = self._terminal_seals.get(question_id)
+            if sealed is not None and sig != sealed[0]:
+                raise QuestionTerminalSealedError(
+                    f"question {question_id!r} is sealed at its terminal content"
+                )
             prev_sig = self._signatures.get(question_id)
             if prev_sig is None or sig != prev_sig:
                 rev = self._revisions.get(question_id, 0) + 1
@@ -208,6 +217,55 @@ class QuestionSnapshotLedger:
                 rev = self._revisions[question_id]
 
         return rev, snapshot
+
+    def seal_terminal(self, question_id: str, payload: dict[str, Any]) -> bool:
+        """Seal one question's terminal summary exactly once.
+
+        Returns ``True`` for the first seal and ``False`` for an identical
+        re-send.  A different summary or a final revision that is not the
+        latest committed revision is rejected.  The terminal itself is
+        validated here so callers cannot bypass the protocol model by using
+        the ledger as a lower-level guard.
+        """
+        validated = QuestionTerminalPayload.model_validate(payload)
+        if any(slot.question_id != question_id for slot in (
+            *validated.expected,
+            *validated.delivered,
+            *validated.missing,
+        )):
+            raise ValueError("terminal slot question_id does not match sealed question")
+        canonical = validated.model_dump(mode="json", exclude_none=True)
+        final_revision = validated.final_revision
+
+        with self._lock:
+            existing = self._terminal_seals.get(question_id)
+            if existing is not None:
+                if existing[1] == canonical:
+                    return False
+                raise QuestionTerminalConflictError(
+                    f"question {question_id!r} received a contradictory terminal"
+                )
+
+            current_revision = self._revisions.get(question_id, 0)
+            if validated.has_final and final_revision != current_revision:
+                raise QuestionTerminalSealedError(
+                    f"terminal final revision {final_revision!r} does not match "
+                    f"latest revision {current_revision!r} for {question_id!r}"
+                )
+            signature = self._signatures.get(question_id, "")
+            self._terminal_seals[question_id] = (signature, copy.deepcopy(canonical))
+            return True
+
+    def is_terminal_sealed(self, question_id: str) -> bool:
+        """Return whether a question has an immutable terminal seal."""
+        with self._lock:
+            return question_id in self._terminal_seals
+
+    def get_terminal(self, question_id: str) -> dict[str, Any] | None:
+        """Return a caller-owned copy of the sealed terminal summary."""
+        with self._lock:
+            sealed = self._terminal_seals.get(question_id)
+            return copy.deepcopy(sealed[1]) if sealed is not None else None
 
     def record_slot_manifest(
         self,
@@ -238,3 +296,11 @@ class QuestionSnapshotLedger:
         """Return the current revision number for *question_id* (0 if unseen)."""
         with self._lock:
             return self._revisions.get(question_id, 0)
+
+
+class QuestionTerminalSealedError(RuntimeError):
+    """Raised when work attempts to change content after terminal sealing."""
+
+
+class QuestionTerminalConflictError(RuntimeError):
+    """Raised when a second terminal summary disagrees with the first one."""

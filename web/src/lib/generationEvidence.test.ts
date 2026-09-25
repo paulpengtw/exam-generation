@@ -297,7 +297,7 @@ describe("applyV2Event — question_terminal", () => {
     expect(next.questions["q_001"].processing).toBe("ended");
   });
 
-  it("does not apply a newer terminal verdict to an older final draft", () => {
+  it("disputes a terminal whose final revision conflicts with an older final receipt", () => {
     let state = freshRun();
     state = applyV2Event(state, makeEvent(
       "result",
@@ -321,8 +321,10 @@ describe("applyV2Event — question_terminal", () => {
 
     expect(next.questions["q_001"].content.revision).toBe(1);
     expect(next.questions["q_001"].review.status).toBe("unknown");
-    expect(next.questions["q_001"].review.pending).toBe(true);
-    expect(next.questions["q_001"].finalPending).toBe(true);
+    expect(next.questions["q_001"].review.pending).toBe(false);
+    expect(next.questions["q_001"].finalPending).toBe(false);
+    expect(next.questions["q_001"].processing).toBe("unknown");
+    expect(next.questions["q_001"].terminalConflict).toBe(true);
   });
 
   it("does not double count a second terminal for the same question", () => {
@@ -335,6 +337,80 @@ describe("applyV2Event — question_terminal", () => {
     state = applyV2Event(state, terminal);
     const next = applyV2Event(state, terminal);
     expect(selectEndedCount(next)).toBe(1);
+  });
+
+  it("rejects an internally contradictory terminal without ending the question", () => {
+    let state = freshRun();
+    state = applyV2Event(state, makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0 },
+      {
+        termination_reason: "normal", has_final: true, final_revision: 1,
+        delivery_status: "partial", expected: [], delivered: [],
+        missing: [{ kind: "image", question_id: "q_001", subquestion_id: null }],
+        review: { status: "passed", content_revision: 1 },
+      },
+    ));
+
+    expect(state.questions["q_001"].terminal).toBeNull();
+    expect(state.questions["q_001"].processing).toBe("unknown");
+    expect(selectEndedCount(state)).toBe(0);
+  });
+
+  it("isolates contradictory terminal redelivery and preserves prior content", () => {
+    let state = freshRun();
+    const q = sampleQuestion("q_001");
+    state = applyV2Event(state, makeEvent(
+      "question_update",
+      { run_id: RUN_ID, event_seq: 3, question_id: "q_001", index: 0, content_revision: 1 },
+      { index: 0, phase: "draft", question: q },
+    ));
+    const first = {
+      termination_reason: "failed", has_final: false, final_revision: null,
+      delivery_status: "none", expected: [], delivered: [], missing: [],
+      review: { status: "unknown", unknown_reason: "no final content" },
+    };
+    state = applyV2Event(state, makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 4, question_id: "q_001", index: 0 },
+      first,
+    ));
+    state = applyV2Event(state, makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0 },
+      { ...first, termination_reason: "cancelled", unknown_reason: "cancelled before completion" },
+    ));
+
+    expect(state.questions["q_001"].content.question).toEqual(q);
+    expect(state.questions["q_001"].content.receipt).toBe("draft");
+    expect(state.questions["q_001"].processing).toBe("unknown");
+    expect(state.questions["q_001"].terminalConflict).toBe(true);
+    expect(selectEndedCount(state)).toBe(0);
+  });
+
+  it("keeps ended count when only review evidence is contradictory", () => {
+    let state = freshRun();
+    const terminal = {
+      termination_reason: "normal", has_final: true, final_revision: 1,
+      delivery_status: "complete", expected: [], delivered: [], missing: [],
+      review: { status: "passed", content_revision: 1 },
+    };
+    state = applyV2Event(state, makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 4, question_id: "q_001", index: 0 },
+      terminal,
+    ));
+    state = applyV2Event(state, makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0 },
+      { ...terminal, review: { status: "failed", content_revision: 1 } },
+    ));
+
+    expect(state.questions["q_001"].processing).toBe("ended");
+    expect(state.questions["q_001"].terminalConflict).toBe(false);
+    expect(state.questions["q_001"].reviewConflict).toBe(true);
+    expect(state.questions["q_001"].review.status).toBe("unknown");
+    expect(selectEndedCount(state)).toBe(1);
   });
 
   it("sets review.status to skipped for skipped review", () => {
@@ -691,6 +767,53 @@ describe("natural-sciences and grouped-math fixed-slot fixture replay", () => {
     expect(Object.values(a.activity?.calls ?? {}).some(
       (call) => call.retryOfCallId !== null,
     )).toBe(true);
+    expect(selectEndedCount(state)).toBe(3);
+    expect(selectFinalReceivedCount(state)).toBe(3);
+  });
+});
+
+describe("issue #747 A/B/C/D real-publisher transport fixture", () => {
+  it("keeps A complete, B partial, C draft-only failure, and D final-without-terminal", () => {
+    const lines = readFileSync(
+      resolve(__dirname, "../../../tests/fixtures/generation_v2/math_abcd_transport.jsonl"),
+      "utf-8",
+    ).trim().split("\n").map((line) => JSON.parse(line) as {
+      event: string;
+      context: Record<string, unknown>;
+      payload: Record<string, unknown>;
+    });
+    const started = lines[0];
+    let state = createRunEvidence({
+      runId: String(started.context.run_id),
+      total: Number(started.payload.total),
+      manifest: (started.payload.questions as Array<Record<string, unknown>>).map((question) => ({
+        index: Number(question.index),
+        questionId: String(question.question_id),
+      })),
+    });
+    const apply = (line: typeof lines[number]) => {
+      state = applyV2Event(state, {
+        kind: "v2",
+        event: { name: line.event, context: line.context, payload: line.payload },
+      });
+    };
+
+    for (const line of lines.slice(1)) apply(line);
+    // Redelivery must not inflate either normalized count.
+    for (const line of lines.slice(1)) apply(line);
+
+    const a = state.questions.q_RUN_001;
+    const b = state.questions.q_RUN_002;
+    const c = state.questions.q_RUN_003;
+    const d = state.questions.q_RUN_004;
+    expect(a.terminal?.delivery_status).toBe("complete");
+    expect(b.terminal?.delivery_status).toBe("partial");
+    expect(c.terminal?.termination_reason).toBe("failed");
+    expect(c.content.receipt).toBe("draft");
+    expect(c.terminal?.has_final).toBe(false);
+    expect(d.content.receipt).toBe("final");
+    expect(d.terminal).toBeNull();
+    expect(d.processing).toBe("unknown");
     expect(selectEndedCount(state)).toBe(3);
     expect(selectFinalReceivedCount(state)).toBe(3);
   });

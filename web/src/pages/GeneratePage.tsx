@@ -335,7 +335,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     }).catch(() => op.end("failed"));
   };
 
-  const showProgress = !(progressLines.length === 0 && status === "idle");
+  const showProgress = runEvidence !== null || !(progressLines.length === 0 && status === "idle");
   const runState: RunState =
     status === "error"
       ? "error"
@@ -530,7 +530,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
         {showProgress && (
           <section ref={progressRef} className="rounded-lg border bg-white p-4 shadow-sm">
-            <ProgressLog lines={progressLines} status={status} errorMessage={errorMessage} llmCalls={llmCalls} />
+            <ProgressLog
+              lines={progressLines}
+              status={status}
+              errorMessage={errorMessage}
+              llmCalls={llmCalls}
+              evidence={runEvidence}
+            />
           </section>
         )}
 

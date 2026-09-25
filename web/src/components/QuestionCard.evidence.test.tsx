@@ -173,4 +173,56 @@ describe("QuestionCard — with content (evidence has question)", () => {
     // Question should still be rendered
     expect(screen.getByTestId("question-card-content")).toBeInTheDocument();
   });
+
+  it("keeps a failed terminal's no-result conclusion separate from a received draft", () => {
+    const ev = makeEvidence({
+      processing: "ended",
+      content: { receipt: "draft", revision: 1, question: sampleQuestion, phase: "draft" },
+      terminal: {
+        termination_reason: "failed", has_final: false, final_revision: null,
+        delivery_status: "none", expected: [], delivered: [], missing: [],
+        review: { status: "unknown", reason: "no final content" },
+      },
+      review: { status: "unknown", revision: null },
+    });
+    render(<QuestionCard evidence={ev} question={sampleQuestion} index={0} />);
+
+    expect(screen.getByTestId("question-card-content")).toBeInTheDocument();
+    expect(screen.getByTestId("evidence-receipt-status")).toHaveTextContent(/草稿|draft/i);
+    expect(screen.getByTestId("evidence-delivery-status")).toHaveTextContent(/無結果|none/i);
+  });
+
+  it("shows conflicted termination evidence as unknown while retaining content", () => {
+    const ev = makeEvidence({
+      processing: "unknown",
+      content: { receipt: "final", revision: 1, question: sampleQuestion, phase: "verified" },
+      terminalConflict: true,
+      terminalConflictReason: "contradictory terminal evidence",
+      review: { status: "unknown", revision: 1 },
+    });
+    render(<QuestionCard evidence={ev} question={sampleQuestion} index={0} />);
+
+    expect(screen.getByTestId("evidence-processing-status")).toHaveTextContent(/狀態未知|unknown/i);
+    expect(screen.getByTestId("evidence-terminal-conflict")).toBeInTheDocument();
+    expect(screen.getByTestId("question-card-content")).toBeInTheDocument();
+  });
+
+  it("keeps an undisputed terminal ended when only review evidence conflicts", () => {
+    const ev = makeEvidence({
+      processing: "ended",
+      content: { receipt: "final", revision: 1, question: sampleQuestion, phase: "verified" },
+      terminal: {
+        termination_reason: "normal", has_final: true, final_revision: 1,
+        delivery_status: "complete", expected: [], delivered: [], missing: [],
+        review: { status: "passed", content_revision: 1 },
+      },
+      reviewConflict: true,
+      review: { status: "unknown", revision: 1, reason: "contradictory review evidence" },
+    });
+    render(<QuestionCard evidence={ev} question={sampleQuestion} index={0} />);
+
+    expect(screen.getByTestId("evidence-processing-status")).toHaveTextContent(/已結束|ended/i);
+    expect(screen.getByTestId("evidence-review-conflict")).toBeInTheDocument();
+    expect(screen.getByTestId("evidence-review-status")).toHaveTextContent(/審題未知|unknown/i);
+  });
 });

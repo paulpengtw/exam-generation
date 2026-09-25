@@ -130,6 +130,77 @@ def test_terminal_normal_partial():
     assert payload.delivery_status == "partial"
 
 
+def test_terminal_rejects_partial_when_expected_slots_are_not_partitioned():
+    slot = SlotRef(kind="image", question_id="q_001")
+    with pytest.raises(Exception):
+        QuestionTerminalPayload(
+            termination_reason="normal",
+            has_final=True,
+            final_revision=1,
+            delivery_status="partial",
+            expected=[],
+            delivered=[],
+            missing=[slot],
+            review={"status": "passed", "content_revision": 1},
+        )
+
+
+def test_terminal_rejects_complete_when_a_slot_is_not_delivered():
+    slot = SlotRef(kind="image", question_id="q_001")
+    with pytest.raises(Exception):
+        QuestionTerminalPayload(
+            termination_reason="normal",
+            has_final=True,
+            final_revision=1,
+            delivery_status="complete",
+            expected=[slot],
+            delivered=[],
+            missing=[],
+            review={"status": "passed", "content_revision": 1},
+        )
+
+
+def test_terminal_rejects_duplicate_or_overlapping_slot_references():
+    slot = SlotRef(kind="image", question_id="q_001")
+    with pytest.raises(Exception):
+        QuestionTerminalPayload(
+            termination_reason="normal",
+            has_final=True,
+            final_revision=1,
+            delivery_status="partial",
+            expected=[slot, slot],
+            delivered=[],
+            missing=[slot],
+            review={"status": "passed", "content_revision": 1},
+        )
+
+    with pytest.raises(Exception):
+        QuestionTerminalPayload(
+            termination_reason="normal",
+            has_final=True,
+            final_revision=1,
+            delivery_status="partial",
+            expected=[slot],
+            delivered=[slot],
+            missing=[slot],
+            review={"status": "passed", "content_revision": 1},
+        )
+
+
+def test_terminal_rejects_final_with_none_delivery():
+    with pytest.raises(Exception):
+        QuestionTerminalPayload(
+            termination_reason="normal",
+            has_final=True,
+            final_revision=1,
+            delivery_status="none",
+            expected=[],
+            delivered=[],
+            missing=[],
+            review={"status": "passed", "content_revision": 1},
+        )
+
+
 def test_terminal_failed_none():
     payload = QuestionTerminalPayload(
         termination_reason="failed",

@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import logging
 import threading
 import uuid
 from collections.abc import Callable
+from concurrent.futures import Future
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-WriteRow = Callable[[dict[str, Any]], None]
+WriteRow = Callable[[dict[str, Any]], Any]
 
 
 class ExchangeRecorder:
@@ -25,6 +27,10 @@ class ExchangeRecorder:
     no matching request (defensive). If a request never gets a response
     (worker crashed), that row is intentionally not written — the
     generation_log row's `status='failed'` already signals the crash.
+
+    Callers that own the event-loop-backed write sink should await ``flush()``
+    after worker activity so writes get a bounded chance to finish before the
+    run ends. Writes that outlive that chance continue in the background.
     """
 
     def __init__(
@@ -42,6 +48,70 @@ class ExchangeRecorder:
         self._lock = threading.Lock()
         self._counter = itertools.count(1)
         self._next_order = next_order
+        self._pending_writes: set[Future[Any]] = set()
+
+    def track_write(self, future: Future[Any]) -> None:
+        """Retain a cross-thread write until its eventual completion."""
+        with self._lock:
+            self._pending_writes.add(future)
+        future.add_done_callback(self._forget_write)
+
+    def _forget_write(self, future: Future[Any]) -> None:
+        with self._lock:
+            self._pending_writes.discard(future)
+
+    async def flush(self) -> None:
+        """Await all writes that were still in flight when this is called.
+
+        The write callback is intentionally best effort.  Its completion callback
+        logs failures, while one failed write does not prevent sibling writes
+        from being drained. The deadline applies to the complete set of writes,
+        rather than once per write.
+        """
+        with self._lock:
+            pending = tuple(self._pending_writes)
+        if not pending:
+            return
+
+        # Import at call time so tests and deployments can change the existing
+        # persistence timeout without creating a module import cycle.
+        from server.generate import persistence
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(0.0, float(persistence.EXCHANGE_WRITE_TIMEOUT_SECONDS))
+        wrapped = tuple(asyncio.wrap_future(future, loop=loop) for future in pending)
+        done, not_done = await asyncio.wait(
+            wrapped,
+            timeout=max(0.0, deadline - loop.time()),
+        )
+
+        def _consume_late_result(future: asyncio.Future[Any]) -> None:
+            try:
+                future.result()
+            except BaseException:
+                # The persistence sink's completion callback owns the
+                # eventual diagnostic; never surface content-bearing future
+                # exceptions through asyncio's unhandled-future handler.
+                pass
+
+        for future in done:
+            try:
+                future.result()
+            except BaseException as outcome:
+                logger.warning(
+                    "ExchangeRecorder write drain failed: %s",
+                    type(outcome).__name__,
+                )
+        for future in not_done:
+            future.add_done_callback(_consume_late_result)
+        if not_done:
+            with self._lock:
+                still_pending = sum(not future.done() for future in pending)
+            if still_pending:
+                logger.warning(
+                    "ExchangeRecorder flush timed out (pending_writes=%d)",
+                    still_pending,
+                )
 
     def __call__(self, event: dict[str, Any]) -> None:
         try:
@@ -155,7 +225,9 @@ class ExchangeRecorder:
             if response_identity:
                 row["response_body"]["identity"] = response_identity
         try:
-            self._write_row(row)
+            write_result = self._write_row(row)
+            if isinstance(write_result, Future):
+                self.track_write(write_result)
         except Exception as exc:
             logger.warning(
                 "ExchangeRecorder write failed (agent=%s, order=%d): %s",

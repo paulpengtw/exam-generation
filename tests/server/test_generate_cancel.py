@@ -46,6 +46,17 @@ class _FakeParams:
     """Opaque stand-in for sampled params; fake do_generate ignores it."""
 
 
+class _FailingFlushRecorder:
+    """Recorder seam used to prove cleanup failures do not abort the stream."""
+
+    def __init__(self) -> None:
+        self.flush_calls = 0
+
+    async def flush(self) -> None:
+        self.flush_calls += 1
+        raise RuntimeError("injected recorder cleanup failure")
+
+
 # ---------------------------------------------------------------------------
 # Helper: build a fake math spec that does not need app_state.curriculum
 # ---------------------------------------------------------------------------
@@ -285,6 +296,45 @@ def test_a2_normal_run_completes_with_both_stages(tmp_path: Path) -> None:
     )
 
 
+def test_cleanup_recorder_failure_still_publishes_done(tmp_path: Path) -> None:
+    """A recorder cleanup exception cannot replace the settled stream ending."""
+    stage_calls: list[str] = []
+    fake_spec = _make_happy_spec(stage_calls)
+    failing_recorder = _FailingFlushRecorder()
+    config = ServerConfig(
+        api_key="x",
+        output_dir=tmp_path,
+        data_dir=Path("data"),
+        creative_planning=False,
+    )
+    params = GenerateParams(subject="fake", count=1, skip_verify=True)
+    app_state = SimpleNamespace(renderer_pool=None)
+    original_factory = _gen_service.make_figure_policy_trail_recorder
+    _gen_service.make_figure_policy_trail_recorder = (  # type: ignore[assignment]
+        lambda **_kwargs: failing_recorder
+    )
+
+    async def collect() -> list[dict]:
+        events: list[dict] = []
+        async for event in generate_question_stream(
+            params,
+            config,
+            app_state,
+            generation_log_id=uuid.uuid4(),
+            subjects={"fake": fake_spec},
+        ):
+            events.append(event)
+        return events
+
+    try:
+        events = asyncio.run(collect())
+    finally:
+        _gen_service.make_figure_policy_trail_recorder = original_factory  # type: ignore[assignment]
+
+    assert events[-1]["event"] == "done"
+    assert failing_recorder.flush_calls > 0
+
+
 # ---------------------------------------------------------------------------
 # A3 — Aborted run: no error SSE event is emitted on cancel (clean exit)
 # ---------------------------------------------------------------------------
@@ -348,6 +398,9 @@ def test_a3_aborted_run_emits_no_error_event(tmp_path: Path) -> None:
     error_events = [e for e in collected_events if e["event"] == "error"]
     assert error_events == [], (
         f"A clean cancel must not emit any error SSE events; got {error_events!r}"
+    )
+    assert [e for e in collected_events if e["event"] == "question_terminal"] == [], (
+        "a disconnect is not confirmed cancellation and must not emit a terminal"
     )
     # Stage 1 ran; stage 2 did not (verified by A1).
     assert "stage1" in stage_calls

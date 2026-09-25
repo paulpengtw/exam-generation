@@ -15,7 +15,16 @@ import itertools
 import threading
 from typing import Any
 
+from server.generate.event_protocol import QuestionTerminalPayload
 from src.common.generation_events import CallScope, OperationScope
+
+
+class QuestionSealedError(RuntimeError):
+    """Raised when a question tries to publish new work after its terminal."""
+
+
+class QuestionTerminalConflictError(RuntimeError):
+    """Raised when a question tries to replace its immutable terminal summary."""
 
 
 class GenerationPublisher:
@@ -32,6 +41,7 @@ class GenerationPublisher:
         self._queue = queue
         self._counter = itertools.count(1)
         self._lock = threading.Lock()
+        self._terminal_payloads: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -82,27 +92,13 @@ class GenerationPublisher:
             operation_id = operation_id or call_scope.operation_id
             retry_of_call_id = retry_of_call_id or call_scope.retry_of_call_id
 
-        seq = self.next_seq()
-        context: dict[str, Any] = {
-            "run_id": self._run_id,
-            "event_seq": seq,
-        }
-        if question_id is not None:
-            context["question_id"] = question_id
-        if index is not None:
-            context["index"] = index
-        if content_revision is not None:
-            context["content_revision"] = content_revision
-        if subquestion_index is not None:
-            context["subquestion_index"] = subquestion_index
-        if operation_id is not None:
-            context["operation_id"] = operation_id
-        if call_id is not None:
-            context["call_id"] = call_id
-
         copied_payload = copy.deepcopy(payload) if payload is not None else {}
         if not isinstance(copied_payload, dict):
             raise TypeError("generation event payload must be a dictionary")
+
+        if event_name == "question_terminal" and question_id is None:
+            raise ValueError("question_terminal requires question_id")
+
         canonical_payload_identity = {
             "run_id": self._run_id,
             "operation_id": operation_id,
@@ -132,6 +128,31 @@ class GenerationPublisher:
                 raise ValueError("payload retry_of_call_id conflicts with call scope")
             copied_payload.setdefault("retry_of_call_id", retry_of_call_id)
 
+        self._check_question_seal(
+            event_name,
+            question_id=question_id,
+            content_revision=content_revision,
+            payload=copied_payload,
+        )
+
+        seq = self.next_seq()
+        context: dict[str, Any] = {
+            "run_id": self._run_id,
+            "event_seq": seq,
+        }
+        if question_id is not None:
+            context["question_id"] = question_id
+        if index is not None:
+            context["index"] = index
+        if content_revision is not None:
+            context["content_revision"] = content_revision
+        if subquestion_index is not None:
+            context["subquestion_index"] = subquestion_index
+        if operation_id is not None:
+            context["operation_id"] = operation_id
+        if call_id is not None:
+            context["call_id"] = call_id
+
         envelope: dict[str, Any] = {
             "event": event_name,      # v1-compatible top-level key
             "context": context,        # v2 metadata
@@ -141,3 +162,54 @@ class GenerationPublisher:
             envelope.update(sidecars)
 
         self._loop.call_soon_threadsafe(self._queue.put_nowait, envelope)
+
+    def is_terminal_sealed(self, question_id: str) -> bool:
+        """Return whether the publisher has accepted a terminal for *question_id*."""
+        with self._lock:
+            return question_id in self._terminal_payloads
+
+    def _check_question_seal(
+        self,
+        event_name: str,
+        *,
+        question_id: str | None,
+        content_revision: int | None,
+        payload: dict[str, Any],
+    ) -> None:
+        """Validate terminal immutability before allocating an event sequence."""
+        if question_id is None:
+            return
+
+        if event_name == "question_terminal":
+            validated = QuestionTerminalPayload.model_validate(payload)
+            if any(slot.question_id != question_id for slot in (
+                *validated.expected,
+                *validated.delivered,
+                *validated.missing,
+            )):
+                raise ValueError("terminal slot question_id does not match event question")
+            canonical = validated.model_dump(mode="json", exclude_none=True)
+            with self._lock:
+                previous = self._terminal_payloads.get(question_id)
+                if previous is not None and previous != canonical:
+                    raise QuestionTerminalConflictError(
+                        f"question {question_id!r} received a contradictory terminal"
+                    )
+                self._terminal_payloads.setdefault(question_id, canonical)
+            return
+
+        with self._lock:
+            terminal = self._terminal_payloads.get(question_id)
+            if terminal is None:
+                return
+
+        if event_name == "result":
+            if not terminal.get("has_final") or content_revision != terminal.get("final_revision"):
+                raise QuestionSealedError(
+                    f"question {question_id!r} can only deliver its declared final"
+                )
+            return
+
+        raise QuestionSealedError(
+            f"question {question_id!r} is sealed after question_terminal"
+        )

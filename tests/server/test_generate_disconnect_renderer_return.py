@@ -55,6 +55,17 @@ class _FakeParams:
     """Opaque stand-in for sampled params; fake do_generate ignores it."""
 
 
+class _FailingFlushRecorder:
+    """Recorder seam whose cleanup failure must not interrupt stream teardown."""
+
+    def __init__(self) -> None:
+        self.flush_calls = 0
+
+    async def flush(self) -> None:
+        self.flush_calls += 1
+        raise RuntimeError("injected recorder cleanup failure")
+
+
 # ---------------------------------------------------------------------------
 # Blocking fake spec: stage 1 blocks until first_call_release is set,
 # then checks is_cancelled() before proceeding to stage 2.
@@ -207,6 +218,7 @@ def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
 
     original_stream = _gen_routes.generate_question_stream
     original_persist = _gen_routes.persist_aborted_generation_record
+    original_figure_recorder_factory = _gen_service.make_figure_policy_trail_recorder
 
     async def _run() -> None:
         # ── DB — single in-memory engine for the lifetime of this event loop ──
@@ -258,6 +270,7 @@ def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
 
         # ── Timing diagnostic: record when persist_aborted is called ────────
         persist_times: list[float] = []
+        failing_recorder = _FailingFlushRecorder()
 
         async def _timed_persist(**kwargs: Any) -> None:  # noqa: ARG001
             persist_times.append(time.time())
@@ -265,6 +278,9 @@ def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
 
         _gen_routes.generate_question_stream = _stream_with_fake  # type: ignore[assignment]
         _gen_routes.persist_aborted_generation_record = _timed_persist  # type: ignore[assignment]
+        _gen_service.make_figure_policy_trail_recorder = (  # type: ignore[assignment]
+            lambda **_kwargs: failing_recorder
+        )
         limiter.reset()
 
         app = create_app()
@@ -416,6 +432,7 @@ def test_client_disconnect_returns_renderer_to_pool_after_worker_exits(
         finally:
             _gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
             _gen_routes.persist_aborted_generation_record = original_persist  # type: ignore[assignment]
+            _gen_service.make_figure_policy_trail_recorder = original_figure_recorder_factory  # type: ignore[assignment]
             limiter.reset()
             await engine.dispose()
 

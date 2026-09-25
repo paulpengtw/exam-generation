@@ -1298,7 +1298,10 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
     assert rows[1].model_used == "claude-sonnet-4-6"
 
 
-def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
+def test_generate_stream_shares_recorder_across_batch_workers(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """params.count > 1 must share one ExchangeRecorder so exchange_order
 
     stays unique/contiguous across the whole generation_log, instead of each
@@ -1314,6 +1317,7 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
         create_async_engine,
     )
 
+    from server.generate import persistence
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
     from server.models import Base, LLMExchange
@@ -1327,6 +1331,41 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
 
     asyncio.run(_init())
     SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    # Keep the exchange writes deterministically slow while still within the
+    # same deadline used by the worker and completion drain.
+    monkeypatch.setattr(persistence, "EXCHANGE_WRITE_TIMEOUT_SECONDS", 0.05)
+
+    class _DelayedSession:
+        def __init__(self, session):
+            self._session = session
+            self._has_exchange = False
+
+        def add(self, obj):
+            self._has_exchange = isinstance(obj, LLMExchange)
+            self._session.add(obj)
+
+        async def commit(self):
+            if self._has_exchange:
+                await asyncio.sleep(0.01)
+            await self._session.commit()
+
+        def __getattr__(self, name):
+            return getattr(self._session, name)
+
+    class _DelayedSessionContext:
+        def __init__(self, context):
+            self._context = context
+
+        async def __aenter__(self):
+            session = await self._context.__aenter__()
+            return _DelayedSession(session)
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return await self._context.__aexit__(exc_type, exc, traceback)
+
+    def delayed_session_factory():
+        return _DelayedSessionContext(SessionLocal())
 
     log_id = uuid.uuid4()
     config = ServerConfig(
@@ -1403,19 +1442,6 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
 
     fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
-    async def _drive() -> None:
-        async for _ in generate_question_stream(
-            params,
-            config,
-            SimpleNamespace(html_renderer=None, renderer_pool=None),
-            generation_log_id=log_id,
-            subjects={"social_studies": fake_spec},
-            session_factory=SessionLocal,
-        ):
-            pass
-
-    asyncio.run(_drive())
-
     async def _read() -> list[LLMExchange]:
         async with SessionLocal() as s:
             result = await s.execute(
@@ -1425,7 +1451,22 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
             )
             return list(result.scalars().all())
 
-    rows = asyncio.run(_read())
+    async def _drive() -> list[LLMExchange]:
+        rows_at_done: list[LLMExchange] | None = None
+        async for event in generate_question_stream(
+            params,
+            config,
+            SimpleNamespace(html_renderer=None, renderer_pool=None),
+            generation_log_id=log_id,
+            subjects={"social_studies": fake_spec},
+            session_factory=delayed_session_factory,
+        ):
+            if event.get("event") == "done":
+                rows_at_done = await _read()
+        assert rows_at_done is not None
+        return rows_at_done
+
+    rows = asyncio.run(_drive())
     asyncio.run(engine.dispose())
 
     # Two questions x two exchanges each = 4 rows total.
@@ -1433,6 +1474,131 @@ def test_generate_stream_shares_recorder_across_batch_workers(tmp_path) -> None:
     orders = sorted(r.exchange_order for r in rows)
     assert orders == [1, 2, 3, 4]
     assert len(set(orders)) == len(orders)
+
+
+def test_generate_stream_flushes_exchange_recorders_concurrently(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stuck exchange write makes the done barrier wait one deadline, not one per worker."""
+    import dataclasses
+    from types import SimpleNamespace
+
+    from server.generate import persistence
+    from server.generate import service as generate_service
+    from server.generate.exchange_recorder import ExchangeRecorder
+    from server.generate.service import generate_question_stream
+    from server.generate.subjects import SUBJECTS
+    from src.social_studies.schemas import ExamQuestion
+
+    flush_deadline = 0.05
+    worker_count = 4
+    monkeypatch.setattr(persistence, "EXCHANGE_WRITE_TIMEOUT_SECONDS", flush_deadline)
+
+    flush_starts: list[float] = []
+
+    class _TimedExchangeRecorder(ExchangeRecorder):
+        async def flush(self) -> None:
+            flush_starts.append(time.monotonic())
+            await super().flush()
+
+    pending_writes = [concurrent.futures.Future() for _ in range(worker_count)]
+    worker_recorders = [
+        _TimedExchangeRecorder(
+            uuid.uuid4(),
+            lambda _row, pending=pending: pending,
+        )
+        for pending in pending_writes
+    ]
+    recorders = iter(
+        [ExchangeRecorder(uuid.uuid4(), lambda _row: None), *worker_recorders]
+    )
+    recorder_lock = threading.Lock()
+
+    def fake_make_exchange_recorder(**_kwargs):
+        with recorder_lock:
+            return next(recorders)
+
+    monkeypatch.setattr(
+        generate_service,
+        "make_exchange_recorder",
+        fake_make_exchange_recorder,
+    )
+
+    config = ServerConfig(
+        api_key="x",
+        output_dir=tmp_path,
+        data_dir=Path("data"),
+        llm_exchange_retention_days=30,
+        creative_planning=False,
+    )
+    params = _resolved_generate_params(
+        {"subject": "social_studies", "count": worker_count, "seed": 41, "skip_verify": True}
+    )
+
+    def fake_generate_with_corrections(**kwargs):
+        question_id = kwargs["question_id"]
+        sampled = kwargs["params"]
+        obs = kwargs["client"].get_observer()
+        obs(
+            {
+                "type": "llm_request",
+                "agent": "generator",
+                "purpose": "generate",
+                "model": "claude-sonnet-4-6",
+                "messages": [{"role": "user", "content": "hi"}],
+                "params": {"max_tokens": 8192, "temperature": 0.7},
+            }
+        )
+        obs(
+            {
+                "type": "llm_response",
+                "agent": "generator",
+                "purpose": "generate",
+                "model": "claude-sonnet-4-6",
+                "content": "ok",
+                "reasoning": None,
+                "usage": {"input": 10, "output": 5, "cache_read": 0, "cache_creation": 0},
+            }
+        )
+        return ExamQuestion(
+            id=question_id,
+            核心問題="c",
+            文本="p",
+            subquestions=[],
+            情境=[c.value for c in sampled.情境],
+            題型種類=sampled.題型種類.value,
+            題型=sampled.題型[0].value,
+            題目=["q"],
+            正確解題分析=["a"],
+        )
+
+    def fake_do_generate(rng_params, overrides, **kwargs):
+        return fake_generate_with_corrections(params=rng_params, **kwargs)
+
+    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
+
+    async def _drive() -> float:
+        done_after_flush: float | None = None
+        async for event in generate_question_stream(
+            params,
+            config,
+            SimpleNamespace(html_renderer=None, renderer_pool=None),
+            generation_log_id=uuid.uuid4(),
+            subjects={"social_studies": fake_spec},
+        ):
+            if event.get("event") == "done":
+                assert flush_starts
+                done_after_flush = time.monotonic() - min(flush_starts)
+                for pending in pending_writes:
+                    pending.set_result(None)
+                await asyncio.sleep(0)
+        assert done_after_flush is not None
+        return done_after_flush
+
+    done_after_flush = asyncio.run(_drive())
+
+    assert done_after_flush < flush_deadline * 2.5
 
 
 def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(

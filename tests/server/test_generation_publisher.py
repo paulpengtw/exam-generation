@@ -18,6 +18,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from server.generate.marshalling import EMITTED_EVENT_NAMES, SSEEventName
 from server.generate.publisher import GenerationPublisher
 from server.generate.subjects import SUBJECTS
@@ -104,7 +106,21 @@ def test_publisher_publish_enqueues_v2_envelope() -> None:
 
     # Run the event loop briefly to let call_soon_threadsafe fire
     async def _drain() -> dict:
-        pub.publish("question_terminal", question_id="myrun_001", index=0, payload={"status": "ok"})
+        pub.publish(
+            "question_terminal",
+            question_id="myrun_001",
+            index=0,
+            payload={
+                "termination_reason": "normal",
+                "has_final": True,
+                "final_revision": 1,
+                "delivery_status": "complete",
+                "expected": [],
+                "delivered": [],
+                "missing": [],
+                "review": {"status": "skipped", "content_revision": 1},
+            },
+        )
         await asyncio.sleep(0)
         return await queue.get()
 
@@ -119,7 +135,59 @@ def test_publisher_publish_enqueues_v2_envelope() -> None:
     assert ctx["run_id"] == "myrun"
     assert isinstance(ctx["event_seq"], int)
     assert ctx["event_seq"] >= 1
-    assert envelope["payload"] == {"status": "ok"}
+    assert envelope["payload"]["termination_reason"] == "normal"
+
+
+def test_publisher_seal_rejects_new_work_and_conflicting_terminal() -> None:
+    loop = asyncio.new_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    pub = GenerationPublisher(run_id="RUN", loop=loop, queue=queue)
+    terminal = {
+        "termination_reason": "normal",
+        "has_final": True,
+        "final_revision": 2,
+        "delivery_status": "complete",
+        "expected": [],
+        "delivered": [],
+        "missing": [],
+        "review": {"status": "skipped", "content_revision": 2},
+    }
+
+    async def _run() -> list[dict[str, Any]]:
+        pub.publish("question_terminal", question_id="RUN_001", index=0, payload=terminal)
+        await asyncio.sleep(0)
+        events = [await queue.get()]
+        with pytest.raises(RuntimeError):
+            pub.publish(
+                "question_terminal",
+                question_id="RUN_001",
+                index=0,
+                payload={**terminal, "termination_reason": "failed"},
+            )
+        with pytest.raises(RuntimeError):
+            pub.publish(
+                "stage",
+                question_id="RUN_001",
+                index=0,
+                payload={"status": "start"},
+            )
+        pub.publish(
+            "result",
+            question_id="RUN_001",
+            index=0,
+            content_revision=2,
+            payload={"id": "RUN_001"},
+        )
+        await asyncio.sleep(0)
+        events.append(await queue.get())
+        return events
+
+    try:
+        events = loop.run_until_complete(_run())
+    finally:
+        loop.close()
+
+    assert [event["event"] for event in events] == ["question_terminal", "result"]
 
 
 def test_publisher_carries_operation_and_call_scope_and_supersedes_marker() -> None:

@@ -317,6 +317,14 @@ async def modification_question_stream(
         make_combined_observer(make_queue_observer(loop, queue), recorder)
     )
 
+    async def _flush_exchange_recorder() -> None:
+        if recorder is None:
+            return
+        try:
+            await recorder.flush()
+        except Exception as exc:  # noqa: BLE001 — persistence must not abort modification
+            logger.warning("modification exchange recorder flush failed: %s", type(exc).__name__)
+
     yield {"event": SSEEventName.STARTED, "data": ""}
     yield _pipeline_event("start")
     yield _stage_event("start")
@@ -446,6 +454,7 @@ async def modification_question_stream(
                 else None
             ),
         }
+        await _flush_exchange_recorder()
         params_json = {
             "kind": "manual_modification",
             "record_id": str(record_id),

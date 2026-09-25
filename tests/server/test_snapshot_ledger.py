@@ -16,6 +16,8 @@ import base64
 import threading
 from pathlib import Path
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Basic revision behaviour
 # ---------------------------------------------------------------------------
@@ -337,3 +339,55 @@ def test_slot_manifest_is_deep_copied_and_first_manifest_wins() -> None:
     assert ledger.get_slot_manifest("q_abc_001") == [
         {"subquestion_index": 0, "id": "q_abc_001-sq001", "序號": 1}
     ]
+
+
+def test_terminal_seal_rejects_a_new_content_revision(tmp_path: Path) -> None:
+    from server.generate.snapshot_ledger import (
+        QuestionSnapshotLedger,
+        QuestionTerminalSealedError,
+    )
+
+    ledger = QuestionSnapshotLedger()
+    q = {"id": "q_abc_001", "題目": "final"}
+    revision, _ = ledger.commit(q, tmp_path)
+    terminal = {
+        "termination_reason": "normal",
+        "has_final": True,
+        "final_revision": revision,
+        "delivery_status": "complete",
+        "expected": [],
+        "delivered": [],
+        "missing": [],
+        "review": {"status": "skipped", "content_revision": revision},
+    }
+
+    assert ledger.seal_terminal(q["id"], terminal) is True
+    assert ledger.seal_terminal(q["id"], dict(terminal)) is False
+    with pytest.raises(QuestionTerminalSealedError):
+        ledger.commit({"id": q["id"], "題目": "different"}, tmp_path)
+
+
+def test_terminal_seal_rejects_a_different_summary(tmp_path: Path) -> None:
+    from server.generate.snapshot_ledger import (
+        QuestionSnapshotLedger,
+        QuestionTerminalConflictError,
+    )
+
+    ledger = QuestionSnapshotLedger()
+    q = {"id": "q_abc_001", "題目": "final"}
+    revision, _ = ledger.commit(q, tmp_path)
+    terminal = {
+        "termination_reason": "normal",
+        "has_final": True,
+        "final_revision": revision,
+        "delivery_status": "complete",
+        "expected": [],
+        "delivered": [],
+        "missing": [],
+        "review": {"status": "skipped", "content_revision": revision},
+    }
+    ledger.seal_terminal(q["id"], terminal)
+
+    contradictory = {**terminal, "termination_reason": "failed"}
+    with pytest.raises(QuestionTerminalConflictError):
+        ledger.seal_terminal(q["id"], contradictory)

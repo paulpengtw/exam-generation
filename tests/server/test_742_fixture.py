@@ -209,7 +209,7 @@ def _run_interleaved_stream(
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
     from src.schemas import ExamQuestion
-    from tests.server.generate_test_utils import resolved_generate_params
+    from tests.server.generate_test_utils import publisher_enqueue_gate, resolved_generate_params
 
     params = resolved_generate_params({
         "subject": "math",
@@ -269,11 +269,9 @@ def _run_interleaved_stream(
         if on_update:
             on_update(q, "draft")
 
-        if is_b:
-            b_done.set()
-        else:
-            # A waits until B has returned
-            b_done.wait(timeout=10)
+        if not is_b:
+            # A waits until B's result has entered the stream queue.
+            assert b_done.wait(timeout=10)
 
         return q
 
@@ -296,7 +294,10 @@ def _run_interleaved_stream(
             events.append(_strip_sidecars(ev))
         return events
 
-    with patch("server.observability.record_generation_outcome"):
+    with (
+        patch("server.observability.record_generation_outcome"),
+        publisher_enqueue_gate(b_done, question_index=1),
+    ):
         events = asyncio.run(collect())
 
     # Extract run_id from the started event

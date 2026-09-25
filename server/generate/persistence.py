@@ -376,7 +376,9 @@ def make_exchange_recorder(
 
     The write sink runs ``asyncio.run_coroutine_threadsafe`` so it is safe to
     call from background ThreadPoolExecutor workers. A wait timeout leaves the
-    insert running and reports its eventual outcome. Failures never propagate.
+    insert running and reports its eventual outcome; the returned recorder
+    retains that future for its caller's ``flush()`` barrier. Failures never
+    propagate.
     """
     if generation_log_id is None or retention_days <= 0:
         return None
@@ -394,7 +396,7 @@ def make_exchange_recorder(
             sess.add(LLMExchange(**db_row))
             await sess.commit()
 
-    def _write_row(row: dict[str, Any]) -> None:
+    def _write_row(row: dict[str, Any]) -> Future[None] | None:
         metadata = {
             "generation_log_id": str(generation_log_id),
             "agent": row["agent"],
@@ -431,7 +433,7 @@ def make_exchange_recorder(
         except Exception as exc:  # noqa: BLE001 — best-effort persistence
             insertion.close()
             report("not_scheduled", exc)
-            return
+            return None
         try:
             future.result(timeout=EXCHANGE_WRITE_TIMEOUT_SECONDS)
         except CancelledError as exc:
@@ -448,5 +450,6 @@ def make_exchange_recorder(
                 future.add_done_callback(report_completion)
         except Exception as exc:  # noqa: BLE001 — best-effort persistence
             report("failed", exc)
+        return future
 
     return ExchangeRecorder(generation_log_id, _write_row, next_order=next_order)

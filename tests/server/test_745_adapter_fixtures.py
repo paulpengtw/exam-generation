@@ -8,7 +8,6 @@ import json
 import os
 import re
 import threading
-import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -158,7 +157,7 @@ def _run_stream(subject: str, tmp_path: Path) -> tuple[list[dict[str, Any]], str
     from server.generate.service import generate_question_stream
     from server.generate.subjects import SUBJECTS
     from src.common.generation_events import new_call_scope, new_operation_scope
-    from tests.server.generate_test_utils import resolved_generate_params
+    from tests.server.generate_test_utils import publisher_enqueue_gate, resolved_generate_params
 
     params = resolved_generate_params({
         "subject": subject,
@@ -245,7 +244,6 @@ def _run_stream(subject: str, tmp_path: Path) -> tuple[list[dict[str, Any]], str
             for slot in (1, 2, 3):
                 shell.subquestions.append(_subquestion(subject, qid, slot, label, rng_params))
                 on_update(shell, "draft")
-            b_done.set()
         elif context.index == 0:
             shell.subquestions.append(_subquestion(subject, qid, 1, label, rng_params))
             on_update(shell, "draft")
@@ -264,10 +262,8 @@ def _run_stream(subject: str, tmp_path: Path) -> tuple[list[dict[str, Any]], str
             stage(retry_scope, "end")
             shell.subquestions.append(_subquestion(subject, qid, 3, label, rng_params))
             on_update(shell, "draft")
-            # Let B leave the fake model before A returns, making the B-before-A
-            # result ordering deterministic while preserving real worker races.
-            b_done.wait(timeout=10)
-            time.sleep(0.01)
+            # A waits until B's result has entered the stream queue.
+            assert b_done.wait(timeout=10)
         else:
             # C demonstrates that the text shell remains final when every
             # announced subquestion attempt fails.
@@ -315,7 +311,10 @@ def _run_stream(subject: str, tmp_path: Path) -> tuple[list[dict[str, Any]], str
             events.append(event)
         return events
 
-    with patch("server.observability.record_generation_outcome"):
+    with (
+        patch("server.observability.record_generation_outcome"),
+        publisher_enqueue_gate(b_done, question_index=1),
+    ):
         events = asyncio.run(collect())
     return events, events[0]["context"]["run_id"]
 

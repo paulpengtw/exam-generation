@@ -72,7 +72,7 @@ def _run_stream(tmp_path: Path) -> tuple[list[dict[str, Any]], str]:
     from server.generate.subjects import SUBJECTS
     from src.common.generation_events import new_call_scope, new_operation_scope
     from src.social_studies.schemas import ExamQuestion, QuestionType
-    from tests.server.generate_test_utils import resolved_generate_params
+    from tests.server.generate_test_utils import publisher_enqueue_gate, resolved_generate_params
 
     params = resolved_generate_params({
         "subject": "social_studies",
@@ -160,7 +160,6 @@ def _run_stream(tmp_path: Path) -> tuple[list[dict[str, Any]], str]:
             for slot in (1, 2, 3):
                 shell.subquestions.append(_subquestion(qid, slot, label))
                 on_update(shell, "draft")
-            b_done.set()
         else:
             shell.subquestions.append(_subquestion(qid, 1, label))
             on_update(shell, "draft")
@@ -179,7 +178,8 @@ def _run_stream(tmp_path: Path) -> tuple[list[dict[str, Any]], str]:
             stage(retry_scope, "end")
             shell.subquestions.append(_subquestion(qid, 3, label))
             on_update(shell, "draft")
-            b_done.wait(timeout=10)
+            # A waits until B's result has entered the stream queue.
+            assert b_done.wait(timeout=10)
 
         return shell
 
@@ -204,7 +204,10 @@ def _run_stream(tmp_path: Path) -> tuple[list[dict[str, Any]], str]:
             events.append(event)
         return events
 
-    with patch("server.observability.record_generation_outcome"):
+    with (
+        patch("server.observability.record_generation_outcome"),
+        publisher_enqueue_gate(b_done, question_index=1),
+    ):
         events = asyncio.run(collect())
     return events, events[0]["context"]["run_id"]
 

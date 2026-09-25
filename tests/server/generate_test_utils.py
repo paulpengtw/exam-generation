@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from server.generate.models import GenerateParams
@@ -52,3 +55,38 @@ def complete_math_query_params(**overrides: Any) -> dict[str, Any]:
 def resolved_generate_params(payload: dict[str, Any]) -> GenerateParams:
     """Build the service seam's complete model through the shared resolver."""
     return GenerateParams.model_validate(_wire_payload(resolve(payload).payload))
+
+
+@contextmanager
+def publisher_enqueue_gate(
+    signal: threading.Event,
+    *,
+    question_index: int,
+    event_names: frozenset[str] = frozenset({"result", "question_terminal"}),
+) -> Iterator[None]:
+    """Signal after a selected publisher envelope enters the stream queue."""
+    from unittest.mock import patch
+
+    from server.generate.publisher import GenerationPublisher
+
+    class _ObservedQueue:
+        def __init__(self, queue: Any) -> None:
+            self._queue = queue
+
+        def put_nowait(self, item: Any) -> None:
+            self._queue.put_nowait(item)
+            context = item.get("context", {}) if isinstance(item, dict) else {}
+            if (
+                isinstance(item, dict)
+                and item.get("event") in event_names
+                and context.get("index") == question_index
+            ):
+                signal.set()
+
+    original_init = GenerationPublisher.__init__
+
+    def observed_init(self: Any, run_id: str, loop: Any, queue: Any) -> None:
+        original_init(self, run_id, loop, _ObservedQueue(queue))
+
+    with patch.object(GenerationPublisher, "__init__", observed_init):
+        yield

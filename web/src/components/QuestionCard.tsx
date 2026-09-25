@@ -521,15 +521,16 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
     receiptLabel = t("card.receipt_missing");
   }
 
-  const terminationLabel = evidence.terminal
-    ? evidence.terminal.termination_reason === "normal" ? t("card.termination_normal")
-      : evidence.terminal.termination_reason === "failed" ? t("card.termination_failed")
+  const terminal = evidence.terminalConflict ? null : evidence.terminal;
+  const terminationLabel = terminal
+    ? terminal.termination_reason === "normal" ? t("card.termination_normal")
+      : terminal.termination_reason === "failed" ? t("card.termination_failed")
       : t("card.termination_cancelled")
     : null;
-  const deliveryLabel = evidence.terminal
-    ? t(`card.delivery_${evidence.terminal.delivery_status}`)
+  const deliveryLabel = terminal
+    ? t(`card.delivery_${terminal.delivery_status}`)
     : null;
-  const missingSlotCount = evidence.terminal?.missing.length ?? 0;
+  const missingSlotCount = terminal?.missing.length ?? 0;
 
   return (
     <div className="sentry-unmask flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
@@ -540,6 +541,12 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
         <span data-testid="evidence-missing-slots">
           {t("card.delivery_missing_slots").replace("{n}", String(missingSlotCount))}
         </span>
+      )}
+      {evidence.terminalConflict && (
+        <span data-testid="evidence-terminal-conflict">{t("card.evidence_conflict")}</span>
+      )}
+      {evidence.reviewConflict && (
+        <span data-testid="evidence-review-conflict">{t("card.review_conflict")}</span>
       )}
       <span data-testid="evidence-review-status">{reviewLabel}</span>
       <span data-testid="evidence-receipt-status">{receiptLabel}</span>
@@ -759,6 +766,7 @@ export default function QuestionCard({
       >
         <div className="font-medium text-gray-500">{posLabel}</div>
         <div className="text-gray-400 mt-1">{procLabel}</div>
+        <EvidenceStatusLine evidence={evidence} />
         <div className="mt-2">
           <QuestionActivityPanel evidence={evidence} />
         </div>

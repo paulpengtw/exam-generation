@@ -6,7 +6,7 @@ Tests ensure _worker_one emits a validated question_terminal at every exit:
 - normal, failed verification → review={'status':'failed',…}
 - skip_verify → review={'status':'skipped',…}
 - do_generate raising → termination_reason='failed', delivery_status='none', has_final=False
-- GenerationCancelled → termination_reason='cancelled', delivery_status='unknown'
+- confirmed cancellation → termination_reason='cancelled', delivery_status='unknown'
 - image spec present + file written → image slot in delivered, delivery_status='complete'
 - image spec present, no file → missing slot, delivery_status='partial'
 - terminal payload validates as QuestionTerminalPayload
@@ -365,13 +365,56 @@ def test_terminal_failed_exactly_once() -> None:
     assert len(terminals) == 1
 
 
+def test_terminal_failure_after_final_keeps_the_delivered_final() -> None:
+    """A late terminal failure does not rewrite an already-delivered final as no-final."""
+    import server.generate.service as service_mod
+    import server.observability as observability_mod
+    from server.generate.service import _worker_one
+
+    loop = asyncio.new_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    ctx = _build_ctx(loop, queue)
+    q = _build_fake_question(ctx)
+    real_publish_terminal = service_mod._publish_question_terminal
+    attempts = 0
+
+    def fail_first_terminal(*args: Any, **kwargs: Any) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("terminal enqueue failed")
+        real_publish_terminal(*args, **kwargs)
+
+    with (
+        patch.object(ctx.spec, "do_generate", return_value=q),
+        patch.object(ctx.spec, "extract_prior_scope", return_value=None),
+        patch.object(service_mod, "_publish_question_terminal", side_effect=fail_first_terminal),
+        patch.object(observability_mod, "record_generation_outcome"),
+    ):
+        _worker_one(0, MagicMock(), ctx, [])
+
+    events = _drain_queue(loop, queue)
+    loop.close()
+
+    result = next(event for event in events if _event_name(event) == "result")
+    terminal = _get_terminal(events)
+    assert terminal is not None
+    _assert_terminal_validates(terminal)
+    assert terminal["context"]["event_seq"] > result["context"]["event_seq"]
+    assert terminal["payload"]["termination_reason"] == "failed"
+    assert terminal["payload"]["has_final"] is True
+    assert terminal["payload"]["final_revision"] == result["context"]["content_revision"]
+    assert terminal["payload"]["delivery_status"] == "complete"
+    assert len([event for event in events if _event_name(event) == "question_terminal"]) == 1
+
+
 # ---------------------------------------------------------------------------
 # Cancelled path
 # ---------------------------------------------------------------------------
 
 
-def test_terminal_cancelled_on_generation_cancelled() -> None:
-    """GenerationCancelled with cancel_event set → termination_reason='cancelled'."""
+def test_disconnect_generation_cancelled_does_not_emit_a_terminal() -> None:
+    """A client cancellation signal is not proof of confirmed cancellation."""
     import server.observability as observability_mod
     from server.generate.service import _worker_one
 
@@ -389,14 +432,33 @@ def test_terminal_cancelled_on_generation_cancelled() -> None:
     events = _drain_queue(loop, queue)
     loop.close()
 
+    assert _get_terminal(events) is None
+
+
+def test_confirmed_generation_cancelled_emits_one_terminal() -> None:
+    """Only the explicit internal confirmation may establish cancellation."""
+    import server.observability as observability_mod
+    from server.generate.service import _worker_one
+
+    loop = asyncio.new_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    ctx = _build_ctx(loop, queue)
+    ctx.confirmed_cancel_event.set()
+
+    with (
+        patch.object(ctx.spec, "do_generate", side_effect=GenerationCancelled()),
+        patch.object(observability_mod, "record_generation_outcome"),
+    ):
+        _worker_one(0, MagicMock(), ctx, [])
+
+    events = _drain_queue(loop, queue)
+    loop.close()
+
     terminal = _get_terminal(events)
     assert terminal is not None
     _assert_terminal_validates(terminal)
-    payload = terminal["payload"]
-    assert payload["termination_reason"] == "cancelled"
-    assert payload["has_final"] is False
-    assert payload["delivery_status"] == "unknown"
-    assert payload.get("unknown_reason") is not None
+    assert terminal["payload"]["termination_reason"] == "cancelled"
+    assert terminal["payload"]["delivery_status"] == "unknown"
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, StrictInt, field_validator, model_validator
 
 PROTOCOL_VERSION = 2
 SUPPORTED_STREAM_VERSIONS: tuple[int, ...] = (2,)
@@ -51,8 +51,22 @@ class SlotRef(BaseModel):
     kind: Literal["subquestion", "image"]
     question_id: str
     subquestion_id: str | None = None
-    subquestion_index: int | None = None
+    subquestion_index: StrictInt | None = None
     reason: str | None = None
+
+    @field_validator("question_id")
+    @classmethod
+    def _question_id_non_empty(cls, value: str) -> str:
+        if not value:
+            raise ValueError("question_id must not be empty")
+        return value
+
+    @field_validator("subquestion_index")
+    @classmethod
+    def _subquestion_index_non_negative(cls, value: int | None) -> int | None:
+        if value is not None and value < 0:
+            raise ValueError("subquestion_index must be >= 0")
+        return value
 
 
 class StartedPayload(BaseModel):
@@ -90,7 +104,7 @@ class QuestionTerminalPayload(BaseModel):
 
     termination_reason: Literal["normal", "failed", "cancelled"]
     has_final: bool
-    final_revision: int | None = None
+    final_revision: StrictInt | None = None
     delivery_status: Literal["complete", "partial", "none", "unknown"]
     expected: list[SlotRef]
     delivered: list[SlotRef]
@@ -100,9 +114,44 @@ class QuestionTerminalPayload(BaseModel):
 
     @model_validator(mode="after")
     def _validate_terminal(self) -> "QuestionTerminalPayload":
+        def slot_key(slot: SlotRef) -> tuple[str, str, str | None, int | None]:
+            # ``reason`` is explanatory evidence, not slot identity.  The
+            # identity tuple is deliberately the same across expected,
+            # delivered and missing so a sender cannot silently change the
+            # delivery partition by adding a reason string.
+            return (
+                slot.kind,
+                slot.question_id,
+                slot.subquestion_id,
+                slot.subquestion_index,
+            )
+
+        def unique_keys(
+            name: str,
+            slots: list[SlotRef],
+        ) -> set[tuple[str, str, str | None, int | None]]:
+            keys = [slot_key(slot) for slot in slots]
+            if len(keys) != len(set(keys)):
+                raise ValueError(f"{name} contains duplicate slot identities")
+            return set(keys)
+
+        expected_keys = unique_keys("expected", self.expected)
+        delivered_keys = unique_keys("delivered", self.delivered)
+        missing_keys = unique_keys("missing", self.missing)
+        if delivered_keys & missing_keys:
+            raise ValueError("delivered and missing slots must be disjoint")
+        if not delivered_keys <= expected_keys:
+            raise ValueError("delivered slots must be present in expected")
+        if not missing_keys <= expected_keys:
+            raise ValueError("missing slots must be present in expected")
+        if delivered_keys | missing_keys != expected_keys:
+            raise ValueError("expected slots must be partitioned by delivered and missing")
+
         if self.has_final:
             if self.final_revision is None or self.final_revision < 1:
                 raise ValueError("has_final=True requires final_revision >= 1")
+            if self.delivery_status == "none":
+                raise ValueError("has_final=True cannot have delivery_status='none'")
         else:
             if self.final_revision is not None:
                 raise ValueError("has_final=False requires final_revision=None")
@@ -111,8 +160,23 @@ class QuestionTerminalPayload(BaseModel):
                     "has_final=False requires delivery_status in ('none', 'unknown')"
                 )
 
+        if self.termination_reason == "cancelled" and self.has_final:
+            raise ValueError("termination_reason='cancelled' cannot have final content")
+
         if self.delivery_status == "complete" and self.missing:
             raise ValueError("delivery_status='complete' requires missing == []")
+
+        if self.delivery_status == "complete" and not self.has_final:
+            raise ValueError("delivery_status='complete' requires has_final=True")
+
+        if self.delivery_status == "none" and self.delivered:
+            raise ValueError("delivery_status='none' cannot contain delivered slots")
+
+        if (
+            self.delivery_status == "none"
+            and set(slot_key(slot) for slot in self.missing) != expected_keys
+        ):
+            raise ValueError("delivery_status='none' requires every expected slot to be missing")
 
         if self.delivery_status == "partial":
             if not self.has_final:
@@ -120,7 +184,7 @@ class QuestionTerminalPayload(BaseModel):
             if not self.missing:
                 raise ValueError("delivery_status='partial' requires missing non-empty")
 
-        if self.delivery_status == "unknown" and self.unknown_reason is None:
+        if self.delivery_status == "unknown" and not self.unknown_reason:
             raise ValueError("delivery_status='unknown' requires unknown_reason")
 
         review_status = self.review.get("status")

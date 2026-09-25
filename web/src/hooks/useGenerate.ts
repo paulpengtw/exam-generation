@@ -13,6 +13,8 @@ import { createGenerationStreamDecoder } from "../lib/generationStream";
 import {
   createRunEvidence,
   applyV2Event,
+  closeRun,
+  selectEndedCount,
   type RunEvidenceState,
 } from "../lib/generationEvidence";
 import {
@@ -680,6 +682,8 @@ export function useGenerate(): UseGenerateReturn {
     controllerRef.current = null;
     setProgressLines([]);
     setLlmCalls([]);
+    setEvidence(null);
+    evidenceRef.current = null;
     setErrorMessage(null);
     setStartedAt(null);
     setFinishedAt(null);
@@ -940,7 +944,14 @@ export function useGenerate(): UseGenerateReturn {
           // Track question_terminal for terminalEvidence settlement
           if (name === "question_terminal") {
             const questionId = typeof context.question_id === "string" ? context.question_id : null;
-            if (questionId !== null) terminalQuestionKeysRef.current.add(questionId);
+            if (questionId !== null) {
+              const questionEvidence = next.questions[questionId];
+              if (questionEvidence && questionEvidence.terminal !== null && !questionEvidence.terminalConflict) {
+                terminalQuestionKeysRef.current.add(questionId);
+              } else {
+                terminalQuestionKeysRef.current.delete(questionId);
+              }
+            }
           }
           // In v2 mode, also update displayResults and results from evidence
           if (name === "result" || name === "question_update") {
@@ -999,16 +1010,21 @@ export function useGenerate(): UseGenerateReturn {
         case "done": {
           // Apply done to close the evidence run
           const prev = evidenceRef.current;
-          if (prev) {
-            const closed = applyV2Event(prev, { kind: "v2", event: { name, context, payload } });
+          const closed = prev
+            ? applyV2Event(prev, { kind: "v2", event: { name, context, payload } })
+            : null;
+          if (closed) {
             evidenceRef.current = closed;
             setEvidence(closed);
           }
           {
             const expected = expectedQuestionTotalRef.current;
+            const endedCount = closed
+              ? selectEndedCount(closed)
+              : terminalQuestionKeysRef.current.size;
             const hasTerminalEvidence = expected === null
-              ? terminalQuestionKeysRef.current.size > 0
-              : expected > 0 && terminalQuestionKeysRef.current.size >= expected;
+              ? endedCount > 0
+              : expected > 0 && endedCount >= expected;
             setTerminalEvidence(hasTerminalEvidence);
             setResultsCompletion(hasTerminalEvidence ? "settled" : "unknown");
           }
@@ -1414,6 +1430,12 @@ export function useGenerate(): UseGenerateReturn {
         setErrorMessage(message);
         setStatus("error");
         if (startedRef.current) {
+          const previous = evidenceRef.current;
+          if (previous) {
+            const closed = closeRun(previous);
+            evidenceRef.current = closed;
+            setEvidence(closed);
+          }
           setResultsCompletion("error");
           setTerminalEvidence(false);
         }

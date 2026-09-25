@@ -83,6 +83,11 @@ export interface QuestionEvidence {
     phase: DraftPhase | null;
   };
   terminal: QuestionTerminalPayload | null;
+  /** A malformed or contradictory terminal is retained as an uncertainty, not an ending. */
+  terminalConflict?: boolean;
+  terminalConflictReason?: string;
+  /** Review-only disagreement does not invalidate the processing conclusion. */
+  reviewConflict?: boolean;
   /** terminal says has_final but final_revision not yet received */
   finalPending: boolean;
   /** stream closed while finalPending was true */
@@ -120,6 +125,8 @@ function emptyQuestionEvidence(questionId: string, index: number): QuestionEvide
     processing: "waiting",
     content: { receipt: "none", revision: null, question: null, phase: null },
     terminal: null,
+    terminalConflict: false,
+    reviewConflict: false,
     finalPending: false,
     finalMissing: false,
     review: { status: "unknown", revision: null, pending: false },
@@ -143,6 +150,169 @@ export function createRunEvidence(run: RunManifest): RunEvidenceState {
 // Reducer
 // ---------------------------------------------------------------------------
 
+type TerminalRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is TerminalRecord {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function positiveRevision(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function slotKey(slot: GenerationSlotReference): string {
+  return JSON.stringify([
+    slot.kind,
+    slot.question_id,
+    slot.subquestion_id ?? null,
+    slot.subquestion_index ?? null,
+  ]);
+}
+
+function parseSlotReferences(value: unknown, questionId: string): GenerationSlotReference[] | null {
+  if (!Array.isArray(value)) return null;
+  const parsed: GenerationSlotReference[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) return null;
+    if (item.kind !== "subquestion" && item.kind !== "image") return null;
+    if (typeof item.question_id !== "string" || item.question_id !== questionId) return null;
+    if (
+      item.subquestion_id !== undefined
+      && item.subquestion_id !== null
+      && typeof item.subquestion_id !== "string"
+    ) return null;
+    if (
+      item.subquestion_index !== undefined
+      && item.subquestion_index !== null
+      && (!Number.isInteger(item.subquestion_index) || (item.subquestion_index as number) < 0)
+    ) return null;
+    if (item.reason !== undefined && typeof item.reason !== "string") return null;
+    parsed.push({
+      kind: item.kind,
+      question_id: item.question_id,
+      ...(item.subquestion_id === undefined ? {} : { subquestion_id: item.subquestion_id as string | null }),
+      ...(item.subquestion_index === undefined
+        ? {}
+        : { subquestion_index: item.subquestion_index as number | null }),
+      ...(item.reason === undefined ? {} : { reason: item.reason as string }),
+    });
+  }
+  return parsed;
+}
+
+function uniqueSlotKeys(slots: GenerationSlotReference[]): Set<string> | null {
+  const keys = slots.map(slotKey);
+  if (new Set(keys).size !== keys.length) return null;
+  return new Set(keys);
+}
+
+/** Validate the server terminal invariants before they affect evidence state. */
+export function parseQuestionTerminalPayload(
+  value: unknown,
+  questionId: string,
+): QuestionTerminalPayload | null {
+  if (!isRecord(value)) return null;
+  const terminationReason = value.termination_reason;
+  if (terminationReason !== "normal" && terminationReason !== "failed" && terminationReason !== "cancelled") {
+    return null;
+  }
+  if (typeof value.has_final !== "boolean") return null;
+  const hasFinal = value.has_final;
+  const finalRevision = value.final_revision;
+  if (hasFinal ? !positiveRevision(finalRevision) : finalRevision !== null) return null;
+  if (terminationReason === "cancelled" && hasFinal) return null;
+
+  const deliveryStatus = value.delivery_status;
+  if (deliveryStatus !== "complete" && deliveryStatus !== "partial" && deliveryStatus !== "none" && deliveryStatus !== "unknown") {
+    return null;
+  }
+  if (hasFinal && deliveryStatus === "none") return null;
+  if (!hasFinal && deliveryStatus !== "none" && deliveryStatus !== "unknown") return null;
+  const unknownReason = value.unknown_reason;
+  if (deliveryStatus === "unknown" && (typeof unknownReason !== "string" || unknownReason.length === 0)) {
+    return null;
+  }
+  if (unknownReason !== undefined && unknownReason !== null && typeof unknownReason !== "string") return null;
+
+  const expected = parseSlotReferences(value.expected, questionId);
+  const delivered = parseSlotReferences(value.delivered, questionId);
+  const missing = parseSlotReferences(value.missing, questionId);
+  if (expected === null || delivered === null || missing === null) return null;
+  const expectedKeys = uniqueSlotKeys(expected);
+  const deliveredKeys = uniqueSlotKeys(delivered);
+  const missingKeys = uniqueSlotKeys(missing);
+  if (expectedKeys === null || deliveredKeys === null || missingKeys === null) return null;
+  if ([...deliveredKeys].some((key) => !expectedKeys.has(key))) return null;
+  if ([...missingKeys].some((key) => !expectedKeys.has(key))) return null;
+  if ([...deliveredKeys].some((key) => missingKeys.has(key))) return null;
+  const covered = new Set([...deliveredKeys, ...missingKeys]);
+  if (covered.size !== expectedKeys.size || [...expectedKeys].some((key) => !covered.has(key))) return null;
+  if (deliveryStatus === "complete" && missing.length > 0) return null;
+  if (deliveryStatus === "partial" && (missing.length === 0 || !hasFinal)) return null;
+  if (deliveryStatus === "none" && (delivered.length > 0 || missingKeys.size !== expectedKeys.size)) return null;
+
+  if (!isRecord(value.review)) return null;
+  const reviewStatus = value.review.status;
+  if (reviewStatus !== "passed" && reviewStatus !== "failed" && reviewStatus !== "skipped" && reviewStatus !== "unknown") {
+    return null;
+  }
+  if (!hasFinal && reviewStatus !== "unknown") return null;
+  const reviewRevision = value.review.content_revision;
+  if (reviewStatus === "passed" || reviewStatus === "failed" || reviewStatus === "skipped") {
+    if (!hasFinal || reviewRevision !== finalRevision) return null;
+  } else if (
+    hasFinal
+    && (typeof value.review.reason !== "string" || value.review.reason.length === 0)
+    && (typeof value.review.unknown_reason !== "string" || value.review.unknown_reason.length === 0)
+  ) {
+    return null;
+  }
+  if (reviewRevision !== undefined && reviewRevision !== null && !positiveRevision(reviewRevision)) return null;
+
+  return {
+    termination_reason: terminationReason,
+    has_final: hasFinal,
+    final_revision: finalRevision as number | null,
+    delivery_status: deliveryStatus,
+    expected,
+    delivered,
+    missing,
+    review: {
+      status: reviewStatus,
+      ...(reviewRevision === undefined ? {} : { content_revision: reviewRevision as number | null }),
+      ...(typeof value.review.unknown_reason === "string" ? { unknown_reason: value.review.unknown_reason } : {}),
+      ...(typeof value.review.reason === "string" ? { reason: value.review.reason } : {}),
+    },
+    ...(typeof unknownReason === "string" ? { unknown_reason: unknownReason } : {}),
+  };
+}
+
+function sameTerminal(left: QuestionTerminalPayload, right: QuestionTerminalPayload): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTerminalPayload): boolean {
+  return JSON.stringify({
+    termination_reason: left.termination_reason,
+    has_final: left.has_final,
+    final_revision: left.final_revision,
+    delivery_status: left.delivery_status,
+    expected: left.expected,
+    delivered: left.delivered,
+    missing: left.missing,
+    unknown_reason: left.unknown_reason,
+  }) === JSON.stringify({
+    termination_reason: right.termination_reason,
+    has_final: right.has_final,
+    final_revision: right.final_revision,
+    delivery_status: right.delivery_status,
+    expected: right.expected,
+    delivered: right.delivered,
+    missing: right.missing,
+    unknown_reason: right.unknown_reason,
+  });
+}
+
 export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent): RunEvidenceState {
   if (decodedEvent.kind !== "v2") return state;
   const { name, context, payload } = decodedEvent.event;
@@ -161,6 +331,22 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
   if (!qev) return state; // unknown question id
 
   const p = payload as Record<string, unknown>;
+
+  if (
+    qev.terminalConflict
+    && name !== "question_terminal"
+  ) {
+    return state;
+  }
+
+  if (
+    qev.terminal !== null
+    && (name === "pipeline" || name === "stage" || name === "llm_request"
+      || name === "llm_response" || name === "llm_thinking" || name === "llm_content"
+      || name === "llm_failure")
+  ) {
+    return state;
+  }
 
   const activity = applyActivity(
     qev.activity ?? { operations: {}, calls: {} },
@@ -203,6 +389,7 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
     }
 
     case "question_update": {
+      if (qev.terminalConflict) return state;
       const contentRevision = typeof ctx.content_revision === "number" ? ctx.content_revision : null;
       if (contentRevision === null) return state;
       if (qev.terminal !== null) {
@@ -231,6 +418,7 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
     }
 
     case "result": {
+      if (qev.terminalConflict) return state;
       const contentRevision = typeof ctx.content_revision === "number" ? ctx.content_revision : null;
       if (contentRevision === null) return state;
       if (qev.terminal !== null) {
@@ -258,9 +446,58 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
     }
 
     case "question_terminal": {
-      // A second terminal for the same question is ignored
-      if (qev.terminal !== null) return state;
-      const terminal = payload as QuestionTerminalPayload;
+      const terminal = parseQuestionTerminalPayload(payload, questionId);
+      if (terminal === null) {
+        return updateQuestion(state, questionId, {
+          processing: "unknown",
+          terminalConflict: true,
+          terminalConflictReason: "invalid terminal evidence",
+          reviewConflict: false,
+          finalPending: false,
+          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "invalid terminal evidence" },
+        });
+      }
+      if (qev.terminalConflict) return state;
+      if (qev.terminal !== null) {
+        if (sameTerminal(qev.terminal, terminal)) return state;
+        if (sameTerminalOutcome(qev.terminal, terminal)) {
+          return updateQuestion(state, questionId, {
+            reviewConflict: true,
+            review: {
+              status: "unknown",
+              revision: qev.review.revision,
+              pending: false,
+              reason: "contradictory review evidence",
+            },
+          });
+        }
+        return updateQuestion(state, questionId, {
+          processing: "unknown",
+          terminalConflict: true,
+          terminalConflictReason: "contradictory terminal evidence",
+          reviewConflict: false,
+          finalPending: false,
+          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "contradictory terminal evidence" },
+        });
+      }
+      if (
+        (terminal.has_final
+          && qev.content.receipt === "final"
+          && qev.content.revision !== terminal.final_revision)
+        || (!terminal.has_final && qev.content.receipt === "final")
+        || (terminal.has_final
+          && qev.content.revision !== null
+          && qev.content.revision > (terminal.final_revision ?? 0))
+      ) {
+        return updateQuestion(state, questionId, {
+          processing: "unknown",
+          terminalConflict: true,
+          terminalConflictReason: "terminal revision conflicts with received content",
+          reviewConflict: false,
+          finalPending: false,
+          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "terminal revision conflicts with received content" },
+        });
+      }
       // finalPending: terminal says has_final but we haven't received the final_revision yet
       const finalPending = terminal.has_final &&
         terminal.final_revision !== null &&
@@ -269,6 +506,9 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
       return updateQuestion(state, questionId, {
         processing: "ended",
         terminal,
+        terminalConflict: false,
+        terminalConflictReason: undefined,
+        reviewConflict: false,
         review: reviewForContent(nextQuestion),
         finalPending,
       });
@@ -406,6 +646,7 @@ function updateQuestion(
 }
 
 function reviewForContent(qev: QuestionEvidence): QuestionEvidence["review"] {
+  if (qev.reviewConflict) return qev.review;
   const terminal = qev.terminal;
   if (terminal === null) return qev.review;
   const review = terminal.review ?? {};
@@ -442,7 +683,7 @@ export function closeRun(state: RunEvidenceState): RunEvidenceState {
     const hadFinalPending = qev.finalPending;
     questions[qid] = {
       ...qev,
-      processing: noTerminal ? "unknown" : qev.processing,
+      processing: noTerminal || qev.terminalConflict ? "unknown" : qev.processing,
       finalPending: false,
       finalMissing: hadFinalPending,
       review: hadFinalPending
@@ -464,7 +705,7 @@ export function closeRun(state: RunEvidenceState): RunEvidenceState {
 
 /** Number of unique questions that have received a question_terminal event. */
 export function selectEndedCount(state: RunEvidenceState): number {
-  return Object.values(state.questions).filter((q) => q.terminal !== null).length;
+  return Object.values(state.questions).filter((q) => q.terminal !== null && !q.terminalConflict).length;
 }
 
 /** Number of unique questions whose content.receipt === 'final'. */
