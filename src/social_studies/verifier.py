@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
+from src.common.generation_events import OperationScope, new_operation_scope
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.common.verifier import PostVerifyHook, verify_question_common
 from src.curriculum_context import CurriculumContext, build_curriculum_section
@@ -377,6 +379,8 @@ def _ss_fact_check_hook(
     question: ExamQuestion,
     result: VerificationResult,
     client: LLMClient,
+    *,
+    scope: OperationScope | None = None,
 ) -> VerificationResult:
     """Post-verify hook: optional web-search fact-check for 時事 questions.
 
@@ -388,13 +392,55 @@ def _ss_fact_check_hook(
     max_uses = int(getattr(getattr(client, "config", None), "web_search_max_uses", 5))
     if provider in {"anthropic", "gemini"} and is_current_events(question):
         obs = client.get_observer() if hasattr(client, "get_observer") else None
+        fact_scope = (
+            new_operation_scope(scope, kind="fact_check")
+            if scope is not None
+            else None
+        )
 
         def _on_fact_check_error(msg: str) -> None:
-            emit_stage(obs, "fact_checker", "fact_check", "error", message=msg)
+            emit_stage(
+                obs,
+                "fact_checker",
+                "fact_check",
+                "error",
+                scope=fact_scope,
+                message=msg,
+            )
 
+        emit_stage(
+            obs,
+            "fact_checker",
+            "fact_check",
+            "start",
+            scope=fact_scope,
+        )
+        fact_kwargs = {
+            "provider": provider,
+            "max_uses": max_uses,
+            "on_error": _on_fact_check_error,
+        }
+        try:
+            fact_parameters = inspect.signature(fact_check_question).parameters
+            accepts_scope = "scope" in fact_parameters or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in fact_parameters.values()
+            )
+        except (TypeError, ValueError):
+            accepts_scope = False
+        if accepts_scope:
+            fact_kwargs["scope"] = fact_scope
         fc: FactCheckResult | None = fact_check_question(
-            client, question, provider=provider, max_uses=max_uses,
-            on_error=_on_fact_check_error,
+            client,
+            question,
+            **fact_kwargs,
+        )
+        emit_stage(
+            obs,
+            "fact_checker",
+            "fact_check",
+            "end",
+            scope=fact_scope,
         )
         result.fact_check = fc
         if fc is not None and fc.verified is False:
@@ -422,6 +468,8 @@ def verify_question(
     question: ExamQuestion,
     chart_image_path: str | None = None,
     curriculum_context: CurriculumContext | None = None,
+    *,
+    scope: OperationScope | None = None,
 ) -> VerificationResult:
     # Fall back to text-only when the image file is absent or unreadable.
     if chart_image_path is not None and not Path(chart_image_path).exists():
@@ -477,4 +525,5 @@ def verify_question(
         chart_verif_cls=ChartVerificationResult,
         chart_image_path=chart_image_path,
         post_verify_hooks=_SS_POST_VERIFY_HOOKS,
+        scope=scope,
     )

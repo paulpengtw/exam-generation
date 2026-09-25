@@ -23,6 +23,7 @@ from enum import Enum
 from typing import Any
 
 from server.config import ServerConfig
+from src.common.generation_events import OperationScope
 
 # ---------------------------------------------------------------------------
 # Event-name vocabulary — single source of truth (issue #162 will derive TS)
@@ -55,6 +56,7 @@ class SSEEventName(str, Enum):
     LLM_THINKING = "llm_thinking"
     LLM_CONTENT = "llm_content"
     LLM_RESPONSE = "llm_response"
+    LLM_FAILURE = "llm_failure"
     STAGE = "stage"
     PLAN = "plan"
     TRAIL = "trail"
@@ -76,6 +78,7 @@ EMITTED_EVENT_NAMES: frozenset[str] = frozenset({
     "llm_thinking",
     "llm_content",
     "llm_response",
+    "llm_failure",
     "stage",
     "plan",
     "trail",
@@ -89,6 +92,7 @@ _OBSERVER_TYPE_MAP: dict[str, SSEEventName] = {
     "llm_reasoning_delta": SSEEventName.LLM_THINKING,
     "llm_content_delta": SSEEventName.LLM_CONTENT,
     "llm_response": SSEEventName.LLM_RESPONSE,
+    "llm_failure": SSEEventName.LLM_FAILURE,
     "stage": SSEEventName.STAGE,
     "plan": SSEEventName.PLAN,
 }
@@ -240,10 +244,19 @@ def make_publisher_observer(
                 sse_event,
                 question_id=question_context.question_id,
                 index=question_context.index,
+                operation_id=event.get("operation_id"),
+                call_id=event.get("call_id"),
+                retry_of_call_id=event.get("retry_of_call_id"),
                 payload=dict(event),
             )
         else:
-            publisher.publish(sse_event, payload=dict(event))
+            publisher.publish(
+                sse_event,
+                operation_id=event.get("operation_id"),
+                call_id=event.get("call_id"),
+                retry_of_call_id=event.get("retry_of_call_id"),
+                payload=dict(event),
+            )
 
     return observer
 
@@ -375,9 +388,9 @@ def make_publisher_question_update_emitter(
 def make_publisher_trail_emitter(
     publisher: Any,
     question_context: Any,
-) -> Callable[[Any], None]:
+) -> Callable[..., None]:
     """Return a thread-safe emitter for one typed trail entry via publisher."""
-    def emit_trail(entry: Any) -> None:
+    def emit_trail(entry: Any, *, scope: OperationScope | None = None) -> None:
         payload = (
             entry.model_dump(mode="json")
             if hasattr(entry, "model_dump")
@@ -387,6 +400,7 @@ def make_publisher_trail_emitter(
             SSEEventName.TRAIL,
             question_id=question_context.question_id,
             index=question_context.index,
+            scope=scope,
             payload=payload,
         )
 

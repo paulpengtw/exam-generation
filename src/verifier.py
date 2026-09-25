@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 
 from src.common.distractor import validate_distractor_keys
+from src.common.generation_events import OperationScope
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, extract_json
@@ -70,6 +72,8 @@ def verify_question(
     question: ExamQuestion,
     chart_image_path: str | None = None,
     curriculum_context: CurriculumContext | None = None,
+    *,
+    scope: OperationScope | None = None,
 ) -> VerificationResult:
     """Run a second LLM pass to independently verify the question and answer.
 
@@ -142,9 +146,18 @@ def verify_question(
         system = VERIFICATION_SYSTEM_PROMPT
 
     try:
-        raw = client.generate_with_image(
-            system, user_prompt, image_path=chart_image_path, purpose="verify"
-        )
+        kwargs = {"image_path": chart_image_path, "purpose": "verify"}
+        try:
+            parameters = inspect.signature(client.generate_with_image).parameters
+            accepts_scope = "scope" in parameters or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+        except (TypeError, ValueError):
+            accepts_scope = False
+        if accepts_scope:
+            kwargs["scope"] = scope
+        raw = client.generate_with_image(system, user_prompt, **kwargs)
         result = extract_json(raw)
 
         chart_verif = None

@@ -48,11 +48,18 @@ from server.generate.snapshot_ledger import QuestionSnapshotLedger
 from server.generate.subjects import (
     SUBJECTS,
     SubjectSpec,
+    _scoped_client,
     resolved_payload_for_index,
 )
 from server.observability import record_generation_outcome
 from src.common.generation_core import GenerationCancelled
-from src.common.generation_events import QuestionContext, allocate_manifest, new_run_id
+from src.common.generation_events import (
+    QuestionContext,
+    RunContext,
+    allocate_manifest,
+    new_operation_scope,
+    new_run_id,
+)
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -501,34 +508,34 @@ def _worker_one_body(
     figure_policy_trail: list[dict[str, Any]] = []
     reference_example_entries: list[dict[str, Any]] = []
 
-    def capture_trail_entry(entry: Any) -> None:
+    def capture_trail_entry(entry: Any, *, scope: Any = None) -> None:
         payload = (
             entry.model_dump(mode="json")
             if hasattr(entry, "model_dump")
             else entry
         )
         verification_trail.append(payload)
-        emit_trail_entry(entry)
+        emit_trail_entry(entry, scope=scope)
 
-    def capture_figure_policy_entry(entry: Any) -> None:
+    def capture_figure_policy_entry(entry: Any, *, scope: Any = None) -> None:
         payload = (
             entry.model_dump(mode="json")
             if hasattr(entry, "model_dump")
             else entry
         )
         figure_policy_trail.append(payload)
-        emit_trail_entry(entry)
+        emit_trail_entry(entry, scope=scope)
         if figure_policy_recorder is not None:
             figure_policy_recorder(entry)
 
-    def capture_reference_example_entry(entry: Any) -> None:
+    def capture_reference_example_entry(entry: Any, *, scope: Any = None) -> None:
         payload = (
             entry.model_dump(mode="json")
             if hasattr(entry, "model_dump")
             else entry
         )
         reference_example_entries.append(payload)
-        emit_trail_entry(entry)
+        emit_trail_entry(entry, scope=scope)
         if reference_example_recorder is not None:
             reference_example_recorder(entry)
 
@@ -577,6 +584,7 @@ def _worker_one_body(
             prior_scopes=prior_snapshot,
             balanced_batch=ctx.balanced_batch,
             is_cancelled=ctx.cancel_event.is_set,
+            question_context=ctx.manifest[i],
         )
 
         # Site 4: metadata patching (SS only; other specs have patch_metadata=None)
@@ -825,8 +833,13 @@ async def generate_question_stream(
     # Run in a worker thread so a synchronous LLM planning call (e.g. Opus for
     # 社會領域 with creative_planning=True, ~14 s) does not block the event loop
     # and freeze pings, /health, and other requests (issue #701).
+    planner_scope = new_operation_scope(
+        RunContext(ctx.run_id),
+        kind="batch_planner",
+    )
     ctx.publisher.publish(
         SSEEventName.STAGE,
+        operation_id=planner_scope.operation_id,
         payload={
             "type": "stage",
             "agent": "planner",
@@ -867,6 +880,7 @@ async def generate_question_stream(
             ctx.client_config.creative_planning, ctx.decoded_subquestion_configs,
             client_factory=_client_factory,
             observer=planner_observer,
+            operation_scope=planner_scope,
         )
     ))
 
@@ -936,6 +950,7 @@ async def generate_question_stream(
 
     ctx.publisher.publish(
         SSEEventName.STAGE,
+        operation_id=planner_scope.operation_id,
         payload={
             "type": "stage",
             "agent": "planner",
@@ -953,7 +968,10 @@ async def generate_question_stream(
         return
 
     ctx.emit_pipeline("pipeline_start", total=ctx.count)
-    question_clients = [_client_factory(ctx.client_config) for _ in range(ctx.count)]
+    question_clients = [
+        _scoped_client(_client_factory, ctx.client_config, ctx.manifest[i])
+        for i in range(ctx.count)
+    ]
     futures = [
         loop.run_in_executor(
             None, functools.partial(_worker_one, i, question_clients[i], ctx, batch_briefs),

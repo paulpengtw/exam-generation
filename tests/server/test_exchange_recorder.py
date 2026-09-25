@@ -147,6 +147,46 @@ def test_thread_safety_under_concurrent_events(sink):
     assert orders == list(range(1, 4 * 50 + 1))
 
 
+def test_context_bearing_events_pair_by_run_and_call_not_agent(sink):
+    rows, write = sink
+    rec = ExchangeRecorder(uuid.uuid4(), write)
+
+    request_a = {
+        **_req("sub_generator#1", purpose="slot-a"),
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:a",
+        "call_id": "RUN:call:a",
+    }
+    request_b = {
+        **_req("sub_generator#1", purpose="slot-b"),
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:b",
+        "call_id": "RUN:call:b",
+    }
+    response_a = {
+        **_resp("sub_generator#1", purpose="slot-a"),
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:a",
+        "call_id": "RUN:call:a",
+    }
+    response_b = {
+        **_resp("sub_generator#1", purpose="slot-b"),
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:b",
+        "call_id": "RUN:call:b",
+    }
+
+    rec(request_a)
+    rec(request_b)
+    rec(response_a)
+    rec(response_b)
+
+    assert [row["purpose"] for row in rows] == ["slot-a", "slot-b"]
+    assert rows[0]["call_id"] == "RUN:call:a"
+    assert rows[1]["call_id"] == "RUN:call:b"
+    assert rows[0]["request_body"]["messages"][1]["content"] == "hello"
+
+
 def test_shared_allocator_across_recorders_prevents_cross_question_pairing(sink):
     rows, write = sink
 

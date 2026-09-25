@@ -21,6 +21,7 @@ from typing import Any
 from server.generate.marshalling import EMITTED_EVENT_NAMES, SSEEventName
 from server.generate.publisher import GenerationPublisher
 from server.generate.subjects import SUBJECTS
+from src.common.generation_events import QuestionContext, new_operation_scope
 from src.social_studies.schemas import (
     ExamQuestion,
     QuestionMetadata,
@@ -119,6 +120,38 @@ def test_publisher_publish_enqueues_v2_envelope() -> None:
     assert isinstance(ctx["event_seq"], int)
     assert ctx["event_seq"] >= 1
     assert envelope["payload"] == {"status": "ok"}
+
+
+def test_publisher_carries_operation_and_call_scope_and_supersedes_marker() -> None:
+    loop = asyncio.new_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    pub = GenerationPublisher(run_id="RUN", loop=loop, queue=queue)
+    question = QuestionContext(run_id="RUN", question_id="q-1", index=0)
+    scope = new_operation_scope(
+        question,
+        kind="subquestion",
+        subquestion_index=1,
+        supersedes_operation_id="RUN:operation:old",
+    )
+    try:
+        async def _drain() -> dict:
+            pub.publish(
+                "stage",
+                scope=scope,
+                call_id="RUN:call:1",
+                payload={"status": "start"},
+            )
+            await asyncio.sleep(0)
+            return await queue.get()
+
+        envelope = loop.run_until_complete(_drain())
+    finally:
+        loop.close()
+
+    assert envelope["context"]["operation_id"] == scope.operation_id
+    assert envelope["context"]["call_id"] == "RUN:call:1"
+    assert envelope["context"]["subquestion_index"] == 1
+    assert envelope["payload"]["supersedes_operation_id"] == "RUN:operation:old"
 
 
 # ---------------------------------------------------------------------------

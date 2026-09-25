@@ -16,8 +16,17 @@ from src.common.cli_resolver import resolve_and_print
 from src.common.difficulty import DEFAULT_DIFFICULTY
 from src.common.generation_core import (
     GenerationCancelled,
+    _call_with_optional_scope,
+    _callback_with_optional_scope,
     generate_one_core,
     generate_with_corrections_core,
+)
+from src.common.generation_events import (
+    QuestionContext as GenerationQuestionContext,
+)
+from src.common.generation_events import (
+    new_operation_scope,
+    new_run_id,
 )
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
@@ -86,14 +95,17 @@ def _emit_verification_trail(
     question_id: str,
     verification: Any,
     config: Config,
+    scope: Any = None,
 ) -> None:
     if callback is not None:
-        callback(
+        _callback_with_optional_scope(
+            callback,
             make_verification_trail_entry(
                 question_id,
                 verification,
                 config.model_verify or config.model_execute,
-            )
+            ),
+            scope=scope,
         )
 
 
@@ -511,6 +523,7 @@ def generate_one(
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
     is_cancelled: Callable[[], bool] | None = None,
+    question_context: Any | None = None,
 ) -> ExamQuestion | str:
     """Generate a single exam question.
 
@@ -545,6 +558,7 @@ def generate_one(
             prior_scopes=prior_scopes,
             curriculum_context=curriculum_context,
             is_cancelled=is_cancelled,
+            question_context=question_context,
         )
 
     # Build prompts using the canonical math curriculum corpus.
@@ -571,12 +585,16 @@ def generate_one(
         )
 
     obs = client.get_observer() if client else None
+    owner = question_context or GenerationQuestionContext(
+        run_id=new_run_id(), question_id=question_id, index=0
+    )
+    text_scope = new_operation_scope(owner, kind="text")
 
     # Generate question via LLM
     print(f"  Generating question {question_id}...", file=sys.stderr)
-    emit_stage(obs, "generator", "llm_generate", "start")
-    raw_json = client.generate_json(system_prompt, user_prompt)
-    emit_stage(obs, "generator", "llm_generate", "end")
+    emit_stage(obs, "generator", "llm_generate", "start", scope=text_scope)
+    raw_json = client.generate_json(system_prompt, user_prompt, scope=text_scope)
+    emit_stage(obs, "generator", "llm_generate", "end", scope=text_scope)
 
     # Cancel boundary: check after LLM call, before image render / verify.
     if is_cancelled is not None and is_cancelled():
@@ -592,8 +610,9 @@ def generate_one(
         img_path = config.output_dir / f"{question_id}.png"
         print(f"  Rendering image: {img_path}", file=sys.stderr)
         question_text = "\n".join(question.題目)
-        _on_render_error, _render_failed = make_render_error_sink(obs)
-        emit_stage(obs, "image_agent", "render_image", "start")
+        image_scope = new_operation_scope(owner, kind="image")
+        _on_render_error, _render_failed = make_render_error_sink(obs, scope=image_scope)
+        emit_stage(obs, "image_agent", "render_image", "start", scope=image_scope)
         rendered = render_image(
             question.chart_spec.model_dump(),
             img_path,
@@ -602,9 +621,10 @@ def generate_one(
             llm_client=client,
             image_generation_mode=image_generation_mode,
             on_error=_on_render_error,
+            scope=image_scope,
         )
         if not _render_failed:
-            emit_stage(obs, "image_agent", "render_image", "end")
+            emit_stage(obs, "image_agent", "render_image", "end", scope=image_scope)
         if rendered:
             question.圖片 = f"{question_id}.png"
             chart_image_path = rendered
@@ -616,19 +636,28 @@ def generate_one(
 
     # Verify if requested
     if not skip_verify:
+        verify_scope = new_operation_scope(owner, kind="verify")
         if on_trail_entry is not None:
-            on_trail_entry(make_initial_trail_entry(question_id, question))
+            _callback_with_optional_scope(
+                on_trail_entry,
+                make_initial_trail_entry(question_id, question),
+                scope=verify_scope,
+            )
         print(f"  Verifying question {question_id}...", file=sys.stderr)
-        emit_stage(obs, "verifier", "verify", "start")
-        result = verify_question(
+        emit_stage(obs, "verifier", "verify", "start", scope=verify_scope)
+        result = _call_with_optional_scope(
+            verify_question,
             client,
             question,
             chart_image_path=chart_image_path,
             curriculum_context=curriculum_context,
+            scope=verify_scope,
         )
-        emit_stage(obs, "verifier", "verify", "end")
+        emit_stage(obs, "verifier", "verify", "end", scope=verify_scope)
         question.verification = result
-        _emit_verification_trail(on_trail_entry, question_id, result, config)
+        _emit_verification_trail(
+            on_trail_entry, question_id, result, config, scope=verify_scope
+        )
         _emit_question_update(on_question_update, question, "verified")
         status = "PASSED" if result.passed else "FAILED"
         print(f"  Verification {status}: {result.details[:100]}", file=sys.stderr)
@@ -707,6 +736,7 @@ def generate_with_corrections(
     prior_scopes: Sequence[PriorScope] | None = None,
     curriculum_context: CurriculumContext | None = None,
     is_cancelled: Callable[[], bool] | None = None,
+    question_context: Any | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes.
 
@@ -744,8 +774,12 @@ def generate_with_corrections(
             prior_scopes=prior_scopes,
             curriculum_context=curriculum_context,
             is_cancelled=is_cancelled,
+            question_context=question_context,
         )
 
+    owner = question_context or GenerationQuestionContext(
+        run_id=new_run_id(), question_id=question_id, index=0
+    )
     question = generate_one(
         config=config,
         client=client,
@@ -771,12 +805,16 @@ def generate_with_corrections(
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
         is_cancelled=is_cancelled,
+        question_context=owner,
     )
 
     if dry_run or not isinstance(question, ExamQuestion):
         return question
 
     obs = client.get_observer() if client else None
+    previous_correction_operation_id: str | None = None
+    previous_image_operation_id: str | None = None
+    previous_verify_operation_id: str | None = None
 
     for attempt in range(max_retries):
         if is_cancelled is not None and is_cancelled():
@@ -799,13 +837,35 @@ def generate_with_corrections(
             if p.exists():
                 chart_image_path = str(p)
 
-        emit_stage(obs, "corrector", "correct", "start", retry=attempt + 1)
-        question = correct_question(
+        correction_scope = new_operation_scope(
+            owner,
+            kind="correction",
+            supersedes_operation_id=previous_correction_operation_id,
+        )
+        previous_correction_operation_id = correction_scope.operation_id
+        emit_stage(
+            obs,
+            "corrector",
+            "correct",
+            "start",
+            retry=attempt + 1,
+            scope=correction_scope,
+        )
+        question = _call_with_optional_scope(
+            correct_question,
             client, question, question.verification,
             chart_image_path=chart_image_path,
             curriculum_context=curriculum_context,
+            scope=correction_scope,
         )
-        emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
+        emit_stage(
+            obs,
+            "corrector",
+            "correct",
+            "end",
+            retry=attempt + 1,
+            scope=correction_scope,
+        )
         _emit_question_update(on_question_update, question, "corrected")
 
         # Re-render only when chart_spec actually changed
@@ -813,8 +873,14 @@ def generate_with_corrections(
         if question.chart_spec and question.chart_spec != prior_chart_spec:
             img_path = config.output_dir / f"{question_id}.png"
             print(f"  Chart spec changed; re-rendering image: {img_path}", file=sys.stderr)
-            _on_render_error, _render_failed = make_render_error_sink(obs)
-            emit_stage(obs, "image_agent", "render_image", "start")
+            image_scope = new_operation_scope(
+                owner,
+                kind="image",
+                supersedes_operation_id=previous_image_operation_id,
+            )
+            previous_image_operation_id = image_scope.operation_id
+            _on_render_error, _render_failed = make_render_error_sink(obs, scope=image_scope)
+            emit_stage(obs, "image_agent", "render_image", "start", scope=image_scope)
             rendered = render_image(
                 question.chart_spec.model_dump(),
                 img_path,
@@ -823,9 +889,10 @@ def generate_with_corrections(
                 llm_client=client,
                 image_generation_mode=image_generation_mode,
                 on_error=_on_render_error,
+                scope=image_scope,
             )
             if not _render_failed:
-                emit_stage(obs, "image_agent", "render_image", "end")
+                emit_stage(obs, "image_agent", "render_image", "end", scope=image_scope)
             if rendered:
                 question.圖片 = f"{question_id}.png"
                 new_chart_image_path = rendered
@@ -835,25 +902,51 @@ def generate_with_corrections(
             new_chart_image_path = str(p) if p.exists() else None
 
         if on_trail_entry is not None:
-            on_trail_entry(
+            _callback_with_optional_scope(
+                on_trail_entry,
                 make_correction_trail_entry(
                     question_id,
                     question,
                     attempt + 1,
                     config.model_correct or config.model_execute,
-                )
+                ),
+                scope=correction_scope,
             )
 
         if not skip_verify:
-            emit_stage(obs, "verifier", "verify", "start", retry=attempt + 1)
-            result = verify_question(
+            verify_scope = new_operation_scope(
+                owner,
+                kind="verify",
+                supersedes_operation_id=previous_verify_operation_id,
+            )
+            previous_verify_operation_id = verify_scope.operation_id
+            emit_stage(
+                obs,
+                "verifier",
+                "verify",
+                "start",
+                retry=attempt + 1,
+                scope=verify_scope,
+            )
+            result = _call_with_optional_scope(
+                verify_question,
                 client, question,
                 chart_image_path=new_chart_image_path,
                 curriculum_context=curriculum_context,
+                scope=verify_scope,
             )
-            emit_stage(obs, "verifier", "verify", "end", retry=attempt + 1)
+            emit_stage(
+                obs,
+                "verifier",
+                "verify",
+                "end",
+                retry=attempt + 1,
+                scope=verify_scope,
+            )
             question.verification = result
-            _emit_verification_trail(on_trail_entry, question_id, result, config)
+            _emit_verification_trail(
+                on_trail_entry, question_id, result, config, scope=verify_scope
+            )
             _emit_question_update(on_question_update, question, "verified")
             status = "PASSED" if result.passed else "FAILED"
             print(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import platform
 import sys
@@ -12,6 +13,8 @@ import matplotlib
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
+
+from src.common.generation_events import OperationScope
 
 matplotlib.use("Agg")  # Non-interactive backend for CLI
 
@@ -55,6 +58,22 @@ def _setup_chinese_font() -> str | None:
     )
     plt.rcParams["axes.unicode_minus"] = False
     return None
+
+
+def _call_with_optional_scope(method, *args, scope: OperationScope | None, **kwargs):
+    """Call renderer provider seams with v2 scope when supported."""
+    if scope is not None:
+        try:
+            parameters = inspect.signature(method).parameters
+            accepts_scope = "scope" in parameters or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+        except (TypeError, ValueError):
+            accepts_scope = False
+        if accepts_scope:
+            kwargs["scope"] = scope
+    return method(*args, **kwargs)
 
 
 CJK_FONT: str | None = _setup_chinese_font()
@@ -320,6 +339,7 @@ def render_image(
     llm_client=None,
     image_generation_mode: str = "html",
     on_error: Callable[[str], None] | None = None,
+    scope: OperationScope | None = None,
 ) -> str | None:
     """Render a question image from an ImageSpec dict and save as PNG.
 
@@ -342,7 +362,12 @@ def render_image(
         try:
             prompt = _build_gpt_image_prompt(image_spec, question_text)
             print("  Generating image via GPT image model...", file=sys.stderr)
-            return llm_client.generate_image(prompt, output_path)
+            return _call_with_optional_scope(
+                llm_client.generate_image,
+                prompt,
+                output_path,
+                scope=scope,
+            )
         except Exception as e:
             print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
             if on_error is not None:
@@ -359,7 +384,12 @@ def render_image(
         try:
             prompt = _build_gpt_image_prompt(image_spec, question_text)
             print("  Generating image via GPT image model (spec-driven)...", file=sys.stderr)
-            return llm_client.generate_image(prompt, output_path)
+            return _call_with_optional_scope(
+                llm_client.generate_image,
+                prompt,
+                output_path,
+                scope=scope,
+            )
         except Exception as e:
             print(f"  Warning: GPT image generation failed: {e}", file=sys.stderr)
             if on_error is not None:
@@ -372,7 +402,7 @@ def render_image(
     if render_mode == "html":
         html = image_spec.get("html", "")
         if not html and llm_client is not None:
-            html = _generate_html_via_llm(image_spec, question_text, llm_client)
+            html = _generate_html_via_llm(image_spec, question_text, llm_client, scope=scope)
         if not html:
             _msg = "no HTML content to render (HTML generation failed or spec missing html)"
             print(f"  Warning: {_msg}", file=sys.stderr)
@@ -464,7 +494,13 @@ Numerical data (if any):
 """
 
 
-def _generate_html_via_llm(spec: dict, question_text: str, llm_client) -> str:
+def _generate_html_via_llm(
+    spec: dict,
+    question_text: str,
+    llm_client,
+    *,
+    scope: OperationScope | None = None,
+) -> str:
     """Ask the LLM to generate an HTML document for the given image spec.
 
     Retries once on failure. Returns empty string if both attempts fail.
@@ -488,7 +524,13 @@ def _generate_html_via_llm(spec: dict, question_text: str, llm_client) -> str:
             else:
                 print("  Generating HTML image via LLM...", file=sys.stderr)
 
-            raw = llm_client.generate(_HTML_SYSTEM_PROMPT, prompt, purpose="html_image")
+            raw = _call_with_optional_scope(
+                llm_client.generate,
+                _HTML_SYSTEM_PROMPT,
+                prompt,
+                purpose="html_image",
+                scope=scope,
+            )
 
             # Extract HTML from code block if wrapped
             match = re.search(r"```(?:html)?\s*\n(.*?)\n```", raw, re.DOTALL)

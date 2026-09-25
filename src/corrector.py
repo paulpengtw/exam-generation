@@ -8,11 +8,13 @@ from collections.abc import Callable
 from src.common.correction_decision import CorrectionDecision, CorrectionRejection
 from src.common.corrector import (
     CorrectionStructureError,
+    _call_client_with_optional_scope,
     apply_correction,
     build_annotations_block,
     reject_correction,
     validate_correction_structure,
 )
+from src.common.generation_events import OperationScope
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ExamQuestion, ImageSpec, SubQuestion, VerificationResult
@@ -144,6 +146,8 @@ def correct_question(
     editable_paths: set[str] | None = None,
     on_rejected: Callable[[str], None] | None = None,
     on_decision: Callable[[CorrectionDecision], None] | None = None,
+    *,
+    scope: OperationScope | None = None,
 ) -> ExamQuestion:
     """Apply verification feedback to produce a minimally corrected question.
 
@@ -206,12 +210,23 @@ def correct_question(
     try:
         # Use multimodal when chart has issues and PNG exists
         if verification.chart_verification and chart_image_path:
-            raw_text = client.generate_with_image(
-                system, user_prompt, image_path=chart_image_path, purpose="correct"
+            raw_text = _call_client_with_optional_scope(
+                client.generate_with_image,
+                system,
+                user_prompt,
+                image_path=chart_image_path,
+                purpose="correct",
+                scope=scope,
             )
             corrected_data = extract_json(raw_text)
         else:
-            corrected_data = client.generate_json(system, user_prompt, purpose="correct")
+            corrected_data = _call_client_with_optional_scope(
+                client.generate_json,
+                system,
+                user_prompt,
+                purpose="correct",
+                scope=scope,
+            )
     except Exception:
         return reject_correction(
             client,
@@ -223,13 +238,19 @@ def correct_question(
             ),
             on_rejected,
             on_decision=on_decision,
+            scope=scope,
         )
 
     try:
         validate_correction_structure(corrected_data, question.subquestions)
     except CorrectionStructureError as exc:
         return reject_correction(
-            client, question, exc.reason, on_rejected, on_decision=on_decision,
+            client,
+            question,
+            exc.reason,
+            on_rejected,
+            on_decision=on_decision,
+            scope=scope,
         )
 
     # Safely merge: only update fields the corrector is allowed to change
@@ -257,6 +278,7 @@ def correct_question(
                     ),
                     on_rejected,
                     on_decision=on_decision,
+                    scope=scope,
                 )
 
     if "誘答分析" in corrected_data:
@@ -283,6 +305,7 @@ def correct_question(
                 ),
                 on_rejected,
                 on_decision=on_decision,
+                scope=scope,
             )
     if corrected_subquestions is not None:
         update["subquestions"] = corrected_subquestions
@@ -294,5 +317,10 @@ def correct_question(
     update["metadata"] = question.metadata
 
     return apply_correction(
-        client, question, update, on_rejected, on_decision=on_decision,
+        client,
+        question,
+        update,
+        on_rejected,
+        on_decision=on_decision,
+        scope=scope,
     )

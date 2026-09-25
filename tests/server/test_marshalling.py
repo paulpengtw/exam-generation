@@ -26,6 +26,7 @@ from server.generate.marshalling import (
     extract_image_files,
     make_combined_observer,
     make_pipeline_emitter,
+    make_publisher_observer,
     make_question_update_emitter,
     make_queue_observer,
     question_to_event,
@@ -97,8 +98,8 @@ def test_sse_event_name_declared_vocabulary_matches_canonical_sets() -> None:
     )
 
 
-def test_sse_event_name_has_exactly_fifteen_members() -> None:
-    assert len(SSEEventName) == 15
+def test_sse_event_name_has_exactly_sixteen_members() -> None:
+    assert len(SSEEventName) == 16
 
 
 def test_sse_event_name_values_are_strings() -> None:
@@ -137,6 +138,28 @@ def test_emitted_events_are_all_declared() -> None:
 
 def test_plan_is_an_emitted_event() -> None:
     assert "plan" in EMITTED_EVENT_NAMES
+
+
+def test_publisher_observer_forwards_explicit_operation_and_call_identity() -> None:
+    published: list[dict] = []
+
+    class Publisher:
+        def publish(self, event_name, **kwargs):
+            published.append({"event_name": event_name, **kwargs})
+
+    observer = make_publisher_observer(Publisher(), None)
+    observer({
+        "type": "llm_request",
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:1",
+        "call_id": "RUN:call:1",
+        "retry_of_call_id": "RUN:call:0",
+        "agent": "generator",
+    })
+
+    assert published[0]["operation_id"] == "RUN:operation:1"
+    assert published[0]["call_id"] == "RUN:call:1"
+    assert published[0]["payload"]["retry_of_call_id"] == "RUN:call:0"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -117,6 +117,7 @@ export type SSEEventName =
   | "llm_thinking"
   | "llm_content"
   | "llm_response"
+  | "llm_failure"
   | "stage"
   | "plan"
   | "trail"
@@ -139,6 +140,7 @@ export const SSE_EMITTED_EVENT_NAMES = [
   "llm_thinking",
   "llm_content",
   "llm_response",
+  "llm_failure",
   "stage",
   "plan",
   "trail",

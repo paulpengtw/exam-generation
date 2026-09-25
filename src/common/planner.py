@@ -5,13 +5,37 @@ Subject-agnostic: callers supply the system/user prompt templates.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import re
 
+from src.common.generation_events import OperationScope
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
+
+
+def _client_plan(
+    client: LLMClient,
+    system: str,
+    user: str,
+    purpose: str,
+    scope: OperationScope | None,
+) -> str:
+    if scope is None:
+        return client.plan(system, user, purpose=purpose)
+    try:
+        signature = inspect.signature(client.plan)
+        accepts_scope = "scope" in signature.parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+    except (TypeError, ValueError):
+        accepts_scope = False
+    if accepts_scope:
+        return client.plan(system, user, purpose=purpose, scope=scope)
+    return client.plan(system, user, purpose=purpose)
 
 
 class CandidateValidationError(ValueError):
@@ -43,6 +67,7 @@ def plan_core_questions(
     learning_stage: str = "第四學習階段",
     subject_filter: list[str] | None = None,
     grade: int | None = None,
+    scope: OperationScope | None = None,
 ) -> list[str]:
     """Call planning model, return n candidate 核心問題 for the given topic.
 
@@ -62,7 +87,7 @@ def plan_core_questions(
 
     for attempt in range(2):
         try:
-            raw = client.plan(system, user, purpose="plan_core_questions")
+            raw = _client_plan(client, system, user, "plan_core_questions", scope)
         except Exception:
             # Provider error messages can contain the request or response.
             # Preserve the failing boundary, never its raw message or chain.
@@ -133,6 +158,7 @@ def plan_context_angles(
     system_prompt: str,
     user_prompt_template: str,
     learning_stage: str = "第四學習階段",
+    scope: OperationScope | None = None,
 ) -> list:
     """Ask the planning model for `count` mutually-distinct 題材 briefs.
 
@@ -159,7 +185,7 @@ def plan_context_angles(
     )
 
     try:
-        raw = client.plan(system, user, purpose="plan_context_angles")
+        raw = _client_plan(client, system, user, "plan_context_angles", scope)
         entries = _parse_brief_candidates(raw)
     except Exception as exc:
         logger.warning(

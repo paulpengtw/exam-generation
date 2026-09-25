@@ -1,7 +1,7 @@
 /**
  * F4: QuestionCard with QuestionEvidence prop tests.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import QuestionCard from "./QuestionCard";
 import type { QuestionEvidence } from "../lib/generationEvidence";
@@ -56,6 +56,31 @@ describe("QuestionCard — placeholder (evidence, no content)", () => {
   it("does NOT render the full question card when evidence is placeholder", () => {
     render(<QuestionCard evidence={makeEvidence()} index={0} />);
     expect(screen.queryByTestId("question-card-content")).not.toBeInTheDocument();
+  });
+
+  it("summarizes active operation sets and expands details on demand", async () => {
+    const activity = {
+      operations: {
+        O1: {
+          operationId: "O1", step: "subquestions", status: "active" as const,
+          agent: "sub_generator#1", subquestionIndex: 1, supersedesOperationId: null, callIds: [],
+        },
+        O2: {
+          operationId: "O2", step: "subquestions", status: "active" as const,
+          agent: "sub_generator#2", subquestionIndex: 2, supersedesOperationId: null, callIds: [],
+        },
+      },
+      calls: {},
+    };
+    render(<QuestionCard evidence={makeEvidence({ processing: "running", activity })} index={0} />);
+
+    expect(screen.getByTestId("question-card-activity-summary")).toHaveTextContent("Sub-questions");
+    expect(screen.getByTestId("question-card-activity-summary")).toHaveTextContent("2");
+    expect(screen.queryByTestId("question-card-activity-operation-O1")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("question-card-activity-summary"));
+    expect(screen.getByTestId("question-card-activity-operation-O1")).toBeInTheDocument();
+    expect(screen.getByTestId("question-card-activity-operation-O2")).toBeInTheDocument();
   });
 });
 

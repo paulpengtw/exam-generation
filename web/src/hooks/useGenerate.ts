@@ -269,12 +269,22 @@ export interface GeneratedQuestion {
   referenceExampleRecord?: ReferenceExampleRecordShape;
 }
 
+interface LlmIdentity {
+  runId?: string;
+  operationId?: string;
+  callId?: string;
+  channel?: "thinking" | "content";
+  retryOfCallId?: string;
+  supersedesOperationId?: string;
+}
+
 export type LlmCallEvent =
-  | { type: "request"; purpose: string; agent: string; model: string; messages: unknown[]; params?: unknown }
-  | { type: "thinking"; purpose: string; agent: string; text: string }
-  | { type: "content"; purpose: string; agent: string; text: string }
-  | { type: "response"; purpose: string; agent: string; model: string; usage?: unknown }
-  | { type: "stage"; agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
+  | ({ type: "request"; purpose: string; agent: string; model: string; messages: unknown[]; params?: unknown } & LlmIdentity)
+  | ({ type: "thinking"; purpose: string; agent: string; text: string } & LlmIdentity)
+  | ({ type: "content"; purpose: string; agent: string; text: string } & LlmIdentity)
+  | ({ type: "response"; purpose: string; agent: string; model: string; usage?: unknown } & LlmIdentity)
+  | ({ type: "failure"; purpose: string; agent: string; model: string; errorType?: string } & LlmIdentity)
+  | ({ type: "stage"; agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string } & LlmIdentity);
 
 export type StageEvent = Extract<LlmCallEvent, { type: "stage" }>;
 
@@ -282,6 +292,7 @@ export type AgentStatus = "idle" | "running" | "done" | "error";
 
 export interface AgentLane {
   agent: string;
+  operationId?: string;
   status: AgentStatus;
   currentStage: string | null;
   streamingThinking: string;
@@ -305,6 +316,7 @@ function purposeToAgent(purpose: string): string {
     plan: "planner",
     plan_core_questions: "planner",
     plan_context_angles: "planner",
+    fact_check: "fact_checker",
   };
   return map[purpose] ?? purpose;
 }
@@ -513,10 +525,12 @@ const AGENT_ORDER = ["generator", "verifier", "corrector", "image_agent", "plann
 function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
   const lanesMap = new Map<string, AgentLane>();
 
-  const getOrCreate = (agent: string): AgentLane => {
-    if (!lanesMap.has(agent)) {
-      lanesMap.set(agent, {
+  const getOrCreate = (agent: string, operationId?: string): AgentLane => {
+    const key = operationId ? `${agent}:${operationId}` : agent;
+    if (!lanesMap.has(key)) {
+      lanesMap.set(key, {
         agent,
+        operationId,
         status: "idle",
         currentStage: null,
         streamingThinking: "",
@@ -524,12 +538,12 @@ function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
         stageHistory: [],
       });
     }
-    return lanesMap.get(agent)!;
+    return lanesMap.get(key)!;
   };
 
   for (const ev of events) {
     if (ev.type === "stage") {
-      const lane = getOrCreate(ev.agent);
+      const lane = getOrCreate(ev.agent, ev.operationId);
       if (ev.status === "start") {
         lane.status = "running";
         lane.currentStage = ev.stage;
@@ -547,21 +561,25 @@ function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
         if (last && last.stage === ev.stage) last.endedAt = ev.ts;
       }
     } else if (ev.type === "request") {
-      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose));
+      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose), ev.operationId);
       lane.status = "running";
       lane.streamingThinking = "";
       lane.streamingContent = "";
     } else if (ev.type === "thinking") {
-      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose));
+      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose), ev.operationId);
       lane.streamingThinking += ev.text;
     } else if (ev.type === "content") {
-      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose));
+      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose), ev.operationId);
       lane.streamingContent += ev.text;
     } else if (ev.type === "response") {
-      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose));
+      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose), ev.operationId);
       if (lane.status === "running" && !lane.currentStage) {
         lane.status = "done";
       }
+    } else if (ev.type === "failure") {
+      const lane = getOrCreate(ev.agent ?? purposeToAgent(ev.purpose), ev.operationId);
+      lane.status = "error";
+      lane.errorMessage = ev.errorType;
     }
   }
 
@@ -745,6 +763,15 @@ export function useGenerate(): UseGenerateReturn {
     // ---------------------------------------------------------------------------
     function handleV2Event(name: string, context: Record<string, unknown>, payload: unknown) {
       const p = payload as Record<string, unknown>;
+      const identity: LlmIdentity = {
+        runId: typeof context.run_id === "string" ? context.run_id : undefined,
+        operationId: typeof context.operation_id === "string" ? context.operation_id : undefined,
+        callId: typeof context.call_id === "string" ? context.call_id : undefined,
+        retryOfCallId: typeof p.retry_of_call_id === "string" ? p.retry_of_call_id : undefined,
+        supersedesOperationId: typeof p.supersedes_operation_id === "string"
+          ? p.supersedes_operation_id
+          : undefined,
+      };
 
       switch (name) {
         case "started": {
@@ -774,6 +801,7 @@ export function useGenerate(): UseGenerateReturn {
             model: (p.model as string) ?? "",
             messages: (p.messages as unknown[]) ?? [],
             params: p.params,
+            ...identity,
           }]);
           break;
         }
@@ -782,11 +810,25 @@ export function useGenerate(): UseGenerateReturn {
           const purpose = (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "";
           const text = (p.text as string) ?? "";
           setLlmCalls((prev) => {
-            const last = prev[prev.length - 1];
-            if (last && last.type === "thinking" && last.purpose === purpose) {
-              return [...prev.slice(0, -1), { ...last, text: last.text + text }];
+            let matchIndex = -1;
+            if (identity.callId) {
+              for (let index = prev.length - 1; index >= 0; index -= 1) {
+                const event = prev[index];
+                if (event.type === "thinking" && event.callId === identity.callId) {
+                  matchIndex = index;
+                  break;
+                }
+              }
             }
-            return [...prev, { type: "thinking", purpose, agent, text }];
+            const last = matchIndex >= 0 ? prev[matchIndex] : prev[prev.length - 1];
+            if (last && last.type === "thinking" && (
+              identity.callId ? last.callId === identity.callId : last.purpose === purpose
+            )) {
+              const next = [...prev];
+              next[matchIndex >= 0 ? matchIndex : prev.length - 1] = { ...last, text: last.text + text };
+              return next;
+            }
+            return [...prev, { type: "thinking", purpose, agent, text, channel: "thinking", ...identity }];
           });
           break;
         }
@@ -795,11 +837,25 @@ export function useGenerate(): UseGenerateReturn {
           const purpose = (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "";
           const text = (p.text as string) ?? "";
           setLlmCalls((prev) => {
-            const last = prev[prev.length - 1];
-            if (last && last.type === "content" && last.purpose === purpose) {
-              return [...prev.slice(0, -1), { ...last, text: last.text + text }];
+            let matchIndex = -1;
+            if (identity.callId) {
+              for (let index = prev.length - 1; index >= 0; index -= 1) {
+                const event = prev[index];
+                if (event.type === "content" && event.callId === identity.callId) {
+                  matchIndex = index;
+                  break;
+                }
+              }
             }
-            return [...prev, { type: "content", purpose, agent, text }];
+            const last = matchIndex >= 0 ? prev[matchIndex] : prev[prev.length - 1];
+            if (last && last.type === "content" && (
+              identity.callId ? last.callId === identity.callId : last.purpose === purpose
+            )) {
+              const next = [...prev];
+              next[matchIndex >= 0 ? matchIndex : prev.length - 1] = { ...last, text: last.text + text };
+              return next;
+            }
+            return [...prev, { type: "content", purpose, agent, text, channel: "content", ...identity }];
           });
           break;
         }
@@ -811,6 +867,19 @@ export function useGenerate(): UseGenerateReturn {
             agent,
             model: (p.model as string) ?? "",
             usage: p.usage,
+            ...identity,
+          }]);
+          break;
+        }
+        case "llm_failure": {
+          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
+          setLlmCalls((prev) => [...prev, {
+            type: "failure",
+            purpose: (p.purpose as string | undefined) ?? "",
+            agent,
+            model: (p.model as string) ?? "",
+            errorType: p.error_type as string | undefined,
+            ...identity,
           }]);
           break;
         }
@@ -823,6 +892,7 @@ export function useGenerate(): UseGenerateReturn {
             ts: (p.ts as number) ?? 0,
             retry: p.retry as number | undefined,
             message: p.message as string | undefined,
+            ...identity,
           }]);
           break;
         }
@@ -1010,6 +1080,31 @@ export function useGenerate(): UseGenerateReturn {
             const d = JSON.parse(data) as { purpose: string; agent?: string; model: string; usage?: unknown };
             const agent = d.agent ?? purposeToAgent(d.purpose);
             setLlmCalls((prev) => [...prev, { type: "response", purpose: d.purpose, agent, model: d.model, usage: d.usage }]);
+          } catch { /* ignore */ }
+          break;
+        }
+        case "llm_failure": {
+          try {
+            const d = JSON.parse(data) as {
+              purpose: string;
+              agent?: string;
+              model?: string;
+              error_type?: string;
+              run_id?: string;
+              operation_id?: string;
+              call_id?: string;
+            };
+            const agent = d.agent ?? purposeToAgent(d.purpose);
+            setLlmCalls((prev) => [...prev, {
+              type: "failure",
+              purpose: d.purpose,
+              agent,
+              model: d.model ?? "",
+              errorType: d.error_type,
+              runId: d.run_id,
+              operationId: d.operation_id,
+              callId: d.call_id,
+            }]);
           } catch { /* ignore */ }
           break;
         }

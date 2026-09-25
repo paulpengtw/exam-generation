@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 from src.common.correction_decision import CorrectionDecision
 from src.common.corrector import correct_question_common, parse_rubric
+from src.common.generation_events import OperationScope
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient
 from src.natural_sciences.curriculum_codes import repair_lc_refs, repair_lp_refs
@@ -176,6 +177,8 @@ def correct_question(
     editable_paths: set[str] | None = None,
     on_rejected: Callable[[str], None] | None = None,
     on_decision: Callable[[CorrectionDecision], None] | None = None,
+    *,
+    scope: OperationScope | None = None,
 ) -> ExamQuestion:
     if curriculum_context is not None:
         curriculum_prefix = build_curriculum_section(curriculum_context)
@@ -198,4 +201,5 @@ def correct_question(
         editable_paths=editable_paths,
         on_rejected=on_rejected,
         on_decision=on_decision,
+        scope=scope,
     )

@@ -383,7 +383,15 @@ def make_exchange_recorder(
 
     async def _insert(row: dict[str, Any]) -> None:
         async with session_factory() as sess:
-            sess.add(LLMExchange(**row))
+            # Operation/call identity is persisted inside the JSON bodies for
+            # schema compatibility; the recorder also exposes the flat fields
+            # to in-process sinks and tests.
+            db_row = {
+                key: value
+                for key, value in row.items()
+                if key not in {"run_id", "call_id", "operation_id", "retry_of_call_id"}
+            }
+            sess.add(LLMExchange(**db_row))
             await sess.commit()
 
     def _write_row(row: dict[str, Any]) -> None:

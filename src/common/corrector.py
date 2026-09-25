@@ -16,16 +16,39 @@ where SS was already tolerant and NS was not (issue #158 AC3).
 
 from __future__ import annotations
 
+import inspect
 import json
 from copy import deepcopy
 from typing import Any, Callable
 
 from src.common.correction_decision import CorrectionDecision, CorrectionRejection
+from src.common.generation_events import OperationScope
 from src.llm_client import LLMClient, emit_stage, extract_json
 
 # Callable: (sq_raw, original_sq, idx) -> SubQuestion | None
 RebuildSubquestionFn = Callable[[dict, Any, int], Any]
 DecisionCallback = Callable[[CorrectionDecision], None]
+
+
+def _call_client_with_optional_scope(
+    method: Callable,
+    *args: Any,
+    scope: OperationScope | None,
+    **kwargs: Any,
+) -> Any:
+    """Pass scope to real clients without breaking legacy correction fakes."""
+    if scope is not None:
+        try:
+            parameters = inspect.signature(method).parameters
+            accepts_scope = "scope" in parameters or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+        except (TypeError, ValueError):
+            accepts_scope = False
+        if accepts_scope:
+            kwargs["scope"] = scope
+    return method(*args, **kwargs)
 
 
 class CorrectionStructureError(ValueError):
@@ -164,6 +187,7 @@ def reject_correction(
     on_rejected: Callable[[str], None] | None = None,
     *,
     on_decision: DecisionCallback | None = None,
+    scope: OperationScope | None = None,
 ) -> Any:
     """Retain the entire snapshot and report why this attempt was rejected."""
     if isinstance(reason, str):
@@ -180,6 +204,7 @@ def reject_correction(
         observer = client.get_observer() if hasattr(client, "get_observer") else None
         emit_stage(
             observer, "corrector", "correct", "error",
+            scope=scope,
             code="correction_rejected", message=reason.message,
             reason=reason.model_dump(),
         )
@@ -193,6 +218,7 @@ def apply_correction(
     on_rejected: Callable[[str], None] | None = None,
     *,
     on_decision: DecisionCallback | None = None,
+    scope: OperationScope | None = None,
 ) -> Any:
     """Validate the full merged snapshot before accepting any of its edits."""
     try:
@@ -204,6 +230,7 @@ def apply_correction(
             _rejection("merged_question_invalid", "$", "correction contains invalid data"),
             on_rejected,
             on_decision=on_decision,
+            scope=scope,
         )
 
     # model_copy(deep=True) detaches both public nested fields and Pydantic
@@ -218,6 +245,7 @@ def apply_correction(
             _rejection("detached_candidate_invalid", "$", "correction could not be detached"),
             on_rejected,
             on_decision=on_decision,
+            scope=scope,
         )
     if on_decision is not None:
         on_decision(CorrectionDecision(outcome="accepted"))
@@ -236,6 +264,7 @@ def correct_question_common(
     editable_paths: set[str] | None = None,
     on_rejected: Callable[[str], None] | None = None,
     on_decision: DecisionCallback | None = None,
+    scope: OperationScope | None = None,
 ) -> Any:
     """Shared corrector core for questions with subquestions.
 
@@ -304,12 +333,23 @@ def correct_question_common(
 
     try:
         if verification.chart_verification and chart_image_path:
-            raw_text = client.generate_with_image(
-                system_prompt, user_prompt, image_path=chart_image_path, purpose="correct"
+            raw_text = _call_client_with_optional_scope(
+                client.generate_with_image,
+                system_prompt,
+                user_prompt,
+                image_path=chart_image_path,
+                purpose="correct",
+                scope=scope,
             )
             corrected_data = extract_json(raw_text)
         else:
-            corrected_data = client.generate_json(system_prompt, user_prompt, purpose="correct")
+            corrected_data = _call_client_with_optional_scope(
+                client.generate_json,
+                system_prompt,
+                user_prompt,
+                purpose="correct",
+                scope=scope,
+            )
     except Exception:
         return reject_correction(
             client,
@@ -317,6 +357,7 @@ def correct_question_common(
             _rejection("response_unreadable", "$", "correction response could not be read"),
             on_rejected,
             on_decision=on_decision,
+            scope=scope,
         )
 
     try:
@@ -324,6 +365,7 @@ def correct_question_common(
     except CorrectionStructureError as exc:
         return reject_correction(
             client, question, exc.reason, on_rejected, on_decision=on_decision,
+            scope=scope,
         )
 
     update: dict = {}
@@ -360,6 +402,7 @@ def correct_question_common(
                     ),
                     on_rejected,
                     on_decision=on_decision,
+                    scope=scope,
                 )
             # Keep generation-owned slot metadata (notably _plan_index) so
             # later image rendering uses the original 各小題配置, even when
@@ -387,6 +430,7 @@ def correct_question_common(
                         _rejection("image_spec_invalid", key, "image specification is invalid"),
                         on_rejected,
                         on_decision=on_decision,
+                        scope=scope,
                     )
 
     update["verification"] = None
@@ -394,5 +438,10 @@ def correct_question_common(
     update["metadata"] = question.metadata
 
     return apply_correction(
-        client, question, update, on_rejected, on_decision=on_decision,
+        client,
+        question,
+        update,
+        on_rejected,
+        on_decision=on_decision,
+        scope=scope,
     )

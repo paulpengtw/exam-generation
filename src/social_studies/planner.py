@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src.common.generation_events import OperationScope
 from src.common.planner import _parse_candidates
 from src.common.planner import plan_context_angles as _base_plan_context_angles
 from src.common.planner import plan_core_questions as _base_plan
@@ -82,6 +83,7 @@ def plan_core_questions(
     grade: int | None = None,
     n: int = 3,
     learning_stage: str = "第四學習階段",
+    scope: OperationScope | None = None,
 ) -> list[str]:
     """Call planning model, return n candidate 核心問題 for the given topic."""
     return _base_plan(
@@ -93,6 +95,7 @@ def plan_core_questions(
         learning_stage=learning_stage,
         subject_filter=subject_filter,
         grade=grade,
+        scope=scope,
     )
 
 
@@ -104,6 +107,7 @@ def plan_context_angles(
     core_question: str | None = None,
     *,
     learning_stage: str = "第四學習階段",
+    scope: OperationScope | None = None,
 ) -> list[CreativeBrief]:
     """Call the planning model and return `count` distinct 社會領域 briefs.
 
@@ -120,6 +124,7 @@ def plan_context_angles(
         system_prompt=_SS_CREATIVE_PLANNER_SYSTEM_PROMPT,
         user_prompt_template=_SS_CREATIVE_PLANNER_USER_TEMPLATE,
         learning_stage=learning_stage,
+        scope=scope,
     )
 
 

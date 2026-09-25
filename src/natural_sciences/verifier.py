@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.common.generation_events import OperationScope
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.common.verifier import PostVerifyHook, verify_question_common
 from src.curriculum_context import CurriculumContext, build_curriculum_section
@@ -142,6 +143,8 @@ def verify_question(
     question: ExamQuestion,
     chart_image_path: str | None = None,
     curriculum_context: CurriculumContext | None = None,
+    *,
+    scope: OperationScope | None = None,
 ) -> VerificationResult:
     # Fall back to text-only when the image file is absent or unreadable.
     if chart_image_path is not None and not Path(chart_image_path).exists():
@@ -184,4 +187,5 @@ def verify_question(
         chart_verif_cls=ChartVerificationResult,
         chart_image_path=chart_image_path,
         post_verify_hooks=_NS_POST_VERIFY_HOOKS,
+        scope=scope,
     )

@@ -33,6 +33,36 @@ export interface QuestionTerminalPayload {
   unknown_reason?: string;
 }
 
+export type GenerationOperationStatus = "active" | "ended" | "failed" | "superseded";
+
+export interface GenerationOperationEvidence {
+  operationId: string;
+  step: string;
+  status: GenerationOperationStatus;
+  agent: string | null;
+  subquestionIndex: number | null;
+  supersedesOperationId: string | null;
+  callIds: string[];
+}
+
+export interface GenerationCallEvidence {
+  runId: string;
+  callId: string;
+  operationId: string;
+  purpose: string;
+  agent: string;
+  status: "active" | "ended" | "failed";
+  retryOfCallId: string | null;
+  thinking: string;
+  content: string;
+}
+
+export interface QuestionActivity {
+  operations: Record<string, GenerationOperationEvidence>;
+  /** Keys are run/call pairs, never an agent or purpose. */
+  calls: Record<string, GenerationCallEvidence>;
+}
+
 export interface QuestionEvidence {
   questionId: string;
   index: number;
@@ -55,6 +85,8 @@ export interface QuestionEvidence {
   trail: VerificationTrailEntry[];
   figurePolicyTrail: FigurePolicyTrailEntry[];
   referenceExampleRecord: ReferenceExampleRecordShape | undefined;
+  /** Present for v2 events; optional for legacy/history fixtures. */
+  activity?: QuestionActivity;
 }
 
 export interface RunEvidenceState {
@@ -83,6 +115,7 @@ function emptyQuestionEvidence(questionId: string, index: number): QuestionEvide
     trail: [],
     figurePolicyTrail: [],
     referenceExampleRecord: undefined,
+    activity: { operations: {}, calls: {} },
   };
 }
 
@@ -113,10 +146,22 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
   const questionId = typeof ctx.question_id === "string" ? ctx.question_id : null;
   if (!questionId) return state;
 
-  const qev = state.questions[questionId];
+  let qev = state.questions[questionId];
   if (!qev) return state; // unknown question id
 
   const p = payload as Record<string, unknown>;
+
+  const activity = applyActivity(
+    qev.activity ?? { operations: {}, calls: {} },
+    name,
+    ctx,
+    p,
+    state.runId,
+  );
+  if (activity !== qev.activity) {
+    state = updateQuestion(state, questionId, { activity });
+    qev = state.questions[questionId];
+  }
 
   switch (name) {
     case "pipeline": {
@@ -133,6 +178,13 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
     case "llm_thinking":
     case "llm_content": {
       // These signal running if not ended
+      if (qev.processing !== "ended") {
+        return updateQuestion(state, questionId, { processing: "running" });
+      }
+      return state;
+    }
+
+    case "llm_failure": {
       if (qev.processing !== "ended") {
         return updateQuestion(state, questionId, { processing: "running" });
       }
@@ -202,6 +254,118 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
   }
 }
 
+function activityRunId(context: Record<string, unknown>, fallback: string): string {
+  return typeof context.run_id === "string" && context.run_id
+    ? context.run_id
+    : fallback;
+}
+
+function activityStep(payload: Record<string, unknown>): string {
+  const stage = typeof payload.stage === "string" ? payload.stage : "";
+  const agent = typeof payload.agent === "string" ? payload.agent : "";
+  if (agent.startsWith("sub_generator#")) return "subquestions";
+  if (agent === "image_agent" || stage.includes("image")) return "image";
+  if (agent === "verifier" || stage === "verify") return "verify";
+  if (agent === "corrector" || stage === "correct") return "correct";
+  if (agent === "planner" || stage === "batch_briefs") return "planner";
+  if (stage === "llm_generate" || agent === "generator") return "text";
+  return stage || agent || "unknown";
+}
+
+function applyActivity(
+  previous: QuestionActivity,
+  eventName: string,
+  context: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  fallbackRunId: string,
+): QuestionActivity {
+  const operationId = typeof context.operation_id === "string" ? context.operation_id : null;
+  const callId = typeof context.call_id === "string" ? context.call_id : null;
+  if (!operationId && !callId) return previous;
+
+  const runId = activityRunId(context, fallbackRunId);
+  const operations = { ...previous.operations };
+  const calls = { ...previous.calls };
+  const effectiveOperationId = operationId ?? (callId ? `${runId}/call/${callId}` : "");
+  const existingOperation = operations[effectiveOperationId];
+  const operation: GenerationOperationEvidence = existingOperation ?? {
+    operationId: effectiveOperationId,
+    step: activityStep(payload),
+    status: "active",
+    agent: typeof payload.agent === "string" ? payload.agent : null,
+    subquestionIndex: typeof context.subquestion_index === "number"
+      ? context.subquestion_index
+      : null,
+    supersedesOperationId: null,
+    callIds: [],
+  };
+  const updatedOperation: GenerationOperationEvidence = {
+    ...operation,
+    step: operation.step === "unknown" ? activityStep(payload) : operation.step,
+    agent: operation.agent ?? (typeof payload.agent === "string" ? payload.agent : null),
+    subquestionIndex: operation.subquestionIndex ?? (
+      typeof context.subquestion_index === "number" ? context.subquestion_index : null
+    ),
+    callIds: [...operation.callIds],
+  };
+
+  if (eventName === "stage") {
+    const status = payload.status;
+    if (status === "start") {
+      updatedOperation.status = "active";
+      if (typeof payload.supersedes_operation_id === "string") {
+        updatedOperation.supersedesOperationId = payload.supersedes_operation_id;
+        const superseded = operations[payload.supersedes_operation_id];
+        if (superseded) {
+          operations[payload.supersedes_operation_id] = { ...superseded, status: "superseded" };
+        }
+      }
+    } else if (status === "error") {
+      if (updatedOperation.status !== "superseded") updatedOperation.status = "failed";
+    } else if (updatedOperation.status !== "superseded") {
+      updatedOperation.status = "ended";
+    }
+  }
+  operations[effectiveOperationId] = updatedOperation;
+
+  if (callId && operationId) {
+    const callKey = `${runId}/${callId}`;
+    const existingCall = calls[callKey];
+    const call: GenerationCallEvidence = existingCall ?? {
+      runId,
+      callId,
+      operationId,
+      purpose: typeof payload.purpose === "string" ? payload.purpose : "",
+      agent: typeof payload.agent === "string" ? payload.agent : "",
+      status: "active",
+      retryOfCallId: typeof payload.retry_of_call_id === "string"
+        ? payload.retry_of_call_id
+        : null,
+      thinking: "",
+      content: "",
+    };
+    const updatedCall: GenerationCallEvidence = {
+      ...call,
+      purpose: call.purpose || (typeof payload.purpose === "string" ? payload.purpose : ""),
+      agent: call.agent || (typeof payload.agent === "string" ? payload.agent : ""),
+      retryOfCallId: call.retryOfCallId ?? (
+        typeof payload.retry_of_call_id === "string" ? payload.retry_of_call_id : null
+      ),
+    };
+    if (!updatedOperation.callIds.includes(callId)) {
+      updatedOperation.callIds = [...updatedOperation.callIds, callId];
+      operations[effectiveOperationId] = updatedOperation;
+    }
+    if (eventName === "llm_thinking") updatedCall.thinking += typeof payload.text === "string" ? payload.text : "";
+    if (eventName === "llm_content") updatedCall.content += typeof payload.text === "string" ? payload.text : "";
+    if (eventName === "llm_response") updatedCall.status = "ended";
+    if (eventName === "llm_failure") updatedCall.status = "failed";
+    calls[callKey] = updatedCall;
+  }
+
+  return { operations, calls };
+}
+
 function updateQuestion(
   state: RunEvidenceState,
   questionId: string,
@@ -243,4 +407,25 @@ export function selectEndedCount(state: RunEvidenceState): number {
 /** Number of unique questions whose content.receipt === 'final'. */
 export function selectFinalReceivedCount(state: RunEvidenceState): number {
   return Object.values(state.questions).filter((q) => q.content.receipt === "final").length;
+}
+
+/** Operations whose own lifecycle is still active for one question. */
+export function selectActiveOperations(question: QuestionEvidence): GenerationOperationEvidence[] {
+  return Object.values(question.activity?.operations ?? {}).filter(
+    (operation) => operation.status === "active",
+  );
+}
+
+/** Aggregate operation activity by the actual generation step, not agent name. */
+export function selectGenerationSteps(
+  question: QuestionEvidence,
+): Array<{ step: string; active: number; total: number }> {
+  const byStep = new Map<string, { step: string; active: number; total: number }>();
+  for (const operation of Object.values(question.activity?.operations ?? {})) {
+    const current = byStep.get(operation.step) ?? { step: operation.step, active: 0, total: 0 };
+    current.total += 1;
+    if (operation.status === "active") current.active += 1;
+    byStep.set(operation.step, current);
+  }
+  return [...byStep.values()];
 }

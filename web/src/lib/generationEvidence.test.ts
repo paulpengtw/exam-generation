@@ -5,6 +5,8 @@ import {
   closeRun,
   selectEndedCount,
   selectFinalReceivedCount,
+  selectActiveOperations,
+  selectGenerationSteps,
   type RunEvidenceState,
 } from "./generationEvidence";
 
@@ -340,5 +342,87 @@ describe("selectors", () => {
 
     expect(selectEndedCount(state)).toBe(3); // A, B, C have terminals
     expect(selectFinalReceivedCount(state)).toBe(3); // A, B, D have receipt===final
+  });
+});
+
+describe("operation-scoped live activity", () => {
+  it("keeps overlapping operations active when an older operation ends", () => {
+    let state = freshRun();
+    let eventSeq = 20;
+    const context = (operationId: string, callId?: string) => ({
+      run_id: RUN_ID,
+      event_seq: eventSeq++,
+      question_id: "q_001",
+      index: 0,
+      operation_id: operationId,
+      ...(callId ? { call_id: callId } : {}),
+    });
+
+    state = applyV2Event(state, makeEvent("stage", context("O1"), {
+      agent: "sub_generator#1", stage: "llm_generate", status: "start",
+    }));
+    state = applyV2Event(state, makeEvent("stage", context("O2"), {
+      agent: "sub_generator#1", stage: "llm_generate", status: "start",
+    }));
+    state = applyV2Event(state, makeEvent("stage", context("O1"), {
+      agent: "sub_generator#1", stage: "llm_generate", status: "end",
+    }));
+
+    expect(selectActiveOperations(state.questions["q_001"])).toEqual([
+      expect.objectContaining({ operationId: "O2", status: "active" }),
+    ]);
+    expect(state.questions["q_001"].processing).toBe("running");
+    expect(selectGenerationSteps(state.questions["q_001"])).toEqual([
+      expect.objectContaining({ step: "subquestions", active: 1 }),
+    ]);
+  });
+
+  it("keeps same-purpose text streams separate by run/call/channel and does not infer termination", () => {
+    let state = freshRun();
+    const event = (name: string, operationId: string, callId: string, text?: string) =>
+      makeEvent(name, {
+        run_id: RUN_ID,
+        event_seq: 40 + (text?.length ?? 0),
+        question_id: "q_001",
+        index: 0,
+        operation_id: operationId,
+        call_id: callId,
+      }, {
+        purpose: "generate",
+        agent: "sub_generator#1",
+        ...(text === undefined ? {} : { text }),
+      });
+
+    state = applyV2Event(state, event("llm_request", "O1", "C1"));
+    state = applyV2Event(state, event("llm_request", "O2", "C2"));
+    state = applyV2Event(state, event("llm_content", "O1", "C1", "old"));
+    state = applyV2Event(state, event("llm_content", "O2", "C2", "new"));
+    state = applyV2Event(state, event("llm_response", "O1", "C1"));
+
+    const calls = Object.values(state.questions["q_001"].activity?.calls ?? {});
+    expect(calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ callId: "C1", content: "old" }),
+      expect.objectContaining({ callId: "C2", content: "new" }),
+    ]));
+    expect(selectActiveOperations(state.questions["q_001"]).map((op) => op.operationId)).toEqual(["O1", "O2"]);
+    expect(state.questions["q_001"].terminal).toBeNull();
+  });
+
+  it("marks only the superseded operation and never creates a later step from an empty active set", () => {
+    let state = freshRun();
+    const base = { run_id: RUN_ID, question_id: "q_001", index: 0 };
+    state = applyV2Event(state, makeEvent("stage", { ...base, event_seq: 1, operation_id: "O1" }, {
+      agent: "sub_generator#1", stage: "llm_generate", status: "start",
+    }));
+    state = applyV2Event(state, makeEvent("stage", { ...base, event_seq: 2, operation_id: "O2" }, {
+      agent: "sub_generator#1", stage: "llm_generate", status: "start", supersedes_operation_id: "O1",
+    }));
+    state = applyV2Event(state, makeEvent("stage", { ...base, event_seq: 3, operation_id: "O1" }, {
+      agent: "sub_generator#1", stage: "llm_generate", status: "end",
+    }));
+
+    expect(state.questions["q_001"].activity?.operations["O1"].status).toBe("superseded");
+    expect(state.questions["q_001"].activity?.operations["O2"].status).toBe("active");
+    expect(selectGenerationSteps(state.questions["q_001"])).toHaveLength(1);
   });
 });

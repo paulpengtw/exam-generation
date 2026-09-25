@@ -26,6 +26,7 @@ class _State:
         self.lock = threading.Lock()
         self.calls_by_slot: dict[int, int] = {}
         self.factory_calls = 0
+        self.scopes: list[object] = []
 
 
 def _slot(agent_override: str) -> int:
@@ -76,6 +77,8 @@ class _FlakySubClient:
     def generate_json(self, system, user, images=None, agent_override=None, **kwargs):
         idx = _slot(agent_override)
         with self._state.lock:
+            self._state.scopes.append(kwargs.get("scope"))
+        with self._state.lock:
             attempt = self._state.calls_by_slot.get(idx, 0) + 1
             self._state.calls_by_slot[idx] = attempt
         if idx == self._failing_slot and attempt <= self._fail_times:
@@ -113,6 +116,13 @@ def test_failed_slot_is_retried_and_recovered() -> None:
     assert state.calls_by_slot == {1: 1, 2: 2, 3: 1}
     # Fresh client per attempt: 3 initial + 1 retry for slot 2.
     assert state.factory_calls == 4
+    scopes = [scope for scope in state.scopes if scope is not None]
+    assert len(scopes) == 4
+    slot_two = [scope for scope in scopes if scope.subquestion_index == 2]
+    assert len(slot_two) == 2
+    assert slot_two[0].operation_id != slot_two[1].operation_id
+    assert slot_two[1].supersedes_operation_id == slot_two[0].operation_id
+    assert {scope.kind for scope in scopes} == {"subquestion"}
 
 
 def test_zero_retries_drops_failed_slot_immediately() -> None:

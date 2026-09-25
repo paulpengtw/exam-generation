@@ -32,7 +32,11 @@ import VerificationTrailTimeline from "./VerificationTrailTimeline";
 import FigurePolicyTrailTimeline from "./FigurePolicyTrailTimeline";
 import ReferenceExampleRecordSection from "./ReferenceExampleRecordSection";
 import InteractiveItemViewer, { type InteractionSubmission } from "./InteractiveItemViewer";
-import type { QuestionEvidence } from "../lib/generationEvidence";
+import {
+  selectGenerationSteps,
+  type QuestionEvidence,
+  type GenerationOperationEvidence,
+} from "../lib/generationEvidence";
 
 export interface QuestionCardProps {
   question?: ExamQuestion;
@@ -506,6 +510,76 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
   );
 }
 
+function activityLabel(step: string, t: (key: string) => string): string {
+  switch (step) {
+    case "text": return t("card.activityText");
+    case "subquestions": return t("card.activitySubquestions");
+    case "image": return t("card.activityImage");
+    case "verify": return t("card.activityVerify");
+    case "correct": return t("card.activityCorrect");
+    case "planner": return t("card.activityPlanner");
+    default: return t("card.activityUnknown");
+  }
+}
+
+function operationStatusLabel(
+  operation: GenerationOperationEvidence,
+  t: (key: string) => string,
+): string {
+  switch (operation.status) {
+    case "active": return t("card.activityActive");
+    case "ended": return t("card.activityEnded");
+    case "failed": return t("card.activityFailed");
+    case "superseded": return t("card.activitySuperseded");
+  }
+}
+
+function QuestionActivityPanel({ evidence }: { evidence: QuestionEvidence }) {
+  const t = useT();
+  const [expanded, setExpanded] = useState(false);
+  const activity = evidence.activity;
+  const steps = activity ? selectGenerationSteps(evidence) : [];
+  const operations = activity ? Object.values(activity.operations) : [];
+  if (steps.length === 0) return null;
+
+  return (
+    <section
+      data-testid="question-card-activity"
+      aria-label={t("card.activityTitle")}
+      className="rounded border border-blue-100 bg-blue-50 p-2 text-xs text-blue-900"
+    >
+      <button
+        type="button"
+        data-testid="question-card-activity-summary"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((previous) => !previous)}
+        className="flex w-full items-center justify-between gap-2 text-left font-medium"
+      >
+        <span>
+          {t("card.activityTitle")}：{" "}
+          {steps.map((step) => `${activityLabel(step.step, t)} ${step.active}`).join("、")}
+        </span>
+        <span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
+      </button>
+      {expanded && (
+        <ul className="mt-2 space-y-1" data-testid="question-card-activity-details">
+          {operations.map((operation) => (
+            <li
+              key={operation.operationId}
+              data-testid={`question-card-activity-operation-${operation.operationId}`}
+              className="flex flex-wrap gap-x-2"
+            >
+              <span>{activityLabel(operation.step, t)}</span>
+              <span>{operation.agent ?? t("card.activityUnknown")}</span>
+              <span>{operationStatusLabel(operation, t)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function QuestionCard({
   question: initialQuestion,
   index,
@@ -642,6 +716,9 @@ export default function QuestionCard({
       >
         <div className="font-medium text-gray-500">{posLabel}</div>
         <div className="text-gray-400 mt-1">{procLabel}</div>
+        <div className="mt-2">
+          <QuestionActivityPanel evidence={evidence} />
+        </div>
       </div>
     );
   }
@@ -754,6 +831,7 @@ export default function QuestionCard({
       className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3"
     >
       {evidence && <EvidenceStatusLine evidence={evidence} />}
+      {evidence && <QuestionActivityPanel evidence={evidence} />}
       {recordId && (
         <ModificationParticipation
           route={route ?? window.location.pathname}

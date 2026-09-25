@@ -15,6 +15,13 @@ from anthropic import Anthropic
 from openai import OpenAI
 from pydantic import BaseModel
 
+from src.common.generation_events import (
+    CallScope,
+    OperationScope,
+    QuestionContext,
+    new_call_scope,
+    new_operation_scope,
+)
 from src.config import Config
 
 logger = logging.getLogger(__name__)
@@ -232,6 +239,8 @@ def emit_stage(
     agent: str,
     stage: str,
     status: str,
+    *,
+    scope: OperationScope | None = None,
     **extra: object,
 ) -> None:
     """Emit a stage lifecycle event to the observer (if any)."""
@@ -240,6 +249,15 @@ def emit_stage(
     event: dict = {
         "type": "stage", "agent": agent, "stage": stage, "status": status, "ts": time.time(),
     }
+    if scope is not None:
+        event.update({
+            "run_id": scope.run_id,
+            "operation_id": scope.operation_id,
+        })
+        if scope.subquestion_index is not None:
+            event["subquestion_index"] = scope.subquestion_index
+        if status == "start" and scope.supersedes_operation_id is not None:
+            event["supersedes_operation_id"] = scope.supersedes_operation_id
     event.update(extra)
     try:
         observer(event)
@@ -257,6 +275,7 @@ def emit_stage(
 def make_render_error_sink(
     observer: LLMObserver | None,
     agent: str = "image_agent",
+    scope: OperationScope | None = None,
 ) -> tuple[Callable[[str], None], list[str]]:
     """Return an (on_error, failed) pair for use at render_image call sites.
 
@@ -275,23 +294,34 @@ def make_render_error_sink(
     failed: list[str] = []
 
     def on_error(err: str) -> None:
-        emit_stage(observer, agent, "render_image", "error", message=err)
+        emit_stage(observer, agent, "render_image", "error", scope=scope, message=err)
         failed.append(err)
 
     return on_error, failed
 
 
-def emit_plan(observer: LLMObserver | None, sub_question_total: int) -> None:
+def emit_plan(
+    observer: LLMObserver | None,
+    sub_question_total: int,
+    *,
+    scope: OperationScope | None = None,
+) -> None:
     """Emit the resolved sub-question plan total to the observer (if any)."""
     if observer is None:
         return
     try:
-        observer({
+        event = {
             "type": "plan",
             "agent": "generator",
             "sub_question_total": sub_question_total,
             "ts": time.time(),
-        })
+        }
+        if scope is not None:
+            event.update({
+                "run_id": scope.run_id,
+                "operation_id": scope.operation_id,
+            })
+        observer(event)
     except Exception:
         pass
 
@@ -392,8 +422,13 @@ def _to_anthropic_content(content: str | list[dict]) -> str | list[dict]:
 class LLMClient:
     """Client for calling Claude via the Anthropic SDK with automatic prompt caching."""
 
-    def __init__(self, config: Config):
+    def __init__(
+        self,
+        config: Config,
+        scope: OperationScope | QuestionContext | None = None,
+    ):
         self.config = config
+        self.scope = scope
         self.client = Anthropic(
             api_key=config.api_key,
             base_url=_strip_v1(config.base_url),
@@ -402,6 +437,45 @@ class LLMClient:
         self._compat_clients: dict[str, OpenAI] = {}
         self._observer: LLMObserver | None = None
         self._observer_warned: bool = False
+
+    def set_scope(self, scope: OperationScope | QuestionContext | None) -> None:
+        """Bind an immutable default scope for explicit child-client plumbing."""
+        self.scope = scope
+
+    def _operation_scope(
+        self,
+        scope: OperationScope | QuestionContext | None,
+        *,
+        kind: str,
+    ) -> OperationScope | None:
+        source = scope if scope is not None else self.scope
+        if isinstance(source, OperationScope):
+            return source
+        if isinstance(source, QuestionContext):
+            return new_operation_scope(source, kind=kind)
+        return None
+
+    @staticmethod
+    def _call_fields(call_scope: CallScope) -> dict[str, str]:
+        fields = {
+            "run_id": call_scope.run_id,
+            "operation_id": call_scope.operation_id,
+            "call_id": call_scope.call_id,
+        }
+        if call_scope.retry_of_call_id is not None:
+            fields["retry_of_call_id"] = call_scope.retry_of_call_id
+        return fields
+
+    def _emit_call_event(
+        self,
+        event_type: str,
+        call_scope: CallScope | None,
+        **fields: object,
+    ) -> None:
+        if call_scope is None:
+            self._emit({"type": event_type, **fields})
+        else:
+            self._emit({"type": event_type, **self._call_fields(call_scope), **fields})
 
     def set_observer(self, cb: LLMObserver) -> None:
         self._observer = cb
@@ -563,6 +637,7 @@ class LLMClient:
         purpose: str,
         options: dict,
         agent_override: str | None = None,
+        call_scope: CallScope | None = None,
     ) -> str:
         """Stream via Anthropic SDK, emitting deltas to observer. Returns assembled content."""
         content_parts: list[str] = []
@@ -590,21 +665,41 @@ class LLMClient:
                     if dtype == "text_delta":
                         text = delta.text
                         content_parts.append(text)
-                        self._emit({
-                            "type": "llm_content_delta",
-                            "purpose": purpose,
-                            "agent": agent,
-                            "text": text,
-                        })
+                        if call_scope is not None:
+                            self._emit_call_event(
+                                "llm_content_delta",
+                                call_scope,
+                                channel="content",
+                                purpose=purpose,
+                                agent=agent,
+                                text=text,
+                            )
+                        else:
+                            self._emit({
+                                "type": "llm_content_delta",
+                                "purpose": purpose,
+                                "agent": agent,
+                                "text": text,
+                            })
                     elif dtype == "thinking_delta":
                         thinking = delta.thinking
                         reasoning_parts.append(thinking)
-                        self._emit({
-                            "type": "llm_reasoning_delta",
-                            "purpose": purpose,
-                            "agent": agent,
-                            "text": thinking,
-                        })
+                        if call_scope is not None:
+                            self._emit_call_event(
+                                "llm_reasoning_delta",
+                                call_scope,
+                                channel="thinking",
+                                purpose=purpose,
+                                agent=agent,
+                                text=thinking,
+                            )
+                        else:
+                            self._emit({
+                                "type": "llm_reasoning_delta",
+                                "purpose": purpose,
+                                "agent": agent,
+                                "text": thinking,
+                            })
 
             final = stream.get_final_message()
             u = final.usage
@@ -616,15 +711,27 @@ class LLMClient:
             }
 
         content = "".join(content_parts)
-        self._emit({
-            "type": "llm_response",
-            "purpose": purpose,
-            "agent": agent,
-            "model": model,
-            "content": content,
-            "reasoning": "".join(reasoning_parts) or None,
-            "usage": usage,
-        })
+        if call_scope is not None:
+            self._emit_call_event(
+                "llm_response",
+                call_scope,
+                purpose=purpose,
+                agent=agent,
+                model=model,
+                content=content,
+                reasoning="".join(reasoning_parts) or None,
+                usage=usage,
+            )
+        else:
+            self._emit({
+                "type": "llm_response",
+                "purpose": purpose,
+                "agent": agent,
+                "model": model,
+                "content": content,
+                "reasoning": "".join(reasoning_parts) or None,
+                "usage": usage,
+            })
         return content
 
     def _call(
@@ -633,12 +740,28 @@ class LLMClient:
         model: str,
         purpose: str,
         agent_override: str | None = None,
+        *,
+        scope: OperationScope | QuestionContext | None = None,
+        retry_of_call_id: str | None = None,
+        _call_scope_sink: list[CallScope] | None = None,
     ) -> str:
         """Emit request event, dispatch to provider-specific call, emit response event."""
         agent = (
             agent_override if agent_override is not None
             else _PURPOSE_TO_AGENT.get(purpose, purpose)
         )
+
+        operation_scope = self._operation_scope(scope, kind=purpose)
+        call_scope = (
+            new_call_scope(
+                operation_scope,
+                retry_of_call_id=retry_of_call_id,
+            )
+            if operation_scope is not None
+            else None
+        )
+        if _call_scope_sink is not None and call_scope is not None:
+            _call_scope_sink.append(call_scope)
 
         provider = resolve_provider(model)
         options = self._provider_options(model, purpose, provider)
@@ -648,20 +771,35 @@ class LLMClient:
                 "stream_options": {"include_usage": True},
             })
         if self._observer:
-            self._emit({
-                "type": "llm_request",
-                "purpose": purpose,
-                "agent": agent,
-                "model": model,
-                "messages": self._summarize_for_observer(messages),
-                "params": dict(options),
-            })
-
-        if provider == "anthropic":
-            return self._anthropic_call(
-                messages, model, purpose, options, agent_override, agent
+            self._emit_call_event(
+                "llm_request",
+                call_scope,
+                purpose=purpose,
+                agent=agent,
+                model=model,
+                messages=self._summarize_for_observer(messages),
+                params=dict(options),
             )
-        return self._openai_compat_call(provider, messages, model, purpose, options, agent)
+
+        try:
+            if provider == "anthropic":
+                return self._anthropic_call(
+                    messages, model, purpose, options, agent_override, agent, call_scope
+                )
+            return self._openai_compat_call(
+                provider, messages, model, purpose, options, agent, call_scope
+            )
+        except Exception as exc:
+            if self._observer and call_scope is not None:
+                self._emit_call_event(
+                    "llm_failure",
+                    call_scope,
+                    purpose=purpose,
+                    agent=agent,
+                    model=model,
+                    error_type=type(exc).__name__,
+                )
+            raise
 
     def _anthropic_call(
         self,
@@ -671,6 +809,7 @@ class LLMClient:
         options: dict,
         agent_override: str | None,
         agent: str,
+        call_scope: CallScope | None = None,
     ) -> str:
         """Call the Anthropic API (streaming or non-streaming)."""
         system = ""
@@ -688,7 +827,7 @@ class LLMClient:
 
         if self._observer and self.config.llm_stream:
             return self._generate_streaming(
-                system, anthropic_messages, model, purpose, options, agent_override
+                system, anthropic_messages, model, purpose, options, agent_override, call_scope
             )
 
         system_param = (
@@ -705,8 +844,7 @@ class LLMClient:
         content = "".join(getattr(block, "text", "") for block in response.content)
         if self._observer:
             u = response.usage
-            self._emit({
-                "type": "llm_response",
+            response_fields = {
                 "purpose": purpose,
                 "agent": agent,
                 "model": model,
@@ -720,7 +858,11 @@ class LLMClient:
                     "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0,
                     "cache_creation": getattr(u, "cache_creation_input_tokens", 0) or 0,
                 },
-            })
+            }
+            if call_scope is not None:
+                self._emit_call_event("llm_response", call_scope, **response_fields)
+            else:
+                self._emit({"type": "llm_response", **response_fields})
         return content
 
     def _openai_compat_streaming(
@@ -730,6 +872,7 @@ class LLMClient:
         model: str,
         purpose: str,
         agent: str,
+        call_scope: CallScope | None = None,
     ) -> str:
         """Stream via OpenAI-compat surface, emitting deltas to observer.
 
@@ -756,33 +899,56 @@ class LLMClient:
             )
             if reasoning_text:
                 reasoning_parts.append(reasoning_text)
-                self._emit({
-                    "type": "llm_reasoning_delta",
-                    "purpose": purpose,
-                    "agent": agent,
-                    "text": reasoning_text,
-                })
+                if call_scope is not None:
+                    self._emit_call_event(
+                        "llm_reasoning_delta",
+                        call_scope,
+                        channel="thinking",
+                        purpose=purpose,
+                        agent=agent,
+                        text=reasoning_text,
+                    )
+                else:
+                    self._emit({
+                        "type": "llm_reasoning_delta",
+                        "purpose": purpose,
+                        "agent": agent,
+                        "text": reasoning_text,
+                    })
 
             content_text = getattr(delta, "content", None)
             if content_text:
                 content_parts.append(content_text)
-                self._emit({
-                    "type": "llm_content_delta",
-                    "purpose": purpose,
-                    "agent": agent,
-                    "text": content_text,
-                })
+                if call_scope is not None:
+                    self._emit_call_event(
+                        "llm_content_delta",
+                        call_scope,
+                        channel="content",
+                        purpose=purpose,
+                        agent=agent,
+                        text=content_text,
+                    )
+                else:
+                    self._emit({
+                        "type": "llm_content_delta",
+                        "purpose": purpose,
+                        "agent": agent,
+                        "text": content_text,
+                    })
 
         content = "".join(content_parts)
-        self._emit({
-            "type": "llm_response",
+        response_fields = {
             "purpose": purpose,
             "agent": agent,
             "model": model,
             "content": content,
             "reasoning": "".join(reasoning_parts) or None,
             "usage": usage,
-        })
+        }
+        if call_scope is not None:
+            self._emit_call_event("llm_response", call_scope, **response_fields)
+        else:
+            self._emit({"type": "llm_response", **response_fields})
         return content
 
     def _openai_compat_call(
@@ -793,6 +959,7 @@ class LLMClient:
         purpose: str,
         options: dict,
         agent: str,
+        call_scope: CallScope | None = None,
     ) -> str:
         """Call through the OpenAI-compatible surface (gemini/openai providers).
 
@@ -808,21 +975,26 @@ class LLMClient:
         }
 
         if self._observer and self.config.llm_stream:
-            return self._openai_compat_streaming(oc, kwargs, model, purpose, agent)
+            return self._openai_compat_streaming(
+                oc, kwargs, model, purpose, agent, call_scope
+            )
 
         response = oc.chat.completions.create(**kwargs)
         choices = response.choices if response.choices else []
         content = (choices[0].message.content or "") if choices else ""
         if self._observer:
-            self._emit({
-                "type": "llm_response",
+            response_fields = {
                 "purpose": purpose,
                 "agent": agent,
                 "model": model,
                 "content": content,
                 "reasoning": None,
                 "usage": _openai_usage_to_internal(getattr(response, "usage", None)),
-            })
+            }
+            if call_scope is not None:
+                self._emit_call_event("llm_response", call_scope, **response_fields)
+            else:
+                self._emit({"type": "llm_response", **response_fields})
         return content
 
     def generate(
@@ -832,6 +1004,8 @@ class LLMClient:
         model: str | None = None,
         images: list[Path] | None = None,
         purpose: str = "generate",
+        *,
+        scope: OperationScope | QuestionContext | None = None,
     ) -> str:
         """Call the execution model (default: Sonnet) and return raw text response."""
         if self.config.rate_limit_delay > 0:
@@ -854,7 +1028,8 @@ class LLMClient:
             {"role": "system", "content": system},
             {"role": "user", "content": user_content},
         ]
-        return self._call(messages, model, purpose)
+        operation_scope = self._operation_scope(scope, kind=purpose)
+        return self._call(messages, model, purpose, scope=operation_scope)
 
     def generate_with_image(
         self,
@@ -863,10 +1038,12 @@ class LLMClient:
         image_path: str | Path | None = None,
         model: str | None = None,
         purpose: str = "generate",
+        *,
+        scope: OperationScope | QuestionContext | None = None,
     ) -> str:
         """Call the execution model with an optional image attachment."""
         if image_path is None:
-            return self.generate(system, user, model, purpose=purpose)
+            return self.generate(system, user, model, purpose=purpose, scope=scope)
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
         model = model or self._model_for_purpose(purpose)
@@ -878,11 +1055,25 @@ class LLMClient:
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_data}"}},
             ]},
         ]
-        return self._call(messages, model, purpose)
+        operation_scope = self._operation_scope(scope, kind=purpose)
+        return self._call(messages, model, purpose, scope=operation_scope)
 
-    def plan(self, system: str, user: str, purpose: str = "plan") -> str:
+    def plan(
+        self,
+        system: str,
+        user: str,
+        purpose: str = "plan",
+        *,
+        scope: OperationScope | QuestionContext | None = None,
+    ) -> str:
         """Call the planning model (default: Opus) and return raw text response."""
-        return self.generate(system, user, model=self.config.model_plan, purpose=purpose)
+        return self.generate(
+            system,
+            user,
+            model=self.config.model_plan,
+            purpose=purpose,
+            scope=scope,
+        )
 
     def generate_json(
         self,
@@ -893,10 +1084,14 @@ class LLMClient:
         purpose: str = "generate",
         max_parse_retries: int = 2,
         agent_override: str | None = None,
+        *,
+        scope: OperationScope | QuestionContext | None = None,
     ) -> dict:
         """Call the execution model and parse the response as JSON."""
         last_err: Exception | None = None
         current_user = user
+        operation_scope = self._operation_scope(scope, kind=purpose)
+        previous_call_id: str | None = None
         for attempt in range(max_parse_retries):
             if self.config.rate_limit_delay > 0:
                 time.sleep(self.config.rate_limit_delay)
@@ -921,17 +1116,38 @@ class LLMClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_content},
             ]
-            raw = self._call(messages, call_model, purpose, agent_override)
+            call_scope_sink: list[CallScope] = []
+            raw = self._call(
+                messages,
+                call_model,
+                purpose,
+                agent_override,
+                scope=operation_scope,
+                retry_of_call_id=previous_call_id,
+                _call_scope_sink=call_scope_sink,
+            )
+            call_scope = call_scope_sink[0] if call_scope_sink else None
+            if call_scope is not None:
+                previous_call_id = call_scope.call_id
             try:
                 return extract_json(raw)
             except (ValueError, json.JSONDecodeError) as e:
                 last_err = e
-                self._emit({
-                    "type": "llm_json_parse_retry",
-                    "purpose": purpose,
-                    "attempt": attempt + 1,
-                    "error": str(e),
-                })
+                if call_scope is not None:
+                    self._emit_call_event(
+                        "llm_json_parse_retry",
+                        call_scope,
+                        purpose=purpose,
+                        attempt=attempt + 1,
+                        error_type=type(e).__name__,
+                    )
+                else:
+                    self._emit({
+                        "type": "llm_json_parse_retry",
+                        "purpose": purpose,
+                        "attempt": attempt + 1,
+                        "error": str(e),
+                    })
                 current_user = (
                     f"{user}\n\n"
                     f"[Previous response had invalid JSON: {e}. "
@@ -939,7 +1155,13 @@ class LLMClient:
                 )
         raise last_err
 
-    def generate_image(self, prompt: str, output_path: str | Path) -> str:
+    def generate_image(
+        self,
+        prompt: str,
+        output_path: str | Path,
+        *,
+        scope: OperationScope | QuestionContext | None = None,
+    ) -> str:
         """Generate a PNG image via OpenAI image API and write it to output_path."""
         if not self.config.image_api_key:
             raise ValueError("IMAGE_API_KEY is required for GPT image generation.")
@@ -954,37 +1176,53 @@ class LLMClient:
             )
 
         purpose = "gpt_image"
-        self._emit({
-            "type": "llm_request",
-            "purpose": purpose,
-            "agent": _PURPOSE_TO_AGENT[purpose],
-            "model": self.config.image_model,
-            "messages": [{"role": "user", "content": prompt}],
-            "params": {"size": "1024x1024", "n": 1},
-        })
-        response = self._image_client.images.generate(
-            model=self.config.image_model,
-            prompt=prompt,
-            size="1024x1024",
-            n=1,
-        )
-        image_data = response.data[0]
-        b64_json = getattr(image_data, "b64_json", None)
-        if not b64_json:
-            raise ValueError("Image generation response did not include b64_json data.")
+        operation_scope = self._operation_scope(scope, kind=purpose)
+        call_scope = new_call_scope(operation_scope) if operation_scope is not None else None
+        try:
+            self._emit_call_event(
+                "llm_request",
+                call_scope,
+                purpose=purpose,
+                agent=_PURPOSE_TO_AGENT[purpose],
+                model=self.config.image_model,
+                messages=[{"role": "user", "content": prompt}],
+                params={"size": "1024x1024", "n": 1},
+            )
+            response = self._image_client.images.generate(
+                model=self.config.image_model,
+                prompt=prompt,
+                size="1024x1024",
+                n=1,
+            )
+            image_data = response.data[0]
+            b64_json = getattr(image_data, "b64_json", None)
+            if not b64_json:
+                raise ValueError("Image generation response did not include b64_json data.")
 
-        output = Path(output_path)
-        output.write_bytes(base64.b64decode(b64_json))
-        self._emit({
-            "type": "llm_response",
-            "purpose": purpose,
-            "agent": _PURPOSE_TO_AGENT[purpose],
-            "model": self.config.image_model,
-            "content": str(output),
-            "reasoning": None,
-            "usage": None,
-        })
-        return str(output)
+            output = Path(output_path)
+            output.write_bytes(base64.b64decode(b64_json))
+            self._emit_call_event(
+                "llm_response",
+                call_scope,
+                purpose=purpose,
+                agent=_PURPOSE_TO_AGENT[purpose],
+                model=self.config.image_model,
+                content=str(output),
+                reasoning=None,
+                usage=None,
+            )
+            return str(output)
+        except Exception as exc:
+            if call_scope is not None:
+                self._emit_call_event(
+                    "llm_failure",
+                    call_scope,
+                    purpose=purpose,
+                    agent=_PURPOSE_TO_AGENT[purpose],
+                    model=self.config.image_model,
+                    error_type=type(exc).__name__,
+                )
+            raise
 
     def generate_with_tools(
         self,
@@ -994,6 +1232,8 @@ class LLMClient:
         purpose: str = "generate",
         max_iterations: int = 3,
         model: str | None = None,
+        *,
+        scope: OperationScope | QuestionContext | None = None,
     ) -> tuple[str, list[Citation]]:
         """Run an Anthropic ``messages.create`` loop with server-side tools.
 
@@ -1007,6 +1247,8 @@ class LLMClient:
             time.sleep(self.config.rate_limit_delay)
         call_model = model or self._model_for_purpose(purpose)
         agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
+        operation_scope = self._operation_scope(scope, kind=purpose)
+        call_scope: CallScope | None = None
         options = self._provider_options(call_model, purpose, "anthropic")
         options["tools"] = tools
 
@@ -1030,7 +1272,8 @@ class LLMClient:
                 return obj.get(name, "") or ""
             return getattr(obj, name, "") or ""
 
-        if self._observer:
+        legacy = operation_scope is None
+        if legacy and self._observer:
             self._emit({
                 "type": "llm_request",
                 "purpose": purpose,
@@ -1040,45 +1283,90 @@ class LLMClient:
                 "params": dict(options),
             })
 
-        for iteration in range(max_iterations):
-            response = self.client.messages.create(
-                model=call_model,
-                **options,
-                system=system_param,
-                messages=messages,  # type: ignore[arg-type]
-            )
-            assistant_blocks: list = list(response.content)
-            for block in assistant_blocks:
-                btype = getattr(block, "type", None)
-                if btype == "text":
-                    collected_text.append(getattr(block, "text", "") or "")
-                    for cit in getattr(block, "citations", None) or []:
-                        _record_citation(_field(cit, "url"), _field(cit, "title"))
-                elif btype == "web_search_tool_result":
-                    for item in getattr(block, "content", None) or []:
-                        _record_citation(_field(item, "url"), _field(item, "title"))
+        try:
+            for iteration in range(max_iterations):
+                # Each visible provider dispatch is its own application call;
+                # pause_turn continuation keeps the operation but gets a new
+                # call identity when the next request is sent.
+                call_scope = (
+                    new_call_scope(operation_scope) if operation_scope is not None else None
+                )
+                if self._observer and not legacy:
+                    self._emit_call_event(
+                        "llm_request",
+                        call_scope,
+                        purpose=purpose,
+                        agent=agent,
+                        model=call_model,
+                        messages=[{"role": "system", "content": system}, *messages],
+                        params=dict(options),
+                    )
 
-            stop_reason = getattr(response, "stop_reason", "end_turn")
-            if stop_reason != "pause_turn":
-                break
-            # Continue the same turn: the assistant blocks are appended, and
-            # the server executes any additional tool_use it produced.
-            messages.append({"role": "assistant", "content": assistant_blocks})
-            if iteration == max_iterations - 1:
-                break
+                response = self.client.messages.create(
+                    model=call_model,
+                    **options,
+                    system=system_param,
+                    messages=messages,  # type: ignore[arg-type]
+                )
+                assistant_blocks: list = list(response.content)
+                for block in assistant_blocks:
+                    btype = getattr(block, "type", None)
+                    if btype == "text":
+                        collected_text.append(getattr(block, "text", "") or "")
+                        for cit in getattr(block, "citations", None) or []:
+                            _record_citation(_field(cit, "url"), _field(cit, "title"))
+                    elif btype == "web_search_tool_result":
+                        for item in getattr(block, "content", None) or []:
+                            _record_citation(_field(item, "url"), _field(item, "title"))
 
-        final_text = "".join(collected_text)
-        if self._observer:
-            self._emit({
-                "type": "llm_response",
-                "purpose": purpose,
-                "agent": agent,
-                "model": call_model,
-                "content": final_text,
-                "reasoning": None,
-                "usage": None,
-            })
-        return final_text, collected_citations
+                if self._observer and not legacy:
+                    self._emit_call_event(
+                        "llm_response",
+                        call_scope,
+                        purpose=purpose,
+                        agent=agent,
+                        model=call_model,
+                        content="".join(
+                            getattr(block, "text", "") or ""
+                            for block in assistant_blocks
+                            if getattr(block, "type", None) == "text"
+                        ),
+                        reasoning=None,
+                        usage=None,
+                    )
+
+                stop_reason = getattr(response, "stop_reason", "end_turn")
+                if stop_reason != "pause_turn":
+                    break
+                # Continue the same operation: the assistant blocks are appended,
+                # and the server executes any additional tool_use it produced.
+                messages.append({"role": "assistant", "content": assistant_blocks})
+                if iteration == max_iterations - 1:
+                    break
+
+            final_text = "".join(collected_text)
+            if legacy and self._observer:
+                self._emit({
+                    "type": "llm_response",
+                    "purpose": purpose,
+                    "agent": agent,
+                    "model": call_model,
+                    "content": final_text,
+                    "reasoning": None,
+                    "usage": None,
+                })
+            return final_text, collected_citations
+        except Exception as exc:
+            if self._observer and call_scope is not None:
+                self._emit_call_event(
+                    "llm_failure",
+                    call_scope,
+                    purpose=purpose,
+                    agent=agent,
+                    model=call_model,
+                    error_type=type(exc).__name__,
+                )
+            raise
 
     def generate_with_google_search(
         self,
@@ -1087,6 +1375,8 @@ class LLMClient:
         purpose: str = "fact_check",
         max_uses: int = 5,
         model: str | None = None,
+        *,
+        scope: OperationScope | QuestionContext | None = None,
     ) -> tuple[str, list[Citation]]:
         """Call Gemini grounding through its OpenAI-compatible endpoint.
 
@@ -1099,6 +1389,8 @@ class LLMClient:
             time.sleep(self.config.rate_limit_delay)
         call_model = model or self._model_for_purpose(purpose)
         agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
+        operation_scope = self._operation_scope(scope, kind=purpose)
+        call_scope = new_call_scope(operation_scope) if operation_scope is not None else None
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -1108,35 +1400,49 @@ class LLMClient:
         options["extra_body"] = extra_body
 
         if self._observer:
-            self._emit({
-                "type": "llm_request",
-                "purpose": purpose,
-                "agent": agent,
-                "model": call_model,
-                "messages": messages,
-                "params": dict(options),
-            })
+            self._emit_call_event(
+                "llm_request",
+                call_scope,
+                purpose=purpose,
+                agent=agent,
+                model=call_model,
+                messages=messages,
+                params=dict(options),
+            )
 
-        oc = self._openai_compat_client("gemini")
-        response = oc.chat.completions.create(
-            model=call_model,
-            messages=messages,
-            **options,
-        )
-        content = response.choices[0].message.content or ""
-        citations = _extract_google_search_citations(response)
+        try:
+            oc = self._openai_compat_client("gemini")
+            response = oc.chat.completions.create(
+                model=call_model,
+                messages=messages,
+                **options,
+            )
+            content = response.choices[0].message.content or ""
+            citations = _extract_google_search_citations(response)
 
-        if self._observer:
-            self._emit({
-                "type": "llm_response",
-                "purpose": purpose,
-                "agent": agent,
-                "model": call_model,
-                "content": content,
-                "reasoning": None,
-                "usage": _openai_usage_to_internal(getattr(response, "usage", None)),
-            })
-        return content, citations
+            if self._observer:
+                self._emit_call_event(
+                    "llm_response",
+                    call_scope,
+                    purpose=purpose,
+                    agent=agent,
+                    model=call_model,
+                    content=content,
+                    reasoning=None,
+                    usage=_openai_usage_to_internal(getattr(response, "usage", None)),
+                )
+            return content, citations
+        except Exception as exc:
+            if self._observer and call_scope is not None:
+                self._emit_call_event(
+                    "llm_failure",
+                    call_scope,
+                    purpose=purpose,
+                    agent=agent,
+                    model=call_model,
+                    error_type=type(exc).__name__,
+                )
+            raise
 
 
 def _try_loads(text: str) -> dict:

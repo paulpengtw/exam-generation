@@ -11,6 +11,7 @@ generation independent of the random samplers.
 from __future__ import annotations
 
 import dataclasses
+import inspect
 import json
 import os
 from pathlib import Path
@@ -171,6 +172,22 @@ def _resolve_enum(value: str | None, enum_cls: type) -> Any:
         if member.value == value:
             return member
     raise ValueError(f"Invalid value '{value}' for {enum_cls.__name__}")
+
+
+def _scoped_client(factory: Callable[..., Any], config: Any, scope: Any) -> Any:
+    """Call a client factory with explicit scope when its seam supports it."""
+    try:
+        signature = inspect.signature(factory)
+        accepts_scope = "scope" in signature.parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+    except (TypeError, ValueError):
+        accepts_scope = False
+    client = factory(config, scope=scope) if accepts_scope else factory(config)
+    if scope is not None and hasattr(client, "set_scope"):
+        client.set_scope(scope)
+    return client
 
 
 def resolved_payload_for_index(params: Any, index: int) -> dict[str, Any]:
@@ -654,11 +671,21 @@ def _ss_plan_all_batch_briefs(
         _ss_params_from_resolved_impl(resolved_payload_for_index(params, i))
         for i in range(count)
     ]
-    planning_client = client_factory(config)
+    planning_client = _scoped_client(
+        client_factory,
+        config,
+        kwargs.get("operation_scope"),
+    )
     observer = kwargs.get("observer")
     if observer is not None:
         planning_client.set_observer(observer)
-    return _ss_plan_batch_briefs(planning_client, config, pre_params_list)
+    planner_scope = kwargs.get("operation_scope")
+    return _ss_plan_batch_briefs(
+        planning_client,
+        config,
+        pre_params_list,
+        scope=planner_scope,
+    )
 
 
 def _ss_params_from_resolved_payload(payload: dict[str, Any], _overrides: dict) -> Any:
@@ -691,6 +718,7 @@ def _ss_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         curriculum_context=overrides["ss_curriculum_context"],
         balanced_batch=kwargs["balanced_batch"],
         is_cancelled=kwargs.get("is_cancelled"),
+        question_context=kwargs.get("question_context"),
     )
 
 
@@ -886,6 +914,7 @@ def _ns_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         curriculum_context=overrides["ns_curriculum_context"],
         balanced_batch=kwargs["balanced_batch"],
         is_cancelled=kwargs.get("is_cancelled"),
+        question_context=kwargs.get("question_context"),
     )
 
 
@@ -1090,6 +1119,7 @@ def _math_do_generate(rng_params: Any, overrides: dict, **kwargs: Any) -> Any:
         prior_scopes=kwargs["prior_scopes"],
         curriculum_context=overrides["math_curriculum_context"],
         is_cancelled=kwargs.get("is_cancelled"),
+        question_context=kwargs.get("question_context"),
     )
 
 

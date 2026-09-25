@@ -15,6 +15,8 @@ import itertools
 import threading
 from typing import Any
 
+from src.common.generation_events import CallScope, OperationScope
+
 
 class GenerationPublisher:
     """Thread-safe monotonic publisher for SSE stream v2 envelopes."""
@@ -50,6 +52,9 @@ class GenerationPublisher:
         subquestion_index: int | None = None,
         operation_id: str | None = None,
         call_id: str | None = None,
+        scope: OperationScope | None = None,
+        call_scope: CallScope | None = None,
+        retry_of_call_id: str | None = None,
         payload: dict[str, Any] | None = None,
         sidecars: dict | None = None,
     ) -> None:
@@ -59,6 +64,24 @@ class GenerationPublisher:
         monotonic ``event_seq``; optional per-question fields are included when
         provided.  ``payload`` defaults to an empty dict if omitted.
         """
+        if scope is not None:
+            if operation_id is not None and operation_id != scope.operation_id:
+                raise ValueError("operation_id conflicts with scope")
+            operation_id = scope.operation_id
+            question_id = question_id if question_id is not None else scope.question_id
+            index = index if index is not None else scope.index
+            subquestion_index = (
+                subquestion_index
+                if subquestion_index is not None
+                else scope.subquestion_index
+            )
+        if call_scope is not None:
+            if call_id is not None and call_id != call_scope.call_id:
+                raise ValueError("call_id conflicts with call_scope")
+            call_id = call_scope.call_id
+            operation_id = operation_id or call_scope.operation_id
+            retry_of_call_id = retry_of_call_id or call_scope.retry_of_call_id
+
         seq = self.next_seq()
         context: dict[str, Any] = {
             "run_id": self._run_id,
@@ -77,10 +100,42 @@ class GenerationPublisher:
         if call_id is not None:
             context["call_id"] = call_id
 
+        copied_payload = copy.deepcopy(payload) if payload is not None else {}
+        if not isinstance(copied_payload, dict):
+            raise TypeError("generation event payload must be a dictionary")
+        canonical_payload_identity = {
+            "run_id": self._run_id,
+            "operation_id": operation_id,
+            "call_id": call_id,
+        }
+        for key, value in canonical_payload_identity.items():
+            if value is None:
+                continue
+            if key in copied_payload and copied_payload[key] != value:
+                raise ValueError(f"payload {key} conflicts with event context")
+        if scope is not None and scope.supersedes_operation_id is not None:
+            if event_name == "stage" and copied_payload.get("status") == "start":
+                if (
+                    "supersedes_operation_id" in copied_payload
+                    and copied_payload["supersedes_operation_id"]
+                    != scope.supersedes_operation_id
+                ):
+                    raise ValueError("payload supersedes_operation_id conflicts with scope")
+                copied_payload.setdefault(
+                    "supersedes_operation_id", scope.supersedes_operation_id
+                )
+        if retry_of_call_id is not None:
+            if (
+                "retry_of_call_id" in copied_payload
+                and copied_payload["retry_of_call_id"] != retry_of_call_id
+            ):
+                raise ValueError("payload retry_of_call_id conflicts with call scope")
+            copied_payload.setdefault("retry_of_call_id", retry_of_call_id)
+
         envelope: dict[str, Any] = {
             "event": event_name,      # v1-compatible top-level key
             "context": context,        # v2 metadata
-            "payload": copy.deepcopy(payload) if payload is not None else {},
+            "payload": copied_payload,
         }
         if sidecars:
             envelope.update(sidecars)

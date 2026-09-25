@@ -1051,6 +1051,11 @@ def test_modification_stream_logs_exchange_under_its_own_generation_log(
 
     exchanges = asyncio.run(read_exchanges())
     assert len(exchanges) == 2
+    assert all(
+        "identity" not in (exchange.request_body or {})
+        and "identity" not in (exchange.response_body or {})
+        for exchange in exchanges
+    )
     assert exchanges[0].agent == "corrector"
     assert exchanges[0].purpose == "correct"
     assert exchanges[0].generation_log_id == uuid.UUID(run_id)

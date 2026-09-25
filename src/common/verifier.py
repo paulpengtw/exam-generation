@@ -27,14 +27,43 @@ not prevent subsequent hooks from running.
 
 from __future__ import annotations
 
+import inspect
 import json
 from typing import Any, Callable
 
 from src.common.distractor import validate_distractor_keys
+from src.common.generation_events import OperationScope
 from src.llm_client import LLMClient, extract_json
 
 # Callable: (question, VerificationResult, LLMClient) -> VerificationResult
 PostVerifyHook = Callable[[Any, Any, "LLMClient"], Any]
+
+
+def _generate_with_optional_scope(
+    client: Any,
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    chart_image_path: str | None,
+    scope: OperationScope | None,
+) -> str:
+    """Keep legacy verifier fakes usable while production gets explicit scope."""
+    method = client.generate_with_image
+    try:
+        parameters = inspect.signature(method).parameters
+        accepts_scope = "scope" in parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+    except (TypeError, ValueError):
+        accepts_scope = False
+    kwargs = {
+        "image_path": chart_image_path,
+        "purpose": "verify",
+    }
+    if accepts_scope:
+        kwargs["scope"] = scope
+    return method(system_prompt, user_prompt, **kwargs)
 
 
 def _parse_chart_verif(cv: dict, chart_verif_cls: type) -> Any:
@@ -54,6 +83,7 @@ def verify_question_common(
     chart_verif_cls: type,
     chart_image_path: str | None = None,
     post_verify_hooks: list[PostVerifyHook] | None = None,
+    scope: OperationScope | None = None,
 ) -> Any:
     """Shared verifier core for questions with subquestions.
 
@@ -87,8 +117,12 @@ def verify_question_common(
         A ``VerificationResult`` instance of ``verification_result_cls``.
     """
     try:
-        raw = client.generate_with_image(
-            system_prompt, user_prompt, image_path=chart_image_path, purpose="verify"
+        raw = _generate_with_optional_scope(
+            client,
+            system_prompt,
+            user_prompt,
+            chart_image_path=chart_image_path,
+            scope=scope,
         )
         result_dict = extract_json(raw)
 
@@ -125,6 +159,17 @@ def verify_question_common(
 
     # Run subject-specific post-verify hooks in declaration order.
     for hook in (post_verify_hooks or []):
-        verification = hook(question, verification, client)
+        try:
+            parameters = inspect.signature(hook).parameters
+            accepts_scope = "scope" in parameters or any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+        except (TypeError, ValueError):
+            accepts_scope = False
+        if accepts_scope:
+            verification = hook(question, verification, client, scope=scope)
+        else:
+            verification = hook(question, verification, client)
 
     return verification

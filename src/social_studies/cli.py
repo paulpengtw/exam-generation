@@ -35,9 +35,12 @@ from src.common.figure_policy_trail import (
 )
 from src.common.generation_core import (
     SubquestionParseError,
+    _call_with_optional_scope,
+    _scoped_callback,
     generate_one_core,
     generate_with_corrections_core,
 )
+from src.common.generation_events import OperationScope, new_operation_scope
 from src.common.image_spec_parsing import image_spec_failure_reason, parse_image_spec
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
 from src.common.subquestion_forcing import force_grade
@@ -663,6 +666,7 @@ def _repair_figure_kind_declaration(
     set_spec: Callable[[ImageSpec], None],
     on_figure_policy_entry: FigurePolicyTrailCallback | None,
     forbidden_kinds: list[str] | None = None,
+    scope: OperationScope | None = None,
 ) -> None:
     """Spend one call to declare a missing visual spec kind."""
     before_kind = effective_figure_kind(spec)
@@ -670,7 +674,8 @@ def _repair_figure_kind_declaration(
     succeeded = False
     repair_error: str | None = None
     try:
-        response = client.generate_json(
+        response = _call_with_optional_scope(
+            client.generate_json,
             _FIGURE_KIND_DECLARATION_REPAIR_SYSTEM_PROMPT,
             _FIGURE_KIND_DECLARATION_REPAIR_USER_TEMPLATE.format(
                 label=label,
@@ -681,6 +686,7 @@ def _repair_figure_kind_declaration(
                 spec_json=spec.model_dump_json(exclude_none=True),
             ),
             purpose="generate",
+            scope=scope,
         )
         raw_spec = response.get("chart_spec") or response.get("image_spec")
         raw_kind = (
@@ -730,6 +736,7 @@ def _ensure_top_level_visual_spec(
     *,
     forbidden_kinds: list[str] | None = None,
     force_repair: bool = False,
+    scope: OperationScope | None = None,
 ) -> None:
     """Repair missing shared visual specs for globally visual social-studies 題組."""
     if (
@@ -750,10 +757,12 @@ def _ensure_top_level_visual_spec(
     )
 
     try:
-        repaired = client.generate_json(
+        repaired = _call_with_optional_scope(
+            client.generate_json,
             _TOP_LEVEL_IMAGE_REPAIR_SYSTEM_PROMPT,
             user_prompt,
             purpose="generate",
+            scope=scope,
         )
     except Exception as exc:
         print(f"  Warning: top-level image spec repair failed: {exc}", file=sys.stderr)
@@ -775,6 +784,7 @@ def _ensure_subquestion_visual_spec(
     forbidden_kinds: list[str] | None = None,
     force_repair: bool = False,
     allow_duplicates: bool = False,
+    scope: OperationScope | None = None,
 ) -> None:
     """Repair a missing chart_spec for a single 小題 whose config requires an image.
 
@@ -809,10 +819,12 @@ def _ensure_subquestion_visual_spec(
     )
 
     try:
-        repaired = client.generate_json(
+        repaired = _call_with_optional_scope(
+            client.generate_json,
             _SQ_IMAGE_REPAIR_SYSTEM_PROMPT,
             user_prompt,
             purpose="generate",
+            scope=scope,
         )
     except Exception as exc:
         print(
@@ -837,6 +849,7 @@ def _render_subquestion_images(
     image_generation_mode: str,
     obs,
     subquestion_image_modes: dict[int, str] | None = None,
+    scope: OperationScope | None = None,
 ) -> list[str]:
     """Render PNGs for subquestion-local image specs and return paths."""
     rendered_paths: list[str] = []
@@ -851,8 +864,12 @@ def _render_subquestion_images(
             part for part in (question.文本, sub.題目) if part
         )
         print(f"  Rendering subquestion image: {img_path}", file=sys.stderr)
-        _on_render_error, _render_failed = make_render_error_sink(obs)
-        emit_stage(obs, "image_agent", "render_image", "start")
+        image_scope = (
+            new_operation_scope(scope, kind="image", subquestion_index=plan_index)
+            if scope is not None else None
+        )
+        _on_render_error, _render_failed = make_render_error_sink(obs, scope=image_scope)
+        emit_stage(obs, "image_agent", "render_image", "start", scope=image_scope)
         rendered = render_image(
             sub.chart_spec.model_dump(),
             img_path,
@@ -861,9 +878,10 @@ def _render_subquestion_images(
             llm_client=client,
             image_generation_mode=mode,
             on_error=_on_render_error,
+            scope=image_scope,
         )
         if not _render_failed:
-            emit_stage(obs, "image_agent", "render_image", "end")
+            emit_stage(obs, "image_agent", "render_image", "end", scope=image_scope)
         if rendered:
             sub.圖片 = img_path.name
             rendered_paths.append(rendered)
@@ -874,6 +892,8 @@ def _plan_batch_briefs(
     client: LLMClient | None,
     config: Config,
     params_list: list[SampledParams],
+    *,
+    scope: Any | None = None,
 ) -> list[CreativeBrief | None]:
     """One Opus planning call for the whole batch; length matches params_list.
 
@@ -902,13 +922,15 @@ def _plan_batch_briefs(
     learning_content_pool = list(params_list[0].學習內容_pool)
 
     try:
-        briefs = plan_context_angles(
-            client,
-            count=n,
-            sampled_contexts=contexts,
-            learning_content_pool=learning_content_pool,
-            core_question=None,
-        )
+        planner_kwargs = {
+            "count": n,
+            "sampled_contexts": contexts,
+            "learning_content_pool": learning_content_pool,
+            "core_question": None,
+        }
+        if scope is not None:
+            planner_kwargs["scope"] = scope
+        briefs = plan_context_angles(client, **planner_kwargs)
     except Exception as exc:
         # plan_context_angles (src/common/planner.py) already catches its own
         # LLM/parse failures internally and returns [None] * count instead of
@@ -999,6 +1021,8 @@ def _ss_make_fallback_sq_plans(params: SampledParams, n: int) -> list[dict]:
 
 def _ss_ensure_visual_spec(
     question: ExamQuestion, params: SampledParams, client: Any,
+    *,
+    scope: OperationScope | None = None,
 ) -> None:
     _derive_iccs_axes(question, params)
     known_kinds = [
@@ -1026,6 +1050,7 @@ def _ss_ensure_visual_spec(
         params,
         client,
         forbidden_kinds=known_kinds,
+        scope=scope,
     )
 
 
@@ -1035,10 +1060,12 @@ def _ss_prepare_visual_policy(
     client: Any,
     *,
     on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+    scope: OperationScope | None = None,
 ) -> None:
     """Declare every existing visual spec before the shared renderer runs."""
     if client is None:
         return
+    on_figure_policy_entry = _scoped_callback(on_figure_policy_entry, scope)
 
     attempted = question._figure_kind_repair_attempted
     if question.chart_spec is not None and not _declared_figure_kind(question.chart_spec):
@@ -1053,6 +1080,7 @@ def _ss_prepare_visual_policy(
                 client=client,
                 set_spec=lambda repaired: setattr(question, "chart_spec", repaired),
                 on_figure_policy_entry=on_figure_policy_entry,
+                scope=scope,
             )
 
     for sub in question.subquestions:
@@ -1080,6 +1108,7 @@ def _ss_prepare_visual_policy(
             forbidden_kinds=_known_figure_kinds_for_subquestion_repair(
                 question, params, sub,
             ),
+            scope=scope,
         )
 
 
@@ -1139,6 +1168,7 @@ def _enforce_figure_data_consistency(
     client: Any,
     obs: Any,
     on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+    scope: OperationScope | None = None,
 ) -> None:
     """Repair or warn for contradictory values shared by a 題組's figures."""
     def on_unresolved(conflict: Any, entries: Sequence[Any]) -> None:
@@ -1149,7 +1179,10 @@ def _enforce_figure_data_consistency(
             conflict,
         )
         print(f"  {entry.message}", file=sys.stderr)
-        emit_stage(obs, "image_agent", "render_image", "warning", message=entry.message)
+        emit_stage(
+            obs, "image_agent", "render_image", "warning", message=entry.message,
+            scope=scope,
+        )
         if on_figure_policy_entry is not None:
             on_figure_policy_entry(entry)
 
@@ -1189,14 +1222,16 @@ def _rerender_top_level_image(
     html_renderer: Any,
     image_generation_mode: str,
     obs: Any,
+    scope: OperationScope | None = None,
 ) -> None:
     """Re-render the already-created 題幹 PNG after its spec is repaired."""
     if question.chart_spec is None:
         return
     img_path = config.output_dir / f"{question.id}.png"
     print(f"  Re-rendering image after figure-kind repair: {img_path}", file=sys.stderr)
-    _on_render_error, _render_failed = make_render_error_sink(obs)
-    emit_stage(obs, "image_agent", "render_image", "start")
+    image_scope = new_operation_scope(scope, kind="image") if scope is not None else None
+    _on_render_error, _render_failed = make_render_error_sink(obs, scope=image_scope)
+    emit_stage(obs, "image_agent", "render_image", "start", scope=image_scope)
     rendered = render_image(
         question.chart_spec.model_dump(),
         img_path,
@@ -1205,9 +1240,10 @@ def _rerender_top_level_image(
         llm_client=client,
         image_generation_mode=image_generation_mode,
         on_error=_on_render_error,
+        scope=image_scope,
     )
     if not _render_failed:
-        emit_stage(obs, "image_agent", "render_image", "end")
+        emit_stage(obs, "image_agent", "render_image", "end", scope=image_scope)
     if rendered:
         question.圖片 = img_path.name
 
@@ -1245,6 +1281,7 @@ def _enforce_figure_kind_diversity(
     obs: Any,
     params: SampledParams,
     on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+    scope: OperationScope | None = None,
 ) -> None:
     """Repair each detected SS figure-kind collision once, then warn if needed."""
     entries = _figure_spec_entries(question, params)
@@ -1265,6 +1302,7 @@ def _enforce_figure_kind_diversity(
         client,
         obs,
         on_figure_policy_entry,
+        scope=scope,
     )
     entries = _figure_spec_entries(question, params)
     if params.allow_duplicate_figure_kinds:
@@ -1306,6 +1344,7 @@ def _enforce_figure_kind_diversity(
                     client,
                     forbidden_kinds=forbidden,
                     force_repair=True,
+                    scope=scope,
                 )
                 if question.chart_spec != before_spec:
                     _rerender_top_level_image(
@@ -1315,6 +1354,7 @@ def _enforce_figure_kind_diversity(
                         html_renderer,
                         image_generation_mode,
                         obs,
+                        scope=scope,
                     )
                 after_kind = effective_figure_kind(question.chart_spec)
                 succeeded = question.chart_spec != before_spec
@@ -1329,6 +1369,7 @@ def _enforce_figure_kind_diversity(
                     forbidden_kinds=forbidden,
                     force_repair=True,
                     allow_duplicates=params.allow_duplicate_figure_kinds,
+                    scope=scope,
                 )
                 after_kind = effective_figure_kind(sub.chart_spec)
                 succeeded = sub.chart_spec != before_spec
@@ -1339,7 +1380,10 @@ def _enforce_figure_kind_diversity(
                 f"{target_entry['label']}: {exc}; duplicate image shipped"
             )
             print(f"  {message}", file=sys.stderr)
-            emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+            emit_stage(
+                obs, "image_agent", "render_image", "warning", message=message,
+                scope=scope,
+            )
         if on_figure_policy_entry is not None:
             on_figure_policy_entry(
                 make_repair_entry(
@@ -1368,7 +1412,10 @@ def _enforce_figure_kind_diversity(
             f"{left_label} and {right_label} ({kind}); duplicate image shipped"
         )
         print(f"  {message}", file=sys.stderr)
-        emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+        emit_stage(
+            obs, "image_agent", "render_image", "warning", message=message,
+            scope=scope,
+        )
         if on_figure_policy_entry is not None:
             on_figure_policy_entry(
                 make_warning_entry(
@@ -1386,6 +1433,7 @@ def _warn_about_undeclared_figure_kinds(
     params: SampledParams,
     obs: Any,
     on_figure_policy_entry: FigurePolicyTrailCallback | None,
+    scope: OperationScope | None = None,
 ) -> None:
     """Record unresolved declaration omissions without blocking image output."""
     for entry in _figure_spec_entries(question, params):
@@ -1397,7 +1445,10 @@ def _warn_about_undeclared_figure_kinds(
             "視覺素材仍繼續渲染"
         )
         print(f"  {message}", file=sys.stderr)
-        emit_stage(obs, "image_agent", "render_image", "warning", message=message)
+        emit_stage(
+            obs, "image_agent", "render_image", "warning", message=message,
+            scope=scope,
+        )
         if on_figure_policy_entry is not None:
             on_figure_policy_entry(
                 make_warning_entry(
@@ -1419,7 +1470,9 @@ def _ss_render_subquestion_images(
     obs: Any,
     params: SampledParams,
     on_figure_policy_entry: FigurePolicyTrailCallback | None = None,
+    scope: OperationScope | None = None,
 ) -> list[str]:
+    on_figure_policy_entry = _scoped_callback(on_figure_policy_entry, scope)
     # Repair missing chart_specs for 小題 slots configured as visual (#320).
     # Mirrors the 題組頂層 repair in _ensure_top_level_visual_spec.
     # image_generation_mode alone does NOT trigger a repair — only an explicit
@@ -1456,6 +1509,7 @@ def _ss_render_subquestion_images(
                         question, params, sub,
                     ),
                     allow_duplicates=params.allow_duplicate_figure_kinds,
+                    scope=scope,
                 )
 
     for sub in question.subquestions:
@@ -1480,6 +1534,7 @@ def _ss_render_subquestion_images(
             forbidden_kinds=_known_figure_kinds_for_subquestion_repair(
                 question, params, sub,
             ),
+            scope=scope,
         )
 
     _enforce_figure_kind_diversity(
@@ -1491,12 +1546,14 @@ def _ss_render_subquestion_images(
         obs,
         params,
         on_figure_policy_entry,
+        scope=scope,
     )
     _warn_about_undeclared_figure_kinds(
         question,
         params,
         obs,
         on_figure_policy_entry,
+        scope=scope,
     )
 
     return _render_subquestion_images(
@@ -1511,6 +1568,7 @@ def _ss_render_subquestion_images(
             for i, cfg in enumerate(params.subquestion_configs, start=1)
             if cfg.image_generation_mode
         },
+        scope=scope,
     )
 
 
@@ -1669,6 +1727,7 @@ def generate_with_corrections(
     balanced_batch: bool = False,
     core_question_callback: bool = True,
     is_cancelled: Callable[[], bool] | None = None,
+    question_context: Any | None = None,
 ) -> ExamQuestion | str:
     """generate_one followed by up to max_retries correction passes."""
     result = generate_with_corrections_core(
@@ -1697,6 +1756,7 @@ def generate_with_corrections(
         prior_scopes=prior_scopes,
         curriculum_context=curriculum_context,
         is_cancelled=is_cancelled,
+        question_context=question_context,
     )
     if isinstance(result, ExamQuestion):
         _derive_iccs_axes(result, params)
