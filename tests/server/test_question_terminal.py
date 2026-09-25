@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.common.generation_core import GenerationCancelled
 
 # ---------------------------------------------------------------------------
@@ -653,6 +655,65 @@ def test_terminal_failed_before_plan_falls_back_to_resolved_count() -> None:
     ]
 
 
+def test_terminal_failed_flat_math_does_not_inherit_batch_group_slots() -> None:
+    """A flat per-question resolution must suppress the batch group count."""
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    payload = _build_question_terminal_payload(
+        question_id="math-flat-batch-grouped",
+        termination_reason="failed",
+        has_final=False,
+        final_revision=None,
+        question=None,
+        params=SimpleNamespace(
+            subject="math",
+            skip_verify=True,
+            sub_question_count=5,
+            subquestion_configs=None,
+        ),
+        output_dir=None,
+        announced_slots=None,
+        resolved_subquestion_configs=None,
+        resolved_subquestion_count=None,
+    )
+
+    assert payload["expected"] == []
+    assert payload["missing"] == []
+
+
+def test_terminal_failed_grouped_math_uses_its_resolved_count() -> None:
+    """A grouped math row gets missing slots before its plan is announced."""
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    payload = _build_question_terminal_payload(
+        question_id="math-grouped-no-plan",
+        termination_reason="failed",
+        has_final=False,
+        final_revision=None,
+        question=None,
+        params=SimpleNamespace(
+            subject="math",
+            skip_verify=True,
+            sub_question_count=None,
+            subquestion_configs=None,
+        ),
+        output_dir=None,
+        announced_slots=None,
+        resolved_subquestion_configs=None,
+        resolved_subquestion_count=3,
+    )
+
+    assert [slot["subquestion_id"] for slot in payload["missing"]] == [
+        "math-grouped-no-plan-sq001",
+        "math-grouped-no-plan-sq002",
+        "math-grouped-no-plan-sq003",
+    ]
+
+
 def test_terminal_social_group_tracks_adopted_image_by_fixed_slot() -> None:
     from types import SimpleNamespace
 
@@ -711,6 +772,185 @@ def test_terminal_social_group_tracks_adopted_image_by_fixed_slot() -> None:
             {"subquestion_index": 0, "id": f"{question_id}-sq001", "序號": 1},
             {"subquestion_index": 1, "id": f"{question_id}-sq002", "序號": 2},
             {"subquestion_index": 2, "id": f"{question_id}-sq003", "序號": 3},
+        ],
+    )
+
+    assert payload["delivery_status"] == "partial"
+    assert payload["missing"] == [{
+        "kind": "image",
+        "question_id": question_id,
+        "subquestion_id": f"{question_id}-sq001",
+        "subquestion_index": 0,
+        "reason": "image not delivered",
+    }]
+
+
+@pytest.mark.parametrize("subject", ["natural_sciences", "math"])
+def test_terminal_fixed_group_preserves_missing_middle_slot_for_each_adapter(
+    subject: str,
+) -> None:
+    """The shared terminal builder uses the announced manifest for both adapters."""
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    question_id = f"{subject}-group-fixed"
+    question = SimpleNamespace(
+        chart_spec=None,
+        image_spec=None,
+        圖片=None,
+        verification=None,
+        subquestions=[
+            SimpleNamespace(id=f"{question_id}-sq001", 序號=1, _plan_index=1),
+            SimpleNamespace(id=f"{question_id}-sq003", 序號=3, _plan_index=3),
+        ],
+    )
+    params = SimpleNamespace(
+        subject=subject,
+        skip_verify=True,
+        sub_question_count=3,
+        subquestion_configs=[SimpleNamespace(content_type=None) for _ in range(3)],
+    )
+    announced_slots = [
+        {
+            "subquestion_index": index,
+            "id": f"{question_id}-sq{index + 1:03d}",
+            "序號": index + 1,
+        }
+        for index in range(3)
+    ]
+
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason="normal",
+        has_final=True,
+        final_revision=3,
+        question=question,
+        params=params,
+        output_dir=None,
+        announced_slots=announced_slots,
+    )
+
+    assert payload["delivery_status"] == "partial"
+    assert [slot["subquestion_id"] for slot in payload["delivered"]] == [
+        f"{question_id}-sq001",
+        f"{question_id}-sq003",
+    ]
+    assert [slot["subquestion_id"] for slot in payload["missing"]] == [
+        f"{question_id}-sq002",
+    ]
+
+
+@pytest.mark.parametrize("subject", ["natural_sciences", "math"])
+def test_terminal_fixed_group_all_subquestions_failed_keeps_text_final(subject: str) -> None:
+    """A surviving text shell is final content even when every fixed slot is absent."""
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    question_id = f"{subject}-group-text-only"
+    params = SimpleNamespace(
+        subject=subject,
+        skip_verify=True,
+        sub_question_count=3,
+        subquestion_configs=[],
+    )
+    announced_slots = [
+        {
+            "subquestion_index": index,
+            "id": f"{question_id}-sq{index + 1:03d}",
+            "序號": index + 1,
+        }
+        for index in range(3)
+    ]
+
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason="normal",
+        has_final=True,
+        final_revision=1,
+        question=SimpleNamespace(
+            chart_spec=None,
+            image_spec=None,
+            圖片=None,
+            verification=None,
+            subquestions=[],
+        ),
+        params=params,
+        output_dir=None,
+        announced_slots=announced_slots,
+    )
+
+    assert payload["has_final"] is True
+    assert payload["delivery_status"] == "partial"
+    assert len(payload["missing"]) == 3
+
+
+def test_terminal_natural_sciences_tracks_fixed_subquestion_image_slot(tmp_path: Path) -> None:
+    """NS image obligations use the same fixed slot identity as delivery."""
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    question_id = "natural-sciences-group-image"
+    question = SimpleNamespace(
+        chart_spec=None,
+        image_spec=None,
+        圖片=None,
+        verification=None,
+        subquestions=[
+            SimpleNamespace(
+                id=f"{question_id}-sq001",
+                序號=1,
+                _plan_index=1,
+                chart_spec=object(),
+                image_spec=None,
+                圖片=f"{question_id}_sq1.png",
+            ),
+            SimpleNamespace(
+                id=f"{question_id}-sq002",
+                序號=2,
+                _plan_index=2,
+                chart_spec=None,
+                image_spec=None,
+                圖片=None,
+            ),
+            SimpleNamespace(
+                id=f"{question_id}-sq003",
+                序號=3,
+                _plan_index=3,
+                chart_spec=None,
+                image_spec=None,
+                圖片=None,
+            ),
+        ],
+    )
+    params = SimpleNamespace(
+        subject="natural_sciences",
+        skip_verify=True,
+        sub_question_count=3,
+        subquestion_configs=[
+            SimpleNamespace(content_type="純文字"),
+            SimpleNamespace(content_type="純文字"),
+            SimpleNamespace(content_type="純文字"),
+        ],
+    )
+
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason="normal",
+        has_final=True,
+        final_revision=4,
+        question=question,
+        params=params,
+        output_dir=tmp_path,
+        announced_slots=[
+            {
+                "subquestion_index": index,
+                "id": f"{question_id}-sq{index + 1:03d}",
+                "序號": index + 1,
+            }
+            for index in range(3)
         ],
     )
 

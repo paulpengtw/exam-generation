@@ -239,9 +239,9 @@ def test_accepted_top_spec_correction_preserves_visual_slot_pins(
         sub_id: (sub.圖片, sub.image_generation_mode)
         for sub_id, sub in by_id.items()
     } == {
-        "visual-pin-slot-1": ("visual_pin_correction_sq1.png", "html"),
-        "visual-pin-slot-2": ("visual_pin_correction_sq2.png", "gpt_image"),
-        "visual-pin-slot-3": (None, None),
+        "visual_pin_correction-sq001": ("visual_pin_correction_sq1.png", "html"),
+        "visual_pin_correction-sq002": ("visual_pin_correction_sq2.png", "gpt_image"),
+        "visual_pin_correction-sq003": (None, None),
     }
     assert main_client.image_paths.count("visual_pin_correction.png") == 2
     assert main_client.image_paths.count("visual_pin_correction_sq2.png") == 2

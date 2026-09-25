@@ -178,6 +178,7 @@ def correct_question(
     on_rejected: Callable[[str], None] | None = None,
     on_decision: Callable[[CorrectionDecision], None] | None = None,
     *,
+    program_owned_subquestion_identity: bool = False,
     scope: OperationScope | None = None,
 ) -> ExamQuestion:
     if curriculum_context is not None:
@@ -201,5 +202,6 @@ def correct_question(
         editable_paths=editable_paths,
         on_rejected=on_rejected,
         on_decision=on_decision,
+        program_owned_subquestion_identity=program_owned_subquestion_identity,
         scope=scope,
     )

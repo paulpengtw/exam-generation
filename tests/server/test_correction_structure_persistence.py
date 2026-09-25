@@ -382,33 +382,31 @@ def test_correction_structure_persists_through_sse_history_and_log(
     events = _stream_events(response)
 
     updates = [data for name, data in events if name == "question_update"]
-    expected_phases = ["draft", "verified"]
+    # #744 publishes the initial shell and one progressive draft per
+    # successfully assembled 小題 before the first verified snapshot.
+    expected_phases = ["draft"] * 6 + ["verified"]
     for correction in corrections:
         if correction == "valid":
             expected_phases.append("corrected")
         expected_phases.append("verified")
     assert [data["phase"] for data in updates] == expected_phases
-    draft_content = updates[0]["question"]
+    draft_updates = [data for data in updates if data["phase"] == "draft"]
+    assert len(draft_updates) == 6
+    assert draft_updates[0]["question"].get("subquestions", []) == []
+    assert len(draft_updates[-1]["question"]["subquestions"]) == 5
     verified_updates = [data for data in updates if data["phase"] == "verified"]
     assert len(verified_updates) == 1 + len(corrections)
     initial_content = verified_updates[0]["question"]
     final_content = verified_updates[-1]["question"]
-    _assert_content_matches(
-        initial_content,
-        draft_content,
-        allowed_differences={"內容領域", "認知歷程"},
-    )
     for data in updates:
-        if data["phase"] == "corrected":
+        if data["phase"] in {"draft", "corrected"}:
             continue
         if expected_success and data["question"] is final_content:
             continue
         _assert_content_matches(
             initial_content,
             data["question"],
-            allowed_differences=(
-                {"內容領域", "認知歷程"} if data["phase"] == "draft" else set()
-            ),
+            allowed_differences=set(),
         )
     assert len(initial_content["subquestions"]) == 5
     assert initial_content["文本"] == "原始共享文本"
@@ -645,8 +643,9 @@ def test_concurrent_questions_keep_correction_decisions_and_history_isolated(
             if name == "question_update" and data["question"]["id"] == question_id
         ]
         assert [update["phase"] for update in updates] == (
-            ["draft", "verified", "verified"] if outcome == "rejected"
-            else ["draft", "verified", "corrected", "verified"]
+            (["draft"] * 6 + ["verified", "verified"])
+            if outcome == "rejected"
+            else (["draft"] * 6 + ["verified", "corrected", "verified"])
         )
         entries = [
             data for name, data in events
@@ -658,8 +657,11 @@ def test_concurrent_questions_keep_correction_decisions_and_history_isolated(
         assert marker in correction["snapshot"]["核心問題"]
         if outcome == "rejected":
             assert correction["reason"]["code"] == "subquestions_count"
+            initial_verified = next(
+                update for update in updates if update["phase"] == "verified"
+            )
             assert _without_nulls(correction["snapshot"]) == _without_nulls(
-                _without_verdict(updates[1]["question"])
+                _without_verdict(initial_verified["question"])
             )
         else:
             assert "reason" not in correction

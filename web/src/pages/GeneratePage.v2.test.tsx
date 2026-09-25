@@ -239,4 +239,42 @@ describe("GeneratePage — v2 evidence rendering", () => {
     expect(screen.getByText("文本 A")).toBeInTheDocument();
     expect(screen.getByText("文本 B")).toBeInTheDocument();
   });
+
+  it.each([
+    ["natural_sciences", "natural_sciences_groups_interleaved.jsonl"],
+    ["math", "math_groups_interleaved.jsonl"],
+  ] as const)("renders the %s fixed-slot fixture through QuestionCard", (subject, fixtureName) => {
+    const lines = readFileSync(
+      resolve(__dirname, `../../../tests/fixtures/generation_v2/${fixtureName}`),
+      "utf-8",
+    ).trim().split("\n").map((line) => JSON.parse(line) as {
+      event: string;
+      context: Record<string, unknown>;
+      payload: Record<string, unknown>;
+    });
+    const started = lines[0];
+    let state = createRunEvidence({
+      runId: String(started.context.run_id),
+      total: Number(started.payload.total),
+      manifest: (started.payload.questions as Array<Record<string, unknown>>).map((question) => ({
+        index: Number(question.index),
+        questionId: String(question.question_id),
+      })),
+    });
+    for (const line of lines.slice(1)) {
+      state = applyV2Event(state, {
+        kind: "v2",
+        event: { name: line.event, context: line.context, payload: line.payload },
+      });
+    }
+    generateState.runEvidence = state;
+
+    render(<GeneratePage subject={subject} />);
+
+    expect(screen.getAllByTestId("question-card-content")).toHaveLength(3);
+    expect(screen.getAllByTestId("missing-subquestion-2")).toHaveLength(2);
+    expect(screen.getByText("文本 A")).toBeInTheDocument();
+    expect(screen.getByText("文本 B")).toBeInTheDocument();
+    expect(screen.getByText("文本 C")).toBeInTheDocument();
+  });
 });

@@ -67,6 +67,7 @@ logger = logging.getLogger(__name__)
 # How long to wait for a pooled renderer before emitting a WARNING.
 # Lowered in tests via monkeypatch.
 RENDERER_POOL_WAIT_WARN_THRESHOLD_S: float = 5.0
+_UNSET_SUBQUESTION_RESOLUTION = object()
 
 
 def _resolved_worker_params(
@@ -338,15 +339,16 @@ def _build_question_terminal_payload(
     output_dir: Any,  # Path | None
     unknown_reason: str | None = None,
     announced_slots: list[dict[str, Any]] | None = None,
-    resolved_subquestion_configs: list[Any] | None = None,
-    resolved_subquestion_count: int | None = None,
+    resolved_subquestion_configs: list[Any] | None | object = _UNSET_SUBQUESTION_RESOLUTION,
+    resolved_subquestion_count: int | None | object = _UNSET_SUBQUESTION_RESOLUTION,
 ) -> dict[str, Any]:
     """Build a QuestionTerminalPayload dict; validated before returning.
 
     On any validation failure, returns a minimal 'unknown' delivery payload
     so the worker never crashes.
 
-    Grouped social-studies slots are fixed by the resolved plan.  The helper
+    Fixed grouped slots are identified by the announced plan (or, before a
+    plan can be emitted, by the resolved grouped count).  The helper
     deliberately keeps renderer mode out of the obligation set: only an
     adopted chart/image or an explicitly visual subquestion configuration
     creates an image slot.
@@ -377,12 +379,31 @@ def _build_question_terminal_payload(
             "content_revision": final_revision,
         }
 
-    # --- fixed social-studies slots and image assets ---
+    # --- fixed grouped slots and image assets ---
     expected: list[dict] = []
     delivered: list[dict] = []
     missing: list[dict] = []
 
-    is_social_group = getattr(params, "subject", None) == "social_studies"
+    # The shared core announces a manifest for every fixed-slot adapter.  Once
+    # a worker has resolved its own row, its count is authoritative—even when
+    # it is None for a flat math question.  Only older/direct callers that did
+    # not provide per-question resolution may fall back to batch params.
+    has_per_question_resolution = (
+        resolved_subquestion_configs is not _UNSET_SUBQUESTION_RESOLUTION
+        or resolved_subquestion_count is not _UNSET_SUBQUESTION_RESOLUTION
+    )
+    per_question_count = (
+        resolved_subquestion_count
+        if resolved_subquestion_count is not _UNSET_SUBQUESTION_RESOLUTION
+        else None
+    )
+    is_fixed_group = announced_slots is not None or (
+        has_per_question_resolution
+        and per_question_count is not None
+    ) or (
+        not has_per_question_resolution
+        and getattr(params, "sub_question_count", None) is not None
+    )
 
     def add_image_slot(
         *,
@@ -409,25 +430,28 @@ def _build_question_terminal_payload(
                 return
         missing.append({**slot, "reason": reason})
 
-    if is_social_group:
-        configs = resolved_subquestion_configs
-        if configs is None:
+    if is_fixed_group:
+        if resolved_subquestion_configs is _UNSET_SUBQUESTION_RESOLUTION:
             configs = getattr(params, "subquestion_configs", None) or []
-            if isinstance(configs, str):
-                try:
-                    decoded_configs = json.loads(configs)
-                except (TypeError, json.JSONDecodeError):
-                    decoded_configs = []
-                configs = decoded_configs if isinstance(decoded_configs, list) else []
+        else:
+            configs = resolved_subquestion_configs or []
+        if isinstance(configs, str):
+            try:
+                decoded_configs = json.loads(configs)
+            except (TypeError, json.JSONDecodeError):
+                decoded_configs = []
+            configs = decoded_configs if isinstance(decoded_configs, list) else []
 
         slot_manifest = announced_slots
         if slot_manifest is None and not has_final and termination_reason == "failed":
-            slot_count = (
-                resolved_subquestion_count
-                or getattr(params, "sub_question_count", None)
-                or len(configs)
-                or 0
-            )
+            if has_per_question_resolution:
+                slot_count = per_question_count or len(configs) or 0
+            else:
+                slot_count = (
+                    getattr(params, "sub_question_count", None)
+                    or len(configs)
+                    or 0
+                )
             slot_manifest = [
                 {
                     "subquestion_index": slot_index,
@@ -786,6 +810,16 @@ def _worker_one_body(
     except GenerationCancelled:
         # Client disconnected; exit cleanly without emitting an error event.
         _qid_cancel = ctx.manifest[i].question_id
+        _cancel_resolution_kwargs: dict[str, Any] = {}
+        if rng_params is not None:
+            _cancel_resolution_kwargs = {
+                "resolved_subquestion_configs": getattr(
+                    rng_params, "subquestion_configs", None
+                ),
+                "resolved_subquestion_count": getattr(
+                    rng_params, "sub_question_count", None
+                ),
+            }
         _cancel_payload = _build_question_terminal_payload(
             question_id=_qid_cancel,
             termination_reason="cancelled",
@@ -795,6 +829,7 @@ def _worker_one_body(
             params=ctx.params,
             output_dir=ctx.config.output_dir,
             announced_slots=ctx.snapshot_ledger.get_slot_manifest(_qid_cancel),
+            **_cancel_resolution_kwargs,
             unknown_reason="cancelled before completion",
         )
         ctx.publisher.publish(
@@ -815,7 +850,16 @@ def _worker_one_body(
             ),
         )
         logger.exception("worker_one error (index=%d)", i)
-        terminal_params = rng_params if rng_params is not None else ctx.params
+        _failed_resolution_kwargs: dict[str, Any] = {}
+        if rng_params is not None:
+            _failed_resolution_kwargs = {
+                "resolved_subquestion_configs": getattr(
+                    rng_params, "subquestion_configs", None
+                ),
+                "resolved_subquestion_count": getattr(
+                    rng_params, "sub_question_count", None
+                ),
+            }
         _failed_payload = _build_question_terminal_payload(
             question_id=question_id,
             termination_reason="failed",
@@ -825,12 +869,7 @@ def _worker_one_body(
             params=ctx.params,
             output_dir=ctx.config.output_dir,
             announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
-            resolved_subquestion_configs=getattr(
-                terminal_params, "subquestion_configs", None
-            ),
-            resolved_subquestion_count=getattr(
-                terminal_params, "sub_question_count", None
-            ),
+            **_failed_resolution_kwargs,
             unknown_reason="no final content",
         )
         ctx.publisher.publish(

@@ -147,6 +147,7 @@ def correct_question(
     on_rejected: Callable[[str], None] | None = None,
     on_decision: Callable[[CorrectionDecision], None] | None = None,
     *,
+    program_owned_subquestion_identity: bool = False,
     scope: OperationScope | None = None,
 ) -> ExamQuestion:
     """Apply verification feedback to produce a minimally corrected question.
@@ -242,7 +243,11 @@ def correct_question(
         )
 
     try:
-        validate_correction_structure(corrected_data, question.subquestions)
+        validate_correction_structure(
+            corrected_data,
+            question.subquestions,
+            program_owned_subquestion_identity=program_owned_subquestion_identity,
+        )
     except CorrectionStructureError as exc:
         return reject_correction(
             client,

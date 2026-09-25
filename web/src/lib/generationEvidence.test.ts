@@ -538,3 +538,96 @@ describe("social fixed-slot fixture replay", () => {
     expect(selectFinalReceivedCount(state)).toBe(2);
   });
 });
+
+describe("natural-sciences and grouped-math fixed-slot fixture replay", () => {
+  const fixtures = [
+    [
+      "natural_sciences",
+      "natural_sciences_groups_interleaved.jsonl",
+      "ns_RUN_001",
+      "ns_RUN_002",
+      "ns_RUN_003",
+    ],
+    [
+      "math",
+      "math_groups_interleaved.jsonl",
+      "q_RUN_001",
+      "q_RUN_002",
+      "q_RUN_003",
+    ],
+  ] as const;
+
+  it.each(fixtures)("replays the %s sender path with fixed slots", (
+    _subject,
+    fixtureName,
+    aId,
+    bId,
+    cId,
+  ) => {
+    const lines = readFileSync(
+      resolve(__dirname, `../../../tests/fixtures/generation_v2/${fixtureName}`),
+      "utf-8",
+    ).trim().split("\n").map((line) => JSON.parse(line) as {
+      event: string;
+      context: Record<string, unknown>;
+      payload: Record<string, unknown>;
+    });
+    const started = lines[0];
+    let state = createRunEvidence({
+      runId: String(started.context.run_id),
+      total: Number(started.payload.total),
+      manifest: (started.payload.questions as Array<Record<string, unknown>>).map((question) => ({
+        index: Number(question.index),
+        questionId: String(question.question_id),
+      })),
+    });
+    let bFinalBeforeA = false;
+
+    for (const line of lines.slice(1)) {
+      state = applyV2Event(state, {
+        kind: "v2",
+        event: { name: line.event, context: line.context, payload: line.payload },
+      });
+      if (
+        state.questions[bId]?.content.receipt === "final"
+        && state.questions[aId]?.content.receipt !== "final"
+      ) {
+        bFinalBeforeA = true;
+      }
+    }
+
+    const a = state.questions[aId];
+    const b = state.questions[bId];
+    const c = state.questions[cId];
+    expect(bFinalBeforeA).toBe(true);
+    expect(a.content.question?.subquestions?.map((sub) => sub.id)).toEqual([
+      `${aId}-sq001`,
+      `${aId}-sq003`,
+    ]);
+    expect(b.content.question?.subquestions?.map((sub) => [sub.id, sub.序號])).toEqual([
+      [`${bId}-sq001`, 1],
+      [`${bId}-sq002`, 2],
+      [`${bId}-sq003`, 3],
+    ]);
+    expect(c.content.question?.文本).toBe("文本 C");
+    expect(c.content.question?.subquestions ?? []).toEqual([]);
+    expect(a.terminal?.delivery_status).toBe("partial");
+    expect(a.terminal?.missing.map((slot) => slot.subquestion_id)).toEqual([
+      `${aId}-sq002`,
+    ]);
+    expect(c.terminal?.delivery_status).toBe("partial");
+    expect(c.terminal?.missing.map((slot) => slot.subquestion_id)).toEqual([
+      `${cId}-sq001`,
+      `${cId}-sq002`,
+      `${cId}-sq003`,
+    ]);
+    expect(Object.values(a.activity?.operations ?? {}).some(
+      (operation) => operation.supersedesOperationId !== null,
+    )).toBe(true);
+    expect(Object.values(a.activity?.calls ?? {}).some(
+      (call) => call.retryOfCallId !== null,
+    )).toBe(true);
+    expect(selectEndedCount(state)).toBe(3);
+    expect(selectFinalReceivedCount(state)).toBe(3);
+  });
+});

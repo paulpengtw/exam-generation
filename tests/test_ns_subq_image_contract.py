@@ -266,10 +266,12 @@ def test_ns_subq_rendering_uses_plan_slot_for_misnumbered_model_output(
 
     assert isinstance(question, ExamQuestion)
     by_sequence = {sub.序號: sub for sub in question.subquestions}
-    assert by_sequence[3].image_generation_mode == "gpt_image"
-    assert by_sequence[3].圖片 == "ns_plan_index_test_sq1.png"
-    assert by_sequence[1].image_generation_mode == "html"
-    assert by_sequence[1].圖片 == "ns_plan_index_test_sq3.png"
+    # The program-owned 序號 is fixed to the plan slot even when the model
+    # reports the reverse order; image placement still follows _plan_index.
+    assert by_sequence[1].image_generation_mode == "gpt_image"
+    assert by_sequence[1].圖片 == "ns_plan_index_test_sq1.png"
+    assert by_sequence[3].image_generation_mode == "html"
+    assert by_sequence[3].圖片 == "ns_plan_index_test_sq3.png"
 
 
 def test_ns_subq_prompt_preview_shows_configured_image_requirement(tmp_path: Path) -> None:

@@ -578,3 +578,114 @@ def test_自然科學_解析後的小題數量不由文本生成器決定() -> N
     )
 
     assert len(question.subquestions) == 4
+
+
+def test_自然科學_固定小題身份覆寫模型編號並保留逐題釘選欄位() -> None:
+    from src.natural_sciences.cli import generate_one
+    from src.natural_sciences.sampler import sample_params
+
+    params = sample_params(seed=745, content_type="純文字", sub_question_count=3)
+    question = generate_one(
+        config=_config(),
+        client=_TextClient("Simple multiple-choice", plan_count=3),
+        params=params,
+        question_id="ns_fixed_identity",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _PayloadSubClient({
+            "id": "model-owned-id",
+            "序號": 99,
+            "科目": ["生物"],
+            "題型": "Simple multiple-choice",
+            "題目": "固定身份測試",
+            "答案": "A",
+        }),
+    )
+
+    assert [sub.id for sub in question.subquestions] == [
+        "ns_fixed_identity-sq001",
+        "ns_fixed_identity-sq002",
+        "ns_fixed_identity-sq003",
+    ]
+    assert [sub.序號 for sub in question.subquestions] == [1, 2, 3]
+    assert [sub._plan_index for sub in question.subquestions] == [1, 2, 3]
+    assert all(sub.科目 == ["自然科學"] for sub in question.subquestions)
+
+
+def test_數學題組_固定小題身份覆寫模型編號() -> None:
+    from src.cli import generate_one
+    from src.sampler import sample_params
+    from src.schemas import QuestionContext, QuestionSetType, QuestionType
+
+    params = sample_params(
+        grade=8,
+        context=[QuestionContext("個人")],
+        set_type=QuestionSetType("題組題"),
+        q_type=[QuestionType("選擇題")],
+        seed=745,
+        math_thinking=None,
+        learning_content=["A-7-7"],
+        learning_performance=["s-IV-12"],
+        content_type="純文字",
+        sub_question_count=3,
+    )
+    question = generate_one(
+        config=_config(),
+        client=_TextClient("選擇題", plan_count=3),
+        curriculum=[],
+        performance={},
+        intro_text="",
+        grade_content={},
+        params=params,
+        question_id="math_fixed_identity",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _PayloadSubClient({
+            "id": "model-owned-id",
+            "序號": 99,
+            "題型": "選擇題",
+            "題目": "固定身份測試",
+            "答案": "A",
+        }),
+    )
+
+    assert [sub.id for sub in question.subquestions] == [
+        "math_fixed_identity-sq001",
+        "math_fixed_identity-sq002",
+        "math_fixed_identity-sq003",
+    ]
+    assert [sub.序號 for sub in question.subquestions] == [1, 2, 3]
+    assert [sub._plan_index for sub in question.subquestions] == [1, 2, 3]
+
+
+def test_數學單一題_不建立虛構小題身份或計畫() -> None:
+    from src.cli import generate_one
+    from src.sampler import sample_params
+    from src.schemas import QuestionContext, QuestionSetType, QuestionType
+
+    events: list[dict] = []
+    params = sample_params(
+        grade=8,
+        context=[QuestionContext("個人")],
+        set_type=QuestionSetType("單一題"),
+        q_type=[QuestionType("選擇題")],
+        seed=745,
+        learning_content=["A-7-7"],
+        learning_performance=["s-IV-12"],
+        content_type="純文字",
+    )
+    question = generate_one(
+        config=_config(),
+        client=_TextClient("選擇題", plan_count=3, observer=events.append),
+        curriculum=[],
+        performance={},
+        intro_text="",
+        grade_content={},
+        params=params,
+        question_id="math_flat_identity",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+    )
+
+    assert question.subquestions == []
+    assert not any(event.get("type") == "plan" for event in events)

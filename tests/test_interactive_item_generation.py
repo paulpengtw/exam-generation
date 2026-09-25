@@ -299,7 +299,11 @@ def test_generation_retries_when_noninteractive_question_contains_interaction(tm
     )
 
     assert provider.attempts == 2
-    assert [sub.id for sub in question.subquestions] == ["slot-1", "slot-2", "slot-3"]
+    assert [sub.id for sub in question.subquestions] == [
+        "interactive-retry-sq001",
+        "interactive-retry-sq002",
+        "interactive-retry-sq003",
+    ]
     assert question.subquestions[0].interaction is None
     assert not any(
         event.get("type") == "stage" and event.get("status") == "error"

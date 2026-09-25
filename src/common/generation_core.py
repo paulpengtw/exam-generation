@@ -247,7 +247,17 @@ def _scoped_callback(
         return None
 
     def emit(*args: Any, **kwargs: Any) -> Any:
-        return _callback_with_optional_scope(callback, *args, scope=scope, **kwargs)
+        # A subject hook may bind this callback again.  In that case the
+        # inner wrapper forwards its bound scope as a normal keyword while the
+        # outer wrapper supplies its own explicit scope.  Remove the inherited
+        # keyword before calling the adapter so Python never sees two values
+        # for the same keyword argument.  The nearest binding owns the event;
+        # an unbound wrapper preserves an inherited scope.
+        inherited_scope = kwargs.pop("scope", None)
+        bound_scope = scope if scope is not None else inherited_scope
+        return _callback_with_optional_scope(
+            callback, *args, scope=bound_scope, **kwargs
+        )
 
     return emit
 
@@ -935,6 +945,7 @@ def generate_with_corrections_core(
             chart_image_path=chart_image_path,
             curriculum_context=curriculum_context,
             on_decision=decisions.append,
+            program_owned_subquestion_identity=spec.fixed_subquestion_identity,
             scope=correction_scope,
         )
         decision = decisions[-1] if decisions else None

@@ -131,7 +131,10 @@ def test_dropping_first_slot_preserves_survivor_figure_obligations(
         visual_slots=visual_slots, drop_first=True,
     )
 
-    assert [sub.id for sub in question.subquestions] == ["slot-2", "slot-3"]
+    assert [sub.id for sub in question.subquestions] == [
+        "figure-obligations-sq002",
+        "figure-obligations-sq003",
+    ]
     assert question.chart_spec is None
     assert question.圖片 is None
     assert "figure-obligations_sq1.png" not in provider.images

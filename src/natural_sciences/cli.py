@@ -1456,6 +1456,7 @@ _NS_SPEC = SubjectGenerationSpec(
     image_question_text_fn=lambda q: "\n".join(q.題目),
     verify_fn=verify_question,
     correct_fn=correct_question,
+    fixed_subquestion_identity=True,
 )
 
 

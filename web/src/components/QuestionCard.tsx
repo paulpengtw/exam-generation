@@ -322,19 +322,19 @@ function SubQuestionBlock({
         </span>
         <Chip label={`${sub.年級}年級`} tone="blue" />
         <Chip label={sub.題型} tone="purple" />
-        {sub.科目.map((s) => (
+        {(sub.科目 ?? []).map((s) => (
           <Chip key={`subj-${s}`} label={s} tone="purple" />
         ))}
         {(sub.科學能力 ?? []).map((c) => (
           <Chip key={`sci-${c}`} label={c} tone="amber" />
         ))}
-        {sub.核心素養.map((c) => (
+        {(sub.核心素養 ?? []).map((c) => (
           <Chip key={`cc-${c}`} label={c} tone="amber" />
         ))}
-        {sub.學習內容.map((lc) => (
+        {(sub.學習內容 ?? []).map((lc) => (
           <Chip key={`lc-${lc.編碼}`} label={lc.編碼} tone="gray" title={lc.說明} />
         ))}
-        {sub.學習表現.map((lp) => (
+        {(sub.學習表現 ?? []).map((lp) => (
           <Chip key={`lp-${lp.編碼}`} label={lp.編碼} tone="teal" title={lp.說明} />
         ))}
       </div>
@@ -685,27 +685,27 @@ export default function QuestionCard({
   const mathCodes = useMemo(() => _question ? getLearningContentCodes(_question) : [], [_question]);
 
   const ssGrades = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => [s.年級]) : [],
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => [s.年級]) : [],
     [_question, isSocialStudies]
   );
   const ssSubjects = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.科目) : [],
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => s.科目 ?? []) : [],
     [_question, isSocialStudies]
   );
   const ssCoreComp = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.核心素養) : [],
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => s.核心素養 ?? []) : [],
     [_question, isSocialStudies]
   );
   const ssScienceComp = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.科學能力 ?? []) : [],
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => s.科學能力 ?? []) : [],
     [_question, isSocialStudies]
   );
   const ssLcCodes = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.學習內容.map((lc) => lc.編碼)) : [],
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => (s.學習內容 ?? []).map((lc) => lc.編碼)) : [],
     [_question, isSocialStudies]
   );
   const ssLpCodes = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions!, (s) => s.學習表現.map((lp) => lp.編碼)) : [],
+    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => (s.學習表現 ?? []).map((lp) => lp.編碼)) : [],
     [_question, isSocialStudies]
   );
 

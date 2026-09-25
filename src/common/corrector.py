@@ -113,12 +113,22 @@ def parse_rubric(sq_raw: dict, rubric_entry_cls: type) -> list:
     ]
 
 
-def validate_correction_structure(candidate: object, originals: list[Any]) -> None:
+def validate_correction_structure(
+    candidate: object,
+    originals: list[Any],
+    *,
+    program_owned_subquestion_identity: bool = False,
+) -> None:
     """Require a complete, ordered list with unambiguous original identities.
 
     An explicit id or 序號 can identify a row. If both are supplied they must
     agree; array position alone never establishes identity. Compare against
     the surviving input rows, without padding gaps from generation.
+
+    For generation pipelines with program-owned fixed slots, the array
+    position is already the identity.  Model-supplied ids and ordinals are
+    deliberately ignored there; the subject rebuilder restores the original
+    slot metadata after validating the row's editable content.
     """
     if not isinstance(candidate, dict):
         raise CorrectionStructureError(
@@ -144,6 +154,8 @@ def validate_correction_structure(candidate: object, originals: list[Any]) -> No
             raise CorrectionStructureError(
                 _rejection("subquestion_row_type", path, "subquestion row must be an object")
             )
+        if program_owned_subquestion_identity:
+            continue
         identity = {}
         if "id" in raw:
             if not isinstance(raw["id"], str) or raw["id"] != getattr(original, "id", None):
@@ -264,6 +276,7 @@ def correct_question_common(
     editable_paths: set[str] | None = None,
     on_rejected: Callable[[str], None] | None = None,
     on_decision: DecisionCallback | None = None,
+    program_owned_subquestion_identity: bool = False,
     scope: OperationScope | None = None,
 ) -> Any:
     """Shared corrector core for questions with subquestions.
@@ -361,7 +374,11 @@ def correct_question_common(
         )
 
     try:
-        validate_correction_structure(corrected_data, question.subquestions)
+        validate_correction_structure(
+            corrected_data,
+            question.subquestions,
+            program_owned_subquestion_identity=program_owned_subquestion_identity,
+        )
     except CorrectionStructureError as exc:
         return reject_correction(
             client, question, exc.reason, on_rejected, on_decision=on_decision,

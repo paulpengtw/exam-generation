@@ -4,6 +4,7 @@ import dataclasses
 
 import pytest
 
+from src.common.generation_core import _scoped_callback
 from src.common.generation_events import (
     QuestionContext,
     new_call_scope,
@@ -38,3 +39,18 @@ def test_operation_and_call_scopes_are_run_unique_and_immutable() -> None:
     assert retry_operation.supersedes_operation_id == operation.operation_id
     with pytest.raises(dataclasses.FrozenInstanceError):
         operation.operation_id = "mutated"  # type: ignore[misc]
+
+
+def test_nested_scoped_callback_forwards_one_scope() -> None:
+    question = QuestionContext(run_id="RUN", question_id="q-1", index=0)
+    scope = new_operation_scope(question, kind="image")
+    received: list[object] = []
+
+    def callback(_entry: object, *, scope=None) -> None:
+        received.append(scope)
+
+    wrapped = _scoped_callback(_scoped_callback(callback, scope), scope)
+
+    wrapped("entry")
+
+    assert received == [scope]

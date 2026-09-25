@@ -15,6 +15,12 @@ CONTENT_PINS = {
     "natural_sciences": ["Ab-Ⅳ-1", "Ab-Ⅳ-2", "Ab-Ⅳ-3"],
 }
 
+FIXED_IDS = [
+    "slot-binding-sq001",
+    "slot-binding-sq002",
+    "slot-binding-sq003",
+]
+
 
 class PlanProvider(FigureProvider):
     def __init__(self, ordinals, subject):
@@ -80,7 +86,7 @@ def run_slots(tmp_path, subject, *, plan_ordinals=(1, 2, 3), row_ordinals=(1, 2,
 def test_model_plan_ordinal_cannot_wrap_to_another_slots_configuration(tmp_path, subject):
     question, prompts = run_slots(tmp_path, subject, plan_ordinals=(0, 2, 3))
 
-    assert [row.id for row in question.subquestions] == ["slot-1", "slot-2", "slot-3"]
+    assert [row.id for row in question.subquestions] == FIXED_IDS
     assert [row.學習內容[0].編碼 for row in question.subquestions] == CONTENT_PINS[subject]
     assert "teacher-slot-1" in prompts[1]
     assert "teacher-slot-3" not in prompts[1]
@@ -90,7 +96,7 @@ def test_model_plan_ordinal_cannot_wrap_to_another_slots_configuration(tmp_path,
 def test_duplicate_model_plan_ordinals_cannot_merge_two_planned_slots(tmp_path, subject):
     question, _ = run_slots(tmp_path, subject, plan_ordinals=(2, 2, 3))
 
-    assert [row.id for row in question.subquestions] == ["slot-1", "slot-2", "slot-3"]
+    assert [row.id for row in question.subquestions] == FIXED_IDS
     assert [row.學習內容[0].編碼 for row in question.subquestions] == CONTENT_PINS[subject]
 
 
@@ -100,7 +106,7 @@ def test_duplicate_generated_ordinals_cannot_overwrite_another_slots_figure(tmp_
         tmp_path, subject, row_ordinals=(2, 2, 3), visual_slots=(1, 2, 3),
     )
 
-    assert [row.序號 for row in question.subquestions] == [2, 2, 3]
+    assert [row.序號 for row in question.subquestions] == [1, 2, 3]
     assert [row.圖片 for row in question.subquestions] == [
         "slot-binding_sq1.png", "slot-binding_sq2.png", "slot-binding_sq3.png",
     ]
@@ -115,8 +121,8 @@ def test_duplicate_generated_ordinals_cannot_overwrite_another_slots_figure(tmp_
 def test_wrong_and_duplicate_generated_ordinals_keep_each_slots_pins(tmp_path, subject, ordinals):
     question, prompts = run_slots(tmp_path, subject, row_ordinals=ordinals)
 
-    assert [row.id for row in question.subquestions] == ["slot-1", "slot-2", "slot-3"]
-    assert [row.序號 for row in question.subquestions] == list(ordinals)
+    assert [row.id for row in question.subquestions] == FIXED_IDS
+    assert [row.序號 for row in question.subquestions] == [1, 2, 3]
     assert [row.學習內容[0].編碼 for row in question.subquestions] == CONTENT_PINS[subject]
     for position in (1, 2, 3):
         assert f"teacher-slot-{position}" in prompts[position]
@@ -131,7 +137,7 @@ def test_slots_beyond_submitted_configuration_have_no_configuration(
         tmp_path, subject, plan_ordinals=(-1, 0, 99), config_count=config_count,
     )
 
-    assert [row.id for row in question.subquestions] == ["slot-1", "slot-2", "slot-3"]
+    assert [row.id for row in question.subquestions] == FIXED_IDS
     if config_count:
         assert question.subquestions[0].學習內容[0].編碼 == CONTENT_PINS[subject][0]
         assert "teacher-slot-1" in prompts[1]

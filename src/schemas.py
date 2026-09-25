@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from src.common.core_competency_loader import (
     build_core_competency_enum,
@@ -60,6 +60,10 @@ class SubQuestion(BaseModel):
     學習內容: list[LearningContentItem] = Field(default_factory=list)
     學習表現: list[LearningContentItem] = Field(default_factory=list)
     出題概念: str = ""
+
+    # One-based program slot used by grouped math's shared core.  It is
+    # intentionally private so transport/history JSON keeps the legacy shape.
+    _plan_index: int | None = PrivateAttr(default=None)
 
 
 class ImageSpec(BaseModel):
