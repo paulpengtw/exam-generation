@@ -1,13 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+
+const language = vi.hoisted(() => ({ value: "en-US" }));
 
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (s: { lang: string }) => unknown) =>
-    selector({ lang: "en-US" }),
+    selector({ lang: language.value }),
 }));
 
 import VerificationTrailTimeline from "./VerificationTrailTimeline";
 import type { VerificationTrailEntry } from "../hooks/useGenerate";
+
+afterEach(() => {
+  language.value = "en-US";
+});
 
 describe("VerificationTrailTimeline", () => {
   it("renders a no-trail state for a persisted null trail", () => {
@@ -107,6 +113,7 @@ describe("VerificationTrailTimeline", () => {
       retry_index: 1,
       model: "correct-model",
       timestamp: "2026-08-24T00:00:02Z",
+      outcome: "accepted",
       snapshot: { id: "q-432", 答案: "A", 題目: ["unchanged question"] },
     };
 
@@ -333,5 +340,81 @@ describe("VerificationTrailTimeline", () => {
     expect(
       screen.getByText("No fields changed in this correction."),
     ).toBeInTheDocument();
+  });
+
+  it("renders a rejected correction as a retained snapshot without an applied diff", () => {
+    const retainedSnapshot = {
+      id: "q-433-rejected",
+      答案: "B",
+      題目: ["retained question"],
+    };
+    const initial: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "initial",
+      question_id: "q-433-rejected",
+      timestamp: "2026-08-24T00:00:00Z",
+      snapshot: retainedSnapshot,
+    };
+    const rejected: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "correction",
+      question_id: "q-433-rejected",
+      retry_index: 1,
+      model: "correct-model",
+      timestamp: "2026-08-24T00:00:02Z",
+      outcome: "rejected",
+      reason: {
+        code: "subquestion_structure_mismatch",
+        path: "subquestions",
+        message: "The correction omitted an original sub-question.",
+      },
+      snapshot: retainedSnapshot,
+    };
+
+    render(<VerificationTrailTimeline entries={[initial, rejected]} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Agent autonomous verification and correction history",
+      }),
+    );
+
+    expect(screen.getByText("Correction rejected")).toBeInTheDocument();
+    expect(screen.getByText("The correction omitted an original sub-question.")).toBeInTheDocument();
+    expect(screen.queryByText("subquestion_structure_mismatch")).not.toBeInTheDocument();
+    expect(screen.queryByText("subquestions", { selector: "dt" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Changed fields")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show before and after snapshots" }),
+    ).not.toBeInTheDocument();
+
+    const snapshotButtons = screen.getAllByRole("button", { name: "Show snapshot" });
+    fireEvent.click(snapshotButtons[1]);
+    expect(screen.getByText(/"retained question"/)).toBeInTheDocument();
+  });
+
+  it("localizes a rejected correction label for Traditional Chinese", () => {
+    language.value = "zh-TW";
+    const rejected: VerificationTrailEntry = {
+      code: "verification_trail",
+      kind: "correction",
+      question_id: "q-433-zh",
+      retry_index: 1,
+      model: "correct-model",
+      timestamp: "2026-08-24T00:00:02Z",
+      outcome: "rejected",
+      snapshot: { id: "q-433-zh", 題目: ["保留題目"] },
+    };
+
+    render(<VerificationTrailTimeline entries={[rejected]} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "展開 Agent 自主驗證修正歷程",
+      }),
+    );
+
+    expect(screen.getByText("修正未採用")).toBeInTheDocument();
+    expect(screen.getByText("保留的題目快照")).toBeInTheDocument();
   });
 });

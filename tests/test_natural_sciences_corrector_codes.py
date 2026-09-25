@@ -1,12 +1,10 @@
-"""NS corrector: frozen originals stay verbatim; LLM-added subquestions get
-their 學習內容/學習表現 codes canonicalized deterministically (issue #92)."""
+"""NS correction freezes original curriculum codes and rejects added 小題 (#806)."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
 from src.natural_sciences.corrector import correct_question
-from src.natural_sciences.curriculum_codes import validate_question_codes
 from src.natural_sciences.schemas import (
     ExamQuestion,
     LearningContentRef,
@@ -56,7 +54,7 @@ def test_corrector_freezes_valid_original_codes() -> None:
     assert [r.編碼 for r in corrected.subquestions[0].學習表現] == ["tr-Ⅳ-1"]
 
 
-def test_corrector_canonicalizes_codes_on_llm_added_subquestion() -> None:
+def test_corrector_rejects_added_subquestion_with_repairable_codes() -> None:
     payload = {
         "subquestions": [
             {
@@ -74,18 +72,14 @@ def test_corrector_canonicalizes_codes_on_llm_added_subquestion() -> None:
             },
         ],
     }
-    corrected = correct_question(_client(payload), _base_question(), _VERIFICATION)
-    assert len(corrected.subquestions) == 2
-    added = corrected.subquestions[1]
-    assert [r.編碼 for r in added.學習內容] == ["Ab-Ⅳ-2"]
-    assert added.學習內容[0].說明  # 說明 filled from curriculum
-    assert [r.編碼 for r in added.學習表現] == ["tr-Ⅳ-1"]
-    assert validate_question_codes(corrected) == []
+    original = _base_question()
+    before = original.model_dump()
+    corrected = correct_question(_client(payload), original, _VERIFICATION)
+    assert corrected.model_dump() == before
 
 
-def test_corrector_drops_all_invalid_codes_on_llm_added_subquestion() -> None:
-    """No pool in the corrector: an all-invalid added row ends up empty and
-    is rejected by the verifier's deterministic check on re-verify."""
+def test_corrector_rejects_added_subquestion_with_invalid_codes() -> None:
+    """Invalid additions are rejected before publishing any part of the correction."""
     payload = {
         "subquestions": [
             {
@@ -100,13 +94,10 @@ def test_corrector_drops_all_invalid_codes_on_llm_added_subquestion() -> None:
             },
         ],
     }
-    corrected = correct_question(_client(payload), _base_question(), _VERIFICATION)
-    added = corrected.subquestions[1]
-    assert added.學習內容 == []
-    assert added.學習表現 == []
-    issues = validate_question_codes(corrected)
-    assert "第2小題：缺少學習內容編碼" in issues
-    assert "第2小題：缺少學習表現編碼" in issues
+    original = _base_question()
+    before = original.model_dump()
+    corrected = correct_question(_client(payload), original, _VERIFICATION)
+    assert corrected.model_dump() == before
 
 
 def test_ns_corrector_accepts_rubric_under_alternate_key_評分標準() -> None:

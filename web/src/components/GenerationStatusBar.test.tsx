@@ -33,6 +33,32 @@ const BASE_PROPS: GenerationStatusBarProps = {
   onFeedback: null,
 };
 
+describe("GenerationStatusBar — manual rejection", () => {
+  it.each(["modification", "correct"] as const)(
+    "marks a rejected %s step as failed and exposes its safe reason",
+    (stage) => {
+      const message = "Correction must preserve all original subquestions.";
+      render(
+        <GenerationStatusBar
+          {...BASE_PROPS}
+          runState="running"
+          evidence={{
+            profile: "modification",
+            steps: [
+              { type: "stage", agent: "corrector", stage, step: "修改", status: "start", ts: 1 },
+              { type: "stage", agent: "corrector", stage, step: "修改", status: "error", ts: 2, message },
+            ],
+          }}
+        />,
+      );
+
+      const rejectedStep = screen.getByTestId("modification-step-0");
+      expect(rejectedStep).toHaveAttribute("data-state", "error");
+      expect(rejectedStep).toHaveAttribute("title", message);
+    },
+  );
+});
+
 describe("GenerationStatusBar — evidence profiles", () => {
   it("renders the modification breadcrumb from modification evidence", () => {
     render(

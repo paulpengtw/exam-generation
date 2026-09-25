@@ -178,11 +178,11 @@ def test_ns_corrector_freezes_出題指示_and_reporting_scale() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Model-added 小題 (no original counterpart) takes model's values
+# Test 4: Model-added 小題 with unresolved metadata rejects the correction
 # ---------------------------------------------------------------------------
 
-def test_ns_corrector_model_added_subquestion_takes_model_出題指示_and_reporting_scale() -> None:
-    """A 小題 the model adds with no original counterpart takes both values from model output."""
+def test_ns_corrector_rejects_added_subquestion_with_unresolved_metadata() -> None:
+    """Correction cannot introduce a 小題 with model-chosen 指示 or Reporting Scale."""
     original_sq = SubQuestion(
         id="ns-test-01",
         序號=1,
@@ -227,9 +227,8 @@ def test_ns_corrector_model_added_subquestion_takes_model_出題指示_and_repor
 
     corrected = correct_question(fake_client, question, _verification())
 
-    assert len(corrected.subquestions) == 2
-    assert corrected.subquestions[1].出題指示 == "請比較兩種物質的物理性質"
-    assert corrected.subquestions[1].reporting_scale == "RSC-1"
+    assert corrected.model_dump() == question.model_dump()
+    assert corrected.subquestions[0].題目 == "原始題目"
 
 
 # ---------------------------------------------------------------------------

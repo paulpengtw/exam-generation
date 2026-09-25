@@ -90,6 +90,53 @@ describe("QuestionCard Agent 自主驗證修正歷程", () => {
     expect(screen.getByText("The answer and explanation agree.")).toBeInTheDocument();
     expect(screen.getByText("The supplied answer conflicts with the question.")).toBeInTheDocument();
   });
+
+  it("mounts a rejected correction as retained history without an applied diff", () => {
+    const retainedSnapshot = {
+      id: "q_test",
+      題目: ["retained question"],
+      答案: "B",
+    };
+    const rejectedTrail: VerificationTrailEntry[] = [
+      {
+        code: "verification_trail",
+        kind: "initial",
+        question_id: "q_test",
+        timestamp: "2026-01-01T00:00:00+00:00",
+        snapshot: retainedSnapshot,
+      },
+      {
+        code: "verification_trail",
+        kind: "correction",
+        question_id: "q_test",
+        retry_index: 1,
+        model: "correct-model",
+        timestamp: "2026-01-01T00:01:00+00:00",
+        outcome: "rejected",
+        reason: {
+          code: "subquestion_structure_mismatch",
+          path: "subquestions",
+          message: "The correction omitted an original sub-question.",
+        },
+        snapshot: retainedSnapshot,
+      },
+    ];
+
+    render(<QuestionCard question={question} trail={rejectedTrail} isFinal />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Show Agent autonomous verification and correction history",
+      }),
+    );
+
+    expect(screen.getByText("Correction rejected")).toBeInTheDocument();
+    expect(screen.getByText("Retained question snapshot")).toBeInTheDocument();
+    expect(screen.queryByText("Changed fields")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show before and after snapshots" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("QuestionCard 圖像種類降級警告", () => {

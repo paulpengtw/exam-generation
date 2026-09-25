@@ -223,7 +223,10 @@ function visibleModificationSteps(
     const openStep = [...steps]
       .reverse()
       .find((step) => step.event.stage === event.stage && step.state === "live");
-    if (openStep) openStep.state = event.status === "error" ? "error" : "complete";
+    if (openStep) {
+      openStep.state = event.status === "error" ? "error" : "complete";
+      if (event.status === "error") openStep.event = event;
+    }
   }
   return steps;
 }
@@ -255,6 +258,7 @@ function ModificationStepBreadcrumb({
             <span
               data-testid={`modification-step-${index}`}
               data-state={state}
+              title={state === "error" ? event.message : undefined}
               className={stateClass}
             >
               {labels[event.stage]}

@@ -144,6 +144,12 @@ export interface VerificationTrailInitialEntry {
   snapshot: Record<string, unknown>;
 }
 
+export interface VerificationTrailRejectionReason {
+  code: string;
+  path: string;
+  message: string;
+}
+
 export interface VerificationTrailCorrectionEntry {
   code: "verification_trail";
   kind: "correction";
@@ -152,6 +158,8 @@ export interface VerificationTrailCorrectionEntry {
   model: string;
   timestamp: string;
   snapshot: Record<string, unknown>;
+  outcome?: "accepted" | "rejected";
+  reason?: VerificationTrailRejectionReason;
 }
 
 export type VerificationTrailEntry =

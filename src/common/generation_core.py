@@ -19,6 +19,7 @@ from collections.abc import Callable, Sequence
 from enum import Enum
 from typing import Any, get_args
 
+from src.common.correction_decision import CorrectionDecision
 from src.common.figure_policy_trail import FigurePolicyTrailEvent
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
@@ -72,9 +73,14 @@ def _emit_correction_trail(
     question: Any,
     retry_index: int,
     model: str,
+    decision: CorrectionDecision | None = None,
 ) -> None:
     if callback is not None:
-        callback(make_correction_trail_entry(question_id, question, retry_index, model))
+        callback(make_correction_trail_entry(
+            question_id, question, retry_index, model,
+            outcome=decision.outcome if decision is not None else None,
+            reason=decision.reason if decision is not None else None,
+        ))
 
 
 def build_text_generation_prompts(
@@ -568,65 +574,88 @@ def generate_with_corrections_core(
             if p.exists():
                 chart_image_path = str(p)
 
-        emit_stage(obs, "corrector", "correct", "start", retry=attempt + 1)
-        question = spec.correct_fn(
+        emit_stage(
+            obs, "corrector", "correct", "start",
+            retry=attempt + 1, question_id=question_id,
+        )
+        decisions: list[CorrectionDecision] = []
+        corrected = spec.correct_fn(
             client, question, question.verification,
             chart_image_path=chart_image_path,
             curriculum_context=curriculum_context,
+            on_decision=decisions.append,
         )
-        emit_stage(obs, "corrector", "correct", "end", retry=attempt + 1)
-        _emit_update(on_question_update, question, "corrected")
+        decision = decisions[-1] if decisions else None
+        rejected = decision is not None and decision.outcome == "rejected"
+        if rejected:
+            reason = decision.reason
+            emit_stage(
+                obs, "corrector", "correct", "error", retry=attempt + 1,
+                question_id=question_id, code="correction_rejected",
+                message=reason.message,
+                reason=reason.model_dump(),
+            )
+        else:
+            question = corrected
+            emit_stage(
+                obs, "corrector", "correct", "end",
+                retry=attempt + 1, question_id=question_id,
+            )
+            _emit_update(on_question_update, question, "corrected")
 
         new_chart_image_path: str | None = None
-        if question.chart_spec and question.chart_spec != prior_chart_spec:
-            img_path = config.output_dir / f"{question_id}.png"
-            print(f"  Chart spec changed; re-rendering image: {img_path}", file=sys.stderr)
-            _on_render_error, _render_failed = make_render_error_sink(obs)
-            emit_stage(obs, "image_agent", "render_image", "start")
-            rendered = render_image(
-                question.chart_spec.model_dump(),
-                img_path,
-                question_text=spec.image_question_text_fn(question),
-                html_renderer=html_renderer,
-                llm_client=client,
-                image_generation_mode=image_generation_mode,
-                on_error=_on_render_error,
-            )
-            if not _render_failed:
-                emit_stage(obs, "image_agent", "render_image", "end")
-            if rendered:
-                question.圖片 = f"{question_id}.png"
-                new_chart_image_path = rendered
-                _emit_update(on_question_update, question, "image")
-        elif question.圖片:
-            p = config.output_dir / question.圖片
-            new_chart_image_path = str(p) if p.exists() else None
+        if rejected:
+            new_chart_image_path = chart_image_path
+        else:
+            if question.chart_spec and question.chart_spec != prior_chart_spec:
+                img_path = config.output_dir / f"{question_id}.png"
+                print(f"  Chart spec changed; re-rendering image: {img_path}", file=sys.stderr)
+                _on_render_error, _render_failed = make_render_error_sink(obs)
+                emit_stage(obs, "image_agent", "render_image", "start")
+                rendered = render_image(
+                    question.chart_spec.model_dump(),
+                    img_path,
+                    question_text=spec.image_question_text_fn(question),
+                    html_renderer=html_renderer,
+                    llm_client=client,
+                    image_generation_mode=image_generation_mode,
+                    on_error=_on_render_error,
+                )
+                if not _render_failed:
+                    emit_stage(obs, "image_agent", "render_image", "end")
+                if rendered:
+                    question.圖片 = f"{question_id}.png"
+                    new_chart_image_path = rendered
+                    _emit_update(on_question_update, question, "image")
+            elif question.圖片:
+                p = config.output_dir / question.圖片
+                new_chart_image_path = str(p) if p.exists() else None
 
-        visual_specs_changed = (
-            question.chart_spec != prior_chart_spec
-            or len(question.subquestions) != len(prior_subquestion_specs)
-            or any(
-                getattr(sub, "chart_spec", None) != prior_subquestion_specs[index]
-                for index, sub in enumerate(question.subquestions)
-                if index < len(prior_subquestion_specs)
+            visual_specs_changed = (
+                question.chart_spec != prior_chart_spec
+                or len(question.subquestions) != len(prior_subquestion_specs)
+                or any(
+                    getattr(sub, "chart_spec", None) != prior_subquestion_specs[index]
+                    for index, sub in enumerate(question.subquestions)
+                    if index < len(prior_subquestion_specs)
+                )
             )
-        )
-        if (
-            visual_specs_changed
-            and spec.post_correction_visual_policy_fn is not None
-        ):
-            spec.post_correction_visual_policy_fn(
-                question,
-                config,
-                client,
-                html_renderer,
-                image_generation_mode,
-                obs,
-                params,
-                on_figure_policy_entry=on_figure_policy_entry,
-            )
-            if question.圖片:
-                new_chart_image_path = str(config.output_dir / question.圖片)
+            if (
+                visual_specs_changed
+                and spec.post_correction_visual_policy_fn is not None
+            ):
+                spec.post_correction_visual_policy_fn(
+                    question,
+                    config,
+                    client,
+                    html_renderer,
+                    image_generation_mode,
+                    obs,
+                    params,
+                    on_figure_policy_entry=on_figure_policy_entry,
+                )
+                if question.圖片:
+                    new_chart_image_path = str(config.output_dir / question.圖片)
 
         _emit_correction_trail(
             on_trail_entry,
@@ -634,6 +663,7 @@ def generate_with_corrections_core(
             question,
             attempt + 1,
             config.model_correct or config.model_execute,
+            decision,
         )
 
         if not skip_verify:

@@ -194,3 +194,33 @@ Durable gotchas and decisions for all agents and developers working on this repo
   Provider barriers establish pre-completion visibility, and authenticated API
   readback verifies persisted exchanges. Live provider acceptance remains
   [#761](https://github.com/paulpengtw/exam-generation/issues/761).
+
+## Correction preserves the entering 題組 structure (#806, #811–#813, 2026-09-15)
+
+- [The correction acceptance guard](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/src/common/corrector.py)
+  compares the complete candidate against the snapshot entering that attempt,
+  including partial and zero-survivor groups. Omitting `subquestions` preserves
+  the rows; an explicit replacement must identify every original in order.
+  The complete public contract is in
+  [correction integrity](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/docs/correction-integrity.md).
+- [The shared retry loop](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/src/common/generation_core.py)
+  consumes a rejected attempt and emits the existing `corrector/correct/error`
+  diagnostic with `code=correction_rejected`. It publishes a rejected trail entry
+  with the retained snapshot and re-verifies that content, without publishing a
+  corrected draft or rendering discarded specifications. This supersedes the
+  initial #806 behavior that skipped retained-content verification and trail
+  entries. The existing retry limit is unchanged.
+- Accepted 社會領域/自然科學 rows must retain generation-owned `_plan_index`:
+  model-reported `序號` can differ from the original 各小題配置 slot. Reconstructing
+  rows without that metadata can swap image filenames and renderer settings
+  during later rendering. The [real-renderer regression](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/tests/test_correction_visual_pins.py)
+  checks public image ownership after a valid 自然科學 correction.
+- [HTTP integration coverage](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/tests/server/test_correction_structure_persistence.py)
+  uses controlled provider responses with the real generation pipeline,
+  SSE snapshots/results, History detail, and Agent 自主驗證修正歷程. No paid
+  generation or expected/delivered/missing protocol changes are needed.
+- [Manual review](https://github.com/paulpengtw/exam-generation/blob/fix/806-preserve-correction-structure/server/generate/modification_service.py)
+  captures the decision at both correction sites. Rejected annotations alone
+  cannot newly mark an image stale; existing stale state survives in the child
+  History record. Manual review retains its separate stream and adds no
+  automatic-generation verification trail.
