@@ -492,3 +492,60 @@ def test_fixed_adapter_resend_allocates_new_question_ids(subject: str, tmp_path:
     assert first_ids != second_ids
     assert [item.rsplit("_", 1)[-1] for item in first_ids] == ["001", "002", "003"]
     assert [item.rsplit("_", 1)[-1] for item in second_ids] == ["001", "002", "003"]
+
+
+@pytest.mark.parametrize("subject", ["natural_sciences", "math"])
+def test_old_question_files_survive_resend_into_same_dir(subject: str, tmp_path: Path) -> None:
+    """Running a second generation into the SAME output directory must not
+    touch (overwrite or delete) files that were written during the first run.
+
+    Covers OpenSpec task 1.3 acceptance criterion "舊檔案不更名": resending into
+    the same output directory allocates new question IDs, so the new question
+    files land at distinct paths and leave the old ones byte-identical.
+
+    The fake do_generate does not write real image files, so we write one JSON
+    sentinel per first-run question ID to simulate question output files, then
+    verify they survive the second run unchanged.
+    """
+    shared_dir = tmp_path / "shared"
+    shared_dir.mkdir()
+
+    # --- first run ---
+    first_events, _ = _run_stream(subject, shared_dir)
+    first_ids = [item["question_id"] for item in first_events[0]["payload"]["questions"]]
+    assert len(first_ids) == 3
+
+    # Simulate question output files that a real run would write ({qid}.json).
+    # We write them AFTER the first stream completes so we know the exact IDs.
+    sentinel_files: dict[Path, bytes] = {}
+    for qid in first_ids:
+        path = shared_dir / f"{qid}.json"
+        content = f'{{"id": "{qid}", "subject": "{subject}"}}\n'.encode()
+        path.write_bytes(content)
+        sentinel_files[path] = content
+
+    # --- second run into the SAME output directory ---
+    second_events, _ = _run_stream(subject, shared_dir)
+    second_ids = [item["question_id"] for item in second_events[0]["payload"]["questions"]]
+
+    # First-run sentinel files must still exist with byte-identical contents.
+    for path, expected_bytes in sentinel_files.items():
+        assert path.exists(), (
+            f"first-run file {path.name} was deleted or renamed by the second run"
+        )
+        assert path.read_bytes() == expected_bytes, (
+            f"first-run file {path.name} was modified by the second run"
+        )
+
+    # Second run must allocate distinct question IDs (no clobber via same filename).
+    assert set(first_ids).isdisjoint(set(second_ids)), (
+        f"second run reused first-run IDs: {set(first_ids) & set(second_ids)}"
+    )
+    assert len(second_ids) == 3
+
+    # The second run's file paths would be distinct from the first run's.
+    first_files = {shared_dir / f"{qid}.json" for qid in first_ids}
+    second_files = {shared_dir / f"{qid}.json" for qid in second_ids}
+    assert first_files.isdisjoint(second_files), (
+        "second run would overwrite a first-run question file"
+    )
