@@ -1,0 +1,20 @@
+.feedback-spinner {
+  animation: feedback-spin var(--motion-duration-loop-spinner) linear infinite;
+}
+
+@keyframes feedback-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes motion-opacity-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}

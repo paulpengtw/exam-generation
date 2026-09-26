@@ -1,0 +1,56 @@
+/*
+ * Adapted from github.com/kvnkld/aicss @ 4556a918, MIT.
+ * The two recipes below are vendored as CSS only; see LICENSE-aicss.txt.
+ */
+.status-shimmer {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: linear-gradient(
+    90deg,
+    var(--color-blue-600) 0%,
+    var(--color-blue-600) 30%,
+    var(--color-blue-300) 45%,
+    var(--color-blue-300) 55%,
+    var(--color-blue-600) 70%,
+    var(--color-blue-600) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: label-shine var(--motion-duration-loop-shimmer)
+    var(--motion-ease-loop) infinite;
+}
+
+@keyframes label-shine {
+  0%,
+  18% {
+    background-position: 100% 0;
+  }
+
+  82%,
+  100% {
+    background-position: 0% 0;
+  }
+}
+
+.streaming-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  background: var(--color-blue-600);
+  vertical-align: text-bottom;
+  animation: caret-blink var(--motion-duration-loop-shimmer)
+    var(--motion-ease-loop) infinite;
+}
+
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}

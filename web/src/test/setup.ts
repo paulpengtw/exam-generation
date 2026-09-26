@@ -1,5 +1,8 @@
 import "@testing-library/jest-dom";
 import { resetReleaseDetector, useReleaseStore } from "../lib/release/releaseStore";
+import { writeMotionTokens } from "../motion/tokens";
+
+writeMotionTokens();
 
 // Default release-store state for all tests: status "current".
 // The real checkNow() is preserved so tests in the release/ subtree that need
