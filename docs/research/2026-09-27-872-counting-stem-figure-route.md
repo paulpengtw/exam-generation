@@ -176,7 +176,7 @@ Basis: 0 FP on 219 non-violating entries; 5/9 recall; the 4 FNs are structural f
 ### counting_stem check
 
 **Recommendation: Note only** (not Fail) until the full 20-entry matrix is measured.  
-Basis: Partial data (11/20) shows 0 FP and 85.7% recall, but 9 dangerous-FP entries are untested. The one FN (Hardy-Weinberg 任N項) is fixable with a counter-example. If the 9 remaining entries also show 0 FP when re-run, the recommendation upgrades to **Fail**.
+Basis: Partial data (11/25) shows 0 FP and 85.7% recall, but 14 entries are unevaluated. The one FN (Hardy-Weinberg 任N項) is fixable with a counter-example. If the 14 remaining entries also show 0 FP when re-run, the recommendation upgrades to **Fail**.
 
 **details sentence** (if Fail):  
 `[評分規準檢核] 此小題以數字或「有哪些」要求學生從開放集合列舉——請改寫題目逐一點名各成員（「一個X與一個Y」），或改為只要求學生列出一項。`

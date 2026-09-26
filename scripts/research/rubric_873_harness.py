@@ -9,7 +9,8 @@ This script:
 2. Runs the every_item_required evaluation on the labelled set (reads cache first;
    LLM calls only for entries not yet cached). Reports the confusion matrix.
 3. Collects 30 open-response 小題 from the NS few-shot corpus as generation-run
-   input (3 flagged for #650 conversion, 27 ready).
+   input.  3 were counting-stem items; their stems are converted per #650 decision 5
+   and included in the run (all 30 ready).
 4. For each ready generation-run item, prompts the model to write a rubric using
    OPEN_RESPONSE_RUBRIC_RULE. Caches every response.
 5. Computes two counts from the generation-run output:
@@ -873,10 +874,17 @@ class GenRunItem:
     stem_snippet: str
     counting_stem_needs_conversion: bool = False
     conversion_note: str = ""
+    # #650 conversion fields — set for counting-stem items:
+    converted_stem: str = ""   # the stem to feed to the rubric-writing prompt
+    conversion_rule: str = ""  # which #650 decision was applied, and why
 
 
 GENERATION_RUN_ITEMS: list[GenRunItem] = [
-    # ── Counting-stem items (need #650 conversion before rubric-writing) ──
+    # ── Counting-stem items (#650-converted; included in the run) ──────────
+    #
+    # Original stems had open counts (「請寫兩個結論」, 「至少兩點」, 「至少列舉三項」).
+    # Each is converted below per #650 decision 5: name the members where the
+    # material lets you; otherwise ask for exactly one.
     GenRunItem(
         key="fasting-method|0|3",
         file_stem="fasting-method",
@@ -885,9 +893,18 @@ GENERATION_RUN_ITEMS: list[GenRunItem] = [
         stem_snippet="請問以上實驗可以得出什麼結論？（請寫兩個結論）",
         counting_stem_needs_conversion=True,
         conversion_note=(
-            "「請寫兩個結論」is counting_stem. Convert: change stem to "
-            "「請寫出一個關於飲食的結論」or name the two conclusions explicitly. "
-            "Note: this item also has every_item_required=True."
+            "「請寫兩個結論」is counting_stem. Converted: reduce to one per #871's "
+            "canonical example."
+        ),
+        # #650 decision 5 — the two possible conclusions are inter-group comparisons
+        # that cannot be named in advance without knowing which comparison the student
+        # chooses; reduce to asking for one (#871 canonical: 「請寫兩個結論」 →
+        # 「寫出一個結論，並指出它依據哪兩組的比較」).
+        # Note: this item also carries every_item_required=True in the corpus rubric.
+        converted_stem="寫出一個結論，並指出它依據哪兩組的比較。",
+        conversion_rule=(
+            "#650 decision 5: 「請寫兩個結論」 from open set; the exact two conclusions "
+            "cannot be named in advance. Reduce to one per #871 canonical example."
         ),
     ),
     GenRunItem(
@@ -898,8 +915,20 @@ GENERATION_RUN_ITEMS: list[GenRunItem] = [
         stem_snippet="請問型號B比起型號A有何不同之處，請寫下至少兩點你觀察到的變因關係。",
         counting_stem_needs_conversion=True,
         conversion_note=(
-            "「至少兩點」from open set is counting_stem. Convert: name the specific "
-            "observations or reduce to one item."
+            "「至少兩點」from open set is counting_stem. Converted: name two specific "
+            "observations from the 答案解析 explicitly."
+        ),
+        # #650 decision 5 — the 答案解析 names four specific observations:
+        # (1) 重量越高，整體運轉時間越長, (2) 重量越高，最高轉速越低,
+        # (3) 重量越高，浸泡/洗清/洗衣時間增加, (4) 脫水時間不隨重量改變.
+        # The material lets us name them; pick two and name explicitly.
+        converted_stem=(
+            "請觀察型號A與型號B洗衣進程，分別說明：（1）負重對最高轉速的影響；"
+            "（2）負重對整體運轉時間的影響。"
+        ),
+        conversion_rule=(
+            "#650 decision 5: 「至少兩點」 from open set; 答案解析 names four specific "
+            "observations; name two of them explicitly (最高轉速, 整體運轉時間)."
         ),
     ),
     GenRunItem(
@@ -910,8 +939,22 @@ GENERATION_RUN_ITEMS: list[GenRunItem] = [
         stem_snippet="造成黑色等位基因比例增加的可能原因有哪些？（請至少列舉三項）",
         counting_stem_needs_conversion=True,
         conversion_note=(
-            "「至少三項」 of Hardy-Weinberg violations is counting_stem. "
-            "Convert: name the five conditions explicitly or reduce to one."
+            "「至少列舉三項」 of five Hardy-Weinberg conditions is 「任N項」 of a larger "
+            "set (#650 decision 3 — banned). Converted: ask for one condition with "
+            "mechanism explanation."
+        ),
+        # #650 decisions 3 & 5 — the five Hardy-Weinberg conditions are listed in the
+        # 答案解析 (無突變、無天擇、無選擇性交配、無遷移、族群夠大); asking for
+        # 「任N項」 of 5 is banned. Naming all five would change the item's character
+        # from open-ended reasoning to a recall list; reduce to one with explanation.
+        converted_stem=(
+            "根據Hardy-Weinberg定律，請說明一項造成英國工業革命後黑色胡椒蛾等位基因"
+            "比例增加的可能原因，並解釋該條件如何被違反。"
+        ),
+        conversion_rule=(
+            "#650 decisions 3 & 5: 「任3項」 of five independent Hardy-Weinberg "
+            "conditions is banned; asking for all five would be a recall list; "
+            "reduce to one condition with mechanism."
         ),
     ),
 
@@ -1151,7 +1194,8 @@ def step1_extra_items_count() -> None:
     print(f"  Missing fixed sentence:   {total - has}")
     print(
         "  → Baseline: 0% of existing corpus rubrics have the #871 fixed sentence.\n"
-        "    The generation-run measures whether the new prompt achieves ≥90% inclusion."
+        "    The generation-run measures the rate at which the 1/2/1 hook will send\n"
+        "    a freshly-generated rubric to the corrector."
     )
     print("\n[Step 1] Labelled set composition")
     print("  Corpus (22 rubric levels in 19 小題): True=1, False=21")
@@ -1234,7 +1278,14 @@ def step2_eir_evaluation(client: LLMClient, config: Any, cache: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def step3_generation_run(client: LLMClient, config: Any, cache: dict) -> None:
-    print(f"\n[Step 3] Generation-run rubric writing ({len(GENERATION_RUN_ITEMS)} items)")
+    n_converted = sum(
+        1 for item in GENERATION_RUN_ITEMS
+        if item.counting_stem_needs_conversion and item.converted_stem
+    )
+    print(
+        f"\n[Step 3] Generation-run rubric writing "
+        f"({len(GENERATION_RUN_ITEMS)} items; {n_converted} with #650-converted stems)"
+    )
     model = config.model_verify
 
     corpus_data: dict[str, Any] = {}
@@ -1246,9 +1297,9 @@ def step3_generation_run(client: LLMClient, config: Any, cache: dict) -> None:
 
     generated_rubrics = []
     for item in GENERATION_RUN_ITEMS:
-        if item.counting_stem_needs_conversion:
-            print(f"  [skip]  {item.key} — needs #650 conversion first")
-            print(f"          → {item.conversion_note[:80]}")
+        # Skip only if the item needs conversion and has no converted stem yet.
+        if item.counting_stem_needs_conversion and not item.converted_stem:
+            print(f"  [skip]  {item.key} — counting_stem item with no converted_stem")
             continue
 
         cache_key = f"genrun|{item.key}"
@@ -1274,7 +1325,12 @@ def step3_generation_run(client: LLMClient, config: Any, cache: dict) -> None:
             if sq is None:
                 print(f"  [skip]  {item.key} — seq {item.seq} not found")
                 continue
-            stem_full = sq.get("題目", "")
+            # Use the #650-converted stem when one is provided.
+            if item.converted_stem:
+                stem_full = item.converted_stem
+                print(f"  [#650]  using converted stem for {item.key}")
+            else:
+                stem_full = sq.get("題目", "")
             answer = sq.get("答案", sq.get("答案解析", "（未提供）"))[:200]
 
             user_msg = RUBRIC_WRITING_USER_TEMPLATE.format(

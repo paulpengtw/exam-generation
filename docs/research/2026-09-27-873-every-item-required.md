@@ -14,7 +14,7 @@ This research adds the `every_item_required` boolean field to the open-response 
 1. **every_item_required distribution** (needs LLM): how many [2] rubric entries in the generation-run output declare `every_item_required=True` vs False, and whether the LLM classifies them correctly against the labelled set.
 2. **EXTRA_ITEMS_FIXED_SENTENCE coverage** (programmatic): what fraction of existing corpus [2] entries contain the `#871` fixed sentence. **Baseline: 0/143 = 0.0%** — the sentence was introduced in #871 and has not yet been back-filled.
 
-**API credit exhaustion.** No LLM calls completed. Steps 2 and 3 are pending re-run.
+**Status:** Labelled set and harness committed. Step 1 (programmatic count) complete. Steps 2 and 3 (LLM evaluation and generation run) are PENDING — API credit exhausted 2026-09-27.
 
 ---
 
@@ -46,7 +46,7 @@ EXTRA_ITEMS_FIXED_SENTENCE = "學生多寫的其他項目不影響評分，但�
 | Has EXTRA_ITEMS_FIXED_SENTENCE | 0 (0.0%) |
 | Missing sentence | 143 |
 
-The #871 fixed sentence was introduced after the corpus was written. The generation-run (Step 3) measures whether the new rubric-writing prompt with `OPEN_RESPONSE_RUBRIC_RULE` achieves ≥90% inclusion in freshly-generated rubrics.
+The #871 fixed sentence was introduced after the corpus was written. The generation-run (Step 3) measures the rate at which the 1/2/1 hook will send freshly-generated rubrics to the corrector; no threshold is set by any ticket.
 
 **Rerun command** (reads cache first; only unevaluated entries make new API calls):
 ```
@@ -166,21 +166,29 @@ API credits exhausted. Expected distribution based on labelled set:
 
 ---
 
-## Step 3 — Generation-run input (30 items, pending)
+## Step 3 — Generation-run input (30 items, PENDING)
 
-30 open-response 小題 selected from the NS Constructed-response corpus:
-- **3 need #650 conversion** before rubric-writing:
-  - `fasting-method|0|3`: 「請寫兩個結論」→ rewrite to name the two conclusions or reduce to one
-  - `washing-machine-physics|0|5`: 「至少兩點」→ rewrite to name the observations or reduce to one
-  - `胡椒蛾の分子機制|0|3`: 「至少三項」of Hardy-Weinberg violations → name them or reduce to one
-- **27 normal items**: no counting_stem issues; ready to send to rubric-writing prompt
+30 open-response 小題 selected from the NS Constructed-response corpus.
+All 30 are fed into the rubric-writing prompt; the 3 counting-stem items use
+converted stems authored in the harness per #650 decision 5.
 
-### Expected counts (after generation run)
+### #650 conversions (3 items)
 
-| Metric | Expected | Threshold |
-|---|---|---|
-| Has EXTRA_ITEMS_FIXED_SENTENCE | ≥90% of 27 | Fail if <90% |
-| every_item_required=True | ~1-3 of 27 | Note only |
+| Item | Original stem (excerpt) | Converted stem | Rule applied |
+|---|---|---|---|
+| `fasting-method\|0\|3` | 「請寫兩個結論」 | 「寫出一個結論，並指出它依據哪兩組的比較。」 | #650 decision 5: two conclusions cannot be named in advance; reduce to one (#871 canonical example) |
+| `washing-machine-physics\|0\|5` | 「至少兩點你觀察到的變因關係」 | 「分別說明：（1）負重對最高轉速的影響；（2）負重對整體運轉時間的影響。」 | #650 decision 5: material (答案解析) names four observations; name two explicitly |
+| `胡椒蛾の分子機制\|0\|3` | 「請至少列舉三項」 | 「請說明一項造成黑色胡椒蛾等位基因比例增加的可能原因，並解釋該條件如何被違反。」 | #650 decisions 3 & 5: 「任3項」 of five conditions is banned; reduce to one |
+
+### Counts (after generation run — PENDING)
+
+The generation run is pending (API credit exhausted 2026-09-27).
+Once complete, report:
+
+| Metric | Notes |
+|---|---|
+| [2] entries with EXTRA_ITEMS_FIXED_SENTENCE | Measures the rate at which the 1/2/1 hook will send a freshly-generated rubric to the corrector. |
+| every_item_required=True | Note only (per #871 decision 7: measured first, wired as fail only if the generator actually writes the wording). |
 
 **Rerun**: `uv run python scripts/research/rubric_873_harness.py`
 
@@ -202,7 +210,7 @@ The prompt is defined in `scripts/research/rubric_873_harness.py` as `RUBRIC_WRI
 **Recommendation: implement as informational field** (no Fail check on its own). The field is needed to correctly route EXTRA_ITEMS_FIXED_SENTENCE: when `every_item_required=True`, the fixed sentence should be suppressed (because the student's extra items ARE penalised — the fixed sentence would be contradictory). When `every_item_required=False`, the fixed sentence must be present.
 
 ### EXTRA_ITEMS_FIXED_SENTENCE coverage
-**Recommendation: Fail if <90%** of freshly-generated [2] entries contain the sentence. Baseline is 0% (existing corpus). The generation-run will measure whether the new prompt achieves the threshold.
+**Recommendation: pending generation run.** The fixed-sentence count measures the rate at which the 1/2/1 hook will send a freshly-generated rubric to the corrector. Baseline is 0% (existing corpus, no back-fill). The generation run will produce the actual rate; no threshold has been set by any ticket.
 
 ---
 

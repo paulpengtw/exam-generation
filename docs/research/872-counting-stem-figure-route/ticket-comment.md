@@ -1,6 +1,6 @@
 # Comment for GitHub issue #872
 
-Research run complete. Report: `docs/research/2026-09-27-872-counting-stem-figure-route.md`
+Labelled set and harness committed; partial results from 11 of 25 evaluated entries. Steps 3 (14 unevaluated) and 4 (0 evaluated) are PENDING — API credit exhausted 2026-09-27. Report: {REPORT_URL}
 
 ## What was measured
 
@@ -16,9 +16,9 @@ Applied the three #859 relabels (black-white-car-heat 5 and entomopathogenic-fun
 
 ---
 
-## Step 3 — counting_stem (partial, 11/26 entries evaluated)
+## Step 3 — counting_stem (partial, **11 of 25** entries evaluated)
 
-API credits ran out after 11 entries. The 14 unevaluated entries include all remaining label=False dangerous-FP cases plus 2 unevaluated label=True synthetic positives. The labelled set was also expanded (from 20 to 25 entries) to ensure ≥3 entries per dangerous-FP category: material-describing counts (3), 「哪些」 over material-supplied set (1 dedicated entry), counts of one (3), named-member requests (2). Five synthetic positives total (2 new with conversion notes).
+API credits ran out after 11 entries. The labelled set has 25 entries; 14 are unevaluated (9 entries were null when credits ran out in the initial 20-entry run; 5 new entries added after expansion).
 
 | Evaluated (n=11) | TP | FN | FP | TN |
 |---|---|---|---|---|
@@ -28,7 +28,7 @@ Recall on evaluated positives: **6/7 = 85.7%**. FPR on evaluated negatives: **0/
 
 **One FN:** `胡椒蛾的分子機制` seq=3 ("至少列舉三項" over Hardy-Weinberg's 5 conditions). The model applied exception F4 (scientifically necessary components), missing that "at least 3 of 5" is 「任N項」 of a larger set — which #650 explicitly bans. Fixable with a prompt counter-example.
 
-**Recommendation:** **Note only** until the 15 remaining entries are evaluated. If re-run shows 0 FP there, upgrade to **Fail**.
+**Recommendation:** **Note only** until the 14 unevaluated entries are evaluated. If re-run shows 0 FP there, upgrade to **Fail**.
 
 **details sentence (for when Fail):**
 `[評分規準檢核] 此小題以數字或「有哪些」要求學生從開放集合列舉——請改寫題目逐一點名各成員（「一個X與一個Y」），或改為只要求學生列出一項。`
@@ -56,10 +56,10 @@ uv run python scripts/research/rubric_872_harness.py
 
 ## Files committed
 
+- {REPORT_URL} — full report
 - `docs/research/651-counting-rubric-prototype/labelled_set_relabelled.json` — relabelled set (original preserved)
-- `docs/research/2026-09-27-872-counting-stem-figure-route.md` — full report
 - `docs/research/872-counting-stem-figure-route/run_summary.json` — machine-readable results
-- `docs/research/872-counting-stem-figure-route/responses.jsonl` — LLM cache (11 entries)
+- `docs/research/872-counting-stem-figure-route/responses.jsonl` — LLM cache (11 counting_stem entries evaluated; 9 figure-route entries empty)
 - `docs/research/872-counting-stem-figure-route/images/` — 4 chart PNGs (CJK labels legible)
-- `scripts/research/rubric_872_harness.py` — harness (extended with `every_item_required` field for #873)
+- `scripts/research/rubric_872_harness.py` — harness (25 counting_stem entries, 9 figure-route entries)
 - `scripts/research/rerender_872_images.py` — standalone re-render helper with CJK font fix
