@@ -90,7 +90,8 @@ RELABELS_859: dict[tuple[str, int], dict] = {
 VERIFIER_SYSTEM_V2 = """\
 你是108課綱自然科學／社會領域素養導向命題的評分規準稽核員。
 你的任務是判斷一道小題的評分規準是否違反下列「規則 C」，
-同時判斷題目（小題）是否構成「計數式提問」（counting_stem）。
+同時判斷題目（小題）是否構成「計數式提問」（counting_stem），
+以及 [2] 級距是否要求學生「所提的每一個項目皆…」（every_item_required）。
 
 ## 規則 C（完整條文，含 #859 修訂）
 
@@ -138,7 +139,8 @@ counting_stem 為 true，當且僅當：
 """
 
 VERIFIER_USER_TEMPLATE_V2 = """\
-請判斷以下小題的評分規準是否違反規則 C，並判斷是否構成計數式提問（counting_stem）。
+請判斷以下小題的評分規準是否違反規則 C，並判斷是否構成計數式提問（counting_stem），
+以及 [2] 級距是否要求學生所寫的每一項均須成立（every_item_required）。
 
 題型：{question_type}
 題目（小題）：
@@ -152,6 +154,20 @@ VERIFIER_USER_TEMPLATE_V2 = """\
 
 {figure_note}
 
+## every_item_required 的定義
+
+every_item_required 為 true，當且僅當：
+  [2] 級距要求學生「所提的每一個項目」都成立
+  ——使用「所提結論皆…」「所列理由都…」「每一項均…」等語句，
+  即任何一個學生自行多寫的「錯誤額外項目」會讓學生降為 [1]。
+
+every_item_required 為 false，當：
+  - [2] 只要求本小題「事前指名的成員」均成立（如「兩個條件均提及」、「甲、乙兩個面向均正確」），
+    學生自行多寫的額外項目不影響結果；或
+  - [2] 不使用皆/均/都/全部等語句。
+
+（請注意：「兩條件均提及」和「所提項目皆…」的差別：前者僅審查題目指定的成分，後者審查學生的全部作答。）
+
 請嚴格依照規則 C 的【判準】邏輯逐步推理，然後以下列 JSON 格式輸出（不要輸出其他文字）：
 
 {{
@@ -159,11 +175,19 @@ VERIFIER_USER_TEMPLATE_V2 = """\
   "framing_evidence": "<str: 引用框定集合的文字，或說明無法框定的原因（限60字）>",
   "counting_violation": <bool: 評分規準依數量分級，且集合未被框定>,
   "counting_stem": <bool: 題目要求學生列出≥2項，且集合無法事前框定（見定義）>,
+  "every_item_required": <bool: [2] 級距要求學生所寫的每一項均成立（見定義）>,
   "specificity_violation": <bool: 評分規準使用「完整正確回答／部分正確／錯誤」等空泛語句>,
   "verdict": "<pass 或 fail: counting_violation 或 specificity_violation 任一為 true 則 fail>",
   "details": "<str: verdict 為 fail 時，一句說明修正方向，以「[評分規準檢核]」開頭；pass 時輸出空字串>"
 }}
 """
+
+# Cache key prefix for the V2 criterion (with every_item_required).
+# V1 = original #651 format (keys: {file_stem}|{item_idx}|{seq})
+# V2 = this combined criterion (keys: v2|{file_stem}|{item_idx}|{seq})
+# The counting_stem standalone criterion uses: counting_stem|{entry.key}
+# These prefixes ensure previously-cached #651/#872 responses stay valid.
+VERIFIER_V2_CACHE_PREFIX = "v2"
 
 # ---------------------------------------------------------------------------
 # counting_stem standalone criterion (for runs where we only need that field)
@@ -767,6 +791,88 @@ def build_counting_stem_labelled_set() -> list[CountingStemEntry]:
         category="dangerous_fp",
     ))
 
+    # === Additional entries to ensure ≥3 per dangerous-FP category ===
+
+    # F1 (material count) — third entry; conversions noted in label_reason
+    entries.append(CountingStemEntry(
+        key="dangerous_fp|material_count|3",
+        question_stem=(
+            "實驗組使用了三支試管，分別裝入不同濃度的葡萄糖溶液。"
+            "請說明濃度最高的試管中細胞滲透壓的變化。"
+        ),
+        learning_content="",
+        label=False,
+        label_reason=(
+            "F1: 「三支試管」描述素材中已給的試管數量；"
+            "答案只要求一個說明（滲透壓變化），不是要求學生列出三項。"
+            "轉換後若題目改問各試管的差異，才需逐一點名（甲管…乙管…丙管…）。"
+        ),
+        category="dangerous_fp",
+    ))
+
+    # F6 (count of one) — third entry
+    entries.append(CountingStemEntry(
+        key="dangerous_fp|count_one|3",
+        question_stem=(
+            "從圖中選取一個最能支持你的論點的數據，並說明該數據如何支持你的推論。"
+        ),
+        learning_content="",
+        label=False,
+        label_reason=(
+            "F6: 「一個數據」，只要求學生列出一項，不在計數式提問的禁止範圍內。"
+        ),
+        category="dangerous_fp",
+    ))
+
+    # F5 — fourth 「哪些」 entry: question over a materially-supplied closed set
+    entries.append(CountingStemEntry(
+        key="dangerous_fp|material_supplied_set|1",
+        question_stem=(
+            "下列五種元素：C、H、O、N、P，哪些是構成蛋白質的基本元素？（可複選）"
+        ),
+        learning_content="",
+        label=False,
+        label_reason=(
+            "F5: 題目已列出五種固定選項（C、H、O、N、P），「哪些」針對已供應的封閉集合，"
+            "學生是從給定集合中選擇，不是從開放集合中自行產出。"
+        ),
+        category="dangerous_fp",
+    ))
+
+    # === Synthetic positives with conversion notes ===
+    # These make the positive corpus more robust and document the standard conversion.
+
+    entries.append(CountingStemEntry(
+        key="synth|open_count_any|4",
+        question_stem=(
+            "請說明基因突變對生物進化的影響，至少列舉兩項可能的結果。"
+        ),
+        learning_content="",
+        label=True,
+        label_reason=(
+            "「至少兩項可能的結果」對開放集合（突變結果），集合無法事前框定。"
+            "轉換方式：改為「請說明基因突變對生物進化的一項影響，並以此說明其進化意義」"
+            "（只要求一項），或改為「請說明基因突變如何分別影響適應性和遺傳多樣性（甲、乙兩個面向）」"
+            "（逐一點名）。"
+        ),
+        category="synthetic_positive",
+    ))
+
+    entries.append(CountingStemEntry(
+        key="synth|open_count_any|5",
+        question_stem=(
+            "根據實驗數據，請提出兩個改善實驗設計的建議，並說明各建議的理由。"
+        ),
+        learning_content="",
+        label=True,
+        label_reason=(
+            "「兩個改善建議」對開放集合，個數固定但成員開放，集合無法事前框定。"
+            "轉換方式：改為「請提出一個改善實驗設計的建議，並說明理由」（只要求一項），"
+            "或改為「請針對缺少對照組和未控制溫度變因這兩個問題各提出一項改善方案」（逐一點名）。"
+        ),
+        category="synthetic_positive",
+    ))
+
     return entries
 
 
@@ -926,40 +1032,38 @@ def build_figure_route_items(image_dir: Path) -> list[FigureRouteEntry]:
         ),
     ))
 
-    # --- Chart B: line chart (3 lines labeled A, B, C over time) ---
+    # --- Chart B: bar chart (3 groups, day-5 survival rates) ---
+    # Note: _render_line_chart does not support the "series" key format;
+    # switched to histogram so the data actually renders on screen.
     chart_b_spec = {
         "render_mode": "chart",
-        "chart_type": "line_chart",
-        "title": "三種處理方式下的細胞存活率（%）",
+        "chart_type": "histogram",
+        "title": "三種處理方式第5天細胞存活率（%）",
         "data": {
-            "x_values": [0, 1, 2, 3, 4, 5],
-            "series": {
-                "處理A": [100, 90, 75, 60, 45, 30],
-                "處理B": [100, 95, 88, 80, 70, 62],
-                "處理C": [100, 85, 70, 55, 40, 25],
-            },
+            "bins": ["處理A", "處理B", "處理C"],
+            "counts": [30, 62, 25],
         },
-        "labels": {"x": "時間（天）", "y": "細胞存活率（%）"},
+        "labels": {"x": "處理方式", "y": "第5天細胞存活率（%）"},
     }
 
     # B1: read-off — asks which treatment had best and worst survival
     items.append(FigureRouteEntry(
         key="fig|chart_B|read_off",
         question_stem=(
-            "根據圖(二)，在第5天時，哪種處理方式的細胞存活率最高，哪種最低？"
+            "根據圖(二)，哪種處理方式在第5天的細胞存活率最高，哪種最低？"
         ),
         rubric_level_2=(
-            "[2] 正確指出圖(二)第5天時存活率最高的是處理B（62%），最低的是處理C（25%），"
-            "兩者均從圖(二)的折線讀出。"
+            "[2] 正確指出圖(二)中存活率最高的是處理B（62%），最低的是處理C（25%），"
+            "兩者均從圖(二)的長條讀出。"
             "學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。"
         ),
-        figure_description="圖(二)：三條折線（處理A、B、C）顯示5天內細胞存活率的變化，每條折線各有圖例標示",
+        figure_description="圖(二)：三種處理方式（處理A、B、C）在第5天的細胞存活率長條圖，各長條均有標示數值",
         chart_spec=chart_b_spec,
         case="read_off",
         expected_verdict="accept",
         label_reason=(
-            "第5天的數值直接從折線讀出；[2]指名圖(二)及兩個成員（處理B、處理C），"
-            "均在圖例和折線上有可見標示"
+            "各長條的數值直接從圖讀出；[2]指名圖(二)及兩個成員（處理B、處理C），"
+            "均在長條上有可見標示"
         ),
     ))
 
@@ -967,59 +1071,56 @@ def build_figure_route_items(image_dir: Path) -> list[FigureRouteEntry]:
     items.append(FigureRouteEntry(
         key="fig|chart_B|supplies_data",
         question_stem=(
-            "根據圖(二)的數據，請說明三種處理方式中細胞存活率下降最快的兩種，"
-            "並分析可能的原因。"
+            "根據圖(二)的數據，請分析存活率最低的兩種處理方式可能的共同原因。"
         ),
         rubric_level_2=(
-            "[2] 能正確分析存活率下降最快的處理方式（如A和C）以及可能的機制"
-            "（例：兩者可能干擾了細胞的抗氧化系統和粒線體功能），提供合理的生物學解釋。"
+            "[2] 能正確識別存活率較低的處理方式（如A和C），並提供合理的生物學解釋"
+            "（例：兩者可能干擾了細胞的抗氧化系統和粒線體功能）。"
             "學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。"
         ),
-        figure_description="圖(二)：三條折線（處理A、B、C）顯示5天內細胞存活率",
+        figure_description="圖(二)：三種處理方式第5天細胞存活率長條圖",
         chart_spec=chart_b_spec,
         case="supplies_data",
         expected_verdict="reject",
         label_reason=(
-            "雖然可以從圖讀出哪兩條下降最快，但[2]要求分析「可能的機制」，"
-            "機制集合開放，圖表只提供數值不決定原因；"
+            "[2]要求分析「共同原因」，原因集合開放，圖表只提供數值不決定原因；"
             "且[2]所列的「抗氧化系統和粒線體功能」在圖上無可見標示"
         ),
     ))
 
-    # --- Chart C: line chart (only 2 lines: 高溫 and 低溫) ---
+    # --- Chart C: bar chart (2 temperature conditions, peak photosynthesis rate) ---
+    # Note: _render_line_chart does not support the "series" key format;
+    # switched to histogram so the data actually renders on screen.
     chart_c_spec = {
         "render_mode": "chart",
-        "chart_type": "line_chart",
-        "title": "光合作用速率與光強度的關係",
+        "chart_type": "histogram",
+        "title": "高溫與低溫下的最高光合速率比較",
         "data": {
-            "x_values": [0, 200, 400, 600, 800, 1000],
-            "series": {
-                "高溫（35°C）": [2, 8, 14, 18, 20, 20],
-                "低溫（15°C）": [1, 5, 9, 12, 13, 13],
-            },
+            "bins": ["高溫（35°C）", "低溫（15°C）"],
+            "counts": [20, 13],
         },
-        "labels": {"x": "光強度（μmol/m²/s）", "y": "光合速率（μmol CO₂/m²/s）"},
+        "labels": {"x": "溫度條件", "y": "最高光合速率（μmol CO₂/m²/s）"},
     }
 
     # C1: read-off — figure has exactly 2 visible series; question asks about both
     items.append(FigureRouteEntry(
         key="fig|chart_C|read_off",
         question_stem=(
-            "根據圖(三)，在相同光強度下，高溫和低溫處理的光合作用速率有何差異？"
-            "請說明哪種溫度條件下光合速率更高。"
+            "根據圖(三)，高溫和低溫哪種溫度條件下光合速率更高？"
+            "請說明你從圖(三)中如何判斷。"
         ),
         rubric_level_2=(
-            "[2] 正確說明圖(三)中在相同光強度下，高溫（35°C）的光合速率始終高於低溫（15°C）；"
-            "兩個成員（高溫、低溫）均取自圖(三)的圖例。"
+            "[2] 正確說明圖(三)中高溫（35°C）的最高光合速率（20）高於低溫（15°C）的最高光合速率（13）；"
+            "兩個成員（高溫、低溫）均取自圖(三)的長條標示。"
             "學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。"
         ),
-        figure_description="圖(三)：兩條折線（高溫35°C、低溫15°C）顯示光合速率與光強度的關係，圖例清晰標示",
+        figure_description="圖(三)：兩個溫度條件（高溫35°C、低溫15°C）的最高光合速率長條圖，各長條均有數值標示",
         chart_spec=chart_c_spec,
         case="read_off",
         expected_verdict="accept",
         label_reason=(
-            "圖上恰好有兩條折線（高溫、低溫），集合等於全部成員；"
-            "[2]指名圖(三)及兩個成員，均以圖例形式可見"
+            "圖上恰好有兩個長條（高溫、低溫），集合等於全部成員；"
+            "[2]指名圖(三)及兩個成員，均以長條標示形式可見"
         ),
     ))
 
@@ -1030,11 +1131,11 @@ def build_figure_route_items(image_dir: Path) -> list[FigureRouteEntry]:
             "根據圖(三)，說明高溫、低溫和中溫三種條件下光合作用速率的差異。"
         ),
         rubric_level_2=(
-            "[2] 正確說明圖(三)中高溫（35°C）速率最高、中溫（25°C）次之、低溫（15°C）最低；"
+            "[2] 正確說明圖(三)中高溫（35°C）速率最高（20），中溫（25°C）次之（約16），低溫（15°C）最低（13）；"
             "三個成員（高溫、中溫、低溫）均取自圖(三)。"
             "學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。"
         ),
-        figure_description="圖(三)：兩條折線（高溫35°C、低溫15°C），無中溫折線",
+        figure_description="圖(三)：兩個長條（高溫35°C、低溫15°C），無中溫長條",
         chart_spec=chart_c_spec,
         case="absent_members",
         expected_verdict="reject",

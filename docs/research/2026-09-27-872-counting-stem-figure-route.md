@@ -99,15 +99,17 @@ Edge case: Hardy-Weinberg asks for "at least 3 of the 5 conditions" — this IS 
 | Category | Count | Expected label |
 |---|---|---|
 | Corpus positives | 4 | True |
-| Synthetic positives | 3 | True |
-| Dangerous FPs (corpus) | 5 | False |
-| Dangerous FPs (synthetic) | 4 | False |
-| Dangerous FPs (other) | 4 | False |
-| **Total** | **20** | — |
+| Synthetic positives | 5 | True |
+| Dangerous FPs (corpus) | 4 | False |
+| Dangerous FPs (synthetic) | 3 | False |
+| Dangerous FPs (other) | 9 | False |
+| **Total** | **25** | — |
 
-### Partial results (11 of 20 evaluated)
+The set was expanded from 20 to 25 entries after the initial run to ensure ≥3 entries per dangerous-FP category. Three new False entries: `dangerous_fp|material_count|3` (F1, third material-describing count), `dangerous_fp|count_one|3` (F6, third count-of-one), `dangerous_fp|material_supplied_set|1` (F5, 「哪些」 over a closed material-supplied set). Two new True entries: `synth|open_count_any|4` and `synth|open_count_any|5` (synthetic positives with conversion notes).
 
-API credits exhausted after 11 entries. The 9 unevaluated entries are all label=False (dangerous false-positive cases): `material_count|2`, `count_one|1`, `count_one|2`, `named_members|1`, `named_members|2`, `corpus|二氧化碳的產生與改變|4`, `synth|named_pair`, `synth|scientific_necessity`, `synth|passage_supplies`.
+### Partial results (11 of 25 evaluated)
+
+API credits exhausted after 11 entries. The 14 unevaluated entries include all label=False dangerous-FP cases not yet evaluated and the 2 new label=True synthetic positives: `material_count|2`, `count_one|1`, `count_one|2`, `named_members|1`, `named_members|2`, `corpus|二氧化碳的產生與改變|4`, `synth|named_pair`, `synth|scientific_necessity`, `synth|passage_supplies`, `material_count|3`, `count_one|3`, `material_supplied_set|1`, `synth|open_count_any|4`, `synth|open_count_any|5`.
 
 | Result | Count | On evaluated (n=11) |
 |---|---|---|
@@ -115,7 +117,7 @@ API credits exhausted after 11 entries. The 9 unevaluated entries are all label=
 | FN | 1 | — |
 | FP | 0 | — |
 | TN | 4 | — |
-| Unevaluated | 9 | — |
+| Unevaluated | 14 | — |
 
 Recall on evaluated positives: **6/7 = 85.7%**  
 FPR on evaluated negatives: **0/4 = 0.0%**
@@ -140,7 +142,7 @@ All 4 evaluated negatives correctly identified as False:
 
 ### Harness status
 
-The harness built 4 chart images (A: bar chart of 4 groups; B: line chart of 3 series; C: line chart of 2 series; D: pie chart of 3 segments) and 9 matched-pair items in three categories:
+The harness built 4 chart images (A: histogram of 4 groups; B: histogram of 3 bars; C: histogram of 2 bars; D: pie chart of 3 segments) and 9 matched-pair items in three categories:
 
 | Case | Items | Expected verdict | LLM evaluations |
 |---|---|---|---|
@@ -150,9 +152,14 @@ The harness built 4 chart images (A: bar chart of 4 groups; B: line chart of 3 s
 
 Chart images: `docs/research/872-counting-stem-figure-route/images/fig_{chart_A,chart_B,chart_C,chart_D}.png`
 
-**Note on chart labels**: The server environment has no CJK font installed; chart axis and legend text rendered as placeholder boxes (□). This does not invalidate the image as a test vehicle — the numeric values and structural layout are correct, and the LLM verifier receives the figure_description in text as well. However, the figure-framing test depends on visible labels matching what [2] claims. For the relabelled corpus, the original research ran text-only (no images); for the generated items here, the CJK rendering gap means the model would see unlabelled bars/lines and would need to rely on figure_description alone. A re-run with CJK fonts installed would be more informative. This is recorded as a caveat.
+**CJK font fix**: Charts B and C were originally specified as `line_chart` with a `series` dict format that `src/renderer.py`'s `_render_line_chart` does not support; they are now rendered as histograms. All four chart images were re-rendered using `scripts/research/rerender_872_images.py`, which registers WenQuanYi Zen Hei from `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc` via `fontManager.addfont()` before importing `src.renderer`, so all axis labels and titles are legible in the committed images.
 
-**No LLM evaluation completed** — API credit exhaustion.
+**Rerun command** (reads cache first; only unevaluated entries make new API calls):
+```
+uv run python scripts/research/rubric_872_harness.py
+```
+
+**No LLM evaluation completed for figure-route** — API credit exhaustion.
 
 ---
 
@@ -179,7 +186,7 @@ Note: The `details` sentence must name **both** fixes ("逐一點名各成員" /
 ### Figure-route check
 
 **Recommendation: Cannot determine** — 0 LLM evaluations completed.  
-The harness is built and the images are committed. Re-run when API credits are available. Given the CJK font gap in the rendering environment, a re-run should either install a CJK font or use alphanumeric-only chart labels.
+The harness is built and the images are committed (CJK labels legible). Re-run when API credits are available: `uv run python scripts/research/rubric_872_harness.py`.
 
 ---
 
@@ -194,4 +201,4 @@ The harness is built and the images are committed. Re-run when API credits are a
 | counting_stem recall (partial, n=7 positives) | 6/7 = 85.7% |
 | counting_stem FPR (partial, n=4 negatives) | 0/4 = 0.0% |
 | Figure-route evaluations | 0/9 |
-| Chart images rendered | 4 (with CJK tofu; numeric values correct) |
+| Chart images rendered | 4 (CJK labels legible via WenQuanYi Zen Hei) |
