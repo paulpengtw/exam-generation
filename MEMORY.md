@@ -53,6 +53,27 @@ Durable gotchas and decisions for all agents and developers working on this repo
    all stack-walk paths.
    Fixed in `server/db_attribution.py` `_origin_frames()`.
 
+8. **Post-draft subject hooks can change signed content after the last draft; the core must commit that before verification (#746, 2026-09-27).**
+   `src/common/generation_core.py::generate_one_core` runs `spec.ensure_visual_spec_fn`
+   after the last 小題 draft commit. Subject hooks mutate more than the top-level
+   `chart_spec`: 社會領域 `_ss_ensure_visual_spec` stamps ICCS axes (`內容領域`,
+   `認知歷程` via `_derive_iccs_axes`), and 自然科學 `_ns_ensure_visual_spec` repairs
+   小題 `chart_spec`. The core used to commit a revision only for a top-level
+   `chart_spec` change, so the verifier was bound to a stale `content_revision`, the
+   next `verified` commit bumped the ledger, and the terminal review degraded to
+   `unknown` ("no matching verification evidence"). Fixed by comparing
+   `_visual_content_marker` (→ phase `corrected`) and `_full_content_marker` (→ phase
+   `draft`) before/after the hook; social-studies streams therefore carry one extra
+   `draft` question_update. `CONTENT_SIGNATURE_EXCLUDED_KEYS` in
+   `src/common/generation_events.py` is the single key set shared by that check and
+   `server/generate/snapshot_ledger.py`; add new non-content keys there, never to one
+   side only. Any new hook that mutates question content between drafts and verification
+   must go through a revision commit. Regressions:
+   `tests/test_verification_trail.py::test_post_draft_non_visual_mutation_binds_revision_to_verifier`,
+   `::test_post_draft_sub_chart_spec_mutation_binds_revision_to_verifier`,
+   `::test_post_draft_only_excluded_key_mutation_emits_no_extra_update`, and
+   `tests/server/test_correction_structure_persistence.py::test_revision_binding_across_subjects_and_outcomes`.
+
 ## 核心問題 planning diagnosis (#763, 2026-09-14)
 
 - The original provider response for the staging `2 candidates, expected 3`

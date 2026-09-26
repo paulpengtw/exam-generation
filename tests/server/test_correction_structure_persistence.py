@@ -50,6 +50,41 @@ def _stream_events(response: Any) -> list[tuple[str, dict[str, Any]]]:
     return events
 
 
+def _stream_events_full(
+    response: Any,
+) -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
+    """Return ``(event_name, context, payload)`` triples for every v2 envelope.
+
+    Unlike ``_stream_events``, the context dict is preserved unmodified so
+    callers can read per-event fields such as ``content_revision`` that live in
+    the context rather than the payload (e.g. ``question_update``, ``result``).
+    Non-envelope frames are skipped.
+    """
+    result: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
+    for frame in response.text.replace("\r\n", "\n").split("\n\n"):
+        fields = {
+            key: value
+            for line in frame.splitlines()
+            if ":" in line
+            for key, value in [line.split(":", 1)]
+        }
+        if "event" not in fields:
+            continue
+        raw_data = fields.get("data", "").strip() or "{}"
+        data = json.loads(raw_data)
+        if (
+            isinstance(data, dict)
+            and "context" in data
+            and "payload" in data
+            and isinstance(data["context"], dict)
+            and isinstance(data["payload"], dict)
+        ):
+            result.append(
+                (fields["event"].strip(), data["context"], data["payload"])
+            )
+    return result
+
+
 class _CorrectionProvider:
     """Deterministic OpenAI-compatible responses for one real subject pipeline."""
 
@@ -384,14 +419,17 @@ def test_correction_structure_persists_through_sse_history_and_log(
     updates = [data for name, data in events if name == "question_update"]
     # #744 publishes the initial shell and one progressive draft per
     # successfully assembled 小題 before the first verified snapshot.
-    expected_phases = ["draft"] * 6 + ["verified"]
+    # #746: SS _ss_ensure_visual_spec stamps ICCS axes (non-visual) → one extra draft
+    # update after all 小題 are assembled; NS and math hooks do not mutate content here.
+    n_drafts = 7 if subject == "social_studies" else 6
+    expected_phases = ["draft"] * n_drafts + ["verified"]
     for correction in corrections:
         if correction == "valid":
             expected_phases.append("corrected")
         expected_phases.append("verified")
     assert [data["phase"] for data in updates] == expected_phases
     draft_updates = [data for data in updates if data["phase"] == "draft"]
-    assert len(draft_updates) == 6
+    assert len(draft_updates) == n_drafts  # #746
     assert draft_updates[0]["question"].get("subquestions", []) == []
     assert len(draft_updates[-1]["question"]["subquestions"]) == 5
     verified_updates = [data for data in updates if data["phase"] == "verified"]
@@ -642,10 +680,11 @@ def test_concurrent_questions_keep_correction_decisions_and_history_isolated(
             data for name, data in events
             if name == "question_update" and data["question"]["id"] == question_id
         ]
+        # #746: SS gets an extra draft for ICCS axes stamping (7 drafts total)
         assert [update["phase"] for update in updates] == (
-            (["draft"] * 6 + ["verified", "verified"])
+            (["draft"] * 7 + ["verified", "verified"])
             if outcome == "rejected"
-            else (["draft"] * 6 + ["verified", "corrected", "verified"])
+            else (["draft"] * 7 + ["verified", "corrected", "verified"])
         )
         entries = [
             data for name, data in events
@@ -696,3 +735,192 @@ def test_concurrent_questions_keep_correction_decisions_and_history_isolated(
             data for name, data in events
             if name == "trail" and data["question_id"] == saved["id"]
         ]
+
+
+@pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
+@pytest.mark.parametrize(
+    ("corrections", "max_retries", "accepted"),
+    [
+        pytest.param(["valid"], 1, True, id="accepted"),
+        pytest.param(["short"], 1, False, id="rejected"),
+    ],
+)
+def test_revision_binding_across_subjects_and_outcomes(
+    transport_client: Any,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    corrections: list[str],
+    max_retries: int,
+    accepted: bool,
+    subject: str,
+) -> None:
+    """#746: content_revision is consistently bound across the stream, trail, and history.
+
+    Assertions (per subject × correction outcome):
+
+    Accepted correction (``corrections=["valid"]``):
+    - ``question_update`` context ``content_revision`` values: pre-correction
+      verified phase carries R1; the corrected phase carries R2 > R1; the final
+      verified phase (after reverification) still carries R2.
+    - ``trail`` events: initial and first (failed) verification carry R1;
+      the correction entry and the final (passed) verification carry R2.
+    - ``question_terminal``: ``final_revision == R2``, ``review.status == 'passed'``,
+      ``review.content_revision == R2``.
+
+    Rejected correction (``corrections=["short"]``):
+    - No ``corrected`` phase update; both verified phases carry R1.
+    - All trail entries carry R1.
+    - ``question_terminal``: ``final_revision == R1``, ``review.status == 'failed'``,
+      ``review.content_revision == R1``.
+
+    History read-back: ``detail["verification_trail"]`` matches the stream's
+    trail events (sibling 歷程讀回指向相同版本).
+    """
+    provider = _CorrectionProvider(corrections, subject)
+    monkeypatch.setattr(
+        "openai.resources.chat.completions.Completions.create", provider
+    )
+    payload = _resolved_payload(transport_client, max_retries=max_retries, subject=subject)
+
+    response = transport_client.post("/api/generate", json=payload)
+    assert response.status_code == 200, response.text[:1000]
+
+    full_events = _stream_events_full(response)
+    events = _stream_events(response)
+
+    # --- question_update revisions (content_revision is in the context) ---
+    update_phases_revisions: list[tuple[int | None, str]] = [
+        (ctx.get("content_revision"), p["phase"])
+        for name, ctx, p in full_events
+        if name == "question_update"
+    ]
+    verified_revisions = [r for r, phase in update_phases_revisions if phase == "verified"]
+    assert len(verified_revisions) >= 2, (
+        f"[{subject}/{corrections}] expected ≥2 verified phases, got {verified_revisions}"
+    )
+    R1 = verified_revisions[0]
+    assert isinstance(R1, int) and R1 >= 1, (
+        f"[{subject}/{corrections}] R1 must be a positive int, got {R1!r}"
+    )
+
+    # --- trail events ---
+    trail_events = [data for name, data in events if name == "trail"]
+    verification_entries = [e for e in trail_events if e.get("kind") == "verification"]
+    correction_entries = [e for e in trail_events if e.get("kind") == "correction"]
+    initial_entries = [e for e in trail_events if e.get("kind") == "initial"]
+
+    assert len(initial_entries) == 1
+    assert initial_entries[0].get("content_revision") == R1, (
+        f"[{subject}/{corrections}] initial trail entry content_revision="
+        f"{initial_entries[0].get('content_revision')!r}, expected R1={R1}"
+    )
+    assert len(verification_entries) >= 1
+    assert verification_entries[0].get("content_revision") == R1, (
+        f"[{subject}/{corrections}] first verification entry content_revision="
+        f"{verification_entries[0].get('content_revision')!r}, expected R1={R1}"
+    )
+
+    # --- question_terminal ---
+    terminal_events = [data for name, data in events if name == "question_terminal"]
+    assert len(terminal_events) == 1
+    terminal = terminal_events[0]
+
+    if accepted:
+        # corrected update exists and bumps to R2 > R1
+        corrected_revisions = [r for r, phase in update_phases_revisions if phase == "corrected"]
+        assert len(corrected_revisions) == 1, (
+            f"[{subject}/{corrections}] expected 1 corrected phase, got {corrected_revisions}"
+        )
+        R2 = corrected_revisions[0]
+        assert isinstance(R2, int) and R2 > R1, (
+            f"[{subject}/{corrections}] R2={R2!r} must exceed R1={R1}"
+        )
+
+        # Final verified update carries R2
+        assert verified_revisions[-1] == R2, (
+            f"[{subject}/{corrections}] final verified phase revision="
+            f"{verified_revisions[-1]!r}, expected R2={R2}"
+        )
+
+        # result context carries R2
+        result_revisions = [
+            ctx.get("content_revision")
+            for name, ctx, _ in full_events
+            if name == "result"
+        ]
+        assert result_revisions == [R2], (
+            f"[{subject}/{corrections}] result content_revision={result_revisions!r}, "
+            f"expected [R2={R2}]"
+        )
+
+        # Correction trail entry targets R2
+        assert len(correction_entries) == 1
+        assert correction_entries[0].get("content_revision") == R2, (
+            f"[{subject}/{corrections}] correction entry content_revision="
+            f"{correction_entries[0].get('content_revision')!r}, expected R2={R2}"
+        )
+
+        # Final (reverification) entry is at R2 and passed
+        assert len(verification_entries) == 2
+        assert verification_entries[1].get("content_revision") == R2, (
+            f"[{subject}/{corrections}] reverification entry content_revision="
+            f"{verification_entries[1].get('content_revision')!r}, expected R2={R2}"
+        )
+        assert verification_entries[1].get("passed") is True
+
+        # Terminal
+        assert terminal.get("final_revision") == R2, (
+            f"[{subject}/{corrections}] terminal final_revision={terminal.get('final_revision')!r}"
+            f", expected R2={R2}"
+        )
+        assert terminal.get("review", {}).get("status") == "passed", (
+            f"[{subject}/{corrections}] terminal review.status={terminal.get('review')!r}"
+        )
+        assert terminal.get("review", {}).get("content_revision") == R2, (
+            f"[{subject}/{corrections}] terminal review.content_revision="
+            f"{terminal.get('review', {}).get('content_revision')!r}, expected R2={R2}"
+        )
+    else:
+        # No corrected update; no revision beyond R1 from verification alone
+        corrected_revisions = [r for r, phase in update_phases_revisions if phase == "corrected"]
+        assert corrected_revisions == [], (
+            f"[{subject}/{corrections}] unexpected corrected phases: {corrected_revisions}"
+        )
+        assert all(rev == R1 for rev in verified_revisions), (
+            f"[{subject}/{corrections}] all verified revisions must equal R1={R1}, "
+            f"got {verified_revisions}"
+        )
+
+        # Correction trail entry (rejected) carries R1
+        for entry in correction_entries:
+            assert entry.get("content_revision") == R1, (
+                f"[{subject}/{corrections}] rejected correction entry content_revision="
+                f"{entry.get('content_revision')!r}, expected R1={R1}"
+            )
+
+        # Final verification is at R1 and failed
+        assert verification_entries[-1].get("content_revision") == R1, (
+            f"[{subject}/{corrections}] final verification content_revision="
+            f"{verification_entries[-1].get('content_revision')!r}, expected R1={R1}"
+        )
+        assert verification_entries[-1].get("passed") is False
+
+        # Terminal
+        assert terminal.get("final_revision") == R1, (
+            f"[{subject}/{corrections}] terminal final_revision={terminal.get('final_revision')!r}"
+            f", expected R1={R1}"
+        )
+        assert terminal.get("review", {}).get("status") == "failed", (
+            f"[{subject}/{corrections}] terminal review.status={terminal.get('review')!r}"
+        )
+        assert terminal.get("review", {}).get("content_revision") == R1, (
+            f"[{subject}/{corrections}] terminal review.content_revision="
+            f"{terminal.get('review', {}).get('content_revision')!r}, expected R1={R1}"
+        )
+
+    # --- Sibling 歷程讀回：history read-back revisions match the stream ---
+    history = transport_client.get("/api/history")
+    assert history.status_code == 200
+    record_id = history.json()["items"][0]["id"]
+    detail = transport_client.get(f"/api/history/{record_id}")
+    assert detail.status_code == 200
+    assert detail.json()["verification_trail"] == trail_events

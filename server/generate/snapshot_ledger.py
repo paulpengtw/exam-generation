@@ -28,22 +28,11 @@ from pathlib import Path
 from typing import Any
 
 from server.generate.event_protocol import QuestionTerminalPayload
+from src.common.generation_events import CONTENT_SIGNATURE_EXCLUDED_KEYS
 
 # Keys to strip from the question at any depth before computing the signature.
-_EXCLUDED_KEYS: frozenset[str] = frozenset(
-    [
-        "verification",
-        "verification_trail",
-        "figure_policy_trail",
-        "reference_example_record",
-        "image_base64",
-        "metadata",
-        "review",
-        "progress",
-        "export",
-        "_export",
-    ]
-)
+# Shared with the generation core's post-draft change check.
+_EXCLUDED_KEYS: frozenset[str] = CONTENT_SIGNATURE_EXCLUDED_KEYS
 
 
 def _strip_excluded(obj: Any) -> Any:

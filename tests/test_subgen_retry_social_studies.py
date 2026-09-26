@@ -236,9 +236,10 @@ def test_model_identity_is_ignored_and_slots_are_emitted_incrementally() -> None
     ]
     assert [sub.序號 for sub in question.subquestions] == [1, 2, 3]
     assert [sub._plan_index for sub in question.subquestions] == [1, 2, 3]
-    assert len(updates) == 4
+    # #746: SS _ss_ensure_visual_spec stamps ICCS axes after sub-assembly → extra draft
+    assert len(updates) == 5
     assert len(updates[0][1]) == 0
-    assert sorted(len(rows) for _phase, rows in updates) == [0, 1, 2, 3]
+    assert sorted(len(rows) for _phase, rows in updates) == [0, 1, 2, 3, 3]
 
 
 def test_middle_slot_failure_keeps_fixed_identity_in_updates() -> None:

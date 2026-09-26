@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import inspect
+import json
 import logging
 import sys
 from collections.abc import Callable, Sequence
@@ -27,6 +28,7 @@ from pydantic import ValidationError
 from src.common.correction_decision import CorrectionDecision
 from src.common.figure_policy_trail import FigurePolicyTrailEvent
 from src.common.generation_events import (
+    CONTENT_SIGNATURE_EXCLUDED_KEYS,
     OperationScope,
     QuestionContext,
     new_operation_scope,
@@ -68,6 +70,30 @@ def _visual_content_marker(question: Any) -> tuple[Any, ...]:
             )
             for subquestion in getattr(question, "subquestions", [])
         ),
+    )
+
+
+def _full_content_marker(question: Any) -> Any:
+    """Stable marker of all ledger-signed content for post-draft hook comparisons."""
+    if not hasattr(question, "model_dump"):
+        return _visual_content_marker(question)  # conservative fallback for test doubles
+
+    def _strip(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {
+                k: _strip(v)
+                for k, v in obj.items()
+                if k not in CONTENT_SIGNATURE_EXCLUDED_KEYS
+            }
+        if isinstance(obj, list):
+            return [_strip(item) for item in obj]
+        return obj
+
+    # image_base64 fields are excluded here; embedded image bytes are produced after this hook.
+    return json.dumps(
+        _strip(question.model_dump(mode="json", exclude_none=True)),
+        sort_keys=True,
+        ensure_ascii=False,
     )
 
 
@@ -811,7 +837,8 @@ def generate_one_core(
     # ── Post-draft hook (SS: ensure_top_level_visual_spec) ────────────────
     visual_spec_scope = new_operation_scope(owner, kind="image_spec")
     if spec.ensure_visual_spec_fn is not None:
-        prior_chart_spec = question.chart_spec.model_copy() if question.chart_spec else None
+        prior_visual = _visual_content_marker(question)
+        prior_content = _full_content_marker(question)  # captures non-visual ledger-signed fields
         _call_with_optional_scope(
             spec.ensure_visual_spec_fn,
             question,
@@ -819,11 +846,19 @@ def generate_one_core(
             client,
             scope=visual_spec_scope,
         )
-        if question.chart_spec != prior_chart_spec:
+        if _visual_content_marker(question) != prior_visual:
             content_revision = _record_update_revision(
                 on_question_update,
                 question,
                 "corrected",
+                content_revision,
+                _revision_state,
+            )
+        elif _full_content_marker(question) != prior_content:  # e.g. ICCS axes stamped
+            content_revision = _record_update_revision(
+                on_question_update,
+                question,
+                "draft",
                 content_revision,
                 _revision_state,
             )

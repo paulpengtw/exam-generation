@@ -432,3 +432,301 @@ def test_all_subject_generation_wrappers_forward_the_trail_callback(monkeypatch)
     )
 
     assert captured == [callback, callback, callback]
+
+
+def test_reverification_entry_carries_post_correction_revision(tmp_path) -> None:
+    """#746 core: the reverification trail entry must bind the post-correction revision.
+
+    Uses ``_snapshot_spec`` (which mutates ``question.answer`` from ``'before'`` to
+    ``'after'`` on correction) and a simple ``on_question_update`` that returns
+    revision 1 for the initial content and revision 2 after correction.
+
+    This is the non-parametrized core assertion that was previously spread across
+    the vacuous parametrized ``test_746_reverify_revision_binding.py``.
+    """
+    failed = VerificationResult(
+        passed=False,
+        details="答案需要修正。",
+        my_answer="B",
+        provided_answer="A",
+        answer_match=False,
+    )
+    passed = failed.model_copy(
+        update={
+            "passed": True,
+            "details": "修正後正確。",
+            "my_answer": "A",
+            "answer_match": True,
+        }
+    )
+    trail = []
+
+    def on_question_update(question: object, _phase: str) -> int:
+        return 1 if getattr(question, "answer", None) == "before" else 2
+
+    generate_with_corrections_core(
+        config=Config(
+            output_dir=tmp_path,
+            model_execute="execute-model",
+            model_verify="verify-model",
+            model_correct="correct-model",
+        ),
+        client=_StubClient(),
+        params=SimpleNamespace(sub_question_count=1, subquestion_configs=[]),
+        question_id="q-746-core",
+        spec=_snapshot_spec([failed, passed]),
+        on_question_update=on_question_update,
+        on_trail_entry=trail.append,
+        max_retries=1,
+    )
+
+    kinds = [e.kind for e in trail]
+    assert kinds == ["initial", "verification", "correction", "verification"], kinds
+
+    R1 = trail[0].content_revision
+    assert isinstance(R1, int) and R1 >= 1, f"initial entry content_revision={R1!r}"
+
+    # First verification (pre-correction) must be at R1
+    assert trail[1].content_revision == R1, (
+        f"first verification carries {trail[1].content_revision!r}, expected R1={R1}"
+    )
+    assert trail[1].passed is False
+
+    # Correction entry must carry the post-correction revision R2 > R1
+    R2 = trail[2].content_revision
+    assert isinstance(R2, int) and R2 > R1, (
+        f"correction entry content_revision={R2!r} should exceed R1={R1}"
+    )
+
+    # Reverification entry must carry R2, not the stale R1
+    assert trail[3].content_revision == R2, (
+        f"reverification entry carries {trail[3].content_revision!r}, expected R2={R2}"
+    )
+    assert trail[3].passed is True
+
+
+def test_post_draft_non_visual_mutation_binds_revision_to_verifier(tmp_path) -> None:
+    """#746 (core): ensure_visual_spec_fn stamping non-visual fields (SS ICCS axes pattern)
+    must emit a draft commit so the verifier receives the post-hook content_revision."""
+    verdict = VerificationResult(
+        passed=True, details="ok", my_answer="A", provided_answer="A", answer_match=True,
+    )
+    seen_revisions: list[int | None] = []
+    update_calls: list[tuple[str, int]] = []
+
+    class _Q(SimpleNamespace):
+        def model_dump(self, *, mode: str = "python", exclude_none: bool = False, **_kw):
+            raw = {"id": self.id, "認知歷程": self.認知歷程, "subquestions": []}
+            if exclude_none:
+                return {k: v for k, v in raw.items() if v is not None}
+            return raw
+
+    def tracking_update(question, phase) -> int:
+        rev = len(update_calls) + 1
+        update_calls.append((phase, rev))
+        return rev
+
+    def hook_stamps_axes(question, _params, _client, **_kw) -> None:
+        question.認知歷程 = ["知識"]  # non-visual field (mirrors SS _derive_iccs_axes)
+
+    def verify_and_capture(*_a, content_revision=None, **_kw):
+        seen_revisions.append(content_revision)
+        return verdict
+
+    spec = dataclasses.replace(
+        _stub_spec(verdict),
+        parse_text_shell_fn=lambda _raw, qid, _params, _model: _Q(
+            id=qid, subquestions=[], chart_spec=None, 圖片=None, 認知歷程=None,
+        ),
+        ensure_visual_spec_fn=hook_stamps_axes,
+        verify_fn=verify_and_capture,
+    )
+    trail: list = []
+
+    generate_with_corrections_core(
+        config=Config(output_dir=tmp_path, model_execute="x"),
+        client=_StubClient(),
+        params=SimpleNamespace(sub_question_count=1, subquestion_configs=[]),
+        question_id="q-746-nv",
+        spec=spec,
+        on_question_update=tracking_update,
+        on_trail_entry=trail.append,
+    )
+
+    assert len(seen_revisions) == 1
+    revision_seen = seen_revisions[0]
+    assert isinstance(revision_seen, int) and revision_seen >= 1
+
+    # With fix: hook emits a "draft" update after non-visual mutation → 3 drafts total
+    # (text shell + sub-1 assembly + ICCS axes); without fix: only 2 drafts.
+    draft_updates = [(phase, rev) for phase, rev in update_calls if phase == "draft"]
+    assert len(draft_updates) == 3, (
+        f"expected 3 draft updates (text shell + sub-1 + non-visual hook), "
+        f"got {len(draft_updates)}: {update_calls!r}"
+    )
+    # Verifier must see the last draft revision (post-hook)
+    last_draft_rev = draft_updates[-1][1]
+    assert revision_seen == last_draft_rev, (
+        f"verifier saw revision {revision_seen!r} but "
+        f"post-hook draft revision is {last_draft_rev!r}"
+    )
+    assert trail[0].content_revision == revision_seen  # initial trail entry
+    assert trail[1].content_revision == revision_seen  # verification trail entry
+
+
+def test_post_draft_only_excluded_key_mutation_emits_no_extra_update(tmp_path) -> None:
+    """#746 regression: a hook that mutates ONLY ledger-excluded keys (review/progress)
+    must NOT emit an extra question_update and must leave the verifier bound to
+    the last draft revision from actual content changes.
+
+    RED before the CONTENT_SIGNATURE_EXCLUDED_KEYS constant fix (the old set lacked
+    review/progress so _full_content_marker saw the change and emitted a spurious
+    draft commit); GREEN after.
+    """
+    verdict = VerificationResult(
+        passed=True, details="ok", my_answer="A", provided_answer="A", answer_match=True,
+    )
+    seen_revisions: list[int | None] = []
+    update_calls: list[tuple[str, int]] = []
+
+    class _Q(SimpleNamespace):
+        def model_dump(self, *, mode: str = "python", exclude_none: bool = False, **_kw):
+            raw = {
+                "id": self.id,
+                "content": "question text",
+                "review": getattr(self, "review", None),
+                "progress": getattr(self, "progress", None),
+                "subquestions": [],
+            }
+            if exclude_none:
+                return {k: v for k, v in raw.items() if v is not None}
+            return raw
+
+    def tracking_update(question, phase) -> int:
+        rev = len(update_calls) + 1
+        update_calls.append((phase, rev))
+        return rev
+
+    def hook_stamps_excluded_keys_only(question, _params, _client, **_kw) -> None:
+        # Mutates ONLY ledger-excluded keys — should NOT be visible to _full_content_marker
+        question.review = {"status": "pending"}
+        question.progress = {"step": "review"}
+
+    def verify_and_capture(*_a, content_revision=None, **_kw):
+        seen_revisions.append(content_revision)
+        return verdict
+
+    spec = dataclasses.replace(
+        _stub_spec(verdict),
+        parse_text_shell_fn=lambda _raw, qid, _params, _model: _Q(
+            id=qid, subquestions=[], chart_spec=None, 圖片=None,
+        ),
+        ensure_visual_spec_fn=hook_stamps_excluded_keys_only,
+        verify_fn=verify_and_capture,
+    )
+    trail: list = []
+
+    generate_with_corrections_core(
+        config=Config(output_dir=tmp_path, model_execute="x"),
+        client=_StubClient(),
+        params=SimpleNamespace(sub_question_count=1, subquestion_configs=[]),
+        question_id="q-746-excluded",
+        spec=spec,
+        on_question_update=tracking_update,
+        on_trail_entry=trail.append,
+    )
+
+    # text shell draft + sub-1 draft = 2 total; hook touches only excluded keys
+    # so _full_content_marker must NOT change → no extra draft commit
+    draft_updates = [(phase, rev) for phase, rev in update_calls if phase == "draft"]
+    assert len(draft_updates) == 2, (
+        f"expected 2 draft updates (text-shell + sub-1 assembly), "
+        f"hook must not add more for excluded keys; "
+        f"got {len(draft_updates)}: {update_calls!r}"
+    )
+
+    # Verifier must see the last draft revision — no phantom revision from the hook
+    last_draft_rev = draft_updates[-1][1]
+    assert seen_revisions == [last_draft_rev], (
+        f"verifier saw revisions {seen_revisions!r} but "
+        f"expected [{last_draft_rev!r}] (last draft)"
+    )
+
+
+def test_post_draft_sub_chart_spec_mutation_binds_revision_to_verifier(tmp_path) -> None:
+    """#746 (core): ensure_visual_spec_fn repairing a sub-question's chart_spec (NS pattern)
+    must emit a corrected commit so content_revision is bound to the visual repair."""
+    verdict = VerificationResult(
+        passed=True, details="ok", my_answer="A", provided_answer="A", answer_match=True,
+    )
+    seen_revisions: list[int | None] = []
+    update_calls: list[tuple[str, int]] = []
+
+    class _Sub(SimpleNamespace):
+        pass
+
+    class _Q(SimpleNamespace):
+        pass  # No model_dump → _full_content_marker falls back to _visual_content_marker
+
+    def tracking_update(question, phase) -> int:
+        rev = len(update_calls) + 1
+        update_calls.append((phase, rev))
+        return rev
+
+    def hook_repairs_sub_chart_spec(question, _params, _client, **_kw) -> None:
+        # Mirrors NS _ns_ensure_visual_spec repairing a missing sub chart_spec
+        for sub in question.subquestions:
+            if getattr(sub, "chart_spec", None) is None:
+                sub.chart_spec = {"render_mode": "html", "description": "repaired"}
+
+    def verify_and_capture(*_a, content_revision=None, **_kw):
+        seen_revisions.append(content_revision)
+        return verdict
+
+    def parse_shell(_raw, qid, _params, _model):
+        q = _Q(id=qid, chart_spec=None, 圖片=None)
+        q.subquestions = []
+        return q
+
+    def parse_sub(_raw, _qid, _params, index):
+        return _Sub(序號=index, chart_spec=None, 圖片=None, image_generation_mode=None)
+
+    spec = dataclasses.replace(
+        _stub_spec(verdict),
+        parse_text_shell_fn=parse_shell,
+        parse_subquestion_fn=parse_sub,
+        ensure_visual_spec_fn=hook_repairs_sub_chart_spec,
+        verify_fn=verify_and_capture,
+    )
+    trail: list = []
+
+    generate_with_corrections_core(
+        config=Config(output_dir=tmp_path, model_execute="x"),
+        client=_StubClient(),
+        params=SimpleNamespace(sub_question_count=1, subquestion_configs=[]),
+        question_id="q-746-sub",
+        spec=spec,
+        on_question_update=tracking_update,
+        on_trail_entry=trail.append,
+    )
+
+    assert len(seen_revisions) == 1
+    revision_seen = seen_revisions[0]
+    assert isinstance(revision_seen, int) and revision_seen >= 1
+
+    # With fix: sub.chart_spec change is a visual change → "corrected" update emitted;
+    # without fix: top-level-only comparison misses sub-level visual changes → no corrected.
+    phases = [phase for phase, _ in update_calls]
+    assert "corrected" in phases, (
+        f"ensure_visual_spec_fn repaired sub.chart_spec but no 'corrected' update was emitted "
+        f"(phases={phases!r})"
+    )
+    # Verifier must see the revision from the corrected update (post-repair)
+    corrected_index = phases.index("corrected")
+    expected_revision = corrected_index + 1  # tracking_update returns len(update_calls)
+    assert revision_seen == expected_revision, (
+        f"verifier saw revision {revision_seen!r} but post-repair (corrected) revision is "
+        f"{expected_revision!r}"
+    )
+    assert trail[0].content_revision == revision_seen  # initial trail entry
+    assert trail[1].content_revision == revision_seen  # verification trail entry

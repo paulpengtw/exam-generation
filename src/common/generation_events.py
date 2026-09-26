@@ -12,6 +12,24 @@ import uuid
 from dataclasses import dataclass
 from typing import Union
 
+# These keys never count as question content.  The snapshot ledger strips them
+# at any depth before signing (it hashes decoded image_base64 bytes separately)
+# and the generation core's post-draft change check strips the same set.
+CONTENT_SIGNATURE_EXCLUDED_KEYS: frozenset[str] = frozenset(
+    [
+        "verification",
+        "verification_trail",
+        "figure_policy_trail",
+        "reference_example_record",
+        "image_base64",
+        "metadata",
+        "review",
+        "progress",
+        "export",
+        "_export",
+    ]
+)
+
 
 @dataclass(frozen=True)
 class RunContext:
