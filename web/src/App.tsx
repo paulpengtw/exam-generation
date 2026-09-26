@@ -16,6 +16,8 @@ export default function App() {
   useDocumentTitle();
   const router = useMemo(() => {
     const createdRouter = createBrowserRouter(routes);
+    // React Router's data router has no global `viewTransition` option.
+    // Wrapping navigate applies it to every Link/useNavigate call without touching useBlocker (ADR 0008/0013).
     const navigate = createdRouter.navigate.bind(createdRouter);
     createdRouter.navigate = ((to, options) => {
       if (typeof to === "number") return navigate(to, options);

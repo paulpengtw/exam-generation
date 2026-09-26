@@ -31,8 +31,6 @@ export function RedrawActionButton({
 }) {
   const t = useT();
   const [sameValue, setSameValue] = useState(false);
-  const [flashCount, setFlashCount] = useState(0);
-  const [flashActive, setFlashActive] = useState(false);
   const action = useActionFeedback<RedrawResult | void>({
     action: async () => {
       const result = await onRedraw();
@@ -44,9 +42,6 @@ export function RedrawActionButton({
     genericError: genericError ?? t("form.confirm_resolve_error"),
     onSuccess: (result) => {
       setSameValue(result?.sameValue === true);
-      setFlashCount((count) => count + 1);
-      setFlashActive(true);
-      window.setTimeout(() => setFlashActive(false), durations.standard);
       onSuccess?.(result);
     },
   });
@@ -54,10 +49,6 @@ export function RedrawActionButton({
   useEffect(() => {
     onPendingChange?.(action.state === "pending");
   }, [action.state, onPendingChange]);
-
-  const handlePendingChange = useCallback((pending: boolean) => {
-    onPendingChange?.(pending);
-  }, [onPendingChange]);
 
   return (
     <>
@@ -68,11 +59,9 @@ export function RedrawActionButton({
         doneLabel={label}
         disabled={disabled}
         data-testid="redraw-control"
-        data-redraw-flash={flashCount > 0 ? String(flashCount) : undefined}
-        className={flashActive ? "redraw-flash" : undefined}
         onPress={() => {
           setSameValue(false);
-          handlePendingChange(true);
+          onPendingChange?.(true);
         }}
       />
       {sameValue && (

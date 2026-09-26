@@ -278,6 +278,12 @@ describe("GeneratePage — v2 evidence rendering", () => {
     expect(screen.getByTestId("missing-subquestion-2")).toBeInTheDocument();
     expect(screen.getByText("文本 A")).toBeInTheDocument();
     expect(screen.getByText("文本 B")).toBeInTheDocument();
+    expect(screen.getAllByText("地理", { exact: true }).length).toBeGreaterThan(0);
+
+    const answerButtons = screen.getAllByRole("button", { name: "card.show_answer" });
+    fireEvent.click(answerButtons[0]);
+    expect(screen.getAllByText("A", { exact: true }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("解析", { exact: true }).length).toBeGreaterThan(0);
   });
 
   it.each([
@@ -316,9 +322,7 @@ describe("GeneratePage — v2 evidence rendering", () => {
     expect(screen.getByText("文本 A")).toBeInTheDocument();
     expect(screen.getByText("文本 B")).toBeInTheDocument();
     expect(screen.getByText("文本 C")).toBeInTheDocument();
-    if (subject === "social_studies") {
-      expect(screen.getAllByText("地理", { exact: true }).length).toBeGreaterThan(0);
-    } else if (subject === "natural_sciences") {
+    if (subject === "natural_sciences") {
       expect(
         screen.getAllByText(
           "環境能力一：解釋人類與地球系統的相互作用對環境的影響",
@@ -348,6 +352,21 @@ describe("GeneratePage — v2 evidence rendering", () => {
     }
     expect(screen.getAllByText("A", { exact: true }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("解析", { exact: true }).length).toBeGreaterThan(0);
+  });
+
+  it("renders real single-question math cards without grouped structure", () => {
+    generateState.runEvidence = replayFixture("math_single_interleaved.jsonl");
+
+    render(<GeneratePage subject="math" />);
+
+    expect(screen.getAllByText("單一題", { exact: true })).toHaveLength(2);
+    expect(screen.getAllByText("選擇題", { exact: true })).toHaveLength(2);
+    expect(screen.getAllByText("形成", { exact: true })).toHaveLength(2);
+    expect(screen.getByText("question for worker A: q_RUN_001", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("question for worker B: q_RUN_002", { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("card.coreQuestion", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("card.passage", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryAllByText(/card\.subquestion/)).toHaveLength(0);
   });
 
   it("keeps math group content visible through the text shell and partial subquestion updates", () => {

@@ -8,7 +8,7 @@ function sourceFiles(): string[] {
   return readdirSync(sourceRoot, { recursive: true, withFileTypes: false })
     .filter((file): file is string => typeof file === "string")
     .filter((file) => /\.(ts|tsx|css)$/.test(file))
-    .filter((file) => !/\.test\.(ts|tsx)$/.test(file))
+    .filter((file) => !/\.(test|spec)\.(ts|tsx)$/.test(file))
     .map((file) => resolve(sourceRoot, file))
     .filter((file) => statSync(file).isFile());
 }
@@ -28,14 +28,12 @@ describe("motion source guards", () => {
     for (const { file, source } of sourceEntries()) {
       if (!/\.(ts|tsx)$/.test(file)) continue;
 
-      const classNameValues = [
-        ...source.matchAll(/className\s*=\s*\{?\s*["'`]([\s\S]*?)["'`]\s*\}?/g),
-      ];
-      for (const match of classNameValues) {
-        const classList = match[1];
-        if (!/\btransition(?:-[a-z-]+)?\b/.test(classList)) continue;
+      const stringLiterals = [...source.matchAll(/(["'`])(?:\\[\s\S]|(?!\1)[\s\S])*?\1/g)];
+      for (const match of stringLiterals) {
+        const classList = match[0].slice(1, -1);
+        if (!/(^|\s)transition(?:-[a-z]+)?(\s|$)/.test(classList)) continue;
         if (
-          !/\b(duration-(?:quick|standard|loop-shimmer|loop-spinner)|ease-(?:signature|exit|loop))\b/.test(
+          !/(^|\s)(duration-(?:quick|standard|loop-shimmer|loop-spinner)|ease-(?:signature|exit|loop))(\s|$)/.test(
             classList,
           )
         ) {

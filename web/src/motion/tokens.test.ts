@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { writeMotionTokens } from "./tokens";
+import { easings, motionEase, writeMotionTokens } from "./tokens";
 
 const indexCss = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 
@@ -39,5 +39,12 @@ describe("writeMotionTokens", () => {
     expect(indexCss).toContain("motion-opacity-pulse");
     expect(indexCss).toContain(".streaming-caret");
     expect(indexCss).toContain("transform: none !important");
+  });
+
+  it("exports Motion-ready easing tuples derived from the shared easings", () => {
+    expect(motionEase.signature).toEqual([...easings.signature]);
+    expect(motionEase.exit).toEqual([...easings.exit]);
+    expect(motionEase.loop).toEqual([...easings.loop]);
+    expect(motionEase.signature).not.toBe(easings.signature);
   });
 });

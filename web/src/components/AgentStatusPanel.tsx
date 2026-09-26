@@ -8,6 +8,17 @@ interface Props {
   requestedTotal: number;
 }
 
+function localizedLabel(
+  t: (key: string) => string,
+  key: string,
+  fallback: string,
+): { value: string; translated: boolean } {
+  const value = t(key);
+  return value === key
+    ? { value: fallback, translated: false }
+    : { value, translated: true };
+}
+
 function StatusDot({ status }: { status: AgentStatus }) {
   if (status === "running") {
     return <Spinner className="h-2.5 w-2.5 text-blue-500 flex-shrink-0" />;
@@ -53,10 +64,16 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
   }, [lane.streamingThinking, lane.streamingContent]);
 
   const [baseAgent, instanceIdx] = lane.agent.split("#");
-  const baseAgentLabel = t(`agent.${baseAgent}` as Parameters<typeof t>[0]) || baseAgent;
-  const agentLabel = instanceIdx ? `${baseAgentLabel} #${instanceIdx}` : baseAgentLabel;
+  const baseAgentLabel = localizedLabel(
+    t,
+    `agent.${baseAgent}`,
+    baseAgent,
+  );
+  const agentLabel = instanceIdx
+    ? `${baseAgentLabel.value} #${instanceIdx}`
+    : baseAgentLabel.value;
   const stageLabel = lane.currentStage
-    ? (t(`stage.${lane.currentStage}` as Parameters<typeof t>[0]) || lane.currentStage)
+    ? localizedLabel(t, `stage.${lane.currentStage}`, lane.currentStage)
     : null;
 
   const activeHistory = lane.stageHistory.filter((h) => h.endedAt !== undefined);
@@ -93,7 +110,9 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
       {/* Header */}
       <div className="flex items-center gap-2">
         <StatusDot status={effectiveStatus} />
-        <span className="sentry-unmask text-sm font-semibold text-gray-800">{agentLabel}</span>
+        <span className={`${baseAgentLabel.translated ? "sentry-unmask " : ""}text-sm font-semibold text-gray-800`}>
+          {agentLabel}
+        </span>
         {aggregateMode ? (
           <span
             data-testid="agent-aggregate-counts"
@@ -106,7 +125,9 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
         ) : (
           <>
             {stageLabel && (
-              <span className="sentry-unmask text-xs text-gray-500 truncate">{stageLabel}</span>
+              <span className={`${stageLabel.translated ? "sentry-unmask " : ""}text-xs text-gray-500 truncate`}>
+                {stageLabel.value}
+              </span>
             )}
             {currentEntry && lane.status === "running" && (
               <span className="ml-auto">
@@ -166,11 +187,11 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
           <div className="mt-1 space-y-0.5">
             {activeHistory.map((h, i) => {
               const dur = h.endedAt ? ((h.endedAt - h.startedAt) * 1000).toFixed(0) : "—";
-              const label = t(`stage.${h.stage}` as Parameters<typeof t>[0]) || h.stage;
+              const label = localizedLabel(t, `stage.${h.stage}`, h.stage);
               return (
                 <div key={i} className="flex items-center gap-2 text-gray-500">
                   <span className="text-green-500">✓</span>
-                  <span>{label}</span>
+                  <span className={label.translated ? "sentry-unmask" : undefined}>{label.value}</span>
                   {h.retry !== undefined && (
                     <span className="text-gray-400">
                       ({t("agent_panel.retry").replace("{n}", String(h.retry))})

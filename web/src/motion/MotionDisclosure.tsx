@@ -2,16 +2,13 @@ import type { ReactNode } from "react";
 import { AnimatePresence, m, useReducedMotion } from "motion/react";
 
 import MotionRoot from "./MotionRoot";
-import { durations, easings } from "./tokens";
+import { durations, motionEase } from "./tokens";
 
 export interface MotionDisclosureProps {
   open: boolean;
   children: ReactNode;
   className?: string;
 }
-
-const signatureEase = [...easings.signature] as [number, number, number, number];
-const exitEase = [...easings.exit] as [number, number, number, number];
 
 /**
  * Shared height/opacity disclosure motion. The content remains mounted for a
@@ -26,10 +23,10 @@ export function MotionDisclosure({
   const reducedMotion = useReducedMotion();
   const enterTransition = reducedMotion
     ? { duration: 0 }
-    : { duration: durations.standard / 1000, ease: signatureEase };
+    : { duration: durations.standard / 1000, ease: motionEase.signature };
   const exitTransition = reducedMotion
     ? { duration: 0 }
-    : { duration: durations.quick / 1000, ease: exitEase };
+    : { duration: durations.quick / 1000, ease: motionEase.exit };
 
   return (
     <MotionRoot>

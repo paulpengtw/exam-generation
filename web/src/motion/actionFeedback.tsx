@@ -52,6 +52,14 @@ export interface ActionFeedback<T> {
   reset: () => void;
 }
 
+type FailureFeedback = Pick<ActionFeedback<unknown>, "reason" | "retry" | "dismiss">;
+
+export function firstFailure(
+  ...feedbacks: readonly FailureFeedback[]
+): FailureFeedback | null {
+  return feedbacks.find((feedback) => feedback.reason !== null) ?? null;
+}
+
 type ClearDoneRegistration = () => void;
 
 interface ActionFeedbackContextValue {

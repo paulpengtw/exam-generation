@@ -21,6 +21,7 @@ import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import {
   ActionButton,
   ActionFailure,
+  firstFailure,
   InlineFailureNotice,
   useActionFeedback,
 } from "../motion/actionFeedback";
@@ -30,7 +31,7 @@ import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspa
 import { projectGenerationCardEvidence, projectGenerationEvidence } from "../lib/generationStream";
 import { runPhaseLabel, selectRunPhase } from "../motion/runPhase";
 import MotionRoot from "../motion/MotionRoot";
-import { choreography, durations, easings } from "../motion/tokens";
+import { choreography, durations, motionEase } from "../motion/tokens";
 import {
   initRecoveryStore,
   initRecoveryStoreAsync,
@@ -80,8 +81,6 @@ function AnimatedQuestionCard({
   index: number;
 }) {
   const reducedMotion = useReducedMotion();
-  const signatureEase = [...easings.signature] as [number, number, number, number];
-  const exitEase = [...easings.exit] as [number, number, number, number];
   const delay = reducedMotion
     ? 0
     : Math.min(index * choreography.stagger, choreography.staggerCap) / 1000;
@@ -96,13 +95,13 @@ function AnimatedQuestionCard({
           : {
               opacity: 0,
               y: choreography.travel,
-              transition: { duration: durations.quick / 1000, ease: exitEase },
+              transition: { duration: durations.quick / 1000, ease: motionEase.exit },
             }
       }
       transition={
         reducedMotion
           ? { duration: 0 }
-          : { duration: durations.standard / 1000, ease: signatureEase, delay }
+          : { duration: durations.standard / 1000, ease: motionEase.signature, delay }
       }
     >
       {children}
@@ -430,6 +429,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     genericError: t("generate.download_odt_error"),
     getFilename: (filename) => filename,
   });
+  const exportFailure = firstFailure(jsonFeedback, odtFeedback);
 
   const showProgress = runEvidence !== null || !(progressLines.length === 0 && status === "idle");
   const runState: RunState =
@@ -674,11 +674,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                   </button>
                 </div>
               </div>
-              <InlineFailureNotice
-                reason={jsonFeedback.reason ?? odtFeedback.reason}
-                onRetry={jsonFeedback.reason ? jsonFeedback.retry : odtFeedback.retry}
-                onDismiss={jsonFeedback.reason ? jsonFeedback.dismiss : odtFeedback.dismiss}
-              />
+              {exportFailure && (
+                <InlineFailureNotice
+                  reason={exportFailure.reason}
+                  onRetry={exportFailure.retry}
+                  onDismiss={exportFailure.dismiss}
+                />
+              )}
             </div>
             <MotionRoot>
               <div className="space-y-3">

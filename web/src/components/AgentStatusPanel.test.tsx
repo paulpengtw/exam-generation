@@ -44,6 +44,19 @@ describe("AgentStatusPanel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps an unknown stage fallback masked", () => {
+    render(
+      <AgentStatusPanel
+        lanes={[{ ...ACTIVE_LANE, currentStage: "unknown_stage" }]}
+        requestedTotal={1}
+      />,
+    );
+
+    const fallback = screen.getByText("unknown_stage", { exact: true });
+    expect(fallback).not.toHaveClass("sentry-unmask");
+    expect(screen.queryByText("stage.unknown_stage", { exact: true })).not.toBeInTheDocument();
+  });
+
   it("shows the aggregate label only for a multi-question run", () => {
     const { rerender } = render(
       <AgentStatusPanel lanes={[ACTIVE_LANE]} requestedTotal={3} />,

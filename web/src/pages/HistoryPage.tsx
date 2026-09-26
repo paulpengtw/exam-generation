@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import {
   ActionButton,
+  firstFailure,
   InlineFailureNotice,
   useActionFeedback,
 } from "../motion/actionFeedback";
@@ -102,9 +103,7 @@ function HistoryList() {
   const hasPrev = offset > 0;
   const hasNext = offset + PAGE_SIZE < total;
   const paging = previousFeedback.state === "pending" || nextFeedback.state === "pending";
-  const pagingReason = previousFeedback.reason ?? nextFeedback.reason;
-  const pagingRetry = previousFeedback.reason ? previousFeedback.retry : nextFeedback.retry;
-  const pagingDismiss = previousFeedback.reason ? previousFeedback.dismiss : nextFeedback.dismiss;
+  const pagingFailure = firstFailure(previousFeedback, nextFeedback);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -246,11 +245,13 @@ function HistoryList() {
               className="min-w-28 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
-          <InlineFailureNotice
-            reason={pagingReason}
-            onRetry={pagingRetry}
-            onDismiss={pagingDismiss}
-          />
+          {pagingFailure && (
+            <InlineFailureNotice
+              reason={pagingFailure.reason}
+              onRetry={pagingFailure.retry}
+              onDismiss={pagingFailure.dismiss}
+            />
+          )}
         </div>
       </main>
     </div>

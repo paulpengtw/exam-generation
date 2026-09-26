@@ -22,6 +22,7 @@ import type { ModificationWorkspaceSnapshot } from "../lib/workspace/adapters/ty
 import { useT } from "../i18n/useT";
 import {
   ActionButton,
+  firstFailure,
   InlineFailureNotice,
   useActionFeedback,
 } from "../motion/actionFeedback";
@@ -901,6 +902,7 @@ export default function QuestionCard({
     genericError: t("card.download_odt_error"),
     getFilename: (filename) => filename,
   });
+  const exportFailure = firstFailure(jsonFeedback, pngFeedback, odtFeedback);
 
   const handleSelectionMouseUp = useCallback(() => {
     if (!selectionEnabled || isRunInFlight || !cardRef.current) return;
@@ -1441,11 +1443,13 @@ export default function QuestionCard({
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         />
       </div>
-      <InlineFailureNotice
-        reason={jsonFeedback.reason ?? pngFeedback.reason ?? odtFeedback.reason}
-        onRetry={jsonFeedback.reason ? jsonFeedback.retry : pngFeedback.reason ? pngFeedback.retry : odtFeedback.retry}
-        onDismiss={jsonFeedback.reason ? jsonFeedback.dismiss : pngFeedback.reason ? pngFeedback.dismiss : odtFeedback.dismiss}
-      />
+      {exportFailure && (
+        <InlineFailureNotice
+          reason={exportFailure.reason}
+          onRetry={exportFailure.retry}
+          onDismiss={exportFailure.dismiss}
+        />
+      )}
     </div>
   );
 }

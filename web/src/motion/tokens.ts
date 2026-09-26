@@ -13,6 +13,18 @@ export const easings = {
   loop: [0.25, 0.1, 0.25, 1],
 } as const satisfies Record<string, readonly [number, number, number, number]>;
 
+export type MotionEaseTuple = [number, number, number, number];
+
+function toMotionEase(values: readonly [number, number, number, number]): MotionEaseTuple {
+  return [values[0], values[1], values[2], values[3]];
+}
+
+export const motionEase = {
+  signature: toMotionEase(easings.signature),
+  exit: toMotionEase(easings.exit),
+  loop: toMotionEase(easings.loop),
+};
+
 export const choreography = {
   travel: 8,
   stagger: 40,

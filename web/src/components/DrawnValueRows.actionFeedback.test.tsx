@@ -98,12 +98,13 @@ describe("DrawnValueRows redraw feedback", () => {
     await act(async () => { second.resolve({ sameValue: true }); });
     await waitFor(() => expect(button).toHaveAttribute("data-action-state", "done"));
     expect(screen.getByText("重抽結果與原值相同")).toBeInTheDocument();
-    expect(screen.getByTestId("redraw-control")).toHaveAttribute("data-redraw-flash", "1");
-    expect(screen.getByText("原值").closest("[data-drawn-value-path]")).toHaveAttribute(
+    expect(button).not.toHaveAttribute("data-redraw-flash");
+    const row = screen.getByText("原值").closest("[data-drawn-value-path]");
+    expect(row).toHaveAttribute(
       "data-redraw-flash",
       "1",
     );
-    expect(screen.getByText("原值").closest("[data-drawn-value-path]")).toHaveClass("redraw-flash");
+    expect(row).toHaveClass("redraw-flash");
     expect(screen.getByText("原值")).toBeInTheDocument();
   });
 });

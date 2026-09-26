@@ -1,21 +1,29 @@
-import type { ReactNode } from "react";
+import { useContext, useMemo, type ReactNode } from "react";
 import { domAnimation, LazyMotion, MotionConfig } from "motion/react";
-import { durations, easings } from "./tokens";
+import { durations, motionEase } from "./tokens";
+import { MotionPlatformContext, type MotionPlatformContextValue } from "./MotionPlatformContext";
 
 const defaultTransition = {
   duration: durations.standard / 1000,
-  ease: [...easings.signature] as [number, number, number, number],
+  ease: motionEase.signature,
 };
 
 export default function MotionRoot({ children }: { children: ReactNode }) {
+  const existingPlatform = useContext(MotionPlatformContext);
+  const platform = useMemo<MotionPlatformContextValue>(() => ({ provided: true }), []);
+
+  if (existingPlatform) return <>{children}</>;
+
   return (
-    <LazyMotion features={domAnimation} strict>
-      <MotionConfig
-        reducedMotion="user"
-        transition={defaultTransition}
-      >
-        {children}
-      </MotionConfig>
-    </LazyMotion>
+    <MotionPlatformContext.Provider value={platform}>
+      <LazyMotion features={domAnimation} strict>
+        <MotionConfig
+          reducedMotion="user"
+          transition={defaultTransition}
+        >
+          {children}
+        </MotionConfig>
+      </LazyMotion>
+    </MotionPlatformContext.Provider>
   );
 }

@@ -41,7 +41,7 @@ import DrawnValueRows, {
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
 import { toGenerateParams } from "../utils/toGenerateParams";
 import { Spinner } from "../motion/Indicators";
-import { choreography, durations, easings } from "../motion/tokens";
+import { choreography, durations, motionEase } from "../motion/tokens";
 import MotionRoot from "../motion/MotionRoot";
 import {
   ActionButton,
@@ -5057,14 +5057,12 @@ export default function ParamForm({
     );
   }
 
-  const signatureEase = [...easings.signature] as [number, number, number, number];
-  const exitEase = [...easings.exit] as [number, number, number, number];
   const enterTransition = reducedMotion
     ? { duration: 0 }
-    : { duration: durations.standard / 1000, ease: signatureEase };
+    : { duration: durations.standard / 1000, ease: motionEase.signature };
   const exitTransition = reducedMotion
     ? { duration: 0 }
-    : { duration: durations.quick / 1000, ease: exitEase };
+    : { duration: durations.quick / 1000, ease: motionEase.exit };
   const renderAnimatedSurface = (formContent: ReactNode | null) => (
     handoffActive ? (
       <MotionRoot>

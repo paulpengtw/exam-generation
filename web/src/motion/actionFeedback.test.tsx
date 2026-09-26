@@ -8,6 +8,7 @@ import { ApiError } from "../api/client";
 import {
   ActionButton,
   ActionFeedbackProvider,
+  firstFailure,
   InlineFailureNotice,
   useActionFeedback,
 } from "./actionFeedback";
@@ -111,6 +112,28 @@ function renderFixture(
 }
 
 describe("useActionFeedback and ActionButton", () => {
+  it("selects the first failed feedback and ignores later failures", () => {
+    const firstRetry = vi.fn();
+    const firstDismiss = vi.fn();
+    const laterRetry = vi.fn();
+    const laterDismiss = vi.fn();
+
+    const failure = firstFailure(
+      { reason: null, retry: vi.fn(), dismiss: vi.fn() },
+      { reason: "first failure", retry: firstRetry, dismiss: firstDismiss },
+      { reason: "later failure", retry: laterRetry, dismiss: laterDismiss },
+    );
+
+    expect(failure?.reason).toBe("first failure");
+    failure?.retry();
+    failure?.dismiss();
+    expect(firstRetry).toHaveBeenCalledOnce();
+    expect(firstDismiss).toHaveBeenCalledOnce();
+    expect(laterRetry).not.toHaveBeenCalled();
+    expect(laterDismiss).not.toHaveBeenCalled();
+    expect(firstFailure({ reason: null, retry: vi.fn(), dismiss: vi.fn() })).toBeNull();
+  });
+
   it("moves from idle to pending to done and attaches the produced filename", async () => {
     const operation = deferred<string>();
     const action = vi.fn(() => operation.promise);
