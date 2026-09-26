@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 vi.mock("../store/langStore", () => ({
@@ -14,6 +14,15 @@ vi.mock("../store/authStore", () => ({
 
 const listHistoryMock = vi.hoisted(() => vi.fn());
 vi.mock("../api/client", () => ({
+  ApiError: class ApiError extends Error {
+    detail: string;
+
+    constructor(_status: number, detail: string) {
+      super(detail);
+      this.name = "ApiError";
+      this.detail = detail;
+    }
+  },
   listHistory: listHistoryMock,
 }));
 
@@ -274,6 +283,91 @@ describe("HistoryPage (list mode)", () => {
     expect(screen.getByText("Generation aborted by the user.")).toBeInTheDocument();
     expect(screen.getByText("Aborted")).toHaveClass("bg-amber-100", "text-amber-800");
     expect(screen.getByText("Failed")).toHaveClass("bg-red-100", "text-red-700");
+  });
+
+  it("keeps stale rows visible and marks the pressed pager while loading", async () => {
+    listHistoryMock.mockReset();
+    listHistoryMock.mockResolvedValueOnce({
+      total: 40,
+      items: [{
+        id: "page-one",
+        subject: "math",
+        question_id: "q-1",
+        created_at: "2026-07-15T00:00:00Z",
+        preview: "first page row",
+        verified: true,
+      }],
+    });
+    let resolveNext!: (value: unknown) => void;
+    listHistoryMock.mockReturnValueOnce(new Promise((resolve) => { resolveNext = resolve; }));
+
+    render(
+      <MemoryRouter initialEntries={["/history"]}>
+        <Routes>
+          <Route path="/history" element={<HistoryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByText("first page row")).toBeInTheDocument());
+    const rows = screen.getByRole("list");
+    const next = screen.getByRole("button", { name: "Next" });
+    fireEvent.click(next);
+
+    expect(rows).toHaveAttribute("aria-busy", "true");
+    expect(rows).toHaveClass("opacity-50");
+    expect(rows).toHaveClass("duration-quick", "ease-signature");
+    expect(screen.getByText("first page row")).toBeInTheDocument();
+    expect(next).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
+
+    resolveNext({
+      total: 40,
+      items: [{
+        id: "page-two",
+        subject: "math",
+        question_id: "q-2",
+        created_at: "2026-07-14T00:00:00Z",
+        preview: "second page row",
+        verified: false,
+      }],
+    });
+    await waitFor(() => expect(screen.getByText("second page row")).toBeInTheDocument());
+    expect(rows).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("marks only the pressed pager when paging fails", async () => {
+    listHistoryMock.mockReset();
+    listHistoryMock.mockResolvedValueOnce({
+      total: 40,
+      items: [{
+        id: "page-one-failure",
+        subject: "math",
+        question_id: "q-1",
+        created_at: "2026-07-15T00:00:00Z",
+        preview: "stable row",
+        verified: true,
+      }],
+    });
+    listHistoryMock.mockRejectedValueOnce(new Error("page request failed"));
+
+    render(
+      <MemoryRouter initialEntries={["/history"]}>
+        <Routes>
+          <Route path="/history" element={<HistoryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByText("stable row")).toBeInTheDocument());
+    const next = screen.getByRole("button", { name: "Next" });
+    const previous = screen.getByRole("button", { name: "Previous" });
+    fireEvent.click(next);
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Unable to load history."));
+    expect(next).toHaveAttribute("data-action-state", "failed");
+    expect(next).toHaveTextContent("Next");
+    expect(previous).toHaveAttribute("data-action-state", "idle");
   });
 });
 

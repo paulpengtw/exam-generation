@@ -75,6 +75,6 @@ describe("ProgressLog v2 evidence projection", () => {
     expect(screen.getByTestId("progress-v2-ended")).toHaveTextContent("3");
     expect(screen.getByTestId("progress-v2-ended")).toHaveTextContent("4");
     expect(screen.getByTestId("progress-v2-final")).toHaveTextContent("3");
-    expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
+    expect(container.querySelector(".feedback-spinner")).not.toBeInTheDocument();
   });
 });

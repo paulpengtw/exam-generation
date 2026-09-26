@@ -177,11 +177,13 @@ export interface PlanCoreQuestionsResponse {
 
 export async function planCoreQuestions(
   req: PlanCoreQuestionsRequest,
+  signal?: AbortSignal,
 ): Promise<PlanCoreQuestionsResponse> {
   const res = await apiFetch("/api/plan-core-questions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
+    signal,
   });
   return (await res.json()) as PlanCoreQuestionsResponse;
 }
@@ -315,6 +317,7 @@ export interface ListHistoryOpts {
   limit?: number;
   offset?: number;
   subject?: string;
+  signal?: AbortSignal;
 }
 
 export async function listHistory(
@@ -327,6 +330,7 @@ export async function listHistory(
   const suffix = params.toString();
   const res = await apiFetch(
     suffix ? `/api/history?${suffix}` : "/api/history",
+    { signal: opts.signal },
   );
   return (await res.json()) as HistoryListResponse;
 }
@@ -336,8 +340,8 @@ export async function getHistoryDetail(id: string): Promise<HistoryDetail> {
   return (await res.json()) as HistoryDetail;
 }
 
-export async function downloadHistoryJson(id: string): Promise<Blob> {
-  const res = await apiFetch(`/api/history/${encodeURIComponent(id)}/download`);
+export async function downloadHistoryJson(id: string, signal?: AbortSignal): Promise<Blob> {
+  const res = await apiFetch(`/api/history/${encodeURIComponent(id)}/download`, { signal });
   return await res.blob();
 }
 

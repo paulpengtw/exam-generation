@@ -10,6 +10,11 @@ import type { ExamQuestion } from "../hooks/useGenerate";
 import type { ReferenceExampleRecordShape } from "../components/ReferenceExampleRecordSection";
 import { useT } from "../i18n/useT";
 import {
+  ActionButton,
+  InlineFailureNotice,
+  useActionFeedback,
+} from "../motion/actionFeedback";
+import {
   ApiError,
   downloadHistoryJson,
   getHistoryDetail,
@@ -168,11 +173,17 @@ function HistoryDetailContent({
   const canDownload = detail != null && !isInterrupted;
   const showDownload = detail == null || canDownload;
 
-  const handleDownload = async () => {
-    if (!detail || !canDownload) return;
-    const blob = await downloadHistoryJson(detail.id);
-    saveBlob(blob, `${detail.question_id || detail.id}.json`);
-  };
+  const downloadFeedback = useActionFeedback({
+    action: async (signal) => {
+      if (!detail || !canDownload) throw new Error("History record is not available");
+      const filename = `${detail.question_id || detail.id}.json`;
+      const blob = await downloadHistoryJson(detail.id, signal);
+      saveBlob(blob, filename);
+      return filename;
+    },
+    genericError: t("history.download_json_error"),
+    getFilename: (filename) => filename,
+  });
 
   const handleRegenerate = () => {
     if (!detail) return;
@@ -201,14 +212,14 @@ function HistoryDetailContent({
           </div>
           <div className="flex items-center gap-2">
             {showDownload && (
-              <button
-                type="button"
+              <ActionButton
+                feedback={downloadFeedback}
+                label={t("history.btn_download_json")}
+                pendingLabel={t("action.downloading")}
+                doneLabel={t("action.downloaded")}
                 disabled={!detail}
-                onClick={handleDownload}
                 className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {t("history.btn_download_json")}
-              </button>
+              />
             )}
             <button
               type="button"
@@ -223,6 +234,11 @@ function HistoryDetailContent({
       </header>
 
       <main className="mx-auto max-w-5xl space-y-4 px-3 py-4 sm:px-4 sm:py-6">
+        <InlineFailureNotice
+          reason={downloadFeedback.reason}
+          onRetry={downloadFeedback.retry}
+          onDismiss={downloadFeedback.dismiss}
+        />
         {showRecovery && (
           <section
             role={restoreState === "blocked" || restoreState === "failed" ? "alert" : "status"}

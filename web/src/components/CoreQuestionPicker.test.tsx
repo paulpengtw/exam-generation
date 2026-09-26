@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CoreQuestionPicker from "./CoreQuestionPicker";
 
@@ -10,6 +10,15 @@ vi.mock("../store/langStore", () => ({
 }));
 
 vi.mock("../api/client", () => ({
+  ApiError: class ApiError extends Error {
+    detail: string;
+
+    constructor(_status: number, detail: string) {
+      super(detail);
+      this.name = "ApiError";
+      this.detail = detail;
+    }
+  },
   planCoreQuestions: vi.fn(),
 }));
 
@@ -59,5 +68,62 @@ describe("CoreQuestionPicker — use my core question button", () => {
     render(<CoreQuestionPicker {...defaultProps} />);
     await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
     expect(screen.getByRole("button", { name: "Use my core question" })).toBeDisabled();
+  });
+
+  it("announces candidate generation as pending on the control", async () => {
+    const { planCoreQuestions } = await import("../api/client");
+    let resolve!: (value: { candidates: string[] }) => void;
+    vi.mocked(planCoreQuestions).mockReturnValueOnce(new Promise((yes) => { resolve = yes; }));
+    const user = userEvent.setup();
+    render(<CoreQuestionPicker {...defaultProps} />);
+
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Generating candidates…");
+    expect(screen.getByRole("button", { name: "Generating candidates…" })).toBeDisabled();
+    await resolve({ candidates: [] });
+  });
+
+  it("keeps the planner label and marks only that control after failure", async () => {
+    const { planCoreQuestions } = await import("../api/client");
+    vi.mocked(planCoreQuestions).mockRejectedValueOnce(new Error("provider detail"));
+    const user = userEvent.setup();
+    render(<CoreQuestionPicker {...defaultProps} />);
+
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+
+    const planner = screen.getByRole("button", { name: "Generate core question candidates" });
+    expect(planner).toHaveAttribute("data-action-state", "failed");
+    expect(planner).toHaveTextContent("Generate core question candidates");
+    expect(screen.getByRole("alert")).toHaveTextContent("Unable to generate core question candidates.");
+    expect(screen.getByRole("button", { name: "Use my core question" })).not.toHaveAttribute(
+      "data-action-state",
+      "failed",
+    );
+  });
+
+  it("does not fail a planner call that runs longer than 30 seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      const { planCoreQuestions } = await import("../api/client");
+      let resolve!: (value: { candidates: string[] }) => void;
+      vi.mocked(planCoreQuestions).mockReturnValueOnce(new Promise((yes) => { resolve = yes; }));
+      render(<CoreQuestionPicker {...defaultProps} />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+      await act(async () => {
+        vi.advanceTimersByTime(30_001);
+      });
+
+      expect(screen.getByRole("status")).toHaveTextContent("Generating candidates…");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      await act(async () => {
+        resolve({ candidates: [] });
+        await Promise.resolve();
+      });
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
   });
 });

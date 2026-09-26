@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useT } from "../i18n/useT";
 import type { AgentLane, AgentStatus } from "../hooks/useGenerate";
+import { Spinner } from "../motion/Indicators";
 
 interface Props {
   lanes: AgentLane[];
@@ -9,9 +10,7 @@ interface Props {
 
 function StatusDot({ status }: { status: AgentStatus }) {
   if (status === "running") {
-    return (
-      <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500 flex-shrink-0" />
-    );
+    return <Spinner className="h-2.5 w-2.5 text-blue-500 flex-shrink-0" />;
   }
   if (status === "done") {
     return <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500 flex-shrink-0" />;

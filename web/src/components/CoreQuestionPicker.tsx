@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { planCoreQuestions } from "../api/client";
 import { useT } from "../i18n/useT";
+import {
+  ActionButton,
+  InlineFailureNotice,
+  useActionFeedback,
+} from "../motion/actionFeedback";
+
+// Keep this above the server LLM_TIMEOUT_SECONDS bound (600 seconds by default).
+const CORE_QUESTION_PLANNER_TIMEOUT_MS = 630_000;
 
 export interface CoreQuestionPickerProps {
   topic: string;
@@ -23,79 +31,58 @@ export default function CoreQuestionPicker({
 }: CoreQuestionPickerProps) {
   const t = useT();
   const [candidates, setCandidates] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function handleFetch() {
-    setLoading(true);
-    setError(null);
+  const feedback = useActionFeedback({
+    action: (signal: AbortSignal) => planCoreQuestions({
+      topic,
+      subject,
+      subject_filter: subjectFilter ? [subjectFilter] : undefined,
+      grade,
+    }, signal),
+    genericError: t("form.plan_error"),
+    timeoutMs: CORE_QUESTION_PLANNER_TIMEOUT_MS,
+    onSuccess: (res) => setCandidates(res.candidates),
+  });
+
+  function handleFetch() {
     setCandidates([]);
     onClear();
-    try {
-      const res = await planCoreQuestions({
-        topic,
-        subject,
-        subject_filter: subjectFilter ? [subjectFilter] : undefined,
-        grade,
-      });
-      setCandidates(res.candidates);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("[plan-core-questions]", e);
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
   }
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={handleFetch}
-          disabled={!topic.trim() || loading}
-          className={`inline-flex items-center gap-2 rounded border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
-            error
-              ? "border-red-500 bg-red-50 text-red-700 hover:bg-red-100"
-              : "border-blue-600 bg-white text-blue-600 hover:bg-blue-50"
-          }`}
-        >
-          {loading && (
-            <svg className="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-            </svg>
-          )}
-          {loading ? t("form.plan_btn_loading") : t("form.plan_btn")}
-        </button>
+        <ActionButton
+          feedback={feedback}
+          label={t("form.plan_btn")}
+          pendingLabel={t("form.plan_btn_loading")}
+          onPress={handleFetch}
+          disabled={!topic.trim()}
+          variant="outline"
+          className={feedback.reason
+            ? "border-red-500 bg-red-50 text-red-700 hover:bg-red-100"
+            : "border-blue-600 bg-white text-blue-600 hover:bg-blue-50"}
+        />
 
         <button
           type="button"
           onClick={() => {
             onPick(topic.trim());
             setCandidates([]);
-            setError(null);
           }}
-          disabled={!topic.trim() || loading}
+          disabled={!topic.trim() || feedback.state === "pending"}
           className="inline-flex items-center gap-2 rounded border border-green-600 bg-white px-3 py-1.5 text-sm font-medium text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t("form.custom_question_btn")}
         </button>
       </div>
 
-      {error && (
-        <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-sm">
-          <p className="font-medium text-red-700">⚠ {t("form.picker_error")}{error}</p>
-          <button
-            type="button"
-            onClick={handleFetch}
-            className="mt-1 text-red-700 underline hover:no-underline"
-          >
-            {t("form.picker_retry")}
-          </button>
-        </div>
-      )}
+      <InlineFailureNotice
+        reason={feedback.reason}
+        onRetry={feedback.retry}
+        onDismiss={feedback.dismiss}
+        retryLabel={t("form.picker_retry")}
+      />
 
       {candidates.length > 0 && (
         <fieldset className="space-y-2">

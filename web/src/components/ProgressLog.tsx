@@ -6,6 +6,7 @@ import {
   selectFinalReceivedCount,
   type RunEvidenceState,
 } from "../lib/generationEvidence";
+import { Spinner } from "../motion/Indicators";
 
 export interface ProgressLogProps {
   lines: string[];
@@ -118,10 +119,7 @@ export default function ProgressLog({
         )}
         {status === "generating" && !evidence?.closed && (
           <>
-            <span
-              className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500"
-              aria-label={t("progress.generating")}
-            />
+            <Spinner className="h-3 w-3 text-blue-500" aria-label={t("progress.generating")} />
             <span className="text-gray-600">{t("progress.generating")}</span>
           </>
         )}

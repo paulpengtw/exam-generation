@@ -10,6 +10,15 @@ vi.mock("../store/langStore", () => ({
 const getDetailMock = vi.hoisted(() => vi.fn());
 const downloadMock = vi.hoisted(() => vi.fn());
 vi.mock("../api/client", () => ({
+  ApiError: class ApiError extends Error {
+    detail: string;
+
+    constructor(_status: number, detail: string) {
+      super(detail);
+      this.name = "ApiError";
+      this.detail = detail;
+    }
+  },
   getHistoryDetail: getDetailMock,
   downloadHistoryJson: downloadMock,
 }));
@@ -91,7 +100,38 @@ describe("HistoryDetail", () => {
     await waitFor(() => expect(screen.getByTestId("qc")).toHaveTextContent("ss_1"));
 
     fireEvent.click(screen.getByRole("button", { name: /Download JSON/i }));
-    await waitFor(() => expect(downloadMock).toHaveBeenCalledWith("abc"));
+    await waitFor(() => expect(downloadMock).toHaveBeenCalledWith("abc", expect.any(AbortSignal)));
+  });
+
+  it("surfaces a history JSON download failure on the pressed control", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      id: "failed-download",
+      subject: "math",
+      question_id: "q-failed-download",
+      created_at: "2026-07-15T00:00:00Z",
+      params_json: {},
+      question_json: { id: "q-failed-download" },
+    });
+    downloadMock.mockRejectedValueOnce(new Error("network details"));
+
+    render(
+      <MemoryRouter initialEntries={["/history/failed-download"]}>
+        <Routes>
+          <Route path="/history/:id" element={<HistoryDetail recordId="failed-download" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId("qc")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Download JSON/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Unable to download the JSON file.",
+    );
+    expect(screen.getByRole("button", { name: /Download JSON/i })).toHaveAttribute(
+      "data-action-state",
+      "failed",
+    );
   });
 
   it("重新帶入 is offered for completed and aborted details and carries params", async () => {

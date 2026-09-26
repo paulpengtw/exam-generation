@@ -19,6 +19,7 @@ vi.mock("./StagingBanner", () => ({ default: () => null }));
 vi.mock("./FeedbackButton", () => ({ default: () => null }));
 vi.mock("react-router-dom", () => ({
   Outlet: () => <div data-testid="outlet" />,
+  useLocation: () => ({ pathname: "/", search: "", hash: "", key: "default" }),
 }));
 
 import RootLayout from "./RootLayout";

@@ -1,10 +1,16 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { consumeSignoutReason, type SignoutReason } from "../lib/signoutReason";
 import { loadDraft } from "../lib/formDraft";
+import {
+  ActionButton,
+  ActionFailure,
+  InlineFailureNotice,
+  useActionFeedback,
+} from "../motion/actionFeedback";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -13,9 +19,8 @@ export default function LoginPage() {
   const t = useT();
   const [email, setEmail] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [apiError, setApiError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const emailToSendRef = useRef("");
   const [signoutInfo] = useState<{
     reason: SignoutReason;
     hasDraft: boolean;
@@ -25,30 +30,38 @@ export default function LoginPage() {
     return { reason: data.reason, hasDraft: loadDraft(data.userId) !== null };
   });
 
-  if (isAuthenticated()) {
-    return <Navigate to="/generate" replace />;
-  }
+  const feedback = useActionFeedback({
+    action: async (signal: AbortSignal) => {
+      const result = await sendMagicLink(emailToSendRef.current, signal);
+      if (!result.success) {
+        throw new ActionFailure(result.error ?? t("login.error_default"));
+      }
+      return result;
+    },
+    genericError: t("login.error_default"),
+    onSuccess: () => setSent(true),
+  });
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setApiError(null);
+  function prepareSubmit(): boolean {
     setValidationError(null);
 
     const trimmed = email.trim();
     if (!EMAIL_RE.test(trimmed)) {
       setValidationError(t("login.validation_email"));
-      return;
+      return false;
     }
 
-    setLoading(true);
-    const result = await sendMagicLink(trimmed);
-    setLoading(false);
+    emailToSendRef.current = trimmed;
+    return true;
+  }
 
-    if (result.success) {
-      setSent(true);
-    } else {
-      setApiError(result.error ?? t("login.error_default"));
-    }
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (prepareSubmit()) void feedback.run();
+  }
+
+  if (isAuthenticated()) {
+    return <Navigate to="/generate" replace />;
   }
 
   return (
@@ -95,7 +108,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
+                disabled={feedback.state === "pending"}
                 autoComplete="email"
                 className="w-full rounded border border-gray-300 px-3 py-2 focus:outline-none focus:ring focus:ring-blue-200"
                 placeholder={t("login.email_placeholder")}
@@ -107,29 +120,23 @@ export default function LoginPage() {
               )}
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded bg-blue-600 px-4 py-2 text-white font-medium hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? (
-                <span className="inline-flex items-center justify-center gap-2">
-                  <span
-                    aria-hidden="true"
-                    className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-                  />
-                  {t("login.btn_sending")}
-                </span>
-              ) : (
-                t("login.btn_send")
-              )}
-            </button>
-
-            {apiError && (
-              <p role="alert" className="text-sm text-red-600 text-center">
-                {apiError}
-              </p>
-            )}
+            <div>
+              <ActionButton
+                feedback={feedback}
+                type="button"
+                label={t("login.btn_send")}
+                pendingLabel={t("login.btn_sending")}
+                className="w-full bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+                onPress={(event) => {
+                  if (!prepareSubmit()) event.preventDefault();
+                }}
+              />
+              <InlineFailureNotice
+                reason={feedback.reason}
+                onRetry={feedback.retry}
+                onDismiss={feedback.dismiss}
+              />
+            </div>
           </form>
         )}
       </div>

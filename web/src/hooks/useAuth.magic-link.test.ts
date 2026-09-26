@@ -72,4 +72,16 @@ describe("useAuth.sendMagicLink — no redirect field in request body", () => {
     expect(body).not.toHaveProperty("next");
     expect(body).not.toHaveProperty("redirect_uri");
   });
+
+  it("forwards an AbortSignal to the magic-link request", async () => {
+    const controller = new AbortController();
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      await result.current.sendMagicLink("user@example.com", controller.signal);
+    });
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(options.signal).toBe(controller.signal);
+  });
 });

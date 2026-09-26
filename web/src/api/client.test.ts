@@ -142,3 +142,23 @@ describe("resolveGenerate", () => {
     );
   });
 });
+
+describe("planCoreQuestions", () => {
+  it("forwards the action AbortSignal to the planning request", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ candidates: ["A"] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const controller = new AbortController();
+
+    const { planCoreQuestions } = await import("./client");
+    await planCoreQuestions({ topic: "Climate" }, controller.signal);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/plan-core-questions",
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+});

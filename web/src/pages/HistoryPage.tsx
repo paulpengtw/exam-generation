@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import LanguageSwitcher from "../components/LanguageSwitcher";
+import {
+  ActionButton,
+  InlineFailureNotice,
+  useActionFeedback,
+} from "../motion/actionFeedback";
 import { useT } from "../i18n/useT";
 import {
   listHistory,
@@ -44,29 +49,62 @@ function HistoryList() {
     hasReceivedResults: false,
   });
 
-  const load = useCallback(async () => {
+  const loadInitial = useCallback(async () => {
     setError(null);
     try {
       const res = await listHistory({
         limit: PAGE_SIZE,
-        offset,
+        offset: 0,
         subject: subject || undefined,
       });
+      setOffset(0);
       setData(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : "error");
     }
-  }, [offset, subject]);
+  }, [subject]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount/param change, matches existing VerifyPage/ParamForm pattern
-    void load();
-  }, [load]);
+    void loadInitial();
+  }, [loadInitial]);
+
+  const previousFeedback = useActionFeedback<HistoryListResponse>({
+    action: (signal) => listHistory({
+      limit: PAGE_SIZE,
+      offset: Math.max(0, offset - PAGE_SIZE),
+      subject: subject || undefined,
+      signal,
+    }),
+    genericError: t("history.page_error"),
+    onSuccess: (res) => {
+      setOffset(Math.max(0, offset - PAGE_SIZE));
+      setData(res);
+    },
+  });
+
+  const nextFeedback = useActionFeedback<HistoryListResponse>({
+    action: (signal) => listHistory({
+      limit: PAGE_SIZE,
+      offset: offset + PAGE_SIZE,
+      subject: subject || undefined,
+      signal,
+    }),
+    genericError: t("history.page_error"),
+    onSuccess: (res) => {
+      setOffset(offset + PAGE_SIZE);
+      setData(res);
+    },
+  });
 
   const items: HistoryListItem[] = useMemo(() => data?.items ?? [], [data]);
   const total = data?.total ?? 0;
   const hasPrev = offset > 0;
   const hasNext = offset + PAGE_SIZE < total;
+  const paging = previousFeedback.state === "pending" || nextFeedback.state === "pending";
+  const pagingReason = previousFeedback.reason ?? nextFeedback.reason;
+  const pagingRetry = previousFeedback.reason ? previousFeedback.retry : nextFeedback.retry;
+  const pagingDismiss = previousFeedback.reason ? previousFeedback.dismiss : nextFeedback.dismiss;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -126,7 +164,10 @@ function HistoryList() {
           </div>
         )}
 
-        <ul className="space-y-2">
+        <ul
+          className={`space-y-2 transition-opacity duration-quick ease-signature ${paging ? "opacity-50" : ""}`}
+          aria-busy={paging}
+        >
           {items.map((item) => {
             const hasFigurePolicyDegradation = item.figure_policy_trail?.some(
               (entry) =>
@@ -186,23 +227,30 @@ function HistoryList() {
           })}
         </ul>
 
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            disabled={!hasPrev}
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("history.prev_page")}
-          </button>
-          <button
-            type="button"
-            disabled={!hasNext}
-            onClick={() => setOffset(offset + PAGE_SIZE)}
-            className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("history.next_page")}
-          </button>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <ActionButton
+              feedback={previousFeedback}
+              label={t("history.prev_page")}
+              pendingLabel={t("action.loading")}
+              doneLabel={t("history.prev_page")}
+              disabled={!hasPrev}
+              className="min-w-28 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+            <ActionButton
+              feedback={nextFeedback}
+              label={t("history.next_page")}
+              pendingLabel={t("action.loading")}
+              doneLabel={t("history.next_page")}
+              disabled={!hasNext}
+              className="min-w-28 rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+          <InlineFailureNotice
+            reason={pagingReason}
+            onRetry={pagingRetry}
+            onDismiss={pagingDismiss}
+          />
         </div>
       </main>
     </div>

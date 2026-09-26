@@ -211,12 +211,18 @@ describe("QuestionCard workspace", () => {
     let reject!: (error: Error) => void;
     buildOdt.mockReturnValue(new Promise<Blob>((yes, no) => { resolve = yes; reject = no; }));
     render(<QuestionCard question={question} recordId={recordId} />);
-    const before = document.body.textContent;
-    fireEvent.click(screen.getByRole("button", { name: /ODT/ }));
+    const odtButton = screen.getByRole("button", { name: /ODT/ });
+    fireEvent.click(odtButton);
     expect(useWorkspaceStore.getState().operations).toEqual([expect.objectContaining({ kind: "export_odt", surface })]);
     await act(async () => { if (success) resolve(new Blob(["odt"])); else reject(new Error("failed")); });
     expect(end).toHaveBeenCalledWith(success ? "completed" : "failed");
     expect(useWorkspaceStore.getState().operations).toEqual([]);
-    expect(document.body.textContent).toBe(before);
+    if (success) {
+      expect(odtButton).toHaveAttribute("data-action-state", "done");
+      expect(screen.getByTestId("action-filename")).toHaveTextContent("exam_ts.odt");
+    } else {
+      expect(screen.getByRole("alert")).toHaveTextContent("Unable to generate the ODT file.");
+      expect(odtButton).toHaveAttribute("data-action-state", "failed");
+    }
   });
 });

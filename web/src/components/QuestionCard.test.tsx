@@ -3,9 +3,14 @@ import { fireEvent, render, screen } from "@testing-library/react";
 
 const recordFigureFallbackMock = vi.hoisted(() => vi.fn());
 const fetchMock = vi.hoisted(() => vi.fn());
+const buildExamOdtMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/figureFallbackMetric", () => ({
   recordFigureFallback: recordFigureFallbackMock,
+}));
+vi.mock("../utils/odt", () => ({
+  buildExamOdt: buildExamOdtMock,
+  formatTimestamp: () => "test-time",
 }));
 
 vi.stubGlobal("fetch", fetchMock);
@@ -43,6 +48,20 @@ describe("QuestionCard draft rendering", () => {
     expect(screen.getByText("2 + 2 = 4.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download JSON" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Download ODT" })).toBeDisabled();
+  });
+
+  it("surfaces a per-card ODT failure without replacing the export label", async () => {
+    buildExamOdtMock.mockRejectedValueOnce(new Error("zip failed"));
+    render(<QuestionCard question={question} isFinal />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Download ODT" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Unable to generate the ODT file.",
+    );
+    const button = screen.getByRole("button", { name: "Download ODT" });
+    expect(button).toHaveAttribute("data-action-state", "failed");
+    expect(button).toHaveTextContent("Download ODT");
   });
 });
 

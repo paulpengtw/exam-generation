@@ -33,7 +33,7 @@ describe("AgentStatusPanel", () => {
       <AgentStatusPanel lanes={[ACTIVE_LANE]} requestedTotal={1} />,
     );
 
-    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+    expect(container.querySelector(".feedback-spinner")).toBeInTheDocument();
     expect(screen.getByText("生成題目中")).toBeInTheDocument();
     expect(screen.getByText("5.0s")).toBeInTheDocument();
     expect(
@@ -93,7 +93,7 @@ describe("AgentStatusPanel", () => {
       <AgentStatusPanel lanes={[staleDoneLane]} requestedTotal={3} />,
     );
 
-    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+    expect(container.querySelector(".feedback-spinner")).toBeInTheDocument();
     const card = screen.getByText("文本生成器").closest(".rounded-lg");
     expect(card).toHaveClass("border-blue-300", "bg-blue-50");
     expect(card).not.toHaveClass("border-green-200", "bg-green-50");

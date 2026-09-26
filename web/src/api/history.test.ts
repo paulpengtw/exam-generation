@@ -87,4 +87,32 @@ describe("history api client", () => {
     expect(blob.type).toBe("application/json");
     expect(await blob.text()).toBe('{"a":1}');
   });
+
+  it("forwards an AbortSignal to history list requests", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ total: 0, items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const controller = new AbortController();
+
+    await listHistory({ signal: controller.signal });
+
+    expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ signal: controller.signal }));
+  });
+
+  it("forwards an AbortSignal to history download requests", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const controller = new AbortController();
+
+    await downloadHistoryJson("abc", controller.signal);
+
+    expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ signal: controller.signal }));
+  });
 });

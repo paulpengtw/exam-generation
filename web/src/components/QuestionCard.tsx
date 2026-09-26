@@ -20,6 +20,11 @@ import {
 } from "../lib/workspace/adapters/modificationWorkspace";
 import type { ModificationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 import { useT } from "../i18n/useT";
+import {
+  ActionButton,
+  InlineFailureNotice,
+  useActionFeedback,
+} from "../motion/actionFeedback";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import FigureRenderer, {
@@ -771,6 +776,80 @@ export default function QuestionCard({
   const showModificationWorkspace = Boolean(
     selectionEnabled || annotations.length > 0 || latchedRecoveredModification,
   );
+  const exportSurface = recordId ? "history.modification" : "generate.results";
+
+  const runExportOperation = useCallback(<T,>(
+    operationName: "export_json" | "export_image" | "export_odt",
+    operation: () => Promise<T> | T,
+  ): Promise<T> => {
+    const operationHandle = useWorkspaceStore.getState().beginOperation(
+      operationName,
+      exportSurface,
+    );
+    let result: Promise<T> | T;
+    try {
+      result = operation();
+    } catch (error: unknown) {
+      operationHandle.end("failed");
+      return Promise.reject(error);
+    }
+    if (result instanceof Promise) {
+      return result.then(
+        (value) => {
+          operationHandle.end("completed");
+          return value;
+        },
+        (error: unknown) => {
+          operationHandle.end("failed");
+          throw error;
+        },
+      );
+    }
+    operationHandle.end("completed");
+    return Promise.resolve(result);
+  }, [exportSurface]);
+
+  const jsonFeedback = useActionFeedback({
+    action: async () => {
+      if (!_question) throw new Error("Question is not available");
+      const filename = `${getQuestionId(_question)}.json`;
+      await runExportOperation("export_json", () => {
+        const json = JSON.stringify(_question, null, 2);
+        downloadBlob(new Blob([json], { type: "application/json" }), filename);
+      });
+      return filename;
+    },
+    genericError: t("card.download_json_error"),
+    getFilename: (filename) => filename,
+  });
+
+  const pngFeedback = useActionFeedback({
+    action: async () => {
+      if (!_question?.image_base64) throw new Error("Image is not available");
+      const filename = `${getQuestionId(_question)}.png`;
+      await runExportOperation("export_image", () => {
+        downloadBlob(base64ToBlob(_question.image_base64!, "image/png"), filename);
+      });
+      return filename;
+    },
+    genericError: t("card.download_png_error"),
+    getFilename: (filename) => filename,
+  });
+
+  const odtFeedback = useActionFeedback({
+    action: async () => {
+      if (!_question) throw new Error("Question is not available");
+      const ts = formatTimestamp();
+      const filename = `exam_${ts}.odt`;
+      await runExportOperation("export_odt", async () => {
+        const blob = await buildExamOdt(`exam_${ts}`, [_question]);
+        downloadBlob(blob, filename);
+      });
+      return filename;
+    },
+    genericError: t("card.download_odt_error"),
+    getFilename: (filename) => filename,
+  });
 
   const handleSelectionMouseUp = useCallback(() => {
     if (!selectionEnabled || isRunInFlight || !cardRef.current) return;
@@ -884,33 +963,6 @@ export default function QuestionCard({
       {question.文本形式 && <Chip label={question.文本形式} tone="gray" />}
     </>
   );
-
-  const exportSurface = recordId ? "history.modification" : "generate.results";
-  const handleDownloadJson = () => {
-    const op = useWorkspaceStore.getState().beginOperation("export_json", exportSurface);
-    const json = JSON.stringify(question, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    downloadBlob(blob, `${questionId}.json`);
-    op.end("completed");
-  };
-
-  const handleDownloadPng = () => {
-    if (!question.image_base64) return;
-    const op = useWorkspaceStore.getState().beginOperation("export_image", exportSurface);
-    const blob = base64ToBlob(question.image_base64, "image/png");
-    downloadBlob(blob, `${questionId}.png`);
-    op.end("completed");
-  };
-
-  const handleDownloadOdt = () => {
-    const op = useWorkspaceStore.getState().beginOperation("export_odt", exportSurface);
-    const ts = formatTimestamp();
-    buildExamOdt(`exam_${ts}`, [question]).then((blob) => {
-      downloadBlob(blob, `exam_${ts}.odt`);
-      op.end("completed");
-    }).catch(() => op.end("failed"));
-  };
-
 
   const handleInstructionChange = (annotationId: number, instruction: string) => {
     setAnnotations((previous) => previous.map((annotation) => (
@@ -1324,33 +1376,38 @@ export default function QuestionCard({
       )}
 
       <div className="flex flex-wrap gap-2 pt-1">
-        <button
-          type="button"
-          onClick={handleDownloadJson}
+        <ActionButton
+          feedback={jsonFeedback}
+          label={t("card.download_json")}
+          pendingLabel={t("action.downloading")}
+          doneLabel={t("action.downloaded")}
           disabled={!isFinal}
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {t("card.download_json")}
-        </button>
+        />
         {question.image_base64 && (
-          <button
-            type="button"
-            onClick={handleDownloadPng}
+          <ActionButton
+            feedback={pngFeedback}
+            label={t("card.download_png")}
+            pendingLabel={t("action.downloading")}
+            doneLabel={t("action.downloaded")}
             disabled={!isFinal}
             className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("card.download_png")}
-          </button>
+          />
         )}
-        <button
-          type="button"
-          onClick={handleDownloadOdt}
+        <ActionButton
+          feedback={odtFeedback}
+          label={t("card.download_odt")}
+          pendingLabel={t("action.downloading")}
+          doneLabel={t("action.downloaded")}
           disabled={!isFinal}
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {t("card.download_odt")}
-        </button>
+        />
       </div>
+      <InlineFailureNotice
+        reason={jsonFeedback.reason ?? pngFeedback.reason ?? odtFeedback.reason}
+        onRetry={jsonFeedback.reason ? jsonFeedback.retry : pngFeedback.reason ? pngFeedback.retry : odtFeedback.retry}
+        onDismiss={jsonFeedback.reason ? jsonFeedback.dismiss : pngFeedback.reason ? pngFeedback.dismiss : odtFeedback.dismiss}
+      />
     </div>
   );
 }

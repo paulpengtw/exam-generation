@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useT } from "../i18n/useT";
 import { consumeReturnDestination } from "../lib/returnDestination";
+import { Spinner } from "../motion/Indicators";
 
 type Status = "verifying" | "error";
 
@@ -40,10 +41,7 @@ export default function VerifyPage() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div role="status" className="inline-flex items-center gap-3 text-gray-700">
-          <span
-            aria-hidden="true"
-            className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent"
-          />
+          <Spinner className="h-5 w-5" />
           <span>{t("verify.verifying")}</span>
         </div>
       </div>

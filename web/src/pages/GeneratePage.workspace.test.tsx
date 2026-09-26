@@ -212,14 +212,20 @@ describe("GeneratePage workspace", () => {
     buildOdt.mockReturnValue(new Promise<Blob>((yes, no) => { resolve = yes; reject = no; }));
     withResults();
     render(<GeneratePage />);
-    const before = document.body.textContent;
-    fireEvent.click(screen.getByRole("button", { name: "generate.btn_download_all_odt" }));
+    const odtButton = screen.getByRole("button", { name: "generate.btn_download_all_odt" });
+    fireEvent.click(odtButton);
     expect(useWorkspaceStore.getState().operations).toEqual([
       expect.objectContaining({ kind: "export_odt", surface: "generate.results" }),
     ]);
     await act(async () => { if (success) resolve(new Blob(["odt"])); else reject(new Error("export failed")); });
     expect(end).toHaveBeenCalledWith(success ? "completed" : "failed");
     expect(useWorkspaceStore.getState().operations).toEqual([]);
-    expect(document.body.textContent).toBe(before);
+    if (success) {
+      expect(odtButton).toHaveAttribute("data-action-state", "done");
+      expect(screen.getByTestId("action-filename")).toHaveTextContent("exam_ts.odt");
+    } else {
+      expect(screen.getByRole("alert")).toHaveTextContent("generate.download_odt_error");
+      expect(odtButton).toHaveAttribute("data-action-state", "failed");
+    }
   });
 });

@@ -17,6 +17,12 @@ import { useAuthStore } from "../store/authStore";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
+import {
+  ActionButton,
+  ActionFailure,
+  InlineFailureNotice,
+  useActionFeedback,
+} from "../motion/actionFeedback";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
@@ -54,6 +60,12 @@ function downloadBlob(blob: Blob, filename: string): void {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function getOdtQuestionIndex(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) return null;
+  const index = (error as { questionIndex?: unknown }).questionIndex;
+  return typeof index === "number" && Number.isInteger(index) && index >= 0 ? index : null;
 }
 
 export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
@@ -317,23 +329,51 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     targetRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const handleDownloadAll = () => {
-    const op = useWorkspaceStore.getState().beginOperation("export_json", "generate.results");
-    const json = JSON.stringify(results, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    downloadBlob(blob, `batch_${ts}.json`);
-    op.end("completed");
-  };
+  const jsonFeedback = useActionFeedback({
+    action: async () => {
+      const filename = `batch_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+      const operation = useWorkspaceStore.getState().beginOperation("export_json", "generate.results");
+      try {
+        const json = JSON.stringify(results, null, 2);
+        downloadBlob(new Blob([json], { type: "application/json" }), filename);
+        operation.end("completed");
+        return filename;
+      } catch (error: unknown) {
+        operation.end("failed");
+        throw error;
+      }
+    },
+    genericError: t("generate.download_json_error"),
+    getFilename: (filename) => filename,
+  });
 
-  const handleDownloadAllOdt = () => {
-    const op = useWorkspaceStore.getState().beginOperation("export_odt", "generate.results");
-    const ts = formatTimestamp();
-    buildExamOdt(`exam_${ts}`, results).then((blob) => {
-      downloadBlob(blob, `exam_${ts}.odt`);
-      op.end("completed");
-    }).catch(() => op.end("failed"));
-  };
+  const odtFeedback = useActionFeedback({
+    action: async () => {
+      const ts = formatTimestamp();
+      const filename = `exam_${ts}.odt`;
+      const operation = useWorkspaceStore.getState().beginOperation("export_odt", "generate.results");
+      try {
+        const blob = await buildExamOdt(`exam_${ts}`, results);
+        downloadBlob(blob, filename);
+        operation.end("completed");
+        return filename;
+      } catch (error: unknown) {
+        operation.end("failed");
+        const questionIndex = getOdtQuestionIndex(error);
+        if (questionIndex !== null && results[questionIndex]) {
+          const question = results[questionIndex];
+          const id = question.id ?? String(questionIndex + 1);
+          const detail = t("generate.download_odt_group_error")
+            .replace("{n}", String(questionIndex + 1))
+            .replace("{id}", id);
+          throw new ActionFailure(detail);
+        }
+        throw error;
+      }
+    },
+    genericError: t("generate.download_odt_error"),
+    getFilename: (filename) => filename,
+  });
 
   const showProgress = runEvidence !== null || !(progressLines.length === 0 && status === "idle");
   const runState: RunState =
@@ -542,33 +582,40 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
         {hasResults && (
           <section ref={resultsRef} className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">{t("generate.results")} ({displayResults.length})</h2>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleDownloadAll}
-                  disabled={results.length === 0}
-                  className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {t("generate.btn_download_all")}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDownloadAllOdt}
-                  disabled={results.length === 0}
-                  className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {t("generate.btn_download_all_odt")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPendingAction({ kind: "clearResults" })}
-                  className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  {t("generate.btn_clear")}
-                </button>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-semibold">{t("generate.results")} ({displayResults.length})</h2>
+                <div className="flex gap-2">
+                  <ActionButton
+                    feedback={jsonFeedback}
+                    label={t("generate.btn_download_all")}
+                    pendingLabel={t("action.downloading")}
+                    doneLabel={t("action.downloaded")}
+                    disabled={results.length === 0}
+                    className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <ActionButton
+                    feedback={odtFeedback}
+                    label={t("generate.btn_download_all_odt")}
+                    pendingLabel={t("action.downloading")}
+                    doneLabel={t("action.downloaded")}
+                    disabled={results.length === 0}
+                    className="rounded border border-blue-600 bg-white px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPendingAction({ kind: "clearResults" })}
+                    className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    {t("generate.btn_clear")}
+                  </button>
+                </div>
               </div>
+              <InlineFailureNotice
+                reason={jsonFeedback.reason ?? odtFeedback.reason}
+                onRetry={jsonFeedback.reason ? jsonFeedback.retry : odtFeedback.retry}
+                onDismiss={jsonFeedback.reason ? jsonFeedback.dismiss : odtFeedback.dismiss}
+              />
             </div>
             <div className="space-y-3">
               {runEvidence

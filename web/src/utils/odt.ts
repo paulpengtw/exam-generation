@@ -133,6 +133,7 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
   }
 
   sections.forEach(({ question, imageRef, subImageRefs }, idx) => {
+    try {
     if (isMultiple) {
       if (idx > 0) {
         paras.push(`<text:p text:style-name="PageBreak"/>`);
@@ -237,6 +238,9 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
         });
       }
     }
+    } catch (error: unknown) {
+      throw new OdtBuildError(idx, error);
+    }
   });
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -283,6 +287,16 @@ ${imgEntries}
 </manifest:manifest>`;
 }
 
+export class OdtBuildError extends Error {
+  readonly questionIndex: number;
+
+  constructor(questionIndex: number, cause: unknown) {
+    super(cause instanceof Error ? cause.message : "ODT question build failed");
+    this.name = "OdtBuildError";
+    this.questionIndex = questionIndex;
+  }
+}
+
 export async function buildExamOdt(title: string, questions: ExamQuestion[]): Promise<Blob> {
   const zip = new JSZip();
   const isMultiple = questions.length > 1;
@@ -293,25 +307,29 @@ export async function buildExamOdt(title: string, questions: ExamQuestion[]): Pr
 
   const imageRefs: string[] = [];
   const sections: Section[] = questions.map((q, idx) => {
-    const section: Section = { question: q };
-    if (q.image_base64) {
-      const ref = `Pictures/img_${idx}.png`;
-      imageRefs.push(ref);
-      section.imageRef = ref;
-      zip.file(ref, base64ToUint8Array(q.image_base64));
+    try {
+      const section: Section = { question: q };
+      if (q.image_base64) {
+        const ref = `Pictures/img_${idx}.png`;
+        imageRefs.push(ref);
+        section.imageRef = ref;
+        zip.file(ref, base64ToUint8Array(q.image_base64));
+      }
+      q.subquestions?.forEach((sub) => {
+        if (!sub.image_base64) return;
+        const ref = `Pictures/img_${idx}_sq_${sub.序號}.png`;
+        imageRefs.push(ref);
+        section.subImageRefs = {
+          ...(section.subImageRefs ?? {}),
+          [subImageKey(sub.id, sub.序號)]: ref,
+          [String(sub.序號)]: ref,
+        };
+        zip.file(ref, base64ToUint8Array(sub.image_base64));
+      });
+      return section;
+    } catch (error: unknown) {
+      throw new OdtBuildError(idx, error);
     }
-    q.subquestions?.forEach((sub) => {
-      if (!sub.image_base64) return;
-      const ref = `Pictures/img_${idx}_sq_${sub.序號}.png`;
-      imageRefs.push(ref);
-      section.subImageRefs = {
-        ...(section.subImageRefs ?? {}),
-        [subImageKey(sub.id, sub.序號)]: ref,
-        [String(sub.序號)]: ref,
-      };
-      zip.file(ref, base64ToUint8Array(sub.image_base64));
-    });
-    return section;
   });
 
   zip.file("meta.xml", buildMeta(title, isoDate));

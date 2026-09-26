@@ -29,12 +29,13 @@ export function useAuth() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const lang = useLangStore((s) => s.lang);
 
-  async function sendMagicLink(email: string): Promise<AuthResult> {
+  async function sendMagicLink(email: string, signal?: AbortSignal): Promise<AuthResult> {
     try {
       const res = await fetch("/auth/magic-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, lang }),
+        signal,
       });
       if (!res.ok) {
         return { success: false, error: await parseError(res) };

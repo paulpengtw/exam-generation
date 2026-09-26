@@ -2,7 +2,7 @@ import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 
 import type { DragDropSpec, ExamQuestion, SliderSpec, SubQuestion } from "../hooks/useGenerate";
-import { buildExamOdt } from "./odt";
+import { buildExamOdt, OdtBuildError } from "./odt";
 
 async function readContentXml(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer();
@@ -18,6 +18,48 @@ function readMetadataLines(xml: string): string[] {
 }
 
 describe("buildExamOdt ICCS metadata", () => {
+  it("identifies the failing question when an image cannot be encoded", async () => {
+    const first: ExamQuestion = {
+      id: "first",
+      情境: [],
+      題型種類: "single",
+      題型: "choice",
+      題目: ["first"],
+      正確解題分析: ["answer"],
+    };
+    const second: ExamQuestion = {
+      ...first,
+      id: "second",
+      image_base64: "not valid base64 *",
+    };
+
+    await expect(buildExamOdt("t", [first, second])).rejects.toBeInstanceOf(OdtBuildError);
+    await expect(buildExamOdt("t", [first, second])).rejects.toMatchObject({
+      questionIndex: 1,
+    });
+  });
+
+  it("identifies the failing question when content XML cannot be generated", async () => {
+    const first: ExamQuestion = {
+      id: "first-content",
+      情境: [],
+      題型種類: "single",
+      題型: "choice",
+      題目: ["first"],
+      正確解題分析: ["answer"],
+    };
+    const second: ExamQuestion = {
+      ...first,
+      id: "second-content",
+      題目: [null as unknown as string],
+    };
+
+    await expect(buildExamOdt("t", [first, second])).rejects.toBeInstanceOf(OdtBuildError);
+    await expect(buildExamOdt("t", [first, second])).rejects.toMatchObject({
+      questionIndex: 1,
+    });
+  });
+
   it("emits ICCS tags for new social-studies records", async () => {
     const knowing = "Knowing–Defining and Describing";
     const reasoning = "Reasoning and Applying–Interpret information";

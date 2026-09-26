@@ -34,6 +34,7 @@ import SubquestionConfigCards, { type ResolvedSubQuestionConfig } from "./Subque
 import DrawnValueRows from "./DrawnValueRows";
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
 import { toGenerateParams } from "../utils/toGenerateParams";
+import { Spinner } from "../motion/Indicators";
 
 export interface SubQuestionConfig {
   question_type?: string;
@@ -5922,20 +5923,7 @@ export default function ParamForm({
         className="inline-flex w-full items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
         {disabled && (
-          <svg
-            className="h-4 w-4 animate-spin"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-            />
-          </svg>
+          <Spinner className="h-4 w-4" />
         )}
         {disabled ? t("form.btn_generating") : t("form.btn_generate")}
       </button>
