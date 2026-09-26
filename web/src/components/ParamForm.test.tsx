@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const getSchemasMock = vi.hoisted(() => vi.fn());
 const getAvailableModelsMock = vi.hoisted(() => vi.fn(async () => ({ allowed: [], defaults: { plan: "", execute: "" } })));
+const resolveGenerateMock = vi.hoisted(() => vi.fn(async (payload: Record<string, unknown>) => ({ payload, drawn: [] })));
 const tMock = vi.hoisted(() => {
   const messages: Record<string, string> = {
     "history.prefill_notice": "Some saved parameters are no longer available in the current schema.",
@@ -17,7 +18,15 @@ const tMock = vi.hoisted(() => {
     "form.subject_filter_natural_sciences_help": "此選擇僅篩選學習內容選項，不會作為出題參數送出。",
     "form.core_question_callback": "末小題回扣核心問題",
     "form.btn_generate": "Generate",
+    "form.btn_generating": "Generating…",
     "form.btn_confirm_send": "Confirm",
+    "form.btn_confirm_send_pending": "Sending…",
+    "form.confirm_resolve_loading": "Resolving…",
+    "form.confirm_resolve_error": "Could not resolve settings.",
+    "form.confirm_send_error": "Could not start generation.",
+    "form.toggle_checkbox_mode": "切換勾選模式",
+    "form.toggle_search_mode": "切換搜尋模式",
+    "form.add_option": "+ 新增選項",
     "form.error_set_type_required": "題型種類 is required.",
   };
   return (key: string) => messages[key] ?? key;
@@ -27,7 +36,7 @@ vi.mock("../api/client", () => ({
   getAvailableModels: getAvailableModelsMock,
   planCoreQuestions: vi.fn(async () => ({ candidates: [] })),
   previewGenerate: vi.fn(async () => ({ prompts: [] })),
-  resolveGenerate: vi.fn(async (payload: Record<string, unknown>) => ({ payload, drawn: [] })),
+  resolveGenerate: resolveGenerateMock,
 }));
 vi.mock("../i18n/useT", () => ({
   useT: () => tMock,
@@ -78,6 +87,16 @@ const FAKE_SCIENCE_SCHEMA = {
     { value: "INa-IV-1", instruction: "共通內容", 科目: "" },
   ],
 };
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
 
 describe("ParamForm subject-filter label", () => {
   beforeEach(() => {
@@ -153,6 +172,60 @@ describe("ParamForm core-question callback option", () => {
     expect(
       screen.queryByRole("checkbox", { name: "末小題回扣核心問題" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ParamForm Phase 3 action feedback", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    getSchemasMock.mockResolvedValue(FAKE_MATH_SCHEMA);
+    getAvailableModelsMock.mockResolvedValue({ allowed: [], defaults: { plan: "", execute: "" } });
+  });
+
+  it("shows the generate spinner and loading label while the resolver is pending", async () => {
+    const resolution = deferred<{ payload: Record<string, unknown>; drawn: string[] }>();
+    resolveGenerateMock.mockReturnValueOnce(resolution.promise);
+
+    render(<ParamForm subject="math" onSubmit={() => {}} disabled={false} />);
+    const generateButton = await screen.findByRole("button", { name: "Generate" });
+
+    fireEvent.click(generateButton);
+
+    expect(generateButton).toBeDisabled();
+    expect(generateButton).toHaveTextContent("Generating…");
+    expect(generateButton.querySelector(".feedback-spinner")).toBeInTheDocument();
+
+    const payload = resolveGenerateMock.mock.calls[0][0] as Record<string, unknown>;
+    await act(async () => {
+      resolution.resolve({ payload, drawn: [] });
+    });
+    await screen.findByRole("heading", { name: "form.confirm_title" });
+  });
+
+  it("keeps 確定發送 pending until admission, then clears it without a done state", async () => {
+    const admission = deferred<{ outcome: "admitted" }>();
+    const onSubmit = vi.fn(() => admission.promise);
+
+    render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Generate" }));
+    await screen.findByRole("heading", { name: "form.confirm_title" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const pendingButton = screen.getByRole("button", { name: "Sending…" });
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(pendingButton).toBeDisabled();
+    expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getAllByRole("status").some((status) => status.textContent?.includes("Sending…"))).toBe(true);
+
+    fireEvent.click(pendingButton);
+    expect(onSubmit).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      admission.resolve({ outcome: "admitted" });
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Generate" })).toBeInTheDocument());
+    expect(screen.queryByText("Done")).not.toBeInTheDocument();
   });
 });
 

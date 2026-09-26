@@ -688,6 +688,45 @@ export default function QuestionCard({
   const modificationResult = modificationRun.result;
   const isRunInFlight = modificationRun.status === "running";
   const restoredEligibility = latchedRecoveredModification === undefined || modificationRestoreEligible === true;
+  const modificationAdmissionWaiterRef = useRef<{
+    resolve: () => void;
+    reject: (reason: unknown) => void;
+  } | null>(null);
+  const modificationFeedback = useActionFeedback<void>({
+    action: async () => {
+      const admitted = new Promise<void>((resolve, reject) => {
+        modificationAdmissionWaiterRef.current = { resolve, reject };
+      });
+      setSubmitError(null);
+      void modificationRun.start({
+        annotations: annotations.map((annotation) => ({
+          segments: annotation.segments,
+          修改指示: annotation.instruction,
+        })),
+      }).catch((error: unknown) => {
+        const waiter = modificationAdmissionWaiterRef.current;
+        if (!waiter) return;
+        modificationAdmissionWaiterRef.current = null;
+        waiter.reject(error);
+      });
+      await admitted;
+    },
+    genericError: t("card.modificationSubmitError"),
+    successState: "idle",
+    failureState: "idle",
+  });
+
+  useEffect(() => {
+    const waiter = modificationAdmissionWaiterRef.current;
+    if (!waiter) return;
+    if (modificationRun.admission === "admitted") {
+      modificationAdmissionWaiterRef.current = null;
+      waiter.resolve();
+    } else if (modificationRun.admission === "rejected") {
+      modificationAdmissionWaiterRef.current = null;
+      waiter.reject(new Error(modificationRun.admissionError ?? t("card.modificationSubmitError")));
+    }
+  }, [modificationRun.admission, modificationRun.admissionError, t]);
 
   const previousResultRef = useRef(modificationResult);
   useEffect(() => {
@@ -983,18 +1022,6 @@ export default function QuestionCard({
     annotations.length > 0 &&
     annotations.every((annotation) => annotation.instruction.trim().length > 0),
   );
-
-  const handleSubmit = async () => {
-    if (!recordId || !canSubmit || isRunInFlight) return;
-
-    setSubmitError(null);
-    void modificationRun.start({
-      annotations: annotations.map((annotation) => ({
-        segments: annotation.segments,
-        修改指示: annotation.instruction,
-      })),
-    });
-  };
 
   const runError = modificationRun.error === null
     ? null
@@ -1341,14 +1368,14 @@ export default function QuestionCard({
           )}
           {recordId && (
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSubmit}
+              <ActionButton
+                feedback={modificationFeedback}
+                label={t("card.submitModifications")}
+                pendingLabel={t("card.submittingModifications")}
+                doneLabel={t("card.submitModifications")}
                 disabled={!canSubmit || isRunInFlight}
                 className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isRunInFlight ? t("card.submittingModifications") : t("card.submitModifications")}
-              </button>
+              />
               {displayedSubmitError && (() => {
                 const isStaleBase = displayedSubmitError.code === "stale_base";
                 const titleKey = displayedSubmitError.code

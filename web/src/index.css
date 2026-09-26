@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "./motion/aicss.css";
 @import "./motion/indicators.css";
+@import "./motion/redraw.css";
 
 @custom-variant dark (&:is(.dark *));
 

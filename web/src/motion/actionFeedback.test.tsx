@@ -26,15 +26,21 @@ function ActionFixture({
   action,
   genericError = "Unable to download the file.",
   timeoutMs,
+  successState,
+  failureState,
 }: {
   action: (signal: AbortSignal) => Promise<string>;
   genericError?: string;
   timeoutMs?: number;
+  successState?: "idle" | "done";
+  failureState?: "idle" | "failed";
 }) {
   const feedback = useActionFeedback({
     action,
     genericError,
     timeoutMs,
+    successState,
+    failureState,
     getFilename: (result) => result,
   });
   const otherFeedback = useActionFeedback({
@@ -87,7 +93,12 @@ const routeNavigateRef: { current: ((to: string) => void) | null } = { current: 
 
 function renderFixture(
   action: (signal: AbortSignal) => Promise<string>,
-  options?: { genericError?: string; timeoutMs?: number },
+  options?: {
+    genericError?: string;
+    timeoutMs?: number;
+    successState?: "idle" | "done";
+    failureState?: "idle" | "failed";
+  },
 ) {
   return render(
     <MemoryRouter initialEntries={["/current"]}>
@@ -247,5 +258,18 @@ describe("useActionFeedback and ActionButton", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("The request timed out.");
     expect(action.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
     expect(action.mock.calls[0][0].aborted).toBe(true);
+  });
+
+  it("can settle a stream starter back to idle without showing a terminal outcome", async () => {
+    const action = vi.fn(async () => "admitted");
+    const user = userEvent.setup();
+    renderFixture(action, { successState: "idle", failureState: "idle" });
+
+    const button = screen.getByRole("button", { name: "Download JSON" });
+    await user.click(button);
+
+    expect(button).toHaveAttribute("data-action-state", "idle");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

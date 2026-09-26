@@ -271,6 +271,24 @@ describe("ParamForm 確認頁修改 preview fetch-failure stale badge + retry (#
     vi.useRealTimers();
   });
 
+  it("shows the auto-preview failure notice and recovers through its retry control", async () => {
+    previewGenerateMock.mockRejectedValueOnce(new Error("Network error"));
+
+    await openConfirmationWithSubquestions();
+
+    const previewRegion = screen.getByRole("region", { name: "將送出的提示詞" });
+    expect(previewRegion).toHaveAttribute("aria-busy", "false");
+    const failure = screen.getByRole("alert");
+    expect(failure).toHaveTextContent("Network error");
+    expect(failure).toHaveTextContent("重新載入預覽");
+
+    previewGenerateMock.mockResolvedValueOnce({ prompts: [] });
+    fireEvent.click(within(failure).getByRole("button", { name: "重新載入預覽" }));
+
+    await waitFor(() => expect(previewGenerateMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
   // ── Slice 5 (criterion 1) ─────────────────────────────────────────────────
   // A failed preview re-fetch shows a stale badge on the affected 題組.
   it("slice 5 — failed re-fetch shows stale badge on the affected 題組", async () => {

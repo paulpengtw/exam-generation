@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ComponentProps,
@@ -37,6 +38,8 @@ export interface UseActionFeedbackOptions<T> {
   timeoutMs?: number;
   getFilename?: (result: T) => string | null | undefined;
   onSuccess?: (result: T) => void;
+  successState?: "idle" | "done";
+  failureState?: "idle" | "failed";
 }
 
 export interface ActionFeedback<T> {
@@ -128,6 +131,8 @@ export function useActionFeedback<T>({
   timeoutMs = 30_000,
   getFilename,
   onSuccess,
+  successState,
+  failureState,
 }: UseActionFeedbackOptions<T>): ActionFeedback<T> {
   const context = useContext(ActionFeedbackContext);
   const [state, setState] = useState<ActionState>("idle");
@@ -143,10 +148,20 @@ export function useActionFeedback<T>({
     timeoutMs,
     getFilename,
     onSuccess,
+    successState,
+    failureState,
   });
-  useEffect(() => {
-    optionsRef.current = { action, genericError, timeoutMs, getFilename, onSuccess };
-  }, [action, genericError, timeoutMs, getFilename, onSuccess]);
+  useLayoutEffect(() => {
+    optionsRef.current = {
+      action,
+      genericError,
+      timeoutMs,
+      getFilename,
+      onSuccess,
+      successState,
+      failureState,
+    };
+  }, [action, genericError, timeoutMs, getFilename, onSuccess, successState, failureState]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -209,7 +224,7 @@ export function useActionFeedback<T>({
         const producedFilename = current.getFilename?.(result) ?? null;
         setFilename(producedFilename);
         setReason(null);
-        setFeedbackState("done");
+        setFeedbackState(current.successState ?? "done");
         current.onSuccess?.(result);
       }
       return result;
@@ -217,7 +232,7 @@ export function useActionFeedback<T>({
       if (mountedRef.current) {
         setFilename(null);
         setReason(getFailureReason(error, current.genericError));
-        setFeedbackState("failed");
+        setFeedbackState(current.failureState ?? "failed");
       }
       return undefined;
     } finally {
@@ -334,6 +349,7 @@ export interface InlineFailureNoticeProps {
   onRetry: () => void;
   onDismiss: () => void;
   retryLabel?: ReactNode;
+  retryDisabled?: boolean;
   dismissLabel?: string;
   failedLabel?: ReactNode;
 }
@@ -343,6 +359,7 @@ export function InlineFailureNotice({
   onRetry,
   onDismiss,
   retryLabel,
+  retryDisabled = false,
   dismissLabel,
   failedLabel,
 }: InlineFailureNoticeProps) {
@@ -363,7 +380,8 @@ export function InlineFailureNotice({
       <button
         type="button"
         onClick={onRetry}
-        className="shrink-0 rounded border border-red-300 bg-white px-2 py-1 font-medium hover:bg-red-100"
+        disabled={retryDisabled}
+        className="shrink-0 rounded border border-red-300 bg-white px-2 py-1 font-medium hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {retryLabel ?? t("action.retry")}
       </button>

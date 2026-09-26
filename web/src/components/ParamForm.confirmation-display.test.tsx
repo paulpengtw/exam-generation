@@ -240,7 +240,9 @@ describe("ParamForm 發送前確認 display semantics", () => {
     expect(screen.getByText("RESOLVED-LC")).toBeInTheDocument();
     expect(screen.getByText("RESOLVED-LP")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+    const confirmButton = screen.getByRole("button", { name: "確定發送" });
+    expect(confirmButton).toBeEnabled();
+    fireEvent.click(confirmButton);
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       drawn: [
         "learning_content",

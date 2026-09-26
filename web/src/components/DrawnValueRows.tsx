@@ -1,6 +1,88 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+
+import { ActionButton, ActionFailure, useActionFeedback } from "../motion/actionFeedback";
+import { useT } from "../i18n/useT";
+import { durations } from "../motion/tokens";
 
 export type DrawnValueLabelMap = Readonly<Record<string, string>>;
+
+export interface RedrawResult {
+  ok?: boolean;
+  sameValue?: boolean;
+  value?: unknown;
+}
+
+export type RedrawAction = () => RedrawResult | void | Promise<RedrawResult | void>;
+
+export function RedrawActionButton({
+  onRedraw,
+  label,
+  disabled = false,
+  genericError,
+  onPendingChange,
+  onSuccess,
+}: {
+  onRedraw: RedrawAction;
+  label: ReactNode;
+  disabled?: boolean;
+  genericError?: string;
+  onPendingChange?: (pending: boolean) => void;
+  onSuccess?: (result: RedrawResult | void) => void;
+}) {
+  const t = useT();
+  const [sameValue, setSameValue] = useState(false);
+  const [flashCount, setFlashCount] = useState(0);
+  const [flashActive, setFlashActive] = useState(false);
+  const action = useActionFeedback<RedrawResult | void>({
+    action: async () => {
+      const result = await onRedraw();
+      if (result?.ok === false) {
+        throw new ActionFailure(genericError ?? t("form.confirm_resolve_error"));
+      }
+      return result;
+    },
+    genericError: genericError ?? t("form.confirm_resolve_error"),
+    onSuccess: (result) => {
+      setSameValue(result?.sameValue === true);
+      setFlashCount((count) => count + 1);
+      setFlashActive(true);
+      window.setTimeout(() => setFlashActive(false), durations.standard);
+      onSuccess?.(result);
+    },
+  });
+
+  useEffect(() => {
+    onPendingChange?.(action.state === "pending");
+  }, [action.state, onPendingChange]);
+
+  const handlePendingChange = useCallback((pending: boolean) => {
+    onPendingChange?.(pending);
+  }, [onPendingChange]);
+
+  return (
+    <>
+      <ActionButton
+        feedback={action}
+        label={label}
+        pendingLabel={t("form.confirm_redraw_pending")}
+        doneLabel={label}
+        disabled={disabled}
+        data-testid="redraw-control"
+        data-redraw-flash={flashCount > 0 ? String(flashCount) : undefined}
+        className={flashActive ? "redraw-flash" : undefined}
+        onPress={() => {
+          setSameValue(false);
+          handlePendingChange(true);
+        }}
+      />
+      {sameValue && (
+        <span data-testid="redraw-same-value-hint" className="text-xs text-amber-700">
+          {t("form.confirm_redraw_same")}
+        </span>
+      )}
+    </>
+  );
+}
 
 export interface DrawnValueRowsProps {
   /** Canonical resolver paths, including any paths outside this component's scope. */
@@ -16,7 +98,7 @@ export interface DrawnValueRowsProps {
   /** Whether a drawn row has an edit control. Defaults to true when renderEditor exists. */
   canEdit?: (path: string, value: unknown) => boolean;
   /** Called by a drawn row's 重抽 control. */
-  onRedraw?: (path: string) => void;
+  onRedraw?: (path: string) => RedrawResult | void | Promise<RedrawResult | void>;
   /** Whether a drawn row has a 重抽 control. Defaults to true when onRedraw exists. */
   canRedraw?: (path: string) => boolean;
   editLabel?: ReactNode;
@@ -31,6 +113,10 @@ export interface DrawnValueRowsProps {
   drawnBadge?: ReactNode;
   pinnedBadge?: ReactNode;
   compact?: boolean | ((path: string) => boolean);
+  /** Disables all redraw controls while the resolver is processing a request. */
+  redrawDisabled?: boolean;
+  /** Canonical path currently being re-resolved; its value row is dimmed. */
+  resolvingPath?: string | null;
 }
 
 function fieldName(path: string): string {
@@ -67,8 +153,32 @@ export default function DrawnValueRows({
   drawnBadge,
   pinnedBadge,
   compact = false,
+  redrawDisabled = false,
+  resolvingPath = null,
 }: DrawnValueRowsProps) {
   const [editingPath, setEditingPath] = useState<string | null>(null);
+  const [pendingPaths, setPendingPaths] = useState<Set<string>>(() => new Set());
+  const [flashCounts, setFlashCounts] = useState<Map<string, number>>(() => new Map());
+  const [flashActivePaths, setFlashActivePaths] = useState<Set<string>>(() => new Set());
+  const markRedrawSuccess = useCallback((path: string) => {
+    setFlashCounts((current) => {
+      const next = new Map(current);
+      next.set(path, (next.get(path) ?? 0) + 1);
+      return next;
+    });
+    setFlashActivePaths((current) => {
+      const next = new Set(current);
+      next.add(path);
+      return next;
+    });
+    window.setTimeout(() => {
+      setFlashActivePaths((current) => {
+        const next = new Set(current);
+        next.delete(path);
+        return next;
+      });
+    }, durations.standard);
+  }, []);
   const paths = [...new Set([
     ...alwaysPaths,
     ...drawnPaths.filter((path) => pathPrefix === undefined || path.startsWith(pathPrefix)),
@@ -93,6 +203,8 @@ export default function DrawnValueRows({
           : <span>{renderedValue}</span>;
         const badge = drawn ? drawnBadge : pinnedBadge;
         const isCompact = typeof compact === "function" ? compact(path) : compact;
+        const isRedrawPending = pendingPaths.has(path) || resolvingPath === path;
+        const flashCount = flashCounts.get(path) ?? 0;
         const controls = (editable || redrawable) && (
           <span className="ml-3 inline-flex flex-wrap gap-1">
             {editable && !isEditing && (
@@ -105,16 +217,25 @@ export default function DrawnValueRows({
               </button>
             )}
             {redrawable && (
-              <button
-                type="button"
-                onClick={() => {
+              <RedrawActionButton
+                onRedraw={() => {
                   setEditingPath(null);
-                  onRedraw(path);
+                  return onRedraw(path);
                 }}
-                className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-              >
-                {redrawLabel}
-              </button>
+                label={redrawLabel}
+                disabled={redrawDisabled}
+                onSuccess={() => markRedrawSuccess(path)}
+                onPendingChange={(pending) => {
+                  setPendingPaths((current) => {
+                    const next = new Set(current);
+                    if (pending) next.add(path);
+                    else next.delete(path);
+                    return next.size === current.size && [...next].every((item) => current.has(item))
+                      ? current
+                      : next;
+                  });
+                }}
+              />
             )}
           </span>
         );
@@ -123,7 +244,12 @@ export default function DrawnValueRows({
         );
         if (isCompact) {
           return (
-            <div key={path} className="text-sm text-gray-700" data-drawn-value-path={path}>
+            <div
+              key={path}
+              className={`text-sm text-gray-700 transition-opacity duration-quick ease-signature ${isRedrawPending ? "opacity-50" : ""} ${flashActivePaths.has(path) ? "redraw-flash" : ""}`}
+              data-drawn-value-path={path}
+              data-redraw-flash={flashCount > 0 ? String(flashCount) : undefined}
+            >
               {renderValue ? <span>{label}: </span> : <span>{label}: {renderedValue}</span>}
               {(renderValue || isEditing) && valueContent}
               {badge !== undefined && (
@@ -137,7 +263,12 @@ export default function DrawnValueRows({
           );
         }
         return (
-          <div key={path} className="flex gap-3 text-sm" data-drawn-value-path={path}>
+          <div
+            key={path}
+            className={`flex gap-3 text-sm transition-opacity duration-quick ease-signature ${isRedrawPending ? "opacity-50" : ""} ${flashActivePaths.has(path) ? "redraw-flash" : ""}`}
+            data-drawn-value-path={path}
+            data-redraw-flash={flashCount > 0 ? String(flashCount) : undefined}
+          >
             <dt className="w-40 shrink-0 font-medium text-gray-600">{label}</dt>
             <dd className="min-w-0 break-words text-gray-900">
               {valueContent}

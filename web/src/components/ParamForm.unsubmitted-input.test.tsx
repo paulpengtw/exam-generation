@@ -54,10 +54,12 @@ vi.mock("../api/client", () => ({
 }));
 
 vi.mock("../i18n/useT", () => ({
-  useT: () => (key: string) =>
-    key === "form.confirm_subq_instruction_placeholder"
-      ? "例如：請聚焦在資料判讀與因果推論"
-      : key,
+  useT: () => (key: string) => ({
+    "form.confirm_subq_instruction_placeholder": "例如：請聚焦在資料判讀與因果推論",
+    "form.toggle_checkbox_mode": "切換勾選模式",
+    "form.toggle_search_mode": "切換搜尋模式",
+    "form.add_option": "+ 新增選項",
+  }[key] ?? key),
 }));
 
 import ParamForm from "./ParamForm";

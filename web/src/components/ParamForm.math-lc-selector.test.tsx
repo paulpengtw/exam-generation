@@ -49,7 +49,10 @@ vi.mock("../api/client", () => ({
 }));
 
 vi.mock("../i18n/useT", () => ({
-  useT: () => (key: string) => key,
+  useT: () => (key: string) => ({
+    "form.toggle_checkbox_mode": "切換勾選模式",
+    "form.toggle_search_mode": "切換搜尋模式",
+  }[key] ?? key),
 }));
 
 import ParamForm, { type GenerateParams } from "./ParamForm";

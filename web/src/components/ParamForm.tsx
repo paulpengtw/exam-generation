@@ -31,10 +31,21 @@ import CoreQuestionPicker from "./CoreQuestionPicker";
 import SubQuestionConfigEditor from "./SubQuestionConfigEditor";
 import SubQuestionCurriculumPickers, { SearchPicker } from "./SubQuestionCurriculumPickers";
 import SubquestionConfigCards, { type ResolvedSubQuestionConfig } from "./SubquestionConfigCards";
-import DrawnValueRows from "./DrawnValueRows";
+import DrawnValueRows, {
+  RedrawActionButton,
+  type RedrawAction,
+  type RedrawResult,
+} from "./DrawnValueRows";
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
 import { toGenerateParams } from "../utils/toGenerateParams";
 import { Spinner } from "../motion/Indicators";
+import { durations } from "../motion/tokens";
+import {
+  ActionButton,
+  ActionFailure,
+  InlineFailureNotice,
+  useActionFeedback,
+} from "../motion/actionFeedback";
 
 export interface SubQuestionConfig {
   question_type?: string;
@@ -488,12 +499,16 @@ function ConfirmationRowActions({
   onRedraw,
   editLabel,
   redrawLabel,
+  redrawDisabled = false,
+  onRedrawSuccess,
 }: {
   isRandom: boolean;
   editor?: () => ReactNode;
-  onRedraw?: () => void;
+  onRedraw?: RedrawAction;
   editLabel: ReactNode;
   redrawLabel: ReactNode;
+  redrawDisabled?: boolean;
+  onRedrawSuccess?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   if (!isRandom || (editor === undefined && onRedraw === undefined)) return null;
@@ -509,16 +524,15 @@ function ConfirmationRowActions({
         </button>
       )}
       {onRedraw !== undefined && (
-        <button
-          type="button"
-          onClick={() => {
+        <RedrawActionButton
+          onRedraw={() => {
             setEditing(false);
-            onRedraw();
+            return onRedraw();
           }}
-          className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-        >
-          {redrawLabel}
-        </button>
+          label={redrawLabel}
+          disabled={redrawDisabled}
+          onSuccess={onRedrawSuccess === undefined ? undefined : () => onRedrawSuccess()}
+        />
       )}
       {editing && editor?.()}
     </span>
@@ -1379,6 +1393,17 @@ export default function ParamForm({
   );
   const [resolverLoading, setResolverLoading] = useState(false);
   const [resolverError, setResolverError] = useState<string | null>(null);
+  const [activeRedrawPath, setActiveRedrawPath] = useState<string | null>(null);
+  const redrawPreviousValuesRef = useRef(new Map<string, unknown>());
+  const [redrawPreviousValues, setRedrawPreviousValues] = useState<Map<string, unknown>>(
+    () => new Map(),
+  );
+  const [confirmationFlashCounts, setConfirmationFlashCounts] = useState<Map<string, number>>(
+    () => new Map(),
+  );
+  const [confirmationFlashPaths, setConfirmationFlashPaths] = useState<Set<string>>(
+    () => new Set(),
+  );
   // Generic gate: keyed by "${questionIndex}-${subquestionIndex}-${field}". Any truthy entry disables 確認送出.
   const [confirmInvalidFields, setConfirmInvalidFields] = useState<Map<string, true>>(new Map());
   const [coreQuestionResolution, setCoreQuestionResolution] = useState<"idle" | "loading" | "generated" | "failed">(() =>
@@ -1399,6 +1424,7 @@ export default function ParamForm({
   const previewRequestedRef = useRef(recoveryConfirmation !== undefined);
   const previewRefetchSeqRef = useRef(0);
   const [previewRefetchLoading, setPreviewRefetchLoading] = useState(false);
+  const [previewInitialLoading, setPreviewInitialLoading] = useState(false);
   // #446: per-題組 stale-preview tracking. Keyed by 題組 index.
   // When non-empty a retry control appears on each stale 題組.
   const [stalePreviewIndices, setStalePreviewIndices] = useState<Set<number>>(new Set());
@@ -1408,6 +1434,7 @@ export default function ParamForm({
     payload: Record<string, unknown>;
     redraws: Record<string, number>;
     rebuildSubquestionSlots: boolean;
+    redrawPath?: string;
   } | null>(null);
   const resolveRequestSeqRef = useRef(0);
   const resolveOperationRef = useRef<OperationHandle | null>(null);
@@ -1425,6 +1452,27 @@ export default function ParamForm({
     pendingPerQuestionParams ? cloneJson(pendingPerQuestionParams) : null,
   );
   const confirmationSubmitInFlightRef = useRef(false);
+  const confirmSendFeedback = useActionFeedback<GenerationAdmissionResult | undefined>({
+    action: async () => {
+      const outcome = await handleConfirmSend();
+      if (outcome?.outcome === "rejected") {
+        throw new ActionFailure(outcome.reason ?? t("form.confirm_send_error"));
+      }
+      return outcome;
+    },
+    genericError: t("form.confirm_send_error"),
+    successState: "idle",
+    failureState: "idle",
+  });
+  const previewRetryFeedback = useActionFeedback<void>({
+    action: async () => {
+      const succeeded = await retryPreviewFetch(true);
+      if (!succeeded) {
+        throw new ActionFailure(previewError ?? t("form.confirm_preview_error"));
+      }
+    },
+    genericError: t("form.confirm_preview_error"),
+  });
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasInitialParams =
     initialParams !== undefined && Object.keys(initialParams).length > 0;
@@ -1807,11 +1855,13 @@ export default function ParamForm({
     ) return;
     let cancelled = false;
     previewRequestedRef.current = true;
+    setPreviewInitialLoading(true);
     const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
     void previewGenerate(toGenerateParams(subject, pendingParams))
       .then(({ prompts }) => {
         op.end("completed");
         if (cancelled) return;
+        setPreviewInitialLoading(false);
         if (isValidPromptPreviewResponse(prompts)) {
           setPromptPreviews(prompts);
         }
@@ -1820,6 +1870,7 @@ export default function ParamForm({
       .catch((cause: unknown) => {
         op.end("failed");
         if (cancelled) return;
+        setPreviewInitialLoading(false);
         setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
       });
     return () => { cancelled = true; op.end("superseded"); };
@@ -3142,7 +3193,8 @@ export default function ParamForm({
   function storeResolvedResponse(
     response: Awaited<ReturnType<typeof resolveGenerate>>,
     preserveConfirmationEdits: boolean,
-  ) {
+    redrawPath?: string,
+  ): RedrawResult {
     const rawPerQuestionParams = response.payload.per_question_params;
     const perQuestionParams = rawPerQuestionParams === undefined
       ? null
@@ -3154,6 +3206,14 @@ export default function ParamForm({
         : { per_question_params: JSON.stringify(perQuestionParams) }),
       drawn: response.drawn,
     } as FormParams;
+    const previousValue = redrawPath === undefined
+      ? undefined
+      : redrawPreviousValuesRef.current.get(redrawPath);
+    const hasPreviousValue = redrawPath !== undefined && redrawPreviousValuesRef.current.has(redrawPath);
+    const nextValue = redrawPath === undefined
+      ? undefined
+      : readConfirmationPathValue(redrawPath, resolvedParams as Record<string, unknown>, perQuestionParams ?? []);
+    const sameValue = hasPreviousValue && jsonDeepEqual(previousValue, nextValue);
     setPendingParams(resolvedParams);
     pendingParamsRef.current = resolvedParams;
     setPendingPerQuestionParams(perQuestionParams);
@@ -3168,6 +3228,12 @@ export default function ParamForm({
     previewRequestedRef.current = false;
     restoredConfirmationEffectsSuppressedRef.current = false;
     setPromptPreviews([]);
+    if (redrawPath !== undefined) {
+      redrawPreviousValuesRef.current.clear();
+      setRedrawPreviousValues(new Map());
+      setActiveRedrawPath(null);
+    }
+    return { ok: true, ...(redrawPath !== undefined ? { sameValue } : {}) };
   }
 
   async function resolveForConfirmation(
@@ -3175,21 +3241,22 @@ export default function ParamForm({
     redraws: Record<string, number>,
     preserveConfirmationEdits: boolean,
     rebuildSubquestionSlots = false,
-  ) {
+    redrawPath?: string,
+  ): Promise<RedrawResult> {
     const sequence = ++resolveRequestSeqRef.current;
     resolveOperationRef.current?.end("superseded");
     const op = useWorkspaceStore.getState().beginOperation("resolve", "generate.confirmation");
     resolveOperationRef.current = op;
-    resolveRequestRef.current = { payload, redraws, rebuildSubquestionSlots };
+    resolveRequestRef.current = { payload, redraws, rebuildSubquestionSlots, redrawPath };
     setResolverLoading(true);
     setResolverError(null);
     try {
       const response = await resolveGenerate(payload, redraws);
-      if (sequence !== resolveRequestSeqRef.current) return;
+      if (sequence !== resolveRequestSeqRef.current) return { ok: false };
       const carriedDrawn = Array.isArray(payload.drawn)
         ? payload.drawn.filter((path): path is string => typeof path === "string")
         : [];
-      storeResolvedResponse(
+      const result = storeResolvedResponse(
         {
           ...response,
           drawn: [...new Set([
@@ -3200,15 +3267,19 @@ export default function ParamForm({
           ])],
         },
         preserveConfirmationEdits,
+        redrawPath,
       );
       op.end("completed");
       if (resolveOperationRef.current === op) resolveOperationRef.current = null;
+      return result;
     } catch (cause) {
-      if (sequence !== resolveRequestSeqRef.current) return;
+      if (sequence !== resolveRequestSeqRef.current) return { ok: false };
       op.end("failed");
       if (resolveOperationRef.current === op) resolveOperationRef.current = null;
       setResolverLoading(false);
       setResolverError(resolveDisplayError(cause, lang, t("form.confirm_resolve_error")));
+      if (redrawPath !== undefined) setActiveRedrawPath(null);
+      return { ok: false };
     }
   }
 
@@ -3220,7 +3291,46 @@ export default function ParamForm({
       request.redraws,
       pendingParamsRef.current !== null,
       request.rebuildSubquestionSlots,
+      request.redrawPath,
     );
+  }
+
+  function rememberRedrawValues(entries: readonly (readonly [string, unknown])[]) {
+    const additions = entries.filter(([path]) => !redrawPreviousValuesRef.current.has(path));
+    if (additions.length === 0) return;
+    for (const [path, value] of additions) redrawPreviousValuesRef.current.set(path, value);
+    setRedrawPreviousValues((current) => {
+      const next = new Map(current);
+      for (const [path, value] of additions) {
+        if (!next.has(path)) next.set(path, value);
+      }
+      return next;
+    });
+  }
+
+  const markConfirmationRedrawSuccess = useCallback((path: string) => {
+    setConfirmationFlashCounts((current) => {
+      const next = new Map(current);
+      next.set(path, (next.get(path) ?? 0) + 1);
+      return next;
+    });
+    setConfirmationFlashPaths((current) => {
+      const next = new Set(current);
+      next.add(path);
+      return next;
+    });
+    window.setTimeout(() => {
+      setConfirmationFlashPaths((current) => {
+        const next = new Set(current);
+        next.delete(path);
+        return next;
+      });
+    }, durations.standard);
+  }, []);
+
+  function clearConfirmationFlash() {
+    setConfirmationFlashCounts(new Map());
+    setConfirmationFlashPaths(new Set());
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -3235,6 +3345,10 @@ export default function ParamForm({
     setClearedPaths([]);
     setResolverError(null);
     setPreviewError(null);
+    redrawPreviousValuesRef.current.clear();
+    setRedrawPreviousValues(new Map());
+    setActiveRedrawPath(null);
+    clearConfirmationFlash();
     if (grade === "") return;
     if (!setType.trim()) {
       setValidationError(t("form.error_set_type_required"));
@@ -3391,9 +3505,13 @@ export default function ParamForm({
     setPendingPerQuestionParams(null);
     setClearedPaths([]);
     setHasPendingConfirmationEdits(false);
+    redrawPreviousValuesRef.current.clear();
+    setRedrawPreviousValues(new Map());
+    setActiveRedrawPath(null);
+    clearConfirmationFlash();
   }
 
-  async function handleConfirmSend() {
+  async function handleConfirmSend(): Promise<GenerationAdmissionResult | undefined> {
     if (!pendingParams || confirmationSubmitInFlightRef.current) return;
     confirmationSubmitInFlightRef.current = true;
     const submittedParams = pendingPerQuestionParams
@@ -3422,22 +3540,23 @@ export default function ParamForm({
     if (admission === undefined || typeof admission.then !== "function") {
       clearSubmittedConfirmation();
       confirmationSubmitInFlightRef.current = false;
-      return;
+      return { outcome: "admitted" };
     }
     try {
       const outcome = await admission;
       if (outcome.outcome === "rejected") {
         generationStartedRef.current = false;
         confirmationSubmitInFlightRef.current = false;
-        return;
+        return outcome;
       }
+      clearSubmittedConfirmation();
+      confirmationSubmitInFlightRef.current = false;
+      return outcome;
     } catch {
       generationStartedRef.current = false;
       confirmationSubmitInFlightRef.current = false;
-      return;
+      return { outcome: "rejected", reason: t("form.confirm_send_error") };
     }
-    clearSubmittedConfirmation();
-    confirmationSubmitInFlightRef.current = false;
   }
 
   function updatePendingConfirmationField(
@@ -3445,13 +3564,13 @@ export default function ParamForm({
     field: string,
     value: unknown,
     redraw = false,
-  ) {
+  ): Promise<RedrawResult> {
     restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
     const questionParams = currentPerQuestionParams[questionIndex];
-    if (!currentParams || !questionParams) return;
+    if (!currentParams || !questionParams) return Promise.resolve({ ok: false });
 
     const canonical = RESOLVER_FIELD_ALIASES[field] ?? field;
     const path = `per_question_params[${questionIndex}].${canonical}`;
@@ -3461,6 +3580,22 @@ export default function ParamForm({
       `per_question_params[${questionIndex}].${field}`,
       ...(questionIndex === 0 ? [canonical, field] : []),
     ]);
+    const currentDrawnPaths = Array.isArray(currentParams.drawn) ? currentParams.drawn : [];
+    const isResolverRedraw = redraw || parentChildren !== undefined;
+    if (isResolverRedraw) {
+      setActiveRedrawPath(path);
+      const pathsToRemember = currentDrawnPaths.filter((drawnPath) =>
+        aliases.has(drawnPath) || (parentChildren !== undefined && isConfirmationChildPath(
+          drawnPath,
+          questionIndex,
+          parentChildren,
+        )),
+      );
+      rememberRedrawValues([...pathsToRemember, ...aliases].map((drawnPath) => [
+        drawnPath,
+        readConfirmationPathValue(drawnPath, currentParams as Record<string, unknown>, currentPerQuestionParams),
+      ]));
+    }
     const nextPerQuestionParams = currentPerQuestionParams.map((params, index) => {
       if (index !== questionIndex) return params;
       const next = { ...params };
@@ -3478,7 +3613,7 @@ export default function ParamForm({
       }
       return next;
     });
-    const nextDrawn = (Array.isArray(currentParams.drawn) ? currentParams.drawn : [])
+    const nextDrawn = currentDrawnPaths
       .filter((drawnPath) => !aliases.has(drawnPath))
       .filter((drawnPath) => canonical === "sub_question_count" || !parentChildren || !isConfirmationChildPath(
         drawnPath,
@@ -3493,6 +3628,9 @@ export default function ParamForm({
     if (value === undefined && canonical === "sub_question_count") {
       delete nextParams.sub_question_count;
     }
+    const displayParams = isResolverRedraw
+      ? { ...nextParams, drawn: currentDrawnPaths } as FormParams
+      : nextParams;
     const nextRedraws = (redraw || parentChildren)
       ? {
           ...redrawsRef.current,
@@ -3500,18 +3638,19 @@ export default function ParamForm({
         }
       : { ...redrawsRef.current };
 
-    pendingParamsRef.current = nextParams;
+    pendingParamsRef.current = displayParams;
     pendingPerQuestionParamsRef.current = nextPerQuestionParams;
     pendingEditedIndicesRef.current.add(questionIndex);
     redrawsRef.current = nextRedraws;
     setHasPendingConfirmationEdits(true);
-    setPendingParams(nextParams);
+    setPendingParams(displayParams);
     setPendingPerQuestionParams(nextPerQuestionParams);
-    void resolveForConfirmation(
+    return resolveForConfirmation(
       toGenerateParams(subject, nextParams) as unknown as Record<string, unknown>,
       nextRedraws,
       true,
       canonical === "sub_question_count",
+      isResolverRedraw ? path : undefined,
     );
   }
 
@@ -3711,15 +3850,15 @@ export default function ParamForm({
     questionIndex: number,
     subquestionIndex: number,
     field: string,
-  ) {
+  ): Promise<RedrawResult> {
     restoredConfirmationEffectsSuppressedRef.current = false;
     const currentParams = pendingParamsRef.current ?? pendingParams;
     const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
       parsePerQuestionParams(currentParams?.per_question_params);
     const questionParams = currentPerQuestionParams[questionIndex];
-    if (!currentParams || !questionParams) return;
+    if (!currentParams || !questionParams) return Promise.resolve({ ok: false });
     const configs = parseSubquestionConfigs(questionParams.subquestion_configs);
-    if (!configs[subquestionIndex]) return;
+    if (!configs[subquestionIndex]) return Promise.resolve({ ok: false });
 
     const nextConfigs = configs.map((config, index) => {
       if (index !== subquestionIndex) return config;
@@ -3739,7 +3878,16 @@ export default function ParamForm({
     const canonicalField = field === "cognitive_process" ? "認知歷程" : field;
     const path =
       `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${canonicalField}`;
-    const nextDrawn = (Array.isArray(currentParams.drawn) ? currentParams.drawn : [])
+    const currentDrawnPaths = Array.isArray(currentParams.drawn) ? currentParams.drawn : [];
+    setActiveRedrawPath(path);
+    rememberRedrawValues([
+      path,
+      `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${field}`,
+    ].map((drawnPath) => [
+      drawnPath,
+      readConfirmationPathValue(drawnPath, currentParams as Record<string, unknown>, currentPerQuestionParams),
+    ]));
+    const nextDrawn = currentDrawnPaths
       .filter((drawnPath) => drawnPath !== path && drawnPath !==
         `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${field}`);
     const nextParams = {
@@ -3747,21 +3895,24 @@ export default function ParamForm({
       drawn: nextDrawn,
       per_question_params: JSON.stringify(nextPerQuestionParams),
     } as FormParams;
+    const displayParams = { ...nextParams, drawn: currentDrawnPaths } as FormParams;
     const nextRedraws = {
       ...redrawsRef.current,
       [path]: (redrawsRef.current[path] ?? 0) + 1,
     };
-    pendingParamsRef.current = nextParams;
+    pendingParamsRef.current = displayParams;
     pendingPerQuestionParamsRef.current = nextPerQuestionParams;
     pendingEditedIndicesRef.current.add(questionIndex);
     redrawsRef.current = nextRedraws;
     setHasPendingConfirmationEdits(true);
-    setPendingParams(nextParams);
+    setPendingParams(displayParams);
     setPendingPerQuestionParams(nextPerQuestionParams);
-    void resolveForConfirmation(
+    return resolveForConfirmation(
       toGenerateParams(subject, nextParams) as unknown as Record<string, unknown>,
       nextRedraws,
       true,
+      false,
+      path,
     );
   }
 
@@ -3769,8 +3920,8 @@ export default function ParamForm({
     questionIndex: number,
     subquestionIndex: number,
     field: "learning_content" | "learning_performance",
-  ) {
-    resubmitSubquestionField(questionIndex, subquestionIndex, field);
+  ): Promise<RedrawResult> {
+    return resubmitSubquestionField(questionIndex, subquestionIndex, field);
   }
 
   function updatePendingSubquestionLc(
@@ -3792,8 +3943,8 @@ export default function ParamForm({
   // does means the race is harmless: whichever request lands last carries live
   // config either way.  On success the stale badge clears; on failure it stays
   // so the user can retry again.
-  function retryPreviewFetch() {
-    if (!pendingParams || !pendingPerQuestionParams || stalePreviewIndices.size === 0 || previewRefetchLoading) return;
+  async function retryPreviewFetch(force = false): Promise<boolean> {
+    if (!pendingParams || !pendingPerQuestionParams || (!force && stalePreviewIndices.size === 0) || previewRefetchLoading) return false;
     const seq = ++previewRefetchSeqRef.current;
     setPreviewRefetchLoading(true);
     const formParams = {
@@ -3802,30 +3953,36 @@ export default function ParamForm({
     };
     const fetchParams = toGenerateParams(subject, formParams);
     const op = useWorkspaceStore.getState().beginOperation("prompt_preview", "generate.confirmation");
-    void previewGenerate(fetchParams)
-      .then(({ prompts }) => {
-        if (seq !== previewRefetchSeqRef.current) {
-          op.end("superseded");
-          return;
-        }
-        op.end("completed");
-        if (isValidPromptPreviewResponse(prompts)) {
-          setPromptPreviews(prompts);
-        }
-        setPreviewRefetchLoading(false);
-        setPreviewError(null);
-        setStalePreviewIndices(new Set());
-      })
-      .catch((cause: unknown) => {
-        if (seq !== previewRefetchSeqRef.current) {
-          op.end("superseded");
-          return;
-        }
-        op.end("failed");
-        setPreviewRefetchLoading(false);
-        setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
-        // Leave stale badge in place so the user can retry again
-      });
+    return new Promise<boolean>((resolve) => {
+      void previewGenerate(fetchParams)
+        .then(({ prompts }) => {
+          if (seq !== previewRefetchSeqRef.current) {
+            op.end("superseded");
+            resolve(false);
+            return;
+          }
+          op.end("completed");
+          if (isValidPromptPreviewResponse(prompts)) {
+            setPromptPreviews(prompts);
+          }
+          setPreviewRefetchLoading(false);
+          setPreviewError(null);
+          setStalePreviewIndices(new Set());
+          resolve(true);
+        })
+        .catch((cause: unknown) => {
+          if (seq !== previewRefetchSeqRef.current) {
+            op.end("superseded");
+            resolve(false);
+            return;
+          }
+          op.end("failed");
+          setPreviewRefetchLoading(false);
+          setPreviewError(resolveDisplayError(cause, lang, t("form.confirm_preview_error")));
+          // Leave stale badge in place so the user can retry again
+          resolve(false);
+        });
+    });
   }
 
   function updatePendingSubquestionLp(
@@ -3980,8 +4137,29 @@ export default function ParamForm({
       "數學思考": t("form.confirm_math_thinking"),
       "認知歷程": t("form.confirm_subq_cognitive_process").replace(/[：:]\s*$/, ""),
     };
-    const valueForDrawnPath = (path: string): unknown =>
-      readConfirmationPathValue(path, p as Record<string, unknown>, resolvedPerQuestionParams);
+    const resolverPathVariants = (path: string): string[] => {
+      const variants = [path];
+      const match = path.match(/^(.*\.)([^.]+)$/);
+      if (!match) return variants;
+      const [, prefix, last] = match;
+      const alias = RESOLVER_VALUE_ALIASES[last] ?? Object.entries(RESOLVER_FIELD_ALIASES)
+        .find(([, value]) => value === last)?.[0];
+      if (alias !== undefined) variants.push(`${prefix}${alias}`);
+      return variants;
+    };
+    const valueForDrawnPath = (path: string): unknown => {
+      const value = readConfirmationPathValue(path, p as Record<string, unknown>, resolvedPerQuestionParams);
+      const isEmpty = value === undefined || value === null || value === "";
+      if (!isEmpty) return value;
+      for (const variant of resolverPathVariants(path)) {
+        if (redrawPreviousValues.has(variant)) {
+          return redrawPreviousValues.get(variant);
+        }
+      }
+      return value;
+    };
+    const isRowResolving = (path: string): boolean =>
+      resolverPathVariants(path).includes(activeRedrawPath ?? "");
     const sharedContentDomainValue = valueForDrawnPath("內容領域");
     const hasSharedContentDomain = subject === "social_studies" && (
       (sharedContentDomainValue !== undefined && sharedContentDomainValue !== "") ||
@@ -4047,7 +4225,8 @@ export default function ParamForm({
                 ) : undefined}
                 canEdit={(path) => path === "內容領域"}
                 onRedraw={(path) => {
-                  if (path === "內容領域") updatePendingConfirmationField(0, "content_domain", undefined, true);
+                  if (path === "內容領域") return updatePendingConfirmationField(0, "content_domain", undefined, true);
+                  return undefined;
                 }}
                 canRedraw={(path) => path === "內容領域"}
                 editLabel={t("form.confirm_edit")}
@@ -4057,6 +4236,8 @@ export default function ParamForm({
                 emptyValue={t("form.confirm_not_filled")}
                 drawnBadge={t("form.confirm_badge_random")}
                 pinnedBadge={t("form.confirm_badge_user")}
+                redrawDisabled={resolverLoading}
+                resolvingPath={activeRedrawPath}
               />
             )}
             {subject === "natural_sciences" && (
@@ -4078,7 +4259,8 @@ export default function ParamForm({
                 ) : undefined}
                 canEdit={(path) => path === "reporting_scale"}
                 onRedraw={(path) => {
-                  if (path === "reporting_scale") updatePendingConfirmationField(0, "reporting_scale", undefined, true);
+                  if (path === "reporting_scale") return updatePendingConfirmationField(0, "reporting_scale", undefined, true);
+                  return undefined;
                 }}
                 canRedraw={(path) => path === "reporting_scale"}
                 editLabel={t("form.confirm_edit")}
@@ -4088,33 +4270,54 @@ export default function ParamForm({
                 emptyValue={t("form.confirm_reporting_scale_per_subquestion")}
                 drawnBadge={t("form.confirm_badge_random")}
                 pinnedBadge={t("form.confirm_badge_user")}
+                redrawDisabled={resolverLoading}
+                resolvingPath={activeRedrawPath}
               />
             )}
           </dl>
         </section>
-        {previewRefetchLoading && (
-          <p className="text-sm text-amber-700">{t("form.confirm_preview_loading")}</p>
-        )}
-        {previewError && (
-          <div role="alert" className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-            {previewError}
-          </div>
-        )}
+        <section
+          role="region"
+          aria-label={t("form.confirm_prompt_preview")}
+          aria-busy={previewInitialLoading || previewRefetchLoading || previewRetryFeedback.state === "pending"}
+          className="space-y-3"
+        >
+          {(previewInitialLoading || previewRefetchLoading || previewRetryFeedback.state === "pending") && (
+            <p role="status" className="flex items-center gap-2 text-sm text-amber-700">
+              <Spinner />
+              {t("form.confirm_preview_loading")}
+            </p>
+          )}
+          <InlineFailureNotice
+            reason={previewError ?? previewRetryFeedback.reason}
+            onRetry={() => previewRetryFeedback.retry()}
+            retryDisabled={previewInitialLoading || previewRefetchLoading || previewRetryFeedback.state === "pending"}
+            onDismiss={() => {
+              setPreviewError(null);
+              previewRetryFeedback.dismiss();
+            }}
+            retryLabel={t("form.confirm_preview_retry")}
+          />
         <div className="space-y-4">
           {resolvedPerQuestionParams.map((questionParams, index) => {
             const heading = t("form.confirm_question_block").replace("{n}", String(index + 1));
-            const questionLpValues = Array.isArray(questionParams.learning_performance) &&
-              questionParams.learning_performance.length > 0
-              ? questionParams.learning_performance
-              : index === 0
-                ? p.learning_performance
-                : undefined;
-            const questionLcValues = Array.isArray(questionParams.learning_content) &&
-              questionParams.learning_content.length > 0
-              ? questionParams.learning_content
-              : index === 0
-                ? p.learning_content
-                : undefined;
+            const questionPathPrefix = `per_question_params[${index}].`;
+            const questionLpResolved = valueForDrawnPath(`${questionPathPrefix}學習表現`);
+            const questionLcResolved = valueForDrawnPath(`${questionPathPrefix}學習內容`);
+            const questionLpValues = Array.isArray(questionLpResolved) && questionLpResolved.length > 0
+              ? questionLpResolved
+              : Array.isArray(questionParams.learning_performance) && questionParams.learning_performance.length > 0
+                ? questionParams.learning_performance
+                : index === 0
+                  ? p.learning_performance
+                  : undefined;
+            const questionLcValues = Array.isArray(questionLcResolved) && questionLcResolved.length > 0
+              ? questionLcResolved
+              : Array.isArray(questionParams.learning_content) && questionParams.learning_content.length > 0
+                ? questionParams.learning_content
+                : index === 0
+                  ? p.learning_content
+                  : undefined;
             const questionLpCodes = Array.isArray(questionLpValues)
               ? questionLpValues.filter((code): code is string => typeof code === "string")
               : [];
@@ -4159,7 +4362,11 @@ export default function ParamForm({
             const questionSubquestionConfigs = parseSubquestionConfigs(
               questionParams.subquestion_configs,
             ) as ResolvedSubQuestionConfig[];
-            const questionSubQuestionCount = typeof questionParams.sub_question_count === "number"
+            const questionSubQuestionCountValue = valueForDrawnPath(`${questionPathPrefix}sub_question_count`);
+            const questionSubQuestionCountPath = `${questionPathPrefix}sub_question_count`;
+            const questionSubQuestionCount = typeof questionSubQuestionCountValue === "number"
+              ? questionSubQuestionCountValue
+              : typeof questionParams.sub_question_count === "number"
               ? questionParams.sub_question_count
               : index === 0 && typeof p.sub_question_count === "number"
                 ? p.sub_question_count
@@ -4169,7 +4376,6 @@ export default function ParamForm({
               index,
               "sub_question_count",
             );
-            const questionPathPrefix = `per_question_params[${index}].`;
             const questionDrawnPaths = drawnPaths.filter((path) =>
               path.startsWith(questionPathPrefix) ||
                 (index === 0 && !path.startsWith("per_question_params[")),
@@ -4337,21 +4543,24 @@ export default function ParamForm({
                     <span className="text-sm font-medium text-amber-700">
                       {t("form.confirm_preview_stale_badge")}
                     </span>
-                    <button
-                      type="button"
-                      onClick={retryPreviewFetch}
-                      disabled={previewRefetchLoading}
-                      className="rounded border border-amber-400 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {t("form.confirm_preview_retry")}
-                    </button>
+                    {!previewError && (
+                      <ActionButton
+                        feedback={previewRetryFeedback}
+                        label={t("form.confirm_preview_retry")}
+                        pendingLabel={t("form.confirm_preview_loading")}
+                        doneLabel={t("form.confirm_preview_retry")}
+                        disabled={previewRefetchLoading}
+                        className="border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                      />
+                    )}
                   </div>
                 )}
                 {questionSubQuestionCount !== undefined && (
                   <dl className="mb-3">
                     <div
-                      className="flex gap-3 text-sm"
-                      data-drawn-value-path={`${questionPathPrefix}sub_question_count`}
+                      className={`flex gap-3 text-sm transition-opacity duration-quick ease-signature ${isRowResolving(questionSubQuestionCountPath) ? "opacity-50" : ""} ${confirmationFlashPaths.has(questionSubQuestionCountPath) ? "redraw-flash" : ""}`}
+                      data-drawn-value-path={questionSubQuestionCountPath}
+                      data-redraw-flash={confirmationFlashCounts.get(questionSubQuestionCountPath) ?? undefined}
                     >
                       <dt className="w-40 shrink-0 font-medium text-gray-600">
                         {t("form.confirm_sub_question_count")}
@@ -4364,6 +4573,7 @@ export default function ParamForm({
                         {questionSubQuestionCountWasDrawn && (
                           <ConfirmationRowActions
                             isRandom
+                            redrawDisabled={resolverLoading}
                             editor={() => (
                               <ConfirmationSubQuestionCountInput
                                 value={questionSubQuestionCount}
@@ -4380,6 +4590,7 @@ export default function ParamForm({
                               undefined,
                               true,
                             )}
+                            onRedrawSuccess={() => markConfirmationRedrawSuccess(questionSubQuestionCountPath)}
                             editLabel={t("form.confirm_edit")}
                             redrawLabel={t("form.confirm_redraw")}
                           />
@@ -4419,7 +4630,13 @@ export default function ParamForm({
                 )}
                 <dl className="space-y-2">
                   {perQuestionRows.map(({ key, label }) => {
-                      const value = questionParams[key];
+                      const rowPath = `${questionPathPrefix}${RESOLVER_FIELD_ALIASES[key] ?? key}`;
+                      const rawValue = questionParams[key];
+                      const resolvedValue = valueForDrawnPath(rowPath);
+                      const value = (rawValue === undefined || rawValue === null || rawValue === "") &&
+                        resolvedValue !== undefined
+                        ? resolvedValue
+                        : rawValue;
                       const displayValue = Array.isArray(value)
                         ? value.join(", ")
                         : value === undefined
@@ -4427,12 +4644,17 @@ export default function ParamForm({
                           : String(value);
                       const isRandom = resolverDrewField(drawnPaths, index, key);
                       const isPredrawnSeed = key === "seed" && isRandom;
-                      const rowPath = `${questionPathPrefix}${RESOLVER_FIELD_ALIASES[key] ?? key}`;
                       const editor = key === "seed"
                         ? undefined
                         : () => renderConfirmationEditor(key, value);
+                      const flashCount = confirmationFlashCounts.get(rowPath);
                       return (
-                        <div key={key} className="flex gap-3 text-sm" data-drawn-value-path={rowPath}>
+                        <div
+                          key={key}
+                          className={`flex gap-3 text-sm transition-opacity duration-quick ease-signature ${isRowResolving(rowPath) ? "opacity-50" : ""} ${confirmationFlashPaths.has(rowPath) ? "redraw-flash" : ""}`}
+                          data-drawn-value-path={rowPath}
+                          data-redraw-flash={flashCount ?? undefined}
+                        >
                           <dt className="w-40 shrink-0 font-medium text-gray-600">
                             {label}
                           </dt>
@@ -4450,10 +4672,12 @@ export default function ParamForm({
                             )}
                             <ConfirmationRowActions
                               isRandom={isRandom && !isPredrawnSeed}
+                              redrawDisabled={resolverLoading}
                               editor={editor}
                               onRedraw={key === "seed"
                                 ? undefined
                                 : () => updatePendingConfirmationField(index, key, undefined, true)}
+                              onRedrawSuccess={() => markConfirmationRedrawSuccess(rowPath)}
                               editLabel={t("form.confirm_edit")}
                               redrawLabel={t("form.confirm_redraw")}
                             />
@@ -4512,7 +4736,7 @@ export default function ParamForm({
                       const key = field === "內容領域"
                         ? "content_domain"
                         : field === "數學思考" ? "math_thinking" : "core_competency";
-                      updatePendingConfirmationField(index, key, undefined, true);
+                      return updatePendingConfirmationField(index, key, undefined, true);
                     }}
                     canRedraw={(path) => {
                       const field = path.match(/(?:^|\.)([^.[\]]+)$/)?.[1];
@@ -4525,11 +4749,14 @@ export default function ParamForm({
                     emptyValue={t("form.confirm_not_filled")}
                     drawnBadge={t("form.confirm_badge_random")}
                     pinnedBadge={t("form.confirm_badge_user")}
+                    redrawDisabled={resolverLoading}
+                    resolvingPath={activeRedrawPath}
                     compact={(path) => path.endsWith("內容領域")}
                   />
                   <div
-                    className="flex gap-3 text-sm"
+                    className={`flex gap-3 text-sm transition-opacity duration-quick ease-signature ${isRowResolving(`${questionPathPrefix}學習表現`) ? "opacity-50" : ""} ${confirmationFlashPaths.has(`${questionPathPrefix}學習表現`) ? "redraw-flash" : ""}`}
                     data-drawn-value-path={`${questionPathPrefix}學習表現`}
+                    data-redraw-flash={confirmationFlashCounts.get(`${questionPathPrefix}學習表現`) ?? undefined}
                   >
                       <dt className="w-40 shrink-0 font-medium text-gray-600">{t("form.confirm_learning_performance")}</dt>
                       <dd className="min-w-0 flex-1 text-gray-900">
@@ -4551,6 +4778,7 @@ export default function ParamForm({
                         {questionLpWasDrawn && (
                           <ConfirmationRowActions
                             isRandom
+                            redrawDisabled={resolverLoading}
                             editor={() => (
                               <ConfirmationMultiSelect
                                 label={t("form.confirm_learning_performance")}
@@ -4570,6 +4798,7 @@ export default function ParamForm({
                               undefined,
                               true,
                             )}
+                            onRedrawSuccess={() => markConfirmationRedrawSuccess(`${questionPathPrefix}學習表現`)}
                             editLabel={t("form.confirm_edit")}
                             redrawLabel={t("form.confirm_redraw")}
                           />
@@ -4582,8 +4811,9 @@ export default function ParamForm({
                       </dd>
                   </div>
                   <div
-                    className="flex gap-3 text-sm"
+                    className={`flex gap-3 text-sm transition-opacity duration-quick ease-signature ${isRowResolving(`${questionPathPrefix}學習內容`) ? "opacity-50" : ""} ${confirmationFlashPaths.has(`${questionPathPrefix}學習內容`) ? "redraw-flash" : ""}`}
                     data-drawn-value-path={`${questionPathPrefix}學習內容`}
+                    data-redraw-flash={confirmationFlashCounts.get(`${questionPathPrefix}學習內容`) ?? undefined}
                   >
                       <dt className="w-40 shrink-0 font-medium text-gray-600">{t("form.confirm_learning_content")}</dt>
                       <dd className="min-w-0 flex-1 text-gray-900">
@@ -4607,6 +4837,7 @@ export default function ParamForm({
                         {questionLcWasDrawn && (
                           <ConfirmationRowActions
                             isRandom
+                            redrawDisabled={resolverLoading}
                             editor={() => (
                               <ConfirmationMultiSelect
                                 label={t("form.confirm_learning_content")}
@@ -4626,6 +4857,7 @@ export default function ParamForm({
                               undefined,
                               true,
                             )}
+                            onRedrawSuccess={() => markConfirmationRedrawSuccess(`${questionPathPrefix}學習內容`)}
                             editLabel={t("form.confirm_edit")}
                             redrawLabel={t("form.confirm_redraw")}
                           />
@@ -4693,6 +4925,9 @@ export default function ParamForm({
                       onFieldRedraw={(subquestionIndex, field) =>
                         resubmitSubquestionField(index, subquestionIndex, field)
                       }
+                      redrawDisabled={resolverLoading}
+                      resolvingPath={activeRedrawPath}
+                      valueForPath={valueForDrawnPath}
                     />
                   </section>
                 )}
@@ -4754,17 +4989,19 @@ export default function ParamForm({
             );
           })}
         </div>
+        </section>
         <div className="flex flex-wrap gap-3 pt-1">
-          <button
+          <ActionButton
+            feedback={confirmSendFeedback}
             type="button"
-            onClick={handleConfirmSend}
+            label={t("form.btn_confirm_send")}
+            pendingLabel={t("form.btn_confirm_send_pending")}
+            doneLabel={t("form.btn_confirm_send")}
             disabled={disabled || resolverLoading || resolverError !== null || confirmationHydrating ||
               (recoveryConfirmation !== undefined && coreQuestionResolution === "loading") ||
               confirmationHasInvalidFields}
-            className="inline-flex items-center gap-2 rounded bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("form.btn_confirm_send")}
-          </button>
+            className="bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          />
           <div className="flex flex-col items-start">
             <button
               type="button"
@@ -4782,6 +5019,7 @@ export default function ParamForm({
                 setConfirmInvalidFields(new Map());
                 setResolverLoading(false);
                 setResolverError(null);
+                clearConfirmationFlash();
                 // #446: clear stale state when navigating back to the form
                 setStalePreviewIndices(new Set());
               }}
@@ -5151,7 +5389,7 @@ export default function ParamForm({
               }}
               className="text-xs text-blue-600 hover:underline"
             >
-              {useCurriculumSearch ? "切換勾選模式" : "切換搜尋模式"}
+              {useCurriculumSearch ? t("form.toggle_checkbox_mode") : t("form.toggle_search_mode")}
             </button>
           </div>
           {availableLearningPerformance.length > 0 ? (
@@ -5409,7 +5647,7 @@ export default function ParamForm({
               }}
               className="text-xs text-blue-600 hover:underline"
             >
-              {useCurriculumSearch ? "切換勾選模式" : "切換搜尋模式"}
+              {useCurriculumSearch ? t("form.toggle_checkbox_mode") : t("form.toggle_search_mode")}
             </button>
           </div>
           {availableLearningContent.length > 0 ? (
@@ -5649,7 +5887,7 @@ export default function ParamForm({
               }}
               className="text-sm text-blue-600 hover:underline disabled:opacity-40"
               disabled={options.length >= 8}
-            >+ 新增選項</button>
+            >{t("form.add_option")}</button>
           </div>
         </fieldset>
       )}
@@ -5922,10 +6160,12 @@ export default function ParamForm({
         disabled={disabled || resolverLoading || recoveredInvalidFields.size > 0 || hasParentNarrowingConflict}
         className="inline-flex w-full items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
       >
-        {disabled && (
+        {resolverLoading && (
           <Spinner className="h-4 w-4" />
         )}
-        {disabled ? t("form.btn_generating") : t("form.btn_generate")}
+        {resolverLoading
+          ? t("form.btn_generating")
+          : t("form.btn_generate")}
       </button>
     </form>
   );

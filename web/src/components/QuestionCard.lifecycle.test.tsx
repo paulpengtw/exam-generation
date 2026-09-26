@@ -156,6 +156,14 @@ function mockAdmission(runId = "run-424") {
   );
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((yes) => {
+    resolve = yes;
+  });
+  return { promise, resolve };
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
@@ -164,6 +172,38 @@ afterEach(() => {
 });
 
 describe("QuestionCard 人工審題修正 run lifecycle", () => {
+  it("keeps 提交修改 pending until admission, then clears the control feedback", async () => {
+    const admission = deferred<Response>();
+    fetchMock.mockReturnValueOnce(admission.promise);
+    fetchEventSourceMock.mockImplementationOnce(async () => undefined);
+
+    render(<QuestionCard question={baseQuestion} recordId="record-424" isFinal />);
+    selectRange(getSelectionField("文本"), 7, 14);
+    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+      target: { value: "Fix the passage" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
+
+    const pendingButton = await screen.findByRole("button", { name: "Submitting…" });
+    expect(pendingButton).toBeDisabled();
+    expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    fireEvent.click(pendingButton);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      admission.resolve(new Response(JSON.stringify({ run_id: "run-424", status: "started" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+    });
+
+    await waitFor(() => expect(fetchEventSourceMock).toHaveBeenCalledOnce());
+    const settledButton = screen.getByRole("button", { name: "Submit modifications" });
+    expect(settledButton).not.toHaveAttribute("aria-busy");
+    expect(settledButton).not.toHaveTextContent("Done");
+    expect(settledButton).not.toHaveTextContent("!");
+  });
+
   it("renders 修改 → 驗證 → 修正 → 驗證 in stream order", async () => {
     let releaseStream!: () => void;
     const streamGate = new Promise<void>((resolve) => {

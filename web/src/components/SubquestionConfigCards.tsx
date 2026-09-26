@@ -1,9 +1,14 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import type { SchemaEntry } from "../api/client";
 import { useT } from "../i18n/useT";
+import { durations } from "../motion/tokens";
 import { SearchPicker, type SearchPickerEntry } from "./SubQuestionCurriculumPickers";
 import type { SubQuestionConfig } from "../components/ParamForm";
-import DrawnValueRows, { type DrawnValueLabelMap } from "./DrawnValueRows";
+import DrawnValueRows, {
+  RedrawActionButton,
+  type DrawnValueLabelMap,
+  type RedrawResult,
+} from "./DrawnValueRows";
 import {
   SubQuestionContentTypeField,
   SubQuestionFigureKindField,
@@ -56,6 +61,9 @@ export default function SubquestionConfigCards({
   onLpChange,
   onCognitiveProcessChange,
   onFieldRedraw,
+  redrawDisabled = false,
+  resolvingPath = null,
+  valueForPath,
 }: {
   configs: ResolvedSubQuestionConfig[];
   subject: string;
@@ -99,15 +107,44 @@ export default function SubquestionConfigCards({
   onLpChange?: (subquestionIndex: number, lp: string[]) => void;
   onCognitiveProcessChange?: (subquestionIndex: number, cognitiveProcess: string) => void;
   /** Called when the user requests a resolver redraw for a 小題 field. */
-  onFieldRedraw?: (subquestionIndex: number, field: string) => void;
+  onFieldRedraw?: (subquestionIndex: number, field: string) => RedrawResult | void | Promise<RedrawResult | void>;
+  redrawDisabled?: boolean;
+  resolvingPath?: string | null;
+  valueForPath?: (path: string) => unknown;
 }) {
   const t = useT();
+  const [flashCounts, setFlashCounts] = useState<Record<string, number>>({});
+  const [flashActivePaths, setFlashActivePaths] = useState<Set<string>>(() => new Set());
+  const markRedrawSuccess = (path: string) => {
+    setFlashCounts((current) => ({
+      ...current,
+      [path]: (current[path] ?? 0) + 1,
+    }));
+    setFlashActivePaths((current) => {
+      const next = new Set(current);
+      next.add(path);
+      return next;
+    });
+    window.setTimeout(() => {
+      setFlashActivePaths((current) => {
+        const next = new Set(current);
+        next.delete(path);
+        return next;
+      });
+    }, durations.standard);
+  };
   const resolverDrew = (subquestionIndex: number, field: string): boolean => {
     if (drawnPaths === undefined) return false;
     const prefix = `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].`;
     const canonical = field === "cognitive_process" ? "認知歷程" : field;
     return drawnPaths.includes(`${prefix}${field}`) || drawnPaths.includes(`${prefix}${canonical}`);
   };
+  const redrawPath = (subquestionIndex: number, field: string): string => {
+    const canonical = field === "cognitive_process" ? "認知歷程" : field;
+    return `per_question_params[${questionIndex}].subquestion_configs[${subquestionIndex}].${canonical}`;
+  };
+  const isResolving = (subquestionIndex: number, field: string): boolean =>
+    resolvingPath === redrawPath(subquestionIndex, field);
   // Base ID for associating labels with SearchPicker inputs — forward-compat hook
   // for #506 which will add a domain-scoped pool filter on top of this picker.
   const baseId = useId();
@@ -144,8 +181,28 @@ export default function SubquestionConfigCards({
         // Keep captured codes visible even when the current schema/domain pool
         // no longer admits them. The parent confirmation gate marks them
         // invalid; filtering here would silently hide the value to correct.
-        const visibleLearningContent = row.learning_content ?? [];
-        const visibleLearningPerformance = row.learning_performance ?? [];
+        const resolvedLearningContent = valueForPath?.(redrawPath(subquestionIndex, "learning_content"));
+        const resolvedLearningPerformance = valueForPath?.(redrawPath(subquestionIndex, "learning_performance"));
+        const visibleLearningContent = Array.isArray(resolvedLearningContent)
+          ? resolvedLearningContent.filter((value): value is string => typeof value === "string")
+          : row.learning_content ?? [];
+        const visibleLearningPerformance = Array.isArray(resolvedLearningPerformance)
+          ? resolvedLearningPerformance.filter((value): value is string => typeof value === "string")
+          : row.learning_performance ?? [];
+        const displayQuestionType = valueForPath?.(redrawPath(subquestionIndex, "question_type"));
+        const displayReportingScale = valueForPath?.(redrawPath(subquestionIndex, "reporting_scale"));
+        const displayRow = {
+          ...row,
+          ...(displayQuestionType === undefined || displayQuestionType === null
+            ? {}
+            : { question_type: String(displayQuestionType) }),
+          ...(displayReportingScale === undefined || displayReportingScale === null
+            ? {}
+            : { reporting_scale: String(displayReportingScale) }),
+        };
+        const questionTypePath = redrawPath(subquestionIndex, "question_type");
+        const learningContentPath = redrawPath(subquestionIndex, "learning_content");
+        const learningPerformancePath = redrawPath(subquestionIndex, "learning_performance");
 
         return (
           <li key={subquestionIndex} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
@@ -158,7 +215,11 @@ export default function SubquestionConfigCards({
                 fieldLabels={drawnValueLabels ?? defaultDrawnValueLabels}
                 pathPrefix={slotPathPrefix}
                 alwaysPaths={[subject === "social_studies" ? cognitivePath : reportingScalePath]}
-                valueForPath={(path) => readDrawnValue(path, row)}
+                valueForPath={(path) => {
+                  const value = readDrawnValue(path, row);
+                  if (value !== undefined && value !== null && value !== "") return value;
+                  return valueForPath?.(path) ?? value;
+                }}
                 renderEditor={subject === "social_studies" ? (path, value) => path.endsWith(".認知歷程") ? (
                   <select
                     aria-label={t("form.confirm_subq_cognitive_process")}
@@ -179,7 +240,7 @@ export default function SubquestionConfigCards({
                   </select>
                 ) : undefined : subject === "natural_sciences" && onReportingScaleChange ? (path) => path.endsWith(".reporting_scale") ? (
                   <SubQuestionReportingScaleField
-                    config={row}
+                    config={displayRow}
                     options={reportingScales}
                     hideLabel
                     emptyOptionLabel={t("form.confirm_not_filled")}
@@ -190,7 +251,7 @@ export default function SubquestionConfigCards({
                   ? (path) => path.endsWith(".reporting_scale")
                     ? (
                         <SubQuestionReportingScaleField
-                          config={row}
+                          config={displayRow}
                           options={reportingScales}
                           hideLabel
                           emptyOptionLabel={t("form.confirm_not_filled")}
@@ -203,8 +264,9 @@ export default function SubquestionConfigCards({
                 drawnBadge={t("form.confirm_badge_random")}
                 pinnedBadge={t("form.confirm_badge_user")}
                 onRedraw={(path) => {
-                  if (path.endsWith(".認知歷程")) onFieldRedraw?.(subquestionIndex, "cognitive_process");
-                  if (path.endsWith(".reporting_scale")) onFieldRedraw?.(subquestionIndex, "reporting_scale");
+                  if (path.endsWith(".認知歷程")) return onFieldRedraw?.(subquestionIndex, "cognitive_process");
+                  if (path.endsWith(".reporting_scale")) return onFieldRedraw?.(subquestionIndex, "reporting_scale");
+                  return undefined;
                 }}
                 canEdit={(path) => path.endsWith(".認知歷程") || path.endsWith(".reporting_scale")}
                 canRedraw={(path) => path.endsWith(".認知歷程") || path.endsWith(".reporting_scale")}
@@ -212,30 +274,36 @@ export default function SubquestionConfigCards({
                 redrawLabel={t("form.confirm_redraw")}
                 clearedPaths={clearedPaths}
                 clearedNotice={t("form.confirm_cleared_notice")}
+                redrawDisabled={redrawDisabled}
+                resolvingPath={resolvingPath}
                 compact
               />
             )}
             {onQuestionTypeChange ? (
-              <div>
+              <div
+                className={`transition-opacity duration-quick ease-signature ${isResolving(subquestionIndex, "question_type") ? "opacity-50" : ""} ${flashActivePaths.has(questionTypePath) ? "redraw-flash" : ""}`}
+                data-redraw-flash={flashCounts[questionTypePath] ? String(flashCounts[questionTypePath]) : undefined}
+              >
                 <SubQuestionQuestionTypeField
-                  config={row}
+                  config={displayRow}
                   subject={subject}
                   questionTypes={questionTypes}
                   emptyOptionLabel={t("form.confirm_not_filled")}
                   badge={{
-                    label: t(resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "form.confirm_badge_random" : "form.confirm_badge_user"),
-                    className: `text-xs font-medium ${resolverDrew(subquestionIndex, "question_type") || !row.question_type?.trim() ? "text-amber-700" : "text-green-700"}`,
+                    label: t(resolverDrew(subquestionIndex, "question_type") || !displayRow.question_type?.trim() ? "form.confirm_badge_random" : "form.confirm_badge_user"),
+                    className: `text-xs font-medium ${resolverDrew(subquestionIndex, "question_type") || !displayRow.question_type?.trim() ? "text-amber-700" : "text-green-700"}`,
                   }}
                   onChange={(patch) => onQuestionTypeChange(subquestionIndex, patch.question_type ?? "")}
                 />
                 {resolverDrew(subquestionIndex, "question_type") && onFieldRedraw && (
-                  <button
-                    type="button"
-                    onClick={() => onFieldRedraw(subquestionIndex, "question_type")}
-                    className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-                  >
-                    {t("form.confirm_redraw")}
-                  </button>
+                  <div className="mt-1">
+                    <RedrawActionButton
+                      onRedraw={() => onFieldRedraw(subquestionIndex, "question_type")}
+                      label={t("form.confirm_redraw")}
+                      disabled={redrawDisabled}
+                      onSuccess={() => markRedrawSuccess(questionTypePath)}
+                    />
+                  </div>
                 )}
               </div>
             ) : (
@@ -337,7 +405,10 @@ export default function SubquestionConfigCards({
             {/* 學習內容 — editable picker when callback provided, read-only otherwise */}
             <div>
               {onLcChange ? (
-                <div className="mt-2">
+                <div
+                  className={`mt-2 transition-opacity duration-quick ease-signature ${isResolving(subquestionIndex, "learning_content") ? "opacity-50" : ""} ${flashActivePaths.has(learningContentPath) ? "redraw-flash" : ""}`}
+                  data-redraw-flash={flashCounts[learningContentPath] ? String(flashCounts[learningContentPath]) : undefined}
+                >
                   <div className="flex items-center gap-2">
                     <label
                       htmlFor={lcPickerId}
@@ -371,13 +442,14 @@ export default function SubquestionConfigCards({
                     </span>
                   )}
                   {resolverDrew(subquestionIndex, "learning_content") && onFieldRedraw && (
-                    <button
-                      type="button"
-                      onClick={() => onFieldRedraw(subquestionIndex, "learning_content")}
-                      className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-                    >
-                      {t("form.confirm_redraw")}
-                    </button>
+                    <div className="mt-1">
+                      <RedrawActionButton
+                        onRedraw={() => onFieldRedraw(subquestionIndex, "learning_content")}
+                        label={t("form.confirm_redraw")}
+                        disabled={redrawDisabled}
+                        onSuccess={() => markRedrawSuccess(learningContentPath)}
+                      />
+                    </div>
                   )}
                 </div>
               ) : (
@@ -413,7 +485,10 @@ export default function SubquestionConfigCards({
             {/* 學習表現 — editable picker when callback provided, read-only otherwise */}
             <div>
               {onLpChange ? (
-                <div className="mt-2">
+                <div
+                  className={`mt-2 transition-opacity duration-quick ease-signature ${isResolving(subquestionIndex, "learning_performance") ? "opacity-50" : ""} ${flashActivePaths.has(learningPerformancePath) ? "redraw-flash" : ""}`}
+                  data-redraw-flash={flashCounts[learningPerformancePath] ? String(flashCounts[learningPerformancePath]) : undefined}
+                >
                   <div className="flex items-center gap-2">
                     <label
                       htmlFor={lpPickerId}
@@ -447,13 +522,14 @@ export default function SubquestionConfigCards({
                     </span>
                   )}
                   {resolverDrew(subquestionIndex, "learning_performance") && onFieldRedraw && (
-                    <button
-                      type="button"
-                      onClick={() => onFieldRedraw(subquestionIndex, "learning_performance")}
-                      className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-                    >
-                      {t("form.confirm_redraw")}
-                    </button>
+                    <div className="mt-1">
+                      <RedrawActionButton
+                        onRedraw={() => onFieldRedraw(subquestionIndex, "learning_performance")}
+                        label={t("form.confirm_redraw")}
+                        disabled={redrawDisabled}
+                        onSuccess={() => markRedrawSuccess(learningPerformancePath)}
+                      />
+                    </div>
                   )}
                 </div>
               ) : (
