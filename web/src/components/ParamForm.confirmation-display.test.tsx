@@ -1661,6 +1661,36 @@ describe("ParamForm 發送前確認 display semantics", () => {
     },
   );
 
+  it("keeps the in-flight planner across a confirmation edit with unchanged planner inputs", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    const planning = deferred<{ candidates: string[] }>();
+    planCoreQuestionsMock.mockReturnValueOnce(planning.promise);
+
+    await openConfirmation("social_studies", {
+      topic: "分數",
+      subject_filter: "歷史",
+      count: 1,
+      sub_question_count: 3,
+      subquestion_configs: [{}, {}, {}],
+    });
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+
+    const firstQuestion = within(screen.getByRole("region", { name: "第1題" }));
+    fireEvent.change(firstQuestion.getAllByLabelText("出題指示")[0], {
+      target: { value: "確認頁修改，不改變規劃輸入" },
+    });
+
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      planning.resolve({ candidates: ["預先規劃核心問題", "另一個核心問題", "第三個核心問題"] });
+    });
+
+    const coreQuestion = await confirmationRow("核心問題").findByText("預先規劃核心問題");
+    expect(coreQuestion).toBeInTheDocument();
+    expect(confirmationRow("核心問題").getByText("預先產生")).toBeInTheDocument();
+  });
+
   it.each(CORE_QUESTION_SUBJECTS)(
     "%s ignores a stale 核心問題 planner response after returning and submitting again",
     async (subject, schema) => {

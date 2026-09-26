@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from functools import lru_cache
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth.tokens import decode_jwt
 from server.config import ServerConfig
-from server.db import get_async_session
+from server.db import DatabaseUnavailableError, get_async_session
 from server.models import User
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache
@@ -67,8 +72,24 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         ) from exc
-    result = await session.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    try:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+    except (
+        TimeoutError,
+        OSError,
+        SQLAlchemyTimeoutError,
+        OperationalError,
+        InterfaceError,
+    ) as exc:
+        logger.warning(
+            "Database unavailable during authenticated user lookup",
+            extra={
+                "error_type": type(exc).__name__,
+                "error_module": type(exc).__module__,
+            },
+        )
+        raise DatabaseUnavailableError() from exc
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

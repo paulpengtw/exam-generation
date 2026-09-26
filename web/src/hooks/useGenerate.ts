@@ -1175,12 +1175,13 @@ export function useGenerate(): UseGenerateReturn {
     }
 
     // Preflight: ensure we have a current release status before submission.
-    // Only trigger a network check when the store is in the initial "checking"
-    // state (no check has run yet).  When the background poller already set a
-    // definitive status, use it directly — this keeps generate() synchronous in
-    // the common case and avoids a microtask deferral that would break tests
-    // using a synchronous act().
-    if (useReleaseStore.getState().status === "checking") {
+    // Trigger a network check for the initial "checking" state and retry an
+    // "unavailable" result. When the background poller already set a
+    // definitive status, use it directly — this keeps generate() synchronous
+    // in the common current/update-required/paused cases and avoids a
+    // microtask deferral that would break tests using a synchronous act().
+    const releaseStatus = useReleaseStore.getState().status;
+    if (releaseStatus === "checking" || releaseStatus === "unavailable") {
       await useReleaseStore.getState().checkNow();
     }
     const preflightStatus = useReleaseStore.getState().status;
@@ -1194,6 +1195,9 @@ export function useGenerate(): UseGenerateReturn {
       const msg = MESSAGES["zh-TW"][msgKey] ?? msgKey;
       setAdmission("idle");
       setAdmissionError(msg);
+      setErrorMessage(msg);
+      setStatus("error");
+      setFinishedAt(Date.now());
       settleAdmission({ outcome: "rejected", reason: msg });
       controller.abort();
       controllerRef.current = null;

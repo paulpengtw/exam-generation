@@ -1410,6 +1410,10 @@ export default function ParamForm({
   } | null>(null);
   const resolveRequestSeqRef = useRef(0);
   const resolveOperationRef = useRef<OperationHandle | null>(null);
+  const coreQuestionPlannerRef = useRef<{
+    inputKey: string;
+    operation: OperationHandle;
+  } | null>(null);
   const redrawsRef = useRef<Record<string, number>>(
     recoveryConfirmation ? cloneJson(recoveryConfirmation.redraws) : {},
   );
@@ -1882,72 +1886,93 @@ export default function ParamForm({
   }, [hasPendingConfirmationEdits, pendingPerQuestionParams, pendingParams, subject]);
 
   useEffect(() => {
+    const activeRequest = coreQuestionPlannerRef.current;
     if (
       restoredConfirmationEffectsSuppressedRef.current ||
-      !pendingParams ||
+      pendingParamsRef.current === null ||
       coreQuestionResolution !== "loading"
-    ) return;
-    let cancelled = false;
-    const pendingSubjectFilter = Array.isArray(pendingParams.subject_filter)
-      ? pendingParams.subject_filter
-      : pendingParams.subject_filter
-        ? [pendingParams.subject_filter]
+    ) {
+      if (activeRequest !== null) {
+        activeRequest.operation.end("aborted");
+        coreQuestionPlannerRef.current = null;
+      }
+      return;
+    }
+
+    // The confirmation screen can update pendingParams for fields that do not
+    // affect planning. Read the latest refs, but key the request only by the
+    // planner inputs so those edits do not cancel an in-flight call.
+    const latestParams = pendingParamsRef.current;
+    const pendingSubjectFilter = Array.isArray(latestParams.subject_filter)
+      ? latestParams.subject_filter
+      : latestParams.subject_filter
+        ? [latestParams.subject_filter]
         : undefined;
-    const op = useWorkspaceStore.getState().beginOperation("core_question_planning", "generate.confirmation");
-    void planCoreQuestions({
-      topic: pendingParams.topic ?? "",
+    const inputKey = JSON.stringify({
+      topic: latestParams.topic ?? "",
       subject,
       subject_filter: pendingSubjectFilter,
-      grade: pendingParams.grade,
+      grade: latestParams.grade,
+    });
+    if (activeRequest?.inputKey === inputKey) return;
+
+    if (activeRequest !== null) {
+      activeRequest.operation.end("superseded");
+      coreQuestionPlannerRef.current = null;
+    }
+
+    const operation = useWorkspaceStore.getState().beginOperation(
+      "core_question_planning",
+      "generate.confirmation",
+    );
+    const request = { inputKey, operation };
+    coreQuestionPlannerRef.current = request;
+    void planCoreQuestions({
+      topic: latestParams.topic ?? "",
+      subject,
+      subject_filter: pendingSubjectFilter,
+      grade: latestParams.grade,
     }).then(({ candidates }) => {
+      if (coreQuestionPlannerRef.current !== request) return;
+      coreQuestionPlannerRef.current = null;
       const selected = selectPlannedCoreQuestion(candidates);
-      op.end(selected ? "completed" : "failed");
-      if (cancelled) return;
+      operation.end(selected ? "completed" : "failed");
       if (!selected) {
         setCoreQuestionResolution("failed");
         return;
       }
-      setPendingPerQuestionParams((current) =>
-        current?.map((item) => ({ ...item, core_question: selected })) ?? current,
-      );
-      setPendingParams((current) => {
-        if (!current) return current;
-        const perQuestion = current.per_question_params
-          ? (JSON.parse(current.per_question_params) as Record<string, unknown>[]).map((item) => ({
-              ...item,
-              core_question: selected,
-            }))
-          : undefined;
-        return {
-          ...current,
-          core_question: selected,
-          per_question_params: perQuestion ? JSON.stringify(perQuestion) : undefined,
-        };
-      });
       const currentParams = pendingParamsRef.current;
       const currentPerQuestionParams = pendingPerQuestionParamsRef.current ??
         parsePerQuestionParams(currentParams?.per_question_params);
-      if (currentParams) {
-        const nextPerQuestionParams = currentPerQuestionParams.map((item) => ({
-          ...item,
-          core_question: selected,
-        }));
-        const nextParams = {
-          ...currentParams,
-          core_question: selected,
-          per_question_params: JSON.stringify(nextPerQuestionParams),
-        };
-        pendingParamsRef.current = nextParams;
-        pendingPerQuestionParamsRef.current = nextPerQuestionParams;
-      }
+      if (currentParams === null) return;
+      const nextPerQuestionParams = currentPerQuestionParams.map((item) => ({
+        ...item,
+        core_question: selected,
+      }));
+      const nextParams = {
+        ...currentParams,
+        core_question: selected,
+        per_question_params: JSON.stringify(nextPerQuestionParams),
+      };
+      pendingParamsRef.current = nextParams;
+      pendingPerQuestionParamsRef.current = nextPerQuestionParams;
+      setPendingPerQuestionParams(nextPerQuestionParams);
+      setPendingParams(nextParams);
       setCoreQuestionResolution("generated");
     }).catch(() => {
-      op.end("failed");
-      if (cancelled) return;
+      if (coreQuestionPlannerRef.current !== request) return;
+      coreQuestionPlannerRef.current = null;
+      operation.end("failed");
       setCoreQuestionResolution("failed");
     });
-    return () => { cancelled = true; op.end("aborted"); };
   }, [coreQuestionResolution, pendingParams, subject]);
+
+  useEffect(() => () => {
+    const activeRequest = coreQuestionPlannerRef.current;
+    if (activeRequest === null) return;
+    activeRequest.operation.end("aborted");
+    coreQuestionPlannerRef.current = null;
+  }, [subject]);
   const isCurriculumSubject =
     subject === "social_studies" || subject === "math" || subject === "natural_sciences";
   const supportsTextWordLimit = isCurriculumSubject;

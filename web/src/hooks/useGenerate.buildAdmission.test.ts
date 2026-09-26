@@ -63,6 +63,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   resetReleaseDetector();
 });
 
@@ -94,6 +95,8 @@ describe("useGenerate — build admission preflight", () => {
     );
     expect(result.current.admission).toBe("rejected");
     expect(result.current.admissionError).toContain("介面版本已更新");
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toContain("介面版本已更新");
     expect(fetchEventSourceMock).not.toHaveBeenCalled();
   });
 
@@ -113,6 +116,8 @@ describe("useGenerate — build admission preflight", () => {
       expect.objectContaining({ outcome: "rejected" })
     );
     expect(result.current.admissionError).toContain("暫停維護中");
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toContain("暫停維護中");
     expect(fetchEventSourceMock).not.toHaveBeenCalled();
   });
 
@@ -132,7 +137,68 @@ describe("useGenerate — build admission preflight", () => {
       expect.objectContaining({ outcome: "rejected" })
     );
     expect(result.current.admissionError).toContain("無法確認介面版本");
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toContain("無法確認介面版本");
     expect(fetchEventSourceMock).not.toHaveBeenCalled();
+  });
+
+  it("rechecks an unavailable release and submits when the policy becomes current", async () => {
+    setReleaseStatus("unavailable");
+    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
+      setReleaseStatus("current");
+    });
+
+    const { result } = renderHook(() => useGenerate());
+    act(() => {
+      result.current.generate({ subject: "math" });
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
+    expect(latestStreamOptions().headers).toEqual(expect.objectContaining({
+      "X-Frontend-Build-ID": "test-build-abc",
+    }));
+  });
+
+  it("rejects an unavailable release again when rechecking still fails", async () => {
+    setReleaseStatus("unavailable");
+    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
+      setReleaseStatus("unavailable");
+    });
+
+    const { result } = renderHook(() => useGenerate());
+    let promise!: Promise<AdmissionOutcome>;
+    await act(async () => {
+      promise = result.current.generate({ subject: "math" });
+    });
+
+    await expect(promise).resolves.toEqual(expect.objectContaining({ outcome: "rejected" }));
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toContain("無法確認介面版本");
+    expect(fetchEventSourceMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a retry after an admission rejection", async () => {
+    setReleaseStatus("unavailable");
+    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
+      setReleaseStatus("unavailable");
+    });
+
+    const { result } = renderHook(() => useGenerate());
+    let rejected!: Promise<AdmissionOutcome>;
+    await act(async () => {
+      rejected = result.current.generate({ subject: "math" });
+    });
+    await expect(rejected).resolves.toEqual(expect.objectContaining({ outcome: "rejected" }));
+
+    setReleaseStatus("current");
+    act(() => {
+      result.current.generate({ subject: "math" });
+    });
+    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
   });
 
   it("sends X-Frontend-Build-ID header when preflight passes (current)", async () => {

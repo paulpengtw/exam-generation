@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import functools
 import json
 import logging
 import uuid
@@ -633,12 +634,15 @@ async def plan_core_questions_endpoint(
     spec = SUBJECTS[body.subject]
     learning_stage = spec.load_planner_stage(None, body.grade)
     try:
-        candidates = spec.plan_core_questions(
-            client,
-            body.topic,
-            subject_filter=body.subject_filter,
-            grade=body.grade,
-            learning_stage=learning_stage,
+        candidates = await asyncio.to_thread(
+            functools.partial(
+                spec.plan_core_questions,
+                client,
+                body.topic,
+                subject_filter=body.subject_filter,
+                grade=body.grade,
+                learning_stage=learning_stage,
+            )
         )
     except ValueError as exc:
         from server.observability import PLANNER_DIAGNOSTIC_MARKER

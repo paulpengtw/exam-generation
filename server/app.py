@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth.dependencies import get_config
 from server.auth.routes import router as auth_router
 from server.config import ServerConfig
-from server.db import AsyncSessionLocal
+from server.db import AsyncSessionLocal, DatabaseUnavailableError
 from server.generate.drain import DrainTelemetry
 from server.generate.modification_routes import router as modification_router
 from server.generate.release_authority import AuthoritySource, build_authority_source
@@ -191,6 +191,20 @@ def create_app(*, release_authority_source: AuthoritySource | None = None) -> Fa
         )
 
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+
+    def _database_unavailable_handler(
+        _request: Request, _exc: DatabaseUnavailableError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Database temporarily unavailable; please retry.",
+                "code": "DATABASE_UNAVAILABLE",
+            },
+            headers={"Retry-After": "5"},
+        )
+
+    app.add_exception_handler(DatabaseUnavailableError, _database_unavailable_handler)
 
     def _unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
         # Starlette re-raises after this response; Sentry's outer ASGI wrapper captures once.

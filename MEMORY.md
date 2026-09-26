@@ -259,3 +259,9 @@ Durable gotchas and decisions for all agents and developers working on this repo
   document were unavailable in the worktrees and registered stores inspected
   for this implementation. Published GitHub issue requirements supplied the
   contract; original-source OpenSpec strict validation remains unverified.
+
+## Planner DB timeouts and silent preflight rejection (#853, 2026-09-26)
+
+- Evidence: Sentry traces `fcc14319…` and `cd26c7c7…` on 2026-09-25 reached no `/api/generate` transaction. Staging `/release/policy.json` returned 404, leaving the release store `unavailable`; the planner endpoint ran its synchronous Opus call on the event loop for about 35 s, starving concurrent asyncpg SSL handshakes until `TimeoutError` after about 81 s.
+- Fixes: planner calls run via `asyncio.to_thread`; asyncpg connection timeout is controlled by `DATABASE_CONNECT_TIMEOUT_SECONDS` (default 10); `get_current_user` maps DB failures to 503 `DATABASE_UNAVAILABLE` with `Retry-After: 5`; `useGenerate` now ends preflight rejection in `error` with the message and rechecks an `unavailable` policy on retry; confirmation makes one planner request per planner input.
+- The staging routing gap is an operator action tracked in [GitHub issue #864](https://github.com/paulpengtw/exam-generation/issues/864).
