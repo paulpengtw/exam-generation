@@ -189,10 +189,23 @@ _FAMILY_CASES = [
         [
             RubricEntry(
                 code="2",
-                規準說明="完整說明趨勢並舉例",
-                學生作答實例=["溶氧下降，夏季魚群浮頭"],
+                規準說明="完整說明水溫升高導致溶氧量下降的趨勢，並附一個具體例子。"
+                "學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。",
+                學生作答實例=["水溫升高時溶氧量下降，夏季魚群浮頭就是一例。"],
             ),
-            RubricEntry(code="0", 規準說明="無法說明趨勢", 學生作答實例=["不知道"]),
+            RubricEntry(
+                code="1",
+                規準說明="說明了趨勢或舉了例子，但推理鏈條有缺口：缺口一為有趨勢但未說明原因，缺口二為有例子但未連結到溶氧量。",
+                學生作答實例=[
+                    "水溫越高，溶氧量會下降，因為溫度高水分子跑得快。",
+                    "夏天魚群常浮頭，應該和溫度有關。",
+                ],
+            ),
+            RubricEntry(
+                code="0",
+                規準說明="未說明溶氧量趨勢，或方向錯誤。",
+                學生作答實例=["水溫越高溶解的氧氣越多，所以魚會更活躍。"],
+            ),
         ],
         id="constructed-response",
     ),
@@ -261,3 +274,186 @@ def test_ns_verifier_fails_on_off_stage_lc_when_grade_in_metadata() -> None:
     assert "[課綱代碼檢核]" in result.details
     # The reported code may use either the submitted or canonical spelling
     assert "Aa-IV-3" in result.details or "Aa-Ⅳ-3" in result.details
+
+
+# ---- Issue #866: rubric shape check hook tests ----
+
+def _conforming_cr_rubric() -> list:
+    """Conforming 2/1/0 rubric with 1/2/1 examples and fixed sentence."""
+    return [
+        RubricEntry(
+            code="2",
+            規準說明=(
+                "完整說明水溫升高導致溶氧量下降的趨勢，並附一個具體例子。"
+                "學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。"
+            ),
+            學生作答實例=["水溫升高時溶氧量下降，夏季魚群浮頭就是一例。"],
+        ),
+        RubricEntry(
+            code="1",
+            規準說明="說明了趨勢或舉了例子，但推理鏈條有缺口：缺口一為有趨勢但未說明原因，缺口二為有例子但未連結到溶氧量。",
+            學生作答實例=[
+                "水溫越高溶氧量會下降，因為溫度高水分子跑得快。",
+                "夏天魚群常浮頭，應該和溫度有關。",
+            ],
+        ),
+        RubricEntry(
+            code="0",
+            規準說明="未說明溶氧量趨勢，或方向錯誤。",
+            學生作答實例=["水溫越高溶解的氧氣越多，所以魚會更活躍。"],
+        ),
+    ]
+
+
+def _cr_question_with_rubric(rubric: list, sq_type: str = "Constructed response") -> ExamQuestion:
+    return ExamQuestion(
+        id="ns-cr-test",
+        核心問題="水溫對溶氧量的影響",
+        文本="河川在夏天水溫偏高，溶氧量測量結果顯示明顯差異……",
+        情境=["Personal"],
+        題型種類="題組題",
+        題型=sq_type,
+        subquestions=[
+            SubQuestion(
+                序號=1,
+                年級=8,
+                科目=["自然科學"],
+                題型=sq_type,
+                題目="請說明水溫上升如何影響水中溶氧量，並舉一例。",
+                答案="水溫上升，溶氧量下降；例如夏季魚群浮頭。",
+                答案解析="溫度升高使氣體溶解度降低，溶氧量因此下降。",
+                評分規準=rubric,
+                學習內容=[LearningContentRef(編碼="Ab-Ⅳ-1", 說明="水的溶解度")],
+                學習表現=[LearningContentRef(編碼="tr-Ⅳ-1", 說明="資料推論")],
+            )
+        ],
+    )
+
+
+def test_ns_rubric_shape_hook_passes_conforming_rubric() -> None:
+    """A conforming 2/1/0 rubric with 1/2/1 examples and fixed sentence passes."""
+    q = _cr_question_with_rubric(_conforming_cr_rubric())
+    result = verify_question(FakeClient(_passing_payload()), q)
+    assert result.passed is True
+    assert "[評分規準形狀檢核]" not in result.details
+
+
+def test_ns_rubric_shape_hook_fails_when_llm_already_failed() -> None:
+    """When LLM verdict is already failed, shape check appends to existing details."""
+    rubric = [
+        RubricEntry(
+            code="2",
+            規準說明="完整說明趨勢並舉例。學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。",
+            學生作答實例=["水溫升高溶氧量下降，夏季魚群浮頭。"],
+        ),
+        # [1] is missing — only 1 example instead of 2
+        RubricEntry(
+            code="1",
+            規準說明="說明了趨勢但未舉例，或舉例但未連結原因。",
+            學生作答實例=["水溫升高，溶氧量下降。"],
+        ),
+        RubricEntry(
+            code="0",
+            規準說明="未說明趨勢，或方向錯誤。",
+            學生作答實例=["水溫越高溶氧越多。"],
+        ),
+    ]
+    q = _cr_question_with_rubric(rubric)
+    failed_payload = {
+        "my_answer": "水溫升高，溶氧量下降",
+        "provided_answer": "水溫升高，溶氧量下降",
+        "answer_match": False,
+        "passed": False,
+        "details": "答案與素材矛盾。",
+    }
+    result = verify_question(FakeClient(failed_payload), q)
+    assert result.passed is False
+    assert "答案與素材矛盾" in result.details
+    assert "[評分規準形狀檢核]" in result.details
+    assert "第1題 [1] 級距需要 2 個學生作答實例" in result.details
+
+
+def test_ns_rubric_shape_hook_mixed_question_group() -> None:
+    """In a 題組 with headline CMC, only the CR subquestion is checked.
+
+    The CMC subquestion with 0X code and no examples reports nothing.
+    """
+    from src.natural_sciences.schemas import QuestionType
+
+    cr_rubric = _conforming_cr_rubric()
+    q = ExamQuestion(
+        id="ns-mixed",
+        核心問題="混合題型測試",
+        文本="測試文本……",
+        情境=["Personal"],
+        題型種類="題組題",
+        題型="Complex multiple-choice",  # headline is CMC
+        subquestions=[
+            SubQuestion(
+                序號=1,
+                年級=8,
+                科目=["自然科學"],
+                題型="Complex multiple-choice",  # CMC 小題 — not in scope
+                題目="請判斷下列敘述是非：(1)水溫升高溶氧量下降 (2)魚群浮頭表示溶氧充足",
+                答案="(1)是 (2)非",
+                答案解析="溫度升高氣體溶解度降低。",
+                評分規準=[
+                    RubricEntry(code="2", 規準說明="全對", 學生作答實例=[]),
+                    RubricEntry(code="1", 規準說明="部分正確", 學生作答實例=[]),
+                    RubricEntry(code="0", 規準說明="錯誤", 學生作答實例=[]),
+                    RubricEntry(code="0X", 規準說明="未作答", 學生作答實例=[]),
+                ],
+                學習內容=[LearningContentRef(編碼="Ab-Ⅳ-1", 說明="水的溶解度")],
+                學習表現=[LearningContentRef(編碼="tr-Ⅳ-1", 說明="資料推論")],
+            ),
+            SubQuestion(
+                序號=2,
+                年級=8,
+                科目=["自然科學"],
+                題型="Constructed response",  # CR 小題 — in scope
+                題目="請說明水溫升高為何導致溶氧量下降。",
+                答案="溫度升高使氣體溶解度降低。",
+                答案解析="溫度升高時水分子熱運動加速，氣體難以留在水中。",
+                評分規準=cr_rubric,
+                學習內容=[LearningContentRef(編碼="Ab-Ⅳ-1", 說明="水的溶解度")],
+                學習表現=[LearningContentRef(編碼="tr-Ⅳ-1", 說明="資料推論")],
+            ),
+        ],
+    )
+    result = verify_question(FakeClient(_passing_payload()), q)
+    # CR subquestion has a conforming rubric → should pass
+    assert result.passed is True
+    assert "[評分規準形狀檢核]" not in result.details
+
+
+def test_ns_rubric_shape_hook_cmc_with_0x_reports_nothing() -> None:
+    """CMC subquestion with 0X code and no examples is not checked by shape hook."""
+    q = ExamQuestion(
+        id="ns-cmc-only",
+        核心問題="選擇題型測試",
+        文本="測試文本……",
+        情境=["Personal"],
+        題型種類="題組題",
+        題型="Complex multiple-choice",
+        subquestions=[
+            SubQuestion(
+                序號=1,
+                年級=8,
+                科目=["自然科學"],
+                題型="Complex multiple-choice",
+                題目="請判斷下列敘述是非。",
+                答案="(1)是 (2)非",
+                答案解析="正確答案。",
+                評分規準=[
+                    RubricEntry(code="2", 規準說明="全對", 學生作答實例=[]),
+                    RubricEntry(code="1", 規準說明="部分", 學生作答實例=[]),
+                    RubricEntry(code="0", 規準說明="錯", 學生作答實例=[]),
+                    RubricEntry(code="0X", 規準說明="未答", 學生作答實例=[]),
+                ],
+                學習內容=[LearningContentRef(編碼="Ab-Ⅳ-1", 說明="溶解")],
+                學習表現=[LearningContentRef(編碼="tr-Ⅳ-1", 說明="推論")],
+            ),
+        ],
+    )
+    result = verify_question(FakeClient(_passing_payload()), q)
+    assert "[評分規準形狀檢核]" not in result.details

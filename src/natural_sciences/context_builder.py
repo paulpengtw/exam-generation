@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from src.common.batch_dedup import PriorScope, format_prior_scopes_block
+from src.common.open_response_rubric import OPEN_RESPONSE_RUBRIC_RULE
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
 from src.natural_sciences.curriculum_loader import (
     content_instructions,
@@ -213,7 +214,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 ## 評分規準
 - Simple multiple-choice：正確代號 2，錯誤代號 0。
 - Complex multiple-choice：通常採整組計分；全對代號 2，部分正確可給 1，錯誤代號 0，未作答 0X。
-- Constructed response：必須附 `評分規準`，使用 2 / 1 / 0 / 0X，並提供學生作答實例。
+- Constructed response：必須附 `評分規準`，使用 2 / 1 / 0。
 
 ## 課程綱要參考
 
@@ -825,8 +826,7 @@ def build_subquestion_system_prompt(
 ## 評分規準
 - Simple multiple-choice：正確代號 2，錯誤代號 0。
 - Complex multiple-choice：通常採整組計分；全對代號 2，部分正確可給 1，錯誤代號 0，未作答 0X。
-- Constructed response：必須附 `評分規準`，使用 2 / 1 / 0 / 0X，並提供學生作答實例。
-
+{OPEN_RESPONSE_RUBRIC_RULE}
 ## 課程綱要參考
 
 {curriculum_section}
