@@ -7,6 +7,10 @@ from collections.abc import Callable
 from src.common.correction_decision import CorrectionDecision
 from src.common.corrector import correct_question_common, parse_rubric
 from src.common.generation_events import OperationScope
+from src.common.open_response_rubric import (
+    COUNTING_STEM_CORRECTION_ROUTING_LINE,
+    OPEN_RESPONSE_RUBRIC_RULE,
+)
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient
 from src.social_studies.schemas import ExamQuestion, ImageSpec, VerificationResult
@@ -54,28 +58,31 @@ FROZEN_SUBQUESTION_FIELDS: frozenset[str] = frozenset(
     }
 )
 
-_CORRECTION_SYSTEM_PROMPT_CORE = """\
-你是一位108課綱社會領域素養導向命題教師，剛收到審核老師對一道題組的意見回饋。
-請根據審核意見「最小幅度」修正題目，保留所有正確的部分。
-
-修正原則：
-- **不要重寫整題**。只更正審核老師明確指出有問題的部分。
-- 若問題在小題答案或評分規準 → 只修改 subquestions 中對應小題的 答案/答案解析/評分規準。
-- 若問題在選項設計（答案不在選項中）→ 修正對應小題的題目文字與答案，同步修正 正確解題分析。
-- 若問題在文本素材或小題敘述歧義 → 最小幅度澄清文本或小題題目，同步調整答案解析。
-- 若 chart_verification 指出非連續文本素材錯誤 → 只修正 chart_spec 的 data/labels/description，
-  保留 render_mode、chart_type 不變。
-- 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、難度、id、metadata、
-  各小題的 學習內容/學習表現/核心素養/出題概念/出題指示/科目/年級，以及
-  `interaction`（含所有互動規格子欄位）；互動規格是原始題目的權威資料。
-- 若某小題的答案或選項有改動，該小題的 `誘答分析` 必須同步反映新的正解與誘答陷阱：
-  正解鍵改為「正確答案：…」，其他鍵改為新的誤解描述。選項標籤必須與新題目一致；
-  若題目沒有 (A)-(D) 標籤，可留空 `{}`。
-- `subquestions` 可以省略，表示不修改小題；若輸出此欄位，必須輸出與原題完全相同數量的清單。
-  每列的 `id`/`序號` 必須仍指向原列，且順序不可改變；不可新增、刪除、複製或重新排序小題。
-
-請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。
-"""
+_CORRECTION_SYSTEM_PROMPT_CORE = (
+    "你是一位108課綱社會領域素養導向命題教師，剛收到審核老師對一道題組的意見回饋。\n"
+    "請根據審核意見「最小幅度」修正題目，保留所有正確的部分。\n"
+    "\n"
+    "修正原則：\n"
+    "- **不要重寫整題**。只更正審核老師明確指出有問題的部分。\n"
+    "- 若問題在小題答案或評分規準 → 只修改 subquestions 中對應小題的 答案/答案解析/評分規準。\n"
+    + COUNTING_STEM_CORRECTION_ROUTING_LINE + "\n"
+    "修改開放式建構反應題的 `評分規準` 時，必須遵守下列規則：\n"
+    + OPEN_RESPONSE_RUBRIC_RULE
+    + "- 若問題在選項設計（答案不在選項中）→ 修正對應小題的題目文字與答案，同步修正 正確解題分析。\n"
+    "- 若問題在文本素材或小題敘述歧義 → 最小幅度澄清文本或小題題目，同步調整答案解析。\n"
+    "- 若 chart_verification 指出非連續文本素材錯誤 → 只修正 chart_spec 的 data/labels/description，\n"
+    "  保留 render_mode、chart_type 不變。\n"
+    "- 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、難度、id、metadata、\n"
+    "  各小題的 學習內容/學習表現/核心素養/出題概念/出題指示/科目/年級，以及\n"
+    "  `interaction`（含所有互動規格子欄位）；互動規格是原始題目的權威資料。\n"
+    "- 若某小題的答案或選項有改動，該小題的 `誘答分析` 必須同步反映新的正解與誘答陷阱：\n"
+    "  正解鍵改為「正確答案：…」，其他鍵改為新的誤解描述。選項標籤必須與新題目一致；\n"
+    "  若題目沒有 (A)-(D) 標籤，可留空 `{}`。\n"
+    "- `subquestions` 可以省略，表示不修改小題；若輸出此欄位，必須輸出與原題完全相同數量的清單。\n"
+    "  每列的 `id`/`序號` 必須仍指向原列，且順序不可改變；不可新增、刪除、複製或重新排序小題。\n"
+    "\n"
+    "請輸出修正後完整的題目 JSON，格式與原題目相同。只輸出 JSON，不要輸出其他文字。\n"
+)
 
 def _ss_rebuild_subquestion(
     sq_raw: dict,

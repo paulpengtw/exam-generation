@@ -308,3 +308,70 @@ def test_shape_check_level_2_with_0_examples_and_no_fixed_sentence() -> None:
     issues = check_open_response_rubric_shape(sqs)
     assert any("[2] 級距需要 1 個學生作答實例（目前 0 個）" in i for i in issues)
     assert any("第1題 [2] 規準說明缺少固定句" in i for i in issues)
+
+
+# ---------------------------------------------------------------------------
+# Cross-prompt byte-identical tests (issues #866 / #868)
+# ---------------------------------------------------------------------------
+
+
+def test_four_rubric_authoring_prompts_carry_block_byte_identical() -> None:
+    """The block in all four rubric-authoring prompts must be byte-identical (task 3.3).
+
+    Extracts OPEN_RESPONSE_RUBRIC_RULE from:
+    1. NS 子題產生器 system prompt
+    2. NS corrector system prompt
+    3. SS 子題產生器 system prompt (issue #868)
+    4. SS corrector system prompt (issue #868)
+    """
+    from src.natural_sciences.context_builder import build_subquestion_system_prompt as ns_subq
+    from src.natural_sciences.corrector import _CORRECTION_SYSTEM_PROMPT_CORE as ns_core
+    from src.social_studies.context_builder import build_subquestion_system_prompt as ss_subq
+    from src.social_studies.corrector import _CORRECTION_SYSTEM_PROMPT_CORE as ss_core
+
+    ns_subq_prompt = ns_subq("第四學習階段")
+    ss_subq_prompt = ss_subq("第四學習階段")
+
+    for label, text in [
+        ("NS subq", ns_subq_prompt),
+        ("NS corrector", ns_core),
+        ("SS subq", ss_subq_prompt),
+        ("SS corrector", ss_core),
+    ]:
+        assert OPEN_RESPONSE_RUBRIC_RULE in text, (
+            f"{label}: prompt does not contain OPEN_RESPONSE_RUBRIC_RULE"
+        )
+        # Count occurrences — must appear exactly once
+        assert text.count(OPEN_RESPONSE_RUBRIC_RULE) == 1, (
+            f"{label}: OPEN_RESPONSE_RUBRIC_RULE appears more than once"
+        )
+
+
+def test_ss_subquestion_system_prompt_contains_block_exactly_once_all_stages() -> None:
+    """Task 3.1: for every 學習階段, the SS 子題產生器 system prompt contains the block exactly once.
+
+    Also verifies it no longer says 「使用 0..N 並允許部分給分」 or 「1-2 個學生作答實例」,
+    and that the prompt formats cleanly (no leftover unformatted placeholders from .format()).
+    """
+    from src.social_studies.context_builder import build_subquestion_system_prompt
+    from src.social_studies.schema_loader import load_schemas
+
+    schemas = load_schemas()
+    # schema["學習階段"] is a plain string (the current stage), not a list.
+    stage_val = schemas.get("學習階段")
+    stages = [stage_val] if stage_val else ["第四學習階段"]
+
+    for stage in stages:
+        prompt = build_subquestion_system_prompt(stage)
+        assert OPEN_RESPONSE_RUBRIC_RULE in prompt, (
+            f"{stage}: prompt missing OPEN_RESPONSE_RUBRIC_RULE"
+        )
+        assert prompt.count(OPEN_RESPONSE_RUBRIC_RULE) == 1, (
+            f"{stage}: OPEN_RESPONSE_RUBRIC_RULE appears more than once"
+        )
+        assert "使用 0..N 並允許部分給分" not in prompt, (
+            f"{stage}: prompt still contains '使用 0..N 並允許部分給分'"
+        )
+        assert "1-2 個學生作答實例" not in prompt, (
+            f"{stage}: prompt still contains '1-2 個學生作答實例'"
+        )

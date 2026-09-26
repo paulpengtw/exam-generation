@@ -195,13 +195,28 @@ def test_rubric_entry_accepts_legacy_and_native_integer_scale_codes(code: str) -
 
 
 def test_new_social_studies_prompts_use_native_scoring_language() -> None:
-    prompt = build_system_prompt() + "\n" + build_subquestion_system_prompt("第四學習階段")
+    # Build both the 文本生成器 system prompt and the 子題產生器 system prompt.
+    system_prompt = build_system_prompt()
+    subq_prompt = build_subquestion_system_prompt("第四學習階段")
+    prompt = system_prompt + "\n" + subq_prompt
 
+    # task 3.4: 含「計分 0/1」與「每題專屬評分指引」
     assert "計分 0/1" in prompt
-    assert "分數 0..N 可部分給分" in prompt
     assert "每題專屬評分指引" in prompt
-    assert "每一分數級距附 1-2 個學生作答實例" in prompt
+
+    # task 3.4: 不含「0..N」、「2/1/0/0X」與「每一分數級距附 1-2 個學生作答實例」
+    assert "0..N" not in prompt
     assert "2/1/0/0X" not in prompt
+    assert "每一分數級距附 1-2 個學生作答實例" not in prompt
+
+    # task 3.4: 文本生成器 system prompt 不含「學生作答實例」
+    assert "學生作答實例" not in system_prompt
+
+    # task 3.4: 選擇題子句 byte-identical (stays unchanged)
+    _MC_CLAUSE = "**選擇題**：四選一單選題，計分 0/1：答對得 1 分、答錯 0 分。"
+    assert _MC_CLAUSE in system_prompt
+
+    # Other existing invariants
     assert "全對才給分" not in prompt
     assert RETIRED_TYPE not in prompt
 
@@ -271,6 +286,9 @@ def test_new_era_0x_rubric_code_fails_deterministic_verification() -> None:
     assert result.passed is False
     assert "0X" in result.details
     assert "第1題" in result.details
+    # task 3.6: details contains 「2 / 1 / 0」 and not 「0..N」
+    assert "2 / 1 / 0" in result.details
+    assert "0..N" not in result.details
 
 
 def test_legacy_0x_rubric_code_is_left_untouched_by_new_era_check() -> None:
@@ -280,3 +298,134 @@ def test_legacy_0x_rubric_code_is_left_untouched_by_new_era_check() -> None:
 
     assert result.passed is True
     assert result.details == "LLM 審核通過"
+
+
+# ---------------------------------------------------------------------------
+# Task 4.2: _ss_rubric_shape_check_hook tests
+# ---------------------------------------------------------------------------
+
+def _open_response_question_with_shape(
+    *,
+    cognitive_process: str | None,
+    rubric_entries: list,
+) -> ExamQuestion:
+    """Build an SS open-response question with the given rubric entries."""
+    from src.social_studies.schemas import RubricEntry as _RE
+    return ExamQuestion(
+        id="shape-check-test",
+        情境=["公共"],
+        題型種類="題組題",
+        題型="開放式建構反應題",
+        核心問題="測試用核心問題",
+        文本="測試文本",
+        subquestions=[
+            SubQuestion(
+                id="shape-check-test-01",
+                序號=1,
+                年級=8,
+                科目=["歷史"],
+                題型="開放式建構反應題",
+                認知歷程=cognitive_process,
+                題目="請說明你的理由。",
+                答案="合理說明",
+                答案解析="依文本判定",
+                評分規準=rubric_entries,
+            )
+        ],
+        題目=["測試文本", "請說明你的理由。"],
+        正確解題分析=["合理說明"],
+    )
+
+
+def _conforming_rubric_entries() -> list:
+    """Return a fully conforming 2/1/0 rubric with correct example counts."""
+    from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
+    return [
+        RubricEntry(
+            code="2",
+            規準說明=f"完整說明。{EXTRA_ITEMS_FIXED_SENTENCE}",
+            學生作答實例=["完整作答示例"],
+        ),
+        RubricEntry(
+            code="1",
+            規準說明="部分說明。",
+            學生作答實例=["最小對照示例", "另一種缺口示例"],
+        ),
+        RubricEntry(
+            code="0",
+            規準說明="未進入推理。",
+            學生作答實例=["錯誤作答示例"],
+        ),
+    ]
+
+
+def test_ss_rubric_shape_check_fails_nonconforming_open_response_with_cognitive_process() -> None:
+    """Task 4.2: a non-conforming rubric on a new-era SS open-response 小題 fails verification."""
+    # Rubric with wrong level set: uses 0X instead of 0
+    question = _open_response_question_with_shape(
+        cognitive_process="Knowing–Defining and Describing",
+        rubric_entries=[
+            RubricEntry(code="2", 規準說明="完整說明。", 學生作答實例=["完整作答"]),
+            RubricEntry(code="1", 規準說明="部分說明。", 學生作答實例=["示例"]),
+        ],
+    )
+
+    result = verify_question(_PassingVerifierClient(), question)
+
+    assert result.passed is False
+    assert "[評分規準形狀檢核]" in result.details
+    assert "第1題" in result.details
+
+
+def test_ss_rubric_shape_check_preserves_existing_details_on_llm_fail() -> None:
+    """Task 4.2: when LLM already failed, shape-check appends to existing details."""
+    class _FailingVerifierClient:
+        def generate_with_image(self, *_args, **_kwargs) -> str:
+            return json.dumps(
+                {
+                    "my_answer": "不確定",
+                    "provided_answer": "合理說明",
+                    "answer_match": False,
+                    "passed": False,
+                    "details": "LLM 審核不通過：答案不符",
+                },
+                ensure_ascii=False,
+            )
+
+    question = _open_response_question_with_shape(
+        cognitive_process="Knowing–Defining and Describing",
+        rubric_entries=[
+            RubricEntry(code="2", 規準說明="完整說明。", 學生作答實例=["完整作答"]),
+        ],
+    )
+
+    result = verify_question(_FailingVerifierClient(), question)
+
+    assert result.passed is False
+    # Both the LLM details and the shape-check details should be present.
+    assert "LLM 審核不通過" in result.details
+    assert "[評分規準形狀檢核]" in result.details
+
+
+def test_ss_rubric_shape_check_skips_subquestion_without_cognitive_process() -> None:
+    """Task 4.2: a 小題 without 認知歷程 carrying 0X still passes with details unchanged."""
+    question = _question_with_rubric(cognitive_process=None, code="0X")
+
+    result = verify_question(_PassingVerifierClient(), question)
+
+    # The shape check skips (no 認知歷程); the 0X scale check also skips.
+    assert result.passed is True
+    assert result.details == "LLM 審核通過"
+
+
+def test_ss_rubric_shape_check_passes_conforming_open_response() -> None:
+    """Task 4.2: a conforming rubric on a new-era SS open-response 小題 passes."""
+    question = _open_response_question_with_shape(
+        cognitive_process="Knowing–Defining and Describing",
+        rubric_entries=_conforming_rubric_entries(),
+    )
+
+    result = verify_question(_PassingVerifierClient(), question)
+
+    assert result.passed is True
+    assert "[評分規準形狀檢核]" not in result.details
