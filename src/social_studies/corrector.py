@@ -68,9 +68,9 @@ _CORRECTION_SYSTEM_PROMPT_CORE = (
     + COUNTING_STEM_CORRECTION_ROUTING_LINE + "\n"
     "修改開放式建構反應題的 `評分規準` 時，必須遵守下列規則：\n"
     + OPEN_RESPONSE_RUBRIC_RULE
-    + "- 若問題在選項設計（答案不在選項中）→ 修正對應小題的題目文字與答案，同步修正 正確解題分析。\n"
+    + "- 若問題在選項設計（答案不在選項中）→ 修正對應小題的題目文字與答案，同步修正 正確解題分析。\n"  # noqa: E501
     "- 若問題在文本素材或小題敘述歧義 → 最小幅度澄清文本或小題題目，同步調整答案解析。\n"
-    "- 若 chart_verification 指出非連續文本素材錯誤 → 只修正 chart_spec 的 data/labels/description，\n"
+    "- 若 chart_verification 指出非連續文本素材錯誤 → 只修正 chart_spec 的 data/labels/description，\n"  # noqa: E501
     "  保留 render_mode、chart_type 不變。\n"
     "- 絕對不可修改：核心問題、情境、題型種類、題型、閱讀歷程、文本形式、難度、id、metadata、\n"
     "  各小題的 學習內容/學習表現/核心素養/出題概念/出題指示/科目/年級，以及\n"

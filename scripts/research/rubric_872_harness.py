@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """
 Research #872 — counting_stem flag and figure-framing route.
 
@@ -27,7 +28,8 @@ import json
 import pathlib
 import sys
 import time
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +39,7 @@ from typing import Any
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from src.config import Config   # noqa: E402
+from src.config import Config  # noqa: E402
 from src.llm_client import LLMClient  # noqa: E402
 from src.renderer import render_chart  # noqa: E402
 
@@ -512,7 +514,7 @@ class CountingStemEntry:
     # Ground-truth label (from the written rule; NOT derived from model output)
     label: bool = False        # True = counting_stem
     label_reason: str = ""
-    category: str = ""         # "corpus_positive" | "synthetic_positive" | "corpus_negative" | "dangerous_fp"
+    category: str = ""         # "corpus_positive" | "synthetic_positive" | "corpus_negative" | "dangerous_fp"  # noqa: E501
     # LLM output
     llm_counting_stem: bool | None = None
     llm_reason: str = ""
@@ -1110,7 +1112,7 @@ def build_figure_route_items(image_dir: Path) -> list[FigureRouteEntry]:
             "請說明你從圖(三)中如何判斷。"
         ),
         rubric_level_2=(
-            "[2] 正確說明圖(三)中高溫（35°C）的最高光合速率（20）高於低溫（15°C）的最高光合速率（13）；"
+            "[2] 正確說明圖(三)中高溫（35°C）的最高光合速率（20）高於低溫（15°C）的最高光合速率（13）；"  # noqa: E501
             "兩個成員（高溫、低溫）均取自圖(三)的長條標示。"
             "學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。"
         ),
@@ -1131,7 +1133,7 @@ def build_figure_route_items(image_dir: Path) -> list[FigureRouteEntry]:
             "根據圖(三)，說明高溫、低溫和中溫三種條件下光合作用速率的差異。"
         ),
         rubric_level_2=(
-            "[2] 正確說明圖(三)中高溫（35°C）速率最高（20），中溫（25°C）次之（約16），低溫（15°C）最低（13）；"
+            "[2] 正確說明圖(三)中高溫（35°C）速率最高（20），中溫（25°C）次之（約16），低溫（15°C）最低（13）；"  # noqa: E501
             "三個成員（高溫、中溫、低溫）均取自圖(三)。"
             "學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。"
         ),
@@ -1314,7 +1316,7 @@ def compute_figure_route_matrix(items: list[FigureRouteEntry]) -> dict:
             "wrong": len(wrong),
             "errors": len(errors),
             "correct_entries": [(i.key, i.llm_verdict) for i in correct],
-            "wrong_entries": [(i.key, i.expected_verdict, i.llm_verdict, i.llm_reject_reason) for i in wrong],
+            "wrong_entries": [(i.key, i.expected_verdict, i.llm_verdict, i.llm_reject_reason) for i in wrong],  # noqa: E501
         }
     return result
 
@@ -1354,9 +1356,9 @@ def main() -> None:
     print(f"  New LLM calls in step 2: {calls_step2}", file=sys.stderr)
 
     recall_data = compute_counting_recall_relabelled(relabelled)
-    print(f"\n  Relabelled set counting-only recall:", file=sys.stderr)
+    print("\n  Relabelled set counting-only recall:", file=sys.stderr)
     print(f"    TP={recall_data['tp']} / {recall_data['violates_count']} VIOLATES", file=sys.stderr)
-    print(f"    FN entries:", file=sys.stderr)
+    print("    FN entries:", file=sys.stderr)
     for fn_item in recall_data["fn_entries"]:
         print(f"      {fn_item[0]} seq={fn_item[1]}: {str(fn_item[2])[:80]}", file=sys.stderr)
 
@@ -1367,7 +1369,7 @@ def main() -> None:
     cs_entries = build_counting_stem_labelled_set()
     positives = [e for e in cs_entries if e.label]
     negatives = [e for e in cs_entries if not e.label]
-    print(f"  Entries: {len(cs_entries)} total ({len(positives)} positive, {len(negatives)} negative)", file=sys.stderr)
+    print(f"  Entries: {len(cs_entries)} total ({len(positives)} positive, {len(negatives)} negative)", file=sys.stderr)  # noqa: E501
 
     cs_entries, calls_step3 = run_counting_stem_criterion(
         cs_entries, client, RESPONSES_872, rate_limit
@@ -1414,7 +1416,7 @@ def main() -> None:
 
     print("\n--- Step 3: counting_stem confusion matrix ---")
     cs = cs_matrix
-    print(f"  Total: {cs['total']}  TP={cs['tp']}  FN={cs['fn']}  FP={cs['fp']}  TN={cs['tn']}  Err={cs['errors']}")
+    print(f"  Total: {cs['total']}  TP={cs['tp']}  FN={cs['fn']}  FP={cs['fp']}  TN={cs['tn']}  Err={cs['errors']}")  # noqa: E501
     if cs['tp'] + cs['fn']:
         print(f"  Recall: {cs['tp']}/{cs['tp']+cs['fn']} = {cs['tp']/(cs['tp']+cs['fn']):.1%}")
     if cs['fp'] + cs['tn']:

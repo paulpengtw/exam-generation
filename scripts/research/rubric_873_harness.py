@@ -39,7 +39,7 @@ import json
 import pathlib
 import sys
 import time
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -53,7 +53,7 @@ from src.common.open_response_rubric import (  # noqa: E402
     EXTRA_ITEMS_FIXED_SENTENCE,
     OPEN_RESPONSE_RUBRIC_RULE,
 )
-from src.config import Config   # noqa: E402
+from src.config import Config  # noqa: E402
 from src.llm_client import LLMClient  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -1145,7 +1145,7 @@ def step1_extra_items_count() -> None:
     counts = count_extra_items_sentence(FS_DIR)
     total = counts["total"]
     has = counts["has"]
-    print(f"\n[Step 1] EXTRA_ITEMS_FIXED_SENTENCE count in Constructed-response corpus")
+    print("\n[Step 1] EXTRA_ITEMS_FIXED_SENTENCE count in Constructed-response corpus")
     print(f"  Total [2] rubric entries: {total}")
     print(f"  Has fixed sentence:       {has} ({100*has/total:.1f}% if total else 'N/A')")
     print(f"  Missing fixed sentence:   {total - has}")
@@ -1153,10 +1153,10 @@ def step1_extra_items_count() -> None:
         "  → Baseline: 0% of existing corpus rubrics have the #871 fixed sentence.\n"
         "    The generation-run measures whether the new prompt achieves ≥90% inclusion."
     )
-    print(f"\n[Step 1] Labelled set composition")
-    print(f"  Corpus (22 rubric levels in 19 小題): True=1, False=21")
-    print(f"  Synthetic positives (3): True=3")
-    print(f"  Near-misses (10): False=10")
+    print("\n[Step 1] Labelled set composition")
+    print("  Corpus (22 rubric levels in 19 小題): True=1, False=21")
+    print("  Synthetic positives (3): True=3")
+    print("  Near-misses (10): False=10")
     print(f"  Total: {len(EIR_LABELLED_SET)} entries (True={_true_count}, False={_false_count})")
 
 
@@ -1311,7 +1311,7 @@ def step3_generation_run(client: LLMClient, config: Any, cache: dict) -> None:
         total = len(generated_rubrics)
         has_fixed = sum(1 for r in generated_rubrics if r["has_fixed_sentence"])
         eir_true = sum(1 for r in generated_rubrics if r["every_item_required"])
-        print(f"\n[Step 3 results]")
+        print("\n[Step 3 results]")
         print(f"  Items generated: {total}")
         print(f"  Has EXTRA_ITEMS_FIXED_SENTENCE: {has_fixed}/{total} ({100*has_fixed/total:.1f}%)")
         print(f"  every_item_required = True: {eir_true}/{total} ({100*eir_true/total:.1f}%)")

@@ -92,13 +92,16 @@ def test_extra_items_fixed_sentence_is_substring_of_block() -> None:
 
 
 def test_block_byte_identical_to_final_block_txt() -> None:
-    """OPEN_RESPONSE_RUBRIC_RULE must be byte-identical to the approved final_block.txt."""
-    path = Path(
-        "/tmp/claude-1000/-workspace/a5a1e464-5288-47d1-a5bc-fac46e4a8a92/scratchpad/final_block.txt"
-    )
-    if not path.exists():
-        pytest.skip("final_block.txt not available in this environment")
-    expected = path.read_text(encoding="utf-8")
+    """OPEN_RESPONSE_RUBRIC_RULE must be byte-identical to the committed approved_block.txt.
+
+    Provenance: the #871 approved block
+    (https://github.com/paulpengtw/exam-generation/issues/871#issuecomment-5846500569)
+    with 【判準】 replaced by the #859 amendment.
+    Fixture committed at tests/fixtures/open_response_rubric/approved_block.txt.
+    """
+    # Fixture lives in the repo — never skip, never depend on a scratchpad path.
+    fixture = Path(__file__).parent / "fixtures" / "open_response_rubric" / "approved_block.txt"
+    expected = fixture.read_text(encoding="utf-8")
     assert OPEN_RESPONSE_RUBRIC_RULE == expected
 
 

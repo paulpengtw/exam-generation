@@ -91,7 +91,23 @@ OPEN_RESPONSE_RUBRIC_RULE = (
 # Expected 學生作答實例 count per rubric level for open-response questions.
 EXPECTED_EXAMPLE_COUNTS: dict[str, int] = {"2": 1, "1": 2, "0": 1}
 
+# Tag prefix appended to VerificationResult.details when shape issues are found.
+# Defined once here so rubric_870_live_batch.py and both verifier hooks share it.
+SHAPE_CHECK_TAG = "[評分規準形狀檢核]"
+
 _OPEN_RESPONSE_TYPES: frozenset[str] = frozenset({"開放式建構反應題", "Constructed response"})
+
+
+def append_shape_check_issues(result: object, issues: list[str]) -> None:
+    """Append *issues* to *result*.details and set *result*.passed = False.
+
+    Keeps the existing wire format byte-identical:
+        details.rstrip() + "\\n\\n" + SHAPE_CHECK_TAG + " " + "；".join(issues)
+    """
+    result.details = (  # type: ignore[union-attr]
+        result.details.rstrip() + "\n\n" + SHAPE_CHECK_TAG + " " + "；".join(issues)  # type: ignore[union-attr]
+    )
+    result.passed = False  # type: ignore[union-attr]
 
 
 def is_open_response(question_type: object) -> bool:
@@ -147,7 +163,6 @@ def check_open_response_rubric_shape(
             seen_codes.append(code)
 
         # 1. Check level set exactly {2, 1, 0}.
-        unique_codes = list(dict.fromkeys(seen_codes))  # preserves order, deduped
         expected_codes = {"2", "1", "0"}
         actual_code_set = set(seen_codes)
 

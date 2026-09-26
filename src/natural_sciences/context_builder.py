@@ -18,8 +18,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from src.common.batch_dedup import PriorScope, format_prior_scopes_block
-from src.common.open_response_rubric import OPEN_RESPONSE_RUBRIC_RULE
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.common.open_response_rubric import OPEN_RESPONSE_RUBRIC_RULE
 from src.natural_sciences.curriculum_loader import (
     content_instructions,
     grade_to_learning_stage,

@@ -33,7 +33,8 @@ import json
 import pathlib
 import sys
 import uuid
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ from typing import Any
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from src.common.open_response_rubric import SHAPE_CHECK_TAG  # noqa: E402
 from src.config import Config  # noqa: E402
 from src.llm_client import LLMClient  # noqa: E402
 
@@ -57,7 +59,6 @@ RESULTS_FILE = OUT / "results.json"
 # Batch parameters
 # ---------------------------------------------------------------------------
 BATCH_SIZE = 5  # 題組 per subject
-SHAPE_CHECK_TAG = "[評分規準形狀檢核]"
 
 # ---------------------------------------------------------------------------
 # Credential probe
@@ -315,9 +316,9 @@ def main() -> None:
         s = results[key]
         print(
             f"\n{s['subject']} ({s['n']} 題組):"
-            f"\n  first-draft shape-check failure rate : {s.get('first_draft_shape_check_failure_rate', 'N/A'):.0%}"
-            f"\n  pass rate after correction           : {s.get('pass_rate_after_correction', 'N/A'):.0%}"
-            f"\n  mean correction rounds               : {s.get('mean_correction_rounds', 'N/A'):.2f}"
+            f"\n  first-draft shape-check failure rate : {s.get('first_draft_shape_check_failure_rate', 'N/A'):.0%}"  # noqa: E501
+            f"\n  pass rate after correction           : {s.get('pass_rate_after_correction', 'N/A'):.0%}"  # noqa: E501
+            f"\n  mean correction rounds               : {s.get('mean_correction_rounds', 'N/A'):.2f}"  # noqa: E501
         )
 
 

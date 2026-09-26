@@ -4,7 +4,7 @@
 
 ## 2. 單一來源規則區塊
 
-- [x] 2.1 新增 `src/common/open_response_rubric.py`，放入三樣東西：spec 規則區塊的常數 `OPEN_RESPONSE_RUBRIC_RULE`、`EXPECTED_EXAMPLE_COUNTS = {"2": 1, "1": 2, "0": 1}`，以及開放式題型判定（接受 enum 或字串）。新增單元測試斷言：常數含【禁止】【判準】【注意】【具體性】【學生作答實例】五個標記且各出現一次、不含 `{` 與 `}`；實例數常數為 1 / 2 / 1；`開放式建構反應題` 與 `Constructed response` 判定為開放式，其他題型不是。以 `uv run pytest` 跑新測試驗證。（#866 實作：7 個標記；含 EXTRA_ITEMS_FIXED_SENTENCE、COUNTING_STEM_CORRECTION_ROUTING_LINE；byte-identical to final_block.txt；2970 passed 2026-09-27）
+- [x] 2.1 新增 `src/common/open_response_rubric.py`，放入三樣東西：spec 規則區塊的常數 `OPEN_RESPONSE_RUBRIC_RULE`、`EXPECTED_EXAMPLE_COUNTS = {"2": 1, "1": 2, "0": 1}`，以及開放式題型判定（接受 enum 或字串）。新增單元測試斷言：七個標記【禁止】【判準】【注意】【提問】【額外項目】【具體性】【學生作答實例】各起頭恰好一個子句（以「行首 strip 後以標記開頭」計），其他子句中的交叉引用不限（見 #871 核准版本）；不含 `{` 與 `}`；實例數常數為 1 / 2 / 1；`開放式建構反應題` 與 `Constructed response` 判定為開放式，其他題型不是。以 `uv run pytest` 跑新測試驗證。（#866 實作；含 EXTRA_ITEMS_FIXED_SENTENCE、COUNTING_STEM_CORRECTION_ROUTING_LINE；byte-identical to tests/fixtures/open_response_rubric/approved_block.txt；2970 passed 2026-09-27；#871 approved block cited）
 
 ## 3. Prompt 落點（依 design D2 替換表）
 

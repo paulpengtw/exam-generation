@@ -7,7 +7,11 @@ from pathlib import Path
 
 from src.common.generation_events import OperationScope, new_operation_scope
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
-from src.common.open_response_rubric import check_open_response_rubric_shape, is_open_response
+from src.common.open_response_rubric import (
+    append_shape_check_issues,
+    check_open_response_rubric_shape,
+    is_open_response,
+)
 from src.common.verifier import PostVerifyHook, verify_question_common
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, emit_stage
@@ -281,8 +285,7 @@ def _ss_rubric_shape_check_hook(
     ]
     issues = check_open_response_rubric_shape(subquestions, in_scope=in_scope)
     if issues:
-        result.details = result.details.rstrip() + "\n\n[評分規準形狀檢核] " + "；".join(issues)
-        result.passed = False
+        append_shape_check_issues(result, issues)
     return result
 
 

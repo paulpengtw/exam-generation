@@ -19,7 +19,6 @@ import sys
 # ── 1. Register WenQuanYi Zen Hei BEFORE any matplotlib import ─────────────
 _WQY_PATH = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
 if pathlib.Path(_WQY_PATH).exists():
-    import matplotlib
     import matplotlib.font_manager as _fm
     _fm.fontManager.addfont(_WQY_PATH)
     import matplotlib.pyplot as _plt
