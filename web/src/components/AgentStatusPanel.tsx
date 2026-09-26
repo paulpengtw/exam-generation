@@ -74,6 +74,11 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
         ? "done"
         : "idle";
   const effectiveStatus = aggregateMode ? aggregateStatus : lane.status;
+  const activeStreamingPane = lane.streamingContent
+    ? "content"
+    : lane.streamingThinking
+      ? "thinking"
+      : null;
 
   return (
     <div className={`rounded-lg border p-3 space-y-2 transition-colors ${
@@ -88,7 +93,7 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
       {/* Header */}
       <div className="flex items-center gap-2">
         <StatusDot status={effectiveStatus} />
-        <span className="text-sm font-semibold text-gray-800">{agentLabel}</span>
+        <span className="sentry-unmask text-sm font-semibold text-gray-800">{agentLabel}</span>
         {aggregateMode ? (
           <span
             data-testid="agent-aggregate-counts"
@@ -101,7 +106,7 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
         ) : (
           <>
             {stageLabel && (
-              <span className="text-xs text-gray-500 truncate">{stageLabel}</span>
+              <span className="sentry-unmask text-xs text-gray-500 truncate">{stageLabel}</span>
             )}
             {currentEntry && lane.status === "running" && (
               <span className="ml-auto">
@@ -117,27 +122,35 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
         <div className="space-y-1">
           {lane.streamingThinking && (
             <div>
-              <div className="text-[10px] font-medium text-yellow-600 uppercase tracking-wide mb-0.5">
+              <div className="sentry-unmask text-[10px] font-medium text-yellow-600 uppercase tracking-wide mb-0.5">
                 {t("agent_panel.thinking")}
               </div>
               <pre
                 ref={contentRef}
+                data-testid="agent-streaming-thinking"
                 className="max-h-24 overflow-y-auto rounded bg-yellow-50 border border-yellow-200 p-1.5 font-mono text-[10px] text-yellow-900 whitespace-pre-wrap"
               >
                 {lane.streamingThinking}
+                {activeStreamingPane === "thinking" ? (
+                  <span className="streaming-caret" aria-hidden="true" />
+                ) : null}
               </pre>
             </div>
           )}
           {lane.streamingContent && (
             <div>
-              <div className="text-[10px] font-medium text-green-600 uppercase tracking-wide mb-0.5">
+              <div className="sentry-unmask text-[10px] font-medium text-green-600 uppercase tracking-wide mb-0.5">
                 {t("agent_panel.response")}
               </div>
               <pre
                 ref={contentRef}
+                data-testid="agent-streaming-content"
                 className="max-h-24 overflow-y-auto rounded bg-green-50 border border-green-200 p-1.5 font-mono text-[10px] text-green-900 whitespace-pre-wrap"
               >
                 {lane.streamingContent}
+                {activeStreamingPane === "content" ? (
+                  <span className="streaming-caret" aria-hidden="true" />
+                ) : null}
               </pre>
             </div>
           )}
@@ -174,8 +187,8 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
       {/* Error message from failed stage */}
       {lane.errorMessage && (
         <div data-testid="stage-error-message" className="rounded border border-red-200 bg-red-50 p-2 text-xs space-y-1">
-          <p className="text-red-700 font-medium">{t("agent_panel.stage_error")}</p>
-          <p className="text-red-600 font-semibold text-[10px]">{t("agent_panel.stage_error_message_label")}</p>
+          <p className="sentry-unmask text-red-700 font-medium">{t("agent_panel.stage_error")}</p>
+          <p className="sentry-unmask text-red-600 font-semibold text-[10px]">{t("agent_panel.stage_error_message_label")}</p>
           <pre className="whitespace-pre-wrap text-red-800 font-mono text-[10px] break-all">{lane.errorMessage}</pre>
         </div>
       )}

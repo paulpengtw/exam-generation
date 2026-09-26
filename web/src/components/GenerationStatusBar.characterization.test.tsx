@@ -39,21 +39,21 @@ describe("GenerationStatusBar — before/after characterization (#739)", () => {
     );
 
     expect(screen.getByTestId("statusbar-status").textContent).toBe(
-      "文本 › 子題 1/3 › 圖片 › 驗證 › 修正",
+      "文本 › 子題生成中 1/3 › 圖片 › 審題 › 改題",
     );
     expect(screen.getByTestId("generation-step-text")).toHaveAttribute("data-state", "complete");
     expect(screen.getByTestId("generation-step-subquestions")).toHaveAttribute("data-state", "live");
     expect(screen.getByTestId("generation-step-verify")).toHaveAttribute("data-state", "pending");
-    expect(screen.getByTestId("statusbar-status").innerHTML).toMatchInlineSnapshot(`"<span data-testid="generation-step-breadcrumb" class="sentry-unmask"><span><span data-testid="generation-step-text" data-state="complete" data-dim="false" class="text-green-600 hidden sm:inline">文本</span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="generation-step-subquestions" data-state="live" data-dim="false" class="font-semibold text-blue-600">子題 1/3</span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="generation-step-image" data-state="pending" data-dim="true" class="text-gray-300 hidden sm:inline">圖片</span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="generation-step-verify" data-state="pending" data-dim="false" class="text-gray-400 hidden sm:inline">驗證</span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="generation-step-correct" data-state="pending" data-dim="true" class="text-gray-300 hidden sm:inline">修正</span></span></span>"`);
+    expect(screen.getByTestId("statusbar-status").innerHTML).toMatchInlineSnapshot(`"<span data-testid="generation-step-breadcrumb" class="sentry-unmask"><span><span data-testid="generation-step-text" data-state="complete" data-dim="false" class="text-green-600 hidden sm:inline"><span class="sentry-unmask">文本</span></span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="generation-step-subquestions" data-state="live" data-dim="false" class="font-semibold text-blue-600"><span class="status-shimmer"><span class="sentry-unmask">子題生成中</span> 1/3</span></span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="generation-step-image" data-state="pending" data-dim="true" class="text-gray-300 hidden sm:inline"><span class="sentry-unmask">圖片</span></span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="generation-step-verify" data-state="pending" data-dim="false" class="text-gray-400 hidden sm:inline"><span class="sentry-unmask">審題</span></span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="generation-step-correct" data-state="pending" data-dim="true" class="text-gray-300 hidden sm:inline"><span class="sentry-unmask">改題</span></span></span></span>"`);
   });
 
   it("preserves the aggregate batch line without a breadcrumb", () => {
     render(<GenerationStatusBar {...BASE_PROPS} requestedTotal={3} completedCount={1} />);
 
-    expect(screen.getByTestId("statusbar-status").textContent).toBe("◐ 生成中 · 已完成 1 / 3");
+    expect(screen.getByTestId("statusbar-status").textContent).toBe("產生中 · 已完成 1 / 3");
     expect(screen.queryByTestId("generation-step-breadcrumb")).not.toBeInTheDocument();
     expect(screen.queryByTestId("modification-step-breadcrumb")).not.toBeInTheDocument();
-    expect(screen.getByTestId("statusbar-status").innerHTML).toMatchInlineSnapshot(`"<span class="sentry-unmask">◐ 生成中 · 已完成</span> 1 / 3"`);
+    expect(screen.getByTestId("statusbar-status").innerHTML).toMatchInlineSnapshot(`"<span class="status-shimmer"><span class="sentry-unmask">產生中 · 已完成</span> 1 / 3</span>"`);
   });
 
   it("preserves modification, verification and correction step history", () => {
@@ -71,11 +71,11 @@ describe("GenerationStatusBar — before/after characterization (#739)", () => {
       />,
     );
 
-    expect(screen.getByTestId("statusbar-status").textContent).toBe("修改 › 驗證 › 修正 › 驗證");
+    expect(screen.getByTestId("statusbar-status").textContent).toBe("修改 › 審題 › 改題中 › 審題中");
     expect(screen.getByTestId("modification-step-0")).toHaveAttribute("data-state", "complete");
     expect(screen.getByTestId("modification-step-1")).toHaveAttribute("data-state", "complete");
     expect(screen.getByTestId("modification-step-2")).toHaveAttribute("data-state", "live");
     expect(screen.getByTestId("modification-step-3")).toHaveAttribute("data-state", "live");
-    expect(screen.getByTestId("statusbar-status").innerHTML).toMatchInlineSnapshot(`"<span data-testid="modification-step-breadcrumb" class="sentry-unmask"><span><span data-testid="modification-step-0" data-state="complete" class="text-green-600">修改</span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="modification-step-1" data-state="complete" class="text-green-600">驗證</span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="modification-step-2" data-state="live" class="font-semibold text-blue-600">修正</span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="modification-step-3" data-state="live" class="font-semibold text-blue-600">驗證</span></span></span>"`);
+    expect(screen.getByTestId("statusbar-status").innerHTML).toMatchInlineSnapshot(`"<span data-testid="modification-step-breadcrumb" class="sentry-unmask"><span><span data-testid="modification-step-0" data-state="complete" data-dim="false" class="text-green-600"><span class="sentry-unmask">修改</span></span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="modification-step-1" data-state="complete" data-dim="false" class="text-green-600"><span class="sentry-unmask">審題</span></span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="modification-step-2" data-state="live" data-dim="false" class="font-semibold text-blue-600"><span class="status-shimmer"><span class="sentry-unmask">改題中</span></span></span></span><span><span class="hidden text-gray-300 sm:inline"> › </span><span data-testid="modification-step-3" data-state="live" data-dim="false" class="font-semibold text-blue-600"><span class="status-shimmer"><span class="sentry-unmask">審題中</span></span></span></span></span>"`);
   });
 });

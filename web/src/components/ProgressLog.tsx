@@ -7,6 +7,9 @@ import {
   type RunEvidenceState,
 } from "../lib/generationEvidence";
 import { Spinner } from "../motion/Indicators";
+import { runPhaseLabel, selectRunPhase } from "../motion/runPhase";
+
+type Subject = "math" | "social_studies" | "natural_sciences";
 
 export interface ProgressLogProps {
   lines: string[];
@@ -14,6 +17,10 @@ export interface ProgressLogProps {
   errorMessage?: string | null;
   llmCalls?: LlmCallEvent[];
   evidence?: RunEvidenceState | null;
+  subject?: Subject;
+  subQuestionCount?: number | null;
+  requestedTotal?: number;
+  completedCount?: number;
 }
 
 export default function ProgressLog({
@@ -22,8 +29,19 @@ export default function ProgressLog({
   errorMessage,
   llmCalls = [],
   evidence = null,
+  subject = "math",
+  subQuestionCount = null,
+  requestedTotal = 1,
+  completedCount = 0,
 }: ProgressLogProps) {
   const t = useT();
+  const phase = selectRunPhase({
+    events: llmCalls,
+    subject,
+    subQuestionCount,
+    requestedTotal,
+    completedCount,
+  });
   const preRef = useRef<HTMLPreElement>(null);
   const traceRef = useRef<HTMLDivElement>(null);
   const [showTrace, setShowTrace] = useState(false);
@@ -120,14 +138,16 @@ export default function ProgressLog({
         {status === "generating" && !evidence?.closed && (
           <>
             <Spinner className="h-3 w-3 text-blue-500" aria-label={t("progress.generating")} />
-            <span className="text-gray-600">{t("progress.generating")}</span>
+            <span data-testid="progress-phase-label" className="sentry-unmask text-gray-600">
+              {runPhaseLabel(phase, t)}
+            </span>
           </>
         )}
         {status === "idle" && lines.length > 0 && (
-          <span className="text-green-600 font-medium">{t("progress.done")}</span>
+          <span className="sentry-unmask text-green-600 font-medium">{t("progress.done")}</span>
         )}
         {status === "error" && (
-          <span className="text-red-600 font-medium">{t("progress.error")}</span>
+          <span className="sentry-unmask text-red-600 font-medium">{t("progress.error")}</span>
         )}
       </div>
       {status === "error" && errorMessage && (

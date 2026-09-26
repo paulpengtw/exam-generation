@@ -122,6 +122,18 @@ describe("GeneratePage — 生成進度列", () => {
       );
     },
   );
+
+  it("uses 產生中 without the legacy running glyph while generating", () => {
+    generateState.status = "generating";
+    generateState.progressLines = ["第 1 題 開始生成"];
+    generateState.startedAt = 1_000;
+
+    render(<GeneratePage subject="math" />);
+
+    const status = screen.getByTestId("statusbar-status");
+    expect(status).toHaveTextContent("產生中");
+    expect(status.textContent).not.toContain("◐");
+  });
 });
 
 describe("GeneratePage — 生成進度列 section jumps", () => {

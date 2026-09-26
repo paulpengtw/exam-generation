@@ -27,6 +27,7 @@ import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipatio
 import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
 import { projectGenerationCardEvidence, projectGenerationEvidence } from "../lib/generationStream";
+import { runPhaseLabel, selectRunPhase } from "../motion/runPhase";
 import {
   initRecoveryStore,
   initRecoveryStoreAsync,
@@ -576,6 +577,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
               errorMessage={errorMessage}
               llmCalls={llmCalls}
               evidence={runEvidence}
+              subject={subject}
+              subQuestionCount={submittedSubQuestionCount ?? subQuestionTotal}
+              requestedTotal={requestedTotal}
+              completedCount={results.length}
             />
           </section>
         )}
@@ -626,6 +631,13 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                     );
                     if (!qEvidence) return null;
                     const cardProps = displayItem ? projectGenerationCardEvidence(displayItem) : {};
+                    const livePhaseLabel = displayItem && status === "generating" && requestedTotal > 1 && !displayItem.isFinal
+                      ? runPhaseLabel(selectRunPhase({
+                        subject,
+                        subQuestionCount: submittedSubQuestionCount ?? subQuestionTotal,
+                        draftPhase: displayItem.phase,
+                      }), t)
+                      : undefined;
                     return (
                       <QuestionCard
                         key={qid}
@@ -633,6 +645,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                         evidence={qEvidence}
                         question={displayItem?.question}
                         subject={subject}
+                        livePhaseLabel={livePhaseLabel}
+                        requestedTotal={requestedTotal}
                         {...cardProps}
                       />
                     );
@@ -642,6 +656,14 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                       key={item.question.id ?? `q-${item.index}`}
                       question={item.question}
                       subject={subject}
+                      livePhaseLabel={status === "generating" && requestedTotal > 1 && !item.isFinal
+                        ? runPhaseLabel(selectRunPhase({
+                          subject,
+                          subQuestionCount: submittedSubQuestionCount ?? subQuestionTotal,
+                          draftPhase: item.phase,
+                        }), t)
+                        : undefined}
+                      requestedTotal={requestedTotal}
                       {...projectGenerationCardEvidence(item)}
                     />
                   ))}
@@ -663,6 +685,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
         requestedTotal={requestedTotal}
         subject={subject}
         evidence={evidence}
+        events={llmCalls}
         startedAt={startedAt}
         finishedAt={finishedAt}
         availableTargets={availableTargets}

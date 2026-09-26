@@ -63,6 +63,36 @@ describe("QuestionCard draft rendering", () => {
     expect(button).toHaveAttribute("data-action-state", "failed");
     expect(button).toHaveTextContent("Download ODT");
   });
+
+  it("shows a shared-spinner phase chip for an in-flight batch card and removes it when final", () => {
+    const { rerender } = render(
+      <QuestionCard
+        question={question}
+        phase="draft"
+        isFinal={false}
+        requestedTotal={2}
+        livePhaseLabel="Text"
+      />,
+    );
+
+    const phaseChip = screen.getByTestId("question-card-live-phase");
+    expect(phaseChip).toHaveTextContent("Text");
+    expect(phaseChip.querySelector(".feedback-spinner")).toBeInTheDocument();
+    expect(phaseChip.querySelector(".sentry-unmask")).toHaveTextContent("Text");
+    expect(screen.getByText("Draft")).toBeInTheDocument();
+
+    rerender(
+      <QuestionCard
+        question={question}
+        phase="verified"
+        isFinal
+        requestedTotal={2}
+        livePhaseLabel="Text"
+      />,
+    );
+
+    expect(screen.queryByTestId("question-card-live-phase")).not.toBeInTheDocument();
+  });
 });
 
 describe("QuestionCard Agent 自主驗證修正歷程", () => {

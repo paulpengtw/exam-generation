@@ -22,9 +22,11 @@ const ERROR_LANE: AgentLane = {
 describe("AgentStatusPanel — error stage", () => {
   it("shows the complete error message verbatim", () => {
     render(<AgentStatusPanel lanes={[ERROR_LANE]} requestedTotal={1} />);
-    expect(screen.getByTestId("stage-error-message")).toHaveTextContent(
+    const error = screen.getByTestId("stage-error-message");
+    expect(error).toHaveTextContent(
       "IMAGE_API_KEY is required for GPT image generation."
     );
+    expect(error.querySelector("pre")).not.toHaveClass("sentry-unmask");
   });
 
   it("shows zh-TW report-to-developer copy", () => {

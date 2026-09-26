@@ -25,6 +25,7 @@ import {
   InlineFailureNotice,
   useActionFeedback,
 } from "../motion/actionFeedback";
+import { Spinner } from "../motion/Indicators";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import FigureRenderer, {
@@ -55,6 +56,9 @@ export interface QuestionCardProps {
   subject?: string;
   phase?: DraftPhase;
   isFinal?: boolean;
+  /** Total requested questions; the parent supplies livePhaseLabel only for batches. */
+  requestedTotal?: number;
+  livePhaseLabel?: string;
   trail?: VerificationTrailEntry[] | null;
   figurePolicyTrail?: FigurePolicyTrailEntry[] | null;
   referenceExampleRecord?: ReferenceExampleRecordShape | null;
@@ -662,6 +666,8 @@ export default function QuestionCard({
   subject,
   phase = "verified",
   isFinal = true,
+  requestedTotal = 1,
+  livePhaseLabel,
   trail = [],
   figurePolicyTrail = [],
   referenceExampleRecord,
@@ -670,6 +676,7 @@ export default function QuestionCard({
   modificationRestoreEligible,
 }: QuestionCardProps) {
   const t = useT();
+  const showLivePhase = livePhaseLabel !== undefined && !isFinal && requestedTotal > 1;
 
   const [showSolution, setShowSolution] = useState(!isFinal);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -928,6 +935,7 @@ export default function QuestionCard({
         className="rounded-lg border bg-white p-3 shadow-sm text-sm sentry-unmask"
       >
         <div className="font-medium text-gray-500">{posLabel}</div>
+        {showLivePhase ? <LivePhaseChip label={livePhaseLabel} /> : null}
         <div className="text-gray-400 mt-1">{procLabel}</div>
         <EvidenceStatusLine evidence={evidence} />
         <div className="mt-2">
@@ -1094,9 +1102,8 @@ export default function QuestionCard({
       {/* Header chips */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
-          {!isFinal && (
-            <Chip label={phaseLabel} tone="orange" />
-          )}
+          {showLivePhase ? <LivePhaseChip label={livePhaseLabel} /> : null}
+          {!isFinal ? <Chip label={phaseLabel} tone="orange" /> : null}
           {isMath ? (
             <>
               {(question.情境 ?? []).map((c) => (
@@ -1450,6 +1457,19 @@ const TONE_CLASSES: Record<ChipTone, string> = {
   orange: "bg-orange-100 text-orange-800",
   green: "bg-green-100 text-green-800",
 };
+
+function LivePhaseChip({ label }: { label: string }) {
+  return (
+    <span
+      data-testid="question-card-live-phase"
+      role="status"
+      className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
+    >
+      <Spinner className="h-3 w-3" />
+      <span className="sentry-unmask">{label}</span>
+    </span>
+  );
+}
 
 function Chip({ label, tone, title }: { label: string; tone: ChipTone; title?: string }) {
   return (

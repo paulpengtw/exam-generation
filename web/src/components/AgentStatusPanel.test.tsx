@@ -98,4 +98,60 @@ describe("AgentStatusPanel", () => {
     expect(card).toHaveClass("border-blue-300", "bg-blue-50");
     expect(card).not.toHaveClass("border-green-200", "bg-green-50");
   });
+
+  it("puts the caret only at the tail of the active thinking pane", () => {
+    render(
+      <AgentStatusPanel
+        lanes={[{
+          ...ACTIVE_LANE,
+          streamingThinking: "thinking text",
+          streamingContent: "",
+        }]}
+        requestedTotal={1}
+      />,
+    );
+
+    const thinkingPane = screen.getByTestId("agent-streaming-thinking");
+    expect(thinkingPane.querySelector(".streaming-caret")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(screen.queryByTestId("agent-streaming-content")).not.toBeInTheDocument();
+  });
+
+  it("moves the caret to the response pane and removes it when streaming stops", () => {
+    const { rerender } = render(
+      <AgentStatusPanel
+        lanes={[{
+          ...ACTIVE_LANE,
+          streamingThinking: "thinking text",
+          streamingContent: "response text",
+        }]}
+        requestedTotal={1}
+      />,
+    );
+
+    const thinkingPane = screen.getByTestId("agent-streaming-thinking");
+    const responsePane = screen.getByTestId("agent-streaming-content");
+    expect(thinkingPane.querySelector(".streaming-caret")).not.toBeInTheDocument();
+    expect(responsePane.querySelector(".streaming-caret")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+
+    rerender(
+      <AgentStatusPanel
+        lanes={[{
+          ...ACTIVE_LANE,
+          status: "done",
+          currentStage: null,
+          streamingThinking: "thinking text",
+          streamingContent: "response text",
+        }]}
+        requestedTotal={1}
+      />,
+    );
+
+    expect(document.querySelector(".streaming-caret")).not.toBeInTheDocument();
+  });
 });

@@ -77,7 +77,8 @@ describe("GenerationStatusBar — evidence profiles", () => {
       />,
     );
 
-    expect(screen.getByTestId("modification-step-breadcrumb")).toHaveTextContent("修改 › 驗證");
+    expect(screen.getByTestId("modification-step-breadcrumb")).toHaveTextContent("修改 › 審題");
+    expect(screen.getByTestId("modification-step-1")).toHaveTextContent("審題中");
     expect(screen.getByTestId("modification-step-0")).toHaveAttribute("data-state", "complete");
     expect(screen.getByTestId("modification-step-1")).toHaveAttribute("data-state", "live");
     expect(screen.queryByTestId("generation-step-breadcrumb")).not.toBeInTheDocument();
@@ -114,7 +115,7 @@ describe("GenerationStatusBar — evidence profiles", () => {
       />,
     );
 
-    expect(screen.getByTestId("generation-step-breadcrumb")).toHaveTextContent("生成 › 圖片 › 驗證 › 修正");
+    expect(screen.getByTestId("generation-step-breadcrumb")).toHaveTextContent("生成 › 圖片 › 審題中 › 改題");
     expect(screen.getByTestId("generation-step-verify")).toHaveAttribute("data-state", "live");
     expect(screen.queryByTestId("modification-step-breadcrumb")).not.toBeInTheDocument();
   });
@@ -135,7 +136,7 @@ describe("GenerationStatusBar — 生成步驟", () => {
     );
 
     const breadcrumb = screen.getByTestId("generation-step-breadcrumb");
-    expect(breadcrumb).toHaveTextContent("生成 › 圖片 › 驗證 › 修正");
+    expect(breadcrumb).toHaveTextContent("產生中 › 圖片 › 審題 › 改題");
     expect(screen.getByTestId("generation-step-generate")).toHaveAttribute(
       "data-state",
       "live",
@@ -159,7 +160,7 @@ describe("GenerationStatusBar — 生成步驟", () => {
       );
 
       const breadcrumb = screen.getByTestId("generation-step-breadcrumb");
-      expect(breadcrumb).toHaveTextContent("文本 › 子題 › 圖片 › 驗證 › 修正");
+      expect(breadcrumb).toHaveTextContent("文本生成中 › 子題 › 圖片 › 審題 › 改題");
       expect(screen.getByTestId("generation-step-text")).toHaveAttribute(
         "data-state",
         "live",
@@ -286,7 +287,7 @@ describe("GenerationStatusBar — 生成步驟", () => {
 
     const subquestions = screen.getByTestId("generation-step-subquestions");
     expect(subquestions).toHaveAttribute("data-state", "live");
-    expect(subquestions).toHaveTextContent("子題 2/5");
+    expect(subquestions).toHaveTextContent("子題生成中 2/5");
 
     rerender(
       <GenerationStatusBar
@@ -300,7 +301,7 @@ describe("GenerationStatusBar — 生成步驟", () => {
     );
 
     expect(screen.getByTestId("generation-step-subquestions")).toHaveTextContent(
-      "子題 2",
+      "子題生成中 2",
     );
     expect(screen.getByTestId("generation-step-subquestions")).not.toHaveTextContent(
       "2/",
@@ -322,7 +323,7 @@ describe("GenerationStatusBar — 生成步驟", () => {
     );
 
     expect(screen.getByTestId("statusbar-status")).toHaveTextContent(
-      "生成中 · 已完成 1 / 2",
+      "產生中 · 已完成 1 / 2",
     );
     expect(screen.queryAllByTestId(/^generation-step-/)).toHaveLength(0);
   });
@@ -371,7 +372,7 @@ describe("GenerationStatusBar — status half", () => {
     expect(screen.getByTestId("statusbar-status")).not.toHaveClass(
       "sentry-unmask",
     );
-    expect(screen.getByText("◐ 生成中 · 已完成")).toHaveClass(
+    expect(screen.getByText("產生中 · 已完成")).toHaveClass(
       "sentry-unmask",
     );
 
@@ -406,7 +407,7 @@ describe("GenerationStatusBar — status half", () => {
     expect(screen.getByText("尚未生成")).toBeInTheDocument();
   });
 
-  it("reports 生成中 with the completed count out of the requested total while a run is live", () => {
+  it("reports 產生中 with the completed count out of the requested total while a run is live", () => {
     render(
       <GenerationStatusBar
         {...BASE_PROPS}
@@ -417,7 +418,7 @@ describe("GenerationStatusBar — status half", () => {
       />,
     );
     const status = screen.getByTestId("statusbar-status");
-    expect(status).toHaveTextContent("生成中");
+    expect(status).toHaveTextContent("產生中");
     expect(status).toHaveTextContent("已完成 2 / 5");
   });
 
@@ -466,7 +467,48 @@ describe("GenerationStatusBar — status half", () => {
     );
     const status = screen.getByTestId("statusbar-status");
     expect(status).toHaveTextContent("錯誤");
-    expect(status).not.toHaveTextContent("生成中");
+    expect(status).not.toHaveTextContent("產生中");
+  });
+
+  it("shimmers 產生中 before the first event without the legacy glyph", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        requestedTotal={1}
+        startedAt={1_000}
+        evidence={{ profile: "generate-legacy", stageEvents: [], subQuestionCount: null }}
+      />,
+    );
+
+    const status = screen.getByTestId("statusbar-status");
+    expect(status).toHaveTextContent("產生中");
+    expect(status.textContent).not.toContain("◐");
+    expect(status.querySelectorAll(".status-shimmer")).toHaveLength(1);
+    expect(screen.getByText("產生中")).toHaveClass("sentry-unmask");
+  });
+
+  it("shimmers only the live phase label while keeping fixed breadcrumb labels unanimated", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        subject="social_studies"
+        runState="running"
+        requestedTotal={1}
+        startedAt={1_000}
+        evidence={{ profile: "generate-legacy", stageEvents: [
+          stageEvent("generator", "llm_generate", "start", 1_000),
+        ], subQuestionCount: 3 }}
+      />,
+    );
+
+    const status = screen.getByTestId("statusbar-status");
+    expect(status).toHaveTextContent("文本生成中");
+    expect(status.querySelectorAll(".status-shimmer")).toHaveLength(1);
+    expect(screen.getByTestId("generation-step-text")).toHaveTextContent("文本生成中");
+    expect(screen.getByTestId("generation-step-text")).toHaveClass("font-semibold", "text-blue-600");
+    expect(screen.getByTestId("generation-step-subquestions")).toHaveClass("text-gray-400");
+    expect(screen.getByText("文本生成中")).toHaveClass("sentry-unmask");
   });
 });
 
