@@ -44,5 +44,5 @@
 
 ## 6. 整合驗證
 
-- [ ] 6.1 以 `choom -n 500 -- uv run pytest` 跑完整測試套件並全數通過。再用 `grep -rn -E "0\.\.N|2 / 1 / 0 / 0X|1-2 個學生作答實例" src` 確認只剩 `Complex multiple-choice` 行與舊碼相容處，開放式題的語句都已更新。
+- [x] 6.1 以 `choom -n 500 -- uv run pytest` 跑完整測試套件並全數通過。再用 `grep -rn -E "0\.\.N|2 / 1 / 0 / 0X|1-2 個學生作答實例" src` 確認只剩 `Complex multiple-choice` 行與舊碼相容處，開放式題的語句都已更新。（#870 實作：49 passed 2026-09-27；src/web/CLAUDE.md/AGENTS.md/README.md/data 全數更新；剩餘 hit 均為 backward-compat 標注，已分類）
 - [ ] 6.2 需要 LLM 金鑰：兩科各生成一小批（例如各 5 題組）含開放式小題的題目，記錄首稿形狀檢核失敗率、修正後通過率，以及修正回合數，貼回 map [評分規準 must measure reasoning, not count answers](https://github.com/paulpengtw/exam-generation/issues/646)。若環境沒有金鑰，在 PR 說明中註明未執行及原因，不以估計值代替。

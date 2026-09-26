@@ -126,8 +126,9 @@ class RubricEntry(BaseModel):
     """One row of a 評分規準 table (scoring rubric).
 
     ``code`` remains an opaque string for compatibility: new open-response
-    records use integer-like 0..N levels, while legacy records may retain
-    codes such as 2/1/0/0X.
+    records use fixed 2 / 1 / 0 levels (shape enforced by the post-verify hook
+    in ``src/common/open_response_rubric.py``); legacy records with 0..N or
+    2/1/0/0X codes remain readable.
     """
 
     code: str  # "2" | "1" | "0" | "0X"
