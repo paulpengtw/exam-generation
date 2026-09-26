@@ -33,8 +33,8 @@
 - [x] 4.3 新增 `_ns_rubric_shape_check_hook`，in_scope 條件為：`題型` 是 `Constructed response`。登錄在 `_NS_POST_VERIFY_HOOKS`，排在 `_ns_code_check_hook` 之後。
   - 把 `tests/test_natural_sciences_verifier.py` 的開放式 fixture（L186-231）改為 2 / 1 / 0 且 1 / 2 / 1 實例，使 `test_ns_verifier_valid_codes_pass_per_item_family` 仍通過。
   - 新增測試：題組標題題型為 `Complex multiple-choice`、內含 `Constructed response` 小題的混合題組，只檢核該小題；`Complex multiple-choice` 小題帶 `0X` 與空實例不被報告。（#866 實作：4 個新測試；2970 passed 2026-09-27）
-- [ ] 4.4 人工審題修正整合：以 `tests/server/test_modification_routes.py` 或 `test_modification_correction_structure.py` 的既有 fixture 模式，建立一筆自然科學舊紀錄（2 / 1 / 0 / 0X、無實例）走修改流程。驗證三件事：重新驗證失敗且 details 含形狀檢核；修正結果存成以 `parent_record_id` 連回的新紀錄；原紀錄的 `question_json` 未變。
-- [ ] 4.5 讀取相容：測試載入 code 為 3 / 2 / 1 / 0 / 0X、實例為空的既有紀錄時不出錯，且級距原樣保留（`RubricEntry` 與 web 型別都不改動）。
+- [x] 4.4 人工審題修正整合：以 `tests/server/test_modification_routes.py` 或 `test_modification_correction_structure.py` 的既有 fixture 模式，建立一筆自然科學舊紀錄（2 / 1 / 0 / 0X、無實例）走修改流程。驗證三件事：重新驗證失敗且 details 含形狀檢核；修正結果存成以 `parent_record_id` 連回的新紀錄；原紀錄的 `question_json` 未變。（#869 實作：tests/server/test_869_legacy_ns_rubric.py；2978 passed 2026-09-27）
+- [x] 4.5 讀取相容：測試載入 code 為 3 / 2 / 1 / 0 / 0X、實例為空的既有紀錄時不出錯，且級距原樣保留（`RubricEntry` 與 web 型別都不改動）。（#869 實作：tests/server/test_869_legacy_ns_rubric.py；2978 passed 2026-09-27）
 
 ## 5. 文件與詞彙
 
