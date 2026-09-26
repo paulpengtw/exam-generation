@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
+import { flushSync } from "react-dom";
 import { getAvailableModels, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
 import { useT } from "../i18n/useT";
 import type { Lang } from "../i18n/messages";
@@ -39,7 +41,8 @@ import DrawnValueRows, {
 import type { GenerateParams as WireGenerateParams } from "../api/generated/contract";
 import { toGenerateParams } from "../utils/toGenerateParams";
 import { Spinner } from "../motion/Indicators";
-import { durations } from "../motion/tokens";
+import { choreography, durations, easings } from "../motion/tokens";
+import MotionRoot from "../motion/MotionRoot";
 import {
   ActionButton,
   ActionFailure,
@@ -385,6 +388,8 @@ export interface ParamFormProps {
   onRecoveryAcknowledge?: () => boolean | void;
   /** Called when the user clicks 捨棄 on the recovery banner (issue #772). */
   onRecoveryDiscard?: () => boolean | void;
+  /** Starts the visual hand-off from confirmation to the running form. */
+  onHandoffStart?: () => void;
 }
 
 export interface GenerationAdmissionResult {
@@ -1342,6 +1347,7 @@ export default function ParamForm({
   recoveredConfirmation,
   onRecoveryAcknowledge,
   onRecoveryDiscard,
+  onHandoffStart,
 }: ParamFormProps) {
   // Recovery props are a one-shot snapshot. Latching them prevents the store's
   // acknowledgement update (or a late hydration render) from rebuilding the
@@ -1369,6 +1375,8 @@ export default function ParamForm({
     onUnsubmittedInput?.();
   };
   const t = useT();
+  const reducedMotion = useReducedMotion();
+  const [handoffActive, setHandoffActive] = useState(false);
   const lang = useLangStore((state) => state.lang);
   const [schemas, setSchemas] = useState<CurriculumPool | null>(null);
   const curriculumRequestSeq = useRef(0);
@@ -3335,6 +3343,7 @@ export default function ParamForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setHandoffActive(false);
     restoredConfirmationEffectsSuppressedRef.current = false;
     previewRequestedRef.current = false;
     setPromptPreviews([]);
@@ -3538,6 +3547,10 @@ export default function ParamForm({
     setStalePreviewIndices(new Set());
     const admission = onSubmit(submittedParams);
     if (admission === undefined || typeof admission.then !== "function") {
+      flushSync(() => {
+        setHandoffActive(true);
+        onHandoffStart?.();
+      });
       clearSubmittedConfirmation();
       confirmationSubmitInFlightRef.current = false;
       return { outcome: "admitted" };
@@ -3549,6 +3562,10 @@ export default function ParamForm({
         confirmationSubmitInFlightRef.current = false;
         return outcome;
       }
+      flushSync(() => {
+        setHandoffActive(true);
+        onHandoffStart?.();
+      });
       clearSubmittedConfirmation();
       confirmationSubmitInFlightRef.current = false;
       return outcome;
@@ -4038,6 +4055,7 @@ export default function ParamForm({
     </section>
   ) : null;
 
+  let confirmationContent: ReactNode = null;
   if (pendingParams) {
     const p = pendingParams;
     const drawnPaths = Array.isArray(p.drawn) ? p.drawn : [];
@@ -4166,7 +4184,7 @@ export default function ParamForm({
       drawnPaths.includes("內容領域")
     );
 
-    return (
+    confirmationContent = (
       <div className="space-y-4">
         <ConfirmationParticipation exportWorkspace={exportConfirmation} />
         {recoveryBanner}
@@ -5039,9 +5057,53 @@ export default function ParamForm({
     );
   }
 
-  if (error) {
+  const signatureEase = [...easings.signature] as [number, number, number, number];
+  const exitEase = [...easings.exit] as [number, number, number, number];
+  const enterTransition = reducedMotion
+    ? { duration: 0 }
+    : { duration: durations.standard / 1000, ease: signatureEase };
+  const exitTransition = reducedMotion
+    ? { duration: 0 }
+    : { duration: durations.quick / 1000, ease: exitEase };
+  const renderAnimatedSurface = (formContent: ReactNode | null) => (
+    handoffActive ? (
+      <MotionRoot>
+        <AnimatePresence initial={false} mode="wait">
+          {pendingParams ? (
+            <m.div
+              key="confirmation"
+              animate={{ opacity: 1, y: 0 }}
+              exit={{
+                opacity: 0,
+                y: choreography.travel,
+                transition: exitTransition,
+              }}
+              transition={enterTransition}
+            >
+              {confirmationContent}
+            </m.div>
+          ) : formContent !== null ? (
+            <m.div
+              key="form"
+              initial={reducedMotion ? false : { opacity: 0, y: choreography.travel }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={enterTransition}
+            >
+              {formContent}
+            </m.div>
+          ) : null}
+        </AnimatePresence>
+      </MotionRoot>
+    ) : (
+      <MotionRoot>{pendingParams ? confirmationContent : formContent}</MotionRoot>
+    )
+  );
+
+  if (error && !pendingParams) {
     return <div className="text-red-600">{t("form.error_schemas")}{error}</div>;
   }
+
+  if (pendingParams) return renderAnimatedSurface(null);
 
   if (!schemas) {
     return (
@@ -5071,7 +5133,7 @@ export default function ParamForm({
     );
   }
 
-  return (
+  const formContent = (
     <form onSubmit={handleSubmit} onChange={markUnsubmittedInput} className="space-y-4">
       {recoveryBanner}
       {draftToRestore && (showDraftPrompt || showDraftHistoryChoice) && (
@@ -6169,4 +6231,6 @@ export default function ParamForm({
       </button>
     </form>
   );
+
+  return renderAnimatedSurface(formContent);
 }

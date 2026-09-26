@@ -7,6 +7,7 @@ import type {
 } from "../hooks/useGenerate";
 import { useT } from "../i18n/useT";
 import { diffSnapshots } from "../lib/snapshotDiff";
+import { MotionDisclosure } from "../motion/MotionDisclosure";
 
 export interface VerificationTrailTimelineProps {
   entries: VerificationTrailEntry[] | null;
@@ -137,28 +138,32 @@ function SnapshotTrailItem({
           </button>
         </div>
       )}
-      {isCorrection && !isRejectedCorrection && sideBySideOpen && beforeSnapshot !== undefined ? (
-        <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-          <div className="min-w-0 rounded border border-blue-100 bg-white p-2">
-            <div className="font-medium text-gray-700">
-              {t("card.trailBeforeCorrection")}
+      {isCorrection && !isRejectedCorrection && beforeSnapshot !== undefined ? (
+        <>
+          <MotionDisclosure open={sideBySideOpen} className="mt-2">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <div className="min-w-0 rounded border border-blue-100 bg-white p-2">
+                <div className="font-medium text-gray-700">
+                  {t("card.trailBeforeCorrection")}
+                </div>
+                <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-gray-800">
+                  {JSON.stringify(beforeSnapshot, null, 2)}
+                </pre>
+              </div>
+              <div className="min-w-0 rounded border border-blue-100 bg-white p-2">
+                <div className="font-medium text-gray-700">
+                  {t("card.trailAfterCorrection")}
+                </div>
+                <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-gray-800">
+                  {JSON.stringify(entry.snapshot, null, 2)}
+                </pre>
+              </div>
             </div>
-            <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-gray-800">
-              {JSON.stringify(beforeSnapshot, null, 2)}
-            </pre>
-          </div>
-          <div className="min-w-0 rounded border border-blue-100 bg-white p-2">
-            <div className="font-medium text-gray-700">
-              {t("card.trailAfterCorrection")}
-            </div>
-            <pre className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-gray-800">
-              {JSON.stringify(entry.snapshot, null, 2)}
-            </pre>
-          </div>
-        </div>
-      ) : (
-        isCorrection && !isRejectedCorrection && (
-          <div className="mt-2 rounded border border-blue-100 bg-white p-2">
+          </MotionDisclosure>
+          <MotionDisclosure
+            open={!sideBySideOpen}
+            className="mt-2 rounded border border-blue-100 bg-white p-2"
+          >
             <div className="font-medium text-gray-700">
               {t("card.trailChangedFields")}
             </div>
@@ -175,9 +180,9 @@ function SnapshotTrailItem({
             ) : (
               <p className="mt-1 text-gray-600">{t("card.trailNoChanges")}</p>
             )}
-          </div>
-        )
-      )}
+          </MotionDisclosure>
+        </>
+      ) : null}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium text-gray-700">
           {t(isRejectedCorrection ? "card.trailRetainedSnapshot" : "card.trailSnapshot")}
@@ -192,14 +197,14 @@ function SnapshotTrailItem({
           {t(snapshotOpen ? "card.trailHideSnapshot" : "card.trailShowSnapshot")}
         </button>
       </div>
-      {snapshotOpen && (
+      <MotionDisclosure open={snapshotOpen} className="mt-2">
         <pre
           id={snapshotId}
-          className="mt-2 overflow-x-auto rounded bg-white p-2 text-xs text-gray-800"
+          className="overflow-x-auto rounded bg-white p-2 text-xs text-gray-800"
         >
           {JSON.stringify(entry.snapshot, null, 2)}
         </pre>
-      )}
+      </MotionDisclosure>
     </li>
   );
 }
@@ -250,8 +255,8 @@ export default function VerificationTrailTimeline({
         </button>
       </div>
 
-      {open && (
-        <ol id={contentId} className="mt-3 space-y-2">
+      <MotionDisclosure open={open} className="mt-3">
+        <ol id={contentId} className="space-y-2">
           {entries.map((entry, index) => {
             if (entry.kind !== "verification") {
               const snapshotId = `${contentId}-snapshot-${index}`;
@@ -338,7 +343,7 @@ export default function VerificationTrailTimeline({
             );
           })}
         </ol>
-      )}
+      </MotionDisclosure>
     </section>
   );
 }

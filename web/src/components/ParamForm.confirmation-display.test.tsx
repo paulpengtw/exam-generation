@@ -169,6 +169,20 @@ describe("ParamForm 發送前確認 display semantics", () => {
       legacyConfirmationResolve(payload));
   });
 
+  it("removes confirmation after 確定發送 and brings back the form", async () => {
+    const onSubmit = vi.fn();
+    await openConfirmation("math", {}, onSubmit);
+
+    expect(screen.getByRole("heading", { name: "發送前確認設定" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "確定發送" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "發送前確認設定" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "產生" })).toBeInTheDocument();
+    });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the submitted social text instruction in 發送前確認", async () => {
     getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
     const instruction = "請聚焦地方自治中的證據比較";

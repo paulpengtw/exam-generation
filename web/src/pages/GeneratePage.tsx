@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 
 import AgentStatusPanel from "../components/AgentStatusPanel";
@@ -28,6 +29,8 @@ import { useWorkspaceStore } from "../lib/workspace/workspaceStore";
 import { exportResultsWorkspace } from "../lib/workspace/adapters/resultsWorkspace";
 import { projectGenerationCardEvidence, projectGenerationEvidence } from "../lib/generationStream";
 import { runPhaseLabel, selectRunPhase } from "../motion/runPhase";
+import MotionRoot from "../motion/MotionRoot";
+import { choreography, durations, easings } from "../motion/tokens";
 import {
   initRecoveryStore,
   initRecoveryStoreAsync,
@@ -67,6 +70,44 @@ function getOdtQuestionIndex(error: unknown): number | null {
   if (typeof error !== "object" || error === null) return null;
   const index = (error as { questionIndex?: unknown }).questionIndex;
   return typeof index === "number" && Number.isInteger(index) && index >= 0 ? index : null;
+}
+
+function AnimatedQuestionCard({
+  children,
+  index,
+}: {
+  children: ReactNode;
+  index: number;
+}) {
+  const reducedMotion = useReducedMotion();
+  const signatureEase = [...easings.signature] as [number, number, number, number];
+  const exitEase = [...easings.exit] as [number, number, number, number];
+  const delay = reducedMotion
+    ? 0
+    : Math.min(index * choreography.stagger, choreography.staggerCap) / 1000;
+
+  return (
+    <m.div
+      initial={reducedMotion ? false : { opacity: 0, y: choreography.travel }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={
+        reducedMotion
+          ? { opacity: 0, transition: { duration: 0 } }
+          : {
+              opacity: 0,
+              y: choreography.travel,
+              transition: { duration: durations.quick / 1000, ease: exitEase },
+            }
+      }
+      transition={
+        reducedMotion
+          ? { duration: 0 }
+          : { duration: durations.standard / 1000, ease: signatureEase, delay }
+      }
+    >
+      {children}
+    </m.div>
+  );
 }
 
 export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
@@ -185,6 +226,20 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const formRef = useRef<HTMLElement | null>(null);
   const progressRef = useRef<HTMLElement | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
+  const handoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reducedMotion = useReducedMotion();
+  const [handoffPending, setHandoffPending] = useState(false);
+  const startHandoff = useCallback(() => {
+    if (handoffTimerRef.current !== null) clearTimeout(handoffTimerRef.current);
+    setHandoffPending(true);
+    handoffTimerRef.current = setTimeout(() => {
+      handoffTimerRef.current = null;
+      setHandoffPending(false);
+    }, reducedMotion ? 0 : choreography.handoffDelay);
+  }, [reducedMotion]);
+  useEffect(() => () => {
+    if (handoffTimerRef.current !== null) clearTimeout(handoffTimerRef.current);
+  }, []);
   const [requestedTotal, setRequestedTotal] = useState(0);
   const [submittedSubQuestionCount, setSubmittedSubQuestionCount] =
     useState<number | null>(null);
@@ -378,7 +433,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
   const showProgress = runEvidence !== null || !(progressLines.length === 0 && status === "idle");
   const runState: RunState =
-    status === "error"
+    status === "generating" && handoffPending
+      ? "idle"
+      : status === "error"
       ? "error"
       : resultsCompletion === "unknown"
         ? "unknown"
@@ -557,6 +614,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             recoveredConfirmation={pendingRecoveryForRoute?.confirmation}
             onRecoveryAcknowledge={handleRecoveryAcknowledge}
             onRecoveryDiscard={handleRecoveryDiscard}
+            onHandoffStart={startHandoff}
           />
         </section>
 
@@ -622,52 +680,79 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                 onDismiss={jsonFeedback.reason ? jsonFeedback.dismiss : odtFeedback.dismiss}
               />
             </div>
-            <div className="space-y-3">
-              {runEvidence
-                ? runEvidence.order.map((qid, idx) => {
-                    const qEvidence = runEvidence.questions[qid];
-                    const displayItem = displayResults.find(
-                      (r) => (r.question.id ?? "") === qid
-                    );
-                    if (!qEvidence) return null;
-                    const cardProps = displayItem ? projectGenerationCardEvidence(displayItem) : {};
-                    const livePhaseLabel = displayItem && status === "generating" && requestedTotal > 1 && !displayItem.isFinal
-                      ? runPhaseLabel(selectRunPhase({
-                        subject,
-                        subQuestionCount: submittedSubQuestionCount ?? subQuestionTotal,
-                        draftPhase: displayItem.phase,
-                      }), t)
-                      : undefined;
-                    return (
-                      <QuestionCard
-                        key={qid}
+            <MotionRoot>
+              <div className="space-y-3">
+                <AnimatePresence initial={false}>
+                  {runEvidence
+                    ? runEvidence.order.map((qid, idx) => {
+                        const qEvidence = runEvidence.questions[qid];
+                        const displayItem = displayResults.find(
+                          (r) => (r.question.id ?? "") === qid,
+                        );
+                        if (!qEvidence) return null;
+                        const cardProps = displayItem
+                          ? projectGenerationCardEvidence(displayItem)
+                          : {};
+                        const livePhaseLabel =
+                          displayItem &&
+                          status === "generating" &&
+                          requestedTotal > 1 &&
+                          !displayItem.isFinal
+                            ? runPhaseLabel(
+                                selectRunPhase({
+                                  subject,
+                                  subQuestionCount:
+                                    submittedSubQuestionCount ?? subQuestionTotal,
+                                  draftPhase: displayItem.phase,
+                                }),
+                                t,
+                              )
+                            : undefined;
+                        return (
+                          <AnimatedQuestionCard key={qid} index={idx}>
+                            <QuestionCard
+                              index={idx}
+                              evidence={qEvidence}
+                              question={displayItem?.question}
+                              subject={subject}
+                              livePhaseLabel={livePhaseLabel}
+                              requestedTotal={requestedTotal}
+                              {...cardProps}
+                            />
+                          </AnimatedQuestionCard>
+                        );
+                      })
+                    : displayResults.map((item, idx) => (
+                      <AnimatedQuestionCard
+                        key={item.question.id ?? `q-${item.index}`}
                         index={idx}
-                        evidence={qEvidence}
-                        question={displayItem?.question}
-                        subject={subject}
-                        livePhaseLabel={livePhaseLabel}
-                        requestedTotal={requestedTotal}
-                        {...cardProps}
-                      />
-                    );
-                  })
-                : displayResults.map((item) => (
-                    <QuestionCard
-                      key={item.question.id ?? `q-${item.index}`}
-                      question={item.question}
-                      subject={subject}
-                      livePhaseLabel={status === "generating" && requestedTotal > 1 && !item.isFinal
-                        ? runPhaseLabel(selectRunPhase({
-                          subject,
-                          subQuestionCount: submittedSubQuestionCount ?? subQuestionTotal,
-                          draftPhase: item.phase,
-                        }), t)
-                        : undefined}
-                      requestedTotal={requestedTotal}
-                      {...projectGenerationCardEvidence(item)}
-                    />
-                  ))}
-            </div>
+                      >
+                        <QuestionCard
+                          question={item.question}
+                          subject={subject}
+                          livePhaseLabel={
+                            status === "generating" &&
+                            requestedTotal > 1 &&
+                            !item.isFinal
+                              ? runPhaseLabel(
+                                  selectRunPhase({
+                                    subject,
+                                    subQuestionCount:
+                                      submittedSubQuestionCount ?? subQuestionTotal,
+                                    draftPhase: item.phase,
+                                  }),
+                                  t,
+                                )
+                              : undefined
+                          }
+                          requestedTotal={requestedTotal}
+                          {...projectGenerationCardEvidence(item)}
+                        />
+                      </AnimatedQuestionCard>
+                      ))}
+                </AnimatePresence>
+              </div>
+            </MotionRoot>
           </section>
         )}
       </main>

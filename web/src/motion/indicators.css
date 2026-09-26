@@ -2,6 +2,11 @@
   animation: feedback-spin var(--motion-duration-loop-spinner) linear infinite;
 }
 
+.statusbar-state-pulse {
+  animation: statusbar-state-pulse var(--motion-duration-standard)
+    var(--motion-ease-signature);
+}
+
 @keyframes feedback-spin {
   to {
     transform: rotate(360deg);
@@ -16,5 +21,16 @@
 
   50% {
     opacity: 0.45;
+  }
+}
+
+@keyframes statusbar-state-pulse {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+
+  45% {
+    background-color: rgb(219 234 254 / 0.8);
   }
 }

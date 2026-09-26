@@ -26,7 +26,7 @@ export default function FeedbackButton() {
       aria-label={t("feedback.button_aria")}
       title={t("feedback.button_aria")}
       onClick={open}
-      className="sentry-unmask fixed bottom-4 right-4 z-50 flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white shadow-lg transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+      className="sentry-unmask fixed bottom-4 right-4 z-50 flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white shadow-lg transition duration-quick ease-signature hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
     >
       ?
     </button>

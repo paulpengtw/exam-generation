@@ -215,7 +215,9 @@ export default function GenerationStatusBar({
     >
       <div className="mx-auto flex h-12 max-w-5xl flex-nowrap items-center gap-2 whitespace-nowrap px-3 text-xs sm:px-4 sm:text-sm">
         <div
-          className={`flex min-w-0 items-center gap-2 ${
+          key={runState}
+          data-testid="statusbar-state-shell"
+          className={`${runState === "idle" ? "" : "statusbar-state-pulse"} flex min-w-0 items-center gap-2 ${
             runState === "running"
               ? "text-blue-600"
               : runState === "done"

@@ -318,18 +318,38 @@ export function ActionButton({
       }}
     >
       {isPending ? (
-        <Spinner />
+        <span
+          key={feedback.state}
+          aria-hidden="true"
+          className="inline-flex animate-in fade-in duration-quick ease-signature"
+        >
+          <Spinner />
+        </span>
       ) : (
-        <span aria-hidden="true" className="inline-flex w-4 justify-center">
+        <span
+          key={feedback.state}
+          aria-hidden="true"
+          className="inline-flex w-4 justify-center animate-in fade-in duration-quick ease-signature"
+        >
           {isDone ? "✓" : isFailed ? "!" : ""}
         </span>
       )}
       {(isPending || isDone) ? (
-        <span role="status" aria-live="polite" className="inline-flex items-center gap-2 sentry-unmask">
+        <span
+          key={`text-${feedback.state}`}
+          role="status"
+          aria-live="polite"
+          className="inline-flex animate-in fade-in items-center gap-2 duration-quick ease-signature sentry-unmask"
+        >
           {text}
         </span>
       ) : (
-        <span className="sentry-unmask">{label}</span>
+        <span
+          key={`text-${feedback.state}`}
+          className="animate-in fade-in duration-quick ease-signature sentry-unmask"
+        >
+          {label}
+        </span>
       )}
       {isDone && feedback.filename && (
         <span

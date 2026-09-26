@@ -1,0 +1,63 @@
+dialog {
+  opacity: 0;
+  transform: translateY(var(--motion-travel));
+  transition:
+    display var(--motion-duration-quick) var(--motion-ease-exit) allow-discrete,
+    overlay var(--motion-duration-quick) var(--motion-ease-exit) allow-discrete,
+    opacity var(--motion-duration-quick) var(--motion-ease-exit),
+    transform var(--motion-duration-quick) var(--motion-ease-exit);
+  transition-behavior: allow-discrete;
+}
+
+dialog:open {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    display var(--motion-duration-standard) var(--motion-ease-signature) allow-discrete,
+    overlay var(--motion-duration-standard) var(--motion-ease-signature) allow-discrete,
+    opacity var(--motion-duration-standard) var(--motion-ease-signature),
+    transform var(--motion-duration-standard) var(--motion-ease-signature);
+}
+
+dialog::backdrop {
+  background-color: rgb(0 0 0 / 0);
+  opacity: 0;
+  transition:
+    display var(--motion-duration-quick) var(--motion-ease-exit) allow-discrete,
+    overlay var(--motion-duration-quick) var(--motion-ease-exit) allow-discrete,
+    background-color var(--motion-duration-quick) var(--motion-ease-exit),
+    opacity var(--motion-duration-quick) var(--motion-ease-exit);
+  transition-behavior: allow-discrete;
+}
+
+dialog:open::backdrop {
+  background-color: rgb(0 0 0 / 40%);
+  opacity: 1;
+  transition:
+    display var(--motion-duration-standard) var(--motion-ease-signature) allow-discrete,
+    overlay var(--motion-duration-standard) var(--motion-ease-signature) allow-discrete,
+    background-color var(--motion-duration-standard) var(--motion-ease-signature),
+    opacity var(--motion-duration-standard) var(--motion-ease-signature);
+}
+
+@starting-style {
+  dialog:open {
+    opacity: 0;
+    transform: translateY(var(--motion-travel));
+  }
+
+  dialog:open::backdrop {
+    background-color: rgb(0 0 0 / 0);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog,
+  dialog:open,
+  dialog::backdrop,
+  dialog:open::backdrop {
+    transition: none !important;
+    transform: none;
+  }
+}

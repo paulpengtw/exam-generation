@@ -46,7 +46,7 @@ export default function SubjectSelectPage() {
           <button
             type="button"
             onClick={() => navigate("/generate/math")}
-            className="flex flex-col items-center gap-3 rounded-xl border-2 border-blue-200 bg-white p-8 text-left shadow-sm transition hover:border-blue-500 hover:shadow-md"
+            className="flex flex-col items-center gap-3 rounded-xl border-2 border-blue-200 bg-white p-8 text-left shadow-sm transition duration-quick ease-signature hover:border-blue-500 hover:shadow-md"
           >
             <span className="text-4xl">📐</span>
             <div>
@@ -58,7 +58,7 @@ export default function SubjectSelectPage() {
           <button
             type="button"
             onClick={() => navigate("/generate/social_studies")}
-            className="flex flex-col items-center gap-3 rounded-xl border-2 border-green-200 bg-white p-8 text-left shadow-sm transition hover:border-green-500 hover:shadow-md"
+            className="flex flex-col items-center gap-3 rounded-xl border-2 border-green-200 bg-white p-8 text-left shadow-sm transition duration-quick ease-signature hover:border-green-500 hover:shadow-md"
           >
             <span className="text-4xl">📖</span>
             <div>
@@ -70,7 +70,7 @@ export default function SubjectSelectPage() {
           <button
             type="button"
             onClick={() => navigate("/generate/natural_sciences")}
-            className="flex flex-col items-center gap-3 rounded-xl border-2 border-cyan-200 bg-white p-8 text-left shadow-sm transition hover:border-cyan-500 hover:shadow-md"
+            className="flex flex-col items-center gap-3 rounded-xl border-2 border-cyan-200 bg-white p-8 text-left shadow-sm transition duration-quick ease-signature hover:border-cyan-500 hover:shadow-md"
           >
             <span className="text-4xl">🔬</span>
             <div>

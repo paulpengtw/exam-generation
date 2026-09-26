@@ -90,7 +90,7 @@ export default function CoreQuestionPicker({
           {candidates.map((c, i) => (
             <label
               key={i}
-              className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors duration-quick ease-signature ${
                 pickedValue === c
                   ? "border-blue-500 bg-blue-50"
                   : "border-gray-200 bg-white hover:border-gray-300"

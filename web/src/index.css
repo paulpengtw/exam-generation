@@ -1,8 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./motion/aicss.css";
+@import "./motion/dialog.css";
 @import "./motion/indicators.css";
 @import "./motion/redraw.css";
+@import "./motion/viewTransitions.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -81,5 +83,9 @@
   .streaming-caret {
     animation: none !important;
     opacity: 1;
+  }
+
+  .statusbar-state-pulse {
+    animation: none !important;
   }
 }

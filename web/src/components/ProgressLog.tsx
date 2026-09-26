@@ -7,6 +7,7 @@ import {
   type RunEvidenceState,
 } from "../lib/generationEvidence";
 import { Spinner } from "../motion/Indicators";
+import { MotionDisclosure } from "../motion/MotionDisclosure";
 import { runPhaseLabel, selectRunPhase } from "../motion/runPhase";
 
 type Subject = "math" | "social_studies" | "natural_sciences";
@@ -166,6 +167,8 @@ export default function ProgressLog({
       {llmCalls.length > 0 && (
         <div className="rounded border border-gray-200 bg-gray-50">
           <button
+            type="button"
+            aria-expanded={showTrace}
             className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100"
             onClick={() => setShowTrace((v) => !v)}
           >
@@ -173,11 +176,8 @@ export default function ProgressLog({
             <span>{showTrace ? "▲" : "▼"}</span>
           </button>
 
-          {showTrace && (
-            <div
-              ref={traceRef}
-              className="max-h-[32rem] overflow-y-auto divide-y divide-gray-200"
-            >
+          <MotionDisclosure open={showTrace} className="max-h-[32rem] divide-y divide-gray-200">
+            <div ref={traceRef} className="max-h-[32rem] overflow-y-auto">
               {blocks.map((b) => {
                 const usage = b.response?.usage as Record<string, number> | undefined;
                 return (
@@ -240,7 +240,7 @@ export default function ProgressLog({
                 );
               })}
             </div>
-          )}
+          </MotionDisclosure>
         </div>
       )}
     </div>

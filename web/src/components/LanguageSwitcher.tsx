@@ -19,8 +19,8 @@ export default function LanguageSwitcher() {
           onClick={() => setLang(value)}
           className={
             lang === value
-              ? "px-3 py-1 bg-blue-600 text-white font-medium"
-              : "px-3 py-1 bg-white text-gray-700 hover:bg-gray-50"
+              ? "px-3 py-1 bg-blue-600 text-white font-medium transition-colors duration-quick ease-signature"
+              : "px-3 py-1 bg-white text-gray-700 hover:bg-gray-50 transition-colors duration-quick ease-signature"
           }
         >
           {label}

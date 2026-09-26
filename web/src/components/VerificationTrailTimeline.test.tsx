@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const language = vi.hoisted(() => ({ value: "en-US" }));
 
@@ -140,7 +140,7 @@ describe("VerificationTrailTimeline", () => {
     expect(screen.getByText(/"答案": "A"/)).toBeInTheDocument();
   });
 
-  it("switches a correction from the changed-fields diff to labeled full snapshots", () => {
+  it("switches a correction from the changed-fields diff to labeled full snapshots", async () => {
     const initial: VerificationTrailEntry = {
       code: "verification_trail",
       kind: "initial",
@@ -184,7 +184,9 @@ describe("VerificationTrailTimeline", () => {
     expect(
       screen.getByRole("button", { name: "Hide before and after snapshots" }),
     ).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByText("Changed fields")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText("Changed fields")).not.toBeInTheDocument(),
+    );
     expect(screen.getByText("Before correction")).toBeInTheDocument();
     expect(screen.getByText("After correction")).toBeInTheDocument();
     expect(screen.getByText(/"題目": "before full question"/)).toBeInTheDocument();
@@ -193,7 +195,7 @@ describe("VerificationTrailTimeline", () => {
     expect(screen.getByText(/"答案": "A"/)).toBeInTheDocument();
   });
 
-  it("keeps the first correction in diff view when the second correction is toggled", () => {
+  it("keeps the first correction in diff view when the second correction is toggled", async () => {
     const initial: VerificationTrailEntry = {
       code: "verification_trail",
       kind: "initial",
@@ -244,10 +246,12 @@ describe("VerificationTrailTimeline", () => {
       screen.getAllByRole("button", { name: "Hide before and after snapshots" }),
     ).toHaveLength(1);
     expect(screen.getByText("B → A")).toBeInTheDocument();
-    expect(screen.queryByText("A → C")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText("A → C")).not.toBeInTheDocument(),
+    );
   });
 
-  it("returns a correction to its changed-fields diff when toggled back", () => {
+  it("returns a correction to its changed-fields diff when toggled back", async () => {
     const initial: VerificationTrailEntry = {
       code: "verification_trail",
       kind: "initial",
@@ -284,8 +288,10 @@ describe("VerificationTrailTimeline", () => {
     ).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("Changed fields")).toBeInTheDocument();
     expect(screen.getByText("B → A")).toBeInTheDocument();
-    expect(screen.queryByText("Before correction")).not.toBeInTheDocument();
-    expect(screen.queryByText("After correction")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("Before correction")).not.toBeInTheDocument();
+      expect(screen.queryByText("After correction")).not.toBeInTheDocument();
+    });
   });
 
   it("does not offer the side-by-side toggle for an initial entry", () => {

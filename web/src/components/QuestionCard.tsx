@@ -26,6 +26,7 @@ import {
   useActionFeedback,
 } from "../motion/actionFeedback";
 import { Spinner } from "../motion/Indicators";
+import { MotionDisclosure } from "../motion/MotionDisclosure";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
 import FigureRenderer, {
@@ -304,29 +305,31 @@ function DistractorPanel({
     <div className="mt-2">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="text-sm font-medium text-amber-700 hover:text-amber-800"
       >
         {open ? t("card.hideDistractor") : t("card.showDistractor")}
       </button>
-      {open && (
-        <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-3 space-y-1 text-sm">
-          <div className="font-medium text-amber-800 mb-1">{t("card.distractorAnalysis")}</div>
-          {entries.map(([label, note]) => (
-            <div key={label} className="flex gap-2 items-start">
-              <span className="inline-flex shrink-0 items-center rounded bg-amber-200 px-1.5 py-0.5 text-xs font-bold text-amber-900">
-                {label}
-              </span>
-              <span
-                className="whitespace-pre-wrap text-amber-900"
-                {...selectionFieldProps(`${fieldPathPrefix}.${label}`, selectionEnabled)}
-              >
-                {note}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      <MotionDisclosure
+        open={open}
+        className="mt-2 rounded border border-amber-200 bg-amber-50 p-3 space-y-1 text-sm"
+      >
+        <div className="font-medium text-amber-800 mb-1">{t("card.distractorAnalysis")}</div>
+        {entries.map(([label, note]) => (
+          <div key={label} className="flex gap-2 items-start">
+            <span className="inline-flex shrink-0 items-center rounded bg-amber-200 px-1.5 py-0.5 text-xs font-bold text-amber-900">
+              {label}
+            </span>
+            <span
+              className="whitespace-pre-wrap text-amber-900"
+              {...selectionFieldProps(`${fieldPathPrefix}.${label}`, selectionEnabled)}
+            >
+              {note}
+            </span>
+          </div>
+        ))}
+      </MotionDisclosure>
     </div>
   );
 }
@@ -411,67 +414,69 @@ function SubQuestionBlock({
       <div>
         <button
           type="button"
+          aria-expanded={showAnswer}
           onClick={() => setShowAnswer((v) => !v)}
           className="text-sm font-medium text-blue-600 hover:text-blue-700"
         >
           {showAnswer ? t("card.hide_answer") : t("card.show_answer")}
         </button>
-        {showAnswer && (
-          <div className="mt-2 rounded bg-white border border-gray-200 p-3 space-y-2 text-sm">
-            {sub.答案 && (
-              <div>
-                <span className="font-medium text-gray-700">{t("card.answer")}：</span>
-                <span
-                  className="whitespace-pre-wrap"
-                  {...selectionFieldProps(`subquestions[${index}].答案`, selectionEnabled)}
-                >
-                  {sub.答案}
-                </span>
+        <MotionDisclosure
+          open={showAnswer}
+          className="mt-2 rounded bg-white border border-gray-200 p-3 space-y-2 text-sm"
+        >
+          {sub.答案 && (
+            <div>
+              <span className="font-medium text-gray-700">{t("card.answer")}：</span>
+              <span
+                className="whitespace-pre-wrap"
+                {...selectionFieldProps(`subquestions[${index}].答案`, selectionEnabled)}
+              >
+                {sub.答案}
+              </span>
+            </div>
+          )}
+          {sub.答案解析 && (
+            <div>
+              <span className="font-medium text-gray-700">{t("card.answerExplanation")}：</span>
+              <span
+                className="whitespace-pre-wrap"
+                {...selectionFieldProps(`subquestions[${index}].答案解析`, selectionEnabled)}
+              >
+                {sub.答案解析}
+              </span>
+            </div>
+          )}
+          {sub.評分規準 && sub.評分規準.length > 0 && (
+            <div>
+              <div className="font-medium text-gray-700 mb-1">{t("card.rubric")}</div>
+              <div className="space-y-1">
+                {sub.評分規準.map((r: RubricEntry, rubricIndex) => (
+                  <div key={r.code} className="flex gap-2 items-start">
+                    <span className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs font-bold ${RUBRIC_TONE[r.code] ?? "bg-gray-100 text-gray-600"}`}>
+                      {r.code}
+                    </span>
+                    <span
+                      className="text-xs leading-relaxed text-gray-700"
+                      {...selectionFieldProps(
+                        `subquestions[${index}].評分規準[${rubricIndex}].規準說明`,
+                        selectionEnabled,
+                      )}
+                    >
+                      {r.規準說明}
+                    </span>
+                  </div>
+                ))}
               </div>
-            )}
-            {sub.答案解析 && (
-              <div>
-                <span className="font-medium text-gray-700">{t("card.answerExplanation")}：</span>
-                <span
-                  className="whitespace-pre-wrap"
-                  {...selectionFieldProps(`subquestions[${index}].答案解析`, selectionEnabled)}
-                >
-                  {sub.答案解析}
-                </span>
-              </div>
-            )}
-            {sub.評分規準 && sub.評分規準.length > 0 && (
-              <div>
-                <div className="font-medium text-gray-700 mb-1">{t("card.rubric")}</div>
-                <div className="space-y-1">
-                  {sub.評分規準.map((r: RubricEntry, rubricIndex) => (
-                    <div key={r.code} className="flex gap-2 items-start">
-                      <span className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs font-bold ${RUBRIC_TONE[r.code] ?? "bg-gray-100 text-gray-600"}`}>
-                        {r.code}
-                      </span>
-                      <span
-                        className="text-xs leading-relaxed text-gray-700"
-                        {...selectionFieldProps(
-                          `subquestions[${index}].評分規準[${rubricIndex}].規準說明`,
-                          selectionEnabled,
-                        )}
-                      >
-                        {r.規準說明}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {sub.誘答分析 && Object.keys(sub.誘答分析).length > 0 && (
-              <DistractorPanel
-                analysis={sub.誘答分析}
-                selectionEnabled={selectionEnabled}
-                fieldPathPrefix={`subquestions[${index}].誘答分析`}
-              />
-            )}
-          </div>
-        )}
+            </div>
+          )}
+          {sub.誘答分析 && Object.keys(sub.誘答分析).length > 0 && (
+            <DistractorPanel
+              analysis={sub.誘答分析}
+              selectionEnabled={selectionEnabled}
+              fieldPathPrefix={`subquestions[${index}].誘答分析`}
+            />
+          )}
+        </MotionDisclosure>
       </div>
     </div>
   );
@@ -638,8 +643,8 @@ function QuestionActivityPanel({ evidence }: { evidence: QuestionEvidence }) {
         </span>
         <span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
       </button>
-      {expanded && (
-        <ul className="mt-2 space-y-1" data-testid="question-card-activity-details">
+      <MotionDisclosure open={expanded} className="mt-2">
+        <ul className="space-y-1" data-testid="question-card-activity-details">
           {operations.map((operation) => (
             <li
               key={operation.operationId}
@@ -652,7 +657,7 @@ function QuestionActivityPanel({ evidence }: { evidence: QuestionEvidence }) {
             </li>
           ))}
         </ul>
-      )}
+      </MotionDisclosure>
     </section>
   );
 }
@@ -1247,13 +1252,13 @@ export default function QuestionCard({
           <div>
             <button
               type="button"
+              aria-expanded={showSolution}
               onClick={() => setShowSolution((v) => !v)}
               className="text-sm font-medium text-blue-600 hover:text-blue-700"
             >
               {showSolution ? t("card.hide_solution") : t("card.show_solution")}
             </button>
-            {showSolution && (
-              <div className="mt-2 space-y-1 rounded bg-gray-50 p-3 text-sm leading-relaxed">
+            <MotionDisclosure open={showSolution} className="mt-2 space-y-1 rounded bg-gray-50 p-3 text-sm leading-relaxed">
                 {question.正確解題分析.map((line, i) => (
                   <p
                     key={i}
@@ -1270,8 +1275,7 @@ export default function QuestionCard({
                     fieldPathPrefix="誘答分析"
                   />
                 )}
-              </div>
-            )}
+            </MotionDisclosure>
           </div>
         </>
       )}

@@ -314,8 +314,10 @@ describe("ParamForm 工作區參與", () => {
     expect(confirmationSurface()).toMatchObject({ readiness: "ready", hasEditableState: true, hasReceivedResults: false });
     expect(formSurface()?.hasEditableState).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: button }));
-    expect(confirmationSurface()).toBeUndefined();
-    expect(formSurface()).toBeDefined();
+    await waitFor(() => {
+      expect(confirmationSurface()).toBeUndefined();
+      expect(formSurface()).toBeDefined();
+    });
     expect(onSubmit).toHaveBeenCalledTimes(button === "確定發送" ? 1 : 0);
   });
 

@@ -4,7 +4,7 @@
  * placeholders shown for not-yet-filled questions, and filled content shown for done ones.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { applyV2Event, createRunEvidence, type RunEvidenceState } from "../lib/generationEvidence";
@@ -156,6 +156,18 @@ describe("GeneratePage — v2 evidence rendering", () => {
     expect(placeholders).toHaveLength(1);
     const contents = screen.getAllByTestId("question-card-content");
     expect(contents).toHaveLength(1);
+  });
+
+  it("keeps a streamed QuestionCard present after it enters the results list", async () => {
+    const { rerender } = render(<GeneratePage subject="math" />);
+
+    generateState.runEvidence = makeRunEvidence();
+    rerender(<GeneratePage subject="math" />);
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("question-card-content")).toHaveLength(1);
+      expect(screen.getAllByTestId("question-card-placeholder")).toHaveLength(1);
+    });
   });
 
   it("renders in manifest order: q_RUN_001 placeholder comes before q_RUN_002 content", () => {

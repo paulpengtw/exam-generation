@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useT } from "../i18n/useT";
+import { MotionDisclosure } from "../motion/MotionDisclosure";
 
 export interface ReferenceExampleEntryShape {
   code: "reference_example";
@@ -76,6 +77,7 @@ export default function ReferenceExampleRecordSection({
                 ? t("card.hideReferenceExampleRecord")
                 : t("card.showReferenceExampleRecord")
             }
+            aria-expanded={expanded}
             onClick={() => setExpanded((prev) => !prev)}
             className="rounded border border-gray-300 bg-white px-2 py-0.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
           >
@@ -96,50 +98,52 @@ export default function ReferenceExampleRecordSection({
             ? t("card.referenceExampleRecordInProgress")
             : t("card.noReferenceExampleRecord")}
         </p>
-      ) : expanded ? (
-        <ol className="mt-3 space-y-2">
-          {entries.map((entry, index) => {
-            const firstSlot = sourceToFirstSlot.get(entry.source);
-            const isDuplicate =
-              firstSlot !== (entry.slot ?? null) &&
-              entries.findIndex((e) => e.source === entry.source) < index;
-            return (
-              <li
-                key={`${entry.timestamp}-${index}`}
-                className="rounded border border-teal-200 bg-teal-50 p-3 text-sm"
-              >
-                <div className="flex flex-wrap items-baseline gap-2 font-semibold">
-                  <span>
-                    {t("card.referenceExampleRecordEntry")}
-                    {entry.slot != null ? ` #${entry.slot}` : ""}
-                    {" — "}
-                    {entry.kind === "example" ? entry.description : entry.cognitive_process}
-                  </span>
-                  {isDuplicate && firstSlot != null && (
-                    <span
-                      aria-label="duplicate"
-                      className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
-                    >
-                      {t("card.referenceExampleRecordSameAsPrefix")}
-                      {firstSlot}
-                      {t("card.referenceExampleRecordSameAsSuffix")}
+      ) : (
+        <MotionDisclosure open={expanded} className="mt-3">
+          <ol className="space-y-2">
+            {entries.map((entry, index) => {
+              const firstSlot = sourceToFirstSlot.get(entry.source);
+              const isDuplicate =
+                firstSlot !== (entry.slot ?? null) &&
+                entries.findIndex((e) => e.source === entry.source) < index;
+              return (
+                <li
+                  key={`${entry.timestamp}-${index}`}
+                  className="rounded border border-teal-200 bg-teal-50 p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-baseline gap-2 font-semibold">
+                    <span>
+                      {t("card.referenceExampleRecordEntry")}
+                      {entry.slot != null ? ` #${entry.slot}` : ""}
+                      {" — "}
+                      {entry.kind === "example" ? entry.description : entry.cognitive_process}
                     </span>
-                  )}
-                </div>
-                <p className="mt-1">
-                  {t("card.referenceExampleRecordStage")}：{entry.stage}
-                </p>
-                <p className="mt-1">
-                  {t("card.referenceExampleRecordSource")}：{entry.source}
-                </p>
-                <time dateTime={entry.timestamp} className="mt-1 block text-xs text-gray-500">
-                  {entry.timestamp}
-                </time>
-              </li>
-            );
-          })}
-        </ol>
-      ) : null}
+                    {isDuplicate && firstSlot != null && (
+                      <span
+                        aria-label="duplicate"
+                        className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
+                      >
+                        {t("card.referenceExampleRecordSameAsPrefix")}
+                        {firstSlot}
+                        {t("card.referenceExampleRecordSameAsSuffix")}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1">
+                    {t("card.referenceExampleRecordStage")}：{entry.stage}
+                  </p>
+                  <p className="mt-1">
+                    {t("card.referenceExampleRecordSource")}：{entry.source}
+                  </p>
+                  <time dateTime={entry.timestamp} className="mt-1 block text-xs text-gray-500">
+                    {entry.timestamp}
+                  </time>
+                </li>
+              );
+            })}
+          </ol>
+        </MotionDisclosure>
+      )}
     </section>
   );
 }

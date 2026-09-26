@@ -81,7 +81,7 @@ function LaneCard({ lane, aggregateMode }: LaneCardProps) {
       : null;
 
   return (
-    <div className={`rounded-lg border p-3 space-y-2 transition-colors ${
+    <div className={`rounded-lg border p-3 space-y-2 transition-colors duration-quick ease-signature ${
       effectiveStatus === "running"
         ? "border-blue-300 bg-blue-50"
         : effectiveStatus === "done"
