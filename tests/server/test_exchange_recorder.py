@@ -22,8 +22,8 @@ def sink() -> tuple[list[dict[str, Any]], Any]:
     return rows, write
 
 
-def _req(agent: str, purpose: str = "generate") -> dict:
-    return {
+def _req(agent: str, purpose: str = "generate", **extra) -> dict:
+    base = {
         "type": "llm_request",
         "agent": agent,
         "purpose": purpose,
@@ -34,10 +34,12 @@ def _req(agent: str, purpose: str = "generate") -> dict:
         ],
         "params": {"max_tokens": 8192, "temperature": 0.7},
     }
+    base.update(extra)
+    return base
 
 
-def _resp(agent: str, purpose: str = "generate") -> dict:
-    return {
+def _resp(agent: str, purpose: str = "generate", **extra) -> dict:
+    base = {
         "type": "llm_response",
         "agent": agent,
         "purpose": purpose,
@@ -46,6 +48,8 @@ def _resp(agent: str, purpose: str = "generate") -> dict:
         "reasoning": None,
         "usage": {"input": 12, "output": 3, "cache_read": 0, "cache_creation": 0},
     }
+    base.update(extra)
+    return base
 
 
 def test_request_response_pair_produces_one_row(sink):
@@ -187,6 +191,58 @@ def test_context_bearing_events_pair_by_run_and_call_not_agent(sink):
     assert rows[0]["call_id"] == "RUN:call:a"
     assert rows[1]["call_id"] == "RUN:call:b"
     assert rows[0]["request_body"]["messages"][1]["content"] == "hello"
+
+    # Each body must embed the matching identity so persistence can survive the flat
+    # field strip (persistence.py strips run_id/call_id/operation_id/retry_of_call_id
+    # before writing to LLMExchange; the body identity is the only surviving copy).
+    assert rows[0]["request_body"]["identity"] == {
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:a",
+        "call_id": "RUN:call:a",
+    }
+    assert rows[0]["response_body"]["identity"] == {
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:a",
+        "call_id": "RUN:call:a",
+    }
+    assert rows[1]["request_body"]["identity"] == {
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:b",
+        "call_id": "RUN:call:b",
+    }
+    assert rows[1]["response_body"]["identity"] == {
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:b",
+        "call_id": "RUN:call:b",
+    }
+
+    # A JSON retry carries retry_of_call_id in both bodies.
+    retry_req = {
+        **_req("sub_generator#1", purpose="slot-a"),
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:a",
+        "call_id": "RUN:call:a2",
+        "retry_of_call_id": "RUN:call:a",
+    }
+    retry_resp = {
+        **_resp("sub_generator#1", purpose="slot-a"),
+        "run_id": "RUN",
+        "operation_id": "RUN:operation:a",
+        "call_id": "RUN:call:a2",
+        "retry_of_call_id": "RUN:call:a",
+    }
+    rec(retry_req)
+    rec(retry_resp)
+    assert rows[2]["request_body"]["identity"]["retry_of_call_id"] == "RUN:call:a"
+    assert rows[2]["response_body"]["identity"]["retry_of_call_id"] == "RUN:call:a"
+    assert rows[2]["request_body"]["identity"]["call_id"] == "RUN:call:a2"
+
+    # A legacy (no context) exchange must carry NO identity key in either body —
+    # it stays on the old schema so downstream consumers are not surprised.
+    rec(_req("generator"))
+    rec(_resp("generator"))
+    assert "identity" not in rows[3]["request_body"]
+    assert "identity" not in rows[3]["response_body"]
 
 
 def test_shared_allocator_across_recorders_prevents_cross_question_pairing(sink):

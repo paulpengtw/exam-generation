@@ -84,6 +84,49 @@ function replayFixture(fixtureName: string, throughEventSeq = Number.MAX_SAFE_IN
   return state;
 }
 
+function makeLargeBatchEvidence(): RunEvidenceState {
+  const manifest = Array.from({ length: 100 }, (_, i) => ({
+    index: i,
+    questionId: `q_LB_${String(i + 1).padStart(3, "0")}`,
+  }));
+  let state = createRunEvidence({ runId: "LB_RUN", total: 100, manifest });
+
+  function stageOp(
+    questionId: string,
+    operationId: string,
+    agent: string,
+    status: "start" | "end",
+    subquestionIndex?: number,
+  ): void {
+    state = applyV2Event(state, {
+      kind: "v2",
+      event: {
+        name: "stage",
+        context: {
+          question_id: questionId,
+          operation_id: operationId,
+          ...(subquestionIndex !== undefined ? { subquestion_index: subquestionIndex } : {}),
+        },
+        payload: { agent, stage: "subquestion", status },
+      },
+    });
+  }
+
+  // q_LB_001: 3 ops total — OP_LB_A and OP_LB_B active, OP_LB_C ended
+  stageOp("q_LB_001", "OP_LB_A", "sub_generator#1", "start", 0);
+  stageOp("q_LB_001", "OP_LB_B", "sub_generator#2", "start", 1);
+  stageOp("q_LB_001", "OP_LB_C", "sub_generator#3", "start", 2);
+  stageOp("q_LB_001", "OP_LB_C", "sub_generator#3", "end", 2);
+
+  // q_LB_002 through q_LB_010: 1 active op each
+  for (let i = 2; i <= 10; i++) {
+    const qid = `q_LB_${String(i).padStart(3, "0")}`;
+    stageOp(qid, `OP_LB_Q${i}_A`, "sub_generator#1", "start", 0);
+  }
+
+  return state;
+}
+
 // Mock useGenerate to return runEvidence
 const generateState = vi.hoisted(() => ({
   runEvidence: null as RunEvidenceState | null,
@@ -396,5 +439,31 @@ describe("GeneratePage — v2 evidence rendering", () => {
     expect(screen.getByText("card.receipt_draft")).toBeInTheDocument();
     expect(screen.getByText("question 4")).toBeInTheDocument();
     expect(screen.getAllByText("card.unknown")).toHaveLength(1);
+  });
+
+  it("100-question batch: no lanes auto-expand, summary shows active count not total, one expand shows only that card's ops", () => {
+    generateState.runEvidence = makeLargeBatchEvidence();
+    render(<GeneratePage subject="math" />);
+
+    // (1) No per-operation lane detail elements in the DOM before any interaction
+    expect(screen.queryByTestId("question-card-activity-operation-OP_LB_A")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("question-card-activity-operation-OP_LB_B")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("question-card-activity-operation-OP_LB_C")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("question-card-activity-operation-OP_LB_Q2_A")).not.toBeInTheDocument();
+
+    // (2) Summary counts equal actual active operation count — ended ops not counted
+    // q_LB_001 has OP_LB_A + OP_LB_B active (2), OP_LB_C ended (1): summary shows "2" not "3"
+    const summaries = screen.getAllByTestId("question-card-activity-summary");
+    const firstSummary = summaries[0]; // q_LB_001 is first in manifest order
+    expect(firstSummary).toHaveTextContent("card.activitySubquestions 2");
+    expect(firstSummary).not.toHaveTextContent("card.activitySubquestions 3");
+
+    // (3) Expanding one card reveals only that card's operations
+    fireEvent.click(firstSummary);
+    expect(screen.getByTestId("question-card-activity-operation-OP_LB_A")).toBeInTheDocument();
+    expect(screen.getByTestId("question-card-activity-operation-OP_LB_B")).toBeInTheDocument();
+    expect(screen.getByTestId("question-card-activity-operation-OP_LB_C")).toBeInTheDocument();
+    // Other cards' operations remain hidden
+    expect(screen.queryByTestId("question-card-activity-operation-OP_LB_Q2_A")).not.toBeInTheDocument();
   });
 });
