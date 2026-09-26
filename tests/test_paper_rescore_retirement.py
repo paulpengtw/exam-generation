@@ -88,8 +88,8 @@ def test_social_question_type_enum_and_csv_retire_closed_format() -> None:
     )
     assert type_rows["開放式建構反應題"] == (
         "學生需自行組織文字作答並說明思考過程。計分採每題專屬評分指引（scoring guide），"
-        "分數 0..N 可部分給分。評分規準表必須隨題產出，每一分數級距附 1-2 個學生作答實例"
-        "（含正確與錯誤示例）。"
+        "固定 2 / 1 / 0 三級。評分規準表必須隨題產出：[2] 附 1 個學生作答實例、"
+        "[1] 附 2 個（第一個為最小對照）、[0] 附 1 個。"
     )
     assert type_rows["拖放題"] == (
         "互動題型，僅限數位卷面（target surface = 數位）。學生將棋子（draggables）拖放至目標區（"

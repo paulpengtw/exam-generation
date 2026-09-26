@@ -30,6 +30,25 @@ _Avoid_: topic, theme, essential question
 A free-text subject hint the user may supply to steer generation. Distinct from 核心問題, which is a formed question.
 _Avoid_: topic (ambiguous with 核心問題)
 
+**評分規準**:
+The scoring guide attached to a 小題: its levels, each with a 規準說明 and 學生作答實例.
+_Avoid_: rubric, scoring guide, 評分標準
+
+**計數式規準**:
+A 評分規準 whose levels are distinguished by how many things the student produced rather than
+by what the item claims to measure.
+_Avoid_: counting rubric
+
+**學生作答實例**:
+A sample answer to one 小題, written as a student would write it, attached to one level of its
+評分規準 so a teacher can see what that level looks like. Never a description of an answer.
+_Avoid_: 示例, 範例答案, sample answer
+
+**最小對照**:
+A [1] 學生作答實例 that makes the same claim, with the same number of points, as the [2] example,
+and differs only in that its reasoning does not close the chain.
+_Avoid_: 對照組 (reserved for experimental design)
+
 ### 課綱 (Curriculum)
 
 **學習內容**:

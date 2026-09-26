@@ -38,9 +38,9 @@
 
 ## 5. 文件與詞彙
 
-- [ ] 5.1 `docs/ADDING_SAMPLES.md`：依 D8 改寫 L158、L205-215 範例與 L250 欄位表。範例須符合區塊：[2] 一則、[1] 兩則（第一則為最小對照）、[0] 一則合理錯誤，不用 `0X`、不用「不知道」。以 `grep -n -E "0\.\.N|0X|1-2 個學生作答實例" docs/ADDING_SAMPLES.md` 驗證開放式題不再出現舊指示（選擇題與 `Complex multiple-choice` 的 `0X` 描述除外）。
-- [ ] 5.2 `data/social_studies/curriculum/schema_parameters.csv` 第 8 列：只改說明欄，改為 2 / 1 / 0 與 1 / 2 / 1。以 schema loader 既有測試驗證 `題型` enum 值不變。
-- [ ] 5.3 `CONTEXT.md`：加入 D7 的四個詞條（評分規準、計數式規準、學生作答實例、最小對照），放在「題目結構」段落。以 `git diff CONTEXT.md` 確認只新增詞條、沒有改動其他內容。
+- [x] 5.1 `docs/ADDING_SAMPLES.md`：依 D8 改寫 L158、L205-215 範例與 L250 欄位表。範例須符合區塊：[2] 一則、[1] 兩則（第一則為最小對照）、[0] 一則合理錯誤，不用 `0X`、不用「不知道」。以 `grep -n -E "0\.\.N|0X|1-2 個學生作答實例" docs/ADDING_SAMPLES.md` 驗證開放式題不再出現舊指示（選擇題與 `Complex multiple-choice` 的 `0X` 描述除外）。
+- [x] 5.2 `data/social_studies/curriculum/schema_parameters.csv` 第 8 列：只改說明欄，改為 2 / 1 / 0 與 1 / 2 / 1。以 schema loader 既有測試驗證 `題型` enum 值不變。
+- [x] 5.3 `CONTEXT.md`：加入 D7 的四個詞條（評分規準、計數式規準、學生作答實例、最小對照），放在「題目結構」段落。以 `git diff CONTEXT.md` 確認只新增詞條、沒有改動其他內容。
 
 ## 6. 整合驗證
 

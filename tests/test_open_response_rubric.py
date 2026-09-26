@@ -375,3 +375,57 @@ def test_ss_subquestion_system_prompt_contains_block_exactly_once_all_stages() -
         assert "1-2 個學生作答實例" not in prompt, (
             f"{stage}: prompt still contains '1-2 個學生作答實例'"
         )
+
+
+# ---------------------------------------------------------------------------
+# Issue #867: Sample guide example must pass shape check
+# ---------------------------------------------------------------------------
+
+def test_adding_samples_guide_example_rubric_conforms() -> None:
+    """The Constructed response example in docs/ADDING_SAMPLES.md must pass shape check (issue #867).
+
+    Parses the first JSON block containing '"Constructed response"' in the guide and verifies
+    its 評分規準 returns no issues from check_open_response_rubric_shape, so the doc
+    cannot drift from the rule.
+    """
+    import json
+    import re
+
+    REPO_ROOT = Path(__file__).parent.parent
+    text = (REPO_ROOT / "docs" / "ADDING_SAMPLES.md").read_text(encoding="utf-8")
+
+    # Find all ```json ... ``` blocks and pick the one for Constructed response.
+    blocks = re.findall(r"```json\n(\{.*?\})\n```", text, re.DOTALL)
+    cr_block = next((b for b in blocks if '"Constructed response"' in b), None)
+    assert cr_block is not None, (
+        "Could not find a Constructed response JSON example block in docs/ADDING_SAMPLES.md"
+    )
+
+    data = json.loads(cr_block)
+    raw_rubric = data["question"]["subquestions"][0]["評分規準"]
+
+    @dataclasses.dataclass
+    class _GEntry:
+        code: str
+        規準說明: str
+        學生作答實例: list[str] = dataclasses.field(default_factory=list)
+
+    @dataclasses.dataclass
+    class _GSQ:
+        序號: int
+        評分規準: list[_GEntry] = dataclasses.field(default_factory=list)
+
+    entries = [
+        _GEntry(
+            code=e["code"],
+            規準說明=e.get("規準說明", ""),
+            學生作答實例=e.get("學生作答實例", []),
+        )
+        for e in raw_rubric
+    ]
+    subq = _GSQ(序號=1, 評分規準=entries)
+    issues = check_open_response_rubric_shape([subq])
+    assert issues == [], (
+        f"Sample guide Constructed response example fails shape check:\n"
+        + "\n".join(f"  - {i}" for i in issues)
+    )
