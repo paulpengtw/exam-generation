@@ -406,6 +406,29 @@ def test_legacy_ns_0x_rubric_fails_shape_check_on_edit_and_corrected_result_is_n
         "Expected a NEW record, but got the same record_id"
     )
 
+    # Direct DB assertion: verify GenerationRecord.parent_record_id column.
+    child_uuid = uuid.UUID(child_record_id)
+
+    async def _fetch_child_row():
+        async with session_factory() as session:
+            return (
+                await session.execute(
+                    select(GenerationRecord).where(GenerationRecord.id == child_uuid)
+                )
+            ).scalar_one_or_none()
+
+    child_row = asyncio.run(_fetch_child_row())
+    assert child_row is not None, (
+        f"Child GenerationRecord {child_record_id!r} not found in DB"
+    )
+    assert child_row.id != record_id, (
+        "child_row.id must differ from the original record_id"
+    )
+    assert child_row.parent_record_id == record_id, (
+        f"Expected child_row.parent_record_id == {record_id!r}; "
+        f"got {child_row.parent_record_id!r}"
+    )
+
     # The parent history now resolves to the child (latest descendant).
     assert parent_hist["id"] == child_record_id
 
