@@ -174,10 +174,10 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
         const subMeta = [
           `${sub.年級}年級`,
           sub.題型,
-          ...sub.科目,
-          ...sub.核心素養,
-          ...sub.學習內容.map((lc) => lc.編碼),
-          ...sub.學習表現.map((lp) => lp.編碼),
+          ...(sub.科目 ?? []),
+          ...(sub.核心素養 ?? []),
+          ...(sub.學習內容 ?? []).map((lc) => lc.編碼),
+          ...(sub.學習表現 ?? []).map((lp) => lp.編碼),
           sub.認知歷程,
         ].filter((item): item is string => Boolean(item)).map(xmlEscape).join(" ｜ ");
         paras.push(`<text:p text:style-name="Heading2">${xmlEscape(`第${sub.序號}題`)}</text:p>`);

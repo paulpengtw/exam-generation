@@ -68,9 +68,9 @@ export interface SubQuestion {
   id: string;
   序號: number;
   年級: number;
-  科目: string[];
+  科目?: string[];
   科學能力?: string[];
-  核心素養: string[];
+  核心素養?: string[];
   學習內容: LearningContentItem[];
   學習表現: LearningContentItem[];
   認知歷程?: string;
@@ -96,6 +96,8 @@ export interface ExamQuestion {
   題型: string;
   數學思考?: string[];
   學習內容?: LearningContentItem[];
+  核心素養?: string[];
+  學習表現?: LearningContentItem[];
   閱讀歷程?: string[];
   文本形式?: string;
   內容領域?: string;

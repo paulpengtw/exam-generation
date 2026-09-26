@@ -4,7 +4,7 @@
  * placeholders shown for not-yet-filled questions, and filled content shown for done ones.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { applyV2Event, createRunEvidence, type RunEvidenceState } from "../lib/generationEvidence";
@@ -56,7 +56,7 @@ function makeRunEvidence(overrides: Partial<RunEvidenceState> = {}): RunEvidence
   };
 }
 
-function replayFixture(fixtureName: string): RunEvidenceState {
+function replayFixture(fixtureName: string, throughEventSeq = Number.MAX_SAFE_INTEGER): RunEvidenceState {
   const lines = readFileSync(
     resolve(__dirname, `../../../tests/fixtures/generation_v2/${fixtureName}`),
     "utf-8",
@@ -75,6 +75,7 @@ function replayFixture(fixtureName: string): RunEvidenceState {
     })),
   });
   for (const line of lines.slice(1)) {
+    if (Number(line.context.event_seq) > throughEventSeq) break;
     state = applyV2Event(state, {
       kind: "v2",
       event: { name: line.event, context: line.context, payload: line.payload },
@@ -303,6 +304,54 @@ describe("GeneratePage — v2 evidence rendering", () => {
     expect(screen.getByText("文本 A")).toBeInTheDocument();
     expect(screen.getByText("文本 B")).toBeInTheDocument();
     expect(screen.getByText("文本 C")).toBeInTheDocument();
+    if (subject === "social_studies") {
+      expect(screen.getAllByText("地理", { exact: true }).length).toBeGreaterThan(0);
+    } else if (subject === "natural_sciences") {
+      expect(
+        screen.getAllByText(
+          "環境能力一：解釋人類與地球系統的相互作用對環境的影響",
+          { exact: true },
+        ).length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("renders the math group's parent metadata and each supplied subquestion from the real fixture", () => {
+    generateState.runEvidence = replayFixture("math_groups_interleaved.jsonl");
+
+    render(<GeneratePage subject="math" />);
+
+    expect(screen.getAllByText("形成", { exact: true }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("詮釋評估", { exact: true }).length).toBeGreaterThan(0);
+    expect(screen.getByText("S-9-3", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("s-IV-1", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("核心問題 C", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("文本 C", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("A 小題 1", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("A 小題 3", { exact: true })).toBeInTheDocument();
+    expect(screen.getAllByText("8年級", { exact: true }).length).toBeGreaterThan(0);
+
+    for (const button of screen.getAllByRole("button", { name: "card.show_answer" })) {
+      fireEvent.click(button);
+    }
+    expect(screen.getAllByText("A", { exact: true }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("解析", { exact: true }).length).toBeGreaterThan(0);
+  });
+
+  it("keeps math group content visible through the text shell and partial subquestion updates", () => {
+    const { rerender } = render(<GeneratePage subject="math" />);
+
+    generateState.runEvidence = replayFixture("math_groups_interleaved.jsonl", 12);
+    rerender(<GeneratePage subject="math" />);
+    expect(screen.getByText("核心問題 A", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("文本 A", { exact: true })).toBeInTheDocument();
+    expect(screen.getAllByText("形成", { exact: true }).length).toBeGreaterThan(0);
+    expect(screen.queryByText("A 小題 1", { exact: true })).not.toBeInTheDocument();
+
+    generateState.runEvidence = replayFixture("math_groups_interleaved.jsonl", 29);
+    rerender(<GeneratePage subject="math" />);
+    expect(screen.getByText("A 小題 1", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("A 小題 3", { exact: true })).toBeInTheDocument();
   });
 
   it("replays the real A/B/C/D transport fixture with draft and terminal gaps preserved", () => {

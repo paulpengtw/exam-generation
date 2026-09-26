@@ -585,6 +585,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                         index={idx}
                         evidence={qEvidence}
                         question={displayItem?.question}
+                        subject={subject}
                         {...cardProps}
                       />
                     );
@@ -593,6 +594,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                     <QuestionCard
                       key={item.question.id ?? `q-${item.index}`}
                       question={item.question}
+                      subject={subject}
                       {...projectGenerationCardEvidence(item)}
                     />
                   ))}

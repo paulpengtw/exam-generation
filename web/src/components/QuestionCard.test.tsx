@@ -357,6 +357,49 @@ const ssQuestion: ExamQuestion = {
   verification: { passed: true },
 };
 
+const mathGroup: ExamQuestion = {
+  id: "math-group",
+  情境: ["科學"],
+  題型種類: "題組題",
+  題型: "選擇題",
+  數學思考: ["運用"],
+  核心素養: ["數-J-A2"],
+  學習內容: [{ 編碼: "N-8-1", 說明: "parent content" }],
+  學習表現: [{ 編碼: "n-IV-2", 說明: "parent performance" }],
+  核心問題: "math core",
+  文本: "math passage",
+  subquestions: [{
+    id: "math-group-sq1",
+    序號: 1,
+    年級: 8,
+    題型: "選擇題",
+    題目: "math subquestion",
+    答案: "4",
+    答案解析: "math explanation",
+    學習內容: [{ 編碼: "N-8-1", 說明: "sub content" }],
+    學習表現: [{ 編碼: "n-IV-2", 說明: "sub performance" }],
+    出題概念: "",
+  }],
+  題目: [],
+  正確解題分析: [],
+};
+
+describe("QuestionCard math 題組", () => {
+  it("renders parent competency/performance and subquestion answers without social-only fields", () => {
+    render(<QuestionCard question={mathGroup} isFinal />);
+
+    expect(screen.getByText("數-J-A2", { exact: true })).toBeInTheDocument();
+    expect(screen.getAllByText("n-IV-2", { exact: true }).length).toBeGreaterThan(0);
+    expect(screen.getByText("math core", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("math subquestion", { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("地理", { exact: true })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show Answer" }));
+    expect(screen.getByText("4", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("math explanation", { exact: true })).toBeInTheDocument();
+  });
+});
+
 describe("QuestionCard fixed social-studies slots", () => {
   it("renders a missing middle slot and partial delivery evidence without compacting survivors", () => {
     const thirdSub: SubQuestion = { ...ssSub, id: "ss1-sq003", 序號: 3, 題目: "Third question" };

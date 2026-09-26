@@ -247,6 +247,30 @@ function aggregateUnique<T>(subs: SubQuestion[], picker: (s: SubQuestion) => T[]
   return result;
 }
 
+type DisplaySubject = "math" | "social_studies" | "natural_sciences";
+
+function inferDisplaySubject(question: ExamQuestion): DisplaySubject {
+  if (Array.isArray(question.數學思考)) return "math";
+  if (Array.isArray(question.科學能力)) return "natural_sciences";
+  if (
+    question.內容領域 !== undefined
+    || question.認知歷程 !== undefined
+    || (question.subquestions ?? []).some((sub) =>
+      (sub.科目?.length ?? 0) > 0 || (sub.核心素養?.length ?? 0) > 0,
+    )
+  ) {
+    return "social_studies";
+  }
+  // Unmarked legacy groups used the social-studies card shape; an unmarked
+  // flat record is the legacy math shape used by the modification surface.
+  return (
+    (question.subquestions?.length ?? 0) > 0
+    || (typeof question.核心問題 === "string" && question.核心問題.length > 0)
+    || (typeof question.文本 === "string" && question.文本.length > 0)
+    || question.題型種類 === "題組題"
+  ) ? "social_studies" : "math";
+}
+
 const RUBRIC_TONE: Record<string, string> = {
   "2": "bg-green-100 text-green-800",
   "1": "bg-yellow-100 text-yellow-800",
@@ -679,11 +703,19 @@ export default function QuestionCard({
   // Non-hook derived values needed by hooks below (may be null before early returns)
   const resolvedQuestion = initialQuestion ?? evidence?.content.question ?? null;
   const _question = (modificationResult?.question ?? resolvedQuestion) as ExamQuestion | null;
-  const isSocialStudies = Boolean(
+  const displaySubject: DisplaySubject = subject === "math"
+    || subject === "social_studies"
+    || subject === "natural_sciences"
+    ? subject
+    : (_question ? inferDisplaySubject(_question) : "math");
+  const isMath = displaySubject === "math";
+  const isGroupedSubject = !isMath;
+  const isQuestionGroup = Boolean(
     _question && (
       (_question.subquestions?.length ?? 0) > 0
-      || typeof _question.核心問題 === "string"
-      || typeof _question.文本 === "string"
+      || (typeof _question.核心問題 === "string" && _question.核心問題.length > 0)
+      || (typeof _question.文本 === "string" && _question.文本.length > 0)
+      || _question.題型種類 === "題組題"
     ),
   );
   const verification = _question?.verification as VerificationShape | undefined;
@@ -691,30 +723,43 @@ export default function QuestionCard({
   const selectionEnabled = restoredEligibility && isFinal && (passed || modificationResult !== null);
 
   const mathCodes = useMemo(() => _question ? getLearningContentCodes(_question) : [], [_question]);
+  const mathCoreComp = useMemo(
+    () => isMath && _question ? _question.核心素養 ?? [] : [],
+    [_question, isMath],
+  );
+  const mathLpCodes = useMemo(
+    () => isMath && _question ? (_question.學習表現 ?? []).map((lp) => lp.編碼).filter(Boolean) : [],
+    [_question, isMath],
+  );
 
   const ssGrades = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => [s.年級]) : [],
-    [_question, isSocialStudies]
+    () => isGroupedSubject && _question ? aggregateUnique(_question.subquestions ?? [], (s) => [s.年級]) : [],
+    [_question, isGroupedSubject]
   );
   const ssSubjects = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => s.科目 ?? []) : [],
-    [_question, isSocialStudies]
+    () => isGroupedSubject && _question ? aggregateUnique(_question.subquestions ?? [], (s) => s.科目 ?? []) : [],
+    [_question, isGroupedSubject]
   );
   const ssCoreComp = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => s.核心素養 ?? []) : [],
-    [_question, isSocialStudies]
+    () => isGroupedSubject && _question ? aggregateUnique(_question.subquestions ?? [], (s) => s.核心素養 ?? []) : [],
+    [_question, isGroupedSubject]
   );
   const ssScienceComp = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => s.科學能力 ?? []) : [],
-    [_question, isSocialStudies]
+    () => isGroupedSubject && _question
+      ? Array.from(new Set([
+        ...(_question.科學能力 ?? []),
+        ...aggregateUnique(_question.subquestions ?? [], (s) => s.科學能力 ?? []),
+      ]))
+      : [],
+    [_question, isGroupedSubject],
   );
   const ssLcCodes = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => (s.學習內容 ?? []).map((lc) => lc.編碼)) : [],
-    [_question, isSocialStudies]
+    () => isGroupedSubject && _question ? aggregateUnique(_question.subquestions ?? [], (s) => (s.學習內容 ?? []).map((lc) => lc.編碼)) : [],
+    [_question, isGroupedSubject]
   );
   const ssLpCodes = useMemo(
-    () => isSocialStudies && _question ? aggregateUnique(_question.subquestions ?? [], (s) => (s.學習表現 ?? []).map((lp) => lp.編碼)) : [],
-    [_question, isSocialStudies]
+    () => isGroupedSubject && _question ? aggregateUnique(_question.subquestions ?? [], (s) => (s.學習表現 ?? []).map((lp) => lp.編碼)) : [],
+    [_question, isGroupedSubject]
   );
 
   const contentIdentity = useMemo(() => canonicalQuestionIdentity(_question), [_question]);
@@ -916,7 +961,7 @@ export default function QuestionCard({
       {recordId && (
         <ModificationParticipation
           route={route ?? window.location.pathname}
-          subject={subject ?? (isSocialStudies ? "social_studies" : "math")}
+          subject={displaySubject}
           recordId={modificationResult?.record_id ?? recordId}
           questionId={questionId}
           contentIdentity={contentIdentity}
@@ -973,7 +1018,27 @@ export default function QuestionCard({
           {!isFinal && (
             <Chip label={phaseLabel} tone="orange" />
           )}
-          {isSocialStudies ? (
+          {isMath ? (
+            <>
+              {(question.情境 ?? []).map((c) => (
+                <Chip key={`ctx-${c}`} label={c} tone="blue" />
+              ))}
+              <Chip label={question.題型種類} tone="purple" />
+              <Chip label={question.題型} tone="purple" />
+              {(question.數學思考 ?? []).map((m) => (
+                <Chip key={`mt-${m}`} label={m} tone="amber" />
+              ))}
+              {isQuestionGroup && mathCoreComp.map((c) => (
+                <Chip key={`cc-${c}`} label={c} tone="amber" />
+              ))}
+              {mathCodes.map((code) => (
+                <Chip key={`code-${code}`} label={code} tone="gray" />
+              ))}
+              {isQuestionGroup && mathLpCodes.map((code) => (
+                <Chip key={`lp-${code}`} label={code} tone="teal" />
+              ))}
+            </>
+          ) : (
             <>
               {ssGrades.map((g) => (
                 <Chip key={`g-${g}`} label={`${g}年級`} tone="blue" />
@@ -995,20 +1060,6 @@ export default function QuestionCard({
               ))}
               {ssLpCodes.map((code) => (
                 <Chip key={`lp-${code}`} label={code} tone="teal" />
-              ))}
-            </>
-          ) : (
-            <>
-              {(question.情境 ?? []).map((c) => (
-                <Chip key={`ctx-${c}`} label={c} tone="blue" />
-              ))}
-              <Chip label={question.題型種類} tone="purple" />
-              <Chip label={question.題型} tone="purple" />
-              {(question.數學思考 ?? []).map((m) => (
-                <Chip key={`mt-${m}`} label={m} tone="amber" />
-              ))}
-              {mathCodes.map((code) => (
-                <Chip key={`code-${code}`} label={code} tone="gray" />
               ))}
             </>
           )}
@@ -1048,8 +1099,8 @@ export default function QuestionCard({
         );
       })()}
 
-      {/* Social studies: core question + passage + subquestions */}
-      {isSocialStudies ? (
+      {/* 題組: core question + passage + subquestions */}
+      {isQuestionGroup ? (
         <div className="space-y-3">
           {question.核心問題 && (
             <div className="rounded bg-blue-50 border border-blue-100 p-3">
