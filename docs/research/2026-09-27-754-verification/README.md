@@ -461,7 +461,7 @@ prefixed with `choom -n 500 --`.
 | 4b Web ESLint | `cd web && npm run lint` | **clean** (exit 0) | < 5 s |
 | 4c Web tsc | `cd web && npx tsc -b` | **clean** (exit 0) | < 5 s |
 | 4d Web build | `cd web && choom -n 500 -- npm run build` | **904 modules, built in 668 ms** | 7 s |
-| 5 ODT browser harness | skipped — see disposition below | — | — |
+| 5 ODT browser harness | `choom -n 500 -- uv run pytest tests/test_753_odt_browser.py -q -rs` | **12 passed** | 13.73 s |
 
 ### Skipped test identification
 
@@ -492,23 +492,43 @@ ADR 0022 guard suite. Correctly skipped.
 - `choom -n 500 --` applied to: backend pytest, web vitest, web build.
 - Ruff, ESLint, tsc are lightweight and run without `choom`.
 
-### ODT browser harness disposition
+### ODT browser harness record
 
-The real-browser ODT harness (`tests/test_753_odt_browser.py` — 9 tests driven
-by Playwright against a live `npx vite` dev server) requires Docker or a
-running Chromium installation that is not available in this CI container.
-It was executed and passed in full during PR #894 (recorded in the "Test Run
-Results" section above). **Nothing in this branch (`feat/895-897-evidence-terminal-order`)
-touches `odt.ts`, `rasterizer.ts`, `odt-export.html`, or any other ODT export
-code path**, so re-running the harness would produce no new information.
-Disposition: skipped on this verification pass; #894's result stands.
+Command run on branch `feat/895-897-evidence-terminal-order` (2026-09-27):
+
+```bash
+choom -n 500 -- uv run pytest tests/test_753_odt_browser.py -q -rs
+```
+
+Result: **12 passed in 13.73 s**
+
+Playwright Chromium is installed (`~/.cache/ms-playwright/chromium-1208`). The
+harness ran in full on this branch with 12 tests passing. The 12 tests include
+the 3 raw SVG foreignObject tests and 9 harness tests (t1–t9, driven by a live
+`npx vite` dev server via Playwright).
 
 ### Historical record note
 
-The #894 backend full suite ran with `--ignore=tests/test_753_odt_browser.py`
-and reported 2997 passed, 1 skipped. The 2026-09-27 10.3 run covers the
-integrated branch (additional tests from #897 and #895 task-5.1) with no
-ignores and reports 3017 passed, 1 skipped. The 20-test increase is expected
-(+20 tests from #895/897 work). Web tests grew from 2037 to 2049 for the
-same reason (+12 new tests on this branch). Both sets of numbers are preserved
-in their respective sections above.
+**Full-suite test_753 inclusion:** The 10.3 full-suite command
+(`choom -n 500 -- uv run pytest -q -rs`, row 2 above) carried no `--ignore`
+flag. `tests/test_753_odt_browser.py` collects 12 tests (verified with
+`uv run pytest --collect-only -q tests/test_753_odt_browser.py`) and was
+therefore included in the 3017-test total.
+
+**Baseline discrepancy (unresolved):** The earlier "Test Run Results" section
+of this README records 2997 passed as the result for the
+`feat/748-754-live-progress-export` branch (run with
+`--ignore=tests/test_753_odt_browser.py`). Issue #895's own statement records
+#894 as having reported 3016 passed, 1 skipped — not 2997. These two figures
+cannot be reconciled from the information in this README; the discrepancy is
+noted explicitly and left for the record owner to resolve.
+
+**20-test increase (relative to the 2997 baseline):** Measured against the
+`feat/748-754-live-progress-export` baseline of 2997 passed (which excluded
+test_753 via `--ignore`), the 10.3 total of 3017 is 20 more. Of those 20:
+12 come from `tests/test_753_odt_browser.py` now being collected without
+`--ignore`, and 8 come from new tests added by #895/897 work. The previous
+claim that all 20 were from "#895/897 work" was incorrect.
+
+Web tests grew from 2037 to 2049 (+12 new tests on this branch). Both backend
+and frontend numbers are preserved in their respective sections above.
