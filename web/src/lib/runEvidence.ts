@@ -21,6 +21,8 @@ export type GenerationV2Evidence = {
   endedCount: number;
   finalReceivedCount: number;
   closed: boolean;
+  /** True once the seq buffer degraded (issue #748). */
+  degraded: boolean;
 };
 
 export type RunEvidence = GenerationLegacyEvidence | ModificationEvidence | GenerationV2Evidence;

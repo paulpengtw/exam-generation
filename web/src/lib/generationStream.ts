@@ -22,6 +22,7 @@ export function projectGenerationEvidence(
       endedCount: selectEndedCount(v2Evidence),
       finalReceivedCount: selectFinalReceivedCount(v2Evidence),
       closed: v2Evidence.closed,
+      degraded: v2Evidence.degraded,
     };
   }
   return {
@@ -82,11 +83,21 @@ export interface GenerationStreamDecoder {
   readonly degraded: boolean;
   /** Decode one SSE event. Returns an array (usually length 1; >1 when held events are replayed). */
   decode(eventName: string, rawData: string): DecodedEvent[];
+  /**
+   * Timer-driven deadline check: call when the gap timer fires without further
+   * events arriving.  Returns a degraded event (+ flushed content/terminal
+   * events) if the 2 s bound has now elapsed; returns [] if the gap filled or
+   * degradation already happened.
+   */
+  checkDeadline(): DecodedEvent[];
 }
 
 const SEQ_BUFFER_MAX_COUNT = 256;
 const SEQ_BUFFER_MAX_BYTES = 4 * 1024 * 1024;
-const SEQ_BUFFER_MAX_AGE_MS = 2000;
+export const SEQ_BUFFER_MAX_AGE_MS = 2000;
+
+/** Reused across all decoder instances for accurate UTF-8 byte measurement. */
+const utf8Encoder = new TextEncoder();
 
 function validateManifest(payload: Record<string, unknown>): { valid: boolean; reason?: string } {
   const total = payload.total;
@@ -147,6 +158,34 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
     return { kind: "v2", event: { name: eventName, context, payload: envelope.payload } };
   }
 
+  /**
+   * Degrade the buffer, releasing any content/terminal events that were
+   * pending.  Activity-only events (stage, pipeline, llm_*) are dropped.
+   * Must only be called when !seqDegraded.
+   */
+  function degrade(reason: "timeout" | "count" | "size" | "eof_gap"): DecodedEvent[] {
+    seqDegraded = true;
+    const released: DecodedEvent[] = [];
+    const sortedSeqs = [...seqPending.keys()].sort((a, b) => a - b);
+    for (const pendingSeq of sortedSeqs) {
+      const entry = seqPending.get(pendingSeq)!;
+      if (
+        entry.eventName === "question_update" ||
+        entry.eventName === "result" ||
+        entry.eventName === "question_terminal"
+      ) {
+        const ev = decodeAsV2(entry.eventName, entry.rawData);
+        if (ev.kind === "v2") {
+          seqSeen.add(pendingSeq);
+          released.push(ev);
+        }
+      }
+    }
+    seqPending.clear();
+    seqPendingBytes = 0;
+    return [{ kind: "degraded", reason }, ...released];
+  }
+
   function decodeV2WithSeq(eventName: string, rawData: string): DecodedEvent[] {
     const decoded = decodeAsV2(eventName, rawData);
     if (decoded.kind !== "v2") return [decoded];
@@ -167,10 +206,10 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
 
     if (eventSeq === seqNextExpected) {
       if (eventName === "done" && seqPending.size > 0) {
-        seqDegraded = true;
+        const degradeResult = degrade("eof_gap");
         seqSeen.add(eventSeq);
         seqNextExpected += 1;
-        return [{ kind: "degraded", reason: "eof_gap" }, decoded];
+        return [...degradeResult, decoded];
       }
 
       seqSeen.add(eventSeq);
@@ -202,28 +241,25 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
     // ahead of the missing gap. Keep the decoded done event usable while
     // making the unresolved ordering explicit.
     if (eventName === "done" && seqPending.size > 0) {
-      seqDegraded = true;
+      const degradeResult = degrade("eof_gap");
       seqSeen.add(eventSeq);
-      return [{ kind: "degraded", reason: "eof_gap" }, decoded];
+      return [...degradeResult, decoded];
     }
 
-    const byteSize = rawData.length;
+    const byteSize = utf8Encoder.encode(rawData).length;
     seqPending.set(eventSeq, { eventName, rawData, byteSize });
     seqPendingBytes += byteSize;
 
     if (seqGapStart === null) seqGapStart = clock.now();
     const now = clock.now();
     if (now - seqGapStart >= SEQ_BUFFER_MAX_AGE_MS) {
-      seqDegraded = true;
-      return [{ kind: "degraded", reason: "timeout" }];
+      return degrade("timeout");
     }
     if (seqPending.size >= SEQ_BUFFER_MAX_COUNT) {
-      seqDegraded = true;
-      return [{ kind: "degraded", reason: "count" }];
+      return degrade("count");
     }
     if (seqPendingBytes >= SEQ_BUFFER_MAX_BYTES) {
-      seqDegraded = true;
-      return [{ kind: "degraded", reason: "size" }];
+      return degrade("size");
     }
     return [{ kind: "held" }];
   }
@@ -291,6 +327,15 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
     get mode() { return mode; },
     get run() { return run; },
     get degraded() { return seqDegraded; },
+
+    checkDeadline(): DecodedEvent[] {
+      if (mode !== "v2" || seqDegraded || seqGapStart === null) return [];
+      const now = clock.now();
+      if (now - seqGapStart >= SEQ_BUFFER_MAX_AGE_MS) {
+        return degrade("timeout");
+      }
+      return [];
+    },
 
     decode(eventName: string, rawData: string): DecodedEvent[] {
       if (mode === "unsupported") {

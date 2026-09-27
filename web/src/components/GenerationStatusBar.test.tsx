@@ -90,7 +90,7 @@ describe("GenerationStatusBar — evidence profiles", () => {
         {...BASE_PROPS}
         runState="running"
         requestedTotal={1}
-        evidence={{ profile: "generate-v2", total: 1, endedCount: 0, finalReceivedCount: 0, closed: false }}
+        evidence={{ profile: "generate-v2", total: 1, endedCount: 0, finalReceivedCount: 0, closed: false, degraded: false }}
       />,
     );
 

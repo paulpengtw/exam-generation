@@ -9,7 +9,7 @@ import { saveSignoutReason } from "../lib/signoutReason";
 import { saveReturnDestination } from "../lib/returnDestination";
 import type { GenerateParams } from "../api/generated/contract";
 import { MESSAGES } from "../i18n/messages";
-import { createGenerationStreamDecoder } from "../lib/generationStream";
+import { createGenerationStreamDecoder, SEQ_BUFFER_MAX_AGE_MS } from "../lib/generationStream";
 import {
   createRunEvidence,
   applyV2Event,
@@ -634,6 +634,7 @@ export function useGenerate(): UseGenerateReturn {
   const [resultsCompletion, setResultsCompletion] = useState<ResultsCompletion | null>(null);
   const [terminalEvidence, setTerminalEvidence] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
+  const gapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextFinalIndexRef = useRef(0);
   const trailByQuestionRef = useRef(new Map<string, VerificationTrailEntry[]>());
   const figurePolicyTrailByQuestionRef = useRef(
@@ -672,6 +673,10 @@ export function useGenerate(): UseGenerateReturn {
       endOperation("aborted");
       controllerRef.current?.abort();
       controllerRef.current = null;
+      if (gapTimerRef.current !== null) {
+        clearTimeout(gapTimerRef.current);
+        gapTimerRef.current = null;
+      }
     };
   }, [endOperation]);
 
@@ -1011,6 +1016,11 @@ export function useGenerate(): UseGenerateReturn {
           break;
         }
         case "done": {
+          // Clear gap timer — stream is ending
+          if (gapTimerRef.current !== null) {
+            clearTimeout(gapTimerRef.current);
+            gapTimerRef.current = null;
+          }
           // Apply done to close the evidence run
           const prev = evidenceRef.current;
           const closed = prev
@@ -1429,16 +1439,42 @@ export function useGenerate(): UseGenerateReturn {
           } else if (d.kind === "legacy") {
             // Legacy mode: use existing switch handler
             handleLegacyEvent(d.name, d.data);
-          } else if (d.kind === "held" && decoder.mode === "awaiting-start") {
-            // Event held pending started: immediately process as legacy so existing
-            // tests (which don't send started first) continue to work.
-            handleLegacyEvent(ev.event ?? "", ev.data ?? "");
+          } else if (d.kind === "held") {
+            if (decoder.mode === "awaiting-start") {
+              // Event held pending started: immediately process as legacy so existing
+              // tests (which don't send started first) continue to work.
+              handleLegacyEvent(ev.event ?? "", ev.data ?? "");
+            } else if (decoder.mode === "v2" && gapTimerRef.current === null) {
+              // Arm a timer that calls checkDeadline() if no further event fills
+              // the gap within the 2 s bound.
+              gapTimerRef.current = setTimeout(() => {
+                gapTimerRef.current = null;
+                if (controllerRef.current !== controller) return;
+                const timeoutEvents = decoder.checkDeadline();
+                for (const te of timeoutEvents) {
+                  if (te.kind === "degraded") {
+                    setEvidence((prev) => {
+                      if (!prev) return prev;
+                      const next = applyDegraded(prev, te.reason);
+                      evidenceRef.current = next;
+                      return next;
+                    });
+                  } else if (te.kind === "v2") {
+                    handleV2Event(te.event.name, te.event.context, te.event.payload);
+                  }
+                }
+              }, SEQ_BUFFER_MAX_AGE_MS + 1);
+            }
           }
           // ignore: no action
         }
       },
       onerror(err) {
         if (controllerRef.current !== controller) return;
+        if (gapTimerRef.current !== null) {
+          clearTimeout(gapTimerRef.current);
+          gapTimerRef.current = null;
+        }
         const message = err instanceof Error ? err.message : String(err);
         setErrorMessage(message);
         setStatus("error");

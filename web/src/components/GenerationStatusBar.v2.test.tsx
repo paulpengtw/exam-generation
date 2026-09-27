@@ -17,6 +17,7 @@ function makeV2Evidence(overrides: Partial<GenerationV2Evidence> = {}): Generati
     endedCount: 2,
     finalReceivedCount: 3,
     closed: false,
+    degraded: false,
     ...overrides,
   };
 }
@@ -81,6 +82,21 @@ describe("GenerationStatusBar — generate-v2 evidence", () => {
   it("uses sentry-unmask class on counts", () => {
     render(<GenerationStatusBar {...baseProps} />);
     expect(screen.getByTestId("statusbar-v2-ended").closest(".sentry-unmask") ?? screen.getByTestId("statusbar-v2-ended")).toBeTruthy();
+  });
+
+  it("renders the degraded notice with role=status when evidence.degraded is true", () => {
+    render(<GenerationStatusBar {...baseProps} evidence={makeV2Evidence({ degraded: true })} />);
+    const notice = screen.getByTestId("statusbar-v2-degraded");
+    expect(notice).toBeTruthy();
+    expect(notice.getAttribute("role")).toBe("status");
+    // Must still show count lines
+    expect(screen.getByTestId("statusbar-v2-ended")).toBeTruthy();
+    expect(screen.getByTestId("statusbar-v2-final")).toBeTruthy();
+  });
+
+  it("does not render the degraded notice when evidence.degraded is false", () => {
+    render(<GenerationStatusBar {...baseProps} evidence={makeV2Evidence({ degraded: false })} />);
+    expect(screen.queryByTestId("statusbar-v2-degraded")).toBeNull();
   });
 
   it("projects the real A/B/C/D fixture as three ended and three final receipts", () => {

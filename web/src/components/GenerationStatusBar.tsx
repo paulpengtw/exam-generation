@@ -146,6 +146,18 @@ function GenerationV2StatusLine({ evidence }: { evidence: GenerationV2Evidence }
       <span data-testid="statusbar-v2-ended">{endedLabel}</span>
       {" · "}
       <span data-testid="statusbar-v2-final">{finalLabel}</span>
+      {evidence.degraded && (
+        <>
+          {" · "}
+          <span
+            role="status"
+            data-testid="statusbar-v2-degraded"
+            className="text-amber-600 dark:text-amber-400"
+          >
+            {t("stream.information_incomplete") as string}
+          </span>
+        </>
+      )}
     </span>
   );
 }
