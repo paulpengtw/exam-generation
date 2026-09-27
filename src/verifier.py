@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 from pathlib import Path
 
 from src.common.distractor import validate_distractor_keys
 from src.common.generation_events import OperationScope
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.common.kwarg_compat import accepts_kwarg
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, extract_json
 from src.schemas import ChartVerificationResult, ExamQuestion, VerificationResult
@@ -147,16 +147,8 @@ def verify_question(
         system = VERIFICATION_SYSTEM_PROMPT
 
     try:
-        kwargs = {"image_path": chart_image_path, "purpose": "verify"}
-        try:
-            parameters = inspect.signature(client.generate_with_image).parameters
-            accepts_scope = "scope" in parameters or any(
-                parameter.kind is inspect.Parameter.VAR_KEYWORD
-                for parameter in parameters.values()
-            )
-        except (TypeError, ValueError):
-            accepts_scope = False
-        if accepts_scope:
+        kwargs: dict[str, object] = {"image_path": chart_image_path, "purpose": "verify"}
+        if accepts_kwarg(client.generate_with_image, "scope"):
             kwargs["scope"] = scope
         raw = client.generate_with_image(system, user_prompt, **kwargs)
         result = extract_json(raw)

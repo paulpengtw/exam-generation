@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Union
 
 # These keys never count as question content.  The snapshot ledger strips them
 # at any depth before signing (it hashes decoded image_base64 bytes separately)
@@ -80,13 +79,6 @@ class CallScope:
             raise ValueError("run, operation, and call ids must not be empty")
         if self.retry_of_call_id == self.call_id:
             raise ValueError("a call cannot retry itself")
-
-
-# Compatibility vocabulary for boundary adapters that use context-oriented
-# names.  The values remain the same immutable objects.
-OperationContext = OperationScope
-CallContext = CallScope
-GenerationScope = Union[QuestionContext, OperationScope]
 
 
 def new_run_id() -> str:

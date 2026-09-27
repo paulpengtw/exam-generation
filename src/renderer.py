@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import logging
 import platform
 import sys
@@ -15,6 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from src.common.generation_events import OperationScope
+from src.common.kwarg_compat import accepts_kwarg
 
 matplotlib.use("Agg")  # Non-interactive backend for CLI
 
@@ -62,17 +62,8 @@ def _setup_chinese_font() -> str | None:
 
 def _call_with_optional_scope(method, *args, scope: OperationScope | None, **kwargs):
     """Call renderer provider seams with v2 scope when supported."""
-    if scope is not None:
-        try:
-            parameters = inspect.signature(method).parameters
-            accepts_scope = "scope" in parameters or any(
-                parameter.kind is inspect.Parameter.VAR_KEYWORD
-                for parameter in parameters.values()
-            )
-        except (TypeError, ValueError):
-            accepts_scope = False
-        if accepts_scope:
-            kwargs["scope"] = scope
+    if scope is not None and accepts_kwarg(method, "scope"):
+        kwargs["scope"] = scope
     return method(*args, **kwargs)
 
 

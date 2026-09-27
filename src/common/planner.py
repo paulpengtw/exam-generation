@@ -5,12 +5,12 @@ Subject-agnostic: callers supply the system/user prompt templates.
 
 from __future__ import annotations
 
-import inspect
 import json
 import logging
 import re
 
 from src.common.generation_events import OperationScope
+from src.common.kwarg_compat import accepts_kwarg
 from src.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -23,17 +23,7 @@ def _client_plan(
     purpose: str,
     scope: OperationScope | None,
 ) -> str:
-    if scope is None:
-        return client.plan(system, user, purpose=purpose)
-    try:
-        signature = inspect.signature(client.plan)
-        accepts_scope = "scope" in signature.parameters or any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in signature.parameters.values()
-        )
-    except (TypeError, ValueError):
-        accepts_scope = False
-    if accepts_scope:
+    if scope is not None and accepts_kwarg(client.plan, "scope"):
         return client.plan(system, user, purpose=purpose, scope=scope)
     return client.plan(system, user, purpose=purpose)
 
