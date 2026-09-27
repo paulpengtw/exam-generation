@@ -249,7 +249,7 @@ Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot`
 
 ### Snapshot export — ODT (issue #752)
 
-> **Full ODT contract met as of issue #753.** chart_spec_preview slots are now rasterized via `defaultRasterizer` (pure-SVG → canvas → PNG; injectable for testing). Per-image conversion failure emits 「匯出缺圖／預覽轉換失敗」 at the slot position; other content is preserved. Whole-ZIP failure throws `OdtBuildError`; no broken file is produced.
+> **Full ODT contract met as of issue #753 (re-implemented).** chart_spec_preview slots are rasterized via `defaultRasterizer` using DOM capture + SVG foreignObject with data: URL (same-source: uses what FigureRenderer actually renders; injectable for testing). Per-image conversion failure emits 「匯出缺圖／預覽轉換失敗」 at the slot position; other content is preserved. Whole-ZIP failure throws `OdtBuildError`; no broken file is produced. Retry reuses the last captured snapshot.
 
 `web/src/utils/odt.ts` exports `buildOdtFromSnapshots(title, snapshots)` which consumes the same frozen `QuestionSnapshot[]` produced by `exportSnapshot.ts`.
 
@@ -270,7 +270,7 @@ Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot`
 **Image embedding from `imageSources`:**
 - `embedSnapshotImages(zip, snapshot, idx, imageRefs)` reads exclusively from `snapshot.imageSources` (frozen at click time); never reads `question.image_base64` directly.
 - `png_base64` kind → embedded in `Pictures/` and referenced as `<draw:image>` in content.xml.
-- `chart_spec_preview` kind → rasterization attempted via injectable `Rasterizer` (issue #753); on success embedded as PNG; on failure emits 「匯出缺圖／預覽轉換失敗」 at the slot position. `buildOdtFromSnapshots` accepts optional `{ rasterizer }` for injection; production uses `defaultRasterizer` from `rasterizer.ts`.
+- `chart_spec_preview` kind → rasterization attempted via injectable `Rasterizer` (issue #753); on success embedded as PNG; on failure emits 「匯出缺圖／預覽轉換失敗」 at the slot position. `buildOdtFromSnapshots` accepts optional `{ rasterizer }` for injection; production uses `defaultRasterizer` from `rasterizer.ts`. `Rasterizer` type takes `RasterizeInput { chartSpec, previewMarkup? }` — `previewMarkup` carries the DOM-captured HTML from the mounted FigureRenderer so the rasterizer uses the same output as the visible preview.
 - `known_missing` kind → text marker `【圖片缺項】`; no PNG file embedded.
 
 **Filename conventions:**

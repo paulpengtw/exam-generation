@@ -46,6 +46,12 @@ export interface CapturedImageSource {
   pngBase64?: string;
   /** Only for kind === "chart_spec_preview": the chart/image spec for FigureRenderer. */
   chartSpec?: Record<string, unknown>;
+  /**
+   * Only for kind === "chart_spec_preview": HTML markup captured from the live
+   * FigureRenderer DOM at click time (same-source capture for #753).
+   * When present, the rasterizer uses this instead of re-rendering offscreen.
+   */
+  previewMarkup?: string;
   /** The content revision this source was captured at; null for legacy/unknown. */
   contentRevision: number | null;
 }
@@ -587,6 +593,37 @@ export function stripExport(exported: ExportedQuestion): ExamQuestion {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { _export: _removed, ...rest } = exported;
   return rest as ExamQuestion;
+}
+
+// ---------------------------------------------------------------------------
+// DOM markup augmentation (issue #753 — same-source capture)
+// ---------------------------------------------------------------------------
+
+/**
+ * Augment chart_spec_preview sources in a CapturedImageSources map with
+ * HTML markup captured from the live FigureRenderer DOM.
+ *
+ * Call this immediately after capturing the snapshot, while the QuestionCard
+ * DOM is still mounted. The domCaptureFn receives the slot key ("stem" or
+ * "sq{序號}") and should return the serialized inner HTML of the FigureRenderer
+ * container at that position (using serializeElementToMarkup from domCapture.ts),
+ * or null if the element is not found.
+ *
+ * When markup is captured, it is stored in source.previewMarkup so the
+ * rasterizer can use the same rendered output as the visible preview.
+ */
+export function augmentWithDomMarkup(
+  sources: CapturedImageSources,
+  domCaptureFn: (slotKey: string) => string | null,
+): void {
+  for (const [key, source] of Object.entries(sources)) {
+    if (source.kind === "chart_spec_preview") {
+      const markup = domCaptureFn(key);
+      if (markup) {
+        sources[key] = { ...source, previewMarkup: markup };
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

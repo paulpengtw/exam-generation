@@ -7,24 +7,30 @@
  *
  * Usage:
  *   import { defaultRasterizer } from "./rasterizer";
- *   const result = await defaultRasterizer(chartSpec);
+ *   const result = await defaultRasterizer({ chartSpec });
  *   if (result.ok) { // use result.pngBase64
  *   } else { // show failure message at that slot
  *   }
  *
+ * Same-source rendering: when previewMarkup is provided (captured from the
+ * mounted FigureRenderer DOM at click time), it is used directly instead of
+ * re-rendering offscreen. This ensures the ODT image matches what the user saw.
+ *
+ * Tainted-canvas fix: uses data:image/svg+xml;charset=utf-8 URL (NOT blob: URL).
+ * Chromium does NOT taint canvas for data-URL SVG with foreignObject.
+ *
  * Injectable: pass a custom Rasterizer to buildOdtFromSnapshots({ rasterizer })
  * so jsdom unit tests can inject success / per-image failure stubs without
  * requiring Canvas or URL.createObjectURL.
- *
- * Supported render paths:
- *   - "geometry" (SVG shapes)       → pure SVG → canvas → PNG
- *   - "table" (columns/rows)        → SVG foreignObject wrapping HTML table → canvas → PNG
- *   - "scenario_card" (title/items) → SVG foreignObject wrapping HTML card → canvas → PNG
- *   - anything else                 → { ok: false } immediately (unsupported)
  */
 
-import { classifySpec } from "../components/FigureRenderer";
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
+import FigureRenderer from "../components/FigureRenderer";
 import type { ChartSpecInput } from "../components/FigureRenderer";
+import { classifySpec } from "../components/FigureRenderer";
+import { serializeElementToMarkup } from "./domCapture";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -34,8 +40,13 @@ export type RasterizerResult =
   | { ok: true; pngBase64: string }
   | { ok: false; error: string };
 
+export interface RasterizeInput {
+  chartSpec: ChartSpecInput;
+  previewMarkup?: string;
+}
+
 /** Injectable rasterizer interface. */
-export type Rasterizer = (spec: ChartSpecInput) => Promise<RasterizerResult>;
+export type Rasterizer = (input: RasterizeInput) => Promise<RasterizerResult>;
 
 // ---------------------------------------------------------------------------
 // Internal constants
@@ -58,6 +69,7 @@ function esc(str: string): string {
 
 // ---------------------------------------------------------------------------
 // SVG builders (pure-string; no DOM required)
+// Kept for backwards compatibility and for use in unit tests.
 // ---------------------------------------------------------------------------
 
 type ShapeSpec = {
@@ -103,10 +115,7 @@ export function buildGeometrySvg(shapes: ShapeSpec[]): string {
 
 /**
  * Build a pure SVG table (no foreignObject).
- *
- * foreignObject triggers a "tainted canvas" security restriction in Chromium when
- * the SVG is rendered via canvas.toDataURL(), making the PNG export fail.  Using
- * pure SVG rect + text elements avoids the restriction and works in all browsers.
+ * Kept for backwards compatibility with tests.
  */
 export function buildTableSvg(columns: string[], rows: string[][]): string {
   const CELL_W = Math.max(80, Math.floor(DEFAULT_WIDTH / Math.max(columns.length, 1)));
@@ -153,8 +162,7 @@ export function buildTableSvg(columns: string[], rows: string[][]): string {
 
 /**
  * Build a pure SVG scenario card (no foreignObject).
- *
- * Uses rect + text elements to avoid the tainted-canvas restriction.
+ * Kept for backwards compatibility with tests.
  */
 export function buildScenarioSvg(
   title: string,
@@ -190,40 +198,81 @@ export function buildScenarioSvg(
 }
 
 // ---------------------------------------------------------------------------
-// SVG → canvas → PNG (browser-only; requires DOM + Canvas API)
+// Offscreen React rendering (browser-only)
 // ---------------------------------------------------------------------------
 
 /**
- * Render an SVG markup string to a PNG and return it as a base64 string.
- * Requires a real browser environment: URL.createObjectURL, new Image(), canvas.
- * Throws when any of those are unavailable (e.g. jsdom without canvas).
+ * Render FigureRenderer offscreen for a given spec and capture its HTML markup.
+ * Requires a real browser environment (document, createRoot, etc.).
  */
-export async function svgMarkupToPng(svgMarkup: string): Promise<string> {
-  if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
-    throw new Error("URL.createObjectURL is unavailable (non-browser environment)");
-  }
-  const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
+async function renderFigureToMarkup(spec: ChartSpecInput): Promise<string> {
+  const container = document.createElement("div");
+  container.style.cssText =
+    "position:absolute;left:-9999px;top:-9999px;width:480px;visibility:hidden";
+  document.body.appendChild(container);
   try {
-    const img = new Image();
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("SVG image failed to load"));
-      img.src = url;
+    const root = createRoot(container);
+    flushSync(() => {
+      root.render(createElement(FigureRenderer, { spec }));
     });
-    const w = img.naturalWidth || DEFAULT_WIDTH;
-    const h = img.naturalHeight || DEFAULT_HEIGHT;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas 2d context unavailable");
-    ctx.drawImage(img, 0, 0);
-    const dataUrl = canvas.toDataURL("image/png");
-    return dataUrl.replace(/^data:image\/png;base64,/, "");
+    // Wait one microtask for any sync effects
+    await Promise.resolve();
+    const child = container.firstElementChild;
+    if (!child) throw new Error("FigureRenderer rendered nothing");
+    return serializeElementToMarkup(child);
   } finally {
-    URL.revokeObjectURL(url);
+    document.body.removeChild(container);
   }
+}
+
+// ---------------------------------------------------------------------------
+// HTML markup → canvas → PNG via SVG foreignObject + data: URL
+// ---------------------------------------------------------------------------
+
+/**
+ * Rasterize HTML markup to PNG using SVG foreignObject + data: URL.
+ * Uses data:image/svg+xml;charset=utf-8 (NOT blob URL) to avoid Chromium tainted-canvas.
+ *
+ * This is the key fix for #753: Chromium does NOT taint canvas for data-URL SVG
+ * with foreignObject, while blob: URLs DO trigger the tainted-canvas restriction.
+ */
+export async function markupToPng(
+  htmlMarkup: string,
+  width: number = DEFAULT_WIDTH,
+  height: number = DEFAULT_HEIGHT,
+): Promise<string> {
+  // Build SVG with foreignObject wrapping XHTML content
+  const svgStr = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`,
+    `<foreignObject x="0" y="0" width="${width}" height="${height}">`,
+    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;min-height:${height}px;background:white;box-sizing:border-box;padding:8px">`,
+    htmlMarkup,
+    `</div>`,
+    `</foreignObject>`,
+    `</svg>`,
+  ].join("");
+
+  // Use data: URL (not blob:) — Chromium does NOT taint canvas for data-URL SVG with foreignObject
+  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("SVG foreignObject image failed to load"));
+    img.src = dataUrl;
+  });
+
+  const w = img.naturalWidth || width;
+  const h = img.naturalHeight || height;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2d context unavailable");
+  ctx.drawImage(img, 0, 0);
+  const result = canvas.toDataURL("image/png");
+  return result.replace(/^data:image\/png;base64,/, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -231,42 +280,33 @@ export async function svgMarkupToPng(svgMarkup: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * Default in-browser rasterizer.  Classify the spec → build SVG → render PNG.
- * Returns { ok: false } for unsupported render modes or on any rendering error.
+ * Default in-browser rasterizer using DOM capture + SVG foreignObject approach.
  *
- * Replace with an injectable stub in tests (jsdom has no real Canvas / ObjectURL).
+ * When previewMarkup is provided (captured from the mounted FigureRenderer DOM),
+ * it is used directly. Otherwise, FigureRenderer is rendered offscreen.
+ *
+ * Replace with an injectable stub in tests (jsdom has no real Canvas / createRoot).
  */
-export const defaultRasterizer: Rasterizer = async (spec) => {
+export const defaultRasterizer: Rasterizer = async ({ chartSpec, previewMarkup }) => {
   try {
-    const category = classifySpec(spec);
-    const data = (spec.data ?? {}) as Record<string, unknown>;
-
-    let svgMarkup: string;
-
-    if (category === "geometry") {
-      svgMarkup = buildGeometrySvg(
-        (data.shapes as ShapeSpec[] | undefined) ?? [],
-      );
-    } else if (category === "table") {
-      svgMarkup = buildTableSvg(
-        (data.columns as string[] | undefined) ?? [],
-        (data.rows as string[][] | undefined) ?? [],
-      );
-    } else if (category === "scenario_card") {
-      const d = data as { title?: string; items?: string[] };
-      svgMarkup = buildScenarioSvg(
-        d.title ?? "",
-        d.items ?? [],
-        spec.description ?? "",
-      );
-    } else {
+    // Unsupported specs fail immediately
+    const category = classifySpec(chartSpec);
+    if (category === "unsupported") {
       return {
         ok: false,
-        error: `unsupported render_mode: ${spec.render_mode ?? "unknown"}`,
+        error: `unsupported render_mode: ${chartSpec.render_mode ?? "unknown"}`,
       };
     }
 
-    const pngBase64 = await svgMarkupToPng(svgMarkup);
+    // Get the HTML markup: use pre-captured if available, else render offscreen
+    let markup: string;
+    if (previewMarkup) {
+      markup = previewMarkup;
+    } else {
+      markup = await renderFigureToMarkup(chartSpec);
+    }
+
+    const pngBase64 = await markupToPng(markup);
     return { ok: true, pngBase64 };
   } catch (e: unknown) {
     return {

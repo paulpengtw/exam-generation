@@ -14,7 +14,7 @@ import {
   buildTableSvg,
   buildScenarioSvg,
 } from "./rasterizer";
-import type { Rasterizer, RasterizerResult } from "./rasterizer";
+import type { Rasterizer, RasterizerResult, RasterizeInput } from "./rasterizer";
 
 // ---------------------------------------------------------------------------
 // SVG builder tests
@@ -124,7 +124,7 @@ describe("Rasterizer interface", () => {
       ok: true,
       pngBase64: "fake_png_data",
     });
-    const result = await stub({ render_mode: "html", description: "test" });
+    const result = await stub({ chartSpec: { render_mode: "html", description: "test" } });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.pngBase64).toBe("fake_png_data");
@@ -136,7 +136,7 @@ describe("Rasterizer interface", () => {
       ok: false,
       error: "conversion failed",
     });
-    const result = await stub({ render_mode: "chart" });
+    const result = await stub({ chartSpec: { render_mode: "chart" } });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBe("conversion failed");
@@ -145,12 +145,12 @@ describe("Rasterizer interface", () => {
 
   it("can be typed as a per-image failure stub", async () => {
     const calls: string[] = [];
-    const stub: Rasterizer = async (spec) => {
-      calls.push(spec.description ?? "no-description");
+    const stub: Rasterizer = async ({ chartSpec }: RasterizeInput) => {
+      calls.push(chartSpec.description ?? "no-description");
       return { ok: true, pngBase64: "abc" };
     };
-    const r1: RasterizerResult = await stub({ description: "first" });
-    const r2: RasterizerResult = await stub({ description: "second" });
+    const r1: RasterizerResult = await stub({ chartSpec: { description: "first" } });
+    const r2: RasterizerResult = await stub({ chartSpec: { description: "second" } });
     expect(calls).toEqual(["first", "second"]);
     expect(r1.ok).toBe(true);
     expect(r2.ok).toBe(true);

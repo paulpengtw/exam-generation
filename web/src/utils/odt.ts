@@ -469,7 +469,11 @@ async function embedSnapshotImages(
       // Attempt export-only rasterization (#753).
       // The rasterizer uses only the frozen chartSpec captured at click time;
       // any new revision arriving during conversion cannot affect it.
-      const result = await rasterizer(stemSource.chartSpec);
+      // Pass previewMarkup when available (same-source DOM capture).
+      const result = await rasterizer({
+        chartSpec: stemSource.chartSpec as import("../components/FigureRenderer").ChartSpecInput,
+        previewMarkup: stemSource.previewMarkup,
+      });
       if (result.ok) {
         const ref = `Pictures/img_snap_${idx}.png`;
         imageRefs.push(ref);
@@ -497,7 +501,11 @@ async function embedSnapshotImages(
       zip.file(ref, base64ToUint8Array(source.pngBase64));
     } else if (source.kind === "chart_spec_preview" && source.chartSpec) {
       // Attempt export-only rasterization (#753).
-      const result = await rasterizer(source.chartSpec);
+      // Pass previewMarkup when available (same-source DOM capture).
+      const result = await rasterizer({
+        chartSpec: source.chartSpec as import("../components/FigureRenderer").ChartSpecInput,
+        previewMarkup: source.previewMarkup,
+      });
       if (result.ok) {
         const ref = `Pictures/img_snap_${idx}_sq_${seq}.png`;
         imageRefs.push(ref);

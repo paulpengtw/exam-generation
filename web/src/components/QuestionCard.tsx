@@ -35,7 +35,10 @@ import {
   captureFromGeneratedQuestion,
   singleQuestionFilename,
   singleQuestionOdtFilename,
+  augmentWithDomMarkup,
+  type QuestionSnapshot,
 } from "../utils/exportSnapshot";
+import { serializeElementToMarkup } from "../utils/domCapture";
 import FigureRenderer, {
   classifySpec,
   isFrontendTsEnabled,
@@ -396,7 +399,7 @@ function SubQuestionBlock({
         if (!figure) return null;
         if (figure.kind === "ts") {
           return (
-            <div className="rounded border border-gray-200 bg-white p-2">
+            <div className="rounded border border-gray-200 bg-white p-2" data-figure-slot={`sq${sub.序號}`}>
               <FigureRenderer spec={figure.spec} alt={`第${sub.序號}題素材圖片`} />
             </div>
           );
@@ -721,6 +724,7 @@ export default function QuestionCard({
 
   const [showSolution, setShowSolution] = useState(!isFinal);
   const cardRef = useRef<HTMLDivElement>(null);
+  const lastOdtSnapshotRef = useRef<QuestionSnapshot | null>(null);
   const [latchedRecoveredModification] = useState(recoveredModification);
   const recoveredAnnotations = latchedRecoveredModification?.annotations ?? [];
   const nextAnnotationId = useRef(recoveredAnnotations.length);
@@ -944,27 +948,52 @@ export default function QuestionCard({
   const odtFeedback = useActionFeedback({
     action: async () => {
       if (!_question) throw new Error("Question is not available");
-      // Atomically capture the snapshot at click time (same snapshot as JSON export)
-      const exportedAt = new Date().toISOString();
-      const snapshot = evidence
-        ? captureFromEvidence(_question, evidence, runId ?? null, exportedAt)
-        : captureFromGeneratedQuestion(
-            {
-              index: typeof index === "number" ? index : 0,
-              question: _question,
-              phase,
-              isFinal,
-              stableId: _question.id ?? undefined,
-              contentRevision: null,
-            },
-            runId ?? null,
-            exportedAt,
-          );
+
+      let snapshot: QuestionSnapshot | null;
+      // On retry (state === "failed"), reuse the last captured snapshot
+      // to avoid re-capturing when the user clicks retry.
+      if (odtFeedback.state === "failed" && lastOdtSnapshotRef.current) {
+        snapshot = lastOdtSnapshotRef.current;
+      } else {
+        // New export click: capture a fresh snapshot
+        const exportedAt = new Date().toISOString();
+        snapshot = evidence
+          ? captureFromEvidence(_question, evidence, runId ?? null, exportedAt)
+          : captureFromGeneratedQuestion(
+              {
+                index: typeof index === "number" ? index : 0,
+                question: _question,
+                phase,
+                isFinal,
+                stableId: _question.id ?? undefined,
+                contentRevision: null,
+              },
+              runId ?? null,
+              exportedAt,
+            );
+        if (snapshot) {
+          // Store for potential retry
+          lastOdtSnapshotRef.current = snapshot;
+          // Augment chart_spec_preview slots with DOM markup from the mounted card
+          if (cardRef.current) {
+            augmentWithDomMarkup(snapshot.imageSources, (slotKey) => {
+              const el = cardRef.current?.querySelector(`[data-figure-slot="${slotKey}"]`);
+              if (!el) return null;
+              try {
+                return serializeElementToMarkup(el);
+              } catch {
+                return null;
+              }
+            });
+          }
+        }
+      }
+
       if (!snapshot) throw new Error("Question is not available");
       const isDraftExport = snapshot.isDraft;
       const filename = singleQuestionOdtFilename(getQuestionId(_question), isDraftExport);
       await runExportOperation("export_odt", async () => {
-        const blob = await buildOdtFromSnapshots(getQuestionId(_question), [snapshot]);
+        const blob = await buildOdtFromSnapshots(getQuestionId(_question), [snapshot!]);
         downloadBlob(blob, filename);
       });
       return filename;
@@ -1259,7 +1288,7 @@ export default function QuestionCard({
         if (!figure) return null;
         if (figure.kind === "ts") {
           return (
-            <div className="rounded border border-gray-200 p-2">
+            <div className="rounded border border-gray-200 p-2" data-figure-slot="stem">
               <FigureRenderer spec={figure.spec} alt="Question diagram" />
             </div>
           );

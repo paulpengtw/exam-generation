@@ -740,8 +740,8 @@ describe("ODT acceptance — frozen source during conversion", () => {
 
     const FAKE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
-    const rasterizer = async (spec: Record<string, unknown>) => {
-      capturedSpec = spec;
+    const rasterizer = async ({ chartSpec }: { chartSpec: Record<string, unknown> }) => {
+      capturedSpec = chartSpec;
       // Simulate slow rasterization: yield to allow mutations
       await new Promise<void>((resolve) => setTimeout(resolve, 5));
       return { ok: true as const, pngBase64: FAKE_PNG };
