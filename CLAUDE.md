@@ -280,16 +280,26 @@ Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot`
 - Batch all final: `batch_{timestamp}.odt`
 - Helpers: `singleQuestionOdtFilename`, `batchOdtFilename` in `exportSnapshot.ts`.
 
-**Component wiring:**
-- `QuestionCard`: ODT button enabled for drafts (label `"card.download_odt_draft"`); uses `singleQuestionOdtFilename`; calls `buildOdtFromSnapshots`.
-- `GeneratePage`: batch ODT uses `captureBatchSnapshots` (returns full `[QuestionSnapshot[], hasDraft]`); filename via `batchOdtFilename(hasDraft)`.
-- `HistoryDetail`: ODT button (shown when `question_json` present) uses `captureFromHistorySnapshot` + `buildOdtFromSnapshots`; `singleQuestionOdtFilename` for filename. `captureFromHistorySnapshot` is separate from `captureFromHistory` (JSON only) — both capture at click time.
+**Component wiring (issue #753 — retry + DOM augmentation):**
+- `QuestionCard`: ODT button enabled for drafts (label `"card.download_odt_draft"`); captures snapshot via `captureFromEvidence`; augments `imageSources` with live DOM markup via `augmentWithDomMarkup`; stores snapshot in `lastOdtSnapshotRef`; on retry (`odtFeedback.state === "failed"`) re-uses the stored ref without re-capturing. Filename via `singleQuestionOdtFilename`.
+- `GeneratePage`: batch ODT uses `captureBatchSnapshots` (returns `[QuestionSnapshot[], hasDraft]`); wraps each `QuestionCard` in `<div data-question-id={qid}>` so `augmentWithDomMarkup` can look up live FigureRenderer DOM per card; stores result in `lastBatchOdtSnapshotsRef` for retry. On retry (`odtFeedback.state === "failed"`) re-uses the stored ref. Filename via `batchOdtFilename(hasDraft)`.
+- `HistoryDetail`: ODT button (shown when `question_json` present) uses `captureFromHistorySnapshot` + `buildOdtFromSnapshots`; augments with DOM markup from `[data-testid="question-card-content"]`; stores snapshot in `lastHistoryOdtSnapshotRef` for retry. On retry re-uses the stored ref. Filename via `singleQuestionOdtFilename`. `captureFromHistorySnapshot` is separate from `captureFromHistory` (JSON only).
+- All three surfaces: `OdtBuildError` (whole-ZIP failure) → `operationFeedback.state = "failed"` → `InlineFailureNotice`; no broken file is produced. Generation evidence (`_export` fields) is never mutated by export failures.
 
 **TDD:** `web/src/utils/odt.snapshot.test.ts` — 26 tests covering draft label, final (no label), status labels, math 題組 detection via `題型種類`, text-only 題組, subquestion number gaps, known-missing subquestion markers, known-missing/preview image markers, PNG embedding, batch page-break ordering, mixed draft/final batch, `OdtBuildError` on invalid base64.
 
 **Acceptance tests:** `web/src/utils/odt.acceptance.test.ts` — (a) fixture-based: math_groups_interleaved.jsonl batch, verifying text-only 題組 structure (q_RUN_003), partial/complete status labels; (b) legacy unknown-order batch stable sort; (c) snapshot immutability after source mutation; (d) flat question still renders flat.
 
-**Key files:** `web/src/utils/odt.ts`, `web/src/utils/odt.snapshot.test.ts`, `web/src/utils/odt.acceptance.test.ts`, `web/src/utils/exportSnapshot.ts`, `web/src/pages/HistoryDetail.tsx`.
+**Component-level jsdom tests (issue #753):**
+- `web/src/components/QuestionCard.odt.test.tsx` — 6 tests (q1–q6): per-image failure → ODT still downloads with marker; ZIP failure → error shown, no download; retry re-uses same snapshot; fresh click after dismiss captures new snapshot; evidence unchanged after failure; PNG download uses correct filename convention.
+- `web/src/pages/GeneratePage.odt-retry.test.tsx` — 4 tests (r1–r4): ZIP failure → InlineFailureNotice; retry re-uses same batch snapshot; fresh click captures new snapshot; evidence unchanged.
+- `web/src/pages/HistoryDetail.odt.test.tsx` — 4 tests (h1–h4): ODT success; ZIP failure; retry re-uses stored snapshot (no re-capture); evidence unchanged.
+
+**Real-browser tests (issue #753):**
+- `tests/test_753_odt_browser.py` — 9 tests: 3 raw SVG foreignObject tests (table, scenario, no tainted canvas) + 6 harness tests driving real modules via `npx vite` dev server: defaultRasterizer produces PNG, same-source previewMarkup path, buildOdtFromSnapshots with chart_spec (PNG embedded), with png_base64, injected failure → marker with no PNG, no SecurityError.
+- Test harness: `web/test-harness/odt-export.html` + `web/test-harness/odt-export-entry.ts` — served by `npx vite`, exposes `window.__harness.runAll()` for Playwright.
+
+**Key files:** `web/src/utils/odt.ts`, `web/src/utils/odt.snapshot.test.ts`, `web/src/utils/odt.acceptance.test.ts`, `web/src/utils/exportSnapshot.ts`, `web/src/utils/rasterizer.ts`, `web/src/pages/GeneratePage.tsx`, `web/src/pages/HistoryDetail.tsx`, `web/test-harness/odt-export.html`, `web/test-harness/odt-export-entry.ts`.
 
 ### Save draft and update (issue #772)
 
