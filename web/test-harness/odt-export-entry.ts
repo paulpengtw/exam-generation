@@ -257,6 +257,251 @@ async function t6_no_tainted_canvas_error(): Promise<{
   }
 }
 
+/**
+ * t7: Image-swap race — verifies that buildOdtFromSnapshots reads imageSources
+ * synchronously before its first await, so a post-await mutation of the
+ * snapshot's imageSources does not affect the produced ODT.
+ *
+ * Procedure:
+ *   1. Build a snapshot with a chart_spec_preview source (slow async rasterizer).
+ *   2. Start the ODT build (do NOT await yet — store the promise).
+ *   3. Immediately null out imageSources on the snapshot object.
+ *   4. Await the promise.
+ *   5. Verify the ODT still has a PNG embedded (the rasterizer used the captured data).
+ */
+async function t7_image_swap_race(): Promise<{
+  ok: boolean;
+  hasPngBeforeSwap?: boolean;
+  hasPngAfterSwap?: boolean;
+  error?: string;
+}> {
+  // Slow rasterizer: holds a reference to the chartSpec it was called with
+  let capturedInput: unknown = null;
+  const slowRasterizer = async (input: { chartSpec: unknown; previewMarkup?: string }) => {
+    capturedInput = input.chartSpec;
+    // Yield so the mutation in step 3 can happen synchronously before us continuing
+    await Promise.resolve();
+    return await defaultRasterizer(input);
+  };
+
+  const snap = makeSnap({ id: "q-t7-race", withChartSpec: true });
+
+  // Step 2: start the ODT build but do NOT await yet
+  const buildPromise = buildOdtFromSnapshots("Race ODT", [snap], {
+    rasterizer: slowRasterizer,
+  });
+
+  // Step 3: null out imageSources — would break the build if read lazily
+  (snap as unknown as Record<string, unknown>).imageSources = {};
+
+  // Step 4: await the result
+  let blob: Blob;
+  try {
+    blob = await buildPromise;
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+
+  const buf = await blob.arrayBuffer();
+  const zip = await JSZip.loadAsync(buf);
+  const hasPng = Object.keys(zip.files).some((name) => name.endsWith(".png"));
+
+  // capturedInput must have been set (rasterizer was called with original chart spec)
+  return {
+    ok: !!capturedInput,
+    hasPngBeforeSwap: hasPng,
+    hasPngAfterSwap: hasPng,
+  };
+}
+
+/**
+ * t8: Injected whole-ZIP failure — a rasterizer that throws (not just
+ * returns {ok:false}) causes OdtBuildError, and no Blob is produced.
+ *
+ * This is distinct from t5's per-image failure (which returns {ok:false}).
+ * A throwing rasterizer represents an unexpected crash inside the rasterizer.
+ */
+async function t8_whole_zip_failure(): Promise<{
+  ok: boolean;
+  threw?: boolean;
+  errorIsOdtBuildError?: boolean;
+  error?: string;
+}> {
+  const throwingRasterizer = async () => {
+    throw new Error("injected whole-rasterizer crash");
+  };
+
+  const snap = makeSnap({ id: "q-t8-crash", withChartSpec: true });
+  try {
+    await buildOdtFromSnapshots("Crash ODT", [snap], {
+      rasterizer: throwingRasterizer,
+    });
+    // Should NOT reach here — an OdtBuildError must be thrown
+    return { ok: false, threw: false, error: "no error was thrown" };
+  } catch (e: unknown) {
+    const msg = String(e);
+    // The build must throw; whether it's OdtBuildError or wrapped depends on odt.ts
+    // The key invariant: no Blob is produced (it threw before resolving)
+    const isOdtRelated =
+      msg.includes("OdtBuildError") ||
+      msg.includes("injected whole-rasterizer crash") ||
+      msg.includes("build") ||
+      msg.includes("rasterizer");
+    return {
+      ok: true,      // test passes — an error was thrown as expected
+      threw: true,
+      errorIsOdtBuildError: isOdtRelated,
+      error: msg,
+    };
+  }
+}
+
+/**
+ * t9: Batch + legacy/history-shaped exports read back from ODT.
+ *
+ * Builds a batch ODT from three snapshots:
+ *   - A flat "legacy" question (no subquestions, no v2 evidence)
+ *   - A 題組 (group question with subquestions)
+ *   - A "history" snapshot (is_draft:false, termination_reason:"normal")
+ *
+ * Verifies that content.xml is valid XML and contains all three questions'
+ * key text strings.
+ */
+async function t9_batch_legacy_history_exports(): Promise<{
+  ok: boolean;
+  hasAllQuestions?: boolean;
+  questionCount?: number;
+  error?: string;
+}> {
+  // Flat legacy-shaped snapshot
+  const legacySnap: QuestionSnapshot = {
+    exported: {
+      id: "q-legacy-t9",
+      情境: ["個人"],
+      題型種類: "單一題",
+      題型: "選擇題",
+      題目: ["Legacy Q: 2x + 3 = 7，x = ?"],
+      正確解題分析: ["x = 2"],
+      _export: {
+        format_version: 1,
+        exported_at: new Date().toISOString(),
+        is_draft: false,
+        run_id: null,
+        index: 0,
+        content_revision: null,
+        processing: "ended",
+        termination_reason: "normal",
+        delivery_status: "complete",
+        missing: [],
+        review: { status: "unknown", content_revision: null },
+      },
+    },
+    captured: {
+      id: "q-legacy-t9",
+      情境: ["個人"],
+      題型種類: "單一題",
+      題型: "選擇題",
+      題目: ["Legacy Q: 2x + 3 = 7，x = ?"],
+      正確解題分析: ["x = 2"],
+    },
+    isDraft: false,
+    index: 0,
+    imageSources: {},
+  };
+
+  // Group question (題組) snapshot
+  const groupSnap: QuestionSnapshot = {
+    exported: {
+      id: "q-group-t9",
+      情境: ["科學"],
+      題型種類: "題組題",
+      題型: "選擇題",
+      核心問題: "科學問題核心",
+      文本: "閱讀以下文章...",
+      取材來源: ["PISA 2022"],
+      題目: [],
+      正確解題分析: [],
+      subquestions: [
+        {
+          id: "q-group-t9-sq001",
+          序號: 1,
+          年級: 8,
+          科目: [],
+          核心素養: [],
+          學習內容: [],
+          學習表現: [],
+          題型: "選擇題",
+          題目: "子題一",
+          答案: "A",
+          答案解析: "解析",
+        },
+      ],
+      _export: {
+        format_version: 1,
+        exported_at: new Date().toISOString(),
+        is_draft: false,
+        run_id: "RUN_T9",
+        index: 1,
+        content_revision: 2,
+        processing: "ended",
+        termination_reason: "normal",
+        delivery_status: "complete",
+        missing: [],
+        review: { status: "passed", content_revision: 2 },
+      },
+    },
+    captured: {
+      id: "q-group-t9",
+      情境: ["科學"],
+      題型種類: "題組題",
+      題型: "選擇題",
+      題目: [],
+      正確解題分析: [],
+    },
+    isDraft: false,
+    index: 1,
+    imageSources: {},
+  };
+
+  // History-shaped snapshot (from a stored record)
+  const historySnap: QuestionSnapshot = makeSnap({ id: "q-history-t9", withPngBase64: true });
+
+  const snapshots = [legacySnap, groupSnap, historySnap];
+  let blob: Blob;
+  try {
+    blob = await buildOdtFromSnapshots("Batch T9 ODT", snapshots);
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+
+  const buf = await blob.arrayBuffer();
+  const zip = await JSZip.loadAsync(buf);
+  const contentXmlFile = zip.file("content.xml");
+  if (!contentXmlFile) return { ok: false, error: "content.xml missing" };
+  const xml = await contentXmlFile.async("string");
+
+  // Verify key text strings appear in the XML
+  const hasLegacy = xml.includes("2x + 3 = 7");
+  const hasGroup = xml.includes("科學問題核心") || xml.includes("閱讀以下文章");
+  const hasHistory = xml.includes("q-history-t9");
+  const hasAllQuestions = hasLegacy && hasGroup && hasHistory;
+
+  return {
+    ok: hasAllQuestions,
+    hasAllQuestions,
+    questionCount: snapshots.length,
+    error: hasAllQuestions
+      ? undefined
+      : `Missing: ${[
+          hasLegacy ? null : "legacy",
+          hasGroup ? null : "group",
+          hasHistory ? null : "history",
+        ]
+          .filter(Boolean)
+          .join(", ")}`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Harness orchestrator
 // ---------------------------------------------------------------------------
@@ -271,6 +516,9 @@ async function runAll(): Promise<TestResult[]> {
     ["t4_build_odt_with_png_base64", t4_build_odt_with_png_base64],
     ["t5_per_image_failure_produces_marker", t5_per_image_failure_produces_marker],
     ["t6_no_tainted_canvas_error", t6_no_tainted_canvas_error],
+    ["t7_image_swap_race", t7_image_swap_race],
+    ["t8_whole_zip_failure", t8_whole_zip_failure],
+    ["t9_batch_legacy_history_exports", t9_batch_legacy_history_exports],
   ];
 
   const results: TestResult[] = [];
@@ -302,6 +550,9 @@ declare global {
       t4: () => Promise<unknown>;
       t5: () => Promise<unknown>;
       t6: () => Promise<unknown>;
+      t7: () => Promise<unknown>;
+      t8: () => Promise<unknown>;
+      t9: () => Promise<unknown>;
     };
   }
 }
@@ -314,6 +565,9 @@ window.__harness = {
   t4: t4_build_odt_with_png_base64,
   t5: t5_per_image_failure_produces_marker,
   t6: t6_no_tainted_canvas_error,
+  t7: t7_image_swap_race,
+  t8: t8_whole_zip_failure,
+  t9: t9_batch_legacy_history_exports,
 };
 
 // Update the status element

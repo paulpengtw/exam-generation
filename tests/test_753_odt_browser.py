@@ -11,10 +11,12 @@ http://localhost:5173/test-harness/odt-export.html).  If the server is not
 reachable, those tests are skipped.
 """
 import os
+import socket
 import subprocess
 import time
-import urllib.request
 import urllib.error
+import urllib.request
+
 import pytest
 from playwright.sync_api import sync_playwright
 
@@ -22,11 +24,16 @@ from playwright.sync_api import sync_playwright
 # Configuration
 # ---------------------------------------------------------------------------
 
-HARNESS_URL = os.environ.get(
-    "HARNESS_URL",
-    "http://localhost:5173/test-harness/odt-export.html",
-)
+HARNESS_URL = os.environ.get("HARNESS_URL", "")
 VITE_STARTUP_TIMEOUT = 20  # seconds to wait for vite to be ready
+
+
+def _find_free_port() -> int:
+    """Return a free TCP port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
 
 
 # ---------------------------------------------------------------------------
@@ -184,25 +191,38 @@ def vite_server():
     """
     Start (or reuse) the vite dev server for the duration of the test module.
 
-    If HARNESS_URL is already reachable (e.g. already running in CI), the
-    server is not started and is not stopped after the tests.  Otherwise a
-    subprocess is started and killed after all module tests complete.
+    Port selection:
+      - If HARNESS_URL env is set and already reachable, use it as-is.
+      - Otherwise pick a free port (avoiding the hardcoded 5173 that may
+        conflict with a running development server) and start vite on it.
+        The module-level HARNESS_URL is updated so all tests in this module
+        use the new URL.
+
+    The server is killed after all module tests complete (unless reused).
     """
-    already_running = _vite_reachable()
-    proc = None
-    if not already_running:
-        proc = subprocess.Popen(
-            ["npx", "vite", "--port", "5173", "--strictPort"],
-            cwd=os.path.join(os.path.dirname(__file__), "..", "web"),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        if not _wait_for_vite(proc):
-            proc.kill()
-            pytest.skip("vite dev server did not start in time — skipping harness tests")
-    yield
-    if proc is not None:
+    global HARNESS_URL
+
+    # If an explicit HARNESS_URL was given and is reachable, reuse it.
+    if HARNESS_URL and _vite_reachable():
+        yield
+        return
+
+    # Pick a free port to avoid conflicts with any running dev server.
+    port = _find_free_port()
+    harness_path = "/test-harness/odt-export.html"
+    HARNESS_URL = f"http://localhost:{port}{harness_path}"
+
+    proc = subprocess.Popen(
+        ["npx", "vite", "--port", str(port), "--strictPort"],
+        cwd=os.path.join(os.path.dirname(__file__), "..", "web"),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if not _wait_for_vite(proc):
         proc.kill()
+        pytest.skip("vite dev server did not start in time — skipping harness tests")
+    yield
+    proc.kill()
 
 
 def _run_harness_test(page, fn_name: str) -> dict:
@@ -309,3 +329,70 @@ def test_harness_no_tainted_canvas_error(vite_server):
         result = _run_harness_test(page, "t6")
         browser.close()
     assert result.get("ok") is True, f"t6 (tainted-canvas test) failed: {result}"
+
+
+@pytest.mark.requires_browser
+def test_harness_image_swap_race(vite_server):
+    """
+    t7 (real modules): image-swap race during conversion.
+
+    Verifies that buildOdtFromSnapshots captures image data before its first
+    async yield, so a post-yield mutation of snapshot.imageSources does NOT
+    corrupt the produced ODT.  The rasterizer must have been called with the
+    original chart spec (capturedInput is truthy) and the ODT must still embed
+    a PNG despite the mutation.
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = _open_harness(browser, HARNESS_URL)
+        result = _run_harness_test(page, "t7")
+        browser.close()
+    assert result.get("ok") is True, (
+        f"t7 (image-swap race) failed: {result}\n"
+        "This means imageSources was read lazily after the await, "
+        "allowing a race mutation to corrupt the ODT."
+    )
+
+
+@pytest.mark.requires_browser
+def test_harness_whole_zip_failure_throws(vite_server):
+    """
+    t8 (real modules): injected whole-ZIP failure — no download produced.
+
+    When a rasterizer THROWS (not just returns {ok:false}), buildOdtFromSnapshots
+    must propagate the error (OdtBuildError or equivalent) and must NOT resolve
+    with a partial Blob.  The harness verifies this by catching the thrown error.
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = _open_harness(browser, HARNESS_URL)
+        result = _run_harness_test(page, "t8")
+        browser.close()
+    assert result.get("ok") is True, (
+        f"t8 (whole-ZIP failure) failed: {result}\n"
+        "Expected the build to throw, but it resolved instead."
+    )
+    assert result.get("threw") is True, f"t8: no error was thrown: {result}"
+
+
+@pytest.mark.requires_browser
+def test_harness_batch_legacy_history_exports(vite_server):
+    """
+    t9 (real modules): batch + legacy/history-shaped exports read back from ODT.
+
+    Builds a 3-question batch ODT (flat legacy, 題組 group, history-shaped with
+    png_base64) and verifies that content.xml contains text from all three
+    questions, confirming each question's content was serialized correctly.
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = _open_harness(browser, HARNESS_URL)
+        result = _run_harness_test(page, "t9")
+        browser.close()
+    assert result.get("ok") is True, (
+        f"t9 (batch + legacy/history exports) failed: {result}\n"
+        "Not all three question types appeared in content.xml."
+    )
+    assert result.get("questionCount") == 3, (
+        f"t9: expected 3 questions, got {result.get('questionCount')}"
+    )

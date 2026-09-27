@@ -1,0 +1,239 @@
+# Issue #754 — Part A Verification
+
+Date: 2026-09-27  
+Branch: `feat/748-754-live-progress-export`
+
+## Scope
+
+Part A of issue #754: fixtures, cross-layer verification, compatibility matrix
+backend, frontend fixture transport, and ODT browser test extensions.
+
+Part B (ADR, protocol docs, CONTEXT.md glossary, acceptance pack) is out of
+scope for this pass.
+
+---
+
+## Fixture Registry
+
+### V2 fixtures (`tests/fixtures/generation_v2/`)
+
+| File | Generator test | Variant |
+|---|---|---|
+| `math_single_interleaved.jsonl` | `test_742_fixture.py::test_interleaved_fixture` | B finishes before A, 2 questions |
+| `math_groups_interleaved.jsonl` | `test_745_adapter_fixtures.py::test_fixed_adapter_fixture_and_terminal[math]` | math 題組, multiple revisions |
+| `social_groups_interleaved.jsonl` | `test_744_social_fixture.py::test_social_fixed_slot_fixture_and_terminal` | social fixed slots |
+| `natural_sciences_groups_interleaved.jsonl` | `test_745_adapter_fixtures.py::test_fixed_adapter_fixture_and_terminal[natural_sciences]` | NS fixed slots |
+| `math_abcd_transport.jsonl` | `test_747_abcd_fixture.py::test_real_publisher_fixture_captures_transport_omitted_terminal` | q_RUN_004 terminal omitted (seq 19 absent — intentional gap) |
+
+### Legacy fixtures (`tests/fixtures/generation_legacy/`)
+
+| File | Notes |
+|---|---|
+| `math_single_legacy.jsonl` | S0 format: `{event, data}`, no `context`/`payload`, no `event_seq` |
+
+### Regeneration command
+
+```bash
+bash scripts/generate_v2_fixtures.sh
+```
+
+No paid models required — all fixtures use `_FakeClient` stubs.
+
+After regeneration, verify with:
+
+```bash
+choom -n 500 -- uv run pytest tests/server/test_754_fixture_drift.py -q
+```
+
+---
+
+## Compatibility Matrix Results
+
+### Matrix cells
+
+| | S0 (old backend) | S1 (new backend, 426 gate) |
+|---|---|---|
+| **C0** (old frontend, no `stream_version`) | Documented defects only | 426 zero-dispatch |
+| **C1** (new frontend, `stream_version=2`) | Legacy adapter: keeps content, 原題序未知, 請求總數, no placeholders | Full v2 contract |
+
+### C0 × S0 — documented defects
+
+Source: `math_single_legacy.jsonl`. Verified by `test_c0_s0_defects_documented`.
+
+- No `context` key at top level
+- No `protocol_version` field in started payload
+- No `questions` manifest list in started payload
+- No `question_terminal` events
+- `started.data` = JSON string `{"generation_log_id": null}` (not empty)
+- `result.data` = direct question JSON (no wrapper)
+
+### C0 × S1 — 426 zero-dispatch
+
+Verified by `test_c0_s1_get_returns_426_zero_dispatch`,
+`test_c0_s1_post_returns_426_zero_dispatch`,
+`test_c0_s1_wrong_version_returns_426`, and
+`test_c0_s1_no_started_in_426_response`.
+
+Key invariants:
+- HTTP 426 returned before any generation starts (`generate_was_called == []`)
+- Response body is `application/json`, not `text/event-stream`
+- Body contains `code: "CLIENT_UPDATE_REQUIRED"` and `detail` string
+- No `started` SSE event in the 426 body
+- `stream_version=1` (wrong version) also returns 426
+
+### C1 × S0 — legacy adapter
+
+Frontend tests in `legacyAdapter.test.ts` (18 tests, existing) and
+`GeneratePage.legacy-no-placeholders.test.tsx` (4 new tests). Key invariants:
+
+- Items keyed by opaque id (not arrival order)
+- `resolvedIndex` set only when explicit index↔id evidence arrives consistently
+- No placeholder cards render without a manifest (`runEvidence === null`)
+- `requestTotal` comes from params, not a manifest
+- No per-question terminal evidence (only `done: true`)
+- No auto-resubmit
+
+### C1 × S1 — v2 contract
+
+Verified by `test_c1_s1_ab_interleaved_v2_contract` (using `_run_ab_stream`
+shared fixture, B finishes before A). Key invariants:
+
+- `started` has `protocol_version=2`, `questions` manifest, contiguous seqs from 1
+- B's result/terminal arrive before A's (interleaved confirmed)
+- Each `question_update`/`result` has `content_revision >= 1`
+- Each `question_terminal` has required fields
+- `question_terminal` arrives after its question's `result`
+- `done` is last event
+- All per-question events use the manifest question ids
+
+---
+
+## Test Run Results
+
+### Backend pytest
+
+Commands run:
+
+```bash
+choom -n 500 -- uv run pytest \
+  tests/server/test_754_fixture_drift.py \
+  tests/server/test_754_compat_matrix.py \
+  -v --tb=short
+```
+
+Result summary (2026-09-27):
+
+```
+18 passed, 3 warnings in 2.48s
+```
+
+Warnings are `PytestUnknownMarkWarning` for `@pytest.mark.timeout` (unflagged
+custom mark, not a test failure).
+
+### Ruff lint
+
+```bash
+uv run ruff check src/ server/ tests/
+```
+
+Result: **All checks passed** (zero violations in new files).
+
+### Frontend TypeScript + ESLint
+
+```bash
+cd web && npx tsc -b --noEmit && npm run lint
+```
+
+Result: **clean** (no errors or warnings).
+
+### Frontend vitest (new tests only)
+
+```bash
+cd web && choom -n 500 -- npx vitest run \
+  src/lib/generationStream.fixtureTransport.test.ts \
+  src/pages/GeneratePage.legacy-no-placeholders.test.tsx
+```
+
+Result:
+
+```
+Test Files  2 passed (2)
+Tests  14 passed (14)
+```
+
+---
+
+## Fixture Transport Tests
+
+New tests in `web/src/lib/generationStream.fixtureTransport.test.ts`
+(added to existing 5 tests, now 14 total):
+
+- **Terminal arrives before result (reversed wire order)** — swaps wire bytes of
+  seq 22 (q_RUN_001 terminal) and seq 21 (q_RUN_001 result); decoder buffers the
+  terminal until result fills seq 21; final state still has 2 finals, 2 terminals,
+  no degradation.
+
+- **Legacy fixture replay through adapter** — loads `math_single_legacy.jsonl`,
+  replays all events through `applyLegacyEvent`; verifies 2 finals, `done: true`,
+  stable unique ids (`legacy_001`, `legacy_002`), `resolvedIndex` set from
+  explicit index evidence.
+
+- **Conflict: duplicate seq with different data** — injects a duplicate of
+  the result event at seq 18 (q_RUN_002) with a mutated payload; verifies
+  `selectConflictCount(state) > 0` and `degraded === false` (conflict does not
+  degrade the stream).
+
+---
+
+## UI / No-Placeholder Evidence
+
+New tests in `web/src/pages/GeneratePage.legacy-no-placeholders.test.tsx`:
+
+- Zero placeholder cards render when `runEvidence === null` and `displayResults`
+  is empty.
+- Zero placeholder cards render when `runEvidence === null` and 2 legacy
+  `GeneratedQuestion` items are in `displayResults`.
+- Placeholder cards DO appear when `runEvidence` provides a manifest (v2 mode),
+  confirming the conditional is correctly wired.
+
+---
+
+## ODT Browser Test Extensions
+
+New tests in `tests/test_753_odt_browser.py` (t7–t9):
+
+- **t7 (image-swap race)** — verifies that `buildOdtFromSnapshots` captures
+  `imageSources` before its first async yield. A post-yield mutation of
+  `snap.imageSources` must not corrupt the ODT.
+
+- **t8 (whole-ZIP failure)** — a rasterizer that throws (not just returns
+  `{ok:false}`) causes `buildOdtFromSnapshots` to propagate the error; no Blob
+  is resolved (test passes when an error is thrown).
+
+- **t9 (batch + legacy/history exports)** — builds a 3-snapshot batch ODT
+  (flat legacy, 題組, history-shaped with png_base64); verifies `content.xml`
+  contains text from all three questions.
+
+Vite fixture updated to pick a free port (`_find_free_port()`) instead of the
+hardcoded 5173, avoiding conflicts with running dev servers.
+
+---
+
+## Notes for Part B Agent
+
+Evidence gathered for ADR, protocol docs, CONTEXT.md glossary:
+
+1. **426 gate behavior**: `server/generate/routes.py` lines 403-404 (GET) and
+   436-437 (POST). Response body is `{"detail": "<string>", "code": "CLIENT_UPDATE_REQUIRED", "supported_stream_versions": [2]}`. `detail` must be a string (not object) because C0 can display strings.
+
+2. **v2 protocol invariants** (verified by fixture tests):
+   - `started` is always seq=1; `done` is always last.
+   - All events carry `context.event_seq`; contiguous 1..N except transport fixtures.
+   - `question_update`/`result` carry `content_revision >= 1`.
+   - `question_terminal` follows its question's `result` (not before).
+
+3. **Transport fixture gap**: `math_abcd_transport.jsonl` has seq 18 → seq 20 (seq 19 absent). The omitted seq 19 would have been `question_terminal` for q_RUN_004. The fixture demonstrates the decoder's bounded-buffer + eof_gap degradation path.
+
+4. **Legacy format**: `math_single_legacy.jsonl` — `{event, data}` wire format. `started.data = '{"generation_log_id": null}'`. `result.data` = direct question JSON string.
+
+5. **C1×S0 adapter architecture**: `web/src/lib/legacyAdapter.ts`. Items keyed by opaque id. `resolvedIndex = null` → 原題序未知. `requestTotal` from params. No placeholder cards. `done` sets `done: true` only.
