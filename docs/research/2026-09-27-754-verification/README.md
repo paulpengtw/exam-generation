@@ -351,3 +351,69 @@ Evidence gathered for ADR, protocol docs, CONTEXT.md glossary:
 4. **Legacy format**: `math_single_legacy.jsonl` — `{event, data}` wire format. `started.data = '{"generation_log_id": null}'`. `result.data` = direct question JSON string.
 
 5. **C1×S0 adapter architecture**: `web/src/lib/legacyAdapter.ts`. Items keyed by opaque id. `resolvedIndex = null` → 原題序未知. `requestTotal` from params. No placeholder cards. `done` sets `done: true` only.
+
+---
+
+## Task 5.1 Evidence Map (Issue #895)
+
+Branch: `wt/895`  
+Date: 2026-09-27
+
+### Scope
+
+Issue #895 requires every sub-item of task 5.1 to have a named test before the
+checkbox can be ticked.  Sub-items 1–9 are listed in the issue; sub-items 1–3
+and 7 were already covered by existing tests; sub-items 4, 5, 6, 8, and 9
+needed new tests.
+
+### Finding: leftover mutation in generationStream.ts
+
+During the audit, `git diff` revealed that `web/src/lib/generationStream.ts`
+had an uncommitted mutation (`if (false && seqSeen.has(eventSeq))`) left over
+from a prior mutation-check experiment.  This disabled the duplicate-seq guard
+and was the root cause of the apparent sub-item 5 integration-test failure
+observed before the revert.  After reverting to HEAD all 91 useGenerate tests
+and all 21 generationStream tests pass.
+
+### Sub-item → test mapping
+
+| # | Sub-item | File | Test name | Status |
+|---|---|---|---|---|
+| 1a | Decoder starts in `awaiting-start` | `web/src/lib/generationStream.test.ts` | `starts in awaiting-start mode with null run` | existing |
+| 1b | Decoder transitions to `v2` | `web/src/lib/generationStream.test.ts` | `transitions to v2 on a valid manifest and sets run` | existing |
+| 1c | Decoder transitions to `legacy` | `web/src/lib/generationStream.test.ts` | `transitions to legacy on a started event with generation_log_id (no context)` | existing |
+| 1d | Decoder reaches `unsupported` state | `web/src/lib/generationStream.test.ts` | `is unsupported with unknown_protocol when protocol_version is not 2` | existing |
+| 2a | useGenerate POST body carries `stream_version: 2` | `web/src/hooks/useGenerate.test.ts` | `F3: stream_version 2 in POST body > sends stream_version 2 in the POST body` | existing |
+| 3 | Complete manifest → creates N waiting slots | `web/src/lib/generationEvidence.test.ts` | `createRunEvidence > creates N waiting placeholders in manifest order` | existing |
+| 4 | Invalid manifest → no slots, status error | `web/src/hooks/useGenerate.test.ts` | `F3: invalid manifest in started → no v2 slots, status error > sets status error and no evidence when started carries an invalid manifest (total mismatch)` | NEW |
+| 5a | Duplicate seq at decoder level → `duplicate_seq` ignore | `web/src/lib/generationStream.test.ts` | `ignores a second started with same seq in v2 mode (duplicate_seq) and stays in v2` | NEW |
+| 5b | Second identical `started` in hook integration → evidence not reset | `web/src/hooks/useGenerate.test.ts` | `F3: second started in active v2 run does not overwrite slots > ignores a second identical started (same payload, same seq 1) and preserves accumulated evidence content` | NEW |
+| 6 | HTTP 426 → stops, no resubmit | `web/src/hooks/useGenerate.test.ts` | `F3: HTTP 426 → stops, no resubmit > sets status error on HTTP 426 and does not issue a second generate call` | NEW |
+| 7a | Unknown protocol version → decoder `unsupported` | `web/src/lib/generationStream.test.ts` | `is unsupported with unknown_protocol when protocol_version is not 2` | existing |
+| 7b | Unknown protocol → hook sets error, no resubmit | `web/src/hooks/useGenerate.test.ts` | `F3: unknown protocol → abort and error > sets status error on unknown_protocol and does not call generate a second time` | existing |
+| 8 | Stale events from old connection do not affect new connection | `web/src/hooks/useGenerate.test.ts` | `F3: stale events from previous connection do not affect new connection > events from a stale stream after reset and new generate do not affect the new connection's evidence` | NEW |
+| 9 | Pre-started events do not create v2 slots; only valid `started` creates them | `web/src/hooks/useGenerate.test.ts` | `F3: only valid started creates v2 evidence slots > pre-started question_update does not create v2 evidence; valid started creates the manifest slots` | NEW |
+
+### Mutation checks
+
+Each new test was verified by a targeted mutation that disables the production
+guard, confirming the test goes red, then restored.
+
+| Test | Mutation applied | Result |
+|---|---|---|
+| 5a (decoder duplicate_seq) | `if (false && seqSeen.has(eventSeq))` in `generationStream.ts` line 260 | Test went red (returned `{kind:"v2",...}` instead of `{kind:"ignore",reason:"duplicate_seq"}`) |
+| 5b (hook duplicate_seq) | Same mutation | Test went red (evidence reset after second `started`) |
+| 4 (invalid manifest) | `if (false && d.kind === "mode" && d.mode === "unsupported")` in `useGenerate.ts` unsupported handler | Test went red (error not set) |
+| 6 (HTTP 426) | Temporarily skipped `FatalStreamError` throw path | Test went red (no error set) |
+| 8 (stale guard) | `if (false && controllerRef.current !== controller)` guard bypass | Test went red (stale event updated evidence) |
+| 9 (pre-started slots) | Same unsupported/held bypass | Test went red (evidence appeared before `started`) |
+
+### Test run results (2026-09-27)
+
+```
+web/src/lib/generationStream.test.ts   21 passed (21)  [+1 new]
+web/src/hooks/useGenerate.test.ts      91 passed (91)  [+5 new]
+```
+
+TypeScript (`npx tsc -b --noEmit`): clean  
+ESLint (`npm run lint`): clean
