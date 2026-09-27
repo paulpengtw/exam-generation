@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { useRetryableSnapshot } from "../hooks/useRetryableSnapshot";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
@@ -94,7 +95,8 @@ function HistoryDetailContent({
   const [recoveryDismissed, setRecoveryDismissed] = useState(false);
   const discardRecovery = useRecoveryStore((state) => state.discardRecovery);
   // Stored ODT snapshot for retry (#753): reuse the same captured snapshot on retry
-  const lastHistoryOdtSnapshotRef = useRef<QuestionSnapshot | null>(null);
+  const { getOrCapture: getOrCaptureHistoryOdtSnapshot } =
+    useRetryableSnapshot<QuestionSnapshot>();
 
   useSurfaceParticipation("history.detail", {
     readiness: detail !== null || error !== null ||
@@ -207,31 +209,29 @@ function HistoryDetailContent({
       if (!detail || !canDownload) throw new Error("History record is not available");
       if (!detail.question_json) throw new Error("ODT unavailable: no question_json");
 
-      let snapshot: QuestionSnapshot;
-
       // Retry (#753): reuse the same captured snapshot so the ODT image is
       // identical to what the user saw at click time, even if the record changed.
-      if (odtFeedback.state === "failed" && lastHistoryOdtSnapshotRef.current) {
-        snapshot = lastHistoryOdtSnapshotRef.current;
-      } else {
-        // Fresh export click: capture a new snapshot at this instant.
-        const exportedAt = new Date().toISOString();
-        const captured = captureFromHistorySnapshot(detail, exportedAt);
-        if (!captured) throw new Error("ODT unavailable: snapshot capture failed");
-        snapshot = captured;
-        // Try to augment chart_spec_preview slots with DOM markup from the mounted QuestionCard.
-        // The card's [data-figure-slot] elements are searched relative to the card root.
-        const cardEl = document.querySelector("[data-testid='question-card-content']");
-        if (cardEl) {
-          augmentWithDomMarkup(snapshot.imageSources, (slotKey) => {
-            const el = cardEl.querySelector(`[data-figure-slot="${slotKey}"]`);
-            if (!el) return null;
-            try { return serializeElementToMarkup(el); } catch { return null; }
-          });
-        }
-        // Store for potential retry.
-        lastHistoryOdtSnapshotRef.current = snapshot;
-      }
+      const snapshot = getOrCaptureHistoryOdtSnapshot(
+        odtFeedback.state === "failed",
+        () => {
+          // Fresh export click: capture a new snapshot at this instant.
+          const exportedAt = new Date().toISOString();
+          const captured = captureFromHistorySnapshot(detail, exportedAt);
+          if (!captured) return null;
+          // Try to augment chart_spec_preview slots with DOM markup from the mounted QuestionCard.
+          // The card's [data-figure-slot] elements are searched relative to the card root.
+          const cardEl = document.querySelector("[data-testid='question-card-content']");
+          if (cardEl) {
+            augmentWithDomMarkup(captured.imageSources, (slotKey) => {
+              const el = cardEl.querySelector(`[data-figure-slot="${slotKey}"]`);
+              if (!el) return null;
+              try { return serializeElementToMarkup(el); } catch { return null; }
+            });
+          }
+          return captured;
+        },
+      );
+      if (!snapshot) throw new Error("ODT unavailable: snapshot capture failed");
 
       const questionId = detail.question_id || detail.id;
       const filename = singleQuestionOdtFilename(questionId, false);

@@ -208,6 +208,38 @@ describe("captureFromEvidence", () => {
     const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
     expect(snapshot!.exported._export.run_id).toBeNull();
   });
+
+  // S1 (#749): disputed terminal must not leak its values into _export
+  it("terminalConflict → processing=unknown, termination_reason=null, delivery_status=null, missing=[]", () => {
+    const q = makeQuestion("qTC");
+    // The reducer sets processing="unknown" and terminalConflict=true but keeps
+    // evidence.terminal populated with the first (disputed) terminal.
+    const ev = makeEvidence("qTC", {
+      processing: "unknown",
+      terminalConflict: true,
+      terminalConflictReason: "terminal_contradiction",
+      // terminal is still the first received one (reducer does not clear it)
+      terminal: {
+        termination_reason: "normal",
+        has_final: true,
+        final_revision: 3,
+        delivery_status: "complete",
+        expected: [],
+        delivered: [],
+        missing: [],
+        review: { status: "passed", content_revision: 3 },
+      },
+    });
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    expect(snapshot).not.toBeNull();
+    // Disputed terminal must not report "ended" processing
+    expect(snapshot!.exported._export.processing).toBe("unknown");
+    // Disputed terminal must not supply termination/delivery/missing values
+    expect(snapshot!.exported._export.termination_reason).toBeNull();
+    expect(snapshot!.exported._export.delivery_status).toBeNull();
+    expect(snapshot!.exported._export.missing).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

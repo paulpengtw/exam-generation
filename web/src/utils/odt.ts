@@ -5,6 +5,51 @@ import type { QuestionSnapshot, CapturedImageSources } from "./exportSnapshot";
 import { slotRefSeqno } from "./exportSnapshot";
 import type { Rasterizer } from "./rasterizer";
 import { defaultRasterizer } from "./rasterizer";
+import type { Lang } from "../i18n/messages";
+import { MESSAGES } from "../i18n/messages";
+
+// ---------------------------------------------------------------------------
+// ODT marker/label strings — sourced from the i18n layer (T1 / issue #752).
+// All user-visible ODT marker text must live here, not as bare string literals
+// in the builder functions.  Callers may pass a `labels` option to
+// `buildOdtFromSnapshots`; the default is zh-TW to match historical output.
+// ---------------------------------------------------------------------------
+
+export interface OdtLabels {
+  /** 【草稿】此題尚未完成最終審核 */
+  draftNotice: string;
+  /** 【匯出缺圖／預覽轉換失敗】 */
+  previewConversionFailed: string;
+  /** 【缺圖：此位置應有圖片，但尚未生成或已遺失】 */
+  knownMissingImageStem: string;
+  /** 【缺小題 N：此小題已知缺失】 — {n} is replaced with the 序號 number */
+  knownMissingSubquestion: (seqNo: number) => string;
+  /** 【缺圖：第N題圖片已知缺失】 — {n} is replaced with the 序號 number */
+  knownMissingSubqImage: (seqNo: number) => string;
+  /** 【已知缺圖：此題應有圖片，但尚未生成或已遺失】 */
+  knownMissingImageFlat: string;
+}
+
+/**
+ * Build an OdtLabels object from the i18n message catalogue for a given lang.
+ * Defaults to zh-TW so historical ODT output is unchanged when callers omit
+ * the labels option.
+ */
+export function defaultOdtLabels(lang: Lang = "zh-TW"): OdtLabels {
+  const m = MESSAGES[lang];
+  const t = (key: string, n?: number): string => {
+    const raw = m[key] ?? MESSAGES["zh-TW"][key] ?? key;
+    return n !== undefined ? raw.replace("{n}", String(n)) : raw;
+  };
+  return {
+    draftNotice: t("odt.draft_notice"),
+    previewConversionFailed: t("odt.preview_conversion_failed"),
+    knownMissingImageStem: t("odt.known_missing_image_stem"),
+    knownMissingSubquestion: (seqNo) => t("odt.known_missing_subquestion", seqNo),
+    knownMissingSubqImage: (seqNo) => t("odt.known_missing_subq_image", seqNo),
+    knownMissingImageFlat: t("odt.known_missing_image_flat"),
+  };
+}
 
 export function formatTimestamp(): string {
   const now = new Date();
@@ -529,7 +574,7 @@ async function embedSnapshotImages(
  * - Known-missing subquestion and image markers at correct positions
  * - Final without terminal = final + unknown processing
  */
-function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isMultiple: boolean): string {
+function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isMultiple: boolean, labels: OdtLabels): string {
   const paras: string[] = [];
 
   if (isMultiple && title) {
@@ -550,7 +595,7 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
 
       // --- Draft label ---
       if (meta.is_draft) {
-        paras.push(`<text:p text:style-name="MetaLine">${xmlEscape("【草稿】此題尚未完成最終審核")}</text:p>`);
+        paras.push(`<text:p text:style-name="MetaLine">${xmlEscape(labels.draftNotice)}</text:p>`);
       }
 
       // --- Status line ---
@@ -576,11 +621,11 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
         if (stemFailed) {
           // Rasterization attempted but failed (#753) — explicit conversion-failure marker
           paras.push(
-            `<text:p text:style-name="MetaLine">${xmlEscape("【匯出缺圖／預覽轉換失敗】")}</text:p>`
+            `<text:p text:style-name="MetaLine">${xmlEscape(labels.previewConversionFailed)}</text:p>`
           );
         } else if (stemSrc?.kind === "known_missing") {
           paras.push(
-            `<text:p text:style-name="MetaLine">${xmlEscape("【缺圖：此位置應有圖片，但尚未生成或已遺失】")}</text:p>`
+            `<text:p text:style-name="MetaLine">${xmlEscape(labels.knownMissingImageStem)}</text:p>`
           );
         }
       }
@@ -633,7 +678,7 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
               `<text:p text:style-name="Heading2">${xmlEscape(`第${seqNo}題`)}</text:p>`
             );
             paras.push(
-              `<text:p text:style-name="MetaLine">${xmlEscape(`【缺小題 ${seqNo}：此小題已知缺失】`)}</text:p>`
+              `<text:p text:style-name="MetaLine">${xmlEscape(labels.knownMissingSubquestion(seqNo))}</text:p>`
             );
             continue;
           }
@@ -664,11 +709,11 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
             if (subFailedKeys?.has(sqKey)) {
               // Rasterization attempted but failed (#753) — explicit conversion-failure marker
               paras.push(
-                `<text:p text:style-name="MetaLine">${xmlEscape("【匯出缺圖／預覽轉換失敗】")}</text:p>`
+                `<text:p text:style-name="MetaLine">${xmlEscape(labels.previewConversionFailed)}</text:p>`
               );
             } else if (sqSrc?.kind === "known_missing") {
               paras.push(
-                `<text:p text:style-name="MetaLine">${xmlEscape(`【缺圖：第${seqNo}題圖片已知缺失】`)}</text:p>`
+                `<text:p text:style-name="MetaLine">${xmlEscape(labels.knownMissingSubqImage(seqNo))}</text:p>`
               );
             }
           }
@@ -745,7 +790,7 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
         // For flat questions, list known-missing at the end (images handled per-slot above)
         if (missingImageSlots.length > 0) {
           paras.push(
-            `<text:p text:style-name="MetaLine">${xmlEscape("【已知缺圖：此題應有圖片，但尚未生成或已遺失】")}</text:p>`
+            `<text:p text:style-name="MetaLine">${xmlEscape(labels.knownMissingImageFlat)}</text:p>`
           );
         }
       }
@@ -794,9 +839,10 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
 export async function buildOdtFromSnapshots(
   title: string,
   snapshots: QuestionSnapshot[],
-  options?: { rasterizer?: Rasterizer },
+  options?: { rasterizer?: Rasterizer; labels?: OdtLabels },
 ): Promise<Blob> {
   const rasterizer = options?.rasterizer ?? defaultRasterizer;
+  const labels = options?.labels ?? defaultOdtLabels("zh-TW");
   const zip = new JSZip();
   const isMultiple = snapshots.length > 1;
   const isoDate = new Date().toISOString();
@@ -824,7 +870,7 @@ export async function buildOdtFromSnapshots(
 
   zip.file("meta.xml", buildMeta(title, isoDate));
   zip.file("styles.xml", buildStyles());
-  zip.file("content.xml", buildSnapshotContentXml(title, sections, isMultiple));
+  zip.file("content.xml", buildSnapshotContentXml(title, sections, isMultiple, labels));
   zip.file("META-INF/manifest.xml", buildManifest(imageRefs));
 
   return zip.generateAsync({

@@ -83,6 +83,24 @@ def _export_examples() -> list[tuple[str, dict]]:
     return results
 
 
+def _started_examples() -> list[tuple[str, dict]]:
+    """Return (label, envelope) for envelopes whose payload has protocol_version=2."""
+    return [
+        (label, env)
+        for label, env in _envelope_examples()
+        if env["payload"].get("protocol_version") == 2
+    ]
+
+
+def _terminal_examples() -> list[tuple[str, dict]]:
+    """Return (label, envelope) for envelopes whose payload has termination_reason."""
+    return [
+        (label, env)
+        for label, env in _envelope_examples()
+        if "termination_reason" in env["payload"]
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -96,23 +114,33 @@ def test_envelope_context_valid(label: str, envelope: dict) -> None:
     assert ctx.event_seq >= 1, f"{label}: event_seq must be >= 1"
 
 
-@pytest.mark.parametrize("label,envelope", _envelope_examples())
+_STARTED_EXAMPLES = _started_examples()
+_TERMINAL_EXAMPLES = _terminal_examples()
+
+# Assert non-empty so a change that removes all examples fails loudly.
+assert _STARTED_EXAMPLES, (
+    "No started-payload examples found in the protocol doc — "
+    "add at least one ```json block with protocol_version=2."
+)
+assert _TERMINAL_EXAMPLES, (
+    "No terminal-payload examples found in the protocol doc — "
+    "add at least one ```json block with termination_reason."
+)
+
+
+@pytest.mark.parametrize("label,envelope", _STARTED_EXAMPLES)
 def test_started_payload_valid(label: str, envelope: dict) -> None:
     """Envelopes with protocol_version:2 in payload validate as StartedPayload."""
     payload = envelope["payload"]
-    if payload.get("protocol_version") != 2:
-        pytest.skip("not a started payload")
     started = StartedPayload(**payload)
     assert started.protocol_version == 2
     assert len(started.questions) == started.total
 
 
-@pytest.mark.parametrize("label,envelope", _envelope_examples())
+@pytest.mark.parametrize("label,envelope", _TERMINAL_EXAMPLES)
 def test_terminal_payload_valid(label: str, envelope: dict) -> None:
     """Envelopes with termination_reason in payload validate as QuestionTerminalPayload."""
     payload = envelope["payload"]
-    if "termination_reason" not in payload:
-        pytest.skip("not a terminal payload")
     terminal = QuestionTerminalPayload(**payload)
     assert terminal.termination_reason in ("normal", "failed", "cancelled")
     assert terminal.delivery_status in ("complete", "partial", "none", "unknown")

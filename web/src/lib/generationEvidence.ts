@@ -334,6 +334,23 @@ function sameTerminal(left: QuestionTerminalPayload, right: QuestionTerminalPayl
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/**
+ * Compare two terminal payloads for "same outcome" — used to detect when only
+ * the review block differs (review disagreement ≠ terminal contradiction).
+ *
+ * The server builds `expected`, `delivered`, and `missing` in manifest (slot)
+ * order: it iterates `slot_manifest` by `slot_index` position, so the same
+ * submission always produces the same ordering.  Confirmed in
+ * `server/generate/service.py` `_build_question_terminal_payload` (for-loop
+ * over `slot_manifest`).  An identical resend therefore arrives byte-identical
+ * in these arrays and is correctly detected as "same outcome" by the
+ * JSON.stringify comparison.  A genuinely different outcome changes at least
+ * one of the compared fields and is still detected as a conflict.
+ *
+ * If the server ever stops guaranteeing this order, change the comparison to
+ * be order-insensitive by slot identity (e.g. sort by subquestion_id before
+ * stringifying).
+ */
 function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTerminalPayload): boolean {
   return JSON.stringify({
     termination_reason: left.termination_reason,

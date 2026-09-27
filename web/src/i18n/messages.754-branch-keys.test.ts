@@ -11,6 +11,12 @@ import { MESSAGES } from "./messages";
 
 const BRANCH_KEYS_754 = [
   "odt.preview_conversion_failed",
+  // T1 (#752): ODT marker strings moved from hard-coded to i18n
+  "odt.draft_notice",
+  "odt.known_missing_image_stem",
+  "odt.known_missing_subquestion",
+  "odt.known_missing_subq_image",
+  "odt.known_missing_image_flat",
   "history.download_odt_error",
   "history.btn_download_odt",
   "stream.information_incomplete",
@@ -49,8 +55,8 @@ describe("754 branch i18n key parity", () => {
     });
   }
 
-  it("all 18 branch keys are present (count check)", () => {
-    expect(BRANCH_KEYS_754).toHaveLength(18);
+  it("all 23 branch keys are present (count check)", () => {
+    expect(BRANCH_KEYS_754).toHaveLength(23);
     const enKeys = new Set(Object.keys(MESSAGES["en-US"]));
     const zhKeys = new Set(Object.keys(MESSAGES["zh-TW"]));
     for (const key of BRANCH_KEYS_754) {

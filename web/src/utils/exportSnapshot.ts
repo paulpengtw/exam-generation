@@ -301,20 +301,23 @@ export function captureFromEvidence(
       ? evidence.content.revision
       : null;
 
-  const terminal = evidence.terminal;
-  const processing: ExportMeta["processing"] = terminal
+  // Issue #749: when the terminal is disputed (terminalConflict=true), treat it
+  // as absent for _export purposes — processing stays "unknown" and no terminal
+  // values (termination_reason / delivery_status / missing) are exported.
+  const effectiveTerminal = evidence.terminalConflict ? null : evidence.terminal;
+  const processing: ExportMeta["processing"] = effectiveTerminal
     ? "ended"
     : evidence.processing === "ended"
     ? "ended"
     : evidence.processing;
 
   const terminationReason: ExportMeta["termination_reason"] =
-    terminal?.termination_reason ?? null;
+    effectiveTerminal?.termination_reason ?? null;
 
   const deliveryStatus: ExportMeta["delivery_status"] =
-    terminal?.delivery_status ?? null;
+    effectiveTerminal?.delivery_status ?? null;
 
-  const missing: GenerationSlotReference[] = terminal?.missing ?? [];
+  const missing: GenerationSlotReference[] = effectiveTerminal?.missing ?? [];
 
   // Review must match current content_revision
   let review: SnapshotReview;
@@ -350,7 +353,9 @@ export function captureFromEvidence(
   });
 
   const exported: ExportedQuestion = { ...captured, _export: exportMeta };
-  const imageSources = captureImageSources(captured, contentRevision, terminal);
+  // Image sources are captured from the actual terminal (if any), regardless of
+  // whether the terminal is disputed — the dispute only affects _export metadata.
+  const imageSources = captureImageSources(captured, contentRevision, evidence.terminal);
   return { exported, captured, isDraft, index, imageSources };
 }
 

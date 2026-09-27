@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRetryableSnapshot } from "../hooks/useRetryableSnapshot";
 
 import { ApiError } from "../api/client";
 import type {
@@ -724,7 +725,8 @@ export default function QuestionCard({
 
   const [showSolution, setShowSolution] = useState(!isFinal);
   const cardRef = useRef<HTMLDivElement>(null);
-  const lastOdtSnapshotRef = useRef<QuestionSnapshot | null>(null);
+  const { getOrCapture: getOrCaptureOdtSnapshot } =
+    useRetryableSnapshot<QuestionSnapshot>();
   const [latchedRecoveredModification] = useState(recoveredModification);
   const recoveredAnnotations = latchedRecoveredModification?.annotations ?? [];
   const nextAnnotationId = useRef(recoveredAnnotations.length);
@@ -949,45 +951,42 @@ export default function QuestionCard({
     action: async () => {
       if (!_question) throw new Error("Question is not available");
 
-      let snapshot: QuestionSnapshot | null;
-      // On retry (state === "failed"), reuse the last captured snapshot
-      // to avoid re-capturing when the user clicks retry.
-      if (odtFeedback.state === "failed" && lastOdtSnapshotRef.current) {
-        snapshot = lastOdtSnapshotRef.current;
-      } else {
-        // New export click: capture a fresh snapshot
-        const exportedAt = new Date().toISOString();
-        snapshot = evidence
-          ? captureFromEvidence(_question, evidence, runId ?? null, exportedAt)
-          : captureFromGeneratedQuestion(
-              {
-                index: typeof index === "number" ? index : 0,
-                question: _question,
-                phase,
-                isFinal,
-                stableId: _question.id ?? undefined,
-                contentRevision: null,
-              },
-              runId ?? null,
-              exportedAt,
-            );
-        if (snapshot) {
-          // Store for potential retry
-          lastOdtSnapshotRef.current = snapshot;
-          // Augment chart_spec_preview slots with DOM markup from the mounted card
-          if (cardRef.current) {
-            augmentWithDomMarkup(snapshot.imageSources, (slotKey) => {
-              const el = cardRef.current?.querySelector(`[data-figure-slot="${slotKey}"]`);
-              if (!el) return null;
-              try {
-                return serializeElementToMarkup(el);
-              } catch {
-                return null;
-              }
-            });
+      const snapshot = getOrCaptureOdtSnapshot(
+        odtFeedback.state === "failed",
+        () => {
+          // New export click: capture a fresh snapshot
+          const exportedAt = new Date().toISOString();
+          const s = evidence
+            ? captureFromEvidence(_question, evidence, runId ?? null, exportedAt)
+            : captureFromGeneratedQuestion(
+                {
+                  index: typeof index === "number" ? index : 0,
+                  question: _question,
+                  phase,
+                  isFinal,
+                  stableId: _question.id ?? undefined,
+                  contentRevision: null,
+                },
+                runId ?? null,
+                exportedAt,
+              );
+          if (s) {
+            // Augment chart_spec_preview slots with DOM markup from the mounted card
+            if (cardRef.current) {
+              augmentWithDomMarkup(s.imageSources, (slotKey) => {
+                const el = cardRef.current?.querySelector(`[data-figure-slot="${slotKey}"]`);
+                if (!el) return null;
+                try {
+                  return serializeElementToMarkup(el);
+                } catch {
+                  return null;
+                }
+              });
+            }
           }
-        }
-      }
+          return s;
+        },
+      );
 
       if (!snapshot) throw new Error("Question is not available");
       const isDraftExport = snapshot.isDraft;

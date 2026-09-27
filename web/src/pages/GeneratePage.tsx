@@ -14,6 +14,7 @@ import ProgressLog from "../components/ProgressLog";
 import QuestionCard from "../components/QuestionCard";
 import { useFeedbackDialog } from "../hooks/useFeedbackDialog";
 import { useGenerate } from "../hooks/useGenerate";
+import { useRetryableSnapshot } from "../hooks/useRetryableSnapshot";
 import { useAuthStore } from "../store/authStore";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../components/LanguageSwitcher";
@@ -267,7 +268,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [resultsRestoreVerified, setResultsRestoreVerified] = useState(false);
   const restoredResultsKeyRef = useRef<string | null>(null);
   // Stored batch ODT snapshot for retry (#753): reuse the same captured snapshot on retry
-  const lastBatchOdtSnapshotsRef = useRef<[QuestionSnapshot[], boolean] | null>(null);
+  const { getOrCapture: getOrCaptureBatchOdtSnapshots } =
+    useRetryableSnapshot<[QuestionSnapshot[], boolean]>();
   const restoreReceivedResults = useCallback((): boolean => {
     if (!recoveryResults) {
       setResultsRestoreError(false);
@@ -420,47 +422,43 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
   const odtFeedback = useActionFeedback({
     action: async () => {
-      let snapshots: QuestionSnapshot[];
-      let hasDraft: boolean;
-
-      // Retry (#753): reuse the same captured snapshot so the ODT image is
-      // identical to what the user saw at click time, even if a new revision
-      // arrived between the first failure and the retry click.
-      if (odtFeedback.state === "failed" && lastBatchOdtSnapshotsRef.current) {
-        [snapshots, hasDraft] = lastBatchOdtSnapshotsRef.current;
-      } else {
-        // Fresh export click: capture a new snapshot at this instant.
-        const exportedAt = new Date().toISOString();
-        const evidenceByQuestionId = runEvidence?.questions ?? {};
-        [snapshots, hasDraft] = captureBatchSnapshots({
-          displayResults,
-          evidenceByQuestionId,
-          runId: runEvidence?.runId ?? null,
-          exportedAt,
-        });
-        // Try to augment chart_spec_preview slots with DOM markup from mounted
-        // cards (same-source capture). Requires [data-question-id] wrappers in
-        // the JSX below. Falls back to offscreen FigureRenderer rendering when
-        // the element is not found (e.g. during unit tests with mocked cards).
-        for (const snapshot of snapshots) {
-          const questionId = snapshot.captured.id;
-          if (questionId) {
-            // Use attribute-value match (no CSS.escape needed for data attribute selectors)
-            const cardEl = Array.from(
-              document.querySelectorAll("[data-question-id]"),
-            ).find((el) => el.getAttribute("data-question-id") === questionId) ?? null;
-            if (cardEl) {
-              augmentWithDomMarkup(snapshot.imageSources, (slotKey) => {
-                const el = cardEl.querySelector(`[data-figure-slot="${slotKey}"]`);
-                if (!el) return null;
-                try { return serializeElementToMarkup(el); } catch { return null; }
-              });
+      const batchCapture = getOrCaptureBatchOdtSnapshots(
+        odtFeedback.state === "failed",
+        () => {
+          // Fresh export click: capture a new snapshot at this instant.
+          const exportedAt = new Date().toISOString();
+          const evidenceByQuestionId = runEvidence?.questions ?? {};
+          const [ss, hd] = captureBatchSnapshots({
+            displayResults,
+            evidenceByQuestionId,
+            runId: runEvidence?.runId ?? null,
+            exportedAt,
+          });
+          // Try to augment chart_spec_preview slots with DOM markup from mounted
+          // cards (same-source capture). Requires [data-question-id] wrappers in
+          // the JSX below. Falls back to offscreen FigureRenderer rendering when
+          // the element is not found (e.g. during unit tests with mocked cards).
+          for (const snapshot of ss) {
+            const questionId = snapshot.captured.id;
+            if (questionId) {
+              // Use attribute-value match (no CSS.escape needed for data attribute selectors)
+              const cardEl = Array.from(
+                document.querySelectorAll("[data-question-id]"),
+              ).find((el) => el.getAttribute("data-question-id") === questionId) ?? null;
+              if (cardEl) {
+                augmentWithDomMarkup(snapshot.imageSources, (slotKey) => {
+                  const el = cardEl.querySelector(`[data-figure-slot="${slotKey}"]`);
+                  if (!el) return null;
+                  try { return serializeElementToMarkup(el); } catch { return null; }
+                });
+              }
             }
           }
-        }
-        // Store for potential retry (cleared on fresh click by state reset).
-        lastBatchOdtSnapshotsRef.current = [snapshots, hasDraft];
-      }
+          return [ss, hd] as [QuestionSnapshot[], boolean];
+        },
+      );
+      if (!batchCapture) throw new Error("No snapshots captured");
+      const [snapshots, hasDraft] = batchCapture;
 
       const filename = batchOdtFilename(hasDraft);
       const operation = useWorkspaceStore.getState().beginOperation("export_odt", "generate.results");

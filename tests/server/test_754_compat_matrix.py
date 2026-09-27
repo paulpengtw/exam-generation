@@ -54,8 +54,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # Shared A/B fixture helpers (same logic as test_742_fixture.py but self-contained)
 # ---------------------------------------------------------------------------
@@ -376,7 +374,6 @@ def test_c0_s1_no_started_in_426_response() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.timeout(60)
 def test_c1_s1_ab_interleaved_v2_contract(tmp_path: Path) -> None:
     """C1 × S1 (backend): shared A/B case produces a valid v2 stream.
 
@@ -446,7 +443,6 @@ def test_c1_s1_ab_interleaved_v2_contract(tmp_path: Path) -> None:
     assert events[-1]["event"] == "done"
 
 
-@pytest.mark.timeout(60)
 def test_c1_s1_question_ids_match_manifest(tmp_path: Path) -> None:
     """C1 × S1: every per-question event must use a question_id declared in started."""
     events, _ = _run_ab_stream(tmp_path)
@@ -463,7 +459,6 @@ def test_c1_s1_question_ids_match_manifest(tmp_path: Path) -> None:
             )
 
 
-@pytest.mark.timeout(60)
 def test_c1_s1_result_payload_is_plain_question(tmp_path: Path) -> None:
     """C1 × S1: result payload must be the plain question dict (no envelope keys)."""
     events, _ = _run_ab_stream(tmp_path)

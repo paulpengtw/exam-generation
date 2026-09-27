@@ -742,3 +742,74 @@ describe("conflict reason codes (Gap 2)", () => {
     expect(state.questions["q_001"].review.reason).toBe("review_contradiction");
   });
 });
+
+// ---------------------------------------------------------------------------
+// S2 (#749): sameTerminalOutcome canonical ordering
+// The server builds expected/delivered/missing arrays in slot_index order
+// (confirmed in server/generate/service.py _build_question_terminal_payload),
+// so an identical resend is byte-identical and must NOT be flagged as a conflict.
+// A genuinely different outcome must still be detected as terminal_contradiction.
+// ---------------------------------------------------------------------------
+
+describe("sameTerminalOutcome: server-guaranteed slot order (S2)", () => {
+  const slotA = {
+    kind: "subquestion" as const,
+    question_id: "q_001",
+    subquestion_id: "q_001-sq001",
+    subquestion_index: 0,
+  };
+  const slotB = {
+    kind: "subquestion" as const,
+    question_id: "q_001",
+    subquestion_id: "q_001-sq002",
+    subquestion_index: 1,
+  };
+
+  function terminalWith(
+    missing: typeof slotA[],
+    delivered: typeof slotA[],
+    expected: typeof slotA[],
+  ) {
+    return {
+      termination_reason: "normal" as const,
+      has_final: true,
+      final_revision: 1,
+      delivery_status: "partial" as const,
+      expected,
+      delivered,
+      missing,
+      review: { status: "passed", content_revision: 1 },
+    };
+  }
+
+  it("identical resend (same slot order) is NOT flagged as terminal_contradiction", () => {
+    let state = freshRun();
+    const first = terminalWith([slotA], [slotB], [slotA, slotB]);
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 2), first));
+    expect(state.questions["q_001"].processing).toBe("ended");
+    expect(state.questions["q_001"].terminalConflict).toBeFalsy();
+
+    // Resend byte-identical terminal
+    const resend = terminalWith([slotA], [slotB], [slotA, slotB]);
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 3), resend));
+    // Idempotent resend → no conflict, stays ended
+    expect(state.questions["q_001"].processing).toBe("ended");
+    expect(state.questions["q_001"].terminalConflict).toBeFalsy();
+  });
+
+  it("different missing set triggers terminal_contradiction", () => {
+    let state = freshRun();
+    const first = terminalWith([slotA], [slotB], [slotA, slotB]);
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 2), first));
+
+    // Second terminal with slotB missing instead of slotA
+    const different = terminalWith([slotB], [slotA], [slotA, slotB]);
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 3), different));
+    expect(state.questions["q_001"].processing).toBe("unknown");
+    expect(state.questions["q_001"].terminalConflictReason).toBe("terminal_contradiction");
+  });
+});
