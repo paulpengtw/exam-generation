@@ -52,6 +52,8 @@ function makeRunEvidence(overrides: Partial<RunEvidenceState> = {}): RunEvidence
     order: ["q_RUN_001", "q_RUN_002"],
     questions: { q_RUN_001: q1, q_RUN_002: q2 },
     closed: false,
+    degraded: false,
+    degradedReason: null,
     ...overrides,
   };
 }

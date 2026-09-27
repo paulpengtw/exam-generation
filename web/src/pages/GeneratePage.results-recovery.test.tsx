@@ -31,13 +31,13 @@ import GeneratePage from "./GeneratePage";
 const fetchEventSourceMock = vi.hoisted(() =>
   vi.fn<(input: RequestInfo, init: FetchEventSourceInit) => Promise<void>>(),
 );
-const buildExamOdtMock = vi.hoisted(() => vi.fn<(title: string, questions: ExamQuestion[]) => Promise<Blob>>());
+const buildOdtFromSnapshotsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@microsoft/fetch-event-source", () => ({
   fetchEventSource: fetchEventSourceMock,
 }));
 vi.mock("../utils/odt", () => ({
-  buildExamOdt: buildExamOdtMock,
+  buildOdtFromSnapshots: buildOdtFromSnapshotsMock,
   formatTimestamp: () => "recovery-test",
 }));
 
@@ -280,7 +280,7 @@ beforeEach(() => {
   resetWorkspaceStoreForTests();
   useAuthStore.setState({ token: "token", user: USER });
   setRelease("current");
-  buildExamOdtMock.mockReset().mockResolvedValue(new Blob(["odt"]));
+  buildOdtFromSnapshotsMock.mockReset().mockResolvedValue(new Blob(["odt"]));
   fetchEventSourceMock.mockReset().mockResolvedValue(undefined);
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:recovery-test");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
@@ -316,13 +316,18 @@ describe("GeneratePage restored results acceptance boundaries", () => {
 
     const odtButton = screen.getByRole("button", { name: /Download all as ODT|下載全部 ODT/i });
     fireEvent.click(odtButton);
-    await waitFor(() => expect(buildExamOdtMock).toHaveBeenCalledOnce());
-    expect(buildExamOdtMock).toHaveBeenCalledWith("exam_recovery-test", [
-      expect.objectContaining({
-        題目: ["restored final question"],
-        image_base64: PNG_BYTES,
-      }),
-    ]);
+    await waitFor(() => expect(buildOdtFromSnapshotsMock).toHaveBeenCalledOnce());
+    expect(buildOdtFromSnapshotsMock).toHaveBeenCalledWith(
+      expect.stringContaining("recovery-test"),
+      expect.arrayContaining([
+        expect.objectContaining({
+          exported: expect.objectContaining({
+            題目: ["restored final question"],
+            image_base64: PNG_BYTES,
+          }),
+        }),
+      ]),
+    );
 
     const pngButtons = screen.getAllByRole("button", { name: /Download PNG|下載 PNG/i });
     expect(pngButtons).toHaveLength(2);
@@ -402,13 +407,15 @@ describe("GeneratePage restored results acceptance boundaries", () => {
     const pointerBeforeExports = loadTabPointer();
     fireEvent.click(screen.getByRole("button", { name: /Download all as JSON|下載全部 JSON/i }));
     fireEvent.click(screen.getByRole("button", { name: /Download all as ODT|下載全部 ODT/i }));
-    await waitFor(() => expect(buildExamOdtMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(buildOdtFromSnapshotsMock).toHaveBeenCalledOnce());
     await waitFor(() => expect(downloaded).toHaveLength(2));
     expect(await downloaded[0].text()).toContain("restored final question");
     expect(await downloaded[0].text()).toContain(PNG_BYTES);
-    expect(buildExamOdtMock).toHaveBeenCalledWith(
-      "exam_recovery-test",
-      [expect.objectContaining({ image_base64: PNG_BYTES })],
+    expect(buildOdtFromSnapshotsMock).toHaveBeenCalledWith(
+      expect.stringContaining("recovery-test"),
+      expect.arrayContaining([expect.objectContaining({
+        exported: expect.objectContaining({ image_base64: PNG_BYTES }),
+      })]),
     );
     expect(loadTabPointer()).toEqual(pointerBeforeExports);
     expect(loadSnapshot(USER.id, "previous-copy")).toEqual(stored);

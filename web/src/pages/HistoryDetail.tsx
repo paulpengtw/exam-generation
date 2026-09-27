@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from "react";
+import { useRetryableSnapshot } from "../hooks/useRetryableSnapshot";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
@@ -20,6 +21,9 @@ import {
   getHistoryDetail,
   type HistoryDetail as HistoryDetailPayload,
 } from "../api/client";
+import { captureFromHistory, captureFromHistorySnapshot, augmentWithDomMarkup, singleQuestionOdtFilename, type QuestionSnapshot } from "../utils/exportSnapshot";
+import { buildOdtFromSnapshots } from "../utils/odt";
+import { serializeElementToMarkup } from "../utils/domCapture";
 import { useAuthStore } from "../store/authStore";
 import {
   initRecoveryStore,
@@ -90,6 +94,9 @@ function HistoryDetailContent({
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [recoveryDismissed, setRecoveryDismissed] = useState(false);
   const discardRecovery = useRecoveryStore((state) => state.discardRecovery);
+  // Stored ODT snapshot for retry (#753): reuse the same captured snapshot on retry
+  const { getOrCapture: getOrCaptureHistoryOdtSnapshot } =
+    useRetryableSnapshot<QuestionSnapshot>();
 
   useSurfaceParticipation("history.detail", {
     readiness: detail !== null || error !== null ||
@@ -177,11 +184,62 @@ function HistoryDetailContent({
     action: async (signal) => {
       if (!detail || !canDownload) throw new Error("History record is not available");
       const filename = `${detail.question_id || detail.id}.json`;
+      // Use snapshot when question_json is available so the downloaded copy
+      // gets _export metadata (issue #751). Fall back to the server endpoint
+      // for records where question_json is absent (rare legacy edge case).
+      if (detail.question_json) {
+        const exportedAt = new Date().toISOString();
+        const exported = captureFromHistory(detail, exportedAt);
+        if (exported) {
+          const json = JSON.stringify(exported, null, 2);
+          saveBlob(new Blob([json], { type: "application/json" }), filename);
+          return filename;
+        }
+      }
       const blob = await downloadHistoryJson(detail.id, signal);
       saveBlob(blob, filename);
       return filename;
     },
     genericError: t("history.download_json_error"),
+    getFilename: (filename) => filename,
+  });
+
+  const odtFeedback = useActionFeedback({
+    action: async () => {
+      if (!detail || !canDownload) throw new Error("History record is not available");
+      if (!detail.question_json) throw new Error("ODT unavailable: no question_json");
+
+      // Retry (#753): reuse the same captured snapshot so the ODT image is
+      // identical to what the user saw at click time, even if the record changed.
+      const snapshot = getOrCaptureHistoryOdtSnapshot(
+        odtFeedback.state === "failed",
+        () => {
+          // Fresh export click: capture a new snapshot at this instant.
+          const exportedAt = new Date().toISOString();
+          const captured = captureFromHistorySnapshot(detail, exportedAt);
+          if (!captured) return null;
+          // Try to augment chart_spec_preview slots with DOM markup from the mounted QuestionCard.
+          // The card's [data-figure-slot] elements are searched relative to the card root.
+          const cardEl = document.querySelector("[data-testid='question-card-content']");
+          if (cardEl) {
+            augmentWithDomMarkup(captured.imageSources, (slotKey) => {
+              const el = cardEl.querySelector(`[data-figure-slot="${slotKey}"]`);
+              if (!el) return null;
+              try { return serializeElementToMarkup(el); } catch { return null; }
+            });
+          }
+          return captured;
+        },
+      );
+      if (!snapshot) throw new Error("ODT unavailable: snapshot capture failed");
+
+      const questionId = detail.question_id || detail.id;
+      const filename = singleQuestionOdtFilename(questionId, false);
+      const blob = await buildOdtFromSnapshots(questionId, [snapshot]);
+      saveBlob(blob, filename);
+      return filename;
+    },
+    genericError: t("history.download_odt_error"),
     getFilename: (filename) => filename,
   });
 
@@ -212,14 +270,26 @@ function HistoryDetailContent({
           </div>
           <div className="flex items-center gap-2">
             {showDownload && (
-              <ActionButton
-                feedback={downloadFeedback}
-                label={t("history.btn_download_json")}
-                pendingLabel={t("action.downloading")}
-                doneLabel={t("action.downloaded")}
-                disabled={!detail}
-                className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              />
+              <>
+                <ActionButton
+                  feedback={downloadFeedback}
+                  label={t("history.btn_download_json")}
+                  pendingLabel={t("action.downloading")}
+                  doneLabel={t("action.downloaded")}
+                  disabled={!detail}
+                  className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                />
+                {detail?.question_json && (
+                  <ActionButton
+                    feedback={odtFeedback}
+                    label={t("history.btn_download_odt")}
+                    pendingLabel={t("action.downloading")}
+                    doneLabel={t("action.downloaded")}
+                    disabled={!detail}
+                    className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  />
+                )}
+              </>
             )}
             <button
               type="button"
@@ -238,6 +308,11 @@ function HistoryDetailContent({
           reason={downloadFeedback.reason}
           onRetry={downloadFeedback.retry}
           onDismiss={downloadFeedback.dismiss}
+        />
+        <InlineFailureNotice
+          reason={odtFeedback.reason}
+          onRetry={odtFeedback.retry}
+          onDismiss={odtFeedback.dismiss}
         />
         {showRecovery && (
           <section

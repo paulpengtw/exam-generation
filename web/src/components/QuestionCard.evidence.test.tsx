@@ -197,7 +197,7 @@ describe("QuestionCard — with content (evidence has question)", () => {
       processing: "unknown",
       content: { receipt: "final", revision: 1, question: sampleQuestion, phase: "verified" },
       terminalConflict: true,
-      terminalConflictReason: "contradictory terminal evidence",
+      terminalConflictReason: "terminal_contradiction",
       review: { status: "unknown", revision: 1 },
     });
     render(<QuestionCard evidence={ev} question={sampleQuestion} index={0} />);
@@ -217,12 +217,105 @@ describe("QuestionCard — with content (evidence has question)", () => {
         review: { status: "passed", content_revision: 1 },
       },
       reviewConflict: true,
-      review: { status: "unknown", revision: 1, reason: "contradictory review evidence" },
+      review: { status: "unknown", revision: 1, reason: "review_contradiction" },
     });
     render(<QuestionCard evidence={ev} question={sampleQuestion} index={0} />);
 
     expect(screen.getByTestId("evidence-processing-status")).toHaveTextContent(/已結束|ended/i);
     expect(screen.getByTestId("evidence-review-conflict")).toBeInTheDocument();
     expect(screen.getByTestId("evidence-review-status")).toHaveTextContent(/審題未知|unknown/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 2: specific conflict reason codes rendered on card (#749)
+// ---------------------------------------------------------------------------
+
+describe("QuestionCard — specific conflict reason codes (Gap 2)", () => {
+  it("shows localized reason for content conflict with same_revision_different_content code", () => {
+    const ev = makeEvidence({
+      content: { receipt: "draft", revision: 1, question: sampleQuestion, phase: null },
+      contentConflict: true,
+      contentConflictReason: "same_revision_different_content",
+    });
+    render(<QuestionCard evidence={ev} question={sampleQuestion} index={0} />);
+
+    const conflictEl = screen.getByTestId("evidence-content-conflict");
+    expect(conflictEl).toBeInTheDocument();
+    // Reason sub-element is present and shows localized text
+    const reasonEl = screen.getByTestId("evidence-content-conflict-reason");
+    expect(reasonEl).toBeInTheDocument();
+    expect(reasonEl).toHaveTextContent(/same revision|Same revision/i);
+  });
+
+  it("shows localized reason for content conflict with identity_mismatch code", () => {
+    const ev = makeEvidence({
+      content: { receipt: "none", revision: null, question: null, phase: null },
+      contentConflict: true,
+      contentConflictReason: "identity_mismatch",
+    });
+    render(<QuestionCard evidence={ev} index={0} />);
+
+    const reasonEl = screen.getByTestId("evidence-content-conflict-reason");
+    expect(reasonEl).toHaveTextContent(/identity|mismatch/i);
+  });
+
+  it("shows localized reason for terminal conflict with terminal_contradiction code", () => {
+    const ev = makeEvidence({
+      processing: "unknown",
+      content: { receipt: "final", revision: 1, question: sampleQuestion, phase: "verified" },
+      terminalConflict: true,
+      terminalConflictReason: "terminal_contradiction",
+      review: { status: "unknown", revision: 1 },
+    });
+    render(<QuestionCard evidence={ev} question={sampleQuestion} index={0} />);
+
+    const conflictEl = screen.getByTestId("evidence-terminal-conflict");
+    expect(conflictEl).toHaveAttribute("role", "status");
+    const reasonEl = screen.getByTestId("evidence-terminal-conflict-reason");
+    expect(reasonEl).toHaveTextContent(/contradictory terminal|Contradictory/i);
+  });
+
+  it("shows localized reason for terminal_invalid code", () => {
+    const ev = makeEvidence({
+      processing: "unknown",
+      terminalConflict: true,
+      terminalConflictReason: "terminal_invalid",
+      review: { status: "unknown", revision: null, reason: "terminal_invalid" },
+    });
+    render(<QuestionCard evidence={ev} index={0} />);
+
+    const reasonEl = screen.getByTestId("evidence-terminal-conflict-reason");
+    expect(reasonEl).toHaveTextContent(/invalid terminal|Invalid/i);
+  });
+
+  it("shows localized reason for review_contradiction on review conflict", () => {
+    const ev = makeEvidence({
+      processing: "ended",
+      content: { receipt: "final", revision: 1, question: sampleQuestion, phase: "verified" },
+      terminal: {
+        termination_reason: "normal", has_final: true, final_revision: 1,
+        delivery_status: "complete", expected: [], delivered: [], missing: [],
+        review: { status: "passed", content_revision: 1 },
+      },
+      reviewConflict: true,
+      review: { status: "unknown", revision: 1, reason: "review_contradiction" },
+    });
+    render(<QuestionCard evidence={ev} question={sampleQuestion} index={0} />);
+
+    const conflictEl = screen.getByTestId("evidence-review-conflict");
+    expect(conflictEl).toHaveAttribute("role", "status");
+    const reasonEl = screen.getByTestId("evidence-review-conflict-reason");
+    expect(reasonEl).toHaveTextContent(/contradictory review|Contradictory/i);
+  });
+
+  it("conflict elements have role=status for accessibility", () => {
+    const ev = makeEvidence({
+      contentConflict: true,
+      contentConflictReason: "seq_data",
+    });
+    render(<QuestionCard evidence={ev} index={0} />);
+    const el = screen.getByTestId("evidence-content-conflict");
+    expect(el).toHaveAttribute("role", "status");
   });
 });

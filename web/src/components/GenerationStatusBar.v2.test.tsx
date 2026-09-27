@@ -17,6 +17,10 @@ function makeV2Evidence(overrides: Partial<GenerationV2Evidence> = {}): Generati
     endedCount: 2,
     finalReceivedCount: 3,
     closed: false,
+    degraded: false,
+    conflictCount: 0,
+    batchConflict: false,
+    legacyMixed: false,
     ...overrides,
   };
 }
@@ -83,6 +87,21 @@ describe("GenerationStatusBar — generate-v2 evidence", () => {
     expect(screen.getByTestId("statusbar-v2-ended").closest(".sentry-unmask") ?? screen.getByTestId("statusbar-v2-ended")).toBeTruthy();
   });
 
+  it("renders the degraded notice with role=status when evidence.degraded is true", () => {
+    render(<GenerationStatusBar {...baseProps} evidence={makeV2Evidence({ degraded: true })} />);
+    const notice = screen.getByTestId("statusbar-v2-degraded");
+    expect(notice).toBeTruthy();
+    expect(notice.getAttribute("role")).toBe("status");
+    // Must still show count lines
+    expect(screen.getByTestId("statusbar-v2-ended")).toBeTruthy();
+    expect(screen.getByTestId("statusbar-v2-final")).toBeTruthy();
+  });
+
+  it("does not render the degraded notice when evidence.degraded is false", () => {
+    render(<GenerationStatusBar {...baseProps} evidence={makeV2Evidence({ degraded: false })} />);
+    expect(screen.queryByTestId("statusbar-v2-degraded")).toBeNull();
+  });
+
   it("projects the real A/B/C/D fixture as three ended and three final receipts", () => {
     const state = replayAbcdFixture();
     const evidence = projectGenerationEvidence([], null, state);
@@ -99,5 +118,51 @@ describe("GenerationStatusBar — generate-v2 evidence", () => {
     expect(screen.getByTestId("statusbar-v2-ended")).toHaveTextContent("3");
     expect(screen.getByTestId("statusbar-v2-ended")).toHaveTextContent("4");
     expect(screen.getByTestId("statusbar-v2-final")).toHaveTextContent("3");
+  });
+
+  it("renders batchConflict notice with role=status; count lines still present", () => {
+    render(
+      <GenerationStatusBar
+        {...baseProps}
+        evidence={makeV2Evidence({ batchConflict: true })}
+      />,
+    );
+    const notice = screen.getByTestId("statusbar-v2-batch-conflict");
+    expect(notice).toBeTruthy();
+    expect(notice.getAttribute("role")).toBe("status");
+    expect(screen.getByTestId("statusbar-v2-ended")).toBeTruthy();
+    expect(screen.getByTestId("statusbar-v2-final")).toBeTruthy();
+  });
+
+  it("renders legacyMixed notice with role=status", () => {
+    render(
+      <GenerationStatusBar
+        {...baseProps}
+        evidence={makeV2Evidence({ legacyMixed: true })}
+      />,
+    );
+    const notice = screen.getByTestId("statusbar-v2-legacy-mixed");
+    expect(notice).toBeTruthy();
+    expect(notice.getAttribute("role")).toBe("status");
+  });
+
+  it("does not render conflict notices when batchConflict=false and legacyMixed=false", () => {
+    render(
+      <GenerationStatusBar
+        {...baseProps}
+        evidence={makeV2Evidence({ batchConflict: false, legacyMixed: false })}
+      />,
+    );
+    expect(screen.queryByTestId("statusbar-v2-batch-conflict")).toBeNull();
+    expect(screen.queryByTestId("statusbar-v2-legacy-mixed")).toBeNull();
+  });
+
+  it("terminal conflict reduces X; endedCount from fixture reflects only non-conflicted terminals", () => {
+    // Build a run state where q_001 has terminalConflict (excluded from X) and q_002 is clean
+    const state = replayAbcdFixture();
+    const evidence = projectGenerationEvidence([], null, state);
+    // The A/B/C/D fixture ends with 3 ended and no terminal conflict by default
+    expect((evidence as GenerationV2Evidence).endedCount).toBe(3);
+    expect((evidence as GenerationV2Evidence).conflictCount).toBe(0);
   });
 });

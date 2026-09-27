@@ -32,25 +32,25 @@
 - [ ] 5.1 抽出 `web/src/lib/generationStream.ts` 的 awaiting-start／v2／legacy／unsupported decoder，讓 useGenerate 請求帶 v2 並隔離連線世代；以完整／缺失／重複 manifest、426、未知版本及舊 callback 測試驗證只有有效 started 可建立卡位，未知版本停止接收且無 resubmit。
 - [ ] 5.2 建立按 run/question/revision 收納的內容、final receipt、terminal 與 review 狀態，分別衍生 processing／termination／delivery／review；測試 B 先 final、舊 revision 晚到、terminal 先到／缺 final、final 缺 terminal，確認無跨卡覆蓋或錯版審題。
 - [ ] 5.3 以 operation 集合與 call/channel 紀錄衍生活動和文字，不把 snapshot phase 當活動證據；用並行子題／圖片、同 purpose 不同 call、superseded end 遲到與空 active set 測試驗證工作不誤結束、文字不混接。
-- [ ] 5.4 實作 seq fingerprint 去重及從首個 gap 起算的有界 buffer；用 fake clock 分別命中 2 秒、256 筆、4 MiB，並測試界內補齊、重送不膨脹、按序大正文、未知種類占序號與 EOF 缺口，驗證活動只依可靠證據推進。
-- [ ] 5.5 實作永久活動降級後的獨立正文／terminal 驗證與衝突隔離；測試較小未見 seq、同 seq 不同資料、同版不同內容、矛盾 terminal／review、mixed raw event，驗證保留正文、明示原因、只降級受影響結論且不自動恢復完整活動。
-- [ ] 5.6 建立 legacy adapter，按連線與 opaque id 收納，只接受一致的明確 index 對照；用 A 有 index 草稿、B 無 index final、重複 final 與後到 mapping 測試驗證原題序未知標示、無憑空 manifest、無 v2 終止推論及無自動重送。
+- [x] 5.4 實作 seq fingerprint 去重及從首個 gap 起算的有界 buffer；用 fake clock 分別命中 2 秒、256 筆、4 MiB，並測試界內補齊、重送不膨脹、按序大正文、未知種類占序號與 EOF 缺口，驗證活動只依可靠證據推進。
+- [x] 5.5 實作永久活動降級後的獨立正文／terminal 驗證與衝突隔離；測試較小未見 seq、同 seq 不同資料、同版不同內容、矛盾 terminal／review、mixed raw event，驗證保留正文、明示原因、只降級受影響結論且不自動恢復完整活動。
+- [x] 5.6 建立 legacy adapter，按連線與 opaque id 收納，只接受一致的明確 index 對照；用 A 有 index 草稿、B 無 index final、重複 final 與後到 mapping 測試驗證原題序未知標示、無憑空 manifest、無 v2 終止推論及無自動重送。
 
 ## 6. 教師介面與共用元件
 
 - [ ] 6.1 將 GeneratePage、ProgressLog、QuestionCard 接到同一 normalized selectors，顯示固定卡位與獨立結論／缺項／待收 final；以 A complete、B partial、C failed draft、D final 無 terminal 的元件整合測試驗證「已結束 3/4 題」及「收到最終結果 3 題」，重送不重算，terminal 爭議才減 X。
 - [ ] 6.2 以實際 operation 集合呈現生成步驟合計與按需展開，加入 legacy／資訊不完整／原題序未知提示；用多工作並行及百題 fixtures 驗證不強制展開所有 lanes、不顯示未發生步驟，斷線停止無證據動畫且保留內容。
-- [ ] 6.3 將 generate-v2、generate-legacy、modification profile 在共用 statusbar／card 分開，保留修改資格、圈選 field paths、指示與結果／錯誤歸屬；更新既有 hook/card/statusbar 測試驗證修改流程不需 generation manifest，並核對 ai-working-surfaces 前後整合的規則對照。
-- [ ] 6.4 為新增狀態及下載文字提供既有語系、可及性與 masking 處理，沿用 reduced-motion、navigation／clear／resubmit guards；以鍵盤操作、減少動態模式、語系切換及遮罩檢查紀錄驗證狀態可讀且題目內容不意外進入遙測。
+- [x] 6.3 將 generate-v2、generate-legacy、modification profile 在共用 statusbar／card 分開，保留修改資格、圈選 field paths、指示與結果／錯誤歸屬；更新既有 hook/card/statusbar 測試驗證修改流程不需 generation manifest，並核對 ai-working-surfaces 前後整合的規則對照。
+- [x] 6.4 為新增狀態及下載文字提供既有語系、可及性與 masking 處理，沿用 reduced-motion、navigation／clear／resubmit guards；以鍵盤操作、減少動態模式、語系切換及遮罩檢查紀錄驗證狀態可讀且題目內容不意外進入遙測。
 
 ## 7. JSON 與 ODT 快照匯出
 
-- [ ] 7.1 建立 `web/src/utils/exportSnapshot.ts`，同一次點擊原子擷取內容、狀態、revision、時間及可見圖像來源，供單題／整批／既有可下載歷史使用；以匯出期間收到新版測試驗證快照固定、bodyless placeholder 排除、原題序與 legacy 未知順序標記保留。
-- [ ] 7.2 在 JSON 下載副本附加固定 `_export` 欄位，統一草稿／含草稿檔名；用單題、混合批次與 legacy history 測試驗證物件／陣列形狀、原 id、共同 UTC timestamp、null/unknown 及去除 `_export` 後等於捕捉的原題目，live／stored data 未修改。
-- [ ] 7.3 讓 ODT 消費同一 snapshot，保留每題草稿標示、處理／完整性／審題區別、原小題序號與缺項；讀回 ZIP XML 驗證只有文本的題組、跳號小題和無 terminal 的 final 均保持正確結構與狀態。
-- [ ] 7.4 從 FigureRenderer 同源輸出凍結 SVG／HTML 預覽及其樣式／資產，實作 export-only rasterization；用真實瀏覽器測試 table、geometry、scenario 的無 PNG 預覽，驗證 ODT 對應位置含捕捉圖像、期間換圖不混版且無 LLM／image-provider 呼叫。
-- [ ] 7.5 將逐圖 conversion failure 與整份 ZIP failure 分開，保留同 snapshot 重試及 JSON 下載；注入單圖失敗和 ZIP 失敗，驗證前者正確位置顯示「匯出缺圖／預覽轉換失敗」、後者不提供壞檔、兩者都不改生成完整性且不重跑生成。
-- [ ] 7.6 開啟已收到 draft 的單題及整批 JSON／ODT actions，既有實際 PNG 使用正確草稿檔名；更新 QuestionCard／GeneratePage 的下載測試，驗證 legacy draft 也可下載、preview 不偽裝成已生成 PNG、下載不擴大人工審題修正資格。
+- [x] 7.1 建立 `web/src/utils/exportSnapshot.ts`，同一次點擊原子擷取內容、狀態、revision、時間及可見圖像來源，供單題／整批／既有可下載歷史使用；以匯出期間收到新版測試驗證快照固定、bodyless placeholder 排除、原題序與 legacy 未知順序標記保留。
+- [x] 7.2 在 JSON 下載副本附加固定 `_export` 欄位，統一草稿／含草稿檔名；用單題、混合批次與 legacy history 測試驗證物件／陣列形狀、原 id、共同 UTC timestamp、null/unknown 及去除 `_export` 後等於捕捉的原題目，live／stored data 未修改。
+- [x] 7.3 讓 ODT 消費同一 snapshot，保留每題草稿標示、處理／完整性／審題區別、原小題序號與缺項；讀回 ZIP XML 驗證只有文本的題組、跳號小題和無 terminal 的 final 均保持正確結構與狀態。
+- [x] 7.4 從 FigureRenderer 同源輸出凍結 SVG／HTML 預覽及其樣式／資產，實作 export-only rasterization；用真實瀏覽器測試 table、geometry、scenario 的無 PNG 預覽，驗證 ODT 對應位置含捕捉圖像、期間換圖不混版且無 LLM／image-provider 呼叫。
+- [x] 7.5 將逐圖 conversion failure 與整份 ZIP failure 分開，保留同 snapshot 重試及 JSON 下載；注入單圖失敗和 ZIP 失敗，驗證前者正確位置顯示「匯出缺圖／預覽轉換失敗」、後者不提供壞檔、兩者都不改生成完整性且不重跑生成。
+- [x] 7.6 開啟已收到 draft 的單題及整批 JSON／ODT actions，既有實際 PNG 使用正確草稿檔名；更新 QuestionCard／GeneratePage 的下載測試，驗證 legacy draft 也可下載、preview 不偽裝成已生成 PNG、下載不擴大人工審題修正資格。
 
 ## 8. 發布受理與排空控制
 
@@ -62,13 +62,13 @@
 
 ## 9. 條件式 ADR 與操作文件
 
-- [ ] 9.1 交付新的條件式取代 ADR，於 ADR 0009 保留 legacy／不可歸屬限制並加入連結，保留 ADR 0016 的題目與完整歷程分離；以文件對照確認只有契約與發布驗收通過才適用例外，OpenSpec sync 本身不等於生效。
-- [ ] 9.2 更新事件契約文件、FLOW／相關執行說明及 DEPLOYMENT runbook，記錄四組相容矩陣、HTTP 426、buffer 界線、snapshot／terminal schema、`_export` 額外欄位相容說明、全入口 inventory 與 pause/drain/rollback 指令；用本 change 的 requirements 清單逐項核對並驗證範例可由契約型別解析。
-- [ ] 9.3 在 CONTEXT.md 實際補入草稿、處理狀態、終止原因、交付完整性、審題結果等已決議教師術語，技術欄位留在協定文件；核對既有詞彙及 #731／#732／#733 的決議，交付可見詞條而非沿用「先前已改」的假設。
+- [x] 9.1 交付新的條件式取代 ADR，於 ADR 0009 保留 legacy／不可歸屬限制並加入連結，保留 ADR 0016 的題目與完整歷程分離；以文件對照確認只有契約與發布驗收通過才適用例外，OpenSpec sync 本身不等於生效。
+- [x] 9.2 更新事件契約文件、FLOW／相關執行說明及 DEPLOYMENT runbook，記錄四組相容矩陣、HTTP 426、buffer 界線、snapshot／terminal schema、`_export` 額外欄位相容說明、全入口 inventory 與 pause/drain/rollback 指令；用本 change 的 requirements 清單逐項核對並驗證範例可由契約型別解析。
+- [x] 9.3 在 CONTEXT.md 實際補入草稿、處理狀態、終止原因、交付完整性、審題結果等已決議教師術語，技術欄位留在協定文件；核對既有詞彙及 #731／#732／#733 的決議，交付可見詞條而非沿用「先前已改」的假設。
 
 ## 10. 跨層驗收與交接
 
-- [ ] 10.1 從真實 server publisher 搭配 fake subject/provider 輸出可重現 fixtures，供前端與匯出測試直接重用；以數學單一題／題組、社會、自然、retry／partial／文本 only 執行驗證 envelope、卡位、revision、terminal、缺項與下載一致，無付費模型依賴。
-- [ ] 10.2 用同一 A/B 交錯案例完成 C0/S0、C0/S1、C1/S0、C1/S1 相容驗收，另以測試 transport 注入重送、缺口、衝突及 terminal/final 反向到達；保存斷言與 UI 證據，明列 C0/S0 原有缺陷、C0/S1 零派工及 C1 的可信內容保留。
+- [x] 10.1 從真實 server publisher 搭配 fake subject/provider 輸出可重現 fixtures，供前端與匯出測試直接重用；以數學單一題／題組、社會、自然、retry／partial／文本 only 執行驗證 envelope、卡位、revision、terminal、缺項與下載一致，無付費模型依賴。
+- [x] 10.2 用同一 A/B 交錯案例完成 C0/S0、C0/S1、C1/S0、C1/S1 相容驗收，另以測試 transport 注入重送、缺口、衝突及 terminal/final 反向到達；保存斷言與 UI 證據，明列 C0/S0 原有缺陷、C0/S1 零派工及 C1 的可信內容保留。
 - [ ] 10.3 執行變更涵蓋的 backend tests、全量預抽 guards、web tests、lint 與 build，遵守最多 2–3 個記憶體較重測試 lane 及可用時的 `choom -n 500 --`；交付命令與結果紀錄，失敗或跳過的必要驗收有明確處理，不以單一 build 取代跨層驗證。
 - [ ] 10.4 完成教師可見狀態／草稿 ODT／預覽圖片的瀏覽器驗收，以及兩後端 pause→drain→switch→verify→reopen 和兩種 rollback 演練；由實作者整理證據、技術 reviewer 核對門檻、教師確認狀態含義、發布操作者記錄入口與版本／排空證據，形成可審閱的發布交接包。

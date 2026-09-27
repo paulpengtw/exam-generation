@@ -1,0 +1,10 @@
+{"event": "started", "data": "{\"generation_log_id\": null}"}
+{"event": "stage", "data": "{\"type\": \"stage\", \"agent\": \"planner\", \"stage\": \"batch_briefs\", \"status\": \"start\", \"ts\": 1000.0}"}
+{"event": "stage", "data": "{\"type\": \"stage\", \"agent\": \"planner\", \"stage\": \"batch_briefs\", \"status\": \"end\", \"ts\": 1001.0}"}
+{"event": "stage", "data": "{\"type\": \"stage\", \"agent\": \"generator\", \"stage\": \"llm_generate\", \"status\": \"start\", \"ts\": 1002.0}"}
+{"event": "question_update", "data": "{\"index\": 0, \"phase\": \"draft\", \"question\": {\"情境\": [\"個人\"], \"題型種類\": \"單一題\", \"題型\": \"選擇題\", \"數學思考\": [\"形成\"], \"學習內容\": [{\"編碼\": \"A-7-7\", \"說明\": \"test lc\"}], \"題目\": [\"Legacy Q1 draft\"], \"正確解題分析\": [\"answer\"], \"id\": \"legacy_001\"}}"}
+{"event": "stage", "data": "{\"type\": \"stage\", \"agent\": \"generator\", \"stage\": \"llm_generate\", \"status\": \"start\", \"ts\": 1003.0}"}
+{"event": "question_update", "data": "{\"index\": 1, \"phase\": \"draft\", \"question\": {\"情境\": [\"社會時事\"], \"題型種類\": \"單一題\", \"題型\": \"選擇題\", \"數學思考\": [\"運用\"], \"學習內容\": [{\"編碼\": \"N-8-2\", \"說明\": \"test lc2\"}], \"題目\": [\"Legacy Q2 draft\"], \"正確解題分析\": [\"answer2\"], \"id\": \"legacy_002\"}}"}
+{"event": "result", "data": "{\"情境\": [\"個人\"], \"題型種類\": \"單一題\", \"題型\": \"選擇題\", \"數學思考\": [\"形成\"], \"學習內容\": [{\"編碼\": \"A-7-7\", \"說明\": \"test lc\"}], \"題目\": [\"Legacy Q1 final\"], \"正確解題分析\": [\"answer\"], \"id\": \"legacy_001\"}"}
+{"event": "result", "data": "{\"情境\": [\"社會時事\"], \"題型種類\": \"單一題\", \"題型\": \"選擇題\", \"數學思考\": [\"運用\"], \"學習內容\": [{\"編碼\": \"N-8-2\", \"說明\": \"test lc2\"}], \"題目\": [\"Legacy Q2 final\"], \"正確解題分析\": [\"answer2\"], \"id\": \"legacy_002\"}"}
+{"event": "done", "data": ""}

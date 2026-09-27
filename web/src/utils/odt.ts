@@ -1,6 +1,55 @@
 import JSZip from "jszip";
 
 import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
+import type { QuestionSnapshot, CapturedImageSources } from "./exportSnapshot";
+import { slotRefSeqno } from "./exportSnapshot";
+import type { Rasterizer } from "./rasterizer";
+import { defaultRasterizer } from "./rasterizer";
+import type { Lang } from "../i18n/messages";
+import { MESSAGES } from "../i18n/messages";
+
+// ---------------------------------------------------------------------------
+// ODT marker/label strings — sourced from the i18n layer (T1 / issue #752).
+// All user-visible ODT marker text must live here, not as bare string literals
+// in the builder functions.  Callers may pass a `labels` option to
+// `buildOdtFromSnapshots`; the default is zh-TW to match historical output.
+// ---------------------------------------------------------------------------
+
+export interface OdtLabels {
+  /** 【草稿】此題尚未完成最終審核 */
+  draftNotice: string;
+  /** 【匯出缺圖／預覽轉換失敗】 */
+  previewConversionFailed: string;
+  /** 【缺圖：此位置應有圖片，但尚未生成或已遺失】 */
+  knownMissingImageStem: string;
+  /** 【缺小題 N：此小題已知缺失】 — {n} is replaced with the 序號 number */
+  knownMissingSubquestion: (seqNo: number) => string;
+  /** 【缺圖：第N題圖片已知缺失】 — {n} is replaced with the 序號 number */
+  knownMissingSubqImage: (seqNo: number) => string;
+  /** 【已知缺圖：此題應有圖片，但尚未生成或已遺失】 */
+  knownMissingImageFlat: string;
+}
+
+/**
+ * Build an OdtLabels object from the i18n message catalogue for a given lang.
+ * Defaults to zh-TW so historical ODT output is unchanged when callers omit
+ * the labels option.
+ */
+export function defaultOdtLabels(lang: Lang = "zh-TW"): OdtLabels {
+  const m = MESSAGES[lang];
+  const t = (key: string, n?: number): string => {
+    const raw = m[key] ?? MESSAGES["zh-TW"][key] ?? key;
+    return n !== undefined ? raw.replace("{n}", String(n)) : raw;
+  };
+  return {
+    draftNotice: t("odt.draft_notice"),
+    previewConversionFailed: t("odt.preview_conversion_failed"),
+    knownMissingImageStem: t("odt.known_missing_image_stem"),
+    knownMissingSubquestion: (seqNo) => t("odt.known_missing_subquestion", seqNo),
+    knownMissingSubqImage: (seqNo) => t("odt.known_missing_subq_image", seqNo),
+    knownMissingImageFlat: t("odt.known_missing_image_flat"),
+  };
+}
 
 export function formatTimestamp(): string {
   const now = new Date();
@@ -93,13 +142,34 @@ function buildImageParagraph(name: string, imageRef: string, zIndex: number): st
   );
 }
 
+/**
+ * Returns true when the question should be rendered as a 題組 (group question) in the ODT.
+ *
+ * A question is a 題組 when any of the following hold:
+ * - `題型種類 === "題組題"` (math 題組, social studies, and natural sciences all use this type)
+ * - It carries subquestion objects (received 小題)
+ * - Its snapshot export metadata lists known-missing subquestion slots
+ *
+ * This is a shared content-structure helper; it does NOT determine which metadata chips to show.
+ */
+function isGroupQuestion(
+  question: Pick<ExamQuestion, "題型種類" | "subquestions">,
+  missingSlots: Array<{ kind: string }> = [],
+): boolean {
+  return (
+    question.題型種類 === "題組題" ||
+    (question.subquestions?.length ?? 0) > 0 ||
+    missingSlots.some((s) => s.kind === "subquestion")
+  );
+}
+
 function buildMetadataItems(question: ExamQuestion): string[] {
-  const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+  const hasSubquestions = (question.subquestions?.length ?? 0) > 0;
   const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
   const eraMetadata = isIccsEra
     ? [question.內容領域, ...(question.認知歷程 ?? [])]
     : [...(question.閱讀歷程 ?? []), question.文本形式];
-  if (isSocialStudies) {
+  if (hasSubquestions) {
     const subs = question.subquestions!;
     const unique = <T>(arr: T[]): T[] => [...new Set(arr)];
     return [
@@ -154,9 +224,9 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
       paras.push(buildImageParagraph(`img${idx}`, imageRef, idx));
     }
 
-    const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+    const isGroup = isGroupQuestion(question);
 
-    if (isSocialStudies) {
+    if (isGroup) {
       // Core question
       if (question.核心問題) {
         paras.push(`<text:p text:style-name="Heading2">${xmlEscape("核心問題")}</text:p>`);
@@ -168,8 +238,8 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
         paras.push(`<text:p text:style-name="Standard">${xmlEscape(question.文本)}</text:p>`);
       }
       // Subquestions
-      const omittedInteractiveSubquestions = question.subquestions!.filter(isInteractiveSubQuestion);
-      question.subquestions!.forEach((sub) => {
+      const omittedInteractiveSubquestions = (question.subquestions ?? []).filter(isInteractiveSubQuestion);
+      (question.subquestions ?? []).forEach((sub) => {
         if (isInteractiveSubQuestion(sub)) return;
 
         const subMeta = [
@@ -342,3 +412,474 @@ export async function buildExamOdt(title: string, questions: ExamQuestion[]): Pr
     mimeType: "application/vnd.oasis.opendocument.text",
   });
 }
+
+// ---------------------------------------------------------------------------
+// Snapshot-aware ODT builder (issue #752)
+// ---------------------------------------------------------------------------
+//
+// Consumes a frozen QuestionSnapshot produced by exportSnapshot.ts.
+// Uses `imageSources` for all image embedding, NOT `question.image_base64`,
+// so images are bound to the snapshot revision and a later arrival never
+// silently substitutes a different version.
+//
+// chart_spec_preview conversion is NOT yet implemented (blocked on issue #753).
+// Until #753 ships, a chart_spec_preview slot emits a visible placeholder paragraph
+// ("圖片預覽待轉換，請至網頁版查看") at the correct position; the ODT is still
+// downloadable and all other content is unaffected.
+//
+// TODO(#753): replace the chart_spec_preview placeholder with actual rasterisation.
+
+interface SnapshotSection {
+  snapshot: QuestionSnapshot;
+  imageRef?: string;
+  subImageRefs?: Record<string, string>; // key: String(序號)
+  /** True when the stem chart_spec_preview rasterization failed; false/absent = ok. */
+  stemFailed?: boolean;
+  /** Keys (String(序號)) of subquestion chart_spec_preview slots where rasterization failed. */
+  subFailedKeys?: Set<string>;
+}
+
+function buildStatusLabel(snapshot: QuestionSnapshot): string | null {
+  const meta = snapshot.exported._export;
+  const parts: string[] = [];
+
+  // Processing
+  const processingMap: Record<string, string> = {
+    waiting: "等候生成",
+    running: "生成中",
+    ended: "已結束",
+    unknown: "處理狀態未知",
+  };
+  parts.push(`處理：${processingMap[meta.processing] ?? meta.processing}`);
+
+  // Delivery
+  if (meta.delivery_status) {
+    const deliveryMap: Record<string, string> = {
+      complete: "完整",
+      partial: "部分",
+      none: "無結果",
+      unknown: "未知",
+    };
+    parts.push(`交付：${deliveryMap[meta.delivery_status] ?? meta.delivery_status}`);
+  } else {
+    // No terminal received — delivery status unknown
+    parts.push("交付：未知（未收到 terminal）");
+  }
+
+  // Review
+  const reviewMap: Record<string, string> = {
+    passed: "通過",
+    failed: "未通過",
+    skipped: "略過",
+    unknown: "未知",
+  };
+  parts.push(`審題：${reviewMap[meta.review.status] ?? meta.review.status}`);
+
+  return parts.join("　");
+}
+
+/**
+ * Gather image refs from the frozen `imageSources` and add them to the ZIP.
+ * Rasterizes chart_spec_preview slots using the injected rasterizer.
+ * Returns the stem image ref, per-subquestion ref map, and failure flags.
+ *
+ * chart_spec_preview: attempted via rasterizer; on success embedded as PNG;
+ *   on failure, stemFailed/subFailedKeys set — caller emits error text in XML.
+ * known_missing: marked in the content XML via the missing-marker helper; no file embedded.
+ *
+ * Issue #753: rasterizer is injectable so jsdom unit tests can inject stubs
+ * without requiring Canvas / URL.createObjectURL.
+ */
+async function embedSnapshotImages(
+  zip: JSZip,
+  snapshot: QuestionSnapshot,
+  idx: number,
+  imageRefs: string[],
+  rasterizer: Rasterizer,
+): Promise<{ stemImageRef?: string; subImageRefs: Record<string, string>; stemFailed: boolean; subFailedKeys: Set<string> }> {
+  const sources: CapturedImageSources = snapshot.imageSources;
+  let stemImageRef: string | undefined;
+  let stemFailed = false;
+  const subImageRefs: Record<string, string> = {};
+  const subFailedKeys = new Set<string>();
+
+  const stemSource = sources["stem"];
+  if (stemSource) {
+    if (stemSource.kind === "png_base64" && stemSource.pngBase64) {
+      const ref = `Pictures/img_snap_${idx}.png`;
+      imageRefs.push(ref);
+      stemImageRef = ref;
+      zip.file(ref, base64ToUint8Array(stemSource.pngBase64));
+    } else if (stemSource.kind === "chart_spec_preview" && stemSource.chartSpec) {
+      // Attempt export-only rasterization (#753).
+      // The rasterizer uses only the frozen chartSpec captured at click time;
+      // any new revision arriving during conversion cannot affect it.
+      // Pass previewMarkup when available (same-source DOM capture).
+      const result = await rasterizer({
+        chartSpec: stemSource.chartSpec as import("../components/FigureRenderer").ChartSpecInput,
+        previewMarkup: stemSource.previewMarkup,
+      });
+      if (result.ok) {
+        const ref = `Pictures/img_snap_${idx}.png`;
+        imageRefs.push(ref);
+        stemImageRef = ref;
+        zip.file(ref, base64ToUint8Array(result.pngBase64));
+      } else {
+        stemFailed = true;
+      }
+    }
+    // kind === "known_missing": no file; marked in XML
+  }
+
+  // Per-subquestion images
+  for (const [key, source] of Object.entries(sources)) {
+    if (key === "stem") continue;
+    // key is "sq{序號}" — extract 序號
+    const seqMatch = /^sq(\d+)$/.exec(key);
+    if (!seqMatch) continue;
+    const seq = seqMatch[1];
+
+    if (source.kind === "png_base64" && source.pngBase64) {
+      const ref = `Pictures/img_snap_${idx}_sq_${seq}.png`;
+      imageRefs.push(ref);
+      subImageRefs[seq] = ref;
+      zip.file(ref, base64ToUint8Array(source.pngBase64));
+    } else if (source.kind === "chart_spec_preview" && source.chartSpec) {
+      // Attempt export-only rasterization (#753).
+      // Pass previewMarkup when available (same-source DOM capture).
+      const result = await rasterizer({
+        chartSpec: source.chartSpec as import("../components/FigureRenderer").ChartSpecInput,
+        previewMarkup: source.previewMarkup,
+      });
+      if (result.ok) {
+        const ref = `Pictures/img_snap_${idx}_sq_${seq}.png`;
+        imageRefs.push(ref);
+        subImageRefs[seq] = ref;
+        zip.file(ref, base64ToUint8Array(result.pngBase64));
+      } else {
+        subFailedKeys.add(seq);
+      }
+    }
+    // kind === "known_missing": no file; marked in XML
+  }
+
+  return { stemImageRef, subImageRefs, stemFailed, subFailedKeys };
+}
+
+/**
+ * Build content XML for snapshot-based exports. Preserves:
+ * - Draft label
+ * - Processing/delivery/review status (separately stated)
+ * - Original subquestion 序號 with gaps
+ * - Known-missing subquestion and image markers at correct positions
+ * - Final without terminal = final + unknown processing
+ */
+function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isMultiple: boolean, labels: OdtLabels): string {
+  const paras: string[] = [];
+
+  if (isMultiple && title) {
+    paras.push(`<text:p text:style-name="Heading1">${xmlEscape(title)}</text:p>`);
+  }
+
+  sections.forEach(({ snapshot, imageRef: stemImageRef, subImageRefs, stemFailed, subFailedKeys }, idx) => {
+    try {
+      const { exported: question } = snapshot;
+      const meta = question._export;
+
+      if (isMultiple) {
+        if (idx > 0) {
+          paras.push(`<text:p text:style-name="PageBreak"/>`);
+        }
+        paras.push(`<text:p text:style-name="Heading1">${xmlEscape(`Question ${idx + 1}`)}</text:p>`);
+      }
+
+      // --- Draft label ---
+      if (meta.is_draft) {
+        paras.push(`<text:p text:style-name="MetaLine">${xmlEscape(labels.draftNotice)}</text:p>`);
+      }
+
+      // --- Status line ---
+      const statusLabel = buildStatusLabel(snapshot);
+      if (statusLabel) {
+        paras.push(`<text:p text:style-name="MetaLine">${xmlEscape(statusLabel)}</text:p>`);
+      }
+
+      // --- Metadata chips (same as existing buildMetadataItems) ---
+      const meta_chips = buildMetadataItems(question as ExamQuestion)
+        .map(xmlEscape)
+        .join(" ｜ ");
+      if (meta_chips) {
+        paras.push(`<text:p text:style-name="MetaLine">${meta_chips}</text:p>`);
+      }
+
+      // --- Stem image (from imageSources, not question.image_base64) ---
+      if (stemImageRef) {
+        paras.push(buildImageParagraph(`snap_img${idx}`, stemImageRef, idx));
+      } else {
+        // Check if stem has a rasterization failure, chart_spec_preview, or known_missing
+        const stemSrc = snapshot.imageSources["stem"];
+        if (stemFailed) {
+          // Rasterization attempted but failed (#753) — explicit conversion-failure marker
+          paras.push(
+            `<text:p text:style-name="MetaLine">${xmlEscape(labels.previewConversionFailed)}</text:p>`
+          );
+        } else if (stemSrc?.kind === "known_missing") {
+          paras.push(
+            `<text:p text:style-name="MetaLine">${xmlEscape(labels.knownMissingImageStem)}</text:p>`
+          );
+        }
+      }
+
+      const isGroup = isGroupQuestion(question as ExamQuestion, meta.missing);
+
+      if (isGroup) {
+        // Core question
+        if ((question as ExamQuestion).核心問題) {
+          paras.push(`<text:p text:style-name="Heading2">${xmlEscape("核心問題")}</text:p>`);
+          paras.push(`<text:p text:style-name="Standard">${xmlEscape((question as ExamQuestion).核心問題!)}</text:p>`);
+        }
+        // Passage
+        if ((question as ExamQuestion).文本) {
+          paras.push(`<text:p text:style-name="Heading2">${xmlEscape("文本")}</text:p>`);
+          paras.push(`<text:p text:style-name="Standard">${xmlEscape((question as ExamQuestion).文本!)}</text:p>`);
+        }
+
+        // Build a sorted list of all known 序號 slots (received + missing-subquestion)
+        const receivedSubqs = (question.subquestions ?? []).filter(
+          (sub) => !isInteractiveSubQuestion(sub as SubQuestion)
+        );
+        // Resolve missing-subquestion slots to 1-based 序號 using the shared helper.
+        // Server stores subquestion_index as 0-based; 序號 = slot_index + 1.
+        // subquestion_id is preferred when present (falls back to index+1).
+        const missingSubqSeqnos = new Set<number>(
+          meta.missing
+            .filter((s) => s.kind === "subquestion")
+            .flatMap((s) => {
+              const seqno = slotRefSeqno(s, receivedSubqs);
+              return seqno !== null ? [seqno] : [];
+            })
+        );
+        // All 序號 values (received + missing), sorted
+        const receivedIndices = new Set(receivedSubqs.map((s) => s.序號));
+        const allIndices = [...new Set([...receivedIndices, ...missingSubqSeqnos])].sort(
+          (a, b) => a - b
+        );
+        const subqByIndex = new Map(receivedSubqs.map((s) => [s.序號, s as SubQuestion]));
+
+        const omittedInteractive = (question.subquestions ?? []).filter(
+          (sub) => isInteractiveSubQuestion(sub as SubQuestion)
+        );
+
+        for (const seqNo of allIndices) {
+          const sub = subqByIndex.get(seqNo);
+          if (!sub) {
+            // Known-missing subquestion
+            paras.push(
+              `<text:p text:style-name="Heading2">${xmlEscape(`第${seqNo}題`)}</text:p>`
+            );
+            paras.push(
+              `<text:p text:style-name="MetaLine">${xmlEscape(labels.knownMissingSubquestion(seqNo))}</text:p>`
+            );
+            continue;
+          }
+
+          // Received subquestion
+          const subMeta = [
+            `${sub.年級}年級`,
+            sub.題型,
+            ...(sub.科目 ?? []),
+            ...(sub.核心素養 ?? []),
+            ...(sub.學習內容 ?? []).map((lc: { 編碼: string }) => lc.編碼),
+            ...(sub.學習表現 ?? []).map((lp: { 編碼: string }) => lp.編碼),
+            (sub as SubQuestion & { 認知歷程?: string }).認知歷程,
+          ].filter((item): item is string => Boolean(item)).map(xmlEscape).join(" ｜ ");
+
+          paras.push(`<text:p text:style-name="Heading2">${xmlEscape(`第${seqNo}題`)}</text:p>`);
+          if (subMeta) {
+            paras.push(`<text:p text:style-name="MetaLine">${subMeta}</text:p>`);
+          }
+
+          // Subquestion image from imageSources
+          const sqKey = String(seqNo);
+          const sqImageRef = subImageRefs?.[sqKey];
+          if (sqImageRef) {
+            paras.push(buildImageParagraph(`snap_img${idx}_sq${seqNo}`, sqImageRef, idx));
+          } else {
+            const sqSrc = snapshot.imageSources[`sq${seqNo}`];
+            if (subFailedKeys?.has(sqKey)) {
+              // Rasterization attempted but failed (#753) — explicit conversion-failure marker
+              paras.push(
+                `<text:p text:style-name="MetaLine">${xmlEscape(labels.previewConversionFailed)}</text:p>`
+              );
+            } else if (sqSrc?.kind === "known_missing") {
+              paras.push(
+                `<text:p text:style-name="MetaLine">${xmlEscape(labels.knownMissingSubqImage(seqNo))}</text:p>`
+              );
+            }
+          }
+
+          paras.push(`<text:p text:style-name="Standard">${xmlEscape(sub.題目)}</text:p>`);
+          paras.push(
+            `<text:p text:style-name="MetaLine">${xmlEscape("答案：")}${xmlEscape(sub.答案)}</text:p>`
+          );
+          if (sub.答案解析) {
+            paras.push(
+              `<text:p text:style-name="MetaLine">${xmlEscape("解析：")}${xmlEscape(sub.答案解析)}</text:p>`
+            );
+          }
+          if (sub.評分規準?.length) {
+            paras.push(`<text:p text:style-name="MetaLine">${xmlEscape("評分規準：")}</text:p>`);
+            sub.評分規準.forEach((r: { code: string; 規準說明: string }) => {
+              paras.push(
+                `<text:p text:style-name="Standard">${xmlEscape(`[${r.code}] ${r.規準說明}`)}</text:p>`
+              );
+            });
+          }
+          if (sub.誘答分析 && Object.keys(sub.誘答分析).length > 0) {
+            paras.push(`<text:p text:style-name="MetaLine">${xmlEscape("誘答分析：")}</text:p>`);
+            Object.entries(sub.誘答分析).forEach(([label, note]) => {
+              paras.push(
+                `<text:p text:style-name="Standard">${xmlEscape(`[${label}] ${note}`)}</text:p>`
+              );
+            });
+          }
+        }
+
+        // Omitted interactive subquestions manifest
+        if (omittedInteractive.length > 0) {
+          const omittedItems = omittedInteractive
+            .map((sub) => `第${sub.序號}小題（${sub.題型}）`)
+            .join("、");
+          paras.push(
+            `<text:p text:style-name="MetaLine">${xmlEscape(
+              `以下互動題目未列入紙本輸出，請於網頁檢視器作答：${omittedItems}`
+            )}</text:p>`
+          );
+        }
+
+        // Known-missing image slots for subquestions not covered by subquestion rendering
+        // (e.g. standalone image slots where subquestion itself was delivered but image is missing
+        // — those are handled per-subquestion above via imageSources["sq{N}"])
+        // Stem-level missing image is handled above; nothing more needed here.
+
+      } else {
+        // Math flat question
+        paras.push(`<text:p text:style-name="Heading2">${xmlEscape("題目")}</text:p>`);
+        question.題目.forEach((line) => {
+          paras.push(`<text:p text:style-name="Standard">${xmlEscape(line)}</text:p>`);
+        });
+        paras.push(`<text:p text:style-name="Heading2">${xmlEscape("正確解題分析")}</text:p>`);
+        question.正確解題分析.forEach((line) => {
+          paras.push(`<text:p text:style-name="Standard">${xmlEscape(line)}</text:p>`);
+        });
+        if ((question as ExamQuestion).誘答分析 && Object.keys((question as ExamQuestion).誘答分析!).length > 0) {
+          paras.push(`<text:p text:style-name="Heading2">${xmlEscape("誘答分析")}</text:p>`);
+          Object.entries((question as ExamQuestion).誘答分析!).forEach(([label, note]) => {
+            paras.push(
+              `<text:p text:style-name="Standard">${xmlEscape(`[${label}] ${note}`)}</text:p>`
+            );
+          });
+        }
+      }
+
+      // --- Known-missing items summary (at the end of each question) ---
+      const missingImageSlots = meta.missing.filter((s) => s.kind === "image");
+      const missingSubqSlots = meta.missing.filter((s) => s.kind === "subquestion");
+      const hasMissingInfo = missingImageSlots.length > 0 || missingSubqSlots.length > 0;
+      if (hasMissingInfo && !isGroup) {
+        // For flat questions, list known-missing at the end (images handled per-slot above)
+        if (missingImageSlots.length > 0) {
+          paras.push(
+            `<text:p text:style-name="MetaLine">${xmlEscape(labels.knownMissingImageFlat)}</text:p>`
+          );
+        }
+      }
+
+    } catch (error: unknown) {
+      throw new OdtBuildError(idx, error);
+    }
+  });
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"
+  office:version="1.3">
+  <office:body>
+    <office:text>
+      ${paras.join("\n      ")}
+    </office:text>
+  </office:body>
+</office:document-content>`;
+}
+
+/**
+ * Build an ODT from a list of QuestionSnapshots.
+ *
+ * This is the snapshot-aware counterpart to `buildExamOdt`. Unlike that function,
+ * this one uses the frozen `imageSources` for all image embedding (not `question.image_base64`),
+ * adds draft labels, status lines, and missing-item markers.
+ *
+ * Issue #753: chart_spec_preview slots are rasterized via the injected rasterizer
+ * (defaultRasterizer uses in-browser SVG→canvas→PNG). On per-image failure the
+ * slot emits "【匯出缺圖／預覽轉換失敗】" and all other content is preserved.
+ * A whole-ZIP packaging failure throws OdtBuildError / a generic Error and no
+ * broken blob is returned.
+ *
+ * The rasterizer reads only from the frozen snapshot.imageSources captured at
+ * click time; any new revision arriving during rasterization cannot replace the
+ * captured source.
+ *
+ * @param options.rasterizer  Injectable rasterizer (default: defaultRasterizer).
+ *   Pass a stub in jsdom unit tests to avoid requiring Canvas / URL.createObjectURL.
+ */
+export async function buildOdtFromSnapshots(
+  title: string,
+  snapshots: QuestionSnapshot[],
+  options?: { rasterizer?: Rasterizer; labels?: OdtLabels },
+): Promise<Blob> {
+  const rasterizer = options?.rasterizer ?? defaultRasterizer;
+  const labels = options?.labels ?? defaultOdtLabels("zh-TW");
+  const zip = new JSZip();
+  const isMultiple = snapshots.length > 1;
+  const isoDate = new Date().toISOString();
+
+  zip.file("mimetype", "application/vnd.oasis.opendocument.text", { compression: "STORE" });
+
+  const imageRefs: string[] = [];
+  // Process snapshots sequentially so imageRefs array is never concurrently mutated.
+  const sections: SnapshotSection[] = [];
+  for (let idx = 0; idx < snapshots.length; idx++) {
+    const snapshot = snapshots[idx];
+    try {
+      const { stemImageRef, subImageRefs, stemFailed, subFailedKeys } =
+        await embedSnapshotImages(zip, snapshot, idx, imageRefs, rasterizer);
+      const section: SnapshotSection = { snapshot };
+      if (stemImageRef) section.imageRef = stemImageRef;
+      if (Object.keys(subImageRefs).length > 0) section.subImageRefs = subImageRefs;
+      if (stemFailed) section.stemFailed = true;
+      if (subFailedKeys.size > 0) section.subFailedKeys = subFailedKeys;
+      sections.push(section);
+    } catch (error: unknown) {
+      throw new OdtBuildError(idx, error);
+    }
+  }
+
+  zip.file("meta.xml", buildMeta(title, isoDate));
+  zip.file("styles.xml", buildStyles());
+  zip.file("content.xml", buildSnapshotContentXml(title, sections, isMultiple, labels));
+  zip.file("META-INF/manifest.xml", buildManifest(imageRefs));
+
+  return zip.generateAsync({
+    type: "blob",
+    mimeType: "application/vnd.oasis.opendocument.text",
+  });
+}
+
+// buildOdtFromBatch was removed (issue #752 review).
+// It built empty imageSources — a trap that silently drops all images.
+// All callers must use captureBatchSnapshots (from exportSnapshot.ts) +
+// buildOdtFromSnapshots directly, so image sources are never lost.

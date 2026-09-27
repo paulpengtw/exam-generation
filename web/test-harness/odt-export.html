@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ODT Export Test Harness — Issue #753</title>
+    <style>
+      body { font-family: sans-serif; padding: 1rem; }
+      #status { white-space: pre; font-family: monospace; }
+      #result { white-space: pre; font-family: monospace; overflow: auto; max-height: 400px; }
+    </style>
+  </head>
+  <body>
+    <h1>ODT Export Test Harness</h1>
+    <p>
+      Drives the real <code>defaultRasterizer</code>, <code>exportSnapshot</code>,
+      and <code>buildOdtFromSnapshots</code> modules to verify end-to-end ODT
+      generation in a real Chromium environment (issue #753).
+    </p>
+    <p>Status: <span id="status">loading…</span></p>
+    <pre id="result"></pre>
+    <script type="module" src="/test-harness/odt-export-entry.ts"></script>
+  </body>
+</html>

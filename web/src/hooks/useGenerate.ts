@@ -9,10 +9,17 @@ import { saveSignoutReason } from "../lib/signoutReason";
 import { saveReturnDestination } from "../lib/returnDestination";
 import type { GenerateParams } from "../api/generated/contract";
 import { MESSAGES } from "../i18n/messages";
-import { createGenerationStreamDecoder } from "../lib/generationStream";
+import { createGenerationStreamDecoder, SEQ_BUFFER_MAX_AGE_MS } from "../lib/generationStream";
+import {
+  createLegacyAdapter,
+  applyLegacyEvent,
+  selectLegacyItems,
+  type LegacyAdapterState,
+} from "../lib/legacyAdapter";
 import {
   createRunEvidence,
   applyV2Event,
+  applyDegraded,
   closeRun,
   selectEndedCount,
   type RunEvidenceState,
@@ -279,6 +286,12 @@ export interface GeneratedQuestion {
   trail?: VerificationTrailEntry[];
   figurePolicyTrail?: FigurePolicyTrailEntry[];
   referenceExampleRecord?: ReferenceExampleRecordShape;
+  /**
+   * True when the original batch position could not be resolved.
+   * Set for legacy-adapter items that have no consistent index↔id evidence.
+   * UI should show "原題序未知" instead of "第 N 題" for these items.
+   */
+  positionUnknown?: boolean;
 }
 
 interface LlmIdentity {
@@ -339,6 +352,13 @@ export interface UseGenerateReturn {
   results: ExamQuestion[];
   displayResults: GeneratedQuestion[];
   evidence: RunEvidenceState | null;
+  /**
+   * C1×S0 legacy adapter state (issue #750). Non-null when the decoder is in
+   * legacy mode AND a "started" event has been received for this run.
+   * Used by GeneratePage to build GenerationLegacyAdapterEvidence for the
+   * status bar, and by tests to inspect the adapter state directly.
+   */
+  legacyAdapter: LegacyAdapterState | null;
   llmCalls: LlmCallEvent[];
   agentLanes: AgentLane[];
   errorMessage: string | null;
@@ -362,21 +382,6 @@ function questionKey(question: ExamQuestion, index: number): string {
   return question.id && question.id.length > 0 ? question.id : `index-${index}`;
 }
 
-function upsertDisplayResult(
-  prev: GeneratedQuestion[],
-  next: GeneratedQuestion,
-): GeneratedQuestion[] {
-  const key = questionKey(next.question, next.index);
-  const existingIndex = prev.findIndex((item) => (
-    questionKey(item.question, item.index) === key || item.index === next.index
-  ));
-  if (existingIndex === -1) {
-    return [...prev, next].sort((a, b) => a.index - b.index);
-  }
-  const updated = [...prev];
-  updated[existingIndex] = next;
-  return updated.sort((a, b) => a.index - b.index);
-}
 
 /**
  * Parse an SSE error event's raw data string into a human-readable message.
@@ -632,8 +637,10 @@ export function useGenerate(): UseGenerateReturn {
   const [subQuestionTotal, setSubQuestionTotal] = useState<number | null>(null);
   const [resultsCompletion, setResultsCompletion] = useState<ResultsCompletion | null>(null);
   const [terminalEvidence, setTerminalEvidence] = useState(false);
+  const [legacyAdapter, setLegacyAdapter] = useState<LegacyAdapterState | null>(null);
+  const legacyAdapterRef = useRef<LegacyAdapterState | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
-  const nextFinalIndexRef = useRef(0);
+  const gapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trailByQuestionRef = useRef(new Map<string, VerificationTrailEntry[]>());
   const figurePolicyTrailByQuestionRef = useRef(
     new Map<string, FigurePolicyTrailEntry[]>(),
@@ -671,6 +678,10 @@ export function useGenerate(): UseGenerateReturn {
       endOperation("aborted");
       controllerRef.current?.abort();
       controllerRef.current = null;
+      if (gapTimerRef.current !== null) {
+        clearTimeout(gapTimerRef.current);
+        gapTimerRef.current = null;
+      }
     };
   }, [endOperation]);
 
@@ -693,7 +704,8 @@ export function useGenerate(): UseGenerateReturn {
     setSubQuestionTotal(null);
     setResultsCompletion(null);
     setTerminalEvidence(false);
-    nextFinalIndexRef.current = 0;
+    setLegacyAdapter(null);
+    legacyAdapterRef.current = null;
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
@@ -765,12 +777,50 @@ export function useGenerate(): UseGenerateReturn {
     setGenerationLogId(null);
     setSubQuestionTotal(null);
     startedRef.current = false;
-    nextFinalIndexRef.current = 0;
+    // Always initialize legacy adapter for C1×S0 compatibility (issue #750).
+    // Pre-started held events are processed by this adapter immediately;
+    // the "started" handler re-initializes it once the server count is known.
+    const initialAdapter = createLegacyAdapter(params.count ?? null);
+    legacyAdapterRef.current = initialAdapter;
+    setLegacyAdapter(initialAdapter);
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
     terminalQuestionKeysRef.current.clear();
     expectedQuestionTotalRef.current = typeof params.count === "number" ? params.count : null;
+
+    /**
+     * Rebuild displayResults and results from the current legacy adapter state.
+     * Called after every question_update or result event in legacy-adapter mode.
+     * Items with resolvedIndex get their 0-based index; items without get a sentinel
+     * (10000+ordinal) so they sort to the end, and positionUnknown is set to true.
+     */
+    function rebuildDisplayResultsFromAdapter(adapterState: LegacyAdapterState) {
+      const items = selectLegacyItems(adapterState);
+      const newDisplay: GeneratedQuestion[] = items.map((item, ordinalPosition) => {
+        const sentinelIndex = 10000 + ordinalPosition;
+        const effectiveIndex = item.resolvedIndex ?? sentinelIndex;
+        const laneKey = item.id; // opaque id used as trail map key
+        const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
+        return {
+          index: effectiveIndex,
+          question: item.question,
+          phase: item.phase,
+          isFinal: item.isFinal,
+          stableId: item.id,
+          contentRevision: item.contentRevision,
+          trail: trailByQuestionRef.current.get(laneKey) ?? [],
+          figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
+          referenceExampleRecord: refEntries
+            ? { disabled: false, entries: refEntries }
+            : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
+          positionUnknown: item.resolvedIndex === null ? true : undefined,
+        };
+      });
+      setDisplayResults(newDisplay);
+      const newResults = items.filter((item) => item.isFinal).map((item) => item.question);
+      setResults(newResults);
+    }
 
     // ---------------------------------------------------------------------------
     // V2 event handler — routes decoded v2 events to evidence + llmCalls
@@ -1010,6 +1060,11 @@ export function useGenerate(): UseGenerateReturn {
           break;
         }
         case "done": {
+          // Clear gap timer — stream is ending
+          if (gapTimerRef.current !== null) {
+            clearTimeout(gapTimerRef.current);
+            gapTimerRef.current = null;
+          }
           // Apply done to close the evidence run
           const prev = evidenceRef.current;
           const closed = prev
@@ -1060,6 +1115,12 @@ export function useGenerate(): UseGenerateReturn {
           {
             const payload = parseStartedEventData(data);
             if (payload) setGenerationLogId(payload.generation_log_id);
+          }
+          // Initialize legacy adapter for C1×S0 compatibility (issue #750)
+          {
+            const adapter = createLegacyAdapter(paramsRef.current?.count ?? null);
+            legacyAdapterRef.current = adapter;
+            setLegacyAdapter(adapter);
           }
           break;
         case "progress":
@@ -1152,33 +1213,15 @@ export function useGenerate(): UseGenerateReturn {
           // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
           break;
         case "question_update": {
+          // Always route through legacy adapter (C1×S0, issue #750).
+          // Adapter is guaranteed initialized at generate() start; C0 arrival-order
+          // fallback deliberately removed — no index-by-arrival-order in C1.
           try {
-            const parsed = JSON.parse(data) as {
-              index: number;
-              phase: DraftPhase;
-              question: ExamQuestion;
-              stable_id?: string;
-              content_revision?: number | null;
-            };
-            const laneKey = questionKey(parsed.question, parsed.index);
-            const draftEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey) ?? [];
-            const draftRefRecord: ReferenceExampleRecordShape = draftEntries.length > 0
-              ? { disabled: false, entries: draftEntries }
-              : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] };
-            setDisplayResults((prev) => upsertDisplayResult(prev, {
-              index: parsed.index,
-              question: parsed.question,
-              phase: parsed.phase,
-              isFinal: false,
-              stableId: parsed.stable_id ?? questionKey(parsed.question, parsed.index),
-              contentRevision: typeof parsed.content_revision === "number" && parsed.content_revision > 0
-                ? parsed.content_revision
-                : null,
-              trail: trailByQuestionRef.current.get(laneKey) ?? [],
-              figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
-              referenceExampleRecord: draftRefRecord,
-            }));
-          } catch { /* ignore malformed draft updates */ }
+            const nextAdapter = applyLegacyEvent(legacyAdapterRef.current!, "question_update", data);
+            legacyAdapterRef.current = nextAdapter;
+            setLegacyAdapter(nextAdapter);
+            rebuildDisplayResultsFromAdapter(nextAdapter);
+          } catch { /* ignore malformed updates */ }
           break;
         }
         case "trail": {
@@ -1234,39 +1277,15 @@ export function useGenerate(): UseGenerateReturn {
           } catch { /* legacy streams may not send JSON terminal envelopes */ }
           break;
         case "result":
+          // Always route through legacy adapter (C1×S0, issue #750).
+          // Adapter is guaranteed initialized at generate() start; C0 arrival-order
+          // fallback deliberately removed — no index-by-arrival-order in C1.
           try {
-            const raw = JSON.parse(data) as ExamQuestion & {
-              stable_id?: string;
-              question_id?: string;
-              content_revision?: number | null;
-              question?: ExamQuestion;
-            };
-            const parsed = raw.question !== undefined && typeof raw.question === "object" && raw.question !== null
-              ? raw.question
-              : raw;
-            const index = nextFinalIndexRef.current;
-            nextFinalIndexRef.current += 1;
-            setResults((prev) => [...prev, parsed]);
-            const laneKey = questionKey(parsed, index);
-            const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
-            setDisplayResults((prev) => upsertDisplayResult(prev, {
-              index,
-              question: parsed,
-              phase: "verified",
-              isFinal: true,
-              stableId: raw.stable_id ?? raw.question_id ?? questionKey(parsed, index),
-              contentRevision: typeof raw.content_revision === "number" && raw.content_revision > 0
-                ? raw.content_revision
-                : null,
-              trail: trailByQuestionRef.current.get(laneKey) ?? [],
-              figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
-              referenceExampleRecord: refEntries
-                ? { disabled: false, entries: refEntries }
-                : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
-            }));
-          } catch {
-            setStatus("error");
-          }
+            const nextAdapter = applyLegacyEvent(legacyAdapterRef.current!, "result", data);
+            legacyAdapterRef.current = nextAdapter;
+            setLegacyAdapter(nextAdapter);
+            rebuildDisplayResultsFromAdapter(nextAdapter);
+          } catch { /* ignore malformed results */ }
           break;
         case "error":
           setErrorMessage(parseErrorEventData(data ?? ""));
@@ -1279,6 +1298,12 @@ export function useGenerate(): UseGenerateReturn {
           endOperation("failed");
           break;
         case "done": {
+          // Update legacy adapter with "done" event if active
+          if (legacyAdapterRef.current) {
+            const doneAdapter = applyLegacyEvent(legacyAdapterRef.current, "done", data);
+            legacyAdapterRef.current = doneAdapter;
+            setLegacyAdapter(doneAdapter);
+          }
           const expected = expectedQuestionTotalRef.current;
           const hasTerminalEvidence = expected === null
             ? terminalQuestionKeysRef.current.size > 0
@@ -1412,6 +1437,16 @@ export function useGenerate(): UseGenerateReturn {
             return;
           }
 
+          if (d.kind === "degraded") {
+            setEvidence((prev) => {
+              if (!prev) return prev;
+              const next = applyDegraded(prev, d.reason);
+              evidenceRef.current = next;
+              return next;
+            });
+            continue;
+          }
+
           if (d.kind === "v2") {
             // V2 mode: route decoded event
             handleV2Event(d.event.name, d.event.context, d.event.payload);
@@ -1419,15 +1454,52 @@ export function useGenerate(): UseGenerateReturn {
             // Legacy mode: use existing switch handler
             handleLegacyEvent(d.name, d.data);
           } else if (d.kind === "held") {
-            // Event held pending started: immediately process as legacy so existing
-            // tests (which don't send started first) continue to work.
-            handleLegacyEvent(ev.event ?? "", ev.data ?? "");
+            if (decoder.mode === "awaiting-start") {
+              // Event held pending started: immediately process as legacy so existing
+              // tests (which don't send started first) continue to work.
+              handleLegacyEvent(ev.event ?? "", ev.data ?? "");
+            } else if (decoder.mode === "v2" && gapTimerRef.current === null) {
+              // Arm a timer that calls checkDeadline() if no further event fills
+              // the gap within the 2 s bound.  If the gap fills before the timer
+              // fires (normal case) the timer is cleared by the event handler.
+              // If gap 2 opens after gap 1's timer fires without degradation, we
+              // re-arm for the remaining time so the new gap also expires correctly.
+              function fireGapTimer() {
+                gapTimerRef.current = null;
+                if (controllerRef.current !== controller) return;
+                const timeoutEvents = decoder.checkDeadline();
+                for (const te of timeoutEvents) {
+                  if (te.kind === "degraded") {
+                    setEvidence((prev) => {
+                      if (!prev) return prev;
+                      const next = applyDegraded(prev, te.reason);
+                      evidenceRef.current = next;
+                      return next;
+                    });
+                  } else if (te.kind === "v2") {
+                    handleV2Event(te.event.name, te.event.context, te.event.payload);
+                  }
+                }
+                // Re-arm if the gap was not resolved (no degradation occurred) but
+                // a new or remaining gap is still open.  Covers the case where gap 1
+                // fills and gap 2 opens before this timer fires.
+                const remaining = decoder.msUntilDeadline();
+                if (remaining !== null && gapTimerRef.current === null) {
+                  gapTimerRef.current = setTimeout(fireGapTimer, remaining + 1);
+                }
+              }
+              gapTimerRef.current = setTimeout(fireGapTimer, SEQ_BUFFER_MAX_AGE_MS + 1);
+            }
           }
           // ignore: no action
         }
       },
       onerror(err) {
         if (controllerRef.current !== controller) return;
+        if (gapTimerRef.current !== null) {
+          clearTimeout(gapTimerRef.current);
+          gapTimerRef.current = null;
+        }
         const message = err instanceof Error ? err.message : String(err);
         setErrorMessage(message);
         setStatus("error");
@@ -1480,6 +1552,7 @@ export function useGenerate(): UseGenerateReturn {
     results,
     displayResults,
     evidence,
+    legacyAdapter,
     llmCalls,
     agentLanes,
     errorMessage,

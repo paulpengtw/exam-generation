@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   createRunEvidence,
   applyV2Event,
+  applyDegraded,
   closeRun,
   selectEndedCount,
   selectFinalReceivedCount,
@@ -816,5 +817,74 @@ describe("issue #747 A/B/C/D real-publisher transport fixture", () => {
     expect(d.processing).toBe("unknown");
     expect(selectEndedCount(state)).toBe(3);
     expect(selectFinalReceivedCount(state)).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyDegraded
+// ---------------------------------------------------------------------------
+
+describe("applyDegraded", () => {
+  it("sets degraded and degradedReason", () => {
+    const state = freshRun();
+    const next = applyDegraded(state, "timeout");
+    expect(next.degraded).toBe(true);
+    expect(next.degradedReason).toBe("timeout");
+  });
+
+  it("is idempotent: first reason wins", () => {
+    const state = freshRun();
+    const once = applyDegraded(state, "timeout");
+    const twice = applyDegraded(once, "count");
+    expect(twice.degradedReason).toBe("timeout");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyV2Event — degraded mode
+// ---------------------------------------------------------------------------
+
+describe("applyV2Event — degraded mode", () => {
+  it("skips stage events when degraded", () => {
+    const state = applyDegraded(freshRun(), "timeout");
+    const ev = makeEvent("stage", { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0 }, {
+      agent: "verifier", stage: "verify", status: "start",
+    });
+    const next = applyV2Event(state, ev);
+    expect(next).toBe(state); // unchanged, same reference
+  });
+
+  it("still processes question_update when degraded", () => {
+    const state = applyDegraded(freshRun(), "timeout");
+    const q = sampleQuestion("q_001");
+    const ev = makeEvent("question_update", { run_id: RUN_ID, event_seq: 6, question_id: "q_001", index: 0, content_revision: 1 }, {
+      phase: "draft", question: q,
+    });
+    const next = applyV2Event(state, ev);
+    expect(next.questions["q_001"].content.receipt).toBe("draft");
+    expect(next.degraded).toBe(true); // degradation preserved
+  });
+
+  it("still processes question_terminal when degraded", () => {
+    const state = applyDegraded(freshRun(), "eof_gap");
+    const ev = makeEvent("question_terminal", { run_id: RUN_ID, event_seq: 7, question_id: "q_001", index: 0 }, {
+      termination_reason: "normal", has_final: true, final_revision: 1,
+      delivery_status: "complete", expected: [], delivered: [], missing: [],
+      review: { status: "passed", content_revision: 1 },
+    });
+    const next = applyV2Event(state, ev);
+    expect(next.questions["q_001"].terminal).not.toBeNull();
+    expect(next.degraded).toBe(true);
+  });
+
+  it("selectors work correctly on degraded state", () => {
+    let state = applyDegraded(freshRun(), "count");
+    const q = sampleQuestion("q_001");
+    state = applyV2Event(state, makeEvent("question_update", { run_id: RUN_ID, event_seq: 6, question_id: "q_001", index: 0, content_revision: 1 }, {
+      phase: "draft", question: q,
+    }));
+    expect(selectEndedCount(state)).toBe(0);
+    expect(selectFinalReceivedCount(state)).toBe(0);
+    expect(state.degraded).toBe(true);
   });
 });

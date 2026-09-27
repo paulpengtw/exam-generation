@@ -154,6 +154,153 @@ The backend implements stream protocol v2. Clients **must** send `stream_version
 
 **Fixtures** in `tests/fixtures/generation_v2/`: `math_single_interleaved.jsonl` (`GENERATE_V2_FIXTURE=1 uv run pytest tests/server/test_742_fixture.py::test_interleaved_fixture`); `social_groups_interleaved.jsonl` (`…test_744_social_fixture.py::test_social_fixed_slot_fixture_and_terminal`); `natural_sciences_groups_interleaved.jsonl` (`…test_745_adapter_fixtures.py::test_fixed_adapter_fixture_and_terminal[natural_sciences]`); `math_groups_interleaved.jsonl` (`…test_745_adapter_fixtures.py::test_fixed_adapter_fixture_and_terminal[math]`); `math_abcd_transport.jsonl` (`GENERATE_747_FIXTURE=1 uv run pytest tests/server/test_747_abcd_fixture.py::test_real_publisher_fixture_captures_transport_omitted_terminal`).
 
+### Seq dedup and bounded buffer (issue #748)
+
+`createGenerationStreamDecoder(options?: { clock?: DecoderClock })` now maintains per-event-seq dedup and a bounded out-of-order buffer in v2 mode. Seqs already processed are tracked in a compact fingerprint set (`seqSeen`); a duplicate seq returns `{ kind: "ignore", reason: "duplicate_seq" }` and does NOT inflate the pending buffer. Out-of-order events (seq > nextExpected) are held in `seqPending` until the gap is filled or a bound is hit. Unknown event names in valid v2 envelopes are accepted and occupy their seq slot — no permanent gap. Pending byte size is measured with `TextEncoder` (UTF-8), not `rawData.length` (UTF-16). Bounds: 2 s, 256 pending events, or 4 MiB pending data (whichever hits first); `done`/EOF with an open gap also degrades immediately. On degradation the decoder emits `{ kind: "degraded"; reason: "timeout" | "count" | "size" | "eof_gap" }` followed by any buffered `question_update`/`result`/`question_terminal` events (flushed in seq order); activity-only events (`stage`, `llm_*`, `pipeline`) in the buffer are silently dropped. The decoder also exposes `checkDeadline(): DecodedEvent[]` for timer-driven degradation: if the gap is still open when the timer fires (no new events filled it), this method checks the clock and degrades + flushes the same way. The decoder additionally exposes `msUntilDeadline(): number | null` — returns the remaining milliseconds until the gap deadline, or null when no gap is open (or degraded). `useGenerate` arms a named `fireGapTimer` callback on the first `held` event in v2 mode; after a non-degrading `checkDeadline()` call, if `decoder.msUntilDeadline() !== null` the callback re-arms itself for the remaining time, ensuring a gap 2 that opens after gap 1 fills before the timer fires also expires correctly. The timer is cleared on stream completion, error, or teardown. `RunEvidenceState.degraded` is set by `applyDegraded(state, reason)` exported from `generationEvidence.ts`; when true, `applyV2Event` skips activity-only event processing. `GenerationV2Evidence.degraded` (projected via `projectGenerationEvidence`) drives the `data-testid="statusbar-v2-degraded"` amber notice rendered by `GenerationV2StatusLine`. The injectable `DecoderClock` is used only in tests; production uses `Date.now()`.
+
+### Conflict isolation (issue #749)
+
+`DecodedEvent` gained two new variants emitted by `createGenerationStreamDecoder`: `{ kind: "conflict"; conflictType: "seq_data"; seq: number; eventName: string; questionId: string | null }` and `{ kind: "conflict"; conflictType: "legacy_in_v2" }`. Fingerprinting: `seqFingerprints: Map<number, string>` stores the raw data string for every seq added to `seqSeen`; when a duplicate seq arrives with different raw data a `seq_data` conflict is emitted rather than `duplicate_seq` ignore. `questionId` in the conflict event is extracted from the new event's context (or `null` when absent). Raw legacy events (JSON objects without a `context` key) produce `legacy_in_v2`; the decoder stays in v2 mode.
+
+`RunEvidenceState` gained `batchConflict: boolean`, `batchConflictReason: string | null`, and `legacyMixed: boolean`. `QuestionEvidence` gained `contentConflict?: boolean` and `contentConflictReason?: string`. `applyConflictEvent` (unexported) handles all `{ kind: "conflict" }` events before the v2-only gate in `applyV2Event`: `seq_data` with a known question routes to `terminalConflict` (for `question_terminal` events) or `contentConflict` (for `result`/`question_update`); activity-event seq conflicts produce no question-level effect; unknown or absent questionId sets `batchConflict`. `legacy_in_v2` sets only `legacyMixed`. The `question_update` handler detects same-draft-revision-different-content (only when `receipt === "draft"`) and the `result` handler detects same-final-revision-different-content (only when `receipt === "final"`). Both also check manifest/payload identity (`payload.id` vs `context.question_id`). A `result` arriving at the same `content_revision` as a prior `question_update` draft is checked: `questionContentFingerprint` normalises both by excluding the `metadata` sidecar field (added by the publisher at emit time and confirmed absent/null in drafts across all committed v2 fixtures); identical normalised content → intentional finalisation, adopted as final; different normalised content → `same_revision_different_content` conflict, draft body kept. `selectConflictCount(state)` counts questions with any active conflict flag. `GenerationV2Evidence` gained `conflictCount: number`, `batchConflict: boolean`, `legacyMixed: boolean` (projected via `projectGenerationEvidence`). `GenerationV2StatusLine` renders `data-testid="statusbar-v2-batch-conflict"` and `data-testid="statusbar-v2-legacy-mixed"` amber notices (`role="status"`). `QuestionCard` renders conflict notices with `role="status"` and a `data-testid="evidence-*-conflict-reason"` child showing the specific localized reason code (`card.conflict_reason_<code>`). Reason codes (not English prose): `seq_data`, `same_revision_different_content`, `identity_mismatch`, `terminal_contradiction`, `terminal_invalid`, `review_contradiction`. Both en-US and zh-TW translations are present in `web/src/i18n/messages.ts`.
+
+Key invariants: only terminal disputes set `processing = "unknown"` and reduce `endedCount` (X); content conflicts do not affect X; `batchConflict` does not erase already-confirmed terminals; `legacyMixed` does not affect any evidence conclusions; after permanent degradation `result`/`question_terminal` events still accepted; no auto-resubmit or modification eligibility change.
+
+### Legacy stream adapter (issue #750)
+
+C1×S0 compatibility: a new client (C1) accidentally receiving a stream from an old server (S0) now routes all legacy-mode events through a dedicated state machine (`web/src/lib/legacyAdapter.ts`) that preserves the batch with degraded display instead of applying the C0/S0 arrival-order indexing bug.
+
+**Documented C0/S0 defects NOT fixed here (unfixed old clients remain C0):**
+- C0 assigns index by arrival order of `result` events (`nextFinalIndexRef.current++`)
+- C0 does not deduplicate duplicate result events
+- C0 does not track consistent index↔id mappings
+- C0 may let a later result overwrite an earlier draft at the same position
+
+**Adapter rules (C1×S0):**
+- `LegacyAdapterState`: items keyed by opaque id (`stable_id` → `question_id` → `question.id` → synthetic); consistent explicit `index↔id` evidence resolves original position; arrival order never substitutes.
+- `resolvedIndex: number | null`: `null` → 原題序未知; consistent explicit mapping required to set it.
+- Inconsistent mapping (same id → different index, or same index → different id): silently rejected; item stays at 原題序未知.
+- Duplicate final (same id, already `isFinal`): silently ignored.
+- `done` sets `done: true` only; NOT per-question terminal evidence.
+- Events after `done` are silently discarded (stream is sealed).
+- Late consistent mapping: a `question_update` arriving after a `result` with the same id can still resolve `resolvedIndex`.
+
+**Evidence profile:** Adapter data is embedded as optional `legacyAdapter?: { requestTotal, finalCount, done }` in the existing `generate-legacy` profile (`GenerationLegacyEvidence` in `runEvidence.ts`). No separate `generate-legacy-adapter` profile — the union stays minimal. `projectGenerationEvidence` in `generationStream.ts` accepts an optional `legacyAdapter?: LegacyAdapterState | null` fourth parameter and populates `GenerationLegacyEvidence.legacyAdapter` when the adapter is active.
+
+**Fixture format (sha 35a7219):** `started.data` = `{"generation_log_id": null}` (JSON object, not empty string); `question_update.data` = `{"index": int, "phase": str, "question": {..., "id": str}}`; `result.data` = direct question object (no wrapper). `done.data` = `""`. Route `_serialize_event()` in `routes.py` only serializes `event` + `data`; verification_trail etc. come in separate `trail` events.
+
+**Always-adapter:** The legacy adapter is initialized at `generate()` start (not just on `started`), so pre-started held events also route through it. The "started" handler re-initializes with the server-confirmed count. C0 arrival-order fallback (`nextFinalIndexRef`) is permanently removed from `question_update` and `result` handlers.
+
+**UI treatment:** `GenerationLegacyAdapterStatusLine` in `GenerationStatusBar.tsx` shows "此批無每題即時進度" notice and "請求總數 N" (from `requestTotal`, not a manifest count), rendered when `evidence.profile === "generate-legacy" && evidence.legacyAdapter != null`. Items with `positionUnknown: true` on `GeneratedQuestion` render "原題序未知" in `QuestionCard` via a `data-testid="question-card-position-unknown"` badge. No placeholder cards are built (no pre-allocated manifest slots); `selectLegacyItems` returns only items with received content.
+
+**Modification flow unchanged:** The adapter state lives in legacy mode only; the modification flow never touches it. No auto-resubmit, no modification eligibility change.
+
+Key files:
+- `web/src/lib/legacyAdapter.ts`: `LegacyItem`, `LegacyAdapterState`, `createLegacyAdapter`, `applyLegacyEvent`, `selectLegacyItems`.
+- `web/src/lib/legacyAdapter.test.ts`: TDD unit tests for all adapter rules (18 tests).
+- `tests/fixtures/generation_legacy/math_single_legacy.jsonl`: two-question legacy stream fixture derived from pre-v2 server format (sha 35a7219); `started.data` = `{"generation_log_id": null}`.
+- `web/src/hooks/useGenerate.ts`: adapter initialized at `generate()` start; `question_update`/`result` always route through adapter; `legacyAdapter: LegacyAdapterState | null` exposed in `UseGenerateReturn`; `nextFinalIndexRef` removed.
+- `web/src/i18n/messages.ts`: `stream.legacy_no_per_question_progress`, `card.position_unknown`, `statusbar.legacy_request_total` in both `en-US` and `zh-TW`.
+
+### Snapshot export — JSON (issue #751)
+
+`web/src/utils/exportSnapshot.ts` (capability `question-snapshot-export`) provides atomic, click-time snapshots for single-question, batch, and history JSON downloads. All three surfaces share the same immutable snapshot contract.
+
+**`_export` schema (format_version: 1, `exam-generation.question-snapshot-export/1`):**
+- `format_version: 1` — always 1 for this revision.
+- `exported_at` — ISO 8601 UTC timestamp frozen at click time; identical for all items in a batch.
+- `is_draft: boolean` — true when `content.receipt === "draft"` (v2 evidence) or `isFinal === false` (legacy item). A final with unknown terminal stays `is_draft: false`.
+- `run_id: string | null` — v2 protocol run id from `RunEvidenceState.runId` (= `context.run_id` in the started event); null for legacy cards. History records use `detail.generation_log_id` (equals the v2 run_id for persisted records). NOT the DB `GenerationLog.id` (`generationLogId`) — those happen to be equal when a log exists, but are semantically distinct.
+- `index: number | null` — 0-based original batch position; null for unknown-order legacy items.
+- `content_revision: number | null` — content version from evidence; null for legacy/history.
+- `processing` — `"waiting" | "running" | "ended" | "unknown"`.
+- `termination_reason` — from terminal payload; null when no terminal received.
+- `delivery_status` — from terminal payload; null when no terminal received.
+- `missing: GenerationSlotReference[]` — from terminal.missing; empty when unknown.
+- `review.status` — matched to the current content_revision; `"unknown"` with `unknown_reason: "review_revision_mismatch"` when revision doesn't match.
+
+**Capture rules:**
+- Bodyless placeholders (`receipt === "none"`) are excluded from batch exports.
+- Batch ordering: by known index ascending; `positionUnknown` items sort last, stable by original array order.
+- `stripExport(exported)` removes `_export` and restores the original captured question.
+- Live/stored questions are never mutated.
+- History records always get `is_draft: false`, `processing: "ended"`, `termination_reason: "normal"`, `delivery_status: "complete"`.
+
+**Visible image sources (`QuestionSnapshot.imageSources`):**
+Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot` only, NOT in the downloaded JSON body) capturing what was visible at click time:
+- Keys: `"stem"` for the top-level question image, `"sq{序號}"` (1-based) for per-subquestion images.
+- Source priority per slot: `image_base64` → `"png_base64"` (with `pngBase64` field); `chart_spec` (no image_base64) → `"chart_spec_preview"` (with `chartSpec` field); slot in `terminal.missing` for `kind="image"` → `"known_missing"`; none → slot absent from record.
+- Each source has `contentRevision: number | null` binding it to the snapshot's content revision.
+- Sources are captured AFTER `captureQuestion()` deep-copy so later mutations never affect them.
+- Consumed by #752 (ODT export) and #753 (rasterization); do NOT appear in JSON downloads.
+
+**Filename conventions:**
+- Single draft: `草稿_{questionId}.json`
+- Single final: `{questionId}.json`
+- Batch with any draft: `含草稿_batch_{timestamp}.json`
+- Batch all final: `batch_{timestamp}.json`
+
+**Component wiring:**
+- `QuestionCard`: `runId` prop added; JSON export enabled for drafts (shows "Download Draft JSON"); uses `captureFromEvidence` (v2) or `captureFromGeneratedQuestion` (legacy/history) for the snapshot.
+- `GeneratePage`: batch JSON export uses `captureBatch` with `runId: runEvidence?.runId ?? null`; v2 QuestionCards receive `runId={runEvidence?.runId ?? null}`; legacy QuestionCards receive `runId={null}` (never the DB log id).
+- `HistoryDetail`: JSON download uses `captureFromHistory` when `detail.question_json` is present; falls back to server endpoint only when `question_json` is null.
+
+**Key files:** `web/src/utils/exportSnapshot.ts`, `web/src/utils/exportSnapshot.test.ts`.
+
+### Snapshot export — ODT (issue #752)
+
+> **Full ODT contract met as of issue #753 (re-implemented).** chart_spec_preview slots are rasterized via `defaultRasterizer` using DOM capture + SVG foreignObject with data: URL (same-source: uses what FigureRenderer actually renders; injectable for testing). Per-image conversion failure emits 「匯出缺圖／預覽轉換失敗」 at the slot position; other content is preserved. Whole-ZIP failure throws `OdtBuildError`; no broken file is produced. Retry reuses the last captured snapshot.
+
+`web/src/utils/odt.ts` exports `buildOdtFromSnapshots(title, snapshots)` which consumes the same frozen `QuestionSnapshot[]` produced by `exportSnapshot.ts`.
+
+`buildOdtFromBatch` was removed (review). All callers must use `captureBatchSnapshots` (from `exportSnapshot.ts`) + `buildOdtFromSnapshots` directly, so image sources are never lost.
+
+**Draft / status labelling:**
+- Questions with `_export.is_draft === true` are prefixed with `【草稿】` in the heading.
+- A status line is appended below each question heading: processing, delivery_status (null delivery → "未知（未收到 terminal）"), review.
+- `buildStatusLabel(snapshot)` maps each field to a Chinese chip string.
+
+**題組 (group question) structure — `isGroupQuestion` helper:**
+- A shared `isGroupQuestion(question, missingSlots=[])` helper detects group questions via ANY of: `題型種類 === "題組題"` (math 題組, 社會, 自然 all use it) OR `subquestions.length > 0` OR `missingSlots.some(s => s.kind === "subquestion")`.
+- Preserved even when no subquestions survived (text-only 題組 — `q_RUN_003` in the math_groups fixture).
+- Subquestion numbers are rendered using the original `序號` field (1-based, gapped sequences preserved).
+- Known-missing subquestion slots (from `terminal.missing`) are injected at their correct ordinal position.
+- Final without terminal = `is_draft: false`; NOT relabelled as draft.
+
+**Image embedding from `imageSources`:**
+- `embedSnapshotImages(zip, snapshot, idx, imageRefs)` reads exclusively from `snapshot.imageSources` (frozen at click time); never reads `question.image_base64` directly.
+- `png_base64` kind → embedded in `Pictures/` and referenced as `<draw:image>` in content.xml.
+- `chart_spec_preview` kind → rasterization attempted via injectable `Rasterizer` (issue #753); on success embedded as PNG; on failure emits 「匯出缺圖／預覽轉換失敗」 at the slot position. `buildOdtFromSnapshots` accepts optional `{ rasterizer }` for injection; production uses `defaultRasterizer` from `rasterizer.ts`. `Rasterizer` type takes `RasterizeInput { chartSpec, previewMarkup? }` — `previewMarkup` carries the DOM-captured HTML from the mounted FigureRenderer so the rasterizer uses the same output as the visible preview.
+- `known_missing` kind → text marker `【圖片缺項】`; no PNG file embedded.
+
+**Filename conventions:**
+- Single draft: `草稿_{questionId}.odt`
+- Single final: `{questionId}.odt`
+- Batch with any draft: `含草稿_batch_{timestamp}.odt`
+- Batch all final: `batch_{timestamp}.odt`
+- Helpers: `singleQuestionOdtFilename`, `batchOdtFilename` in `exportSnapshot.ts`.
+
+**Component wiring (issue #753 — retry + DOM augmentation):**
+- `QuestionCard`: ODT button enabled for drafts (label `"card.download_odt_draft"`); captures snapshot via `captureFromEvidence`; augments `imageSources` with live DOM markup via `augmentWithDomMarkup`; stores snapshot in `lastOdtSnapshotRef`; on retry (`odtFeedback.state === "failed"`) re-uses the stored ref without re-capturing. Filename via `singleQuestionOdtFilename`.
+- `GeneratePage`: batch ODT uses `captureBatchSnapshots` (returns `[QuestionSnapshot[], hasDraft]`); wraps each `QuestionCard` in `<div data-question-id={qid}>` so `augmentWithDomMarkup` can look up live FigureRenderer DOM per card; stores result in `lastBatchOdtSnapshotsRef` for retry. On retry (`odtFeedback.state === "failed"`) re-uses the stored ref. Filename via `batchOdtFilename(hasDraft)`.
+- `HistoryDetail`: ODT button (shown when `question_json` present) uses `captureFromHistorySnapshot` + `buildOdtFromSnapshots`; augments with DOM markup from `[data-testid="question-card-content"]`; stores snapshot in `lastHistoryOdtSnapshotRef` for retry. On retry re-uses the stored ref. Filename via `singleQuestionOdtFilename`. `captureFromHistorySnapshot` is separate from `captureFromHistory` (JSON only).
+- All three surfaces: `OdtBuildError` (whole-ZIP failure) → `operationFeedback.state = "failed"` → `InlineFailureNotice`; no broken file is produced. Generation evidence (`_export` fields) is never mutated by export failures.
+
+**TDD:** `web/src/utils/odt.snapshot.test.ts` — 26 tests covering draft label, final (no label), status labels, math 題組 detection via `題型種類`, text-only 題組, subquestion number gaps, known-missing subquestion markers, known-missing/preview image markers, PNG embedding, batch page-break ordering, mixed draft/final batch, `OdtBuildError` on invalid base64.
+
+**Acceptance tests:** `web/src/utils/odt.acceptance.test.ts` — (a) fixture-based: math_groups_interleaved.jsonl batch, verifying text-only 題組 structure (q_RUN_003), partial/complete status labels; (b) legacy unknown-order batch stable sort; (c) snapshot immutability after source mutation; (d) flat question still renders flat.
+
+**Component-level jsdom tests (issue #753):**
+- `web/src/components/QuestionCard.odt.test.tsx` — 6 tests (q1–q6): per-image failure → ODT still downloads with marker; ZIP failure → error shown, no download; retry re-uses same snapshot; fresh click after dismiss captures new snapshot; evidence unchanged after failure; PNG download uses correct filename convention.
+- `web/src/pages/GeneratePage.odt-retry.test.tsx` — 4 tests (r1–r4): ZIP failure → InlineFailureNotice; retry re-uses same batch snapshot; fresh click captures new snapshot; evidence unchanged.
+- `web/src/pages/HistoryDetail.odt.test.tsx` — 4 tests (h1–h4): ODT success; ZIP failure; retry re-uses stored snapshot (no re-capture); evidence unchanged.
+
+**Real-browser tests (issue #753):**
+- `tests/test_753_odt_browser.py` — 9 tests: 3 raw SVG foreignObject tests (table, scenario, no tainted canvas) + 6 harness tests driving real modules via `npx vite` dev server: defaultRasterizer produces PNG, same-source previewMarkup path, buildOdtFromSnapshots with chart_spec (PNG embedded), with png_base64, injected failure → marker with no PNG, no SecurityError.
+- Test harness: `web/test-harness/odt-export.html` + `web/test-harness/odt-export-entry.ts` — served by `npx vite`, exposes `window.__harness.runAll()` for Playwright.
+
+**Key files:** `web/src/utils/odt.ts`, `web/src/utils/odt.snapshot.test.ts`, `web/src/utils/odt.acceptance.test.ts`, `web/src/utils/exportSnapshot.ts`, `web/src/utils/rasterizer.ts`, `web/src/pages/GeneratePage.tsx`, `web/src/pages/HistoryDetail.tsx`, `web/test-harness/odt-export.html`, `web/test-harness/odt-export-entry.ts`.
+
 ### Save draft and update (issue #772)
 
 `web/src/lib/recovery/format.ts` defines `RecoverySnapshotV1` (schema `exam-generation.recovery/1`) with `parseRecoverySnapshot` for strict validation (account, origin, environment, form shape).

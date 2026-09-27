@@ -14,10 +14,13 @@ import ProgressLog from "../components/ProgressLog";
 import QuestionCard from "../components/QuestionCard";
 import { useFeedbackDialog } from "../hooks/useFeedbackDialog";
 import { useGenerate } from "../hooks/useGenerate";
+import { useRetryableSnapshot } from "../hooks/useRetryableSnapshot";
 import { useAuthStore } from "../store/authStore";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../components/LanguageSwitcher";
-import { buildExamOdt, formatTimestamp } from "../utils/odt";
+import { buildOdtFromSnapshots, formatTimestamp } from "../utils/odt";
+import { captureBatch, captureBatchSnapshots, batchFilename, batchOdtFilename, augmentWithDomMarkup, type QuestionSnapshot } from "../utils/exportSnapshot";
+import { serializeElementToMarkup } from "../utils/domCapture";
 import {
   ActionButton,
   ActionFailure,
@@ -136,6 +139,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     restoreResults: restoreSavedResults,
     reset,
     evidence: runEvidence,
+    legacyAdapter: legacyAdapterState,
   } = useGenerate();
   // Recovery must be resolved before ParamForm mounts. Otherwise its schema,
   // model, draft, and default effects can observe an empty form and replace a
@@ -247,8 +251,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       llmCalls,
       submittedSubQuestionCount ?? subQuestionTotal,
       runEvidence,
+      legacyAdapterState,
     ),
-    [llmCalls, runEvidence, submittedSubQuestionCount, subQuestionTotal],
+    [llmCalls, runEvidence, submittedSubQuestionCount, subQuestionTotal, legacyAdapterState],
   );
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -262,6 +267,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const [resultsRestoreError, setResultsRestoreError] = useState(false);
   const [resultsRestoreVerified, setResultsRestoreVerified] = useState(false);
   const restoredResultsKeyRef = useRef<string | null>(null);
+  // Stored batch ODT snapshot for retry (#753): reuse the same captured snapshot on retry
+  const { getOrCapture: getOrCaptureBatchOdtSnapshots } =
+    useRetryableSnapshot<[QuestionSnapshot[], boolean]>();
   const restoreReceivedResults = useCallback((): boolean => {
     if (!recoveryResults) {
       setResultsRestoreError(false);
@@ -386,10 +394,20 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
   const jsonFeedback = useActionFeedback({
     action: async () => {
-      const filename = `batch_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+      // Atomically capture the batch snapshot at click time (issue #751)
+      const exportedAt = new Date().toISOString();
+      const evidenceByQuestionId = runEvidence?.questions ?? {};
+      const batch = captureBatch({
+        displayResults,
+        evidenceByQuestionId,
+        // v2 run_id is the protocol run id (RunEvidenceState.runId), not the DB log id
+        runId: runEvidence?.runId ?? null,
+        exportedAt,
+      });
+      const filename = batchFilename(batch.hasDraft);
       const operation = useWorkspaceStore.getState().beginOperation("export_json", "generate.results");
       try {
-        const json = JSON.stringify(results, null, 2);
+        const json = JSON.stringify(batch.exported, null, 2);
         downloadBlob(new Blob([json], { type: "application/json" }), filename);
         operation.end("completed");
         return filename;
@@ -404,20 +422,58 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
   const odtFeedback = useActionFeedback({
     action: async () => {
-      const ts = formatTimestamp();
-      const filename = `exam_${ts}.odt`;
+      const batchCapture = getOrCaptureBatchOdtSnapshots(
+        odtFeedback.state === "failed",
+        () => {
+          // Fresh export click: capture a new snapshot at this instant.
+          const exportedAt = new Date().toISOString();
+          const evidenceByQuestionId = runEvidence?.questions ?? {};
+          const [ss, hd] = captureBatchSnapshots({
+            displayResults,
+            evidenceByQuestionId,
+            runId: runEvidence?.runId ?? null,
+            exportedAt,
+          });
+          // Try to augment chart_spec_preview slots with DOM markup from mounted
+          // cards (same-source capture). Requires [data-question-id] wrappers in
+          // the JSX below. Falls back to offscreen FigureRenderer rendering when
+          // the element is not found (e.g. during unit tests with mocked cards).
+          for (const snapshot of ss) {
+            const questionId = snapshot.captured.id;
+            if (questionId) {
+              // Use attribute-value match (no CSS.escape needed for data attribute selectors)
+              const cardEl = Array.from(
+                document.querySelectorAll("[data-question-id]"),
+              ).find((el) => el.getAttribute("data-question-id") === questionId) ?? null;
+              if (cardEl) {
+                augmentWithDomMarkup(snapshot.imageSources, (slotKey) => {
+                  const el = cardEl.querySelector(`[data-figure-slot="${slotKey}"]`);
+                  if (!el) return null;
+                  try { return serializeElementToMarkup(el); } catch { return null; }
+                });
+              }
+            }
+          }
+          return [ss, hd] as [QuestionSnapshot[], boolean];
+        },
+      );
+      if (!batchCapture) throw new Error("No snapshots captured");
+      const [snapshots, hasDraft] = batchCapture;
+
+      const filename = batchOdtFilename(hasDraft);
       const operation = useWorkspaceStore.getState().beginOperation("export_odt", "generate.results");
       try {
-        const blob = await buildExamOdt(`exam_${ts}`, results);
+        const ts = formatTimestamp();
+        const blob = await buildOdtFromSnapshots(`exam_${ts}`, snapshots);
         downloadBlob(blob, filename);
         operation.end("completed");
         return filename;
       } catch (error: unknown) {
         operation.end("failed");
         const questionIndex = getOdtQuestionIndex(error);
-        if (questionIndex !== null && results[questionIndex]) {
-          const question = results[questionIndex];
-          const id = question.id ?? String(questionIndex + 1);
+        if (questionIndex !== null && snapshots[questionIndex]) {
+          const snap = snapshots[questionIndex];
+          const id = snap.exported.id ?? String(questionIndex + 1);
           const detail = t("generate.download_odt_group_error")
             .replace("{n}", String(questionIndex + 1))
             .replace("{id}", id);
@@ -712,15 +768,19 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                             : undefined;
                         return (
                           <AnimatedQuestionCard key={qid} index={idx}>
-                            <QuestionCard
-                              index={idx}
-                              evidence={qEvidence}
-                              question={displayItem?.question}
-                              subject={subject}
-                              livePhaseLabel={livePhaseLabel}
-                              requestedTotal={requestedTotal}
-                              {...cardProps}
-                            />
+                            {/* data-question-id enables batch ODT DOM capture (#753) */}
+                            <div data-question-id={qid}>
+                              <QuestionCard
+                                index={idx}
+                                evidence={qEvidence}
+                                question={displayItem?.question}
+                                subject={subject}
+                                livePhaseLabel={livePhaseLabel}
+                                requestedTotal={requestedTotal}
+                                runId={runEvidence?.runId ?? null}
+                                {...cardProps}
+                              />
+                            </div>
                           </AnimatedQuestionCard>
                         );
                       })
@@ -729,9 +789,12 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                         key={item.question.id ?? `q-${item.index}`}
                         index={idx}
                       >
-                        <QuestionCard
-                          question={item.question}
-                          subject={subject}
+                        {/* data-question-id enables batch ODT DOM capture (#753) */}
+                        <div data-question-id={item.question.id ?? `q-${item.index}`}>
+                          <QuestionCard
+                            question={item.question}
+                            subject={subject}
+                            positionUnknown={item.positionUnknown}
                           livePhaseLabel={
                             status === "generating" &&
                             requestedTotal > 1 &&
@@ -748,8 +811,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                               : undefined
                           }
                           requestedTotal={requestedTotal}
+                          runId={null}
                           {...projectGenerationCardEvidence(item)}
                         />
+                        </div>
                       </AnimatedQuestionCard>
                       ))}
                 </AnimatePresence>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
 import type { LlmCallEvent } from "../hooks/useGenerate";
-import type { GenerationV2Evidence, RunEvidence } from "../lib/runEvidence";
+import type { GenerationLegacyEvidence, GenerationV2Evidence, RunEvidence } from "../lib/runEvidence";
 import { Shimmer } from "../motion/Indicators";
 import {
   runPhaseLabel,
@@ -146,6 +146,66 @@ function GenerationV2StatusLine({ evidence }: { evidence: GenerationV2Evidence }
       <span data-testid="statusbar-v2-ended">{endedLabel}</span>
       {" · "}
       <span data-testid="statusbar-v2-final">{finalLabel}</span>
+      {evidence.degraded && (
+        <>
+          {" · "}
+          <span
+            role="status"
+            data-testid="statusbar-v2-degraded"
+            className="text-amber-600 dark:text-amber-400"
+          >
+            {t("stream.information_incomplete") as string}
+          </span>
+        </>
+      )}
+      {evidence.batchConflict && (
+        <>
+          {" · "}
+          <span
+            role="status"
+            data-testid="statusbar-v2-batch-conflict"
+            className="text-amber-600 dark:text-amber-400"
+          >
+            {t("stream.batch_conflict") as string}
+          </span>
+        </>
+      )}
+      {evidence.legacyMixed && (
+        <>
+          {" · "}
+          <span
+            role="status"
+            data-testid="statusbar-v2-legacy-mixed"
+            className="text-amber-600 dark:text-amber-400"
+          >
+            {t("stream.legacy_mixed") as string}
+          </span>
+        </>
+      )}
+    </span>
+  );
+}
+
+function GenerationLegacyAdapterStatusLine({ evidence }: { evidence: GenerationLegacyEvidence }) {
+  const t = useT();
+  const adapter = evidence.legacyAdapter!;
+  return (
+    <span className="sentry-unmask">
+      <span
+        role="status"
+        data-testid="statusbar-legacy-adapter-notice"
+        className="text-amber-600 dark:text-amber-400"
+      >
+        {t("stream.legacy_no_per_question_progress") as string}
+      </span>
+      {adapter.requestTotal !== null && (
+        <>
+          {" · "}
+          <span data-testid="statusbar-legacy-adapter-total">
+            {(t("statusbar.legacy_request_total") as string).replace("{n}", String(adapter.requestTotal))}
+          </span>
+        </>
+      )}
     </span>
   );
 }
@@ -207,6 +267,7 @@ export default function GenerationStatusBar({
     evidence.profile === "generate-legacy" && runState === "running" && requestedTotal === 1;
   const showModificationSteps = modification && runState === "running";
   const showV2Status = evidence.profile === "generate-v2";
+  const showLegacyAdapterStatus = evidence.profile === "generate-legacy" && evidence.legacyAdapter != null;
 
   return (
     <div
@@ -248,6 +309,12 @@ export default function GenerationStatusBar({
                   <span aria-hidden="true"> · </span>
                   <GenerationV2StatusLine evidence={evidence as GenerationV2Evidence} />
                 </>
+              ) : showLegacyAdapterStatus ? (
+                <>
+                  <BatchRunningLabel phase={phase} />
+                  <span aria-hidden="true"> · </span>
+                  <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyEvidence} />
+                </>
               ) : (
                 <BatchRunningLabel phase={phase} />
               )
@@ -259,6 +326,11 @@ export default function GenerationStatusBar({
                 <>
                   <span className="sentry-unmask">✓ {t("statusbar.done")} · </span>
                   <GenerationV2StatusLine evidence={evidence as GenerationV2Evidence} />
+                </>
+              ) : showLegacyAdapterStatus ? (
+                <>
+                  <span className="sentry-unmask">✓ {t("statusbar.done")} · </span>
+                  <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyEvidence} />
                 </>
               ) : (
                 <>
@@ -283,7 +355,13 @@ export default function GenerationStatusBar({
                 <GenerationV2StatusLine evidence={evidence as GenerationV2Evidence} />
               </>
             ) : null}
-            {runState === "error" && !showV2Status ? (
+            {runState === "error" && showLegacyAdapterStatus ? (
+              <>
+                <span className="sentry-unmask">✕ {t("statusbar.error")} · </span>
+                <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyEvidence} />
+              </>
+            ) : null}
+            {runState === "error" && !showV2Status && !showLegacyAdapterStatus ? (
               <span className="sentry-unmask">
                 ✕ {t("statusbar.error")}
               </span>
@@ -294,7 +372,13 @@ export default function GenerationStatusBar({
                 <GenerationV2StatusLine evidence={evidence as GenerationV2Evidence} />
               </>
             ) : null}
-            {runState === "unknown" && !showV2Status ? (
+            {runState === "unknown" && showLegacyAdapterStatus ? (
+              <>
+                <span className="sentry-unmask">? {t("statusbar.unknown")} · </span>
+                <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyEvidence} />
+              </>
+            ) : null}
+            {runState === "unknown" && !showV2Status && !showLegacyAdapterStatus ? (
               <span className="sentry-unmask">
                 ? {t("statusbar.unknown")}
               </span>

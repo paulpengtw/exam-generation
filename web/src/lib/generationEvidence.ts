@@ -88,6 +88,14 @@ export interface QuestionEvidence {
   terminalConflictReason?: string;
   /** Review-only disagreement does not invalidate the processing conclusion. */
   reviewConflict?: boolean;
+  /**
+   * Content version conflict (issue #749): same content_revision but different data, or
+   * a manifest/payload identity mismatch, or a seq_data conflict on a content event.
+   * Does NOT affect processing status or endedCount — only terminal disputes do that.
+   * The already-received body is retained unchanged.
+   */
+  contentConflict?: boolean;
+  contentConflictReason?: string;
   /** terminal says has_final but final_revision not yet received */
   finalPending: boolean;
   /** stream closed while finalPending was true */
@@ -112,6 +120,19 @@ export interface RunEvidenceState {
   order: string[];
   questions: Record<string, QuestionEvidence>;
   closed: boolean;
+  degraded: boolean;
+  degradedReason: "timeout" | "count" | "size" | "eof_gap" | null;
+  /**
+   * True when an unattributable seq conflict stops whole-batch live updates
+   * (issue #749).  Individual already-confirmed terminals are NOT erased.
+   */
+  batchConflict: boolean;
+  batchConflictReason: string | null;
+  /**
+   * True when a raw legacy event was received in v2 mode (issue #749).
+   * The decoder stays in v2 mode; unmatched content is incomplete.
+   */
+  legacyMixed: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,7 +147,10 @@ function emptyQuestionEvidence(questionId: string, index: number): QuestionEvide
     content: { receipt: "none", revision: null, question: null, phase: null },
     terminal: null,
     terminalConflict: false,
+    terminalConflictReason: undefined,
     reviewConflict: false,
+    contentConflict: false,
+    contentConflictReason: undefined,
     finalPending: false,
     finalMissing: false,
     review: { status: "unknown", revision: null, pending: false },
@@ -143,7 +167,26 @@ export function createRunEvidence(run: RunManifest): RunEvidenceState {
   for (const m of run.manifest) {
     questions[m.questionId] = emptyQuestionEvidence(m.questionId, m.index);
   }
-  return { runId: run.runId, total: run.total, order, questions, closed: false };
+  return {
+    runId: run.runId,
+    total: run.total,
+    order,
+    questions,
+    closed: false,
+    degraded: false,
+    degradedReason: null,
+    batchConflict: false,
+    batchConflictReason: null,
+    legacyMixed: false,
+  };
+}
+
+export function applyDegraded(
+  state: RunEvidenceState,
+  reason: "timeout" | "count" | "size" | "eof_gap",
+): RunEvidenceState {
+  if (state.degraded) return state;
+  return { ...state, degraded: true, degradedReason: reason };
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +334,23 @@ function sameTerminal(left: QuestionTerminalPayload, right: QuestionTerminalPayl
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/**
+ * Compare two terminal payloads for "same outcome" — used to detect when only
+ * the review block differs (review disagreement ≠ terminal contradiction).
+ *
+ * The server builds `expected`, `delivered`, and `missing` in manifest (slot)
+ * order: it iterates `slot_manifest` by `slot_index` position, so the same
+ * submission always produces the same ordering.  Confirmed in
+ * `server/generate/service.py` `_build_question_terminal_payload` (for-loop
+ * over `slot_manifest`).  An identical resend therefore arrives byte-identical
+ * in these arrays and is correctly detected as "same outcome" by the
+ * JSON.stringify comparison.  A genuinely different outcome changes at least
+ * one of the compared fields and is still detected as a conflict.
+ *
+ * If the server ever stops guaranteeing this order, change the comparison to
+ * be order-insensitive by slot identity (e.g. sort by subquestion_id before
+ * stringifying).
+ */
 function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTerminalPayload): boolean {
   return JSON.stringify({
     termination_reason: left.termination_reason,
@@ -313,9 +373,122 @@ function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTermi
   });
 }
 
+/**
+ * Transport/sidecar fields that the publisher adds to a `result` payload at
+ * emission time and that are NOT part of the immutable content signature.
+ * Confirmed by inspection of all five committed v2 fixtures: `metadata` is
+ * null in `question_update` (draft) and populated in `result` (final) for the
+ * same content_revision; all other question fields are byte-identical.
+ * Excluding these from the fingerprint lets the draft→final promotion pass
+ * without a false content conflict.
+ */
+const CONTENT_SIDECAR_FIELDS = new Set(["metadata"]);
+
+/**
+ * A lightweight fingerprint for content-conflict detection (issue #749).
+ * Normalises the question object by excluding transport/sidecar fields before
+ * serialising.  An empty string on stringify failure ensures a mismatch is
+ * never silently treated as identical.
+ */
+function questionContentFingerprint(q: unknown): string {
+  if (q !== null && q !== undefined && typeof q === "object" && !Array.isArray(q)) {
+    const normalized: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(q as Record<string, unknown>)) {
+      if (!CONTENT_SIDECAR_FIELDS.has(k)) normalized[k] = v;
+    }
+    try { return JSON.stringify(normalized) ?? ""; } catch { return ""; }
+  }
+  try {
+    return JSON.stringify(q) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Handle conflict events emitted by the stream decoder (issue #749).
+ * seq_data conflicts are locatable to a question when questionId is present;
+ * otherwise they stop whole-batch live (batchConflict).  legacy_in_v2 sets
+ * legacyMixed without stopping live or erasing any confirmed terminals.
+ */
+function applyConflictEvent(
+  state: RunEvidenceState,
+  ev: Extract<DecodedEvent, { kind: "conflict" }>,
+): RunEvidenceState {
+  if (ev.conflictType === "legacy_in_v2") {
+    if (state.legacyMixed) return state;
+    return { ...state, legacyMixed: true };
+  }
+
+  if (ev.conflictType === "seq_data") {
+    const { eventName, questionId } = ev;
+
+    if (!questionId) {
+      // Unattributable — stop whole-batch live; confirmed terminals remain.
+      if (state.batchConflict) return state;
+      return { ...state, batchConflict: true, batchConflictReason: "seq_data" };
+    }
+
+    const qev = state.questions[questionId];
+    if (!qev) {
+      // questionId not in manifest → treat as unattributable
+      if (state.batchConflict) return state;
+      return { ...state, batchConflict: true, batchConflictReason: "seq_data" };
+    }
+
+    if (eventName === "question_terminal") {
+      // Terminal seq conflict → terminalConflict, processing=unknown, excluded from X
+      if (qev.terminalConflict) return state;
+      return updateQuestion(state, questionId, {
+        processing: "unknown",
+        terminalConflict: true,
+        terminalConflictReason: "seq_data",
+        reviewConflict: false,
+        finalPending: false,
+        review: {
+          status: "unknown",
+          revision: qev.review.revision,
+          pending: false,
+          reason: "seq_data",
+        },
+      });
+    }
+
+    if (eventName === "result" || eventName === "question_update") {
+      // Content seq conflict → contentConflict; processing and terminal unaffected
+      if (qev.contentConflict) return state;
+      return updateQuestion(state, questionId, {
+        contentConflict: true,
+        contentConflictReason: "seq_data",
+      });
+    }
+
+    // Activity event seq conflict (stage, llm_*, pipeline) → no question-level effect;
+    // does not constitute evidence-grade data, so the conclusion stays reliable.
+    return state;
+  }
+
+  return state;
+}
+
 export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent): RunEvidenceState {
+  // Issue #749: handle conflict events before the v2-only gate.
+  if (decodedEvent.kind === "conflict") {
+    return applyConflictEvent(state, decodedEvent);
+  }
+
   if (decodedEvent.kind !== "v2") return state;
   const { name, context, payload } = decodedEvent.event;
+
+  // When degraded, skip activity-only events; content and terminal still apply.
+  if (state.degraded && (
+    name === "stage" || name === "pipeline"
+    || name === "llm_request" || name === "llm_response"
+    || name === "llm_thinking" || name === "llm_content" || name === "llm_failure"
+  )) {
+    return state;
+  }
+
   const ctx = context as Record<string, unknown>;
 
   // Done event closes the run
@@ -398,6 +571,40 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
       }
       // Ignore older revisions
       if (qev.content.revision !== null && contentRevision < qev.content.revision) return state;
+
+      // Issue #749: manifest/payload identity mismatch — question object id must match context.
+      const questionObj = p.question as Record<string, unknown> | null | undefined;
+      if (
+        questionObj !== null
+        && questionObj !== undefined
+        && typeof questionObj.id === "string"
+        && questionObj.id !== questionId
+      ) {
+        if (qev.contentConflict) return state;
+        return updateQuestion(state, questionId, {
+          contentConflict: true,
+          contentConflictReason: "identity_mismatch",
+        });
+      }
+
+      // Issue #749: same-revision-different-content — only flag when an already-stored
+      // DRAFT arrives again at the same revision with different content.  A `result` event
+      // at the same revision as a prior `question_update` draft is intentional finalisation,
+      // not a conflict; we must not compare the two.
+      if (qev.content.receipt === "draft" && qev.content.revision === contentRevision && qev.content.question !== null) {
+        const storedFp = questionContentFingerprint(qev.content.question);
+        const newFp = questionContentFingerprint(questionObj);
+        if (storedFp !== newFp) {
+          if (qev.contentConflict) return state;
+          return updateQuestion(state, questionId, {
+            contentConflict: true,
+            contentConflictReason: "same_revision_different_content",
+          });
+        }
+        // Same draft revision, same content → idempotent resend, no state change needed
+        return state;
+      }
+
       // Only update if this is not a final receipt, or if revision is higher
       if (qev.content.receipt === "final" && qev.content.revision !== null && contentRevision <= qev.content.revision) {
         return state;
@@ -428,9 +635,58 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
       if (qev.content.revision !== null && contentRevision < qev.content.revision) {
         return state;
       }
+
+      // Issue #749: manifest/payload identity mismatch — result payload id must match context.
+      const resultPayload = payload as Record<string, unknown>;
+      if (typeof resultPayload.id === "string" && resultPayload.id !== questionId) {
+        if (qev.contentConflict) return state;
+        return updateQuestion(state, questionId, {
+          contentConflict: true,
+          contentConflictReason: "identity_mismatch",
+        });
+      }
+
       if (qev.content.receipt === "final" && qev.content.revision !== null && contentRevision <= qev.content.revision) {
+        // Issue #749: same-revision-different-content — two `result` events for the same
+        // final revision with different data is a conflict.  A result at a lower revision
+        // than the stored final is silently ignored (older, not a conflict).
+        if (contentRevision === qev.content.revision && qev.content.question !== null) {
+          const storedFp = questionContentFingerprint(qev.content.question);
+          const newFp = questionContentFingerprint(payload);
+          if (storedFp !== newFp) {
+            if (qev.contentConflict) return state;
+            return updateQuestion(state, questionId, {
+              contentConflict: true,
+              contentConflictReason: "same_revision_different_content",
+            });
+          }
+        }
         return state;
       }
+
+      // Issue #749 (Gap 1): same-revision draft→final content conflict.
+      // Per snapshot-ledger contract (tasks 3.1/3.3), a revision's content is immutable.
+      // A `result` at the same content_revision as a stored draft may only promote
+      // identical (normalised) content.  `metadata` is a sidecar field added by the
+      // publisher at result-time and is legitimately absent from the draft; exclude it
+      // before comparing so real fixtures (social/NS) do not produce false conflicts.
+      if (
+        qev.content.receipt === "draft"
+        && qev.content.revision === contentRevision
+        && qev.content.question !== null
+      ) {
+        const storedFp = questionContentFingerprint(qev.content.question);
+        const newFp = questionContentFingerprint(payload);
+        if (storedFp !== newFp) {
+          if (qev.contentConflict) return state;
+          return updateQuestion(state, questionId, {
+            contentConflict: true,
+            contentConflictReason: "same_revision_different_content",
+          });
+        }
+        // Same normalised content: intentional finalisation — fall through to adopt as final.
+      }
+
       const question = payload as ExamQuestion;
       // Clear finalPending if this matches the expected final_revision
       const newFinalPending = qev.finalPending && qev.terminal !== null
@@ -451,10 +707,10 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
         return updateQuestion(state, questionId, {
           processing: "unknown",
           terminalConflict: true,
-          terminalConflictReason: "invalid terminal evidence",
+          terminalConflictReason: "terminal_invalid",
           reviewConflict: false,
           finalPending: false,
-          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "invalid terminal evidence" },
+          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "terminal_invalid" },
         });
       }
       if (qev.terminalConflict) return state;
@@ -467,17 +723,17 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
               status: "unknown",
               revision: qev.review.revision,
               pending: false,
-              reason: "contradictory review evidence",
+              reason: "review_contradiction",
             },
           });
         }
         return updateQuestion(state, questionId, {
           processing: "unknown",
           terminalConflict: true,
-          terminalConflictReason: "contradictory terminal evidence",
+          terminalConflictReason: "terminal_contradiction",
           reviewConflict: false,
           finalPending: false,
-          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "contradictory terminal evidence" },
+          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "terminal_contradiction" },
         });
       }
       if (
@@ -492,10 +748,10 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
         return updateQuestion(state, questionId, {
           processing: "unknown",
           terminalConflict: true,
-          terminalConflictReason: "terminal revision conflicts with received content",
+          terminalConflictReason: "terminal_contradiction",
           reviewConflict: false,
           finalPending: false,
-          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "terminal revision conflicts with received content" },
+          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "terminal_contradiction" },
         });
       }
       // finalPending: terminal says has_final but we haven't received the final_revision yet
@@ -706,6 +962,16 @@ export function closeRun(state: RunEvidenceState): RunEvidenceState {
 /** Number of unique questions that have received a question_terminal event. */
 export function selectEndedCount(state: RunEvidenceState): number {
   return Object.values(state.questions).filter((q) => q.terminal !== null && !q.terminalConflict).length;
+}
+
+/**
+ * Number of unique questions with any active conflict flag
+ * (terminalConflict, contentConflict, or reviewConflict).  Issue #749.
+ */
+export function selectConflictCount(state: RunEvidenceState): number {
+  return Object.values(state.questions).filter(
+    (q) => q.terminalConflict || q.contentConflict || q.reviewConflict,
+  ).length;
 }
 
 /** Number of unique questions whose content.receipt === 'final'. */

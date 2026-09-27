@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRetryableSnapshot } from "../hooks/useRetryableSnapshot";
 
 import { ApiError } from "../api/client";
 import type {
@@ -29,7 +30,16 @@ import {
 import { Spinner } from "../motion/Indicators";
 import { MotionDisclosure } from "../motion/MotionDisclosure";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
-import { buildExamOdt, formatTimestamp } from "../utils/odt";
+import { buildOdtFromSnapshots } from "../utils/odt";
+import {
+  captureFromEvidence,
+  captureFromGeneratedQuestion,
+  singleQuestionFilename,
+  singleQuestionOdtFilename,
+  augmentWithDomMarkup,
+  type QuestionSnapshot,
+} from "../utils/exportSnapshot";
+import { serializeElementToMarkup } from "../utils/domCapture";
 import FigureRenderer, {
   classifySpec,
   isFrontendTsEnabled,
@@ -51,6 +61,13 @@ export interface QuestionCardProps {
   question?: ExamQuestion;
   /** Manifest position index (0-based); required when evidence is provided */
   index?: number;
+  /**
+   * When true the original batch position could not be resolved.
+   * The card shows "原題序未知" instead of "第 N 題".
+   * Set by the C1×S0 legacy adapter (issue #750) for items with no consistent
+   * index↔id evidence.
+   */
+  positionUnknown?: boolean;
   /** Per-question evidence from the v2 stream */
   evidence?: QuestionEvidence;
   recordId?: string;
@@ -67,6 +84,8 @@ export interface QuestionCardProps {
   onInteractionSubmit?: (submission: InteractionSubmission) => void;
   recoveredModification?: ModificationWorkspaceSnapshot;
   modificationRestoreEligible?: boolean;
+  /** Run id (generation_log_id) for snapshot _export metadata */
+  runId?: string | null;
 }
 
 interface VerificationShape {
@@ -381,7 +400,7 @@ function SubQuestionBlock({
         if (!figure) return null;
         if (figure.kind === "ts") {
           return (
-            <div className="rounded border border-gray-200 bg-white p-2">
+            <div className="rounded border border-gray-200 bg-white p-2" data-figure-slot={`sq${sub.序號}`}>
               <FigureRenderer spec={figure.spec} alt={`第${sub.序號}題素材圖片`} />
             </div>
           );
@@ -582,10 +601,28 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
         </span>
       )}
       {evidence.terminalConflict && (
-        <span data-testid="evidence-terminal-conflict">{t("card.evidence_conflict")}</span>
+        <span data-testid="evidence-terminal-conflict" role="status">
+          {t("card.evidence_conflict")}
+          {evidence.terminalConflictReason && (
+            <> — <span data-testid="evidence-terminal-conflict-reason">{t(`card.conflict_reason_${evidence.terminalConflictReason}`)}</span></>
+          )}
+        </span>
       )}
       {evidence.reviewConflict && (
-        <span data-testid="evidence-review-conflict">{t("card.review_conflict")}</span>
+        <span data-testid="evidence-review-conflict" role="status">
+          {t("card.review_conflict")}
+          {evidence.review.reason && (
+            <> — <span data-testid="evidence-review-conflict-reason">{t(`card.conflict_reason_${evidence.review.reason}`)}</span></>
+          )}
+        </span>
+      )}
+      {evidence.contentConflict && (
+        <span data-testid="evidence-content-conflict" role="status">
+          {t("card.content_conflict")}
+          {evidence.contentConflictReason && (
+            <> — <span data-testid="evidence-content-conflict-reason">{t(`card.conflict_reason_${evidence.contentConflictReason}`)}</span></>
+          )}
+        </span>
       )}
       <span data-testid="evidence-review-status">{reviewLabel}</span>
       <span data-testid="evidence-receipt-status">{receiptLabel}</span>
@@ -666,6 +703,7 @@ function QuestionActivityPanel({ evidence }: { evidence: QuestionEvidence }) {
 export default function QuestionCard({
   question: initialQuestion,
   index,
+  positionUnknown,
   evidence,
   recordId,
   route,
@@ -680,12 +718,15 @@ export default function QuestionCard({
   onInteractionSubmit,
   recoveredModification,
   modificationRestoreEligible,
+  runId = null,
 }: QuestionCardProps) {
   const t = useT();
   const showLivePhase = livePhaseLabel !== undefined && !isFinal && requestedTotal > 1;
 
   const [showSolution, setShowSolution] = useState(!isFinal);
   const cardRef = useRef<HTMLDivElement>(null);
+  const { getOrCapture: getOrCaptureOdtSnapshot } =
+    useRetryableSnapshot<QuestionSnapshot>();
   const [latchedRecoveredModification] = useState(recoveredModification);
   const recoveredAnnotations = latchedRecoveredModification?.annotations ?? [];
   const nextAnnotationId = useRef(recoveredAnnotations.length);
@@ -864,9 +905,27 @@ export default function QuestionCard({
   const jsonFeedback = useActionFeedback({
     action: async () => {
       if (!_question) throw new Error("Question is not available");
-      const filename = `${getQuestionId(_question)}.json`;
+      const exportedAt = new Date().toISOString();
+      // Atomically capture the snapshot at click time
+      const snapshot = evidence
+        ? captureFromEvidence(_question, evidence, runId ?? null, exportedAt)
+        : captureFromGeneratedQuestion(
+            {
+              index: typeof index === "number" ? index : 0,
+              question: _question,
+              phase,
+              isFinal,
+              stableId: _question.id ?? undefined,
+              contentRevision: null,
+            },
+            runId ?? null,
+            exportedAt,
+          );
+      const exportedQuestion = snapshot?.exported ?? _question;
+      const isDraftExport = snapshot ? snapshot.isDraft : !isFinal;
+      const filename = singleQuestionFilename(getQuestionId(_question), isDraftExport);
       await runExportOperation("export_json", () => {
-        const json = JSON.stringify(_question, null, 2);
+        const json = JSON.stringify(exportedQuestion, null, 2);
         downloadBlob(new Blob([json], { type: "application/json" }), filename);
       });
       return filename;
@@ -891,10 +950,49 @@ export default function QuestionCard({
   const odtFeedback = useActionFeedback({
     action: async () => {
       if (!_question) throw new Error("Question is not available");
-      const ts = formatTimestamp();
-      const filename = `exam_${ts}.odt`;
+
+      const snapshot = getOrCaptureOdtSnapshot(
+        odtFeedback.state === "failed",
+        () => {
+          // New export click: capture a fresh snapshot
+          const exportedAt = new Date().toISOString();
+          const s = evidence
+            ? captureFromEvidence(_question, evidence, runId ?? null, exportedAt)
+            : captureFromGeneratedQuestion(
+                {
+                  index: typeof index === "number" ? index : 0,
+                  question: _question,
+                  phase,
+                  isFinal,
+                  stableId: _question.id ?? undefined,
+                  contentRevision: null,
+                },
+                runId ?? null,
+                exportedAt,
+              );
+          if (s) {
+            // Augment chart_spec_preview slots with DOM markup from the mounted card
+            if (cardRef.current) {
+              augmentWithDomMarkup(s.imageSources, (slotKey) => {
+                const el = cardRef.current?.querySelector(`[data-figure-slot="${slotKey}"]`);
+                if (!el) return null;
+                try {
+                  return serializeElementToMarkup(el);
+                } catch {
+                  return null;
+                }
+              });
+            }
+          }
+          return s;
+        },
+      );
+
+      if (!snapshot) throw new Error("Question is not available");
+      const isDraftExport = snapshot.isDraft;
+      const filename = singleQuestionOdtFilename(getQuestionId(_question), isDraftExport);
       await runExportOperation("export_odt", async () => {
-        const blob = await buildExamOdt(`exam_${ts}`, [_question]);
+        const blob = await buildOdtFromSnapshots(getQuestionId(_question), [snapshot!]);
         downloadBlob(blob, filename);
       });
       return filename;
@@ -932,9 +1030,11 @@ export default function QuestionCard({
 
   // Placeholder: evidence provided but no content yet
   if (evidence && evidence.content.receipt === "none") {
-    const posLabel = index !== undefined
-      ? (t("card.position") as string).replace("{n}", String(index + 1))
-      : `${index ?? ""}`;
+    const posLabel = positionUnknown
+      ? (t("card.position_unknown") as string)
+      : index !== undefined
+        ? (t("card.position") as string).replace("{n}", String(index + 1))
+        : `${index ?? ""}`;
     const procLabel = processingLabel(evidence.processing, t);
     return (
       <div
@@ -1052,6 +1152,15 @@ export default function QuestionCard({
     >
       {evidence && <EvidenceStatusLine evidence={evidence} />}
       {evidence && <QuestionActivityPanel evidence={evidence} />}
+      {/* Position label for legacy-adapter items (issue #750) */}
+      {positionUnknown && (
+        <div
+          data-testid="question-card-position-unknown"
+          className="text-sm font-medium text-amber-600 dark:text-amber-400"
+        >
+          {t("card.position_unknown") as string}
+        </div>
+      )}
       {recordId && (
         <ModificationParticipation
           route={route ?? window.location.pathname}
@@ -1178,7 +1287,7 @@ export default function QuestionCard({
         if (!figure) return null;
         if (figure.kind === "ts") {
           return (
-            <div className="rounded border border-gray-200 p-2">
+            <div className="rounded border border-gray-200 p-2" data-figure-slot="stem">
               <FigureRenderer spec={figure.spec} alt="Question diagram" />
             </div>
           );
@@ -1418,10 +1527,9 @@ export default function QuestionCard({
       <div className="flex flex-wrap gap-2 pt-1">
         <ActionButton
           feedback={jsonFeedback}
-          label={t("card.download_json")}
+          label={isFinal ? t("card.download_json") : t("card.download_json_draft")}
           pendingLabel={t("action.downloading")}
           doneLabel={t("action.downloaded")}
-          disabled={!isFinal}
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         />
         {question.image_base64 && (
@@ -1436,10 +1544,9 @@ export default function QuestionCard({
         )}
         <ActionButton
           feedback={odtFeedback}
-          label={t("card.download_odt")}
+          label={isFinal ? t("card.download_odt") : t("card.download_odt_draft")}
           pendingLabel={t("action.downloading")}
           doneLabel={t("action.downloaded")}
-          disabled={!isFinal}
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         />
       </div>
