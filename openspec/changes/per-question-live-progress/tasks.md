@@ -40,8 +40,8 @@
 
 - [ ] 6.1 將 GeneratePage、ProgressLog、QuestionCard 接到同一 normalized selectors，顯示固定卡位與獨立結論／缺項／待收 final；以 A complete、B partial、C failed draft、D final 無 terminal 的元件整合測試驗證「已結束 3/4 題」及「收到最終結果 3 題」，重送不重算，terminal 爭議才減 X。
 - [ ] 6.2 以實際 operation 集合呈現生成步驟合計與按需展開，加入 legacy／資訊不完整／原題序未知提示；用多工作並行及百題 fixtures 驗證不強制展開所有 lanes、不顯示未發生步驟，斷線停止無證據動畫且保留內容。
-- [ ] 6.3 將 generate-v2、generate-legacy、modification profile 在共用 statusbar／card 分開，保留修改資格、圈選 field paths、指示與結果／錯誤歸屬；更新既有 hook/card/statusbar 測試驗證修改流程不需 generation manifest，並核對 ai-working-surfaces 前後整合的規則對照。
-- [ ] 6.4 為新增狀態及下載文字提供既有語系、可及性與 masking 處理，沿用 reduced-motion、navigation／clear／resubmit guards；以鍵盤操作、減少動態模式、語系切換及遮罩檢查紀錄驗證狀態可讀且題目內容不意外進入遙測。
+- [x] 6.3 將 generate-v2、generate-legacy、modification profile 在共用 statusbar／card 分開，保留修改資格、圈選 field paths、指示與結果／錯誤歸屬；更新既有 hook/card/statusbar 測試驗證修改流程不需 generation manifest，並核對 ai-working-surfaces 前後整合的規則對照。
+- [x] 6.4 為新增狀態及下載文字提供既有語系、可及性與 masking 處理，沿用 reduced-motion、navigation／clear／resubmit guards；以鍵盤操作、減少動態模式、語系切換及遮罩檢查紀錄驗證狀態可讀且題目內容不意外進入遙測。
 
 ## 7. JSON 與 ODT 快照匯出
 
@@ -68,7 +68,7 @@
 
 ## 10. 跨層驗收與交接
 
-- [ ] 10.1 從真實 server publisher 搭配 fake subject/provider 輸出可重現 fixtures，供前端與匯出測試直接重用；以數學單一題／題組、社會、自然、retry／partial／文本 only 執行驗證 envelope、卡位、revision、terminal、缺項與下載一致，無付費模型依賴。
-- [ ] 10.2 用同一 A/B 交錯案例完成 C0/S0、C0/S1、C1/S0、C1/S1 相容驗收，另以測試 transport 注入重送、缺口、衝突及 terminal/final 反向到達；保存斷言與 UI 證據，明列 C0/S0 原有缺陷、C0/S1 零派工及 C1 的可信內容保留。
+- [x] 10.1 從真實 server publisher 搭配 fake subject/provider 輸出可重現 fixtures，供前端與匯出測試直接重用；以數學單一題／題組、社會、自然、retry／partial／文本 only 執行驗證 envelope、卡位、revision、terminal、缺項與下載一致，無付費模型依賴。
+- [x] 10.2 用同一 A/B 交錯案例完成 C0/S0、C0/S1、C1/S0、C1/S1 相容驗收，另以測試 transport 注入重送、缺口、衝突及 terminal/final 反向到達；保存斷言與 UI 證據，明列 C0/S0 原有缺陷、C0/S1 零派工及 C1 的可信內容保留。
 - [ ] 10.3 執行變更涵蓋的 backend tests、全量預抽 guards、web tests、lint 與 build，遵守最多 2–3 個記憶體較重測試 lane 及可用時的 `choom -n 500 --`；交付命令與結果紀錄，失敗或跳過的必要驗收有明確處理，不以單一 build 取代跨層驗證。
 - [ ] 10.4 完成教師可見狀態／草稿 ODT／預覽圖片的瀏覽器驗收，以及兩後端 pause→drain→switch→verify→reopen 和兩種 rollback 演練；由實作者整理證據、技術 reviewer 核對門檻、教師確認狀態含義、發布操作者記錄入口與版本／排空證據，形成可審閱的發布交接包。

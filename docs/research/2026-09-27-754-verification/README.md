@@ -130,6 +130,18 @@ Result summary (2026-09-27):
 Warnings are `PytestUnknownMarkWarning` for `@pytest.mark.timeout` (unflagged
 custom mark, not a test failure).
 
+### Backend pytest — full suite (2026-09-27)
+
+```bash
+choom -n 500 -- uv run pytest -q --ignore=tests/test_753_odt_browser.py
+```
+
+Result:
+
+```
+2997 passed, 1 skipped, 47 warnings in 569.64s (0:09:29)
+```
+
 ### Ruff lint
 
 ```bash
@@ -146,7 +158,21 @@ cd web && npx tsc -b --noEmit && npm run lint
 
 Result: **clean** (no errors or warnings).
 
-### Frontend vitest (new tests only)
+### Frontend vitest — full suite (2026-09-27, second run)
+
+```bash
+cd web && choom -n 500 -- npm test -- --reporter=verbose
+```
+
+Result:
+
+```
+Test Files  185 passed (185)
+Tests  2013 passed (2013)
+Duration  66.85s
+```
+
+### Frontend vitest (new tests only, first run)
 
 ```bash
 cd web && choom -n 500 -- npx vitest run \
@@ -216,6 +242,94 @@ New tests in `tests/test_753_odt_browser.py` (t7–t9):
 
 Vite fixture updated to pick a free port (`_find_free_port()`) instead of the
 hardcoded 5173, avoiding conflicts with running dev servers.
+
+---
+
+## Part A — 6.3 / 6.4 / 10.1 / 10.2 Tests (second commit)
+
+Added on 2026-09-27 to complete the remaining Part A deliverables.
+
+### (b) i18n parity: `web/src/i18n/messages.754-branch-keys.test.ts`
+
+19 tests (one per key + count check). All 18 branch keys verified present and
+non-empty in both `en-US` and `zh-TW`. Result: **19 passed**.
+
+Keys covered: `odt.preview_conversion_failed`, `history.download_odt_error`,
+`history.btn_download_odt`, `stream.information_incomplete`,
+`stream.batch_conflict`, `stream.legacy_mixed`, `card.content_conflict`,
+`card.conflict_reason_seq_data`,
+`card.conflict_reason_same_revision_different_content`,
+`card.conflict_reason_identity_mismatch`,
+`card.conflict_reason_terminal_contradiction`,
+`card.conflict_reason_terminal_invalid`,
+`card.conflict_reason_review_contradiction`, `card.position_unknown`,
+`stream.legacy_no_per_question_progress`, `statusbar.legacy_request_total`,
+`card.download_json_draft`, `card.download_odt_draft`.
+
+### (g) Status bar counts: `web/src/lib/generationEvidence.transport-statusbar.test.ts`
+
+9 tests replaying `math_abcd_transport.jsonl`. Verified:
+- manifest total = 4
+- `selectEndedCount` = 3 (A complete, B partial, C failed draft)
+- `selectFinalReceivedCount` = 3 (A, B, D)
+- Resend of D's result (dup seq 18) does not inflate count to 4
+- No batch conflict in clean replay
+- D (q_RUN_004): `receipt="final"`, `terminal=null`
+- C (q_RUN_003): `terminal.has_final=false`, `receipt≠"final"`
+
+Result: **9 passed**.
+
+### (c)/(d) Keyboard + reduced-motion: `web/src/motion/actionFeedback.754-a11y.test.tsx`
+
+12 tests:
+- `ActionButton` renders as native `<button>` (keyboard-operable by default)
+- `InlineFailureNotice` retry/dismiss render as native `<button>` elements
+- `InlineFailureNotice` uses `role=alert`, no `autofocus`/`tabindex`
+- `role=status` notices have no `autofocus`/`tabindex` (no focus steal)
+- `@media (prefers-reduced-motion: reduce)` block present in `index.css`
+- Block suppresses `transition-duration: 1ms !important` and `transform: none !important`
+- `.streaming-caret` override (`animation: none !important`) inside block
+- `motion-opacity-pulse` shimmer covered
+
+Result: **12 passed**.
+
+### (e) Masking: `web/src/sentry.754-masking.test.ts`
+
+9 tests extending existing sentry coverage:
+- `genAI: { inputs: false, outputs: false }` — question content not captured
+- HTTP bodies empty — no request/response capture
+- Query params empty — no URL-embedded content
+- `maskAllText: true, blockAllMedia: true` — replay masks all content
+- `unmask: [".sentry-unmask"]` only — conflict reason codes not in unmask list
+- Console limited to `["warn", "error"]` — no info/debug leakage
+- HTTP headers empty; userInfo disabled
+- Breadcrumb hook passes ordinary navigation breadcrumbs unchanged
+
+Result: **9 passed**.
+
+### (a) Modification eligibility: `web/src/components/QuestionCard.754-modification-eligibility.test.tsx`
+
+6 tests:
+- Legacy (C1/S0) final card: annotation section appears (`isFinal=true`, `passed=true`, `recordId` set)
+- Legacy card: `[data-selection-field]` elements present (no generation manifest required)
+- Independent error attribution: failed ODT export in one card does not affect another
+- v2-origin card saved to history: annotation section appears (same gate: `isFinal && passed`)
+- Legacy adapter item (`positionUnknown=true`): selection fields still present
+- `passed=false` card: annotation section absent (eligibility correctly gated)
+
+Result: **6 passed**.
+
+### (f) Navigation/clear/resubmit guards: `web/src/pages/GeneratePage.754-guards.test.tsx`
+
+6 tests:
+- Page renders without crash during v2 stream (`status="generating"`, evidence active)
+- `generate()` NOT called automatically when evidence degrades (no auto-resubmit)
+- Page renders without crash during legacy stream (legacyAdapter active)
+- `generate()` NOT called automatically during legacy stream
+- `generate()` not auto-called at idle (guard released)
+- Switching from non-degraded→degraded does NOT trigger `generate()`
+
+Result: **6 passed**.
 
 ---
 
