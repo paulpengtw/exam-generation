@@ -42,7 +42,6 @@ from server.models import Base, GenerationRecord, User
 from server.rate_limit import limiter
 from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
 
-
 # ---------------------------------------------------------------------------
 # Shared app fixture (same pattern as test_modification_correction_structure)
 # ---------------------------------------------------------------------------
@@ -227,7 +226,10 @@ def _run_modification_stream(
     provider,
     annotation_payload: dict,
 ) -> tuple[list[dict], dict, dict, dict]:
-    """Admit + stream a modification run; return (events, parent_history, parent_download, child_history)."""
+    """Admit + stream a modification run.
+
+    Returns (events, parent_history, parent_download, child_history).
+    """
     token = create_jwt(user_id, "user@example.com", config=config)
     headers = {"Authorization": f"Bearer {token}"}
     app.state.modification_client_factory = lambda _config: provider

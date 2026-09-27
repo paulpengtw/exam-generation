@@ -343,7 +343,7 @@ def test_ns_rubric_shape_hook_fails_when_llm_already_failed() -> None:
     rubric = [
         RubricEntry(
             code="2",
-            規準說明="完整說明趨勢並舉例。學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。",
+            規準說明="完整說明趨勢並舉例。學生多寫的其他項目不影響評分，但若與得分的作答矛盾，最高給 [1]。",  # noqa: E501
             學生作答實例=["水溫升高溶氧量下降，夏季魚群浮頭。"],
         ),
         # [1] is missing — only 1 example instead of 2
@@ -378,7 +378,6 @@ def test_ns_rubric_shape_hook_mixed_question_group() -> None:
 
     The CMC subquestion with 0X code and no examples reports nothing.
     """
-    from src.natural_sciences.schemas import QuestionType
 
     cr_rubric = _conforming_cr_rubric()
     q = ExamQuestion(

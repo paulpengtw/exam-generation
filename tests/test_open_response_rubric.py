@@ -51,12 +51,12 @@ def _conforming_rubric(n: int = 1) -> list[_RubricEntry]:
         ),
         _RubricEntry(
             code="1",
-            規準說明=f"部分說明，推理有缺口。",
+            規準說明="部分說明，推理有缺口。",
             學生作答實例=[f"稍有說明但不完整，第{n}題。", f"另一種缺口，第{n}題。"],
         ),
         _RubricEntry(
             code="0",
-            規準說明=f"方向錯誤。",
+            規準說明="方向錯誤。",
             學生作答實例=[f"錯誤觀念作答，第{n}題。"],
         ),
     ]
@@ -72,7 +72,10 @@ def _sq(n: int, rubric: list[_RubricEntry], q_type: str = "Constructed response"
 
 def test_block_contains_seven_clause_markers_each_at_line_start() -> None:
     """Each of the 7 clause markers starts exactly one indented line."""
-    markers = ["【禁止】", "【判準】", "【注意】", "【提問】", "【額外項目】", "【具體性】", "【學生作答實例】"]
+    markers = [
+        "【禁止】", "【判準】", "【注意】", "【提問】",
+        "【額外項目】", "【具體性】", "【學生作答實例】",
+    ]
     for marker in markers:
         count = sum(
             1
@@ -280,8 +283,8 @@ def test_shape_check_level_set_wrong_still_reports_count_issues() -> None:
     """Even when the level set is wrong, count issues for existing 2/1/0 are reported."""
     rubric = [
         _RubricEntry(code="3", 規準說明="超完整。", 學生作答實例=["超完整。"]),
-        _RubricEntry(code="2", 規準說明=f"完整。{_FIXED}", 學生作答實例=["一", "二"]),  # [2] has 2, should have 1
-        _RubricEntry(code="1", 規準說明="部分。", 學生作答實例=["只有一個"]),  # [1] has 1, should have 2
+        _RubricEntry(code="2", 規準說明=f"完整。{_FIXED}", 學生作答實例=["一", "二"]),  # noqa: E501
+        _RubricEntry(code="1", 規準說明="部分。", 學生作答實例=["只有一個"]),  # [1] has 1, should have 2  # noqa: E501
         _RubricEntry(code="0", 規準說明="錯誤。", 學生作答實例=["錯誤。"]),
     ]
     sqs = [_sq(1, rubric)]
@@ -351,7 +354,8 @@ def test_four_rubric_authoring_prompts_carry_block_byte_identical() -> None:
 
 
 def test_ss_subquestion_system_prompt_contains_block_exactly_once_all_stages() -> None:
-    """Task 3.1: for every 學習階段, the SS 子題產生器 system prompt contains the block exactly once.
+    """Task 3.1: for every 學習階段, the SS 子題產生器 system prompt contains the
+    block exactly once.
 
     Also verifies it no longer says 「使用 0..N 並允許部分給分」 or 「1-2 個學生作答實例」,
     and that the prompt formats cleanly (no leftover unformatted placeholders from .format()).
@@ -385,7 +389,8 @@ def test_ss_subquestion_system_prompt_contains_block_exactly_once_all_stages() -
 # ---------------------------------------------------------------------------
 
 def test_adding_samples_guide_example_rubric_conforms() -> None:
-    """The Constructed response example in docs/ADDING_SAMPLES.md must pass shape check (issue #867).
+    """The Constructed response example in docs/ADDING_SAMPLES.md must pass shape
+    check (issue #867).
 
     Parses the first JSON block containing '"Constructed response"' in the guide and verifies
     its 評分規準 returns no issues from check_open_response_rubric_shape, so the doc
@@ -429,6 +434,6 @@ def test_adding_samples_guide_example_rubric_conforms() -> None:
     subq = _GSQ(序號=1, 評分規準=entries)
     issues = check_open_response_rubric_shape([subq])
     assert issues == [], (
-        f"Sample guide Constructed response example fails shape check:\n"
+        "Sample guide Constructed response example fails shape check:\n"
         + "\n".join(f"  - {i}" for i in issues)
     )

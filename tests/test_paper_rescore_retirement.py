@@ -310,7 +310,6 @@ def _open_response_question_with_shape(
     rubric_entries: list,
 ) -> ExamQuestion:
     """Build an SS open-response question with the given rubric entries."""
-    from src.social_studies.schemas import RubricEntry as _RE
     return ExamQuestion(
         id="shape-check-test",
         情境=["公共"],
