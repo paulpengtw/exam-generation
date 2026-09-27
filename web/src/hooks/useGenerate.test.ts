@@ -1355,7 +1355,7 @@ describe("F3: terminal-before-final then final fills", () => {
     });
 
     // terminal arrives for q_RUN_001 before result
-    sendV2Event("question_terminal", { run_id: "RUN", event_seq: 5, question_id: "q_RUN_001", index: 0 }, {
+    sendV2Event("question_terminal", { run_id: "RUN", event_seq: 2, question_id: "q_RUN_001", index: 0 }, {
       termination_reason: "normal", has_final: true, final_revision: 1,
       delivery_status: "complete", expected: [], delivered: [], missing: [],
       review: { status: "passed", content_revision: 1 },
@@ -1365,7 +1365,7 @@ describe("F3: terminal-before-final then final fills", () => {
     expect(ev1.evidence?.questions["q_RUN_001"].finalPending).toBe(true);
 
     // now result arrives
-    sendV2Event("result", { run_id: "RUN", event_seq: 6, question_id: "q_RUN_001", index: 0, content_revision: 1 }, sampleQ("q_RUN_001"));
+    sendV2Event("result", { run_id: "RUN", event_seq: 3, question_id: "q_RUN_001", index: 0, content_revision: 1 }, sampleQ("q_RUN_001"));
 
     const ev2 = result.current as unknown as { evidence: RunEvidenceState | null };
     expect(ev2.evidence?.questions["q_RUN_001"].finalPending).toBe(false);
@@ -1385,10 +1385,10 @@ describe("F3: final without terminal then done → processing unknown", () => {
     });
 
     // result for q_RUN_001 without terminal
-    sendV2Event("result", { run_id: "RUN", event_seq: 5, question_id: "q_RUN_001", index: 0, content_revision: 1 }, sampleQ("q_RUN_001"));
+    sendV2Event("result", { run_id: "RUN", event_seq: 2, question_id: "q_RUN_001", index: 0, content_revision: 1 }, sampleQ("q_RUN_001"));
 
     // done
-    sendV2Event("done", { run_id: "RUN", event_seq: 6 }, {});
+    sendV2Event("done", { run_id: "RUN", event_seq: 3 }, {});
 
     const ev = result.current as unknown as { evidence: RunEvidenceState | null };
     expect(ev.evidence?.questions["q_RUN_001"].processing).toBe("unknown");
@@ -1439,7 +1439,7 @@ describe("F3: v2 displayResults carry stableId and contentRevision", () => {
     // Send result for q_RUN_001 with content_revision 5
     sendV2Event(
       "result",
-      { run_id: "RUN", event_seq: 3, question_id: "q_RUN_001", index: 0, content_revision: 5 },
+      { run_id: "RUN", event_seq: 2, question_id: "q_RUN_001", index: 0, content_revision: 5 },
       sampleQ("q_RUN_001"),
     );
 
@@ -1465,7 +1465,7 @@ describe("F3: v2 error event sets resultsCompletion to 'error'", () => {
       });
     });
 
-    sendV2Event("error", { run_id: "RUN", event_seq: 4 }, { message: "something went wrong" });
+    sendV2Event("error", { run_id: "RUN", event_seq: 2 }, { message: "something went wrong" });
 
     const r = result.current as unknown as { resultsCompletion: string | null; terminalEvidence: boolean };
     expect(result.current.status).toBe("error");

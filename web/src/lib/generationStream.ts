@@ -62,21 +62,31 @@ export interface RunManifest {
   manifest: Array<{ index: number; questionId: string }>;
 }
 
+export interface DecoderClock {
+  now(): number;
+}
+
 /** A decoded event from the stream. */
 export type DecodedEvent =
   | { kind: "v2"; event: { name: string; context: Record<string, unknown>; payload: unknown } }
   | { kind: "legacy"; name: string; data: string }
   | { kind: "mode"; mode: "unsupported"; reason: "unknown_protocol" | "invalid_manifest" | "missing_started" }
   | { kind: "ignore"; reason: string }
-  | { kind: "held" };
+  | { kind: "held" }
+  | { kind: "degraded"; reason: "timeout" | "count" | "size" | "eof_gap" };
 
 /** Stateful decoder for a single generate() call's SSE stream. */
 export interface GenerationStreamDecoder {
   readonly mode: DecoderMode;
   readonly run: RunManifest | null;
+  readonly degraded: boolean;
   /** Decode one SSE event. Returns an array (usually length 1; >1 when held events are replayed). */
   decode(eventName: string, rawData: string): DecodedEvent[];
 }
+
+const SEQ_BUFFER_MAX_COUNT = 256;
+const SEQ_BUFFER_MAX_BYTES = 4 * 1024 * 1024;
+const SEQ_BUFFER_MAX_AGE_MS = 2000;
 
 function validateManifest(payload: Record<string, unknown>): { valid: boolean; reason?: string } {
   const total = payload.total;
@@ -99,10 +109,17 @@ function validateManifest(payload: Record<string, unknown>): { valid: boolean; r
   return { valid: true };
 }
 
-export function createGenerationStreamDecoder(): GenerationStreamDecoder {
+export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }): GenerationStreamDecoder {
   let mode: DecoderMode = "awaiting-start";
   let run: RunManifest | null = null;
   const held: Array<{ name: string; rawData: string }> = [];
+  const clock: DecoderClock = options?.clock ?? { now: () => Date.now() };
+  let seqNextExpected = 0;
+  let seqSeen = new Set<number>();
+  let seqPending = new Map<number, { eventName: string; rawData: string; byteSize: number }>();
+  let seqPendingBytes = 0;
+  let seqGapStart: number | null = null;
+  let seqDegraded = false;
 
   function decodeAsV2(eventName: string, rawData: string): DecodedEvent {
     if (run === null) return { kind: "ignore", reason: "no_run" };
@@ -128,6 +145,87 @@ export function createGenerationStreamDecoder(): GenerationStreamDecoder {
       return { kind: "ignore", reason: "invalid_envelope" };
     }
     return { kind: "v2", event: { name: eventName, context, payload: envelope.payload } };
+  }
+
+  function decodeV2WithSeq(eventName: string, rawData: string): DecodedEvent[] {
+    const decoded = decodeAsV2(eventName, rawData);
+    if (decoded.kind !== "v2") return [decoded];
+
+    const eventSeq = decoded.event.context.event_seq as number;
+
+    if (seqSeen.has(eventSeq)) {
+      return [{ kind: "ignore", reason: "duplicate_seq" }];
+    }
+
+    if (seqDegraded) {
+      if (eventName === "question_update" || eventName === "result" || eventName === "question_terminal") {
+        seqSeen.add(eventSeq);
+        return [decoded];
+      }
+      return [{ kind: "ignore", reason: "degraded" }];
+    }
+
+    if (eventSeq === seqNextExpected) {
+      if (eventName === "done" && seqPending.size > 0) {
+        seqDegraded = true;
+        seqSeen.add(eventSeq);
+        seqNextExpected += 1;
+        return [{ kind: "degraded", reason: "eof_gap" }, decoded];
+      }
+
+      seqSeen.add(eventSeq);
+      seqNextExpected += 1;
+      const results: DecodedEvent[] = [decoded];
+      while (seqPending.has(seqNextExpected)) {
+        const pendingSeq = seqNextExpected;
+        const entry = seqPending.get(pendingSeq)!;
+        seqPending.delete(pendingSeq);
+        seqPendingBytes -= entry.byteSize;
+        seqSeen.add(pendingSeq);
+        seqNextExpected += 1;
+        results.push(decodeAsV2(entry.eventName, entry.rawData));
+      }
+      if (seqPending.size === 0) seqGapStart = null;
+      return results;
+    }
+
+    if (eventSeq < seqNextExpected) {
+      seqSeen.add(eventSeq);
+      return [decoded];
+    }
+
+    if (seqPending.has(eventSeq)) {
+      return [{ kind: "ignore", reason: "duplicate_seq" }];
+    }
+
+    // A valid done event is an EOF boundary even when its own sequence is
+    // ahead of the missing gap. Keep the decoded done event usable while
+    // making the unresolved ordering explicit.
+    if (eventName === "done" && seqPending.size > 0) {
+      seqDegraded = true;
+      seqSeen.add(eventSeq);
+      return [{ kind: "degraded", reason: "eof_gap" }, decoded];
+    }
+
+    const byteSize = rawData.length;
+    seqPending.set(eventSeq, { eventName, rawData, byteSize });
+    seqPendingBytes += byteSize;
+
+    if (seqGapStart === null) seqGapStart = clock.now();
+    const now = clock.now();
+    if (now - seqGapStart >= SEQ_BUFFER_MAX_AGE_MS) {
+      seqDegraded = true;
+      return [{ kind: "degraded", reason: "timeout" }];
+    }
+    if (seqPending.size >= SEQ_BUFFER_MAX_COUNT) {
+      seqDegraded = true;
+      return [{ kind: "degraded", reason: "count" }];
+    }
+    if (seqPendingBytes >= SEQ_BUFFER_MAX_BYTES) {
+      seqDegraded = true;
+      return [{ kind: "degraded", reason: "size" }];
+    }
+    return [{ kind: "held" }];
   }
 
   function processStarted(rawData: string): DecodedEvent[] {
@@ -164,13 +262,19 @@ export function createGenerationStreamDecoder(): GenerationStreamDecoder {
           manifest: questions.map((q) => ({ index: q.index, questionId: q.question_id })),
         };
         mode = "v2";
+        seqNextExpected = 2;
+        seqSeen = new Set([1]);
+        seqPending = new Map();
+        seqPendingBytes = 0;
+        seqGapStart = null;
+        seqDegraded = false;
         const startedEvent: DecodedEvent = {
           kind: "v2",
           event: { name: "started", context: ctx, payload: p },
         };
         // Replay held events through the now-v2 decoder
         const toReplay = held.splice(0);
-        const replayed = toReplay.map((h) => decodeAsV2(h.name, h.rawData));
+        const replayed = toReplay.flatMap((h) => decodeV2WithSeq(h.name, h.rawData));
         return [startedEvent, ...replayed];
       }
       // No context key → legacy (includes {generation_log_id:...} and {})
@@ -186,13 +290,14 @@ export function createGenerationStreamDecoder(): GenerationStreamDecoder {
   return {
     get mode() { return mode; },
     get run() { return run; },
+    get degraded() { return seqDegraded; },
 
     decode(eventName: string, rawData: string): DecodedEvent[] {
       if (mode === "unsupported") {
         return [{ kind: "ignore", reason: "unsupported" }];
       }
       if (mode === "v2") {
-        return [decodeAsV2(eventName, rawData)];
+        return decodeV2WithSeq(eventName, rawData);
       }
       if (mode === "legacy") {
         return [{ kind: "legacy", name: eventName, data: rawData }];

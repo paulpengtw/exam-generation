@@ -257,7 +257,7 @@ describe("createGenerationStreamDecoder", () => {
   it("decodes v2 events with correct structure after valid started", () => {
     const dec = createGenerationStreamDecoder();
     dec.decode("started", validStartedData);
-    const ctx = { run_id: "RUN", event_seq: 5, question_id: "q_RUN_001", index: 0, content_revision: 1 };
+    const ctx = { run_id: "RUN", event_seq: 2, question_id: "q_RUN_001", index: 0, content_revision: 1 };
     const payload = { index: 0, phase: "draft", question: { id: "q_RUN_001" } };
     const data = JSON.stringify({ context: ctx, payload });
     const events = dec.decode("question_update", data);

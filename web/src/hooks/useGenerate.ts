@@ -13,6 +13,7 @@ import { createGenerationStreamDecoder } from "../lib/generationStream";
 import {
   createRunEvidence,
   applyV2Event,
+  applyDegraded,
   closeRun,
   selectEndedCount,
   type RunEvidenceState,
@@ -1412,13 +1413,23 @@ export function useGenerate(): UseGenerateReturn {
             return;
           }
 
+          if (d.kind === "degraded") {
+            setEvidence((prev) => {
+              if (!prev) return prev;
+              const next = applyDegraded(prev, d.reason);
+              evidenceRef.current = next;
+              return next;
+            });
+            continue;
+          }
+
           if (d.kind === "v2") {
             // V2 mode: route decoded event
             handleV2Event(d.event.name, d.event.context, d.event.payload);
           } else if (d.kind === "legacy") {
             // Legacy mode: use existing switch handler
             handleLegacyEvent(d.name, d.data);
-          } else if (d.kind === "held") {
+          } else if (d.kind === "held" && decoder.mode === "awaiting-start") {
             // Event held pending started: immediately process as legacy so existing
             // tests (which don't send started first) continue to work.
             handleLegacyEvent(ev.event ?? "", ev.data ?? "");

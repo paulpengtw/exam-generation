@@ -112,6 +112,8 @@ export interface RunEvidenceState {
   order: string[];
   questions: Record<string, QuestionEvidence>;
   closed: boolean;
+  degraded: boolean;
+  degradedReason: "timeout" | "count" | "size" | "eof_gap" | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +145,23 @@ export function createRunEvidence(run: RunManifest): RunEvidenceState {
   for (const m of run.manifest) {
     questions[m.questionId] = emptyQuestionEvidence(m.questionId, m.index);
   }
-  return { runId: run.runId, total: run.total, order, questions, closed: false };
+  return {
+    runId: run.runId,
+    total: run.total,
+    order,
+    questions,
+    closed: false,
+    degraded: false,
+    degradedReason: null,
+  };
+}
+
+export function applyDegraded(
+  state: RunEvidenceState,
+  reason: "timeout" | "count" | "size" | "eof_gap",
+): RunEvidenceState {
+  if (state.degraded) return state;
+  return { ...state, degraded: true, degradedReason: reason };
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +334,16 @@ function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTermi
 export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent): RunEvidenceState {
   if (decodedEvent.kind !== "v2") return state;
   const { name, context, payload } = decodedEvent.event;
+
+  // When degraded, skip activity-only events; content and terminal still apply.
+  if (state.degraded && (
+    name === "stage" || name === "pipeline"
+    || name === "llm_request" || name === "llm_response"
+    || name === "llm_thinking" || name === "llm_content" || name === "llm_failure"
+  )) {
+    return state;
+  }
+
   const ctx = context as Record<string, unknown>;
 
   // Done event closes the run
