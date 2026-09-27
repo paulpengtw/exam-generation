@@ -143,7 +143,8 @@ The backend implements stream protocol v2. Clients **must** send `stream_version
 - `server/generate/event_protocol.py`: `PROTOCOL_VERSION=2`, `EventContext`, `StartedPayload`, `QuestionTerminalPayload`, `SlotRef`, `envelope_dict()`; `StartedPayload` (validated before emission in `service.py`, issue #855; `generation_log_id` is an explicitly declared optional field: `str` with a log, `null` on the direct seam).
 - `server/generate/publisher.py`: `GenerationPublisher` — thread-safe monotonic `event_seq`, `loop.call_soon_threadsafe`.
 - `server/generate/snapshot_ledger.py`: `QuestionSnapshotLedger.commit(question_dict, output_dir)` → `(revision, snapshot)`.
-- `server/generate/service.py`: `_build_question_terminal_payload()`, `_worker_one` wiring.
+- `server/generate/service.py`: `_build_question_terminal_payload()` (thin composition point), `_worker_one` wiring.
+- `server/generate/question_terminal.py`: `_QuestionPositionResolution`, `_compute_review`, `_compute_expected_delivered_missing`, `_compute_delivery_status` (independently testable units; issue #857).
 - `web/src/lib/generationStream.ts`: `createGenerationStreamDecoder()` — state machine (`awaiting-start` → `v2`/`legacy`/`unsupported`); `projectGenerationEvidence()` accepts optional `RunEvidenceState` and returns `GenerationV2Evidence`.
 - `web/src/lib/generationEvidence.ts`: `RunEvidenceState` reducer — `createRunEvidence`, `applyV2Event`, `closeRun`, `selectEndedCount`, `selectFinalReceivedCount`.
 - `web/src/hooks/useGenerate.ts`: sends `stream_version: 2`; routes events through decoder; builds `RunEvidenceState` from `started` manifest; exposes `evidence: RunEvidenceState | null`.

@@ -45,6 +45,12 @@ from server.generate.persistence import (
     persist_generation_record,
 )
 from server.generate.publisher import GenerationPublisher
+from server.generate.question_terminal import (
+    _compute_delivery_status,
+    _compute_expected_delivered_missing,
+    _compute_review,
+    _QuestionPositionResolution,
+)
 from server.generate.snapshot_ledger import QuestionSnapshotLedger
 from server.generate.subjects import (
     SUBJECTS,
@@ -350,252 +356,72 @@ def _build_question_terminal_payload(
     params: GenerateParams,
     output_dir: Any,  # Path | None
     unknown_reason: str | None = None,
+    # Legacy kwargs — kept so that existing callers and tests continue to work
+    # without modification.  New exits should supply ``resolution`` directly.
     announced_slots: list[dict[str, Any]] | None = None,
     verification_trail: list[dict[str, Any]] | None = None,
     resolved_subquestion_configs: list[Any] | None | object = _UNSET_SUBQUESTION_RESOLUTION,
     resolved_subquestion_count: int | None | object = _UNSET_SUBQUESTION_RESOLUTION,
+    # New typed bundle (preferred; all internal exits pass it)
+    resolution: _QuestionPositionResolution | None = None,
 ) -> dict[str, Any]:
     """Build a QuestionTerminalPayload dict; validated before returning.
+
+    Thin composition point that delegates to three independently testable units:
+      _compute_review, _compute_expected_delivered_missing, _compute_delivery_status.
 
     On any validation failure, returns a minimal 'unknown' delivery payload
     so the worker never crashes.
 
-    Fixed grouped slots are identified by the announced plan (or, before a
-    plan can be emitted, by the resolved grouped count).  The helper
-    deliberately keeps renderer mode out of the obligation set: only an
-    adopted chart/image or an explicitly visual subquestion configuration
-    creates an image slot.
+    Legacy callers that pass the individual keyword arguments are handled by
+    constructing a ``_QuestionPositionResolution`` from those arguments so the
+    shared units receive a uniform input type.
     """
-    from pathlib import Path as _Path
-
-    # --- review ---
-    if not has_final:
-        review: dict[str, Any] = {
-            "status": "unknown",
-            "reason": unknown_reason or "no final content",
-        }
-    elif params.skip_verify:
-        review = {
-            "status": "skipped",
-            "content_revision": final_revision,
-        }
-    elif question is not None and getattr(question, "verification", None) is not None:
-        verification_entries = [
-            entry
-            for entry in reversed(verification_trail or [])
-            if isinstance(entry, Mapping) and entry.get("kind") == "verification"
-        ]
-        verification_revision = (
-            verification_entries[0].get("content_revision")
-            if verification_entries
-            else None
-        )
-        if (
-            isinstance(verification_revision, int)
-            and not isinstance(verification_revision, bool)
-            and verification_revision == final_revision
-        ):
-            passed = question.verification.passed
-            review = {
-                "status": "passed" if passed else "failed",
-                "content_revision": final_revision,
-            }
-        else:
-            review = {
-                "status": "unknown",
-                "reason": (
-                    "no matching verification evidence"
-                    if verification_entries
-                    else "no verification evidence"
-                ),
-            }
-    else:
-        review = {
-            "status": "unknown",
-            "reason": "no verification evidence",
-        }
-
-    # --- fixed grouped slots and image assets ---
-    expected: list[dict] = []
-    delivered: list[dict] = []
-    missing: list[dict] = []
-
-    # The shared core announces a manifest for every fixed-slot adapter.  Once
-    # a worker has resolved its own row, its count is authoritative—even when
-    # it is None for a flat math question.  Only older/direct callers that did
-    # not provide per-question resolution may fall back to batch params.
-    has_per_question_resolution = (
-        resolved_subquestion_configs is not _UNSET_SUBQUESTION_RESOLUTION
-        or resolved_subquestion_count is not _UNSET_SUBQUESTION_RESOLUTION
-    )
-    per_question_count = (
-        resolved_subquestion_count
-        if resolved_subquestion_count is not _UNSET_SUBQUESTION_RESOLUTION
-        else None
-    )
-    is_fixed_group = announced_slots is not None or (
-        has_per_question_resolution
-        and per_question_count is not None
-    ) or (
-        not has_per_question_resolution
-        and getattr(params, "sub_question_count", None) is not None
-    )
-
-    def add_image_slot(
-        *,
-        subquestion_id: str | None,
-        filename: str | None,
-        adopted: bool,
-        reason: str,
-        subquestion_index: int | None = None,
-    ) -> None:
-        if not adopted and not filename:
-            return
-        slot: dict[str, Any] = {
-            "kind": "image",
-            "question_id": question_id,
-            "subquestion_id": subquestion_id,
-        }
-        if subquestion_index is not None:
-            slot["subquestion_index"] = subquestion_index
-        expected.append(slot)
-        if filename and output_dir is not None:
-            img_path = _Path(output_dir) / filename
-            if img_path.exists():
-                delivered.append(slot)
-                return
-        missing.append({**slot, "reason": reason})
-
-    if is_fixed_group:
-        if resolved_subquestion_configs is _UNSET_SUBQUESTION_RESOLUTION:
-            configs = getattr(params, "subquestion_configs", None) or []
-        else:
-            configs = resolved_subquestion_configs or []
-        if isinstance(configs, str):
-            try:
-                decoded_configs = json.loads(configs)
-            except (TypeError, json.JSONDecodeError):
-                decoded_configs = []
-            configs = decoded_configs if isinstance(decoded_configs, list) else []
-
-        slot_manifest = announced_slots
-        if slot_manifest is None and not has_final and termination_reason == "failed":
-            if has_per_question_resolution:
-                slot_count = per_question_count or len(configs) or 0
-            else:
-                slot_count = (
-                    getattr(params, "sub_question_count", None)
-                    or len(configs)
-                    or 0
-                )
-            slot_manifest = [
-                {
-                    "subquestion_index": slot_index,
-                    "id": f"{question_id}-sq{slot_index + 1:03d}",
-                    "序號": slot_index + 1,
-                }
-                for slot_index in range(slot_count)
-            ]
-
-        visual_types = {"含圖片", "graphs/charts/tables"}
-
-        def config_value(config: Any, key: str) -> Any:
-            if isinstance(config, dict):
-                return config.get(key)
-            return getattr(config, key, None)
-
-        if slot_manifest is not None:
-            subquestions = (
-                list(getattr(question, "subquestions", []) or [])
-                if question is not None
-                else []
-            )
-            by_id = {
-                getattr(sub, "id", None): sub
-                for sub in subquestions
-                if getattr(sub, "id", None)
-            }
-            for position, raw_slot in enumerate(slot_manifest):
-                slot_index = raw_slot.get("subquestion_index")
-                if not isinstance(slot_index, int) or slot_index < 0:
-                    slot_index = position
-                raw_id = raw_slot.get("id") or raw_slot.get("subquestion_id")
-                subquestion_id = (
-                    raw_id
-                    if isinstance(raw_id, str) and raw_id
-                    else f"{question_id}-sq{slot_index + 1:03d}"
-                )
-                sub_slot = {
-                    "kind": "subquestion",
-                    "question_id": question_id,
-                    "subquestion_id": subquestion_id,
-                    "subquestion_index": slot_index,
-                }
-                expected.append(sub_slot)
-                sub = by_id.get(subquestion_id)
-                if sub is None:
-                    missing.append({**sub_slot, "reason": "subquestion not delivered"})
-                else:
-                    delivered.append(sub_slot)
-
-                if has_final and question is not None:
-                    config = configs[slot_index] if slot_index < len(configs) else None
-                    adopted = bool(
-                        sub is not None
-                        and (
-                            getattr(sub, "chart_spec", None) is not None
-                            or getattr(sub, "image_spec", None) is not None
-                        )
-                    )
-                    explicitly_visual = bool(
-                        config is not None
-                        and (
-                            config_value(config, "content_type") in visual_types
-                            or config_value(config, "figure_kind")
-                        )
-                    )
-                    add_image_slot(
-                        subquestion_id=subquestion_id,
-                        filename=getattr(sub, "圖片", None) if sub is not None else None,
-                        adopted=adopted or explicitly_visual,
-                        reason="image not delivered",
-                        subquestion_index=slot_index,
-                    )
-
-        if has_final and question is not None:
-            add_image_slot(
-                subquestion_id=None,
-                filename=getattr(question, "圖片", None),
-                adopted=(
-                    getattr(question, "chart_spec", None) is not None
-                    or getattr(question, "image_spec", None) is not None
-                ),
-                reason="image not delivered",
-            )
-    elif has_final and question is not None:
-        # An image slot exists when the pipeline adopted an image
-        # (i.e. chart_spec or image_spec is non-None on the final question)
-        has_image_spec = (
-            getattr(question, "chart_spec", None) is not None
-            or getattr(question, "image_spec", None) is not None
-        )
-        add_image_slot(
-            subquestion_id=None,
-            filename=getattr(question, "圖片", None),
-            adopted=has_image_spec,
-            reason="image not delivered",
+    # Build resolution from legacy kwargs when not supplied directly.
+    if resolution is None:
+        resolution = _QuestionPositionResolution(
+            announced_slots=announced_slots,
+            verification_trail=verification_trail,
+            resolved_subquestion_configs=(
+                None
+                if resolved_subquestion_configs is _UNSET_SUBQUESTION_RESOLUTION
+                else resolved_subquestion_configs
+            ),
+            resolved_subquestion_count=(
+                None
+                if resolved_subquestion_count is _UNSET_SUBQUESTION_RESOLUTION
+                else resolved_subquestion_count
+            ),
+            has_per_question_resolution=(
+                resolved_subquestion_configs is not _UNSET_SUBQUESTION_RESOLUTION
+                or resolved_subquestion_count is not _UNSET_SUBQUESTION_RESOLUTION
+            ),
         )
 
-    # --- delivery_status ---
-    if not has_final:
-        if termination_reason == "cancelled":
-            delivery_status = "unknown"
-        else:
-            delivery_status = "none"
-    elif missing:
-        delivery_status = "partial"
-    else:
-        delivery_status = "complete"
+    review = _compute_review(
+        has_final=has_final,
+        skip_verify=getattr(params, "skip_verify", False),
+        question=question,
+        final_revision=final_revision,
+        unknown_reason=unknown_reason,
+        verification_trail=resolution.verification_trail,
+    )
+
+    expected, delivered, missing = _compute_expected_delivered_missing(
+        question_id=question_id,
+        question=question,
+        params=params,
+        output_dir=output_dir,
+        has_final=has_final,
+        termination_reason=termination_reason,
+        resolution=resolution,
+    )
+
+    delivery_status = _compute_delivery_status(
+        has_final=has_final,
+        termination_reason=termination_reason,
+        missing=missing,
+    )
 
     raw_payload: dict[str, Any] = {
         "termination_reason": termination_reason,
@@ -866,6 +692,13 @@ def _worker_one_body(
         )
         final_published_revision = _final_revision
         # Normal terminal – published AFTER the result event.
+        _normal_resolution = _QuestionPositionResolution(
+            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
+            verification_trail=verification_trail,
+            resolved_subquestion_configs=getattr(rng_params, "subquestion_configs", None),
+            resolved_subquestion_count=getattr(rng_params, "sub_question_count", None),
+            has_per_question_resolution=True,
+        )
         _terminal_payload = _build_question_terminal_payload(
             question_id=question_id,
             termination_reason="normal",
@@ -874,10 +707,7 @@ def _worker_one_body(
             question=question,
             params=ctx.params,
             output_dir=ctx.config.output_dir,
-            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
-            verification_trail=verification_trail,
-            resolved_subquestion_configs=getattr(rng_params, "subquestion_configs", None),
-            resolved_subquestion_count=getattr(rng_params, "sub_question_count", None),
+            resolution=_normal_resolution,
         )
         _publish_question_terminal(ctx, index=i, payload=_terminal_payload)
     except GenerationCancelled:
@@ -887,16 +717,21 @@ def _worker_one_body(
         if not ctx.confirmed_cancel_event.is_set():
             return
         _qid_cancel = ctx.manifest[i].question_id
-        _cancel_resolution_kwargs: dict[str, Any] = {}
-        if rng_params is not None:
-            _cancel_resolution_kwargs = {
-                "resolved_subquestion_configs": getattr(
-                    rng_params, "subquestion_configs", None
-                ),
-                "resolved_subquestion_count": getattr(
-                    rng_params, "sub_question_count", None
-                ),
-            }
+        _cancel_resolution = _QuestionPositionResolution(
+            announced_slots=ctx.snapshot_ledger.get_slot_manifest(_qid_cancel),
+            verification_trail=None,
+            resolved_subquestion_configs=(
+                getattr(rng_params, "subquestion_configs", None)
+                if rng_params is not None
+                else None
+            ),
+            resolved_subquestion_count=(
+                getattr(rng_params, "sub_question_count", None)
+                if rng_params is not None
+                else None
+            ),
+            has_per_question_resolution=rng_params is not None,
+        )
         _cancel_payload = _build_question_terminal_payload(
             question_id=_qid_cancel,
             termination_reason="cancelled",
@@ -905,9 +740,8 @@ def _worker_one_body(
             question=None,
             params=ctx.params,
             output_dir=ctx.config.output_dir,
-            announced_slots=ctx.snapshot_ledger.get_slot_manifest(_qid_cancel),
-            **_cancel_resolution_kwargs,
             unknown_reason="cancelled before completion",
+            resolution=_cancel_resolution,
         )
         _publish_question_terminal(ctx, index=i, payload=_cancel_payload)
     except Exception as exc:
@@ -950,16 +784,21 @@ def _worker_one_body(
             ),
         )
         logger.exception("worker_one error (index=%d)", i)
-        _failed_resolution_kwargs: dict[str, Any] = {}
-        if rng_params is not None:
-            _failed_resolution_kwargs = {
-                "resolved_subquestion_configs": getattr(
-                    rng_params, "subquestion_configs", None
-                ),
-                "resolved_subquestion_count": getattr(
-                    rng_params, "sub_question_count", None
-                ),
-            }
+        _failed_resolution = _QuestionPositionResolution(
+            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
+            verification_trail=verification_trail,
+            resolved_subquestion_configs=(
+                getattr(rng_params, "subquestion_configs", None)
+                if rng_params is not None
+                else None
+            ),
+            resolved_subquestion_count=(
+                getattr(rng_params, "sub_question_count", None)
+                if rng_params is not None
+                else None
+            ),
+            has_per_question_resolution=rng_params is not None,
+        )
         _failed_payload = _build_question_terminal_payload(
             question_id=question_id,
             termination_reason="failed",
@@ -968,14 +807,12 @@ def _worker_one_body(
             question=question if final_published_revision is not None else None,
             params=ctx.params,
             output_dir=ctx.config.output_dir,
-            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
-            verification_trail=verification_trail,
-            **_failed_resolution_kwargs,
             unknown_reason=(
                 "no final content"
                 if final_published_revision is None
                 else "terminal completion failed after final delivery"
             ),
+            resolution=_failed_resolution,
         )
         _publish_question_terminal(ctx, index=i, payload=_failed_payload)
 
@@ -1342,6 +1179,10 @@ async def generate_question_stream(
                 ),
             )
             for i, question in enumerate(ctx.manifest):
+                _batch_fail_resolution = _QuestionPositionResolution(
+                    announced_slots=None,
+                    has_per_question_resolution=False,
+                )
                 terminal = _build_question_terminal_payload(
                     question_id=question.question_id,
                     termination_reason="failed",
@@ -1350,8 +1191,8 @@ async def generate_question_stream(
                     question=None,
                     params=ctx.params,
                     output_dir=ctx.config.output_dir,
-                    announced_slots=None,
                     unknown_reason="batch failed before question generation",
+                    resolution=_batch_fail_resolution,
                 )
                 _publish_question_terminal(ctx, index=i, payload=terminal)
         else:
@@ -1376,6 +1217,12 @@ async def generate_question_stream(
                         f"Question generation failed ({type(outcome).__name__})",
                     ),
                 )
+                _worker_exit_resolution = _QuestionPositionResolution(
+                    announced_slots=ctx.snapshot_ledger.get_slot_manifest(
+                        question.question_id
+                    ),
+                    has_per_question_resolution=False,
+                )
                 terminal = _build_question_terminal_payload(
                     question_id=question.question_id,
                     termination_reason="failed",
@@ -1384,8 +1231,8 @@ async def generate_question_stream(
                     question=None,
                     params=ctx.params,
                     output_dir=ctx.config.output_dir,
-                    announced_slots=ctx.snapshot_ledger.get_slot_manifest(question.question_id),
                     unknown_reason="question worker exited before final content",
+                    resolution=_worker_exit_resolution,
                 )
                 _publish_question_terminal(ctx, index=i, payload=terminal)
         await _flush_generation_recorders()
