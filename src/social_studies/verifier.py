@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 from src.common.generation_events import OperationScope, new_operation_scope
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.common.kwarg_compat import accepts_kwarg
 from src.common.open_response_rubric import (
     append_shape_check_issues,
     check_open_response_rubric_shape,
@@ -442,20 +442,12 @@ def _ss_fact_check_hook(
             "start",
             scope=fact_scope,
         )
-        fact_kwargs = {
+        fact_kwargs: dict[str, object] = {
             "provider": provider,
             "max_uses": max_uses,
             "on_error": _on_fact_check_error,
         }
-        try:
-            fact_parameters = inspect.signature(fact_check_question).parameters
-            accepts_scope = "scope" in fact_parameters or any(
-                parameter.kind is inspect.Parameter.VAR_KEYWORD
-                for parameter in fact_parameters.values()
-            )
-        except (TypeError, ValueError):
-            accepts_scope = False
-        if accepts_scope:
+        if accepts_kwarg(fact_check_question, "scope"):
             fact_kwargs["scope"] = fact_scope
         fc: FactCheckResult | None = fact_check_question(
             client,

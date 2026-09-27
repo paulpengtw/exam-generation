@@ -11,7 +11,6 @@ generation independent of the random samplers.
 from __future__ import annotations
 
 import dataclasses
-import inspect
 import json
 import os
 from pathlib import Path
@@ -33,6 +32,7 @@ from src.common.core_competency_loader import (
 from src.common.core_competency_loader import load_core_competencies as load_math_core_competencies
 from src.common.curriculum_loader import load_learning_content as load_common_lc
 from src.common.curriculum_loader import load_learning_performance as load_common_lp
+from src.common.kwarg_compat import accepts_kwarg
 from src.corrector import correct_question as _math_correct_question
 from src.natural_sciences.cli import (
     _ns_params_from_resolved as _ns_params_from_resolved_impl,
@@ -176,15 +176,7 @@ def _resolve_enum(value: str | None, enum_cls: type) -> Any:
 
 def _scoped_client(factory: Callable[..., Any], config: Any, scope: Any) -> Any:
     """Call a client factory with explicit scope when its seam supports it."""
-    try:
-        signature = inspect.signature(factory)
-        accepts_scope = "scope" in signature.parameters or any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD
-            for parameter in signature.parameters.values()
-        )
-    except (TypeError, ValueError):
-        accepts_scope = False
-    client = factory(config, scope=scope) if accepts_scope else factory(config)
+    client = factory(config, scope=scope) if accepts_kwarg(factory, "scope") else factory(config)
     if scope is not None and hasattr(client, "set_scope"):
         client.set_scope(scope)
     return client
