@@ -1598,3 +1598,256 @@ describe("useGenerate — legacy fixture replay end-to-end (issue #750 gap 4e)",
     expect(result.current.status).toBe("idle");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 5.1 gap-fill tests (issue #895)
+// ---------------------------------------------------------------------------
+
+describe("F3: invalid manifest in started → no v2 slots, status error", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets status error and no evidence when started carries an invalid manifest (total mismatch)", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({
+          context: { run_id: "RUN", event_seq: 1 },
+          payload: {
+            protocol_version: 2,
+            total: 3, // mismatch: total says 3 but only 2 questions listed
+            questions: [
+              { index: 0, question_id: "q_RUN_001" },
+              { index: 1, question_id: "q_RUN_002" },
+            ],
+          },
+        }),
+      });
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toBeTruthy();
+    const ev = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(ev.evidence).toBeNull();
+  });
+});
+
+describe("F3: second started in active v2 run does not overwrite slots", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("ignores a second identical started (same payload, same seq 1) and preserves accumulated evidence content", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    // First valid v2 started → evidence with 2 slots (receipt=none)
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // Deliver a draft for q_RUN_001 at seq 2 so receipt advances to "draft"
+    sendV2Event("question_update",
+      { run_id: "RUN", event_seq: 2, question_id: "q_RUN_001", content_revision: 1 },
+      { question: { ...sampleQ("q_RUN_001") } },
+    );
+
+    expect((result.current as unknown as { evidence: RunEvidenceState | null }).evidence!.questions["q_RUN_001"].content.receipt).toBe("draft");
+
+    // Second identical started: seq 1 already seen → duplicate_seq ignore; started case NOT triggered
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    // Evidence is NOT reset — draft content from q_RUN_001 is still present
+    const evAfter = (result.current as unknown as { evidence: RunEvidenceState | null }).evidence;
+    expect(evAfter).not.toBeNull();
+    expect(evAfter!.total).toBe(2);
+    expect(evAfter!.questions["q_RUN_001"].content.receipt).toBe("draft");
+    // Status stays generating (not error)
+    expect(result.current.status).toBe("generating");
+  });
+});
+
+describe("F3: HTTP 426 → stops, no resubmit", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets status error on HTTP 426 and does not issue a second generate call", async () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      try {
+        await latestStreamOptions().onopen?.(
+          new Response(
+            JSON.stringify({
+              detail: "介面版本已更新，請重新整理頁面後再生成。",
+              code: "CLIENT_UPDATE_REQUIRED",
+              supported_stream_versions: [2],
+            }),
+            { status: 426, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      } catch { /* expected: FatalStreamError thrown on non-2xx */ }
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toBeTruthy();
+    // No second fetchEventSource call (no resubmit on 426)
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("F3: stale events from previous connection do not affect new connection", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("stale done from old connection does not corrupt the new connection's evidence or status", () => {
+    const { result } = renderHook(() => useGenerate());
+
+    // --- First generate: run "RUN" (2 questions) ---
+    act(() => { result.current.generate({ subject: "math" }); });
+    const oldStream = latestStreamOptions();
+
+    // started seq 1 → v2 mode, evidence created
+    act(() => {
+      oldStream.onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+    // question_update seq 2 → q_RUN_001 draft
+    act(() => {
+      oldStream.onmessage?.({
+        id: "",
+        event: "question_update",
+        data: JSON.stringify({
+          context: { run_id: "RUN", event_seq: 2, question_id: "q_RUN_001", content_revision: 1 },
+          payload: { question: { ...sampleQ("q_RUN_001") } },
+        }),
+      });
+    });
+    expect((result.current as unknown as { evidence: RunEvidenceState | null }).evidence!
+      .questions["q_RUN_001"].content.receipt).toBe("draft");
+
+    // Reset clears the first connection
+    act(() => { result.current.reset(); });
+
+    // --- Second generate: run "RUN2" (2 different questions) ---
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    const RUN2_STARTED_DATA = {
+      context: { run_id: "RUN2", event_seq: 1 },
+      payload: {
+        protocol_version: 2,
+        total: 2,
+        questions: [
+          { index: 0, question_id: "q_RUN2_001" },
+          { index: 1, question_id: "q_RUN2_002" },
+        ],
+        generation_log_id: null,
+      },
+    };
+
+    // New connection: started RUN2
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify(RUN2_STARTED_DATA),
+      });
+    });
+    // New connection: question_update seq 2 → q_RUN2_001 draft
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "question_update",
+        data: JSON.stringify({
+          context: { run_id: "RUN2", event_seq: 2, question_id: "q_RUN2_001", content_revision: 1 },
+          payload: { question: { ...sampleQ("q_RUN2_001") } },
+        }),
+      });
+    });
+    const evNew = (result.current as unknown as { evidence: RunEvidenceState | null }).evidence;
+    expect(evNew).not.toBeNull();
+    expect(evNew!.runId).toBe("RUN2");
+    expect(evNew!.total).toBe(2);
+    expect(evNew!.order).toEqual(["q_RUN2_001", "q_RUN2_002"]);
+    expect(evNew!.questions["q_RUN2_001"].content.receipt).toBe("draft");
+    expect(result.current.status).toBe("generating");
+
+    // --- OLD stream fires stale "done" for RUN (seq 3) ---
+    // The decoder for the first connection has seqNextExpected=3, so this is next in order.
+    // With the controller guard (controllerRef.current !== controller), this is blocked.
+    // Without the guard, handleV2Event("done") would set status="idle" and null out controllerRef.
+    act(() => {
+      oldStream.onmessage?.({
+        id: "",
+        event: "done",
+        data: JSON.stringify({ context: { run_id: "RUN", event_seq: 3 }, payload: {} }),
+      });
+    });
+
+    // New connection's evidence is unchanged
+    const evAfterStale = (result.current as unknown as { evidence: RunEvidenceState | null }).evidence;
+    expect(evAfterStale).not.toBeNull();
+    expect(evAfterStale!.runId).toBe("RUN2");
+    expect(evAfterStale!.total).toBe(2);
+    expect(evAfterStale!.questions["q_RUN2_001"].content.receipt).toBe("draft");
+    // Status is still generating (stale done did not terminate the new run)
+    expect(result.current.status).toBe("generating");
+  });
+});
+
+describe("F3: only valid started creates v2 evidence slots", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("pre-started question_update does not create v2 evidence; valid started creates the manifest slots", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    // Send a question_update before started: decoder is in awaiting-start → held → processed as legacy
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "question_update",
+        data: JSON.stringify({
+          index: 0,
+          phase: "draft",
+          question: { id: "q_early", 題目: ["early question"], 正確解題分析: ["answer"], 情境: [], 題型種類: "單一題", 題型: "選擇題" },
+        }),
+      });
+    });
+
+    // No v2 evidence slots before started
+    const evBefore = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(evBefore.evidence).toBeNull();
+
+    // Now valid v2 started arrives → creates 2 manifest slots, clears legacy results
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify(V2_STARTED_DATA),
+      });
+    });
+
+    const evAfter = result.current as unknown as { evidence: RunEvidenceState | null };
+    expect(evAfter.evidence).not.toBeNull();
+    expect(evAfter.evidence!.total).toBe(2);
+    expect(evAfter.evidence!.order).toEqual(["q_RUN_001", "q_RUN_002"]);
+    // Both slots have receipt=none (pre-started content is NOT in the v2 slots)
+    expect(evAfter.evidence!.questions["q_RUN_001"].content.receipt).toBe("none");
+    expect(evAfter.evidence!.questions["q_RUN_002"].content.receipt).toBe("none");
+  });
+});

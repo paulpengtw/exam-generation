@@ -331,46 +331,44 @@ export function parseQuestionTerminalPayload(
 }
 
 function sameTerminal(left: QuestionTerminalPayload, right: QuestionTerminalPayload): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return sameTerminalOutcome(left, right) && JSON.stringify(left.review) === JSON.stringify(right.review);
+}
+
+/**
+ * Build a string multiset key from a slot array: serialize each SlotRef with
+ * sorted object keys, sort the resulting strings, and JSON-stringify the sorted
+ * array.  Used for order-independent comparison of expected/delivered/missing
+ * slot arrays.
+ */
+function slotMultisetKey(slots: GenerationSlotReference[]): string {
+  return JSON.stringify(
+    slots
+      .map((s) => JSON.stringify(s, Object.keys(s).sort()))
+      .sort(),
+  );
 }
 
 /**
  * Compare two terminal payloads for "same outcome" — used to detect when only
  * the review block differs (review disagreement ≠ terminal contradiction).
  *
- * The server builds `expected`, `delivered`, and `missing` in manifest (slot)
- * order: it iterates `slot_manifest` by `slot_index` position, so the same
- * submission always produces the same ordering.  Confirmed in
- * `server/generate/service.py` `_build_question_terminal_payload` (for-loop
- * over `slot_manifest`).  An identical resend therefore arrives byte-identical
- * in these arrays and is correctly detected as "same outcome" by the
- * JSON.stringify comparison.  A genuinely different outcome changes at least
- * one of the compared fields and is still detected as a conflict.
- *
- * If the server ever stops guaranteeing this order, change the comparison to
- * be order-insensitive by slot identity (e.g. sort by subquestion_id before
- * stringifying).
+ * expected/delivered/missing arrays are compared as multisets: each SlotRef is
+ * canonicalized with sorted object keys and the resulting keys are sorted, so
+ * a resend that merely reorders slots is not flagged as terminal_contradiction.
  */
 function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTerminalPayload): boolean {
-  return JSON.stringify({
-    termination_reason: left.termination_reason,
-    has_final: left.has_final,
-    final_revision: left.final_revision,
-    delivery_status: left.delivery_status,
-    expected: left.expected,
-    delivered: left.delivered,
-    missing: left.missing,
-    unknown_reason: left.unknown_reason,
-  }) === JSON.stringify({
-    termination_reason: right.termination_reason,
-    has_final: right.has_final,
-    final_revision: right.final_revision,
-    delivery_status: right.delivery_status,
-    expected: right.expected,
-    delivered: right.delivered,
-    missing: right.missing,
-    unknown_reason: right.unknown_reason,
-  });
+  if (
+    left.termination_reason !== right.termination_reason
+    || left.has_final !== right.has_final
+    || left.final_revision !== right.final_revision
+    || left.delivery_status !== right.delivery_status
+    || left.unknown_reason !== right.unknown_reason
+  ) return false;
+  return (
+    slotMultisetKey(left.expected) === slotMultisetKey(right.expected)
+    && slotMultisetKey(left.delivered) === slotMultisetKey(right.delivered)
+    && slotMultisetKey(left.missing) === slotMultisetKey(right.missing)
+  );
 }
 
 /**

@@ -29,7 +29,7 @@
 
 ## 5. 前端 decoder 與證據 reducer
 
-- [ ] 5.1 抽出 `web/src/lib/generationStream.ts` 的 awaiting-start／v2／legacy／unsupported decoder，讓 useGenerate 請求帶 v2 並隔離連線世代；以完整／缺失／重複 manifest、426、未知版本及舊 callback 測試驗證只有有效 started 可建立卡位，未知版本停止接收且無 resubmit。
+- [x] 5.1 抽出 `web/src/lib/generationStream.ts` 的 awaiting-start／v2／legacy／unsupported decoder，讓 useGenerate 請求帶 v2 並隔離連線世代；以完整／缺失／重複 manifest、426、未知版本及舊 callback 測試驗證只有有效 started 可建立卡位，未知版本停止接收且無 resubmit。
 - [ ] 5.2 建立按 run/question/revision 收納的內容、final receipt、terminal 與 review 狀態，分別衍生 processing／termination／delivery／review；測試 B 先 final、舊 revision 晚到、terminal 先到／缺 final、final 缺 terminal，確認無跨卡覆蓋或錯版審題。
 - [ ] 5.3 以 operation 集合與 call/channel 紀錄衍生活動和文字，不把 snapshot phase 當活動證據；用並行子題／圖片、同 purpose 不同 call、superseded end 遲到與空 active set 測試驗證工作不誤結束、文字不混接。
 - [x] 5.4 實作 seq fingerprint 去重及從首個 gap 起算的有界 buffer；用 fake clock 分別命中 2 秒、256 筆、4 MiB，並測試界內補齊、重送不膨脹、按序大正文、未知種類占序號與 EOF 缺口，驗證活動只依可靠證據推進。
@@ -70,5 +70,5 @@
 
 - [x] 10.1 從真實 server publisher 搭配 fake subject/provider 輸出可重現 fixtures，供前端與匯出測試直接重用；以數學單一題／題組、社會、自然、retry／partial／文本 only 執行驗證 envelope、卡位、revision、terminal、缺項與下載一致，無付費模型依賴。
 - [x] 10.2 用同一 A/B 交錯案例完成 C0/S0、C0/S1、C1/S0、C1/S1 相容驗收，另以測試 transport 注入重送、缺口、衝突及 terminal/final 反向到達；保存斷言與 UI 證據，明列 C0/S0 原有缺陷、C0/S1 零派工及 C1 的可信內容保留。
-- [ ] 10.3 執行變更涵蓋的 backend tests、全量預抽 guards、web tests、lint 與 build，遵守最多 2–3 個記憶體較重測試 lane 及可用時的 `choom -n 500 --`；交付命令與結果紀錄，失敗或跳過的必要驗收有明確處理，不以單一 build 取代跨層驗證。
+- [x] 10.3 執行變更涵蓋的 backend tests、全量預抽 guards、web tests、lint 與 build，遵守最多 2–3 個記憶體較重測試 lane 及可用時的 `choom -n 500 --`；交付命令與結果紀錄，失敗或跳過的必要驗收有明確處理，不以單一 build 取代跨層驗證。
 - [ ] 10.4 完成教師可見狀態／草稿 ODT／預覽圖片的瀏覽器驗收，以及兩後端 pause→drain→switch→verify→reopen 和兩種 rollback 演練；由實作者整理證據、技術 reviewer 核對門檻、教師確認狀態含義、發布操作者記錄入口與版本／排空證據，形成可審閱的發布交接包。

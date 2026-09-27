@@ -744,14 +744,14 @@ describe("conflict reason codes (Gap 2)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// S2 (#749): sameTerminalOutcome canonical ordering
-// The server builds expected/delivered/missing arrays in slot_index order
-// (confirmed in server/generate/service.py _build_question_terminal_payload),
-// so an identical resend is byte-identical and must NOT be flagged as a conflict.
-// A genuinely different outcome must still be detected as terminal_contradiction.
+// S2 (#749, #897): sameTerminalOutcome order-independent slot comparison
+// expected/delivered/missing arrays are compared as multisets (order-insensitive).
+// A resend with the same slots in a different array order must NOT be flagged as
+// a conflict.  A genuinely different outcome (different slot, missing slot, extra
+// duplicate) must still be detected as terminal_contradiction.
 // ---------------------------------------------------------------------------
 
-describe("sameTerminalOutcome: server-guaranteed slot order (S2)", () => {
+describe("sameTerminalOutcome: order-independent slot comparison (S2)", () => {
   const slotA = {
     kind: "subquestion" as const,
     question_id: "q_001",
@@ -797,6 +797,47 @@ describe("sameTerminalOutcome: server-guaranteed slot order (S2)", () => {
     // Idempotent resend → no conflict, stays ended
     expect(state.questions["q_001"].processing).toBe("ended");
     expect(state.questions["q_001"].terminalConflict).toBeFalsy();
+  });
+
+  it("reordered slots in resend are NOT flagged as terminal_contradiction", () => {
+    // #897: consumers must treat slot arrays as multisets — order is non-normative.
+    let state = freshRun();
+    const first = terminalWith([slotA], [slotB], [slotA, slotB]);
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 2), first));
+    expect(state.questions["q_001"].processing).toBe("ended");
+    expect(state.questions["q_001"].terminalConflict).toBeFalsy();
+
+    // Resend with same slots but reversed array order in expected (slotB, slotA)
+    const reordered = terminalWith([slotA], [slotB], [slotB, slotA]);
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 3), reordered));
+    // Same multiset → no conflict, processing stays ended
+    expect(state.questions["q_001"].processing).toBe("ended");
+    expect(state.questions["q_001"].terminalConflict).toBeFalsy();
+    expect(state.questions["q_001"].reviewConflict).toBeFalsy();
+  });
+
+  it("reordered slots + different review → reviewConflict only (not terminalConflict)", () => {
+    // sameTerminalOutcome returns true (same slots, different order) so the
+    // review-only path fires, setting reviewConflict but not terminalConflict.
+    let state = freshRun();
+    const first = terminalWith([slotA], [slotB], [slotA, slotB]);
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 2), first));
+    expect(state.questions["q_001"].processing).toBe("ended");
+
+    // Resend: slots reordered AND review changed to "failed"
+    const reorderedDifferentReview = {
+      ...terminalWith([slotA], [slotB], [slotB, slotA]),
+      review: { status: "failed" as const, content_revision: 1 },
+    };
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 3), reorderedDifferentReview));
+    // Outcome is the same (multiset match) but review differs → reviewConflict
+    expect(state.questions["q_001"].processing).toBe("ended");
+    expect(state.questions["q_001"].terminalConflict).toBeFalsy();
+    expect(state.questions["q_001"].reviewConflict).toBe(true);
   });
 
   it("different missing set triggers terminal_contradiction", () => {

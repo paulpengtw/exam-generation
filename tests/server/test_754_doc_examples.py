@@ -202,3 +202,16 @@ def test_doc_contains_envelope_examples() -> None:
     exports = _export_examples()
     assert len(envelopes) >= 2, "Expected at least 2 envelope examples"
     assert len(exports) >= 1, "Expected at least 1 _export example"
+
+
+def test_doc_states_slot_array_order_non_normative() -> None:
+    """The protocol doc must state that slot array order is non-normative (#897)."""
+    text = PROTOCOL_DOC.read_text(encoding="utf-8")
+    assert "non-normative" in text, (
+        "docs/generation-event-protocol.md must state that slot array order is "
+        "non-normative (expected/delivered/missing are compared as multisets)"
+    )
+    assert "multiset" in text, (
+        "docs/generation-event-protocol.md must mention multiset comparison for "
+        "expected/delivered/missing slot arrays"
+    )

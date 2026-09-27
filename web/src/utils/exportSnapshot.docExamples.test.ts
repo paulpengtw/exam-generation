@@ -197,3 +197,15 @@ describe("docs/generation-event-protocol.md envelope examples", () => {
     });
   });
 });
+
+describe("docs/generation-event-protocol.md slot order non-normative (#897)", () => {
+  it("document states that slot array order is non-normative", () => {
+    const doc = readFileSync(PROTOCOL_DOC, "utf-8");
+    expect(doc).toContain("non-normative");
+  });
+
+  it("document mentions multiset comparison for slot arrays", () => {
+    const doc = readFileSync(PROTOCOL_DOC, "utf-8");
+    expect(doc).toContain("multiset");
+  });
+});
