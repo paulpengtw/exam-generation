@@ -1711,12 +1711,14 @@ describe("F3: HTTP 426 → stops, no resubmit", () => {
 describe("F3: stale events from previous connection do not affect new connection", () => {
   beforeEach(() => { fetchEventSourceMock.mockClear(); });
 
-  it("events from a stale stream after reset and new generate do not affect the new connection's evidence", () => {
+  it("stale done from old connection does not corrupt the new connection's evidence or status", () => {
     const { result } = renderHook(() => useGenerate());
+
+    // --- First generate: run "RUN" (2 questions) ---
     act(() => { result.current.generate({ subject: "math" }); });
     const oldStream = latestStreamOptions();
 
-    // Establish first run with v2 evidence
+    // started seq 1 → v2 mode, evidence created
     act(() => {
       oldStream.onmessage?.({
         id: "",
@@ -1724,32 +1726,85 @@ describe("F3: stale events from previous connection do not affect new connection
         data: JSON.stringify(V2_STARTED_DATA),
       });
     });
-    const evFirst = result.current as unknown as { evidence: RunEvidenceState | null };
-    expect(evFirst.evidence).not.toBeNull();
-
-    // Reset cancels the old stream; evidence is cleared
-    act(() => { result.current.reset(); });
-    expect((result.current as unknown as { evidence: RunEvidenceState | null }).evidence).toBeNull();
-
-    // New generate starts a new controller
-    act(() => { result.current.generate({ subject: "math" }); });
-
-    // Old stream fires a late question_update: controllerRef.current !== oldController → guard returns early
+    // question_update seq 2 → q_RUN_001 draft
     act(() => {
       oldStream.onmessage?.({
         id: "",
         event: "question_update",
         data: JSON.stringify({
           context: { run_id: "RUN", event_seq: 2, question_id: "q_RUN_001", content_revision: 1 },
-          payload: { question: { 題目: ["stale question"], 正確解題分析: ["answer"], 情境: [], 題型種類: "單一題", 題型: "選擇題" } },
+          payload: { question: { ...sampleQ("q_RUN_001") } },
         }),
       });
     });
+    expect((result.current as unknown as { evidence: RunEvidenceState | null }).evidence!
+      .questions["q_RUN_001"].content.receipt).toBe("draft");
 
-    // New connection's evidence is still null (no started arrived yet for new run)
-    const evAfterStale = result.current as unknown as { evidence: RunEvidenceState | null };
-    expect(evAfterStale.evidence).toBeNull();
-    // Status is still generating (stale event did not affect it)
+    // Reset clears the first connection
+    act(() => { result.current.reset(); });
+
+    // --- Second generate: run "RUN2" (2 different questions) ---
+    act(() => { result.current.generate({ subject: "math" }); });
+
+    const RUN2_STARTED_DATA = {
+      context: { run_id: "RUN2", event_seq: 1 },
+      payload: {
+        protocol_version: 2,
+        total: 2,
+        questions: [
+          { index: 0, question_id: "q_RUN2_001" },
+          { index: 1, question_id: "q_RUN2_002" },
+        ],
+        generation_log_id: null,
+      },
+    };
+
+    // New connection: started RUN2
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify(RUN2_STARTED_DATA),
+      });
+    });
+    // New connection: question_update seq 2 → q_RUN2_001 draft
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "question_update",
+        data: JSON.stringify({
+          context: { run_id: "RUN2", event_seq: 2, question_id: "q_RUN2_001", content_revision: 1 },
+          payload: { question: { ...sampleQ("q_RUN2_001") } },
+        }),
+      });
+    });
+    const evNew = (result.current as unknown as { evidence: RunEvidenceState | null }).evidence;
+    expect(evNew).not.toBeNull();
+    expect(evNew!.runId).toBe("RUN2");
+    expect(evNew!.total).toBe(2);
+    expect(evNew!.order).toEqual(["q_RUN2_001", "q_RUN2_002"]);
+    expect(evNew!.questions["q_RUN2_001"].content.receipt).toBe("draft");
+    expect(result.current.status).toBe("generating");
+
+    // --- OLD stream fires stale "done" for RUN (seq 3) ---
+    // The decoder for the first connection has seqNextExpected=3, so this is next in order.
+    // With the controller guard (controllerRef.current !== controller), this is blocked.
+    // Without the guard, handleV2Event("done") would set status="idle" and null out controllerRef.
+    act(() => {
+      oldStream.onmessage?.({
+        id: "",
+        event: "done",
+        data: JSON.stringify({ context: { run_id: "RUN", event_seq: 3 }, payload: {} }),
+      });
+    });
+
+    // New connection's evidence is unchanged
+    const evAfterStale = (result.current as unknown as { evidence: RunEvidenceState | null }).evidence;
+    expect(evAfterStale).not.toBeNull();
+    expect(evAfterStale!.runId).toBe("RUN2");
+    expect(evAfterStale!.total).toBe(2);
+    expect(evAfterStale!.questions["q_RUN2_001"].content.receipt).toBe("draft");
+    // Status is still generating (stale done did not terminate the new run)
     expect(result.current.status).toBe("generating");
   });
 });
