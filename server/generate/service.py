@@ -24,7 +24,7 @@ import anyio
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.drain import get_drain
-from server.generate.event_protocol import QuestionTerminalPayload
+from server.generate.event_protocol import QuestionTerminalPayload, StartedPayload
 from server.generate.marshalling import (
     SSEEventName,
     make_combined_observer,
@@ -1088,18 +1088,33 @@ async def generate_question_stream(
         run_id=_run_id,
     )
 
-    ctx.publisher.publish(
-        SSEEventName.STARTED,
-        payload={
-            "protocol_version": 2,
-            "total": ctx.count,
-            "questions": [
-                {"index": qc.index, "question_id": qc.question_id}
-                for qc in ctx.manifest
-            ],
-            "generation_log_id": str(generation_log_id) if generation_log_id is not None else None,
-        },
-    )
+    _started_payload: dict[str, Any] = {
+        "protocol_version": 2,
+        "total": ctx.count,
+        "questions": [
+            {"index": qc.index, "question_id": qc.question_id}
+            for qc in ctx.manifest
+        ],
+        "generation_log_id": str(generation_log_id) if generation_log_id is not None else None,
+    }
+    try:
+        StartedPayload.model_validate(_started_payload)
+    except Exception as exc:  # ValidationError
+        logger.warning(
+            "started payload validation failed; rejecting generation (%s): %s",
+            type(exc).__name__,
+            exc,
+        )
+        ctx.publisher.publish(
+            SSEEventName.ERROR,
+            payload=build_sse_error("started_invalid", "generation manifest validation failed"),
+        )
+        await asyncio.sleep(0)
+        yield queue.get_nowait()
+        _drain.unregister_queue(queue)
+        return
+
+    ctx.publisher.publish(SSEEventName.STARTED, payload=_started_payload)
     await asyncio.sleep(0)
     yield queue.get_nowait()
 
