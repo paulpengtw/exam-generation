@@ -84,6 +84,167 @@ describe("QuestionCard — placeholder (evidence, no content)", () => {
   });
 });
 
+/**
+ * Issue #854: Summary counts only in-progress (active) work.
+ * Finished or superseded work must not appear as "0" counts in the collapsed summary.
+ * When no work is in progress the summary shows a neutral phrase (both locales).
+ */
+describe("QuestionCard — activity panel summary filter (issue #854)", () => {
+  // Acceptance criterion: summary lists only steps with in-progress counts; finished work not counted.
+  it("shows only active steps in summary and does not show 0 for finished steps", () => {
+    const activity = {
+      operations: {
+        O1: {
+          operationId: "O1", step: "text", status: "ended" as const,
+          agent: "generator", subquestionIndex: null, supersedesOperationId: null, callIds: [],
+        },
+        O2: {
+          operationId: "O2", step: "subquestions", status: "active" as const,
+          agent: "sub_generator#1", subquestionIndex: 1, supersedesOperationId: null, callIds: [],
+        },
+        O3: {
+          operationId: "O3", step: "subquestions", status: "active" as const,
+          agent: "sub_generator#2", subquestionIndex: 2, supersedesOperationId: null, callIds: [],
+        },
+      },
+      calls: {},
+    };
+    render(<QuestionCard evidence={makeEvidence({ processing: "running", activity })} index={0} />);
+
+    const summary = screen.getByTestId("question-card-activity-summary");
+    // Finished "text" step must NOT appear in summary
+    expect(summary).not.toHaveTextContent("Text");
+    // Active "subquestions" step with count 2 must appear
+    expect(summary).toHaveTextContent("Sub-questions");
+    expect(summary).toHaveTextContent("2");
+    // No "0" count should appear in summary (test for literal " 0" spacing)
+    expect(summary).not.toHaveTextContent(" 0");
+  });
+
+  // Acceptance criterion: with no in-progress work, neutral phrase shown, no 0 counts.
+  it("shows neutral phrase (en) and no 0 when all operations are ended", () => {
+    const activity = {
+      operations: {
+        O1: {
+          operationId: "O1", step: "subquestions", status: "ended" as const,
+          agent: "sub_generator#1", subquestionIndex: 1, supersedesOperationId: null, callIds: [],
+        },
+        O2: {
+          operationId: "O2", step: "subquestions", status: "ended" as const,
+          agent: "sub_generator#2", subquestionIndex: 2, supersedesOperationId: null, callIds: [],
+        },
+      },
+      calls: {},
+    };
+    render(<QuestionCard evidence={makeEvidence({ processing: "ended", activity })} index={0} />);
+
+    const summary = screen.getByTestId("question-card-activity-summary");
+    expect(summary).toHaveTextContent("No steps in progress");
+    expect(summary).not.toHaveTextContent("0");
+  });
+
+  // Acceptance criterion: with no in-progress work, neutral phrase shown for superseded.
+  it("shows neutral phrase when all operations are superseded", () => {
+    const activity = {
+      operations: {
+        O1: {
+          operationId: "O1", step: "subquestions", status: "superseded" as const,
+          agent: "sub_generator#1", subquestionIndex: 1, supersedesOperationId: null, callIds: [],
+        },
+      },
+      calls: {},
+    };
+    render(<QuestionCard evidence={makeEvidence({ processing: "running", activity })} index={0} />);
+
+    const summary = screen.getByTestId("question-card-activity-summary");
+    expect(summary).toHaveTextContent("No steps in progress");
+    expect(summary).not.toHaveTextContent("0");
+  });
+
+  // Acceptance criterion: panel remains visible with expandable detail when all work is finished.
+  it("activity panel stays visible and expands to show all operations when no active steps", async () => {
+    const activity = {
+      operations: {
+        O1: {
+          operationId: "O1", step: "subquestions", status: "ended" as const,
+          agent: "sub_generator#1", subquestionIndex: 1, supersedesOperationId: null, callIds: [],
+        },
+        O2: {
+          operationId: "O2", step: "subquestions", status: "ended" as const,
+          agent: "sub_generator#2", subquestionIndex: 2, supersedesOperationId: null, callIds: [],
+        },
+      },
+      calls: {},
+    };
+    render(<QuestionCard evidence={makeEvidence({ processing: "ended", activity })} index={0} />);
+
+    // Panel must render (not return null) for traceability
+    expect(screen.getByTestId("question-card-activity")).toBeInTheDocument();
+
+    // Expand and verify all operations are present in detail
+    fireEvent.click(screen.getByTestId("question-card-activity-summary"));
+    expect(screen.getByTestId("question-card-activity-operation-O1")).toBeInTheDocument();
+    expect(screen.getByTestId("question-card-activity-operation-O2")).toBeInTheDocument();
+  });
+
+  // Acceptance criterion: late finish of superseded operation does not affect the new op's count.
+  it("late-finish of superseded operation does not change in-progress count of the replacing operation", () => {
+    // O1 was superseded by O2, then O1 arrives late with "ended" status (late finish scenario)
+    const activity = {
+      operations: {
+        O1: {
+          operationId: "O1", step: "subquestions", status: "ended" as const,
+          agent: "sub_generator#1", subquestionIndex: 1, supersedesOperationId: null, callIds: [],
+        },
+        O2: {
+          operationId: "O2", step: "subquestions", status: "active" as const,
+          agent: "sub_generator#1", subquestionIndex: 1, supersedesOperationId: "O1", callIds: [],
+        },
+        O3: {
+          operationId: "O3", step: "subquestions", status: "active" as const,
+          agent: "sub_generator#2", subquestionIndex: 2, supersedesOperationId: null, callIds: [],
+        },
+      },
+      calls: {},
+    };
+    render(<QuestionCard evidence={makeEvidence({ processing: "running", activity })} index={0} />);
+
+    const summary = screen.getByTestId("question-card-activity-summary");
+    // Only O2 and O3 are active, so count should be 2, not 3
+    expect(summary).toHaveTextContent("Sub-questions");
+    expect(summary).toHaveTextContent("2");
+    expect(summary).not.toHaveTextContent("3");
+  });
+
+  // Acceptance criterion: expanded detail shows ALL work including ended/superseded for traceability.
+  it("expanded detail shows all operations including ended and superseded ones", async () => {
+    const activity = {
+      operations: {
+        O1: {
+          operationId: "O1", step: "text", status: "ended" as const,
+          agent: "generator", subquestionIndex: null, supersedesOperationId: null, callIds: [],
+        },
+        O2: {
+          operationId: "O2", step: "subquestions", status: "superseded" as const,
+          agent: "sub_generator#1", subquestionIndex: 1, supersedesOperationId: null, callIds: [],
+        },
+        O3: {
+          operationId: "O3", step: "subquestions", status: "active" as const,
+          agent: "sub_generator#1", subquestionIndex: 1, supersedesOperationId: "O2", callIds: [],
+        },
+      },
+      calls: {},
+    };
+    render(<QuestionCard evidence={makeEvidence({ processing: "running", activity })} index={0} />);
+
+    fireEvent.click(screen.getByTestId("question-card-activity-summary"));
+    // All three operations must be visible in detail for traceability
+    expect(screen.getByTestId("question-card-activity-operation-O1")).toBeInTheDocument();
+    expect(screen.getByTestId("question-card-activity-operation-O2")).toBeInTheDocument();
+    expect(screen.getByTestId("question-card-activity-operation-O3")).toBeInTheDocument();
+  });
+});
+
 describe("QuestionCard — with content (evidence has question)", () => {
   const evidenceWithQuestion: QuestionEvidence = makeEvidence({
     processing: "ended",
