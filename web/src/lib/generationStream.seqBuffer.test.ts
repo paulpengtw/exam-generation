@@ -382,3 +382,67 @@ describe("seq buffer — post-degradation pass-through", () => {
     expect(r).toEqual([{ kind: "ignore", reason: "degraded" }]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// msUntilDeadline() — Gap 3 (timer re-arm)
+// ---------------------------------------------------------------------------
+
+describe("msUntilDeadline() — Gap 3 (#748)", () => {
+  it("returns null when no gap is open", () => {
+    const { clock } = makeClock(0);
+    const dec = createGenerationStreamDecoder({ clock });
+    dec.decode("started", validStartedData);
+    // seq 2 in-order — no gap
+    dec.decode("stage", makeV2Event("stage", 2));
+    expect(dec.msUntilDeadline()).toBeNull();
+  });
+
+  it("returns remaining ms when gap is open (before deadline)", () => {
+    const { clock, advance } = makeClock(0);
+    const dec = createGenerationStreamDecoder({ clock });
+    dec.decode("started", validStartedData);
+    // seq 3 arrives out of order — gap opens at t=0
+    dec.decode("stage", makeV2Event("stage", 3));
+    advance(500); // 500 ms elapsed
+    const rem = dec.msUntilDeadline();
+    expect(rem).not.toBeNull();
+    expect(rem!).toBe(1500); // SEQ_BUFFER_MAX_AGE_MS (2000) - 500 = 1500
+  });
+
+  it("returns 0 when gap has passed its deadline (not yet degraded by timer)", () => {
+    const { clock, advance } = makeClock(0);
+    const dec = createGenerationStreamDecoder({ clock });
+    dec.decode("started", validStartedData);
+    dec.decode("stage", makeV2Event("stage", 3));
+    advance(2500); // well past 2000 ms — but checkDeadline() not yet called
+    const rem = dec.msUntilDeadline();
+    expect(rem).toBe(0);
+  });
+
+  it("returns null after degradation", () => {
+    const { clock, advance } = makeClock(0);
+    const dec = createGenerationStreamDecoder({ clock });
+    dec.decode("started", validStartedData);
+    dec.decode("stage", makeV2Event("stage", 3));
+    advance(2001);
+    dec.checkDeadline(); // degrades
+    expect(dec.degraded).toBe(true);
+    expect(dec.msUntilDeadline()).toBeNull();
+  });
+
+  it("returns null when gap fills before deadline", () => {
+    const { clock } = makeClock(0);
+    const dec = createGenerationStreamDecoder({ clock });
+    dec.decode("started", validStartedData);
+    dec.decode("stage", makeV2Event("stage", 3)); // seq 3, gap opens (seq 2 missing)
+    dec.decode("stage", makeV2Event("stage", 2)); // gap fills
+    expect(dec.msUntilDeadline()).toBeNull();
+  });
+
+  it("returns null when not in v2 mode", () => {
+    const { clock } = makeClock(0);
+    const dec = createGenerationStreamDecoder({ clock });
+    // awaiting-start, no started event sent
+    expect(dec.msUntilDeadline()).toBeNull();
+  });
+});

@@ -357,11 +357,30 @@ function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTermi
 }
 
 /**
+ * Transport/sidecar fields that the publisher adds to a `result` payload at
+ * emission time and that are NOT part of the immutable content signature.
+ * Confirmed by inspection of all five committed v2 fixtures: `metadata` is
+ * null in `question_update` (draft) and populated in `result` (final) for the
+ * same content_revision; all other question fields are byte-identical.
+ * Excluding these from the fingerprint lets the draft→final promotion pass
+ * without a false content conflict.
+ */
+const CONTENT_SIDECAR_FIELDS = new Set(["metadata"]);
+
+/**
  * A lightweight fingerprint for content-conflict detection (issue #749).
- * Compares the serialised question objects; an empty string on stringify failure
- * ensures a mismatch is never silently treated as identical.
+ * Normalises the question object by excluding transport/sidecar fields before
+ * serialising.  An empty string on stringify failure ensures a mismatch is
+ * never silently treated as identical.
  */
 function questionContentFingerprint(q: unknown): string {
+  if (q !== null && q !== undefined && typeof q === "object" && !Array.isArray(q)) {
+    const normalized: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(q as Record<string, unknown>)) {
+      if (!CONTENT_SIDECAR_FIELDS.has(k)) normalized[k] = v;
+    }
+    try { return JSON.stringify(normalized) ?? ""; } catch { return ""; }
+  }
   try {
     return JSON.stringify(q) ?? "";
   } catch {
@@ -390,14 +409,14 @@ function applyConflictEvent(
     if (!questionId) {
       // Unattributable — stop whole-batch live; confirmed terminals remain.
       if (state.batchConflict) return state;
-      return { ...state, batchConflict: true, batchConflictReason: "unattributable seq conflict" };
+      return { ...state, batchConflict: true, batchConflictReason: "seq_data" };
     }
 
     const qev = state.questions[questionId];
     if (!qev) {
       // questionId not in manifest → treat as unattributable
       if (state.batchConflict) return state;
-      return { ...state, batchConflict: true, batchConflictReason: "seq conflict with unknown question id" };
+      return { ...state, batchConflict: true, batchConflictReason: "seq_data" };
     }
 
     if (eventName === "question_terminal") {
@@ -406,14 +425,14 @@ function applyConflictEvent(
       return updateQuestion(state, questionId, {
         processing: "unknown",
         terminalConflict: true,
-        terminalConflictReason: "seq conflict: same sequence number, different terminal data",
+        terminalConflictReason: "seq_data",
         reviewConflict: false,
         finalPending: false,
         review: {
           status: "unknown",
           revision: qev.review.revision,
           pending: false,
-          reason: "seq conflict: same sequence number, different terminal data",
+          reason: "seq_data",
         },
       });
     }
@@ -423,7 +442,7 @@ function applyConflictEvent(
       if (qev.contentConflict) return state;
       return updateQuestion(state, questionId, {
         contentConflict: true,
-        contentConflictReason: "seq conflict: same sequence number, different content data",
+        contentConflictReason: "seq_data",
       });
     }
 
@@ -547,7 +566,7 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
         if (qev.contentConflict) return state;
         return updateQuestion(state, questionId, {
           contentConflict: true,
-          contentConflictReason: "question_update payload question id does not match manifest",
+          contentConflictReason: "identity_mismatch",
         });
       }
 
@@ -562,7 +581,7 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
           if (qev.contentConflict) return state;
           return updateQuestion(state, questionId, {
             contentConflict: true,
-            contentConflictReason: "same content revision with different content data",
+            contentConflictReason: "same_revision_different_content",
           });
         }
         // Same draft revision, same content → idempotent resend, no state change needed
@@ -606,7 +625,7 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
         if (qev.contentConflict) return state;
         return updateQuestion(state, questionId, {
           contentConflict: true,
-          contentConflictReason: "result payload question id does not match manifest",
+          contentConflictReason: "identity_mismatch",
         });
       }
 
@@ -621,17 +640,35 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
             if (qev.contentConflict) return state;
             return updateQuestion(state, questionId, {
               contentConflict: true,
-              contentConflictReason: "same final revision with different content data",
+              contentConflictReason: "same_revision_different_content",
             });
           }
         }
         return state;
       }
 
-      // Note: no same-revision-different-content check here for the case where a `result`
-      // arrives at the same revision as a prior `question_update` draft.  The result
-      // intentionally finalises the draft; the payload may include extra fields (e.g. `id`)
-      // and must not be flagged as a content conflict.
+      // Issue #749 (Gap 1): same-revision draft→final content conflict.
+      // Per snapshot-ledger contract (tasks 3.1/3.3), a revision's content is immutable.
+      // A `result` at the same content_revision as a stored draft may only promote
+      // identical (normalised) content.  `metadata` is a sidecar field added by the
+      // publisher at result-time and is legitimately absent from the draft; exclude it
+      // before comparing so real fixtures (social/NS) do not produce false conflicts.
+      if (
+        qev.content.receipt === "draft"
+        && qev.content.revision === contentRevision
+        && qev.content.question !== null
+      ) {
+        const storedFp = questionContentFingerprint(qev.content.question);
+        const newFp = questionContentFingerprint(payload);
+        if (storedFp !== newFp) {
+          if (qev.contentConflict) return state;
+          return updateQuestion(state, questionId, {
+            contentConflict: true,
+            contentConflictReason: "same_revision_different_content",
+          });
+        }
+        // Same normalised content: intentional finalisation — fall through to adopt as final.
+      }
 
       const question = payload as ExamQuestion;
       // Clear finalPending if this matches the expected final_revision
@@ -653,10 +690,10 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
         return updateQuestion(state, questionId, {
           processing: "unknown",
           terminalConflict: true,
-          terminalConflictReason: "invalid terminal evidence",
+          terminalConflictReason: "terminal_invalid",
           reviewConflict: false,
           finalPending: false,
-          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "invalid terminal evidence" },
+          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "terminal_invalid" },
         });
       }
       if (qev.terminalConflict) return state;
@@ -669,17 +706,17 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
               status: "unknown",
               revision: qev.review.revision,
               pending: false,
-              reason: "contradictory review evidence",
+              reason: "review_contradiction",
             },
           });
         }
         return updateQuestion(state, questionId, {
           processing: "unknown",
           terminalConflict: true,
-          terminalConflictReason: "contradictory terminal evidence",
+          terminalConflictReason: "terminal_contradiction",
           reviewConflict: false,
           finalPending: false,
-          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "contradictory terminal evidence" },
+          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "terminal_contradiction" },
         });
       }
       if (
@@ -694,10 +731,10 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
         return updateQuestion(state, questionId, {
           processing: "unknown",
           terminalConflict: true,
-          terminalConflictReason: "terminal revision conflicts with received content",
+          terminalConflictReason: "terminal_contradiction",
           reviewConflict: false,
           finalPending: false,
-          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "terminal revision conflicts with received content" },
+          review: { status: "unknown", revision: qev.review.revision, pending: false, reason: "terminal_contradiction" },
         });
       }
       // finalPending: terminal says has_final but we haven't received the final_revision yet

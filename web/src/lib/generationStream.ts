@@ -103,6 +103,12 @@ export interface GenerationStreamDecoder {
    * degradation already happened.
    */
   checkDeadline(): DecodedEvent[];
+  /**
+   * Remaining milliseconds until the gap deadline, or null if no gap is open
+   * (or the decoder is not in v2 mode, or already degraded).
+   * Used by useGenerate to re-arm the gap timer after a non-degrading checkDeadline().
+   */
+  msUntilDeadline(): number | null;
 }
 
 const SEQ_BUFFER_MAX_COUNT = 256;
@@ -390,6 +396,13 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
         return degrade("timeout");
       }
       return [];
+    },
+
+    msUntilDeadline(): number | null {
+      if (mode !== "v2" || seqDegraded || seqGapStart === null) return null;
+      const elapsed = clock.now() - seqGapStart;
+      const remaining = SEQ_BUFFER_MAX_AGE_MS - elapsed;
+      return remaining > 0 ? remaining : 0;
     },
 
     decode(eventName: string, rawData: string): DecodedEvent[] {

@@ -553,3 +553,192 @@ describe("after permanent degradation", () => {
     expect(state.questions["q_001"].terminalConflict).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Gap 1: draft→final same-revision conflict with normalized fingerprint (#749)
+// ---------------------------------------------------------------------------
+
+describe("draft→final same-revision conflict (Gap 1 — normalized fingerprint)", () => {
+  function draftQuestion(id: string, body: string) {
+    // Draft: no metadata (null, absent from question_update)
+    return { id, 題目: [body], 正確解題分析: ["ans"], metadata: null };
+  }
+
+  function finalQuestion(id: string, body: string) {
+    // Final (result): metadata sidecar added by publisher at emit time
+    return {
+      id,
+      題目: [body],
+      正確解題分析: ["ans"],
+      metadata: { grade: 8, model: "gemini", generated_at: "2026-01-01T00:00:00Z", difficulty: "medium" },
+    };
+  }
+
+  it("draft r1 → final r1 identical normalized content ⇒ no conflict, adopted as final", () => {
+    let state = freshRun();
+    // Draft arrives first
+    state = applyV2Event(state, makeEvent("question_update",
+      ctx("q_001", 2, { content_revision: 1 }),
+      { question: draftQuestion("q_001", "same content") },
+    ));
+    expect(state.questions["q_001"].content.receipt).toBe("draft");
+    expect(state.questions["q_001"].contentConflict).toBeFalsy();
+
+    // Result at same revision; normalized content matches draft (metadata differs but is sidecar)
+    state = applyV2Event(state, makeEvent("result",
+      ctx("q_001", 3, { content_revision: 1 }),
+      finalQuestion("q_001", "same content"),
+    ));
+    expect(state.questions["q_001"].contentConflict).toBeFalsy();
+    expect(state.questions["q_001"].content.receipt).toBe("final");
+    // Final body adopted
+    const q = state.questions["q_001"].content.question as { metadata: unknown };
+    expect(q.metadata).toBeTruthy(); // publisher-added metadata present in adopted final
+  });
+
+  it("draft r1 → final r1 different normalized content ⇒ conflict, draft body kept", () => {
+    let state = freshRun();
+    // Draft arrives first
+    state = applyV2Event(state, makeEvent("question_update",
+      ctx("q_001", 2, { content_revision: 1 }),
+      { question: draftQuestion("q_001", "original draft content") },
+    ));
+
+    // Result at same revision; normalized content differs (question text changed)
+    state = applyV2Event(state, makeEvent("result",
+      ctx("q_001", 3, { content_revision: 1 }),
+      finalQuestion("q_001", "DIFFERENT content — server error"),
+    ));
+    expect(state.questions["q_001"].contentConflict).toBe(true);
+    expect(state.questions["q_001"].contentConflictReason).toBe("same_revision_different_content");
+    // Draft body is retained (receipt still "draft")
+    expect(state.questions["q_001"].content.receipt).toBe("draft");
+    const q = state.questions["q_001"].content.question as { 題目: string[] };
+    expect(q.題目[0]).toContain("original draft content");
+    // processing NOT set to unknown (content conflicts don't affect X)
+    expect(state.questions["q_001"].processing).not.toBe("unknown");
+  });
+
+  it("real fixture pattern: metadata=null in draft, metadata populated in final, same text ⇒ no conflict", () => {
+    // Mirrors the social / natural_sciences fixture pattern confirmed by fixture analysis.
+    let state = freshRun();
+    const sharedBody = "台灣民主的發展過程";
+
+    state = applyV2Event(state, makeEvent("question_update",
+      ctx("q_001", 2, { content_revision: 1 }),
+      { question: { id: "q_001", 核心問題: sharedBody, metadata: null } },
+    ));
+
+    state = applyV2Event(state, makeEvent("result",
+      ctx("q_001", 3, { content_revision: 1 }),
+      { id: "q_001", 核心問題: sharedBody, metadata: { grade: 8, model: "unknown", generated_at: "ts", difficulty: "medium" } },
+    ));
+    expect(state.questions["q_001"].contentConflict).toBeFalsy();
+    expect(state.questions["q_001"].content.receipt).toBe("final");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap 2: Reason codes (not English prose)
+// ---------------------------------------------------------------------------
+
+describe("conflict reason codes (Gap 2)", () => {
+  it("seq_data terminal conflict reason is 'seq_data'", () => {
+    let state = freshRun();
+    state = applyV2Event(state, {
+      kind: "conflict",
+      conflictType: "seq_data",
+      seq: 5,
+      eventName: "question_terminal",
+      questionId: "q_001",
+    });
+    expect(state.questions["q_001"].terminalConflictReason).toBe("seq_data");
+    expect(state.questions["q_001"].review.reason).toBe("seq_data");
+  });
+
+  it("seq_data content conflict reason is 'seq_data'", () => {
+    let state = freshRun();
+    state = applyV2Event(state, {
+      kind: "conflict",
+      conflictType: "seq_data",
+      seq: 5,
+      eventName: "result",
+      questionId: "q_001",
+    });
+    expect(state.questions["q_001"].contentConflictReason).toBe("seq_data");
+  });
+
+  it("identity mismatch reason is 'identity_mismatch'", () => {
+    let state = freshRun();
+    state = applyV2Event(state, makeEvent("result",
+      ctx("q_001", 2, { content_revision: 1 }),
+      { id: "q_999", 題目: ["x"] },
+    ));
+    expect(state.questions["q_001"].contentConflictReason).toBe("identity_mismatch");
+  });
+
+  it("question_update identity mismatch reason is 'identity_mismatch'", () => {
+    let state = freshRun();
+    state = applyV2Event(state, makeEvent("question_update",
+      ctx("q_001", 2, { content_revision: 1 }),
+      { question: { id: "q_999", 題目: ["x"] } },
+    ));
+    expect(state.questions["q_001"].contentConflictReason).toBe("identity_mismatch");
+  });
+
+  it("same-revision-different-content reason is 'same_revision_different_content'", () => {
+    let state = freshRun();
+    state = applyV2Event(state, makeEvent("question_update",
+      ctx("q_001", 2, { content_revision: 1 }),
+      { question: { id: "q_001", 題目: ["version A"] } },
+    ));
+    state = applyV2Event(state, makeEvent("question_update",
+      ctx("q_001", 3, { content_revision: 1 }),
+      { question: { id: "q_001", 題目: ["version B"] } },
+    ));
+    expect(state.questions["q_001"].contentConflictReason).toBe("same_revision_different_content");
+  });
+
+  it("terminal_invalid reason is 'terminal_invalid'", () => {
+    let state = freshRun();
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 2),
+      { termination_reason: "bad" }, // invalid
+    ));
+    expect(state.questions["q_001"].terminalConflictReason).toBe("terminal_invalid");
+    expect(state.questions["q_001"].review.reason).toBe("terminal_invalid");
+  });
+
+  it("terminal_contradiction reason is 'terminal_contradiction'", () => {
+    let state = freshRun();
+    // First terminal (normal)
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 2),
+      validTerminal("q_001"),
+    ));
+    expect(state.questions["q_001"].processing).toBe("ended");
+
+    // Second, contradictory terminal with different outcome
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 3),
+      { ...noFinalTerminal() },
+    ));
+    expect(state.questions["q_001"].terminalConflictReason).toBe("terminal_contradiction");
+  });
+
+  it("review_contradiction reason is 'review_contradiction'", () => {
+    let state = freshRun();
+    const first = validTerminal("q_001");
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 2), first));
+    // Second terminal with same outcome but different review
+    const reviewConflictTerminal = {
+      ...validTerminal("q_001"),
+      review: { status: "failed" as const, content_revision: 1 },
+    };
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 3), reviewConflictTerminal));
+    expect(state.questions["q_001"].reviewConflict).toBe(true);
+    expect(state.questions["q_001"].review.reason).toBe("review_contradiction");
+  });
+});

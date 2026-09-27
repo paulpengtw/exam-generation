@@ -582,13 +582,28 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
         </span>
       )}
       {evidence.terminalConflict && (
-        <span data-testid="evidence-terminal-conflict">{t("card.evidence_conflict")}</span>
+        <span data-testid="evidence-terminal-conflict" role="status">
+          {t("card.evidence_conflict")}
+          {evidence.terminalConflictReason && (
+            <> — <span data-testid="evidence-terminal-conflict-reason">{t(`card.conflict_reason_${evidence.terminalConflictReason}`)}</span></>
+          )}
+        </span>
       )}
       {evidence.reviewConflict && (
-        <span data-testid="evidence-review-conflict">{t("card.review_conflict")}</span>
+        <span data-testid="evidence-review-conflict" role="status">
+          {t("card.review_conflict")}
+          {evidence.review.reason && (
+            <> — <span data-testid="evidence-review-conflict-reason">{t(`card.conflict_reason_${evidence.review.reason}`)}</span></>
+          )}
+        </span>
       )}
       {evidence.contentConflict && (
-        <span data-testid="evidence-content-conflict">{t("card.content_conflict")}</span>
+        <span data-testid="evidence-content-conflict" role="status">
+          {t("card.content_conflict")}
+          {evidence.contentConflictReason && (
+            <> — <span data-testid="evidence-content-conflict-reason">{t(`card.conflict_reason_${evidence.contentConflictReason}`)}</span></>
+          )}
+        </span>
       )}
       <span data-testid="evidence-review-status">{reviewLabel}</span>
       <span data-testid="evidence-receipt-status">{receiptLabel}</span>
