@@ -1446,8 +1446,11 @@ export function useGenerate(): UseGenerateReturn {
               handleLegacyEvent(ev.event ?? "", ev.data ?? "");
             } else if (decoder.mode === "v2" && gapTimerRef.current === null) {
               // Arm a timer that calls checkDeadline() if no further event fills
-              // the gap within the 2 s bound.
-              gapTimerRef.current = setTimeout(() => {
+              // the gap within the 2 s bound.  If the gap fills before the timer
+              // fires (normal case) the timer is cleared by the event handler.
+              // If gap 2 opens after gap 1's timer fires without degradation, we
+              // re-arm for the remaining time so the new gap also expires correctly.
+              function fireGapTimer() {
                 gapTimerRef.current = null;
                 if (controllerRef.current !== controller) return;
                 const timeoutEvents = decoder.checkDeadline();
@@ -1463,7 +1466,15 @@ export function useGenerate(): UseGenerateReturn {
                     handleV2Event(te.event.name, te.event.context, te.event.payload);
                   }
                 }
-              }, SEQ_BUFFER_MAX_AGE_MS + 1);
+                // Re-arm if the gap was not resolved (no degradation occurred) but
+                // a new or remaining gap is still open.  Covers the case where gap 1
+                // fills and gap 2 opens before this timer fires.
+                const remaining = decoder.msUntilDeadline();
+                if (remaining !== null && gapTimerRef.current === null) {
+                  gapTimerRef.current = setTimeout(fireGapTimer, remaining + 1);
+                }
+              }
+              gapTimerRef.current = setTimeout(fireGapTimer, SEQ_BUFFER_MAX_AGE_MS + 1);
             }
           }
           // ignore: no action
