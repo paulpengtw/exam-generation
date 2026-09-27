@@ -395,3 +395,432 @@ describe("ODT acceptance — flat question still renders flat (not group)", () =
     expect(xml).not.toContain("核心問題");
   });
 });
+
+// ---------------------------------------------------------------------------
+// (e) Rasterizer: injectable success → PNG embedded in ZIP (issue #753)
+// ---------------------------------------------------------------------------
+
+describe("ODT acceptance — injectable rasterizer success", () => {
+  it("chart_spec_preview stem slot: success rasterizer → PNG in Pictures/, image tag in XML", async () => {
+    // 1x1 pixel transparent PNG in base64
+    const FAKE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const rasterizer = async () => ({ ok: true as const, pngBase64: FAKE_PNG });
+
+    const question: ExamQuestion = {
+      id: "q-chart-stem",
+      情境: ["個人"],
+      題型種類: "single",
+      題型: "選擇題",
+      題目: ["Stem question"],
+      正確解題分析: ["Stem answer"],
+      chart_spec: { render_mode: "html", description: "table preview" } as Record<string, unknown>,
+    };
+    const item: GeneratedQuestion = {
+      index: 0,
+      question,
+      phase: "final",
+      isFinal: true,
+    };
+    const snap = captureFromGeneratedQuestion(item, null, "2026-09-27T00:00:00.000Z");
+    expect(snap).not.toBeNull();
+    expect(snap!.imageSources["stem"]?.kind).toBe("chart_spec_preview");
+
+    const blob = await buildOdtFromSnapshots("test", [snap!], { rasterizer });
+    const buf = await blob.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+
+    // Pictures/ folder must contain the rasterized PNG
+    const pngFile = zip.file("Pictures/img_snap_0.png");
+    expect(pngFile).not.toBeNull();
+    const pngData = await pngFile!.async("uint8array");
+    // PNG signature: 0x89 0x50 0x4E 0x47 ...
+    expect(pngData[0]).toBe(0x89);
+    expect(pngData[1]).toBe(0x50);
+
+    // content.xml must reference the image with draw:image, not the failure text
+    const xml = await readContentXml(blob);
+    expect(xml).toContain("Pictures/img_snap_0.png");
+    expect(xml).toContain("draw:image");
+    expect(xml).not.toContain("匯出缺圖");
+  });
+
+  it("chart_spec_preview subquestion slot: success → sub-PNG in Pictures/", async () => {
+    const FAKE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const rasterizer = async () => ({ ok: true as const, pngBase64: FAKE_PNG });
+
+    const question: ExamQuestion = {
+      id: "q-chart-sq",
+      情境: ["個人"],
+      題型種類: "題組題",
+      題型: "選擇題",
+      題目: [],
+      正確解題分析: [],
+      核心問題: "test core",
+      文本: "test passage",
+      subquestions: [
+        {
+          id: "sq1",
+          序號: 1,
+          年級: 7,
+          題型: "選擇題",
+          科目: ["數學"],
+          核心素養: [],
+          學習內容: [],
+          學習表現: [],
+          題目: "Subquestion text",
+          答案: "A",
+          答案解析: "Analysis",
+          chart_spec: { render_mode: "html", description: "table" } as Record<string, unknown>,
+        },
+      ],
+    };
+    const item: GeneratedQuestion = {
+      index: 0,
+      question,
+      phase: "final",
+      isFinal: true,
+    };
+    const snap = captureFromGeneratedQuestion(item, null, "2026-09-27T00:00:00.000Z");
+    expect(snap).not.toBeNull();
+    expect(snap!.imageSources["sq1"]?.kind).toBe("chart_spec_preview");
+
+    const blob = await buildOdtFromSnapshots("test", [snap!], { rasterizer });
+    const buf = await blob.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+
+    const pngFile = zip.file("Pictures/img_snap_0_sq_1.png");
+    expect(pngFile).not.toBeNull();
+
+    const xml = await readContentXml(blob);
+    expect(xml).toContain("Pictures/img_snap_0_sq_1.png");
+    expect(xml).not.toContain("匯出缺圖");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (f) Per-image conversion failure → failure message at correct position,
+//     other content intact (issue #753 acceptance criterion)
+// ---------------------------------------------------------------------------
+
+describe("ODT acceptance — per-image conversion failure", () => {
+  it("stem failure: 【匯出缺圖／預覽轉換失敗】 at stem position, question text intact", async () => {
+    const rasterizer = async () => ({
+      ok: false as const,
+      error: "canvas unavailable",
+    });
+
+    const question: ExamQuestion = {
+      id: "q-fail-stem",
+      情境: ["個人"],
+      題型種類: "single",
+      題型: "選擇題",
+      題目: ["Question with failed stem image"],
+      正確解題分析: ["Answer analysis"],
+      chart_spec: { render_mode: "html", description: "table" } as Record<string, unknown>,
+    };
+    const item: GeneratedQuestion = {
+      index: 0,
+      question,
+      phase: "final",
+      isFinal: true,
+    };
+    const snap = captureFromGeneratedQuestion(item, null, "2026-09-27T00:00:00.000Z");
+    expect(snap).not.toBeNull();
+
+    const blob = await buildOdtFromSnapshots("test", [snap!], { rasterizer });
+    const xml = await readContentXml(blob);
+
+    // Failure marker present at correct position
+    expect(xml).toContain("匯出缺圖／預覽轉換失敗");
+    // No real PNG file embedded
+    const buf = await blob.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+    expect(zip.file("Pictures/img_snap_0.png")).toBeNull();
+    // Other content still intact
+    expect(xml).toContain("Question with failed stem image");
+    expect(xml).toContain("Answer analysis");
+    // Old placeholder text NOT used
+    expect(xml).not.toContain("圖片預覽待轉換");
+  });
+
+  it("subquestion failure: failure at that sub's position, sibling content intact", async () => {
+    const FAKE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    let callCount = 0;
+    // sq1 succeeds; sq2 fails
+    const rasterizer = async () => {
+      callCount++;
+      if (callCount === 1) return { ok: true as const, pngBase64: FAKE_PNG };
+      return { ok: false as const, error: "failed for sq2" };
+    };
+
+    const question: ExamQuestion = {
+      id: "q-fail-sq",
+      情境: ["個人"],
+      題型種類: "題組題",
+      題型: "選擇題",
+      題目: [],
+      正確解題分析: [],
+      核心問題: "core",
+      文本: "passage",
+      subquestions: [
+        {
+          id: "sq1",
+          序號: 1,
+          年級: 7,
+          題型: "選擇題",
+          科目: ["數學"],
+          核心素養: [],
+          學習內容: [],
+          學習表現: [],
+          題目: "First subquestion",
+          答案: "A",
+          答案解析: "",
+          chart_spec: { render_mode: "html", description: "sq1 chart" } as Record<string, unknown>,
+        },
+        {
+          id: "sq2",
+          序號: 2,
+          年級: 7,
+          題型: "選擇題",
+          科目: ["數學"],
+          核心素養: [],
+          學習內容: [],
+          學習表現: [],
+          題目: "Second subquestion",
+          答案: "B",
+          答案解析: "",
+          chart_spec: { render_mode: "html", description: "sq2 chart" } as Record<string, unknown>,
+        },
+      ],
+    };
+    const item: GeneratedQuestion = {
+      index: 0,
+      question,
+      phase: "final",
+      isFinal: true,
+    };
+    const snap = captureFromGeneratedQuestion(item, null, "2026-09-27T00:00:00.000Z");
+    expect(snap).not.toBeNull();
+
+    const blob = await buildOdtFromSnapshots("test", [snap!], { rasterizer });
+    const xml = await readContentXml(blob);
+    const buf = await blob.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+
+    // sq1 succeeded: PNG present, no failure marker
+    expect(zip.file("Pictures/img_snap_0_sq_1.png")).not.toBeNull();
+    // sq2 failed: failure marker present, no PNG
+    expect(zip.file("Pictures/img_snap_0_sq_2.png")).toBeNull();
+    expect(xml).toContain("匯出缺圖／預覽轉換失敗");
+    // Both subquestion texts still intact
+    expect(xml).toContain("First subquestion");
+    expect(xml).toContain("Second subquestion");
+    // Batch still downloadable (blob was produced, not thrown)
+    expect(blob).toBeInstanceOf(Blob);
+    // Generation completeness not affected (no _export fields changed)
+    expect(snap!.exported._export.delivery_status).toBeNull(); // from legacy path
+  });
+
+  it("per-image failure does not prevent other questions in batch from rendering", async () => {
+    const FAKE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    let callCount = 0;
+    // Question 0 chart fails; Question 1 chart succeeds
+    const rasterizer = async () => {
+      callCount++;
+      if (callCount === 1) return { ok: false as const, error: "q0 fail" };
+      return { ok: true as const, pngBase64: FAKE_PNG };
+    };
+
+    const makeQuestion = (id: string, text: string) => ({
+      id,
+      情境: ["個人"] as string[],
+      題型種類: "single",
+      題型: "選擇題",
+      題目: [text],
+      正確解題分析: ["answer"],
+      chart_spec: { render_mode: "html", description: "chart" } as Record<string, unknown>,
+    });
+
+    const items: GeneratedQuestion[] = [
+      { index: 0, question: makeQuestion("q0", "Question zero"), phase: "final", isFinal: true },
+      { index: 1, question: makeQuestion("q1", "Question one"), phase: "final", isFinal: true },
+    ];
+    const snaps = items.map((item) =>
+      captureFromGeneratedQuestion(item, null, "2026-09-27T00:00:00.000Z")!
+    );
+
+    const blob = await buildOdtFromSnapshots("batch", snaps, { rasterizer });
+    const xml = await readContentXml(blob);
+    const buf = await blob.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+
+    // q0 failed, q1 succeeded
+    expect(zip.file("Pictures/img_snap_0.png")).toBeNull();
+    expect(zip.file("Pictures/img_snap_1.png")).not.toBeNull();
+    // Both question texts present
+    expect(xml).toContain("Question zero");
+    expect(xml).toContain("Question one");
+    // Failure marker only for q0 position
+    expect(xml).toContain("匯出缺圖／預覽轉換失敗");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (g) ZIP packaging failure → OdtBuildError thrown, no broken blob (issue #753)
+// ---------------------------------------------------------------------------
+
+describe("ODT acceptance — ZIP / per-question build failure", () => {
+  it("a rasterizer that throws propagates as OdtBuildError, not a partial blob", async () => {
+    const rasterizer = async (): Promise<{ ok: true; pngBase64: string }> => {
+      throw new Error("rasterizer internal crash");
+    };
+
+    const question: ExamQuestion = {
+      id: "q-crash",
+      情境: ["個人"],
+      題型種類: "single",
+      題型: "選擇題",
+      題目: ["Crash question"],
+      正確解題分析: ["answer"],
+      chart_spec: { render_mode: "html", description: "crash chart" } as Record<string, unknown>,
+    };
+    const item: GeneratedQuestion = {
+      index: 0,
+      question,
+      phase: "final",
+      isFinal: true,
+    };
+    const snap = captureFromGeneratedQuestion(item, null, "2026-09-27T00:00:00.000Z");
+    expect(snap).not.toBeNull();
+
+    // Must throw (no broken blob produced)
+    await expect(
+      buildOdtFromSnapshots("test", [snap!], { rasterizer })
+    ).rejects.toMatchObject({ name: "OdtBuildError", questionIndex: 0 });
+  });
+
+  it("failure in question 2 of a batch marks questionIndex=1 in OdtBuildError", async () => {
+    let callCount = 0;
+    const rasterizer = async (): Promise<{ ok: true; pngBase64: string }> => {
+      callCount++;
+      if (callCount === 2) throw new Error("crash at second question");
+      return { ok: true, pngBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" };
+    };
+
+    const makeSnap = (id: string, idx: number) => {
+      const q: ExamQuestion = {
+        id,
+        情境: ["個人"] as string[],
+        題型種類: "single",
+        題型: "選擇題",
+        題目: [`Q${idx}`],
+        正確解題分析: ["answer"],
+        chart_spec: { render_mode: "html", description: "c" } as Record<string, unknown>,
+      };
+      return captureFromGeneratedQuestion(
+        { index: idx, question: q, phase: "final", isFinal: true },
+        null,
+        "2026-09-27T00:00:00.000Z",
+      )!;
+    };
+
+    await expect(
+      buildOdtFromSnapshots("batch", [makeSnap("q0", 0), makeSnap("q1", 1)], { rasterizer })
+    ).rejects.toMatchObject({ questionIndex: 1 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (h) Mid-conversion revision arrival does not replace captured source
+// ---------------------------------------------------------------------------
+
+describe("ODT acceptance — frozen source during conversion", () => {
+  it("mutating snapshot.captured after build starts does not change the rasterized spec", async () => {
+    let capturedSpec: Record<string, unknown> | undefined;
+
+    const FAKE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    const rasterizer = async (spec: Record<string, unknown>) => {
+      capturedSpec = spec;
+      // Simulate slow rasterization: yield to allow mutations
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+      return { ok: true as const, pngBase64: FAKE_PNG };
+    };
+
+    const originalChartSpec = { render_mode: "html", description: "original_spec" };
+    const question: ExamQuestion = {
+      id: "q-race",
+      情境: ["個人"],
+      題型種類: "single",
+      題型: "選擇題",
+      題目: ["Race condition question"],
+      正確解題分析: ["answer"],
+      chart_spec: { ...originalChartSpec } as Record<string, unknown>,
+    };
+    const item: GeneratedQuestion = {
+      index: 0,
+      question,
+      phase: "final",
+      isFinal: true,
+    };
+    const snap = captureFromGeneratedQuestion(item, null, "2026-09-27T00:00:00.000Z");
+    expect(snap).not.toBeNull();
+    expect(snap!.imageSources["stem"]?.kind).toBe("chart_spec_preview");
+
+    // Start the ODT build (won't finish immediately due to 5ms delay)
+    const buildPromise = buildOdtFromSnapshots("test", [snap!], { rasterizer });
+
+    // Simulate a new revision arriving: mutate the live question's chart_spec
+    // and also try mutating the captured object
+    (question as ExamQuestion).chart_spec = { render_mode: "html", description: "NEW_REVISION_SPEC" } as Record<string, unknown>;
+
+    // Wait for the build to complete
+    const blob = await buildPromise;
+
+    // The rasterizer must have been called with the ORIGINAL spec
+    // (from imageSources, captured at click time, NOT from the live question)
+    expect(capturedSpec).toBeDefined();
+    expect((capturedSpec as Record<string, unknown>)["description"]).toBe("original_spec");
+    expect(blob).toBeInstanceOf(Blob);
+  });
+
+  it("JSON download is unaffected by a failed ODT rasterization (generation completeness unchanged)", async () => {
+    // A failed rasterization must not modify the snapshot's _export fields
+    const rasterizer = async () => ({
+      ok: false as const,
+      error: "simulated failure",
+    });
+
+    const question: ExamQuestion = {
+      id: "q-json-ok",
+      情境: ["個人"],
+      題型種類: "single",
+      題型: "選擇題",
+      題目: ["JSON should stay clean"],
+      正確解題分析: ["answer"],
+      chart_spec: { render_mode: "html", description: "chart" } as Record<string, unknown>,
+    };
+    const item: GeneratedQuestion = {
+      index: 0,
+      question,
+      phase: "final",
+      isFinal: true,
+    };
+    const snap = captureFromGeneratedQuestion(item, null, "2026-09-27T00:00:00.000Z");
+    expect(snap).not.toBeNull();
+
+    // Capture JSON BEFORE the ODT build
+    const exportedBefore = JSON.stringify(snap!.exported._export);
+
+    // Run ODT export with failure
+    await buildOdtFromSnapshots("test", [snap!], { rasterizer });
+
+    // The snapshot's _export must be unchanged
+    const exportedAfter = JSON.stringify(snap!.exported._export);
+    expect(exportedAfter).toBe(exportedBefore);
+
+    // Specifically: delivery_status, processing, review not altered
+    expect(snap!.exported._export.processing).toBe("unknown"); // legacy path = unknown
+    expect(snap!.exported._export.delivery_status).toBeNull(); // no terminal = null
+  });
+});

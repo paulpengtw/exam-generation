@@ -11,7 +11,7 @@
  * - Final with no terminal evidence → final receipt + unknown processing (not relabeled as draft)
  * - Processing/delivery/review stated separately
  * - PNG images embedded in Pictures/ from imageSources, referenced at correct position
- * - chart_spec_preview → placeholder text (TODO #753)
+ * - chart_spec_preview → rasterization attempted; failure emits 匯出缺圖／預覽轉換失敗 (issue #753)
  * - New revision arriving during export: snapshot is immutable (verified structurally)
  * - Batch: hasDraft = true drives batch filename (verified via singleQuestionOdtFilename/batchOdtFilename)
  * - Legacy/unknown-order items: positionUnknown reflected in _export.index = null
@@ -430,26 +430,35 @@ describe("buildOdtFromSnapshots — PNG image embedding", () => {
 });
 
 // ---------------------------------------------------------------------------
-// chart_spec_preview placeholder
+// chart_spec_preview rasterization (issue #753)
+// In jsdom the defaultRasterizer has no Canvas / URL.createObjectURL, so
+// it returns { ok: false } and the slot emits the conversion-failure marker.
+// The injectable rasterizer is the escape hatch for real-browser and success tests
+// (see odt.acceptance.test.ts sections e–h).
 // ---------------------------------------------------------------------------
 
-describe("buildOdtFromSnapshots — chart_spec_preview placeholder", () => {
-  it("emits placeholder text for chart_spec_preview stem (TODO #753)", async () => {
+describe("buildOdtFromSnapshots — chart_spec_preview conversion failure in jsdom", () => {
+  it("emits 【匯出缺圖／預覽轉換失敗】 for chart_spec_preview stem when rasterizer fails", async () => {
+    // Inject a stub that always fails so this test does not depend on jsdom canvas availability
+    const failRasterizer = async () => ({ ok: false as const, error: "no canvas" });
     const q = makeFlatQuestion("q-preview");
     const snapshot = makeSnapshot(
       q,
       {},
       { stem: { kind: "chart_spec_preview", chartSpec: { type: "bar" }, contentRevision: 3 } },
     );
-    const blob = await buildOdtFromSnapshots("test", [snapshot]);
+    const blob = await buildOdtFromSnapshots("test", [snapshot], { rasterizer: failRasterizer });
     const xml = await readContentXml(blob);
-    expect(xml).toContain("圖片預覽待轉換");
+    expect(xml).toContain("匯出缺圖／預覽轉換失敗");
+    // Old placeholder text must NOT appear
+    expect(xml).not.toContain("圖片預覽待轉換");
     // No PNG in Pictures/
     const paths = await readZipPaths(blob);
     expect(paths.filter((p) => p.startsWith("Pictures/"))).toHaveLength(0);
   });
 
-  it("emits placeholder text for chart_spec_preview on subquestion (TODO #753)", async () => {
+  it("emits conversion-failure marker for chart_spec_preview on subquestion when rasterizer fails", async () => {
+    const failRasterizer = async () => ({ ok: false as const, error: "no canvas" });
     const sq1 = makeSubQuestion(1);
     const q = makeGroupQuestion("q-sq-preview", [sq1]);
     const snapshot = makeSnapshot(
@@ -457,9 +466,10 @@ describe("buildOdtFromSnapshots — chart_spec_preview placeholder", () => {
       {},
       { sq1: { kind: "chart_spec_preview", chartSpec: { type: "pie" }, contentRevision: 3 } },
     );
-    const blob = await buildOdtFromSnapshots("test", [snapshot]);
+    const blob = await buildOdtFromSnapshots("test", [snapshot], { rasterizer: failRasterizer });
     const xml = await readContentXml(blob);
-    expect(xml).toContain("圖片預覽待轉換");
+    expect(xml).toContain("匯出缺圖／預覽轉換失敗");
+    expect(xml).not.toContain("圖片預覽待轉換");
   });
 });
 

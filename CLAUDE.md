@@ -249,7 +249,7 @@ Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot`
 
 ### Snapshot export — ODT (issue #752)
 
-> **NOT releasable until issue #753 ships.** chart_spec_preview slots emit a text placeholder ("圖片預覽待轉換，請至網頁版查看") rather than a rasterized PNG; every question that carries a chart image will be missing that figure in the downloaded ODT until #753 adds the rasterization pipeline.
+> **Full ODT contract met as of issue #753.** chart_spec_preview slots are now rasterized via `defaultRasterizer` (pure-SVG → canvas → PNG; injectable for testing). Per-image conversion failure emits 「匯出缺圖／預覽轉換失敗」 at the slot position; other content is preserved. Whole-ZIP failure throws `OdtBuildError`; no broken file is produced.
 
 `web/src/utils/odt.ts` exports `buildOdtFromSnapshots(title, snapshots)` which consumes the same frozen `QuestionSnapshot[]` produced by `exportSnapshot.ts`.
 
@@ -270,7 +270,7 @@ Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot`
 **Image embedding from `imageSources`:**
 - `embedSnapshotImages(zip, snapshot, idx, imageRefs)` reads exclusively from `snapshot.imageSources` (frozen at click time); never reads `question.image_base64` directly.
 - `png_base64` kind → embedded in `Pictures/` and referenced as `<draw:image>` in content.xml.
-- `chart_spec_preview` kind → placeholder text `【圖片預覽待轉換，請至網頁版查看】`; no PNG file embedded; TODO(#753).
+- `chart_spec_preview` kind → rasterization attempted via injectable `Rasterizer` (issue #753); on success embedded as PNG; on failure emits 「匯出缺圖／預覽轉換失敗」 at the slot position. `buildOdtFromSnapshots` accepts optional `{ rasterizer }` for injection; production uses `defaultRasterizer` from `rasterizer.ts`.
 - `known_missing` kind → text marker `【圖片缺項】`; no PNG file embedded.
 
 **Filename conventions:**

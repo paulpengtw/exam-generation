@@ -3,6 +3,8 @@ import JSZip from "jszip";
 import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
 import type { QuestionSnapshot, CapturedImageSources } from "./exportSnapshot";
 import { slotRefSeqno } from "./exportSnapshot";
+import type { Rasterizer } from "./rasterizer";
+import { defaultRasterizer } from "./rasterizer";
 
 export function formatTimestamp(): string {
   const now = new Date();
@@ -386,6 +388,10 @@ interface SnapshotSection {
   snapshot: QuestionSnapshot;
   imageRef?: string;
   subImageRefs?: Record<string, string>; // key: String(序號)
+  /** True when the stem chart_spec_preview rasterization failed; false/absent = ok. */
+  stemFailed?: boolean;
+  /** Keys (String(序號)) of subquestion chart_spec_preview slots where rasterization failed. */
+  subFailedKeys?: Set<string>;
 }
 
 function buildStatusLabel(snapshot: QuestionSnapshot): string | null {
@@ -429,22 +435,28 @@ function buildStatusLabel(snapshot: QuestionSnapshot): string | null {
 
 /**
  * Gather image refs from the frozen `imageSources` and add them to the ZIP.
- * Returns the stem image ref and a per-subquestion ref map.
+ * Rasterizes chart_spec_preview slots using the injected rasterizer.
+ * Returns the stem image ref, per-subquestion ref map, and failure flags.
  *
- * chart_spec_preview: emits a placeholder marker (TODO #753).
+ * chart_spec_preview: attempted via rasterizer; on success embedded as PNG;
+ *   on failure, stemFailed/subFailedKeys set — caller emits error text in XML.
  * known_missing: marked in the content XML via the missing-marker helper; no file embedded.
+ *
+ * Issue #753: rasterizer is injectable so jsdom unit tests can inject stubs
+ * without requiring Canvas / URL.createObjectURL.
  */
-function embedSnapshotImages(
+async function embedSnapshotImages(
   zip: JSZip,
   snapshot: QuestionSnapshot,
   idx: number,
   imageRefs: string[],
-): { stemImageRef?: string; subImageRefs: Record<string, string>; stemIsPreview: boolean; subPreviewKeys: Set<string> } {
+  rasterizer: Rasterizer,
+): Promise<{ stemImageRef?: string; subImageRefs: Record<string, string>; stemFailed: boolean; subFailedKeys: Set<string> }> {
   const sources: CapturedImageSources = snapshot.imageSources;
   let stemImageRef: string | undefined;
-  let stemIsPreview = false;
+  let stemFailed = false;
   const subImageRefs: Record<string, string> = {};
-  const subPreviewKeys = new Set<string>();
+  const subFailedKeys = new Set<string>();
 
   const stemSource = sources["stem"];
   if (stemSource) {
@@ -453,9 +465,19 @@ function embedSnapshotImages(
       imageRefs.push(ref);
       stemImageRef = ref;
       zip.file(ref, base64ToUint8Array(stemSource.pngBase64));
-    } else if (stemSource.kind === "chart_spec_preview") {
-      // TODO(#753): rasterize chart_spec_preview
-      stemIsPreview = true;
+    } else if (stemSource.kind === "chart_spec_preview" && stemSource.chartSpec) {
+      // Attempt export-only rasterization (#753).
+      // The rasterizer uses only the frozen chartSpec captured at click time;
+      // any new revision arriving during conversion cannot affect it.
+      const result = await rasterizer(stemSource.chartSpec);
+      if (result.ok) {
+        const ref = `Pictures/img_snap_${idx}.png`;
+        imageRefs.push(ref);
+        stemImageRef = ref;
+        zip.file(ref, base64ToUint8Array(result.pngBase64));
+      } else {
+        stemFailed = true;
+      }
     }
     // kind === "known_missing": no file; marked in XML
   }
@@ -473,14 +495,22 @@ function embedSnapshotImages(
       imageRefs.push(ref);
       subImageRefs[seq] = ref;
       zip.file(ref, base64ToUint8Array(source.pngBase64));
-    } else if (source.kind === "chart_spec_preview") {
-      // TODO(#753): rasterize chart_spec_preview
-      subPreviewKeys.add(seq);
+    } else if (source.kind === "chart_spec_preview" && source.chartSpec) {
+      // Attempt export-only rasterization (#753).
+      const result = await rasterizer(source.chartSpec);
+      if (result.ok) {
+        const ref = `Pictures/img_snap_${idx}_sq_${seq}.png`;
+        imageRefs.push(ref);
+        subImageRefs[seq] = ref;
+        zip.file(ref, base64ToUint8Array(result.pngBase64));
+      } else {
+        subFailedKeys.add(seq);
+      }
     }
     // kind === "known_missing": no file; marked in XML
   }
 
-  return { stemImageRef, subImageRefs, stemIsPreview, subPreviewKeys };
+  return { stemImageRef, subImageRefs, stemFailed, subFailedKeys };
 }
 
 /**
@@ -498,7 +528,7 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
     paras.push(`<text:p text:style-name="Heading1">${xmlEscape(title)}</text:p>`);
   }
 
-  sections.forEach(({ snapshot, imageRef: stemImageRef, subImageRefs }, idx) => {
+  sections.forEach(({ snapshot, imageRef: stemImageRef, subImageRefs, stemFailed, subFailedKeys }, idx) => {
     try {
       const { exported: question } = snapshot;
       const meta = question._export;
@@ -533,12 +563,12 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
       if (stemImageRef) {
         paras.push(buildImageParagraph(`snap_img${idx}`, stemImageRef, idx));
       } else {
-        // Check if stem has chart_spec_preview or known_missing
+        // Check if stem has a rasterization failure, chart_spec_preview, or known_missing
         const stemSrc = snapshot.imageSources["stem"];
-        if (stemSrc?.kind === "chart_spec_preview") {
-          // TODO(#753): rasterize; for now emit placeholder
+        if (stemFailed) {
+          // Rasterization attempted but failed (#753) — explicit conversion-failure marker
           paras.push(
-            `<text:p text:style-name="MetaLine">${xmlEscape("【圖片預覽待轉換，請至網頁版查看】")}</text:p>`
+            `<text:p text:style-name="MetaLine">${xmlEscape("【匯出缺圖／預覽轉換失敗】")}</text:p>`
           );
         } else if (stemSrc?.kind === "known_missing") {
           paras.push(
@@ -623,10 +653,10 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
             paras.push(buildImageParagraph(`snap_img${idx}_sq${seqNo}`, sqImageRef, idx));
           } else {
             const sqSrc = snapshot.imageSources[`sq${seqNo}`];
-            if (sqSrc?.kind === "chart_spec_preview") {
-              // TODO(#753): rasterize; for now emit placeholder
+            if (subFailedKeys?.has(sqKey)) {
+              // Rasterization attempted but failed (#753) — explicit conversion-failure marker
               paras.push(
-                `<text:p text:style-name="MetaLine">${xmlEscape("【圖片預覽待轉換，請至網頁版查看】")}</text:p>`
+                `<text:p text:style-name="MetaLine">${xmlEscape("【匯出缺圖／預覽轉換失敗】")}</text:p>`
               );
             } else if (sqSrc?.kind === "known_missing") {
               paras.push(
@@ -740,13 +770,25 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
  * this one uses the frozen `imageSources` for all image embedding (not `question.image_base64`),
  * adds draft labels, status lines, and missing-item markers.
  *
- * chart_spec_preview conversion is not yet implemented (blocked on issue #753).
- * Until then, a text placeholder is emitted at the preview position.
+ * Issue #753: chart_spec_preview slots are rasterized via the injected rasterizer
+ * (defaultRasterizer uses in-browser SVG→canvas→PNG). On per-image failure the
+ * slot emits "【匯出缺圖／預覽轉換失敗】" and all other content is preserved.
+ * A whole-ZIP packaging failure throws OdtBuildError / a generic Error and no
+ * broken blob is returned.
+ *
+ * The rasterizer reads only from the frozen snapshot.imageSources captured at
+ * click time; any new revision arriving during rasterization cannot replace the
+ * captured source.
+ *
+ * @param options.rasterizer  Injectable rasterizer (default: defaultRasterizer).
+ *   Pass a stub in jsdom unit tests to avoid requiring Canvas / URL.createObjectURL.
  */
 export async function buildOdtFromSnapshots(
   title: string,
   snapshots: QuestionSnapshot[],
+  options?: { rasterizer?: Rasterizer },
 ): Promise<Blob> {
+  const rasterizer = options?.rasterizer ?? defaultRasterizer;
   const zip = new JSZip();
   const isMultiple = snapshots.length > 1;
   const isoDate = new Date().toISOString();
@@ -754,19 +796,23 @@ export async function buildOdtFromSnapshots(
   zip.file("mimetype", "application/vnd.oasis.opendocument.text", { compression: "STORE" });
 
   const imageRefs: string[] = [];
-  const sections: SnapshotSection[] = snapshots.map((snapshot, idx) => {
+  // Process snapshots sequentially so imageRefs array is never concurrently mutated.
+  const sections: SnapshotSection[] = [];
+  for (let idx = 0; idx < snapshots.length; idx++) {
+    const snapshot = snapshots[idx];
     try {
-      const { stemImageRef, subImageRefs } = embedSnapshotImages(
-        zip, snapshot, idx, imageRefs,
-      );
+      const { stemImageRef, subImageRefs, stemFailed, subFailedKeys } =
+        await embedSnapshotImages(zip, snapshot, idx, imageRefs, rasterizer);
       const section: SnapshotSection = { snapshot };
       if (stemImageRef) section.imageRef = stemImageRef;
       if (Object.keys(subImageRefs).length > 0) section.subImageRefs = subImageRefs;
-      return section;
+      if (stemFailed) section.stemFailed = true;
+      if (subFailedKeys.size > 0) section.subFailedKeys = subFailedKeys;
+      sections.push(section);
     } catch (error: unknown) {
       throw new OdtBuildError(idx, error);
     }
-  });
+  }
 
   zip.file("meta.xml", buildMeta(title, isoDate));
   zip.file("styles.xml", buildStyles());
