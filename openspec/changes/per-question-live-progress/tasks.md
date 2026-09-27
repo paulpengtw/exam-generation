@@ -34,7 +34,7 @@
 - [ ] 5.3 以 operation 集合與 call/channel 紀錄衍生活動和文字，不把 snapshot phase 當活動證據；用並行子題／圖片、同 purpose 不同 call、superseded end 遲到與空 active set 測試驗證工作不誤結束、文字不混接。
 - [x] 5.4 實作 seq fingerprint 去重及從首個 gap 起算的有界 buffer；用 fake clock 分別命中 2 秒、256 筆、4 MiB，並測試界內補齊、重送不膨脹、按序大正文、未知種類占序號與 EOF 缺口，驗證活動只依可靠證據推進。
 - [x] 5.5 實作永久活動降級後的獨立正文／terminal 驗證與衝突隔離；測試較小未見 seq、同 seq 不同資料、同版不同內容、矛盾 terminal／review、mixed raw event，驗證保留正文、明示原因、只降級受影響結論且不自動恢復完整活動。
-- [ ] 5.6 建立 legacy adapter，按連線與 opaque id 收納，只接受一致的明確 index 對照；用 A 有 index 草稿、B 無 index final、重複 final 與後到 mapping 測試驗證原題序未知標示、無憑空 manifest、無 v2 終止推論及無自動重送。
+- [x] 5.6 建立 legacy adapter，按連線與 opaque id 收納，只接受一致的明確 index 對照；用 A 有 index 草稿、B 無 index final、重複 final 與後到 mapping 測試驗證原題序未知標示、無憑空 manifest、無 v2 終止推論及無自動重送。
 
 ## 6. 教師介面與共用元件
 

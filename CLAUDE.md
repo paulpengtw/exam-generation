@@ -166,6 +166,38 @@ The backend implements stream protocol v2. Clients **must** send `stream_version
 
 Key invariants: only terminal disputes set `processing = "unknown"` and reduce `endedCount` (X); content conflicts do not affect X; `batchConflict` does not erase already-confirmed terminals; `legacyMixed` does not affect any evidence conclusions; after permanent degradation `result`/`question_terminal` events still accepted; no auto-resubmit or modification eligibility change.
 
+### Legacy stream adapter (issue #750)
+
+C1×S0 compatibility: a new client (C1) accidentally receiving a stream from an old server (S0) now routes all legacy-mode events through a dedicated state machine (`web/src/lib/legacyAdapter.ts`) that preserves the batch with degraded display instead of applying the C0/S0 arrival-order indexing bug.
+
+**Documented C0/S0 defects NOT fixed here (unfixed old clients remain C0):**
+- C0 assigns index by arrival order of `result` events (`nextFinalIndexRef.current++`)
+- C0 does not deduplicate duplicate result events
+- C0 does not track consistent index↔id mappings
+- C0 may let a later result overwrite an earlier draft at the same position
+
+**Adapter rules (C1×S0):**
+- `LegacyAdapterState`: items keyed by opaque id (`stable_id` → `question_id` → `question.id` → synthetic); consistent explicit `index↔id` evidence resolves original position; arrival order never substitutes.
+- `resolvedIndex: number | null`: `null` → 原題序未知; consistent explicit mapping required to set it.
+- Inconsistent mapping (same id → different index, or same index → different id): silently rejected; item stays at 原題序未知.
+- Duplicate final (same id, already `isFinal`): silently ignored.
+- `done` sets `done: true` only; NOT per-question terminal evidence.
+- Events after `done` are silently discarded (stream is sealed).
+- Late consistent mapping: a `question_update` arriving after a `result` with the same id can still resolve `resolvedIndex`.
+
+**Evidence profile:** `generate-legacy-adapter` (added to `RunEvidence` union in `runEvidence.ts`). `projectGenerationEvidence` in `generationStream.ts` accepts an optional `legacyAdapter?: LegacyAdapterState | null` fourth parameter and returns `GenerationLegacyAdapterEvidence` when the adapter is active.
+
+**UI treatment:** `GenerationLegacyAdapterStatusLine` in `GenerationStatusBar.tsx` shows "此批無每題即時進度" notice and "請求總數 N" (from `requestTotal`, not a manifest count). Items with `positionUnknown: true` on `GeneratedQuestion` render "原題序未知" in `QuestionCard` via a `data-testid="question-card-position-unknown"` badge. No placeholder cards are built (no pre-allocated manifest slots); `selectLegacyItems` returns only items with received content.
+
+**Modification flow unchanged:** `generate-legacy-adapter` is only set when the decoder is in legacy mode; the modification flow never touches the adapter. No auto-resubmit, no modification eligibility change.
+
+Key files:
+- `web/src/lib/legacyAdapter.ts`: `LegacyItem`, `LegacyAdapterState`, `createLegacyAdapter`, `applyLegacyEvent`, `selectLegacyItems`.
+- `web/src/lib/legacyAdapter.test.ts`: TDD unit tests for all adapter rules.
+- `tests/fixtures/generation_legacy/math_single_legacy.jsonl`: two-question legacy stream fixture.
+- `web/src/hooks/useGenerate.ts`: `legacyAdapterRef`; `handleLegacyEvent("started")` initializes adapter; `question_update`/`result` route through adapter when active; `legacyAdapter: LegacyAdapterState | null` exposed in `UseGenerateReturn`.
+- `web/src/i18n/messages.ts`: `stream.legacy_no_per_question_progress`, `card.position_unknown`, `statusbar.legacy_request_total` in both `en-US` and `zh-TW`.
+
 ### Save draft and update (issue #772)
 
 `web/src/lib/recovery/format.ts` defines `RecoverySnapshotV1` (schema `exam-generation.recovery/1`) with `parseRecoverySnapshot` for strict validation (account, origin, environment, form shape).
