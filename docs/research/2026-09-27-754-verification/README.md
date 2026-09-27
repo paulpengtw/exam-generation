@@ -515,20 +515,22 @@ flag. `tests/test_753_odt_browser.py` collects 12 tests (verified with
 `uv run pytest --collect-only -q tests/test_753_odt_browser.py`) and was
 therefore included in the 3017-test total.
 
-**Baseline discrepancy (unresolved):** The earlier "Test Run Results" section
-of this README records 2997 passed as the result for the
-`feat/748-754-live-progress-export` branch (run with
-`--ignore=tests/test_753_odt_browser.py`). Issue #895's own statement records
-#894 as having reported 3016 passed, 1 skipped — not 2997. These two figures
-cannot be reconciled from the information in this README; the discrepancy is
-noted explicitly and left for the record owner to resolve.
+**Baseline reconciliation (resolved):** The 2997 figure in "Test Run Results"
+was an intermediate run on `feat/748-754-live-progress-export` with
+`--ignore=tests/test_753_odt_browser.py` (12 tests excluded) and recorded
+before commit 76f64e8 added `tests/server/test_754_doc_examples.py` to that
+branch. Commit 76f64e8 contributed 7 collected tests on staging (confirmed:
+8 collected on this branch minus the 1 new test from #897). Adding both
+back: 2997 + 12 + 7 = 3016, which matches #894's reported "3016 passed,
+1 skipped" exactly. There is no discrepancy.
 
-**20-test increase (relative to the 2997 baseline):** Measured against the
-`feat/748-754-live-progress-export` baseline of 2997 passed (which excluded
-test_753 via `--ignore`), the 10.3 total of 3017 is 20 more. Of those 20:
-12 come from `tests/test_753_odt_browser.py` now being collected without
-`--ignore`, and 8 come from new tests added by #895/897 work. The previous
-claim that all 20 were from "#895/897 work" was incorrect.
+**Backend test delta (#895 / #897):** #895 added no backend tests.
+`git diff staging --stat -- tests/ server/ src/` shows this branch touches
+only `tests/server/test_754_doc_examples.py` (+13 lines), adding exactly
+1 collected test (`test_doc_states_slot_array_order_non_normative`, #897).
+Staging (post-#894) therefore collects 3017 = 3016 passed + 1 skipped (the
+`RUN_CREATIVE_PLANNING_SMOKE` test). This branch collects 3018: 3017 passed
+(3016 from staging + 1 from #897) and 1 skipped.
 
 Web tests grew from 2037 to 2049 (+12 new tests on this branch). Both backend
 and frontend numbers are preserved in their respective sections above.
