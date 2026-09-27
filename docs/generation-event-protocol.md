@@ -258,6 +258,12 @@ One `question_terminal` per question is published at every worker exit.
 | `expected` | SlotRef[] | Fixed-identity slots (subquestions + required images) |
 | `delivered` | SlotRef[] | Subset of expected, disjoint from missing |
 | `missing` | SlotRef[] | Subset of expected, disjoint from delivered |
+
+> **Order non-normative.** The array order of `expected`, `delivered`, and `missing` is
+> not significant.  Producers currently emit slots in manifest (slot_index) order, but
+> consumers **must** compare these arrays as multisets by slot identity, not by position
+> or JSON serialization order.  A resend that merely reorders slots must not be treated
+> as a terminal contradiction.
 | `review.status` | `passed` \| `failed` \| `skipped` \| `unknown` | Requires reason when unknown+has_final |
 | `review.content_revision` | integer \| null | Must equal `final_revision` for definitive verdicts |
 

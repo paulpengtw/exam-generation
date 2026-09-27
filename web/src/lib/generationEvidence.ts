@@ -330,47 +330,58 @@ export function parseQuestionTerminalPayload(
   };
 }
 
+function normalizeTerminalForComparison(t: QuestionTerminalPayload): string {
+  return JSON.stringify({
+    termination_reason: t.termination_reason,
+    has_final: t.has_final,
+    final_revision: t.final_revision,
+    delivery_status: t.delivery_status,
+    expected: JSON.parse(canonicalSlotList(t.expected)) as unknown[],
+    delivered: JSON.parse(canonicalSlotList(t.delivered)) as unknown[],
+    missing: JSON.parse(canonicalSlotList(t.missing)) as unknown[],
+    unknown_reason: t.unknown_reason,
+    review: t.review,
+  });
+}
+
 function sameTerminal(left: QuestionTerminalPayload, right: QuestionTerminalPayload): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return normalizeTerminalForComparison(left) === normalizeTerminalForComparison(right);
+}
+
+/**
+ * Canonicalize each SlotRef to a stable string by serializing with sorted object
+ * keys, then sort the resulting array.  Used for multiset (order-independent)
+ * comparison of expected/delivered/missing slot arrays.
+ */
+function canonicalSlotList(slots: GenerationSlotReference[]): string {
+  return JSON.stringify(
+    slots
+      .map((s) => JSON.stringify(s, Object.keys(s).sort()))
+      .sort(),
+  );
 }
 
 /**
  * Compare two terminal payloads for "same outcome" — used to detect when only
  * the review block differs (review disagreement ≠ terminal contradiction).
  *
- * The server builds `expected`, `delivered`, and `missing` in manifest (slot)
- * order: it iterates `slot_manifest` by `slot_index` position, so the same
- * submission always produces the same ordering.  Confirmed in
- * `server/generate/service.py` `_build_question_terminal_payload` (for-loop
- * over `slot_manifest`).  An identical resend therefore arrives byte-identical
- * in these arrays and is correctly detected as "same outcome" by the
- * JSON.stringify comparison.  A genuinely different outcome changes at least
- * one of the compared fields and is still detected as a conflict.
- *
- * If the server ever stops guaranteeing this order, change the comparison to
- * be order-insensitive by slot identity (e.g. sort by subquestion_id before
- * stringifying).
+ * expected/delivered/missing arrays are compared as multisets: each SlotRef is
+ * canonicalized with sorted object keys and the resulting keys are sorted, so
+ * a resend that merely reorders slots is not flagged as terminal_contradiction.
  */
 function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTerminalPayload): boolean {
-  return JSON.stringify({
-    termination_reason: left.termination_reason,
-    has_final: left.has_final,
-    final_revision: left.final_revision,
-    delivery_status: left.delivery_status,
-    expected: left.expected,
-    delivered: left.delivered,
-    missing: left.missing,
-    unknown_reason: left.unknown_reason,
-  }) === JSON.stringify({
-    termination_reason: right.termination_reason,
-    has_final: right.has_final,
-    final_revision: right.final_revision,
-    delivery_status: right.delivery_status,
-    expected: right.expected,
-    delivered: right.delivered,
-    missing: right.missing,
-    unknown_reason: right.unknown_reason,
-  });
+  if (
+    left.termination_reason !== right.termination_reason
+    || left.has_final !== right.has_final
+    || left.final_revision !== right.final_revision
+    || left.delivery_status !== right.delivery_status
+    || left.unknown_reason !== right.unknown_reason
+  ) return false;
+  return (
+    canonicalSlotList(left.expected) === canonicalSlotList(right.expected)
+    && canonicalSlotList(left.delivered) === canonicalSlotList(right.delivered)
+    && canonicalSlotList(left.missing) === canonicalSlotList(right.missing)
+  );
 }
 
 /**
