@@ -432,3 +432,83 @@ web/src/hooks/useGenerate.test.ts      91 passed (91)  [+5 new describe blocks]
 
 TypeScript (`npx tsc -b --noEmit`): clean  
 ESLint (`npm run lint`): clean
+
+---
+
+## Task 10.3 Verification Record (Issue #895)
+
+Date: 2026-09-27  
+Branch: `feat/895-897-evidence-terminal-order`  
+Commit: `9fed1b82a62b3e53b258f0176295028bf7e72bb6`
+
+### Environment note
+
+All commands run on the integrated branch (`feat/895-897-evidence-terminal-order`)
+which incorporates PR #894 plus fixes for #897 and the #895 task-5.1 tests.
+Memory discipline: at most one heavy lane at a time; every heavy command
+prefixed with `choom -n 500 --`.
+
+### Command and result table
+
+| Step | Command | Result | Duration |
+|---|---|---|---|
+| 1 Ruff | `uv run ruff check src/ server/ tests/` | **All checks passed** (0 violations) | < 5 s |
+| 2 Backend full suite | `choom -n 500 -- uv run pytest -q -rs` | **3017 passed, 1 skipped, 44 warnings** | 596 s |
+| 3a Guard — RNG allowlist | `choom -n 500 -- uv run pytest -v tests/test_generation_sampler_allowlist.py` | **6 passed** | 2 s |
+| 3b Guard — forwarding/PIN-ONLY | `choom -n 500 -- uv run pytest -v tests/test_contract_forwarding_guard.py` | **151 passed** | 2 s |
+| 3c Guard — runtime completeness gate | `choom -n 500 -- uv run pytest -v tests/server/test_generate_routes.py::test_generate_route_rejects_unresolved_top_level_field tests/server/test_generate_routes.py::test_generate_route_rejects_unresolved_per_question_field tests/server/test_generate_routes.py::test_generate_route_rejects_unresolved_subquestion_field tests/server/test_generate_routes.py::test_preview_route_rejects_unresolved_top_level_field tests/server/test_generate_routes.py::test_generate_route_reports_incompatible_parent_with_resolver_shape` | **5 passed** | 8 s |
+| 4a Web vitest | `cd web && choom -n 500 -- npm test -- --reporter=verbose` | **187 files, 2049 tests passed** | 69 s |
+| 4b Web ESLint | `cd web && npm run lint` | **clean** (exit 0) | < 5 s |
+| 4c Web tsc | `cd web && npx tsc -b` | **clean** (exit 0) | < 5 s |
+| 4d Web build | `cd web && choom -n 500 -- npm run build` | **904 modules, built in 668 ms** | 7 s |
+| 5 ODT browser harness | skipped — see disposition below | — | — |
+
+### Skipped test identification
+
+**Node ID:** `tests/test_social_studies_creative_planning_smoke.py::test_five_briefs_have_at_least_three_distinct_題材_keywords`
+
+**Skip reason:** `Set RUN_CREATIVE_PLANNING_SMOKE=1 to run this smoke test.`
+(Guarded by `pytest.mark.skipif(os.environ.get("RUN_CREATIVE_PLANNING_SMOKE") != "1", ...)`)
+
+**Disposition — NOT a required acceptance item.** The file's module docstring
+says explicitly "Not run in CI." The test issues one live Opus planning call to
+check diversity across 5 briefs — it requires `LLM_API_KEY` and real model
+access. It exercises issue #114 (batch-level prompt dedup), not any code changed
+on this branch. No production guard relies on it, and it is not listed in any
+ADR 0022 guard suite. Correctly skipped.
+
+### Full-預抽 guard suites
+
+| Suite | Test file | Scope | Result |
+|---|---|---|---|
+| Runtime completeness gate (ADR 0022 §1) | `tests/server/test_generate_routes.py` (5 targeted tests) | `/generate` returns HTTP 422 for non-empty `drawn` set; incompatible pinned 從屬參數 returns 422 | **5 passed** |
+| Static RNG/`sample_params` allowlist (ADR 0022 §2) | `tests/test_generation_sampler_allowlist.py` | Every `random.`/`rng.` use under `src/` and `server/` outside resolver modules matches allowlist; `sample_params` only called from resolver | **6 passed** |
+| Forwarding RESOLVED/PIN-ONLY classification guard (ADR 0022 §3) | `tests/test_contract_forwarding_guard.py` | Every `GenerateParams` field × subject classified FORWARDED/REJECTED/INAPPLICABLE; FORWARDED fields are RESOLVED or PIN-ONLY | **151 passed** |
+
+### Memory discipline
+
+- Lane cap: 1 heavy lane at a time throughout (backend suite → guard suites →
+  web suite → web build; no overlap).
+- `choom -n 500 --` applied to: backend pytest, web vitest, web build.
+- Ruff, ESLint, tsc are lightweight and run without `choom`.
+
+### ODT browser harness disposition
+
+The real-browser ODT harness (`tests/test_753_odt_browser.py` — 9 tests driven
+by Playwright against a live `npx vite` dev server) requires Docker or a
+running Chromium installation that is not available in this CI container.
+It was executed and passed in full during PR #894 (recorded in the "Test Run
+Results" section above). **Nothing in this branch (`feat/895-897-evidence-terminal-order`)
+touches `odt.ts`, `rasterizer.ts`, `odt-export.html`, or any other ODT export
+code path**, so re-running the harness would produce no new information.
+Disposition: skipped on this verification pass; #894's result stands.
+
+### Historical record note
+
+The #894 backend full suite ran with `--ignore=tests/test_753_odt_browser.py`
+and reported 2997 passed, 1 skipped. The 2026-09-27 10.3 run covers the
+integrated branch (additional tests from #897 and #895 task-5.1) with no
+ignores and reports 3017 passed, 1 skipped. The 20-test increase is expected
+(+20 tests from #895/897 work). Web tests grew from 2037 to 2049 for the
+same reason (+12 new tests on this branch). Both sets of numbers are preserved
+in their respective sections above.
