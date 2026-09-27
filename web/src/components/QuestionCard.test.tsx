@@ -949,3 +949,43 @@ describe("QuestionCard distractor panel", () => {
     expect(screen.getByText(/正確答案：4/)).toBeInTheDocument();
   });
 });
+
+describe("QuestionCard — positionUnknown (issue #750)", () => {
+  it("shows position-unknown badge when positionUnknown is true", () => {
+    render(
+      <QuestionCard
+        question={question}
+        phase="verified"
+        isFinal={true}
+        positionUnknown={true}
+      />,
+    );
+
+    expect(screen.getByTestId("question-card-position-unknown")).toBeInTheDocument();
+  });
+
+  it("does not show 原題序未知 badge when positionUnknown is false", () => {
+    render(
+      <QuestionCard
+        question={question}
+        phase="verified"
+        isFinal={true}
+        positionUnknown={false}
+      />,
+    );
+
+    expect(screen.queryByTestId("question-card-position-unknown")).not.toBeInTheDocument();
+  });
+
+  it("does not show 原題序未知 badge when positionUnknown is absent", () => {
+    render(
+      <QuestionCard
+        question={question}
+        phase="verified"
+        isFinal={true}
+      />,
+    );
+
+    expect(screen.queryByTestId("question-card-position-unknown")).not.toBeInTheDocument();
+  });
+});

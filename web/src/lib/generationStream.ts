@@ -6,7 +6,7 @@ import type {
   ReferenceExampleRecordShape,
   VerificationTrailEntry,
 } from "../hooks/useGenerate";
-import type { GenerationLegacyAdapterEvidence, GenerationLegacyEvidence, GenerationV2Evidence } from "./runEvidence";
+import type { GenerationLegacyEvidence, GenerationV2Evidence } from "./runEvidence";
 import type { RunEvidenceState } from "./generationEvidence";
 import { selectEndedCount, selectFinalReceivedCount, selectConflictCount } from "./generationEvidence";
 import type { LegacyAdapterState } from "./legacyAdapter";
@@ -16,7 +16,7 @@ export function projectGenerationEvidence(
   subQuestionCount: number | null,
   v2Evidence?: RunEvidenceState | null,
   legacyAdapter?: LegacyAdapterState | null,
-): GenerationLegacyEvidence | GenerationV2Evidence | GenerationLegacyAdapterEvidence {
+): GenerationLegacyEvidence | GenerationV2Evidence {
   if (v2Evidence) {
     return {
       profile: "generate-v2",
@@ -30,19 +30,19 @@ export function projectGenerationEvidence(
       legacyMixed: v2Evidence.legacyMixed,
     };
   }
+  const base: GenerationLegacyEvidence = {
+    profile: "generate-legacy",
+    stageEvents: llmCalls.filter((event) => event.type === "stage"),
+    subQuestionCount,
+  };
   if (legacyAdapter !== null && legacyAdapter !== undefined) {
-    return {
-      profile: "generate-legacy-adapter",
+    base.legacyAdapter = {
       requestTotal: legacyAdapter.requestTotal,
       finalCount: legacyAdapter.finalCount,
       done: legacyAdapter.done,
     };
   }
-  return {
-    profile: "generate-legacy",
-    stageEvents: llmCalls.filter((event) => event.type === "stage"),
-    subQuestionCount,
-  };
+  return base;
 }
 
 export type GenerationCardEvidence = {

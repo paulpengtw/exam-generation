@@ -1,4 +1,4 @@
-{"event": "started", "data": ""}
+{"event": "started", "data": "{\"generation_log_id\": null}"}
 {"event": "stage", "data": "{\"type\": \"stage\", \"agent\": \"planner\", \"stage\": \"batch_briefs\", \"status\": \"start\", \"ts\": 1000.0}"}
 {"event": "stage", "data": "{\"type\": \"stage\", \"agent\": \"planner\", \"stage\": \"batch_briefs\", \"status\": \"end\", \"ts\": 1001.0}"}
 {"event": "stage", "data": "{\"type\": \"stage\", \"agent\": \"generator\", \"stage\": \"llm_generate\", \"status\": \"start\", \"ts\": 1002.0}"}

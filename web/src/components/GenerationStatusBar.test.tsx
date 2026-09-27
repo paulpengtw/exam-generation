@@ -610,3 +610,102 @@ describe("GenerationStatusBar — 回饋", () => {
     expect(screen.queryByRole("button", { name: "回饋" })).toBeNull();
   });
 });
+
+describe("GenerationStatusBar — legacy stream adapter (issue #750)", () => {
+  it("shows 此批無每題即時進度 notice when generate-legacy has legacyAdapter data (running)", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        startedAt={Date.now()}
+        evidence={{
+          profile: "generate-legacy",
+          stageEvents: [],
+          subQuestionCount: null,
+          legacyAdapter: { requestTotal: 3, finalCount: 0, done: false },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("statusbar-legacy-adapter-notice")).toBeInTheDocument();
+    expect(screen.getByTestId("statusbar-legacy-adapter-notice").textContent).toBe(
+      "此批無每題即時進度",
+    );
+  });
+
+  it("shows 請求總數 N when requestTotal is provided", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        startedAt={Date.now()}
+        evidence={{
+          profile: "generate-legacy",
+          stageEvents: [],
+          subQuestionCount: null,
+          legacyAdapter: { requestTotal: 5, finalCount: 0, done: false },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("statusbar-legacy-adapter-total")).toBeInTheDocument();
+    expect(screen.getByTestId("statusbar-legacy-adapter-total").textContent).toContain("5");
+  });
+
+  it("omits 請求總數 line when requestTotal is null", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        startedAt={Date.now()}
+        evidence={{
+          profile: "generate-legacy",
+          stageEvents: [],
+          subQuestionCount: null,
+          legacyAdapter: { requestTotal: null, finalCount: 0, done: false },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("statusbar-legacy-adapter-notice")).toBeInTheDocument();
+    expect(screen.queryByTestId("statusbar-legacy-adapter-total")).toBeNull();
+  });
+
+  it("shows adapter notice in done state", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="done"
+        startedAt={100}
+        finishedAt={5000}
+        evidence={{
+          profile: "generate-legacy",
+          stageEvents: [],
+          subQuestionCount: null,
+          legacyAdapter: { requestTotal: 2, finalCount: 2, done: true },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("statusbar-legacy-adapter-notice")).toBeInTheDocument();
+    expect(screen.getByTestId("statusbar-legacy-adapter-total").textContent).toContain("2");
+  });
+
+  it("does not show legacy adapter UI when legacyAdapter is absent from generate-legacy evidence", () => {
+    render(
+      <GenerationStatusBar
+        {...BASE_PROPS}
+        runState="running"
+        startedAt={Date.now()}
+        evidence={{
+          profile: "generate-legacy",
+          stageEvents: [],
+          subQuestionCount: null,
+        }}
+      />,
+    );
+
+    expect(screen.queryByTestId("statusbar-legacy-adapter-notice")).toBeNull();
+    expect(screen.queryByTestId("statusbar-legacy-adapter-total")).toBeNull();
+  });
+});

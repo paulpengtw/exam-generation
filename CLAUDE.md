@@ -185,17 +185,21 @@ C1×S0 compatibility: a new client (C1) accidentally receiving a stream from an 
 - Events after `done` are silently discarded (stream is sealed).
 - Late consistent mapping: a `question_update` arriving after a `result` with the same id can still resolve `resolvedIndex`.
 
-**Evidence profile:** `generate-legacy-adapter` (added to `RunEvidence` union in `runEvidence.ts`). `projectGenerationEvidence` in `generationStream.ts` accepts an optional `legacyAdapter?: LegacyAdapterState | null` fourth parameter and returns `GenerationLegacyAdapterEvidence` when the adapter is active.
+**Evidence profile:** Adapter data is embedded as optional `legacyAdapter?: { requestTotal, finalCount, done }` in the existing `generate-legacy` profile (`GenerationLegacyEvidence` in `runEvidence.ts`). No separate `generate-legacy-adapter` profile — the union stays minimal. `projectGenerationEvidence` in `generationStream.ts` accepts an optional `legacyAdapter?: LegacyAdapterState | null` fourth parameter and populates `GenerationLegacyEvidence.legacyAdapter` when the adapter is active.
 
-**UI treatment:** `GenerationLegacyAdapterStatusLine` in `GenerationStatusBar.tsx` shows "此批無每題即時進度" notice and "請求總數 N" (from `requestTotal`, not a manifest count). Items with `positionUnknown: true` on `GeneratedQuestion` render "原題序未知" in `QuestionCard` via a `data-testid="question-card-position-unknown"` badge. No placeholder cards are built (no pre-allocated manifest slots); `selectLegacyItems` returns only items with received content.
+**Fixture format (sha 35a7219):** `started.data` = `{"generation_log_id": null}` (JSON object, not empty string); `question_update.data` = `{"index": int, "phase": str, "question": {..., "id": str}}`; `result.data` = direct question object (no wrapper). `done.data` = `""`. Route `_serialize_event()` in `routes.py` only serializes `event` + `data`; verification_trail etc. come in separate `trail` events.
 
-**Modification flow unchanged:** `generate-legacy-adapter` is only set when the decoder is in legacy mode; the modification flow never touches the adapter. No auto-resubmit, no modification eligibility change.
+**Always-adapter:** The legacy adapter is initialized at `generate()` start (not just on `started`), so pre-started held events also route through it. The "started" handler re-initializes with the server-confirmed count. C0 arrival-order fallback (`nextFinalIndexRef`) is permanently removed from `question_update` and `result` handlers.
+
+**UI treatment:** `GenerationLegacyAdapterStatusLine` in `GenerationStatusBar.tsx` shows "此批無每題即時進度" notice and "請求總數 N" (from `requestTotal`, not a manifest count), rendered when `evidence.profile === "generate-legacy" && evidence.legacyAdapter != null`. Items with `positionUnknown: true` on `GeneratedQuestion` render "原題序未知" in `QuestionCard` via a `data-testid="question-card-position-unknown"` badge. No placeholder cards are built (no pre-allocated manifest slots); `selectLegacyItems` returns only items with received content.
+
+**Modification flow unchanged:** The adapter state lives in legacy mode only; the modification flow never touches it. No auto-resubmit, no modification eligibility change.
 
 Key files:
 - `web/src/lib/legacyAdapter.ts`: `LegacyItem`, `LegacyAdapterState`, `createLegacyAdapter`, `applyLegacyEvent`, `selectLegacyItems`.
-- `web/src/lib/legacyAdapter.test.ts`: TDD unit tests for all adapter rules.
-- `tests/fixtures/generation_legacy/math_single_legacy.jsonl`: two-question legacy stream fixture.
-- `web/src/hooks/useGenerate.ts`: `legacyAdapterRef`; `handleLegacyEvent("started")` initializes adapter; `question_update`/`result` route through adapter when active; `legacyAdapter: LegacyAdapterState | null` exposed in `UseGenerateReturn`.
+- `web/src/lib/legacyAdapter.test.ts`: TDD unit tests for all adapter rules (18 tests).
+- `tests/fixtures/generation_legacy/math_single_legacy.jsonl`: two-question legacy stream fixture derived from pre-v2 server format (sha 35a7219); `started.data` = `{"generation_log_id": null}`.
+- `web/src/hooks/useGenerate.ts`: adapter initialized at `generate()` start; `question_update`/`result` always route through adapter; `legacyAdapter: LegacyAdapterState | null` exposed in `UseGenerateReturn`; `nextFinalIndexRef` removed.
 - `web/src/i18n/messages.ts`: `stream.legacy_no_per_question_progress`, `card.position_unknown`, `statusbar.legacy_request_total` in both `en-US` and `zh-TW`.
 
 ### Save draft and update (issue #772)

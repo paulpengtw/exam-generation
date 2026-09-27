@@ -1473,3 +1473,128 @@ describe("F3: v2 error event sets resultsCompletion to 'error'", () => {
     expect(r.terminalEvidence).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Gap 4 tests (issue #750 code review)
+// ---------------------------------------------------------------------------
+
+describe("useGenerate — unknown stream version stays unsupported (issue #750 gap 4b)", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("sets status=error and errorMessage when started carries unknown protocol_version, no resubmit", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math", count: 1 }); });
+
+    const callCountBefore = fetchEventSourceMock.mock.calls.length;
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({
+          context: { run_id: "RUN" },
+          payload: { protocol_version: 99, total: 1, questions: [] },
+        }),
+      });
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toBeTruthy();
+    // No additional fetchEventSource calls (no auto-resubmit)
+    expect(fetchEventSourceMock.mock.calls.length).toBe(callCountBefore);
+  });
+});
+
+describe("useGenerate — disconnect mid-legacy-stream retains received content (issue #750 gap 4c)", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("retains received legacy questions and marks resultsCompletion=error on onerror", () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math", count: 2 }); });
+
+    const stream = latestStreamOptions();
+    const question1 = {
+      id: "q-1",
+      情境: [],
+      題型種類: "single",
+      題型: "multiple_choice",
+      題目: ["Legacy Q1"],
+      正確解題分析: ["answer"],
+    };
+
+    act(() => {
+      // started event → legacy mode
+      stream.onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({ generation_log_id: null }),
+      });
+      // one question_update arrives
+      stream.onmessage?.({
+        id: "",
+        event: "question_update",
+        data: JSON.stringify({ index: 0, phase: "draft", question: question1 }),
+      });
+    });
+
+    // Verify question was received
+    expect(result.current.displayResults).toHaveLength(1);
+    expect(result.current.displayResults[0].question.題目).toEqual(["Legacy Q1"]);
+
+    // Simulate disconnect
+    act(() => {
+      try { stream.onerror?.(new Error("connection lost")); } catch { /* expected */ }
+    });
+
+    // Content is retained after disconnect
+    expect(result.current.displayResults).toHaveLength(1);
+    expect(result.current.displayResults[0].question.題目).toEqual(["Legacy Q1"]);
+    expect(result.current.status).toBe("error");
+
+    // No second fetchEventSource call issued
+    expect(fetchEventSourceMock.mock.calls.length).toBe(1);
+  });
+});
+
+describe("useGenerate — legacy fixture replay end-to-end (issue #750 gap 4e)", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("replays math_single_legacy.jsonl and produces two correctly-ordered questions", () => {
+    // Load the real fixture derived from pre-v2 server format (sha 35a7219)
+    const fixturePath = resolve(
+      __dirname,
+      "../../../tests/fixtures/generation_legacy/math_single_legacy.jsonl",
+    );
+    const lines = readFileSync(fixturePath, "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { event: string; data: string });
+
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math", count: 2 }); });
+
+    act(() => {
+      for (const line of lines) {
+        latestStreamOptions().onmessage?.({
+          id: "",
+          event: line.event,
+          data: line.data,
+        });
+      }
+    });
+
+    // Two questions with final content
+    const dr = result.current.displayResults;
+    expect(dr).toHaveLength(2);
+    // Both questions received their final result events
+    expect(dr.every((item) => item.isFinal)).toBe(true);
+    // Index ordering: 0 before 1 (both have explicit resolvedIndex from question_update)
+    expect(dr[0].index).toBeLessThan(dr[1].index);
+    // No placeholder cards (adapter never pre-allocates)
+    expect(dr.every((item) => item.question.題目.length > 0)).toBe(true);
+    // positionUnknown not set (both questions had explicit index in question_update)
+    expect(dr.every((item) => !item.positionUnknown)).toBe(true);
+    // Status is idle (stream completed)
+    expect(result.current.status).toBe("idle");
+  });
+});

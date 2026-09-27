@@ -382,21 +382,6 @@ function questionKey(question: ExamQuestion, index: number): string {
   return question.id && question.id.length > 0 ? question.id : `index-${index}`;
 }
 
-function upsertDisplayResult(
-  prev: GeneratedQuestion[],
-  next: GeneratedQuestion,
-): GeneratedQuestion[] {
-  const key = questionKey(next.question, next.index);
-  const existingIndex = prev.findIndex((item) => (
-    questionKey(item.question, item.index) === key || item.index === next.index
-  ));
-  if (existingIndex === -1) {
-    return [...prev, next].sort((a, b) => a.index - b.index);
-  }
-  const updated = [...prev];
-  updated[existingIndex] = next;
-  return updated.sort((a, b) => a.index - b.index);
-}
 
 /**
  * Parse an SSE error event's raw data string into a human-readable message.
@@ -656,7 +641,6 @@ export function useGenerate(): UseGenerateReturn {
   const legacyAdapterRef = useRef<LegacyAdapterState | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const gapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const nextFinalIndexRef = useRef(0);
   const trailByQuestionRef = useRef(new Map<string, VerificationTrailEntry[]>());
   const figurePolicyTrailByQuestionRef = useRef(
     new Map<string, FigurePolicyTrailEntry[]>(),
@@ -722,7 +706,6 @@ export function useGenerate(): UseGenerateReturn {
     setTerminalEvidence(false);
     setLegacyAdapter(null);
     legacyAdapterRef.current = null;
-    nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
@@ -794,8 +777,12 @@ export function useGenerate(): UseGenerateReturn {
     setGenerationLogId(null);
     setSubQuestionTotal(null);
     startedRef.current = false;
-    legacyAdapterRef.current = null;
-    nextFinalIndexRef.current = 0;
+    // Always initialize legacy adapter for C1×S0 compatibility (issue #750).
+    // Pre-started held events are processed by this adapter immediately;
+    // the "started" handler re-initializes it once the server count is known.
+    const initialAdapter = createLegacyAdapter(params.count ?? null);
+    legacyAdapterRef.current = initialAdapter;
+    setLegacyAdapter(initialAdapter);
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
@@ -1226,44 +1213,15 @@ export function useGenerate(): UseGenerateReturn {
           // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
           break;
         case "question_update": {
-          // Legacy-adapter mode (C1×S0, issue #750): route through adapter
-          if (legacyAdapterRef.current) {
-            try {
-              const nextAdapter = applyLegacyEvent(legacyAdapterRef.current, "question_update", data);
-              legacyAdapterRef.current = nextAdapter;
-              setLegacyAdapter(nextAdapter);
-              rebuildDisplayResultsFromAdapter(nextAdapter);
-            } catch { /* ignore malformed updates */ }
-            break;
-          }
-          // Legacy fallback (no adapter yet, e.g. pre-started events in tests)
+          // Always route through legacy adapter (C1×S0, issue #750).
+          // Adapter is guaranteed initialized at generate() start; C0 arrival-order
+          // fallback deliberately removed — no index-by-arrival-order in C1.
           try {
-            const parsed = JSON.parse(data) as {
-              index: number;
-              phase: DraftPhase;
-              question: ExamQuestion;
-              stable_id?: string;
-              content_revision?: number | null;
-            };
-            const laneKey = questionKey(parsed.question, parsed.index);
-            const draftEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey) ?? [];
-            const draftRefRecord: ReferenceExampleRecordShape = draftEntries.length > 0
-              ? { disabled: false, entries: draftEntries }
-              : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] };
-            setDisplayResults((prev) => upsertDisplayResult(prev, {
-              index: parsed.index,
-              question: parsed.question,
-              phase: parsed.phase,
-              isFinal: false,
-              stableId: parsed.stable_id ?? questionKey(parsed.question, parsed.index),
-              contentRevision: typeof parsed.content_revision === "number" && parsed.content_revision > 0
-                ? parsed.content_revision
-                : null,
-              trail: trailByQuestionRef.current.get(laneKey) ?? [],
-              figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
-              referenceExampleRecord: draftRefRecord,
-            }));
-          } catch { /* ignore malformed draft updates */ }
+            const nextAdapter = applyLegacyEvent(legacyAdapterRef.current!, "question_update", data);
+            legacyAdapterRef.current = nextAdapter;
+            setLegacyAdapter(nextAdapter);
+            rebuildDisplayResultsFromAdapter(nextAdapter);
+          } catch { /* ignore malformed updates */ }
           break;
         }
         case "trail": {
@@ -1319,50 +1277,15 @@ export function useGenerate(): UseGenerateReturn {
           } catch { /* legacy streams may not send JSON terminal envelopes */ }
           break;
         case "result":
-          // Legacy-adapter mode (C1×S0, issue #750): route through adapter
-          if (legacyAdapterRef.current) {
-            try {
-              const nextAdapter = applyLegacyEvent(legacyAdapterRef.current, "result", data);
-              legacyAdapterRef.current = nextAdapter;
-              setLegacyAdapter(nextAdapter);
-              rebuildDisplayResultsFromAdapter(nextAdapter);
-            } catch { /* ignore malformed results */ }
-            break;
-          }
-          // Legacy fallback (no adapter yet, e.g. pre-started events in tests)
+          // Always route through legacy adapter (C1×S0, issue #750).
+          // Adapter is guaranteed initialized at generate() start; C0 arrival-order
+          // fallback deliberately removed — no index-by-arrival-order in C1.
           try {
-            const raw = JSON.parse(data) as ExamQuestion & {
-              stable_id?: string;
-              question_id?: string;
-              content_revision?: number | null;
-              question?: ExamQuestion;
-            };
-            const parsed = raw.question !== undefined && typeof raw.question === "object" && raw.question !== null
-              ? raw.question
-              : raw;
-            const index = nextFinalIndexRef.current;
-            nextFinalIndexRef.current += 1;
-            setResults((prev) => [...prev, parsed]);
-            const laneKey = questionKey(parsed, index);
-            const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
-            setDisplayResults((prev) => upsertDisplayResult(prev, {
-              index,
-              question: parsed,
-              phase: "verified",
-              isFinal: true,
-              stableId: raw.stable_id ?? raw.question_id ?? questionKey(parsed, index),
-              contentRevision: typeof raw.content_revision === "number" && raw.content_revision > 0
-                ? raw.content_revision
-                : null,
-              trail: trailByQuestionRef.current.get(laneKey) ?? [],
-              figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
-              referenceExampleRecord: refEntries
-                ? { disabled: false, entries: refEntries }
-                : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
-            }));
-          } catch {
-            setStatus("error");
-          }
+            const nextAdapter = applyLegacyEvent(legacyAdapterRef.current!, "result", data);
+            legacyAdapterRef.current = nextAdapter;
+            setLegacyAdapter(nextAdapter);
+            rebuildDisplayResultsFromAdapter(nextAdapter);
+          } catch { /* ignore malformed results */ }
           break;
         case "error":
           setErrorMessage(parseErrorEventData(data ?? ""));

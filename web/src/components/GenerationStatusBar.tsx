@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/useT";
 import type { LlmCallEvent } from "../hooks/useGenerate";
-import type { GenerationLegacyAdapterEvidence, GenerationV2Evidence, RunEvidence } from "../lib/runEvidence";
+import type { GenerationLegacyEvidence, GenerationV2Evidence, RunEvidence } from "../lib/runEvidence";
 import { Shimmer } from "../motion/Indicators";
 import {
   runPhaseLabel,
@@ -186,8 +186,9 @@ function GenerationV2StatusLine({ evidence }: { evidence: GenerationV2Evidence }
   );
 }
 
-function GenerationLegacyAdapterStatusLine({ evidence }: { evidence: GenerationLegacyAdapterEvidence }) {
+function GenerationLegacyAdapterStatusLine({ evidence }: { evidence: GenerationLegacyEvidence }) {
   const t = useT();
+  const adapter = evidence.legacyAdapter!;
   return (
     <span className="sentry-unmask">
       <span
@@ -197,11 +198,11 @@ function GenerationLegacyAdapterStatusLine({ evidence }: { evidence: GenerationL
       >
         {t("stream.legacy_no_per_question_progress") as string}
       </span>
-      {evidence.requestTotal !== null && (
+      {adapter.requestTotal !== null && (
         <>
           {" · "}
           <span data-testid="statusbar-legacy-adapter-total">
-            {(t("statusbar.legacy_request_total") as string).replace("{n}", String(evidence.requestTotal))}
+            {(t("statusbar.legacy_request_total") as string).replace("{n}", String(adapter.requestTotal))}
           </span>
         </>
       )}
@@ -266,7 +267,7 @@ export default function GenerationStatusBar({
     evidence.profile === "generate-legacy" && runState === "running" && requestedTotal === 1;
   const showModificationSteps = modification && runState === "running";
   const showV2Status = evidence.profile === "generate-v2";
-  const showLegacyAdapterStatus = evidence.profile === "generate-legacy-adapter";
+  const showLegacyAdapterStatus = evidence.profile === "generate-legacy" && evidence.legacyAdapter != null;
 
   return (
     <div
@@ -312,7 +313,7 @@ export default function GenerationStatusBar({
                 <>
                   <BatchRunningLabel phase={phase} />
                   <span aria-hidden="true"> · </span>
-                  <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyAdapterEvidence} />
+                  <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyEvidence} />
                 </>
               ) : (
                 <BatchRunningLabel phase={phase} />
@@ -329,7 +330,7 @@ export default function GenerationStatusBar({
               ) : showLegacyAdapterStatus ? (
                 <>
                   <span className="sentry-unmask">✓ {t("statusbar.done")} · </span>
-                  <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyAdapterEvidence} />
+                  <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyEvidence} />
                 </>
               ) : (
                 <>
@@ -357,7 +358,7 @@ export default function GenerationStatusBar({
             {runState === "error" && showLegacyAdapterStatus ? (
               <>
                 <span className="sentry-unmask">✕ {t("statusbar.error")} · </span>
-                <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyAdapterEvidence} />
+                <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyEvidence} />
               </>
             ) : null}
             {runState === "error" && !showV2Status && !showLegacyAdapterStatus ? (
@@ -374,7 +375,7 @@ export default function GenerationStatusBar({
             {runState === "unknown" && showLegacyAdapterStatus ? (
               <>
                 <span className="sentry-unmask">? {t("statusbar.unknown")} · </span>
-                <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyAdapterEvidence} />
+                <GenerationLegacyAdapterStatusLine evidence={evidence as GenerationLegacyEvidence} />
               </>
             ) : null}
             {runState === "unknown" && !showV2Status && !showLegacyAdapterStatus ? (
