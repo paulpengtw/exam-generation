@@ -7,6 +7,11 @@ from pathlib import Path
 
 from src.common.generation_events import OperationScope, new_operation_scope
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.common.open_response_rubric import (
+    append_shape_check_issues,
+    check_open_response_rubric_shape,
+    is_open_response,
+)
 from src.common.verifier import PostVerifyHook, verify_question_common
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient, emit_stage
@@ -35,8 +40,7 @@ VERIFICATION_SYSTEM_PROMPT = f"""\
    - 如果提供的答案或解題分析能被文本合理支持，即使你的答案措辭不同，也應視為通過。
    - 開放式題目可有多種合理回答；只要評分規準（rubric）清楚、公平、能涵蓋合理答案，就應視為通過。
    - 選擇題採 0/1 計分（答對 1 分、答錯 0 分），並應以認知偏誤角度說明誘答分析。
-   - 開放式建構反應題採每題專屬評分指引，分數使用 0..N 並允許部分給分；
-   - 每一分數級距應有 1-2 個學生作答實例，包含正確與錯誤示例。
+   - 開放式建構反應題採每題專屬評分指引，固定使用 2 / 1 / 0 三級；
    - 小幅措辭、格式、詳略、誘答力不足但不影響作答的問題，請在 details 提醒，但不要因此判定 failed。
    - 只有在答案明顯無文本支持、與文本矛盾、選項正解不存在、題目嚴重歧義、
      評分規準缺失或不公平時，才判定 failed。
@@ -250,7 +254,7 @@ def _ss_rubric_scale_check_hook(
     del client
     issues = [
         f"第{subquestion.序號}題使用舊版評分代號 0X；有認知歷程的新紀錄必須使用每題專屬 "
-        "0..N 評分指引"
+        "2 / 1 / 0 評分指引"
         for subquestion in question.subquestions
         if subquestion.認知歷程
         and any(entry.code == "0X" for entry in subquestion.評分規準)
@@ -259,6 +263,29 @@ def _ss_rubric_scale_check_hook(
         result.details = result.details.rstrip()
         result.details += "\n\n[評分規準檢核] " + "；".join(issues)
         result.passed = False
+    return result
+
+
+def _ss_rubric_shape_check_hook(
+    question: ExamQuestion,
+    result: VerificationResult,
+    client: LLMClient,
+) -> VerificationResult:
+    """Check open-response rubric shape for new-era SS records (design D3/D5).
+
+    in_scope = 小題's own 題型 is 開放式建構反應題 AND its 認知歷程 is non-empty.
+    Legacy records without 認知歷程 are skipped (preserves the existing contract
+    tested by test_legacy_0x_rubric_code_is_left_untouched_by_new_era_check).
+    """
+    del client
+    subquestions = question.subquestions
+    in_scope = [
+        is_open_response(sq.題型) and bool(getattr(sq, "認知歷程", None))
+        for sq in subquestions
+    ]
+    issues = check_open_response_rubric_shape(subquestions, in_scope=in_scope)
+    if issues:
+        append_shape_check_issues(result, issues)
     return result
 
 
@@ -457,6 +484,7 @@ def _ss_fact_check_hook(
 _SS_POST_VERIFY_HOOKS: list[PostVerifyHook] = [
     _ss_interaction_spec_check_hook,
     _ss_rubric_scale_check_hook,
+    _ss_rubric_shape_check_hook,
     _ss_content_domain_code_check_hook,
     _ss_content_domain_theme_advisory_hook,
     _ss_fact_check_hook,

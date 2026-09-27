@@ -268,7 +268,7 @@ LLM 透過此內容能：
 | 題型 | 題面與欄位要求 | 計分 |
 |------|----------------|------|
 | `選擇題` | 題目含 A–D 四個選項；`答案` 填單一字母；`評分規準` 為空陣列 | 0/1：答對 1 分、答錯 0 分 |
-| `開放式建構反應題` | `答案`、`答案解析` 與 `評分規準` 必填；rubric 每個分數級距附 `規準說明` 與 1–2 個 `學生作答實例` | 0..N，可部分給分；依每題專屬 rubric |
+| `開放式建構反應題` | `答案`、`答案解析` 與 `評分規準` 必填；rubric 固定 2 / 1 / 0 三級，各附 `規準說明`；[2] 附 1 個、[1] 附 2 個、[0] 附 1 個 `學生作答實例` | 固定 2 / 1 / 0；依每題專屬評分規準 |
 | `拖放題` | 只能用於 `target_surface=數位`；輸出 `interaction`，含 `draggables`、`targets`、`correct_mapping`、`exact_match`、`shuffle_draggables` | 預設每個正確配對 1 分；`exact_match=true` 時全對才得 `max_score` |
 | `滑桿題` | 只能用於 `target_surface=數位`；輸出 `interaction`，含 `min`、`max`、`step`、`unit`、`correct_value`、`tolerance` | 0/1：作答值落在 `correct_value ± tolerance` 內得 1 分 |
 

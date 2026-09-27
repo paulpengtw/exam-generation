@@ -40,7 +40,7 @@ export interface LearningContentItem {
 }
 
 export interface RubricEntry {
-  /** Opaque scoring-level text: new 0..N levels and legacy 2/1/0/0X both render. */
+  /** Opaque scoring-level text: new records use fixed 2 / 1 / 0; legacy 0..N and 2/1/0/0X both render. */
   code: string;
   規準說明: string;
   學生作答實例?: string[];

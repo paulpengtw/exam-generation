@@ -1,0 +1,293 @@
+{
+  "model": "claude-opus-4-6",
+  "effort_verify": "high",
+  "total_llm_calls": 11,
+  "cache_651_size": 257,
+  "relabelled_recall": {
+    "tp": 5,
+    "fn": 4,
+    "total_violates": 9
+  },
+  "counting_stem_matrix": {
+    "total": 20,
+    "tp": 6,
+    "fn": 1,
+    "fp": 0,
+    "tn": 13,
+    "errors": 9
+  },
+  "figure_route_matrix": {
+    "read_off": {
+      "total": 4,
+      "correct": 0,
+      "wrong": 0,
+      "errors": 4
+    },
+    "supplies_data": {
+      "total": 3,
+      "correct": 0,
+      "wrong": 0,
+      "errors": 3
+    },
+    "absent_members": {
+      "total": 2,
+      "correct": 0,
+      "wrong": 0,
+      "errors": 2
+    }
+  },
+  "counting_stem_entries": [
+    {
+      "key": "corpus|fasting-method|3",
+      "category": "corpus_positive",
+      "label": true,
+      "llm_counting_stem": true,
+      "llm_reason": "要求寫出「兩個結論」，實驗可得結論的完整集合無法事前框定，屬開放式計數提問。",
+      "question_stem": "請根據實驗結果寫出兩個結論。"
+    },
+    {
+      "key": "corpus|washing-machine-physics|5",
+      "category": "corpus_positive",
+      "label": true,
+      "llm_counting_stem": true,
+      "llm_reason": "要求「至少兩點」，影響振動的因素屬開放集合，無法事前框定完整答案。",
+      "question_stem": "根據實驗數據，寫出影響洗衣機振動的因素（至少兩點，答兩點以上得分）。"
+    },
+    {
+      "key": "corpus|胡椒蛾的分子機制|3",
+      "category": "corpus_positive",
+      "label": true,
+      "llm_counting_stem": false,
+      "llm_reason": "題幹明示五個條件，違反即為原因，答案集合由科學概念唯一決定，屬例外3。",
+      "question_stem": "Hardy-Weinberg 平衡需要五個條件成立。若族群不符合 Hardy-Weinberg 平衡，請至少列舉三項可能原因。"
+    },
+    {
+      "key": "corpus|wind-corridor-effect|1",
+      "category": "corpus_positive",
+      "label": true,
+      "llm_counting_stem": true,
+      "llm_reason": "「哪些實驗」要求列舉多項，且可行實驗設計為開放集合，無法事前框定。",
+      "question_stem": "若要驗證「城市熱島效應中風廊道可降低溫度」的假說，你認為研究者需要進行哪些實驗？"
+    },
+    {
+      "key": "synth|open_count_any|1",
+      "category": "synthetic_positive",
+      "label": true,
+      "llm_counting_stem": true,
+      "llm_reason": "要求「至少兩個」原因，且溫室效應加劇的可能原因為開放集合，無法事前框定。",
+      "question_stem": "請列舉至少兩個溫室效應加劇的可能原因。"
+    },
+    {
+      "key": "synth|open_count_any|2",
+      "category": "synthetic_positive",
+      "label": true,
+      "llm_counting_stem": true,
+      "llm_reason": "要求寫出「兩個」人為因素，合理答案眾多且無法事前框定完整集合。",
+      "question_stem": "請寫出兩個影響海洋生物多樣性的人為因素。"
+    },
+    {
+      "key": "synth|open_count_any|3",
+      "category": "synthetic_positive",
+      "label": true,
+      "llm_counting_stem": true,
+      "llm_reason": "要求「至少舉出兩點」，改進方法雖源自文章但可能散見各處，完整集合難以唯一框定。",
+      "question_stem": "根據文章，研究者對這個實驗的改進方法有哪些？請至少舉出兩點。"
+    },
+    {
+      "key": "dangerous_fp|truck-cornering|3",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": false,
+      "llm_reason": "「哪些」針對題幹已列出的四個固定因素進行選取，集合已事前框定，屬例外4。",
+      "question_stem": "卡車在彎道中有翻覆的危險，影響翻覆的因素包括：重心高度、速度、轉彎半徑、貨物偏移量。下列因素中哪些會增加翻覆的風險？（可複選）"
+    },
+    {
+      "key": "dangerous_fp|乒乓球|3",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": false,
+      "llm_reason": "「哪些」針對課文已列出的三種固定情境，答案集合由文本框定，屬例外4。",
+      "question_stem": "課文提到以下三種彈性碰撞的情境：正面碰撞、側面碰撞、旋轉碰撞。其中哪些會使乒乓球的速度增加？"
+    },
+    {
+      "key": "dangerous_fp|蛙勒|4",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": false,
+      "llm_reason": "答案由圖表長條圖直接讀出，任何人看圖皆列出相同月份，屬例外2。",
+      "question_stem": "根據圖(三)，蛙勒在哪幾個月份的種類最多？"
+    },
+    {
+      "key": "dangerous_fp|material_count|1",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": false,
+      "llm_reason": "「兩個烤箱」修飾的是實驗素材情境，非要求學生答出的項目數，屬例外6。",
+      "question_stem": "實驗使用了兩個烤箱，分別設定為 200°C 和 250°C。請解釋為何較高溫度的烤箱中麵包膨脹更快。"
+    },
+    {
+      "key": "dangerous_fp|material_count|2",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": null,
+      "llm_reason": "",
+      "question_stem": "研究者依據數據做出三項推論。請評估這三項推論是否都有資料支持，並說明原因。"
+    },
+    {
+      "key": "dangerous_fp|count_one|1",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": null,
+      "llm_reason": "",
+      "question_stem": "請根據實驗結果提出一個改進建議，並說明理由。"
+    },
+    {
+      "key": "dangerous_fp|count_one|2",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": null,
+      "llm_reason": "",
+      "question_stem": "從上述實驗中，你認為最重要的一個控制變因是什麼？請說明。"
+    },
+    {
+      "key": "dangerous_fp|named_members|1",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": null,
+      "llm_reason": "",
+      "question_stem": "二氧化碳的產生與改變可能和哪兩項因素的關係？請根據附圖說明光合作用速率與這兩項因素的關係。"
+    },
+    {
+      "key": "dangerous_fp|named_members|2",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": null,
+      "llm_reason": "",
+      "question_stem": "請分別說明實驗組甲和實驗組乙的實驗結果，並比較兩者的差異。"
+    },
+    {
+      "key": "dangerous_fp|corpus|二氧化碳的產生與改變|4",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": null,
+      "llm_reason": "",
+      "question_stem": "根據上圖，分別說明光強度與溫度對光合作用速率的影響。（[2]: 正確說明光強度的影響，且正確說明溫度的影響）"
+    },
+    {
+      "key": "dangerous_fp|synth|named_pair",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": null,
+      "llm_reason": "",
+      "question_stem": "請比較方法A和方法B的優缺點，並說明你更推薦哪一種方法。"
+    },
+    {
+      "key": "dangerous_fp|synth|scientific_necessity",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": null,
+      "llm_reason": "",
+      "question_stem": "請說明生態系中能量流動的完整過程，包括生產者、消費者與分解者各自扮演的角色。"
+    },
+    {
+      "key": "dangerous_fp|synth|passage_supplies",
+      "category": "dangerous_fp",
+      "label": false,
+      "llm_counting_stem": null,
+      "llm_reason": "",
+      "question_stem": "文章提到三種節能策略：LED照明、隔熱窗、太陽能板。請說明其中哪些策略適合在台灣的氣候條件下使用，並說明理由。"
+    }
+  ],
+  "figure_route_entries": [
+    {
+      "key": "fig|chart_A|read_off",
+      "case": "read_off",
+      "expected_verdict": "accept",
+      "llm_verdict": "",
+      "llm_figure_frames_set": null,
+      "llm_members_visible": null,
+      "llm_read_off_or_analysis": "",
+      "llm_reject_reason": ""
+    },
+    {
+      "key": "fig|chart_A|supplies_data",
+      "case": "supplies_data",
+      "expected_verdict": "reject",
+      "llm_verdict": "",
+      "llm_figure_frames_set": null,
+      "llm_members_visible": null,
+      "llm_read_off_or_analysis": "",
+      "llm_reject_reason": ""
+    },
+    {
+      "key": "fig|chart_B|read_off",
+      "case": "read_off",
+      "expected_verdict": "accept",
+      "llm_verdict": "",
+      "llm_figure_frames_set": null,
+      "llm_members_visible": null,
+      "llm_read_off_or_analysis": "",
+      "llm_reject_reason": ""
+    },
+    {
+      "key": "fig|chart_B|supplies_data",
+      "case": "supplies_data",
+      "expected_verdict": "reject",
+      "llm_verdict": "",
+      "llm_figure_frames_set": null,
+      "llm_members_visible": null,
+      "llm_read_off_or_analysis": "",
+      "llm_reject_reason": ""
+    },
+    {
+      "key": "fig|chart_C|read_off",
+      "case": "read_off",
+      "expected_verdict": "accept",
+      "llm_verdict": "",
+      "llm_figure_frames_set": null,
+      "llm_members_visible": null,
+      "llm_read_off_or_analysis": "",
+      "llm_reject_reason": ""
+    },
+    {
+      "key": "fig|chart_C|absent_members",
+      "case": "absent_members",
+      "expected_verdict": "reject",
+      "llm_verdict": "",
+      "llm_figure_frames_set": null,
+      "llm_members_visible": null,
+      "llm_read_off_or_analysis": "",
+      "llm_reject_reason": ""
+    },
+    {
+      "key": "fig|chart_D|read_off",
+      "case": "read_off",
+      "expected_verdict": "accept",
+      "llm_verdict": "",
+      "llm_figure_frames_set": null,
+      "llm_members_visible": null,
+      "llm_read_off_or_analysis": "",
+      "llm_reject_reason": ""
+    },
+    {
+      "key": "fig|chart_D|supplies_data",
+      "case": "supplies_data",
+      "expected_verdict": "reject",
+      "llm_verdict": "",
+      "llm_figure_frames_set": null,
+      "llm_members_visible": null,
+      "llm_read_off_or_analysis": "",
+      "llm_reject_reason": ""
+    },
+    {
+      "key": "fig|chart_D|absent_members",
+      "case": "absent_members",
+      "expected_verdict": "reject",
+      "llm_verdict": "",
+      "llm_figure_frames_set": null,
+      "llm_members_visible": null,
+      "llm_read_off_or_analysis": "",
+      "llm_reject_reason": ""
+    }
+  ]
+}

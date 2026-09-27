@@ -7,6 +7,11 @@ from pathlib import Path
 
 from src.common.generation_events import OperationScope
 from src.common.image_disclaimer import IMAGE_DISCLAIMER
+from src.common.open_response_rubric import (
+    append_shape_check_issues,
+    check_open_response_rubric_shape,
+    is_open_response,
+)
 from src.common.verifier import PostVerifyHook, verify_question_common
 from src.curriculum_context import CurriculumContext, build_curriculum_section
 from src.llm_client import LLMClient
@@ -134,8 +139,34 @@ def _ns_code_check_hook(
     return result
 
 
+def _ns_rubric_shape_check_hook(
+    question: ExamQuestion,
+    result: VerificationResult,
+    client: LLMClient,
+) -> VerificationResult:
+    """Post-verify hook: rubric shape check for Constructed response subquestions (issue #866).
+
+    Runs after ``_ns_code_check_hook``.  For each subquestion whose 題型 is
+    ``Constructed response``, asserts that the 評分規準 has exactly 2/1/0 levels
+    and 1/2/1 non-blank 學生作答實例.  Also checks that the [2] 規準說明 contains
+    the required fixed sentence.
+
+    Appends ``[評分規準形狀檢核]`` to ``details`` and forces ``passed=False``
+    when issues are found.  Existing details text (including prior hook output)
+    is preserved.
+    """
+    del client
+    if not question.subquestions:
+        return result
+    in_scope = [is_open_response(sq.題型) for sq in question.subquestions]
+    issues = check_open_response_rubric_shape(question.subquestions, in_scope=in_scope)
+    if issues:
+        append_shape_check_issues(result, issues)
+    return result
+
+
 # Declared on the subject spec: hooks run in this order after the LLM verdict.
-_NS_POST_VERIFY_HOOKS: list[PostVerifyHook] = [_ns_code_check_hook]
+_NS_POST_VERIFY_HOOKS: list[PostVerifyHook] = [_ns_code_check_hook, _ns_rubric_shape_check_hook]
 
 
 def verify_question(

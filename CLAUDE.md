@@ -338,7 +338,7 @@ Each subject package wraps these with its own data directory and prefix map:
 
 Math keeps its byte-identical single-call flat output when the resolved `題型種類` is `單一題` and `sub_question_count` is absent. When the resolved `題型種類` is `題組題`, the resolver has already supplied `sub_question_count` before the shared `src/common/generation_core.py` **文本生成器 → N 子題產生器** pipeline; a supplied `sub_question_count` still pins `題型種類=題組題`, and supplying it with explicit `題型種類=單一題` remains HTTP 422. The shared core truncates or pads the plan so exactly the resolved number of 小題 is generated. Social studies and natural sciences both use a 題組 structure with `subquestions[]` and rubric entries. Social-studies parent items are fixed as 題組題; the ICCS-era social pipeline assigns `認知歷程` and `內容領域`, supports the four live `subquestions[*].題型` formats, and consumes complete per-小題 題型, 出題指示, question/option word-limit, content/image constraints from the web/API (no per-小題 text_word_limit — that is a request-level field only, ADR 0023). Natural sciences replaces `核心素養` with `科學能力` (6 entries: 能力一/二/三 + 環境能力一/二/三) and adds `情境子類別` (a PISA sub-context parented to the top-level 情境). Natural sciences also supports complete per-小題 SubQuestionConfig rows. The natural sciences verifier uses the lenient "寬鬆通過、只攔重大問題" stance, distinct from math's strict "明確錯誤" stance.
 
-Social studies is now in the ICCS era: `認知歷程` uses four buckets, `內容領域` uses four ICCS domains, and `內容領域_mapping.csv` anchors public/cross-subject learning-content codes to the selected domain. `閱讀歷程` and `文本形式` remain schema fields only for rendering old records; new generation, prompts, and authoring surfaces do not create them. `target_surface` is `紙本` or `數位`; `拖放題` and `滑桿題` are digital-only. Interactive items carry authoritative `interaction` specs and native scoring, while open responses carry per-item 0..N rubrics.
+Social studies is now in the ICCS era: `認知歷程` uses four buckets, `內容領域` uses four ICCS domains, and `內容領域_mapping.csv` anchors public/cross-subject learning-content codes to the selected domain. `閱讀歷程` and `文本形式` remain schema fields only for rendering old records; new generation, prompts, and authoring surfaces do not create them. `target_surface` is `紙本` or `數位`; `拖放題` and `滑桿題` are digital-only. Interactive items carry authoritative `interaction` specs and native scoring, while open responses carry fixed 2 / 1 / 0 rubrics (1 / 2 / 1 學生作答實例; shape enforced by the post-verify hook in `src/common/open_response_rubric.py`; legacy codes remain readable).
 
 Schema, curriculum, and few-shot data are **CSV-driven** for schema/few-shot; **JSON-driven** for curriculum. Files under `data/social_studies/` read at runtime:
 
@@ -550,11 +550,11 @@ subquestions: array of SubQuestion objects (primary format)
     答案: string
     答案解析: string
     評分規準: list[RubricEntry] — for open-response items
-      RubricEntry: {code: str in 0..N, 規準說明: str, 學生作答實例: list[str]}
+      RubricEntry: {code: str (new records: "2"|"1"|"0"; legacy 0..N codes remain readable), 規準說明: str, 學生作答實例: list[str]}
     interaction: DragDropSpec | SliderSpec | None — authoritative digital interaction spec
 ```
 
-Scoring is native to the format: 選擇題 is 0/1; 開放式建構反應題 uses a per-item 0..N rubric; 拖放題 scores each correct mapping unless `exact_match=true`; 滑桿題 is 0/1 within `correct_value ± tolerance`. `拖放題` and `滑桿題` are 僅限數位卷面. `interaction` is authoritative; human-readable `答案` remains required.
+Scoring is native to the format: 選擇題 is 0/1; 開放式建構反應題 uses a fixed 2 / 1 / 0 per-item rubric; 拖放題 scores each correct mapping unless `exact_match=true`; 滑桿題 is 0/1 within `correct_value ± tolerance`. `拖放題` and `滑桿題` are 僅限數位卷面. `interaction` is authoritative; human-readable `答案` remains required.
 
 ### Natural sciences question schema (108課綱 自然科學 + PISA)
 
@@ -584,10 +584,10 @@ subquestions: array of SubQuestion objects
     答案: string
     答案解析: string
     評分規準: list[RubricEntry] — for Constructed-response items
-      RubricEntry: {code: "2"|"1"|"0"|"0X", 規準說明: str, 學生作答實例: list[str]}
+      RubricEntry: {code: "2"|"1"|"0" (new records); "0X" reserved for Complex-multiple-choice; legacy codes remain readable, 規準說明: str, 學生作答實例: list[str]}
 ```
 
-Rubric scoring codes follow the same 2/1/0/0X convention as social studies.
+Constructed-response rubrics use fixed 2 / 1 / 0 levels with 1 / 2 / 1 學生作答實例; shape enforced by `_ns_rubric_shape_check_hook`. `0X` remains for Complex-multiple-choice.
 
 ## Curriculum Data Structure
 
