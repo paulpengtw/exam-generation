@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Any
 
 import anyio
+from pydantic import ValidationError
 
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
@@ -1099,11 +1100,10 @@ async def generate_question_stream(
     }
     try:
         StartedPayload.model_validate(_started_payload)
-    except Exception as exc:  # ValidationError
+    except ValidationError as exc:
         logger.warning(
-            "started payload validation failed; rejecting generation (%s): %s",
+            "started payload validation failed; rejecting generation (%s)",
             type(exc).__name__,
-            exc,
         )
         ctx.publisher.publish(
             SSEEventName.ERROR,

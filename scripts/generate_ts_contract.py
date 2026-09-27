@@ -196,7 +196,22 @@ def _generate_resolve_block() -> str:
 
 def _generate_started_payload_block() -> str:
     """Emit the StartedPayload TypeScript interface."""
+    import types as _types
     import typing
+
+    def _ts_type_nullable(annotation: object) -> tuple[str, bool]:
+        """Like _ts_type but emits 'T | null' for Union[T, None] instead of just 'T'."""
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        if origin is Union or (
+            hasattr(_types, "UnionType") and isinstance(annotation, _types.UnionType)  # type: ignore[attr-defined]
+        ):
+            non_none = [a for a in args if a is not type(None)]
+            has_none = any(a is type(None) for a in args)
+            if len(non_none) == 1 and has_none:
+                inner, _ = _ts_type(non_none[0])
+                return f"{inner} | null", True
+        return _ts_type(annotation)
 
     lines: list[str] = []
     lines.append("/**")
@@ -208,7 +223,7 @@ def _generate_started_payload_block() -> str:
     hints = typing.get_type_hints(StartedPayload)
     for field_name, field_info in StartedPayload.model_fields.items():
         annotation = hints.get(field_name, field_info.annotation)
-        ts_type, optional = _ts_type(annotation)
+        ts_type, optional = _ts_type_nullable(annotation)
         has_default = _field_is_optional(field_info)
         optional = optional or has_default
         suffix = "?" if optional else ""

@@ -162,5 +162,5 @@ export interface StartedPayload {
   protocol_version: 2;
   total: number;
   questions: Record<string, unknown>[];
-  generation_log_id?: string;
+  generation_log_id?: string | null;
 }

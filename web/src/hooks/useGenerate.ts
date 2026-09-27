@@ -7,7 +7,7 @@ import { useLangStore } from "../store/langStore";
 import { isSentryEnabled } from "../sentry";
 import { saveSignoutReason } from "../lib/signoutReason";
 import { saveReturnDestination } from "../lib/returnDestination";
-import type { GenerateParams } from "../api/generated/contract";
+import type { GenerateParams, StartedPayload } from "../api/generated/contract";
 import { MESSAGES } from "../i18n/messages";
 import { createGenerationStreamDecoder, SEQ_BUFFER_MAX_AGE_MS } from "../lib/generationStream";
 import {
@@ -327,9 +327,7 @@ export interface AgentLane {
 }
 
 /** Payload announced before a generation stream starts doing model work. */
-export interface StartedEventPayload {
-  generation_log_id: string | null;
-}
+export type StartedEventPayload = Required<Pick<StartedPayload, "generation_log_id">>;
 
 function purposeToAgent(purpose: string): string {
   const map: Record<string, string> = {
