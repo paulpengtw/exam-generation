@@ -170,7 +170,7 @@ describe("createGenerationStreamDecoder", () => {
     expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "invalid_manifest" });
   });
 
-  // Sub-item 4: missing questions — payload has protocol_version 2 but no questions array
+  // Sub-item 4b: missing questions — payload has protocol_version 2 but no questions array
   it("is unsupported with invalid_manifest when questions array is absent from payload", () => {
     const dec = createGenerationStreamDecoder();
     const data = JSON.stringify({
@@ -182,7 +182,7 @@ describe("createGenerationStreamDecoder", () => {
     expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "invalid_manifest" });
   });
 
-  // Sub-item 5: duplicate manifest — duplicate index value (both questions claim index 0)
+  // Sub-item 5b: duplicate manifest — duplicate index value (both questions claim index 0)
   it("is unsupported with invalid_manifest on duplicate question index", () => {
     const dec = createGenerationStreamDecoder();
     const data = JSON.stringify({
@@ -303,7 +303,7 @@ describe("createGenerationStreamDecoder", () => {
     });
   });
 
-  // Sub-item 5: duplicate manifest — second started in v2 mode is ignored (seq 1 already seen)
+  // Sub-item 5c: duplicate manifest — second started in v2 mode is ignored (seq 1 already seen)
   it("ignores a second started with same seq in v2 mode (duplicate_seq) and stays in v2", () => {
     const dec = createGenerationStreamDecoder();
     dec.decode("started", validStartedData); // first started → v2 mode, run set

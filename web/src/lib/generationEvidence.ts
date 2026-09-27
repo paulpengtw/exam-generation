@@ -335,11 +335,12 @@ function sameTerminal(left: QuestionTerminalPayload, right: QuestionTerminalPayl
 }
 
 /**
- * Canonicalize each SlotRef to a stable string by serializing with sorted object
- * keys, then sort the resulting array.  Used for multiset (order-independent)
- * comparison of expected/delivered/missing slot arrays.
+ * Build a string multiset key from a slot array: serialize each SlotRef with
+ * sorted object keys, sort the resulting strings, and JSON-stringify the sorted
+ * array.  Used for order-independent comparison of expected/delivered/missing
+ * slot arrays.
  */
-function canonicalSlotList(slots: GenerationSlotReference[]): string {
+function slotMultisetKey(slots: GenerationSlotReference[]): string {
   return JSON.stringify(
     slots
       .map((s) => JSON.stringify(s, Object.keys(s).sort()))
@@ -364,9 +365,9 @@ function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTermi
     || left.unknown_reason !== right.unknown_reason
   ) return false;
   return (
-    canonicalSlotList(left.expected) === canonicalSlotList(right.expected)
-    && canonicalSlotList(left.delivered) === canonicalSlotList(right.delivered)
-    && canonicalSlotList(left.missing) === canonicalSlotList(right.missing)
+    slotMultisetKey(left.expected) === slotMultisetKey(right.expected)
+    && slotMultisetKey(left.delivered) === slotMultisetKey(right.delivered)
+    && slotMultisetKey(left.missing) === slotMultisetKey(right.missing)
   );
 }
 

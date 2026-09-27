@@ -386,7 +386,7 @@ and all 21 generationStream tests pass.
 | 3 | Complete manifest → creates N waiting slots | `web/src/lib/generationEvidence.test.ts` | `createRunEvidence > creates N waiting placeholders in manifest order` | existing |
 | 4a | Invalid manifest (total mismatch) → no slots, status error | `web/src/hooks/useGenerate.test.ts` | `F3: invalid manifest in started → no v2 slots, status error > sets status error and no evidence when started carries an invalid manifest (total mismatch)` | NEW (hook) |
 | 4b | Invalid manifest (missing `questions`) → decoder `unsupported` | `web/src/lib/generationStream.test.ts` | `is unsupported with invalid_manifest when questions array is absent from payload` | NEW (decoder) |
-| 4c | Missing started then done → no placeholders, error | `web/src/hooks/useGenerate.test.ts` | `F3: missing started then done → no placeholders, error > ...` | existing |
+| 4c | Missing started then done → no placeholders, error | `web/src/hooks/useGenerate.test.ts` | `F3: missing started then done → no placeholders, error > sets status error and no evidence when done arrives before started` | existing |
 | 5a | Duplicate `question_id` in manifest → decoder `unsupported` | `web/src/lib/generationStream.test.ts` | `is unsupported with invalid_manifest on duplicate question_id` | existing |
 | 5b | Duplicate `index` in manifest → decoder `unsupported` | `web/src/lib/generationStream.test.ts` | `is unsupported with invalid_manifest on duplicate question index` | NEW (decoder) |
 | 5c | Duplicate seq at decoder level → `duplicate_seq` ignore | `web/src/lib/generationStream.test.ts` | `ignores a second started with same seq in v2 mode (duplicate_seq) and stays in v2` | NEW |
