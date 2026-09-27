@@ -29,11 +29,12 @@ import {
 import { Spinner } from "../motion/Indicators";
 import { MotionDisclosure } from "../motion/MotionDisclosure";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
-import { buildExamOdt, formatTimestamp } from "../utils/odt";
+import { buildOdtFromSnapshots } from "../utils/odt";
 import {
   captureFromEvidence,
   captureFromGeneratedQuestion,
   singleQuestionFilename,
+  singleQuestionOdtFilename,
 } from "../utils/exportSnapshot";
 import FigureRenderer, {
   classifySpec,
@@ -943,10 +944,27 @@ export default function QuestionCard({
   const odtFeedback = useActionFeedback({
     action: async () => {
       if (!_question) throw new Error("Question is not available");
-      const ts = formatTimestamp();
-      const filename = `exam_${ts}.odt`;
+      // Atomically capture the snapshot at click time (same snapshot as JSON export)
+      const exportedAt = new Date().toISOString();
+      const snapshot = evidence
+        ? captureFromEvidence(_question, evidence, runId ?? null, exportedAt)
+        : captureFromGeneratedQuestion(
+            {
+              index: typeof index === "number" ? index : 0,
+              question: _question,
+              phase,
+              isFinal,
+              stableId: _question.id ?? undefined,
+              contentRevision: null,
+            },
+            runId ?? null,
+            exportedAt,
+          );
+      if (!snapshot) throw new Error("Question is not available");
+      const isDraftExport = snapshot.isDraft;
+      const filename = singleQuestionOdtFilename(getQuestionId(_question), isDraftExport);
       await runExportOperation("export_odt", async () => {
-        const blob = await buildExamOdt(`exam_${ts}`, [_question]);
+        const blob = await buildOdtFromSnapshots(getQuestionId(_question), [snapshot]);
         downloadBlob(blob, filename);
       });
       return filename;
@@ -1498,10 +1516,9 @@ export default function QuestionCard({
         )}
         <ActionButton
           feedback={odtFeedback}
-          label={t("card.download_odt")}
+          label={isFinal ? t("card.download_odt") : t("card.download_odt_draft")}
           pendingLabel={t("action.downloading")}
           doneLabel={t("action.downloaded")}
-          disabled={!isFinal}
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         />
       </div>

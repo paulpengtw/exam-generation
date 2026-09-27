@@ -407,6 +407,48 @@ export function captureBatch(input: BatchSnapshotInput): BatchSnapshot {
   return { exported, hasDraft, exportedAt };
 }
 
+/**
+ * Capture a batch as a list of QuestionSnapshot objects (includes imageSources).
+ * Preferred over captureBatch() for ODT export, which needs per-snapshot imageSources.
+ * Returns [snapshots, hasDraft] tuple.
+ */
+export function captureBatchSnapshots(input: BatchSnapshotInput): [QuestionSnapshot[], boolean] {
+  const { displayResults, evidenceByQuestionId, runId, exportedAt } = input;
+
+  const snapshots: QuestionSnapshot[] = [];
+  let hasDraft = false;
+
+  const sorted = displayResults
+    .map((item, ordinal) => ({ item, ordinal }))
+    .sort((a, b) => {
+      const ai = a.item.positionUnknown ? Infinity : a.item.index;
+      const bi = b.item.positionUnknown ? Infinity : b.item.index;
+      if (ai !== bi) return ai - bi;
+      return a.ordinal - b.ordinal;
+    });
+
+  for (const { item } of sorted) {
+    if (!item.question) continue;
+
+    const evidenceEntry =
+      item.stableId ? evidenceByQuestionId[item.stableId] : undefined;
+
+    let snapshot: QuestionSnapshot | null;
+    if (evidenceEntry) {
+      snapshot = captureFromEvidence(item.question, evidenceEntry, runId, exportedAt);
+    } else {
+      snapshot = captureFromGeneratedQuestion(item, runId, exportedAt);
+    }
+
+    if (snapshot === null) continue; // bodyless placeholder
+
+    if (snapshot.isDraft) hasDraft = true;
+    snapshots.push(snapshot);
+  }
+
+  return [snapshots, hasDraft];
+}
+
 // ---------------------------------------------------------------------------
 // History record snapshot
 // ---------------------------------------------------------------------------
@@ -473,4 +515,29 @@ export function stripExport(exported: ExportedQuestion): ExamQuestion {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { _export: _removed, ...rest } = exported;
   return rest as ExamQuestion;
+}
+
+// ---------------------------------------------------------------------------
+// ODT filename helpers (issue #752)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a filename for a single question ODT download.
+ * Includes "草稿_" prefix when the question is a draft.
+ */
+export function singleQuestionOdtFilename(
+  questionId: string,
+  isDraft: boolean,
+): string {
+  const base = questionId && questionId.length > 0 ? questionId : "question";
+  return isDraft ? `草稿_${base}.odt` : `${base}.odt`;
+}
+
+/**
+ * Generate a filename for a batch ODT download.
+ * Includes "含草稿_" prefix when any question is a draft.
+ */
+export function batchOdtFilename(hasDraft: boolean): string {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  return hasDraft ? `含草稿_batch_${ts}.odt` : `batch_${ts}.odt`;
 }

@@ -2,11 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const buildExamOdtMock = vi.hoisted(() => vi.fn());
+const buildOdtFromSnapshotsMock = vi.hoisted(() => vi.fn());
 const useGenerateMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/odt", () => ({
-  buildExamOdt: buildExamOdtMock,
+  buildOdtFromSnapshots: buildOdtFromSnapshotsMock,
   formatTimestamp: () => "batch-test",
 }));
 
@@ -65,7 +65,7 @@ const question = (id: string) => ({
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
-  buildExamOdtMock.mockReset();
+  buildOdtFromSnapshotsMock.mockReset();
   const first = question("proto-run-1-1");
   const second = question("proto-run-2-2");
   useGenerateMock.mockReturnValue({
@@ -94,7 +94,7 @@ beforeEach(() => {
 
 describe("GeneratePage export feedback", () => {
   it("reports one named group for a partial batch ODT failure without creating a file", async () => {
-    buildExamOdtMock.mockRejectedValueOnce({ questionIndex: 1 });
+    buildOdtFromSnapshotsMock.mockRejectedValueOnce({ questionIndex: 1 });
     const createObjectUrl = vi.spyOn(URL, "createObjectURL");
 
     render(
@@ -116,7 +116,7 @@ describe("GeneratePage export feedback", () => {
       "data-action-state",
       "failed",
     );
-    expect(buildExamOdtMock).toHaveBeenCalledOnce();
+    expect(buildOdtFromSnapshotsMock).toHaveBeenCalledOnce();
     expect(createObjectUrl).not.toHaveBeenCalled();
 
     await waitFor(() => expect(screen.getByRole("button", { name: /Retry/i })).toBeInTheDocument());

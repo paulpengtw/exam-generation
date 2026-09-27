@@ -27,7 +27,7 @@ vi.mock("react-router-dom", () => ({
   useBlocker: () => ({ state: "unblocked" }),
 }));
 vi.mock("../i18n/useT", () => ({ useT: () => (key: string) => key }));
-vi.mock("../utils/odt", () => ({ buildExamOdt: buildOdt, formatTimestamp: () => "ts" }));
+vi.mock("../utils/odt", () => ({ buildOdtFromSnapshots: buildOdt, formatTimestamp: () => "ts" }));
 vi.mock("../components/ParamForm", () => ({
   default: ({
     onSubmit,
@@ -222,7 +222,7 @@ describe("GeneratePage workspace", () => {
     expect(useWorkspaceStore.getState().operations).toEqual([]);
     if (success) {
       expect(odtButton).toHaveAttribute("data-action-state", "done");
-      expect(screen.getByTestId("action-filename")).toHaveTextContent("exam_ts.odt");
+      expect(screen.getByTestId("action-filename")).toHaveTextContent(".odt");
     } else {
       expect(screen.getByRole("alert")).toHaveTextContent("generate.download_odt_error");
       expect(odtButton).toHaveAttribute("data-action-state", "failed");

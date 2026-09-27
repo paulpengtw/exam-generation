@@ -47,7 +47,7 @@
 
 - [x] 7.1 建立 `web/src/utils/exportSnapshot.ts`，同一次點擊原子擷取內容、狀態、revision、時間及可見圖像來源，供單題／整批／既有可下載歷史使用；以匯出期間收到新版測試驗證快照固定、bodyless placeholder 排除、原題序與 legacy 未知順序標記保留。
 - [x] 7.2 在 JSON 下載副本附加固定 `_export` 欄位，統一草稿／含草稿檔名；用單題、混合批次與 legacy history 測試驗證物件／陣列形狀、原 id、共同 UTC timestamp、null/unknown 及去除 `_export` 後等於捕捉的原題目，live／stored data 未修改。
-- [ ] 7.3 讓 ODT 消費同一 snapshot，保留每題草稿標示、處理／完整性／審題區別、原小題序號與缺項；讀回 ZIP XML 驗證只有文本的題組、跳號小題和無 terminal 的 final 均保持正確結構與狀態。
+- [x] 7.3 讓 ODT 消費同一 snapshot，保留每題草稿標示、處理／完整性／審題區別、原小題序號與缺項；讀回 ZIP XML 驗證只有文本的題組、跳號小題和無 terminal 的 final 均保持正確結構與狀態。
 - [ ] 7.4 從 FigureRenderer 同源輸出凍結 SVG／HTML 預覽及其樣式／資產，實作 export-only rasterization；用真實瀏覽器測試 table、geometry、scenario 的無 PNG 預覽，驗證 ODT 對應位置含捕捉圖像、期間換圖不混版且無 LLM／image-provider 呼叫。
 - [ ] 7.5 將逐圖 conversion failure 與整份 ZIP failure 分開，保留同 snapshot 重試及 JSON 下載；注入單圖失敗和 ZIP 失敗，驗證前者正確位置顯示「匯出缺圖／預覽轉換失敗」、後者不提供壞檔、兩者都不改生成完整性且不重跑生成。
 - [ ] 7.6 開啟已收到 draft 的單題及整批 JSON／ODT actions，既有實際 PNG 使用正確草稿檔名；更新 QuestionCard／GeneratePage 的下載測試，驗證 legacy draft 也可下載、preview 不偽裝成已生成 PNG、下載不擴大人工審題修正資格。

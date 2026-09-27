@@ -15,7 +15,7 @@ vi.mock("../api/client", async (importOriginal) => ({
   submitModificationBatch: vi.fn().mockResolvedValue({ run_id: "run-1", status: "accepted" }),
 }));
 vi.mock("../store/langStore", () => ({ useLangStore: (selector: (s: { lang: string }) => unknown) => selector({ lang: "en-US" }) }));
-vi.mock("../utils/odt", () => ({ buildExamOdt: buildOdt, formatTimestamp: () => "ts" }));
+vi.mock("../utils/odt", () => ({ buildOdtFromSnapshots: buildOdt, formatTimestamp: () => "ts" }));
 import QuestionCard from "./QuestionCard";
 
 const question: ExamQuestion = {
@@ -219,7 +219,7 @@ describe("QuestionCard workspace", () => {
     expect(useWorkspaceStore.getState().operations).toEqual([]);
     if (success) {
       expect(odtButton).toHaveAttribute("data-action-state", "done");
-      expect(screen.getByTestId("action-filename")).toHaveTextContent("exam_ts.odt");
+      expect(screen.getByTestId("action-filename")).toHaveTextContent(".odt");
     } else {
       expect(screen.getByRole("alert")).toHaveTextContent("Unable to generate the ODT file.");
       expect(odtButton).toHaveAttribute("data-action-state", "failed");

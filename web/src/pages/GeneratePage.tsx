@@ -17,8 +17,8 @@ import { useGenerate } from "../hooks/useGenerate";
 import { useAuthStore } from "../store/authStore";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../components/LanguageSwitcher";
-import { buildExamOdt, formatTimestamp } from "../utils/odt";
-import { captureBatch, batchFilename } from "../utils/exportSnapshot";
+import { buildOdtFromSnapshots, formatTimestamp } from "../utils/odt";
+import { captureBatch, captureBatchSnapshots, batchFilename, batchOdtFilename } from "../utils/exportSnapshot";
 import {
   ActionButton,
   ActionFailure,
@@ -417,20 +417,29 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
   const odtFeedback = useActionFeedback({
     action: async () => {
-      const ts = formatTimestamp();
-      const filename = `exam_${ts}.odt`;
+      // Atomically capture the batch snapshot at click time (one snapshot shared with JSON export)
+      const exportedAt = new Date().toISOString();
+      const evidenceByQuestionId = runEvidence?.questions ?? {};
+      const [snapshots, hasDraft] = captureBatchSnapshots({
+        displayResults,
+        evidenceByQuestionId,
+        runId: runEvidence?.runId ?? null,
+        exportedAt,
+      });
+      const filename = batchOdtFilename(hasDraft);
       const operation = useWorkspaceStore.getState().beginOperation("export_odt", "generate.results");
       try {
-        const blob = await buildExamOdt(`exam_${ts}`, results);
+        const ts = formatTimestamp();
+        const blob = await buildOdtFromSnapshots(`exam_${ts}`, snapshots);
         downloadBlob(blob, filename);
         operation.end("completed");
         return filename;
       } catch (error: unknown) {
         operation.end("failed");
         const questionIndex = getOdtQuestionIndex(error);
-        if (questionIndex !== null && results[questionIndex]) {
-          const question = results[questionIndex];
-          const id = question.id ?? String(questionIndex + 1);
+        if (questionIndex !== null && snapshots[questionIndex]) {
+          const snap = snapshots[questionIndex];
+          const id = snap.exported.id ?? String(questionIndex + 1);
           const detail = t("generate.download_odt_group_error")
             .replace("{n}", String(questionIndex + 1))
             .replace("{id}", id);

@@ -247,6 +247,42 @@ Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot`
 
 **Key files:** `web/src/utils/exportSnapshot.ts`, `web/src/utils/exportSnapshot.test.ts`.
 
+### Snapshot export — ODT (issue #752)
+
+`web/src/utils/odt.ts` exports `buildOdtFromSnapshots(title, snapshots)` which consumes the same frozen `QuestionSnapshot[]` produced by `exportSnapshot.ts`. A convenience wrapper `buildOdtFromBatch(title, batch)` accepts a `BatchSnapshot` directly (empty imageSources).
+
+**Draft / status labelling:**
+- Questions with `_export.is_draft === true` are prefixed with `【草稿】` in the heading.
+- A status line is appended below each question heading: processing, termination_reason, delivery_status (null delivery → "未知（未收到 terminal）").
+- `buildStatusLabel(snapshot)` maps each field to a Chinese chip string.
+
+**題組 (group question) structure:**
+- Preserved even when no subquestions survived (text-only 題組): `isSocialStudies` is true when `subquestions.length > 0 OR meta.missing.some(slot.kind === "subquestion")`.
+- Subquestion numbers are rendered using the original `序號` field (1-based, gapped sequences preserved).
+- Known-missing subquestion slots (from `terminal.missing`) are injected at their correct ordinal position as `【小題 {序號} 缺項】` markers.
+- Final without terminal = `is_draft: false`; NOT relabelled as draft.
+
+**Image embedding from `imageSources`:**
+- `embedSnapshotImages(zip, snapshot, idx, imageRefs)` reads exclusively from `snapshot.imageSources` (frozen at click time); never reads `question.image_base64` directly.
+- `png_base64` kind → embedded in `Pictures/` and referenced as `<draw:image>` in content.xml.
+- `chart_spec_preview` kind → placeholder text `【圖片預覽待轉換，請至網頁版查看】`; no PNG file embedded; TODO(#753).
+- `known_missing` kind → text marker `【圖片缺項】`; no PNG file embedded.
+
+**Filename conventions:**
+- Single draft: `草稿_{questionId}.odt`
+- Single final: `{questionId}.odt`
+- Batch with any draft: `含草稿_batch_{timestamp}.odt`
+- Batch all final: `batch_{timestamp}.odt`
+- Helpers: `singleQuestionOdtFilename`, `batchOdtFilename` in `exportSnapshot.ts`.
+
+**Component wiring:**
+- `QuestionCard`: ODT button enabled for drafts (label `"card.download_odt_draft"`); uses `singleQuestionOdtFilename`; calls `buildOdtFromSnapshots`.
+- `GeneratePage`: batch ODT uses `captureBatchSnapshots` (returns full `[QuestionSnapshot[], hasDraft]`); filename via `batchOdtFilename(hasDraft)`.
+
+**TDD:** `web/src/utils/odt.snapshot.test.ts` — 24 tests covering draft label, final (no label), status labels, text-only 題組, subquestion number gaps, known-missing subquestion markers, known-missing/preview image markers, PNG embedding, batch page-break ordering, mixed draft/final batch, `OdtBuildError` on invalid base64.
+
+**Key files:** `web/src/utils/odt.ts`, `web/src/utils/odt.snapshot.test.ts`, `web/src/utils/exportSnapshot.ts`.
+
 ### Save draft and update (issue #772)
 
 `web/src/lib/recovery/format.ts` defines `RecoverySnapshotV1` (schema `exam-generation.recovery/1`) with `parseRecoverySnapshot` for strict validation (account, origin, environment, form shape).

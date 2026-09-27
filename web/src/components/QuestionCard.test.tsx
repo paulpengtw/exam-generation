@@ -3,13 +3,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 
 const recordFigureFallbackMock = vi.hoisted(() => vi.fn());
 const fetchMock = vi.hoisted(() => vi.fn());
-const buildExamOdtMock = vi.hoisted(() => vi.fn());
+const buildOdtFromSnapshotsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/figureFallbackMetric", () => ({
   recordFigureFallback: recordFigureFallbackMock,
 }));
 vi.mock("../utils/odt", () => ({
-  buildExamOdt: buildExamOdtMock,
+  buildOdtFromSnapshots: buildOdtFromSnapshotsMock,
   formatTimestamp: () => "test-time",
 }));
 
@@ -49,11 +49,12 @@ describe("QuestionCard draft rendering", () => {
     expect(screen.getByText("2 + 2 = 4.")).toBeInTheDocument();
     // JSON download is enabled for drafts (labeled "Download Draft JSON")
     expect(screen.getByRole("button", { name: "Download Draft JSON" })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: "Download ODT" })).toBeDisabled();
+    // ODT download is also available for drafts (labeled "Download Draft ODT") — issue #752
+    expect(screen.getByRole("button", { name: "Download Draft ODT" })).not.toBeDisabled();
   });
 
   it("surfaces a per-card ODT failure without replacing the export label", async () => {
-    buildExamOdtMock.mockRejectedValueOnce(new Error("zip failed"));
+    buildOdtFromSnapshotsMock.mockRejectedValueOnce(new Error("zip failed"));
     render(<QuestionCard question={question} isFinal />);
 
     fireEvent.click(screen.getByRole("button", { name: "Download ODT" }));
