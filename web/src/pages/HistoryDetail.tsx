@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
@@ -20,8 +20,9 @@ import {
   getHistoryDetail,
   type HistoryDetail as HistoryDetailPayload,
 } from "../api/client";
-import { captureFromHistory, captureFromHistorySnapshot, singleQuestionOdtFilename } from "../utils/exportSnapshot";
+import { captureFromHistory, captureFromHistorySnapshot, augmentWithDomMarkup, singleQuestionOdtFilename, type QuestionSnapshot } from "../utils/exportSnapshot";
 import { buildOdtFromSnapshots } from "../utils/odt";
+import { serializeElementToMarkup } from "../utils/domCapture";
 import { useAuthStore } from "../store/authStore";
 import {
   initRecoveryStore,
@@ -92,6 +93,8 @@ function HistoryDetailContent({
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [recoveryDismissed, setRecoveryDismissed] = useState(false);
   const discardRecovery = useRecoveryStore((state) => state.discardRecovery);
+  // Stored ODT snapshot for retry (#753): reuse the same captured snapshot on retry
+  const lastHistoryOdtSnapshotRef = useRef<QuestionSnapshot | null>(null);
 
   useSurfaceParticipation("history.detail", {
     readiness: detail !== null || error !== null ||
@@ -203,9 +206,33 @@ function HistoryDetailContent({
     action: async () => {
       if (!detail || !canDownload) throw new Error("History record is not available");
       if (!detail.question_json) throw new Error("ODT unavailable: no question_json");
-      const exportedAt = new Date().toISOString();
-      const snapshot = captureFromHistorySnapshot(detail, exportedAt);
-      if (!snapshot) throw new Error("ODT unavailable: snapshot capture failed");
+
+      let snapshot: QuestionSnapshot;
+
+      // Retry (#753): reuse the same captured snapshot so the ODT image is
+      // identical to what the user saw at click time, even if the record changed.
+      if (odtFeedback.state === "failed" && lastHistoryOdtSnapshotRef.current) {
+        snapshot = lastHistoryOdtSnapshotRef.current;
+      } else {
+        // Fresh export click: capture a new snapshot at this instant.
+        const exportedAt = new Date().toISOString();
+        const captured = captureFromHistorySnapshot(detail, exportedAt);
+        if (!captured) throw new Error("ODT unavailable: snapshot capture failed");
+        snapshot = captured;
+        // Try to augment chart_spec_preview slots with DOM markup from the mounted QuestionCard.
+        // The card's [data-figure-slot] elements are searched relative to the card root.
+        const cardEl = document.querySelector("[data-testid='question-card-content']");
+        if (cardEl) {
+          augmentWithDomMarkup(snapshot.imageSources, (slotKey) => {
+            const el = cardEl.querySelector(`[data-figure-slot="${slotKey}"]`);
+            if (!el) return null;
+            try { return serializeElementToMarkup(el); } catch { return null; }
+          });
+        }
+        // Store for potential retry.
+        lastHistoryOdtSnapshotRef.current = snapshot;
+      }
+
       const questionId = detail.question_id || detail.id;
       const filename = singleQuestionOdtFilename(questionId, false);
       const blob = await buildOdtFromSnapshots(questionId, [snapshot]);
