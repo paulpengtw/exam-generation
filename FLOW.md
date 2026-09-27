@@ -152,3 +152,29 @@ The web server calls subject-specific `do_generate` functions (registered in `SU
 3. DB logging (start/finish per request)
 4. Base64 image inlining in the result event
 5. Cooperative cancel signal (`threading.Event`) per run
+
+## v2 Protocol additions (issues #742–#754)
+
+The flow above reflects the pre-v2 single-question lifecycle.  In v2:
+
+- Requests must carry `stream_version=2` (query or POST body); absent or
+  unsupported values return HTTP 426 before any worker starts (see
+  `docs/generation-event-protocol.md` §1 and `server/generate/routes.py`).
+- Build admission (`X-Frontend-Build-ID`) is checked after `stream_version`
+  (see DEPLOYMENT.md §"Build admission").
+- `GenerationPublisher` assigns monotonic `event_seq` to every emitted event
+  from a single call site; `started` is always seq=1; `done` is last.
+- A pre-allocated manifest (`allocate_manifest()`) announces all question IDs
+  before worker or planner starts.
+- Each question carries a `QuestionSnapshotLedger` that assigns immutable
+  `content_revision` values; both `question_update` and `result` carry
+  `context.content_revision`.
+- Each question produces exactly one `question_terminal` at every worker exit.
+- One question's failure never stops sibling workers (batch-planner failure
+  is the only batch-fatal path).
+- The client decoder (`createGenerationStreamDecoder`) maintains a bounded
+  out-of-order buffer (2 s / 256 events / 4 MiB) and degrades rather than
+  stalling.
+
+For the compatibility matrix (C0/S0, C0/S1, C1/S0, C1/S1) and buffer bound
+details, see `docs/generation-event-protocol.md`.

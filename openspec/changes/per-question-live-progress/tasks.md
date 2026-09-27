@@ -62,9 +62,9 @@
 
 ## 9. 條件式 ADR 與操作文件
 
-- [ ] 9.1 交付新的條件式取代 ADR，於 ADR 0009 保留 legacy／不可歸屬限制並加入連結，保留 ADR 0016 的題目與完整歷程分離；以文件對照確認只有契約與發布驗收通過才適用例外，OpenSpec sync 本身不等於生效。
-- [ ] 9.2 更新事件契約文件、FLOW／相關執行說明及 DEPLOYMENT runbook，記錄四組相容矩陣、HTTP 426、buffer 界線、snapshot／terminal schema、`_export` 額外欄位相容說明、全入口 inventory 與 pause/drain/rollback 指令；用本 change 的 requirements 清單逐項核對並驗證範例可由契約型別解析。
-- [ ] 9.3 在 CONTEXT.md 實際補入草稿、處理狀態、終止原因、交付完整性、審題結果等已決議教師術語，技術欄位留在協定文件；核對既有詞彙及 #731／#732／#733 的決議，交付可見詞條而非沿用「先前已改」的假設。
+- [x] 9.1 交付新的條件式取代 ADR，於 ADR 0009 保留 legacy／不可歸屬限制並加入連結，保留 ADR 0016 的題目與完整歷程分離；以文件對照確認只有契約與發布驗收通過才適用例外，OpenSpec sync 本身不等於生效。
+- [x] 9.2 更新事件契約文件、FLOW／相關執行說明及 DEPLOYMENT runbook，記錄四組相容矩陣、HTTP 426、buffer 界線、snapshot／terminal schema、`_export` 額外欄位相容說明、全入口 inventory 與 pause/drain/rollback 指令；用本 change 的 requirements 清單逐項核對並驗證範例可由契約型別解析。
+- [x] 9.3 在 CONTEXT.md 實際補入草稿、處理狀態、終止原因、交付完整性、審題結果等已決議教師術語，技術欄位留在協定文件；核對既有詞彙及 #731／#732／#733 的決議，交付可見詞條而非沿用「先前已改」的假設。
 
 ## 10. 跨層驗收與交接
 

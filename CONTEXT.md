@@ -262,3 +262,27 @@ _Avoid_: 題目品質, 審題通過 (when used to mean that every expected part 
 **審題結果**:
 The independent verification assessment of a particular version of the generated question. A verdict for earlier content does not establish the verdict for revised content; receiving content or reaching the end of generation does not by itself establish that the question passed verification.
 _Avoid_: 生成成功, 已完成 (when used as a substitute for a verification verdict)
+
+**已結束**:
+The label shown in the generation status bar (「已結束 X/N 題」) counting questions that have received authoritative terminal evidence — questions whose generation work has definitively ended in v2 mode. X is derived from unique `question_terminal` evidence, not from arrival-order counts. Available only in v2 mode; legacy sessions show 請求總數 instead.
+_Avoid_: 已完成, 生成完成 (when referring to the terminal-evidence count)
+
+**收到最終結果**:
+The label shown in the generation status bar (「收到最終結果 Y 題」) counting questions for which a final `result` has been received. Y is derived from unique final-receipt evidence. A question may be 已結束 without yet having its 最終結果 received (for example when the client is buffering), or may have a 最終結果 received without a 已結束 terminal (the two are tracked separately).
+_Avoid_: 已完成 (when referring to the receipt count rather than terminal count)
+
+**資訊不完整**:
+The notice shown when the generation stream decoder degrades — some events were held in the out-of-order buffer and the buffer bound (2 seconds, 256 events, or 4 MiB) was reached before the gap was filled. Content that was already received before degradation remains usable. The notice reads 「資訊不完整：部分事件未收到」 in zh-TW. No auto-resubmit is triggered.
+_Avoid_: 錯誤, 失敗 (degradation is not a generation failure)
+
+**原題序未知**:
+The label shown on a question card when the original batch position cannot be determined — the question arrived through the legacy adapter (C1×S0) without consistent index↔id evidence. Content is still available for inspection and export; only the position within the batch is unknown.
+_Avoid_: 未知題目, 錯誤 (position unknown is not an error)
+
+**請求總數**:
+The count shown in the status bar for legacy-mode batches (「請求總數 N」), taken from the request parameters rather than a pre-allocated manifest. Used only in C1×S0 legacy-adapter mode because no server-side manifest exists; in v2 mode the manifest total is used instead.
+_Avoid_: 已完成題數, 生成總數 (in legacy mode the total is the requested count, not a confirmed result count)
+
+**匯出缺圖**:
+The marker placed in an ODT document at a figure slot where a visible chart-spec preview failed conversion during export (「匯出缺圖／預覽轉換失敗」). The rest of the question content is preserved in the download. This is an export-time conversion failure, not a generated-content missing item, and does not affect the question's processing, delivery, or review evidence.
+_Avoid_: 圖片遺失, 生成缺圖 (this is an export conversion failure, not a generation failure)

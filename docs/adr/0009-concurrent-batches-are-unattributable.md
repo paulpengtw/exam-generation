@@ -12,3 +12,7 @@ This list now records both current status surfaces and remains open for future m
 ## Rejected Alternative
 
 Stamping a question identifier onto every agent ID would change the existing event contract. At the parameter caps it would also render roughly a hundred lanes in 代理狀態面板, replacing an attribution gap with an unusable panel.
+
+## Conditional exception
+
+[ADR 0032](0032-per-question-live-progress-is-a-conditional-exception-to-unattributability.md) records a conditional exception: when both the v2 event contract (stream_version=2) **and** the release acceptance gates defined there are satisfied, per-question attribution is permissible. The legacy / unattributable limitation above applies to all other sessions and must not be removed.
