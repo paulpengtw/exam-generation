@@ -170,6 +170,37 @@ describe("createGenerationStreamDecoder", () => {
     expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "invalid_manifest" });
   });
 
+  // Sub-item 4: missing questions — payload has protocol_version 2 but no questions array
+  it("is unsupported with invalid_manifest when questions array is absent from payload", () => {
+    const dec = createGenerationStreamDecoder();
+    const data = JSON.stringify({
+      context: validContext,
+      payload: { protocol_version: 2, total: 2 }, // no questions key
+    });
+    const events = dec.decode("started", data);
+    expect(dec.mode).toBe("unsupported");
+    expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "invalid_manifest" });
+  });
+
+  // Sub-item 5: duplicate manifest — duplicate index value (both questions claim index 0)
+  it("is unsupported with invalid_manifest on duplicate question index", () => {
+    const dec = createGenerationStreamDecoder();
+    const data = JSON.stringify({
+      context: validContext,
+      payload: {
+        protocol_version: 2,
+        total: 2,
+        questions: [
+          { index: 0, question_id: "q1" },
+          { index: 0, question_id: "q2" }, // duplicate index 0 (non-contiguous — fails i===q.index check)
+        ],
+      },
+    });
+    const events = dec.decode("started", data);
+    expect(dec.mode).toBe("unsupported");
+    expect(events[0]).toEqual({ kind: "mode", mode: "unsupported", reason: "invalid_manifest" });
+  });
+
   it("transitions to legacy on a started event with generation_log_id (no context)", () => {
     const dec = createGenerationStreamDecoder();
     const data = JSON.stringify({ generation_log_id: "LOG123" });
@@ -270,5 +301,20 @@ describe("createGenerationStreamDecoder", () => {
         payload,
       },
     });
+  });
+
+  // Sub-item 5: duplicate manifest — second started in v2 mode is ignored (seq 1 already seen)
+  it("ignores a second started with same seq in v2 mode (duplicate_seq) and stays in v2", () => {
+    const dec = createGenerationStreamDecoder();
+    dec.decode("started", validStartedData); // first started → v2 mode, run set
+    expect(dec.mode).toBe("v2");
+    const originalRun = dec.run;
+
+    // Second started with identical payload: seq 1 is already in seqSeen → duplicate_seq
+    const events2 = dec.decode("started", validStartedData);
+    expect(dec.mode).toBe("v2"); // stays in v2
+    expect(dec.run).toBe(originalRun); // run manifest is unchanged
+    expect(events2).toHaveLength(1);
+    expect(events2[0]).toEqual({ kind: "ignore", reason: "duplicate_seq" });
   });
 });
