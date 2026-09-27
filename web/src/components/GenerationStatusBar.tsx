@@ -158,6 +158,30 @@ function GenerationV2StatusLine({ evidence }: { evidence: GenerationV2Evidence }
           </span>
         </>
       )}
+      {evidence.batchConflict && (
+        <>
+          {" · "}
+          <span
+            role="status"
+            data-testid="statusbar-v2-batch-conflict"
+            className="text-amber-600 dark:text-amber-400"
+          >
+            {t("stream.batch_conflict") as string}
+          </span>
+        </>
+      )}
+      {evidence.legacyMixed && (
+        <>
+          {" · "}
+          <span
+            role="status"
+            data-testid="statusbar-v2-legacy-mixed"
+            className="text-amber-600 dark:text-amber-400"
+          >
+            {t("stream.legacy_mixed") as string}
+          </span>
+        </>
+      )}
     </span>
   );
 }

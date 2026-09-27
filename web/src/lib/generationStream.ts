@@ -8,7 +8,7 @@ import type {
 } from "../hooks/useGenerate";
 import type { GenerationLegacyEvidence, GenerationV2Evidence } from "./runEvidence";
 import type { RunEvidenceState } from "./generationEvidence";
-import { selectEndedCount, selectFinalReceivedCount } from "./generationEvidence";
+import { selectEndedCount, selectFinalReceivedCount, selectConflictCount } from "./generationEvidence";
 
 export function projectGenerationEvidence(
   llmCalls: readonly LlmCallEvent[],
@@ -23,6 +23,9 @@ export function projectGenerationEvidence(
       finalReceivedCount: selectFinalReceivedCount(v2Evidence),
       closed: v2Evidence.closed,
       degraded: v2Evidence.degraded,
+      conflictCount: selectConflictCount(v2Evidence),
+      batchConflict: v2Evidence.batchConflict,
+      legacyMixed: v2Evidence.legacyMixed,
     };
   }
   return {
@@ -74,7 +77,17 @@ export type DecodedEvent =
   | { kind: "mode"; mode: "unsupported"; reason: "unknown_protocol" | "invalid_manifest" | "missing_started" }
   | { kind: "ignore"; reason: string }
   | { kind: "held" }
-  | { kind: "degraded"; reason: "timeout" | "count" | "size" | "eof_gap" };
+  | { kind: "degraded"; reason: "timeout" | "count" | "size" | "eof_gap" }
+  /**
+   * Conflict events (issue #749): isolate the problem to the smallest scope.
+   * seq_data:      same event_seq with different raw data — fingerprint mismatch.
+   *   questionId: string  → locatable to that question; only that question is affected.
+   *   questionId: null    → unattributable; whole-batch live stops (batchConflict).
+   * legacy_in_v2:  an event without a v2 context envelope arrived while in v2 mode.
+   *   The decoder stays in v2 mode; unmatched content is marked incomplete (legacyMixed).
+   */
+  | { kind: "conflict"; conflictType: "seq_data"; seq: number; eventName: string; questionId: string | null }
+  | { kind: "conflict"; conflictType: "legacy_in_v2" };
 
 /** Stateful decoder for a single generate() call's SSE stream. */
 export interface GenerationStreamDecoder {
@@ -127,10 +140,25 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
   const clock: DecoderClock = options?.clock ?? { now: () => Date.now() };
   let seqNextExpected = 0;
   let seqSeen = new Set<number>();
+  /**
+   * Fingerprint map for conflict detection (issue #749): maps event_seq →
+   * raw data string of the first-processed event at that seq.  When a seq
+   * arrives again, the stored fingerprint is compared; a mismatch means the
+   * same sequence number carried different data, which is a seq_data conflict.
+   * Storing the full rawData string is intentional: events are compact JSON
+   * and the map grows linearly with the stream, matching seqSeen's own growth.
+   */
+  let seqFingerprints = new Map<number, string>();
   let seqPending = new Map<number, { eventName: string; rawData: string; byteSize: number }>();
   let seqPendingBytes = 0;
   let seqGapStart: number | null = null;
   let seqDegraded = false;
+
+  /** Record a processed seq → fingerprint pair. */
+  function recordSeq(seq: number, rawData: string) {
+    seqSeen.add(seq);
+    seqFingerprints.set(seq, rawData);
+  }
 
   function decodeAsV2(eventName: string, rawData: string): DecodedEvent {
     if (run === null) return { kind: "ignore", reason: "no_run" };
@@ -144,6 +172,10 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
       return { kind: "ignore", reason: "invalid_envelope" };
     }
     const envelope = parsed as Record<string, unknown>;
+    // Issue #749: detect raw legacy events (no context key at all) vs. malformed v2.
+    if (!("context" in envelope)) {
+      return { kind: "conflict", conflictType: "legacy_in_v2" };
+    }
     const ctx = envelope.context;
     if (ctx === null || typeof ctx !== "object") {
       return { kind: "ignore", reason: "invalid_envelope" };
@@ -176,7 +208,7 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
       ) {
         const ev = decodeAsV2(entry.eventName, entry.rawData);
         if (ev.kind === "v2") {
-          seqSeen.add(pendingSeq);
+          recordSeq(pendingSeq, entry.rawData);
           released.push(ev);
         }
       }
@@ -186,19 +218,41 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
     return [{ kind: "degraded", reason }, ...released];
   }
 
+  /**
+   * Build a seq_data conflict event from a duplicate seq that has different data.
+   * The questionId is extracted from the NEW event's decoded context (already parsed
+   * by decodeAsV2 via the `decoded` arg).
+   */
+  function seqDataConflict(
+    decoded: Extract<DecodedEvent, { kind: "v2" }>,
+    seq: number,
+    evName: string,
+  ): DecodedEvent {
+    const questionId = typeof decoded.event.context.question_id === "string"
+      ? decoded.event.context.question_id
+      : null;
+    return { kind: "conflict", conflictType: "seq_data", seq, eventName: evName, questionId };
+  }
+
   function decodeV2WithSeq(eventName: string, rawData: string): DecodedEvent[] {
     const decoded = decodeAsV2(eventName, rawData);
+    // Pass through non-v2 results (ignore, conflict, etc.) without seq processing.
     if (decoded.kind !== "v2") return [decoded];
 
     const eventSeq = decoded.event.context.event_seq as number;
 
     if (seqSeen.has(eventSeq)) {
-      return [{ kind: "ignore", reason: "duplicate_seq" }];
+      // Issue #749: fingerprint check — same data = idempotent, different data = conflict.
+      const stored = seqFingerprints.get(eventSeq);
+      if (stored === rawData || stored === undefined) {
+        return [{ kind: "ignore", reason: "duplicate_seq" }];
+      }
+      return [seqDataConflict(decoded, eventSeq, eventName)];
     }
 
     if (seqDegraded) {
       if (eventName === "question_update" || eventName === "result" || eventName === "question_terminal") {
-        seqSeen.add(eventSeq);
+        recordSeq(eventSeq, rawData);
         return [decoded];
       }
       return [{ kind: "ignore", reason: "degraded" }];
@@ -207,12 +261,12 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
     if (eventSeq === seqNextExpected) {
       if (eventName === "done" && seqPending.size > 0) {
         const degradeResult = degrade("eof_gap");
-        seqSeen.add(eventSeq);
+        recordSeq(eventSeq, rawData);
         seqNextExpected += 1;
         return [...degradeResult, decoded];
       }
 
-      seqSeen.add(eventSeq);
+      recordSeq(eventSeq, rawData);
       seqNextExpected += 1;
       const results: DecodedEvent[] = [decoded];
       while (seqPending.has(seqNextExpected)) {
@@ -220,7 +274,7 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
         const entry = seqPending.get(pendingSeq)!;
         seqPending.delete(pendingSeq);
         seqPendingBytes -= entry.byteSize;
-        seqSeen.add(pendingSeq);
+        recordSeq(pendingSeq, entry.rawData);
         seqNextExpected += 1;
         results.push(decodeAsV2(entry.eventName, entry.rawData));
       }
@@ -229,7 +283,7 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
     }
 
     if (eventSeq < seqNextExpected) {
-      seqSeen.add(eventSeq);
+      recordSeq(eventSeq, rawData);
       return [decoded];
     }
 
@@ -300,6 +354,7 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
         mode = "v2";
         seqNextExpected = 2;
         seqSeen = new Set([1]);
+        seqFingerprints = new Map([[1, rawData]]); // fingerprint the started event (seq 1)
         seqPending = new Map();
         seqPendingBytes = 0;
         seqGapStart = null;

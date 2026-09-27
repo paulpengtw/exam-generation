@@ -587,6 +587,9 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
       {evidence.reviewConflict && (
         <span data-testid="evidence-review-conflict">{t("card.review_conflict")}</span>
       )}
+      {evidence.contentConflict && (
+        <span data-testid="evidence-content-conflict">{t("card.content_conflict")}</span>
+      )}
       <span data-testid="evidence-review-status">{reviewLabel}</span>
       <span data-testid="evidence-receipt-status">{receiptLabel}</span>
     </div>
