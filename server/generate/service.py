@@ -478,29 +478,42 @@ def _publish_question_terminal(
     )
 
 
-def _worker_one(
+# ---------------------------------------------------------------------------
+# Issue #858 – per-question worker split: setup, execution, shared finalize
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class _WorkerRecorderSetup:
+    """Bundle of per-question recording and trail-capture seams.
+
+    Returned by _setup_worker_recorders.  The trail lists grow in-place during
+    generation; the callable fields are closures that reference ctx and the
+    lists.  Callers must NOT replace the list fields after construction.
+    """
+
+    emit_question_update: Any   # Callable[[Any, str], int]
+    capture_trail_entry: Any    # Callable[..., None]
+    capture_figure_policy_entry: Any    # Callable[..., None]
+    capture_reference_example_entry: Any    # Callable[..., None]
+    verification_trail: list    # list[dict[str, Any]] – mutated by capture_trail_entry
+    figure_policy_trail: list   # list[dict[str, Any]] – mutated by capture_figure_policy_entry
+    reference_example_entries: list  # list[dict[str, Any]] – mutated by capture_reference_example_entry  # noqa: E501
+    _revision_tracker: list     # list[int | None] – mutable singleton; [0] is last-committed rev
+
+
+def _setup_worker_recorders(
     i: int,
     question_client: LLMClient,
     ctx: _RunContext,
-    batch_briefs: list,
-) -> None:
-    """Execute one question-generation worker; enqueues result/error events."""
-    with ctx.drain_telemetry.ctx_active_worker():
-        _worker_one_body(i, question_client, ctx, batch_briefs)
+) -> _WorkerRecorderSetup:
+    """Create the exchange recorder, observer, and trail-capture callbacks for one worker.
 
-
-def _worker_one_body(
-    i: int,
-    question_client: LLMClient,
-    ctx: _RunContext,
-    batch_briefs: list,
-) -> None:
-    """Run the v2 worker body inside the drain telemetry wrapper."""
-    question_id = ctx.manifest[i].question_id
-    if ctx.publisher.is_terminal_sealed(question_id):
-        logger.warning("worker %s was submitted after terminal sealing", question_id)
-        return
-
+    Registers the exchange recorder with ctx.exchange_recorders and wires the
+    LLM observer onto question_client.  Returns a _WorkerRecorderSetup bundle
+    that can be exercised in tests without running generation (issue #858
+    acceptance criterion 2).
+    """
     worker_recorder = make_exchange_recorder(
         generation_log_id=ctx.generation_log_id,
         retention_days=ctx.retention_days,
@@ -528,8 +541,7 @@ def _worker_one_body(
     question_client.set_observer(
         make_combined_observer(observe_worker_event, worker_recorder)
     )
-    # Wrap emit_question_update to commit to the snapshot ledger and carry
-    # content_revision in every question_update context (slice 5).
+
     _revision_tracker: list[int | None] = [None]  # mutable container for core revision binding
 
     def emit_question_update(question: Any, phase: str) -> int:
@@ -600,6 +612,121 @@ def _worker_one_body(
         if reference_example_recorder is not None:
             reference_example_recorder(entry)
 
+    return _WorkerRecorderSetup(
+        emit_question_update=emit_question_update,
+        capture_trail_entry=capture_trail_entry,
+        capture_figure_policy_entry=capture_figure_policy_entry,
+        capture_reference_example_entry=capture_reference_example_entry,
+        verification_trail=verification_trail,
+        figure_policy_trail=figure_policy_trail,
+        reference_example_entries=reference_example_entries,
+        _revision_tracker=_revision_tracker,
+    )
+
+
+def _finalize_worker_terminal(
+    ctx: _RunContext,
+    *,
+    index: int,
+    question_id: str,
+    already_sealed: bool = False,
+    termination_reason: str = "",
+    has_final: bool = False,
+    final_revision: int | None = None,
+    question: Any | None = None,
+    rng_params: Any | None = None,
+    verification_trail: list[dict[str, Any]] | None = None,
+    unknown_reason: str | None = None,
+) -> None:
+    """Shared finalize path: seals the ledger and emits question_terminal.
+
+    Every terminal exit in _worker_one_body and _wait_and_signal routes here
+    (issue #858 acceptance criterion 1).
+
+    When already_sealed is True (ledger sealed but publisher not yet confirmed)
+    the immutable sealed payload is re-sent without re-building or re-sealing
+    the terminal.  The other parameters are ignored in that case.
+    """
+    if already_sealed:
+        sealed_payload = ctx.snapshot_ledger.get_terminal(question_id)
+        if sealed_payload is not None:
+            try:
+                ctx.publisher.publish(
+                    SSEEventName.QUESTION_TERMINAL,
+                    question_id=question_id,
+                    index=index,
+                    payload=sealed_payload,
+                )
+            except Exception as retry_exc:  # noqa: BLE001 — terminal remains sealed
+                logger.warning(
+                    "sealed terminal delivery failed for %s: %s",
+                    question_id,
+                    type(retry_exc).__name__,
+                )
+        return
+
+    resolution = _QuestionPositionResolution(
+        announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
+        verification_trail=verification_trail,
+        resolved_subquestion_configs=(
+            getattr(rng_params, "subquestion_configs", None)
+            if rng_params is not None
+            else None
+        ),
+        resolved_subquestion_count=(
+            getattr(rng_params, "sub_question_count", None)
+            if rng_params is not None
+            else None
+        ),
+        has_per_question_resolution=rng_params is not None,
+    )
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason=termination_reason,
+        has_final=has_final,
+        final_revision=final_revision,
+        question=question,
+        params=ctx.params,
+        output_dir=ctx.config.output_dir,
+        unknown_reason=unknown_reason,
+        resolution=resolution,
+    )
+    _publish_question_terminal(ctx, index=index, payload=payload)
+
+
+def _worker_one(
+    i: int,
+    question_client: LLMClient,
+    ctx: _RunContext,
+    batch_briefs: list,
+) -> None:
+    """Execute one question-generation worker; enqueues result/error events."""
+    with ctx.drain_telemetry.ctx_active_worker():
+        _worker_one_body(i, question_client, ctx, batch_briefs)
+
+
+def _worker_one_body(
+    i: int,
+    question_client: LLMClient,
+    ctx: _RunContext,
+    batch_briefs: list,
+) -> None:
+    """Run the v2 worker body inside the drain telemetry wrapper.
+
+    Structured in three single-responsibility phases (issue #858):
+      1. _setup_worker_recorders – recorder + observer + trail-capture setup.
+      2. Generation execution    – resolves params, calls do_generate, publishes result.
+      3. _finalize_worker_terminal – shared finalize path for every exit kind.
+    """
+    question_id = ctx.manifest[i].question_id
+    if ctx.publisher.is_terminal_sealed(question_id):
+        logger.warning("worker %s was submitted after terminal sealing", question_id)
+        return
+
+    # Phase 1 – recorder & trail-capture setup (testable without generation).
+    setup = _setup_worker_recorders(i, question_client, ctx)
+
+    # Phase 2 – generation execution.
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
@@ -639,10 +766,10 @@ def _worker_one_body(
             user_core_question=ctx.params.core_question,
             text_instruction=_per_question_text_instruction(i, ctx.params),
             core_question_callback=ctx.params.core_question_callback,
-            on_question_update=emit_question_update,
-            on_trail_entry=None if ctx.params.skip_verify else capture_trail_entry,
-            on_figure_policy_entry=capture_figure_policy_entry,
-            on_reference_example_entry=capture_reference_example_entry,
+            on_question_update=setup.emit_question_update,
+            on_trail_entry=None if ctx.params.skip_verify else setup.capture_trail_entry,
+            on_figure_policy_entry=setup.capture_figure_policy_entry,
+            on_reference_example_entry=setup.capture_reference_example_entry,
             prior_scopes=prior_snapshot,
             balanced_batch=ctx.balanced_batch,
             is_cancelled=ctx.cancel_event.is_set,
@@ -669,19 +796,19 @@ def _worker_one_body(
         sidecars: dict[str, Any] = {
             "reference_example_record": {
                 "disabled": bool(ctx.params.disable_reference_fewshot),
-                "entries": reference_example_entries,
+                "entries": setup.reference_example_entries,
             },
         }
-        if verification_trail:
-            sidecars["verification_trail"] = verification_trail
-        if figure_policy_trail:
-            sidecars["figure_policy_trail"] = figure_policy_trail
+        if setup.verification_trail:
+            sidecars["verification_trail"] = setup.verification_trail
+        if setup.figure_policy_trail:
+            sidecars["figure_policy_trail"] = setup.figure_policy_trail
         # Commit the final question to the ledger (unchanged content keeps revision).
         _q_final_dict = json.loads(question.model_dump_json(exclude_none=True))
         _final_revision, _ = ctx.snapshot_ledger.commit(
             _q_final_dict, ctx.config.output_dir
         )
-        _revision_tracker[0] = _final_revision
+        setup._revision_tracker[0] = _final_revision
         ctx.publisher.publish(
             SSEEventName.RESULT,
             question_id=question_id,
@@ -691,59 +818,37 @@ def _worker_one_body(
             sidecars=sidecars,
         )
         final_published_revision = _final_revision
-        # Normal terminal – published AFTER the result event.
-        _normal_resolution = _QuestionPositionResolution(
-            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
-            verification_trail=verification_trail,
-            resolved_subquestion_configs=getattr(rng_params, "subquestion_configs", None),
-            resolved_subquestion_count=getattr(rng_params, "sub_question_count", None),
-            has_per_question_resolution=True,
-        )
-        _terminal_payload = _build_question_terminal_payload(
+        # Phase 3 – normal terminal: published AFTER the result event.
+        _finalize_worker_terminal(
+            ctx,
+            index=i,
             question_id=question_id,
             termination_reason="normal",
             has_final=True,
             final_revision=_final_revision,
             question=question,
-            params=ctx.params,
-            output_dir=ctx.config.output_dir,
-            resolution=_normal_resolution,
+            rng_params=rng_params,
+            verification_trail=setup.verification_trail,
         )
-        _publish_question_terminal(ctx, index=i, payload=_terminal_payload)
     except GenerationCancelled:
         # A client disconnect is not proof that cancellation was confirmed by
         # the generation boundary.  Only an explicit internal confirmation may
         # produce the cancelled terminal conclusion.
         if not ctx.confirmed_cancel_event.is_set():
             return
-        _qid_cancel = ctx.manifest[i].question_id
-        _cancel_resolution = _QuestionPositionResolution(
-            announced_slots=ctx.snapshot_ledger.get_slot_manifest(_qid_cancel),
-            verification_trail=None,
-            resolved_subquestion_configs=(
-                getattr(rng_params, "subquestion_configs", None)
-                if rng_params is not None
-                else None
-            ),
-            resolved_subquestion_count=(
-                getattr(rng_params, "sub_question_count", None)
-                if rng_params is not None
-                else None
-            ),
-            has_per_question_resolution=rng_params is not None,
-        )
-        _cancel_payload = _build_question_terminal_payload(
-            question_id=_qid_cancel,
+        # Phase 3 – confirmed-cancellation terminal.
+        _finalize_worker_terminal(
+            ctx,
+            index=i,
+            question_id=ctx.manifest[i].question_id,
             termination_reason="cancelled",
             has_final=False,
             final_revision=None,
             question=None,
-            params=ctx.params,
-            output_dir=ctx.config.output_dir,
+            rng_params=rng_params,
+            verification_trail=None,
             unknown_reason="cancelled before completion",
-            resolution=_cancel_resolution,
         )
-        _publish_question_terminal(ctx, index=i, payload=_cancel_payload)
     except Exception as exc:
         if ctx.publisher.is_terminal_sealed(question_id):
             logger.warning(
@@ -757,21 +862,13 @@ def _worker_one_body(
             # failed after the ledger sealed, retry the exact immutable summary
             # once so a transient enqueue failure cannot turn a normal final
             # into a contradictory failure.  No new error event is emitted.
-            sealed_payload = ctx.snapshot_ledger.get_terminal(question_id)
-            if sealed_payload is not None:
-                try:
-                    ctx.publisher.publish(
-                        SSEEventName.QUESTION_TERMINAL,
-                        question_id=question_id,
-                        index=i,
-                        payload=sealed_payload,
-                    )
-                except Exception as retry_exc:  # noqa: BLE001 — terminal remains sealed
-                    logger.warning(
-                        "sealed terminal delivery failed for %s: %s",
-                        question_id,
-                        type(retry_exc).__name__,
-                    )
+            # Phase 3 – resend of already-sealed summary.
+            _finalize_worker_terminal(
+                ctx,
+                index=i,
+                question_id=question_id,
+                already_sealed=True,
+            )
             return
         record_generation_outcome(ctx.params.subject, "failure")
         ctx.publisher.publish(
@@ -784,37 +881,23 @@ def _worker_one_body(
             ),
         )
         logger.exception("worker_one error (index=%d)", i)
-        _failed_resolution = _QuestionPositionResolution(
-            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
-            verification_trail=verification_trail,
-            resolved_subquestion_configs=(
-                getattr(rng_params, "subquestion_configs", None)
-                if rng_params is not None
-                else None
-            ),
-            resolved_subquestion_count=(
-                getattr(rng_params, "sub_question_count", None)
-                if rng_params is not None
-                else None
-            ),
-            has_per_question_resolution=rng_params is not None,
-        )
-        _failed_payload = _build_question_terminal_payload(
+        # Phase 3 – final-failure terminal.
+        _finalize_worker_terminal(
+            ctx,
+            index=i,
             question_id=question_id,
             termination_reason="failed",
             has_final=final_published_revision is not None,
             final_revision=final_published_revision,
             question=question if final_published_revision is not None else None,
-            params=ctx.params,
-            output_dir=ctx.config.output_dir,
+            rng_params=rng_params,
+            verification_trail=setup.verification_trail,
             unknown_reason=(
                 "no final content"
                 if final_published_revision is None
                 else "terminal completion failed after final delivery"
             ),
-            resolution=_failed_resolution,
         )
-        _publish_question_terminal(ctx, index=i, payload=_failed_payload)
 
 
 def _track_active_run(
@@ -1179,22 +1262,19 @@ async def generate_question_stream(
                 ),
             )
             for i, question in enumerate(ctx.manifest):
-                _batch_fail_resolution = _QuestionPositionResolution(
-                    announced_slots=None,
-                    has_per_question_resolution=False,
-                )
-                terminal = _build_question_terminal_payload(
+                # Phase 3 – batch-planning-failure terminal (shared finalize path).
+                _finalize_worker_terminal(
+                    ctx,
+                    index=i,
                     question_id=question.question_id,
                     termination_reason="failed",
                     has_final=False,
                     final_revision=None,
                     question=None,
-                    params=ctx.params,
-                    output_dir=ctx.config.output_dir,
+                    rng_params=None,
+                    verification_trail=None,
                     unknown_reason="batch failed before question generation",
-                    resolution=_batch_fail_resolution,
                 )
-                _publish_question_terminal(ctx, index=i, payload=terminal)
         else:
             outcomes = await asyncio.gather(*futures, return_exceptions=True)
             for i, outcome in enumerate(outcomes):
@@ -1217,24 +1297,19 @@ async def generate_question_stream(
                         f"Question generation failed ({type(outcome).__name__})",
                     ),
                 )
-                _worker_exit_resolution = _QuestionPositionResolution(
-                    announced_slots=ctx.snapshot_ledger.get_slot_manifest(
-                        question.question_id
-                    ),
-                    has_per_question_resolution=False,
-                )
-                terminal = _build_question_terminal_payload(
+                # Phase 3 – worker-unexpected-exit terminal (shared finalize path).
+                _finalize_worker_terminal(
+                    ctx,
+                    index=i,
                     question_id=question.question_id,
                     termination_reason="failed",
                     has_final=False,
                     final_revision=None,
                     question=None,
-                    params=ctx.params,
-                    output_dir=ctx.config.output_dir,
+                    rng_params=None,
+                    verification_trail=None,
                     unknown_reason="question worker exited before final content",
-                    resolution=_worker_exit_resolution,
                 )
-                _publish_question_terminal(ctx, index=i, payload=terminal)
         await _flush_generation_recorders()
         ctx.emit_pipeline("pipeline_end", total=ctx.count)
         ctx.publisher.publish(SSEEventName.DONE, payload={})
