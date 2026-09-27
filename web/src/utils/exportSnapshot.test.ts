@@ -12,10 +12,12 @@
  * - final without terminal → final+unknown (not called draft)
  * - new revision during export keeps captured version/time
  * - bodyless placeholders excluded
+ * - image source capture: per-position, png_base64, chart_spec_preview, known_missing
+ * - image source immutability: new image after capture does not change snapshot
  */
 
 import { describe, expect, it } from "vitest";
-import type { ExamQuestion } from "../hooks/useGenerate";
+import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
 import type { QuestionEvidence } from "../lib/generationEvidence";
 import type { GeneratedQuestion } from "../hooks/useGenerate";
 import type { HistoryDetail } from "../api/client";
@@ -235,6 +237,187 @@ describe("captureFromGeneratedQuestion", () => {
     const item = makeGeneratedQuestion("qJ", true, 0, true);
     const snapshot = captureFromGeneratedQuestion(item, null, "2026-09-27T10:00:00.000Z");
     expect(snapshot!.exported._export.index).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// captureImageSources (via captureFromEvidence snapshot.imageSources)
+// ---------------------------------------------------------------------------
+
+describe("image source capture", () => {
+  function makeSubQuestion(overrides: Partial<SubQuestion> = {}): SubQuestion {
+    return {
+      id: "sq1",
+      序號: 1,
+      年級: 8,
+      學習內容: [],
+      學習表現: [],
+      出題概念: "概念",
+      題型: "選擇題",
+      題目: "小題",
+      答案: "A",
+      答案解析: "解析",
+      ...overrides,
+    };
+  }
+
+  it("captures png_base64 source for top-level (stem) image", () => {
+    const q = makeQuestion("qImg", { image_base64: "aGVsbG8=" });
+    const ev = makeEvidence("qImg");
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot!.imageSources["stem"]).toBeDefined();
+    expect(snapshot!.imageSources["stem"].kind).toBe("png_base64");
+    expect(snapshot!.imageSources["stem"].pngBase64).toBe("aGVsbG8=");
+    expect(snapshot!.imageSources["stem"].contentRevision).toBe(3);
+  });
+
+  it("captures chart_spec_preview source when only chart_spec is present", () => {
+    const spec = { render_mode: "html", description: "chart" };
+    const q = makeQuestion("qChart", { chart_spec: spec });
+    const ev = makeEvidence("qChart");
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot!.imageSources["stem"]).toBeDefined();
+    expect(snapshot!.imageSources["stem"].kind).toBe("chart_spec_preview");
+    expect(snapshot!.imageSources["stem"].chartSpec).toEqual(spec);
+    expect(snapshot!.imageSources["stem"].contentRevision).toBe(3);
+    // png_base64 not present → chartSpec used
+    expect(snapshot!.imageSources["stem"].pngBase64).toBeUndefined();
+  });
+
+  it("png_base64 takes priority over chart_spec when both are present", () => {
+    const q = makeQuestion("qBoth", {
+      image_base64: "cGluZw==",
+      chart_spec: { render_mode: "html" },
+    });
+    const ev = makeEvidence("qBoth");
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    expect(snapshot!.imageSources["stem"].kind).toBe("png_base64");
+    expect(snapshot!.imageSources["stem"].pngBase64).toBe("cGluZw==");
+  });
+
+  it("captures known_missing when terminal.missing has an image slot for stem", () => {
+    const q = makeQuestion("qMissing");
+    const ev = makeEvidence("qMissing", {
+      terminal: {
+        termination_reason: "normal",
+        has_final: true,
+        final_revision: 3,
+        delivery_status: "partial",
+        expected: [{ kind: "image", question_id: "qMissing" }],
+        delivered: [],
+        missing: [{ kind: "image", question_id: "qMissing" }],
+        review: { status: "passed", content_revision: 3 },
+      },
+    });
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    expect(snapshot!.imageSources["stem"]).toBeDefined();
+    expect(snapshot!.imageSources["stem"].kind).toBe("known_missing");
+    expect(snapshot!.imageSources["stem"].contentRevision).toBe(3);
+  });
+
+  it("captures per-subquestion image sources keyed by sq{序號}", () => {
+    const sq1 = makeSubQuestion({ 序號: 1, image_base64: "c3ExaW1n" });
+    const sq2 = makeSubQuestion({ id: "sq2", 序號: 2, chart_spec: { render_mode: "html" } });
+    const q = makeQuestion("qGroup", {
+      subquestions: [sq1, sq2],
+    });
+    const ev = makeEvidence("qGroup");
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    expect(snapshot!.imageSources["sq1"]).toBeDefined();
+    expect(snapshot!.imageSources["sq1"].kind).toBe("png_base64");
+    expect(snapshot!.imageSources["sq1"].pngBase64).toBe("c3ExaW1n");
+
+    expect(snapshot!.imageSources["sq2"]).toBeDefined();
+    expect(snapshot!.imageSources["sq2"].kind).toBe("chart_spec_preview");
+    expect(snapshot!.imageSources["sq2"].chartSpec).toEqual({ render_mode: "html" });
+  });
+
+  it("captures known_missing for a subquestion in terminal.missing", () => {
+    const sq1 = makeSubQuestion({ 序號: 1 }); // no image
+    const q = makeQuestion("qPartial", { subquestions: [sq1] });
+    const ev = makeEvidence("qPartial", {
+      terminal: {
+        termination_reason: "normal",
+        has_final: true,
+        final_revision: 3,
+        delivery_status: "partial",
+        expected: [{ kind: "image", question_id: "qPartial", subquestion_id: "sq1", subquestion_index: 1 }],
+        delivered: [],
+        missing: [{ kind: "image", question_id: "qPartial", subquestion_id: "sq1", subquestion_index: 1 }],
+        review: { status: "passed", content_revision: 3 },
+      },
+    });
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    expect(snapshot!.imageSources["sq1"]).toBeDefined();
+    expect(snapshot!.imageSources["sq1"].kind).toBe("known_missing");
+    expect(snapshot!.imageSources["sq1"].contentRevision).toBe(3);
+  });
+
+  it("slot with no image, no chart_spec, and not in missing → absent from imageSources", () => {
+    const sq = makeSubQuestion({ 序號: 1 }); // no image
+    const q = makeQuestion("qNoImg", { subquestions: [sq] });
+    const ev = makeEvidence("qNoImg");
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    expect(snapshot!.imageSources["sq1"]).toBeUndefined();
+    expect(snapshot!.imageSources["stem"]).toBeUndefined();
+  });
+
+  it("new image arriving after capture does not change the snapshot imageSources", () => {
+    const q = makeQuestion("qImmutable", { image_base64: "b3JpZ2luYWw=" });
+    const ev = makeEvidence("qImmutable");
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    // Simulate new image arriving — mutate the original question AFTER capture
+    (q as { image_base64: string }).image_base64 = "bmV3SW1nQWZ0ZXJDYXB0dXJl";
+    (ev.content as { revision: number }).revision = 4;
+
+    // Snapshot must still hold the original captured image and revision
+    expect(snapshot!.imageSources["stem"].pngBase64).toBe("b3JpZ2luYWw=");
+    expect(snapshot!.imageSources["stem"].contentRevision).toBe(3);
+  });
+
+  it("mismatched-revision: image at wrong revision stored with captured revision, not later one", () => {
+    // The question has an image_base64 but the evidence says content_revision is 3.
+    // A new revision 4 arrives AFTER capture; the snapshot must remain at rev 3.
+    const q = makeQuestion("qRevMismatch", { image_base64: "cmV2M0ltZw==" });
+    const ev = makeEvidence("qRevMismatch", {
+      content: { receipt: "final", revision: 3, question: q, phase: "verified" },
+    });
+    const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
+
+    // Captured at revision 3
+    expect(snapshot!.imageSources["stem"].contentRevision).toBe(3);
+
+    // Mutate to revision 4 (simulating new revision event)
+    (ev.content as { revision: number }).revision = 4;
+    (q as { image_base64: string }).image_base64 = "cmV2NEltZw==";
+
+    // Snapshot must NOT be updated
+    expect(snapshot!.imageSources["stem"].contentRevision).toBe(3);
+    expect(snapshot!.imageSources["stem"].pngBase64).toBe("cmV2M0ltZw==");
+  });
+
+  it("captureFromGeneratedQuestion includes imageSources from legacy item", () => {
+    const q = makeQuestion("qLegacyImg", { image_base64: "bGVnYWN5" });
+    const item: GeneratedQuestion = {
+      index: 0, question: q, phase: "verified", isFinal: true,
+      stableId: "qLegacyImg", contentRevision: 2,
+    };
+    const snapshot = captureFromGeneratedQuestion(item, null, "2026-09-27T10:00:00.000Z");
+
+    expect(snapshot!.imageSources["stem"]).toBeDefined();
+    expect(snapshot!.imageSources["stem"].kind).toBe("png_base64");
+    expect(snapshot!.imageSources["stem"].pngBase64).toBe("bGVnYWN5");
+    expect(snapshot!.imageSources["stem"].contentRevision).toBe(2);
   });
 });
 

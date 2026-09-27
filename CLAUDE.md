@@ -210,7 +210,7 @@ Key files:
 - `format_version: 1` — always 1 for this revision.
 - `exported_at` — ISO 8601 UTC timestamp frozen at click time; identical for all items in a batch.
 - `is_draft: boolean` — true when `content.receipt === "draft"` (v2 evidence) or `isFinal === false` (legacy item). A final with unknown terminal stays `is_draft: false`.
-- `run_id: string | null` — from `generationLogId` / `generation_log_id`; null for legacy or old data.
+- `run_id: string | null` — v2 protocol run id from `RunEvidenceState.runId` (= `context.run_id` in the started event); null for legacy cards. History records use `detail.generation_log_id` (equals the v2 run_id for persisted records). NOT the DB `GenerationLog.id` (`generationLogId`) — those happen to be equal when a log exists, but are semantically distinct.
 - `index: number | null` — 0-based original batch position; null for unknown-order legacy items.
 - `content_revision: number | null` — content version from evidence; null for legacy/history.
 - `processing` — `"waiting" | "running" | "ended" | "unknown"`.
@@ -226,6 +226,14 @@ Key files:
 - Live/stored questions are never mutated.
 - History records always get `is_draft: false`, `processing: "ended"`, `termination_reason: "normal"`, `delivery_status: "complete"`.
 
+**Visible image sources (`QuestionSnapshot.imageSources`):**
+Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot` only, NOT in the downloaded JSON body) capturing what was visible at click time:
+- Keys: `"stem"` for the top-level question image, `"sq{序號}"` (1-based) for per-subquestion images.
+- Source priority per slot: `image_base64` → `"png_base64"` (with `pngBase64` field); `chart_spec` (no image_base64) → `"chart_spec_preview"` (with `chartSpec` field); slot in `terminal.missing` for `kind="image"` → `"known_missing"`; none → slot absent from record.
+- Each source has `contentRevision: number | null` binding it to the snapshot's content revision.
+- Sources are captured AFTER `captureQuestion()` deep-copy so later mutations never affect them.
+- Consumed by #752 (ODT export) and #753 (rasterization); do NOT appear in JSON downloads.
+
 **Filename conventions:**
 - Single draft: `草稿_{questionId}.json`
 - Single final: `{questionId}.json`
@@ -234,7 +242,7 @@ Key files:
 
 **Component wiring:**
 - `QuestionCard`: `runId` prop added; JSON export enabled for drafts (shows "Download Draft JSON"); uses `captureFromEvidence` (v2) or `captureFromGeneratedQuestion` (legacy/history) for the snapshot.
-- `GeneratePage`: batch JSON export uses `captureBatch`; `generationLogId` is passed as `runId` to each `QuestionCard`.
+- `GeneratePage`: batch JSON export uses `captureBatch` with `runId: runEvidence?.runId ?? null`; v2 QuestionCards receive `runId={runEvidence?.runId ?? null}`; legacy QuestionCards receive `runId={null}` (never the DB log id).
 - `HistoryDetail`: JSON download uses `captureFromHistory` when `detail.question_json` is present; falls back to server endpoint only when `question_json` is null.
 
 **Key files:** `web/src/utils/exportSnapshot.ts`, `web/src/utils/exportSnapshot.test.ts`.

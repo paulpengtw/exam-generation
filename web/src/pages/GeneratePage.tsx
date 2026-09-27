@@ -395,7 +395,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       const batch = captureBatch({
         displayResults,
         evidenceByQuestionId,
-        runId: generationLogId,
+        // v2 run_id is the protocol run id (RunEvidenceState.runId), not the DB log id
+        runId: runEvidence?.runId ?? null,
         exportedAt,
       });
       const filename = batchFilename(batch.hasDraft);
@@ -731,7 +732,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                               subject={subject}
                               livePhaseLabel={livePhaseLabel}
                               requestedTotal={requestedTotal}
-                              runId={generationLogId}
+                              runId={runEvidence?.runId ?? null}
                               {...cardProps}
                             />
                           </AnimatedQuestionCard>
@@ -762,7 +763,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                               : undefined
                           }
                           requestedTotal={requestedTotal}
-                          runId={generationLogId}
+                          runId={null}
                           {...projectGenerationCardEvidence(item)}
                         />
                       </AnimatedQuestionCard>

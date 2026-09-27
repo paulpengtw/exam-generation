@@ -991,3 +991,117 @@ describe("QuestionCard — positionUnknown (issue #750)", () => {
     expect(screen.queryByTestId("question-card-position-unknown")).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Issue #751: snapshot immutability — newer revision after click
+// ---------------------------------------------------------------------------
+
+describe("QuestionCard JSON export snapshot immutability (issue #751)", () => {
+  it("keeps captured revision and exported_at even when evidence changes after click", async () => {
+    const blobs: Blob[] = [];
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockImplementation((blob: Blob) => {
+        blobs.push(blob);
+        return "blob:snap";
+      });
+    const revokeObjectURL = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+
+    const baseQuestion: import("../hooks/useGenerate").ExamQuestion = {
+      id: "qSnap",
+      情境: ["個人"],
+      題型種類: "單一題",
+      題型: "選擇題",
+      題目: ["Revision 3 content"],
+      正確解題分析: ["Answer R3"],
+    };
+
+    const evidence3: import("../lib/generationEvidence").QuestionEvidence = {
+      questionId: "qSnap",
+      index: 0,
+      processing: "ended",
+      content: {
+        receipt: "final",
+        revision: 3,
+        question: baseQuestion,
+        phase: "verified",
+      },
+      terminal: {
+        termination_reason: "normal",
+        has_final: true,
+        final_revision: 3,
+        delivery_status: "complete",
+        expected: [],
+        delivered: [],
+        missing: [],
+        review: { status: "passed", content_revision: 3 },
+      },
+      terminalConflict: false,
+      terminalConflictReason: undefined,
+      reviewConflict: false,
+      contentConflict: false,
+      contentConflictReason: undefined,
+      finalPending: false,
+      finalMissing: false,
+      review: { status: "passed", revision: 3 },
+      trail: [],
+      figurePolicyTrail: [],
+      referenceExampleRecord: undefined,
+      activity: { operations: {}, calls: {} },
+    };
+
+    try {
+      const { rerender } = render(
+        <QuestionCard
+          question={baseQuestion}
+          evidence={evidence3}
+          isFinal={true}
+          runId="run-snap"
+        />,
+      );
+
+      // Click Download JSON — snapshot captured at revision 3
+      fireEvent.click(screen.getByRole("button", { name: "Download JSON" }));
+
+      // Simulate newer revision arriving AFTER click but before Blob is consumed
+      const updatedQuestion = {
+        ...baseQuestion,
+        題目: ["Revision 4 content — should NOT appear in export"],
+      };
+      const evidence4 = {
+        ...evidence3,
+        content: { ...evidence3.content, revision: 4, question: updatedQuestion },
+        terminal: {
+          ...evidence3.terminal!,
+          final_revision: 4,
+        },
+        review: { status: "passed" as const, revision: 4 },
+      };
+      rerender(
+        <QuestionCard
+          question={updatedQuestion}
+          evidence={evidence4}
+          isFinal={true}
+          runId="run-snap"
+        />,
+      );
+
+      // Wait for the blob created by the click action
+      await vi.waitFor(() => expect(blobs).toHaveLength(1));
+
+      const body = JSON.parse(await blobs[0].text()) as Record<string, unknown>;
+      const meta = body._export as Record<string, unknown>;
+
+      // The snapshot must reflect what was captured at click time (revision 3)
+      expect(meta.content_revision).toBe(3);
+      expect(typeof meta.exported_at).toBe("string");
+      // The question text must be revision 3's text, not revision 4
+      expect(body["題目"]).toEqual(["Revision 3 content"]);
+    } finally {
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
+  });
+});

@@ -20,13 +20,45 @@
  */
 
 import type { ExamQuestion } from "../hooks/useGenerate";
-import type { QuestionEvidence, GenerationSlotReference } from "../lib/generationEvidence";
+import type {
+  QuestionEvidence,
+  GenerationSlotReference,
+  QuestionTerminalPayload,
+} from "../lib/generationEvidence";
 import type { GeneratedQuestion } from "../hooks/useGenerate";
 import type { HistoryDetail } from "../api/client";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/** Kind of visible image source captured at click time. */
+export type ImageSourceKind = "png_base64" | "chart_spec_preview" | "known_missing";
+
+/**
+ * A single captured image source for one question/subquestion slot.
+ * Bound to the content revision at the time of capture.
+ * Consumed by ODT export (#752) and rasterization (#753).
+ */
+export interface CapturedImageSource {
+  kind: ImageSourceKind;
+  /** Only for kind === "png_base64": the embedded PNG image data (base64 string). */
+  pngBase64?: string;
+  /** Only for kind === "chart_spec_preview": the chart/image spec for FigureRenderer. */
+  chartSpec?: Record<string, unknown>;
+  /** The content revision this source was captured at; null for legacy/unknown. */
+  contentRevision: number | null;
+}
+
+/**
+ * Frozen visible image sources per position, keyed by slot:
+ * - `"stem"` → top-level question image
+ * - `"sq{序號}"` → per-subquestion image (1-based 序號)
+ *
+ * Only slots that have an image, chart spec, or are known missing are included.
+ * This lives on QuestionSnapshot only; it does NOT appear in the downloaded JSON body.
+ */
+export type CapturedImageSources = Record<string, CapturedImageSource>;
 
 export interface SnapshotReview {
   status: "passed" | "failed" | "skipped" | "unknown";
@@ -60,6 +92,11 @@ export interface QuestionSnapshot {
   isDraft: boolean;
   /** 0-based original index; null = position unknown */
   index: number | null;
+  /**
+   * Frozen visible image sources per position at click time.
+   * Consumed by #752 (ODT) and #753 (rasterization); NOT in the downloaded JSON body.
+   */
+  imageSources: CapturedImageSources;
 }
 
 export interface BatchSnapshot {
@@ -108,6 +145,89 @@ function buildExportMeta(
     missing: params.missing,
     review: params.review,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Image source capture
+// ---------------------------------------------------------------------------
+
+/**
+ * Capture visible image sources from a (deep-copied) question at a given revision.
+ *
+ * Priority per slot:
+ *   1. image_base64 present → "png_base64"
+ *   2. chart_spec present (no image_base64) → "chart_spec_preview"
+ *   3. slot in terminal.missing for kind="image" → "known_missing"
+ *   4. none → slot omitted from result
+ *
+ * IMPORTANT: call this AFTER captureQuestion() so the question is already an
+ * immutable deep copy. Any later mutations to the source question do not affect
+ * the returned sources.
+ *
+ * The `contentRevision` stored on each source binds it to the snapshot revision.
+ * A later image arriving at a different revision is never silently substituted.
+ */
+function captureImageSources(
+  question: ExamQuestion,
+  contentRevision: number | null,
+  terminal: QuestionTerminalPayload | null,
+): CapturedImageSources {
+  const sources: CapturedImageSources = {};
+
+  // Build lookup for missing image slots from terminal.missing
+  // Stem: subquestion_id is absent/null and subquestion_index is absent/null
+  const missingStemImage =
+    terminal?.missing.some(
+      (s) => s.kind === "image" && !s.subquestion_id && !s.subquestion_index,
+    ) ?? false;
+  // Per-subquestion: matched by 1-based subquestion_index (= 序號)
+  const missingSubqIndices = new Set<number>(
+    (terminal?.missing ?? [])
+      .filter(
+        (s): s is GenerationSlotReference & { subquestion_index: number } =>
+          s.kind === "image" && typeof s.subquestion_index === "number",
+      )
+      .map((s) => s.subquestion_index),
+  );
+
+  // --- Stem image ---
+  if (question.image_base64) {
+    sources["stem"] = {
+      kind: "png_base64",
+      pngBase64: question.image_base64,
+      contentRevision,
+    };
+  } else if (question.chart_spec) {
+    sources["stem"] = {
+      kind: "chart_spec_preview",
+      chartSpec: question.chart_spec as Record<string, unknown>,
+      contentRevision,
+    };
+  } else if (missingStemImage) {
+    sources["stem"] = { kind: "known_missing", contentRevision };
+  }
+
+  // --- Per-subquestion images ---
+  for (const sq of question.subquestions ?? []) {
+    const key = `sq${sq.序號}`;
+    if (sq.image_base64) {
+      sources[key] = {
+        kind: "png_base64",
+        pngBase64: sq.image_base64,
+        contentRevision,
+      };
+    } else if (sq.chart_spec) {
+      sources[key] = {
+        kind: "chart_spec_preview",
+        chartSpec: sq.chart_spec as Record<string, unknown>,
+        contentRevision,
+      };
+    } else if (missingSubqIndices.has(sq.序號)) {
+      sources[key] = { kind: "known_missing", contentRevision };
+    }
+  }
+
+  return sources;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +305,8 @@ export function captureFromEvidence(
   });
 
   const exported: ExportedQuestion = { ...captured, _export: exportMeta };
-  return { exported, captured, isDraft, index };
+  const imageSources = captureImageSources(captured, contentRevision, terminal);
+  return { exported, captured, isDraft, index, imageSources };
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +347,8 @@ export function captureFromGeneratedQuestion(
   });
 
   const exported: ExportedQuestion = { ...captured, _export: exportMeta };
-  return { exported, captured, isDraft, index };
+  const imageSources = captureImageSources(captured, contentRevision, null);
+  return { exported, captured, isDraft, index, imageSources };
 }
 
 // ---------------------------------------------------------------------------
