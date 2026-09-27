@@ -1106,3 +1106,149 @@ describe("QuestionCard JSON export snapshot immutability (issue #751)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// (d) Modification eligibility unchanged by ODT/JSON downloads (issue #752 review)
+// ---------------------------------------------------------------------------
+
+describe("QuestionCard — ODT/JSON downloads do not affect modification eligibility (issue #752)", () => {
+  it("final card with recordId: ODT and JSON buttons enabled, modification submit still requires selections", () => {
+    // Regression guard: adding ODT download to QuestionCard must not silently
+    // disable or hide the modification (人工審題修正) submit button.
+    render(<QuestionCard question={ssQuestion} recordId="record-752" isFinal />);
+
+    // Both download buttons must be present and enabled
+    expect(screen.getByRole("button", { name: "Download ODT" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Download JSON" })).not.toBeDisabled();
+
+    // Submit modifications must still be disabled (no annotations yet)
+    expect(screen.getByRole("button", { name: "Submit modifications" })).toBeDisabled();
+  });
+
+  it("draft card: ODT download enabled, no modification submit shown (no recordId)", () => {
+    // Draft cards in the generate flow have no recordId — modification UI
+    // should be absent entirely; the ODT button must still be available.
+    render(<QuestionCard question={ssQuestion} phase="draft" isFinal={false} />);
+
+    expect(screen.getByRole("button", { name: "Download Draft ODT" })).not.toBeDisabled();
+    // No modification section on generate-flow (non-history) cards
+    expect(screen.queryByRole("button", { name: "Submit modifications" })).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (c) ODT snapshot immutability: newer revision after click does not change document
+// ---------------------------------------------------------------------------
+
+describe("QuestionCard ODT snapshot immutability (issue #752)", () => {
+  it("snapshot captured at click time: a new revision arriving after click does not affect the ODT", async () => {
+    // buildOdtFromSnapshotsMock is already wired; capture what snapshots it receives.
+    buildOdtFromSnapshotsMock.mockImplementationOnce(
+      async (_title: string, snapshots: unknown[]) => {
+        // Return a minimal blob — we only check snapshot content, not ZIP bytes
+        return new Blob([JSON.stringify(snapshots)], { type: "application/vnd.oasis.opendocument.text" });
+      },
+    );
+
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockImplementation(() => "blob:odt-immutable");
+    const revokeObjectURL = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+
+    const baseQuestion: import("../hooks/useGenerate").ExamQuestion = {
+      id: "qOdtImmutable",
+      情境: ["個人"],
+      題型種類: "單一題",
+      題型: "選擇題",
+      題目: ["ODT Revision 3 content"],
+      正確解題分析: ["ODT Answer R3"],
+    };
+
+    const baseEvidence: import("../lib/generationEvidence").QuestionEvidence = {
+      questionId: "qOdtImmutable",
+      index: 0,
+      processing: "ended",
+      content: {
+        receipt: "final",
+        revision: 3,
+        question: baseQuestion,
+        phase: "verified",
+      },
+      terminal: {
+        termination_reason: "normal",
+        has_final: true,
+        final_revision: 3,
+        delivery_status: "complete",
+        expected: [],
+        delivered: [],
+        missing: [],
+        review: { status: "passed", content_revision: 3 },
+      },
+      terminalConflict: false,
+      terminalConflictReason: undefined,
+      reviewConflict: false,
+      contentConflict: false,
+      contentConflictReason: undefined,
+      finalPending: false,
+      finalMissing: false,
+      review: { status: "passed", revision: 3 },
+      trail: [],
+      figurePolicyTrail: [],
+      referenceExampleRecord: undefined,
+      activity: { operations: {}, calls: {} },
+    };
+
+    try {
+      const { rerender } = render(
+        <QuestionCard
+          question={baseQuestion}
+          evidence={baseEvidence}
+          isFinal={true}
+          runId="run-odt-snap"
+        />,
+      );
+
+      // Click Download ODT — snapshot captured at revision 3
+      fireEvent.click(screen.getByRole("button", { name: "Download ODT" }));
+
+      // Simulate newer revision arriving AFTER click but before blob is consumed
+      const updatedQuestion = {
+        ...baseQuestion,
+        題目: ["ODT Revision 4 content — should NOT appear"],
+        正確解題分析: ["ODT Answer R4 — should NOT appear"],
+      };
+      const evidence4 = {
+        ...baseEvidence,
+        content: { ...baseEvidence.content, revision: 4, question: updatedQuestion },
+        terminal: { ...baseEvidence.terminal!, final_revision: 4 },
+        review: { status: "passed" as const, revision: 4 },
+      };
+      rerender(
+        <QuestionCard
+          question={updatedQuestion}
+          evidence={evidence4}
+          isFinal={true}
+          runId="run-odt-snap"
+        />,
+      );
+
+      // Wait for buildOdtFromSnapshots to have been called
+      await vi.waitFor(() => expect(buildOdtFromSnapshotsMock).toHaveBeenCalled());
+
+      // Check the snapshots passed to the builder reflect revision 3 (click time)
+      const [, snapshots] = buildOdtFromSnapshotsMock.mock.calls[
+        buildOdtFromSnapshotsMock.mock.calls.length - 1
+      ] as [string, import("../utils/exportSnapshot").QuestionSnapshot[]];
+      expect(snapshots).toHaveLength(1);
+      const snap = snapshots[0];
+      expect(snap.exported._export.content_revision).toBe(3);
+      expect(snap.captured["題目"]).toEqual(["ODT Revision 3 content"]);
+      expect(snap.captured["正確解題分析"]).toEqual(["ODT Answer R3"]);
+    } finally {
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
+  });
+});

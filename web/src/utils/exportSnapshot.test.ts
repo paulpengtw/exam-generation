@@ -29,8 +29,10 @@ import {
   stripExport,
   singleQuestionFilename,
   batchFilename,
+  slotRefSeqno,
   type ExportedQuestion,
 } from "./exportSnapshot";
+import type { GenerationSlotReference } from "../lib/generationEvidence";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -694,5 +696,163 @@ describe("JSON read-back", () => {
     const ev = makeEvidence("my-custom-id-123");
     const snapshot = captureFromEvidence(q, ev, null, "2026-09-27T10:00:00.000Z");
     expect(snapshot!.exported.id).toBe("my-custom-id-123");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// slotRefSeqno — 0-based server slot index → 1-based 序號 conversion
+// ---------------------------------------------------------------------------
+
+describe("slotRefSeqno", () => {
+  const subqs = [
+    { id: "q_001-sq001", 序號: 1 },
+    { id: "q_001-sq002", 序號: 2 },
+    { id: "q_001-sq003", 序號: 3 },
+  ];
+
+  it("resolves slot_index=0 to 序號=1 (not 0)", () => {
+    const slot: GenerationSlotReference = { kind: "subquestion", question_id: "q_001", subquestion_index: 0 };
+    expect(slotRefSeqno(slot)).toBe(1);
+  });
+
+  it("resolves slot_index=1 to 序號=2", () => {
+    const slot: GenerationSlotReference = { kind: "subquestion", question_id: "q_001", subquestion_index: 1 };
+    expect(slotRefSeqno(slot)).toBe(2);
+  });
+
+  it("resolves slot_index=2 to 序號=3", () => {
+    const slot: GenerationSlotReference = { kind: "image", question_id: "q_001", subquestion_index: 2 };
+    expect(slotRefSeqno(slot)).toBe(3);
+  });
+
+  it("returns null for a stem slot (no subquestion_id, no subquestion_index)", () => {
+    const slot: GenerationSlotReference = { kind: "image", question_id: "q_001" };
+    expect(slotRefSeqno(slot)).toBeNull();
+  });
+
+  it("returns null for subquestion_index: null", () => {
+    const slot: GenerationSlotReference = { kind: "subquestion", question_id: "q_001", subquestion_index: null };
+    expect(slotRefSeqno(slot)).toBeNull();
+  });
+
+  it("prefers subquestion_id match over subquestion_index", () => {
+    // subquestion_id matches 序號=3 but subquestion_index=0 would give 序號=1
+    const slot: GenerationSlotReference = {
+      kind: "image",
+      question_id: "q_001",
+      subquestion_id: "q_001-sq003",
+      subquestion_index: 0,
+    };
+    expect(slotRefSeqno(slot, subqs)).toBe(3);
+  });
+
+  it("falls back to subquestion_index+1 when subquestion_id not found in subqs", () => {
+    const slot: GenerationSlotReference = {
+      kind: "image",
+      question_id: "q_001",
+      subquestion_id: "q_001-sq099", // not in list
+      subquestion_index: 1,
+    };
+    expect(slotRefSeqno(slot, subqs)).toBe(2); // falls back to index+1
+  });
+
+  it("returns subquestion_id match even when subqs provided and no index", () => {
+    const slot: GenerationSlotReference = {
+      kind: "image",
+      question_id: "q_001",
+      subquestion_id: "q_001-sq002",
+    };
+    expect(slotRefSeqno(slot, subqs)).toBe(2);
+  });
+
+  it("returns null when subquestion_id is present but no subqs list and no index", () => {
+    const slot: GenerationSlotReference = {
+      kind: "image",
+      question_id: "q_001",
+      subquestion_id: "q_001-sq002",
+    };
+    expect(slotRefSeqno(slot, undefined)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// captureImageSources — slot index → 序號 bug (issue #752 review)
+// ---------------------------------------------------------------------------
+
+describe("captureImageSources — missing image slot resolves to correct 序號", () => {
+  it("subquestion at 序號=3 with slot_index=2 missing image is correctly keyed as sq3", () => {
+    // The terminal carries slot_index=2 (0-based), which must map to 序號=3 (1-based).
+    // Before the fix, missingSubqIndices.has(3) would fail because 2 ≠ 3.
+    const sq3: SubQuestion = {
+      id: "q_001-sq003",
+      序號: 3,
+      年級: 7,
+      科目: ["數學"],
+      題型: "選擇題",
+      題目: "sq3 text",
+      答案: "A",
+      答案解析: "analysis",
+      出題概念: "concept",
+      學習內容: [],
+      學習表現: [],
+      image_base64: undefined as unknown as string,
+      chart_spec: undefined as unknown as Record<string, unknown>,
+    };
+
+    const question: ExamQuestion = {
+      id: "q_001",
+      情境: ["個人"],
+      題型種類: "題組題",
+      題型: "選擇題",
+      核心問題: "Core?",
+      文本: "Text",
+      取材來源: [],
+      subquestions: [sq3],
+      題目: [],
+      正確解題分析: [],
+    };
+
+    const terminal = {
+      question_id: "q_001",
+      termination_reason: "normal" as const,
+      has_final: true,
+      final_revision: 1,
+      delivery_status: "partial" as const,
+      missing: [
+        {
+          kind: "image" as const,
+          question_id: "q_001",
+          subquestion_index: 2,   // 0-based slot index for 第3小題
+          subquestion_id: null,
+        },
+      ],
+      review: { status: "unknown" as const, content_revision: null, unknown_reason: undefined },
+    };
+
+    const ev: QuestionEvidence = {
+      questionId: "q_001",
+      index: 0,
+      processing: "ended",
+      content: { receipt: "final", revision: 1, question, phase: "verified" },
+      terminal,
+      finalPending: false,
+      finalMissing: false,
+      review: { status: "unknown", revision: null },
+      trail: [],
+      figurePolicyTrail: [],
+      referenceExampleRecord: undefined,
+    };
+
+    const exportedAt = "2026-09-27T10:00:00.000Z";
+    const snapshot = captureFromEvidence(question, ev, null, exportedAt);
+    expect(snapshot).not.toBeNull();
+    // sq3 (序號=3) should have a known_missing image source keyed as "sq3"
+    expect(snapshot!.imageSources["sq3"]).toEqual({
+      kind: "known_missing",
+      contentRevision: 1,
+    });
+    // sq1 and sq2 were never in the question, no keys for them
+    expect(snapshot!.imageSources["sq1"]).toBeUndefined();
+    expect(snapshot!.imageSources["sq2"]).toBeUndefined();
   });
 });

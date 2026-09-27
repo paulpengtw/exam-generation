@@ -2,6 +2,7 @@ import JSZip from "jszip";
 
 import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
 import type { QuestionSnapshot, CapturedImageSources } from "./exportSnapshot";
+import { slotRefSeqno } from "./exportSnapshot";
 
 export function formatTimestamp(): string {
   const now = new Date();
@@ -564,14 +565,20 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
         const receivedSubqs = (question.subquestions ?? []).filter(
           (sub) => !isInteractiveSubQuestion(sub as SubQuestion)
         );
-        const missingSubqIndices = new Set<number>(
+        // Resolve missing-subquestion slots to 1-based 序號 using the shared helper.
+        // Server stores subquestion_index as 0-based; 序號 = slot_index + 1.
+        // subquestion_id is preferred when present (falls back to index+1).
+        const missingSubqSeqnos = new Set<number>(
           meta.missing
-            .filter((s) => s.kind === "subquestion" && typeof s.subquestion_index === "number")
-            .map((s) => s.subquestion_index as number)
+            .filter((s) => s.kind === "subquestion")
+            .flatMap((s) => {
+              const seqno = slotRefSeqno(s, receivedSubqs);
+              return seqno !== null ? [seqno] : [];
+            })
         );
         // All 序號 values (received + missing), sorted
         const receivedIndices = new Set(receivedSubqs.map((s) => s.序號));
-        const allIndices = [...new Set([...receivedIndices, ...missingSubqIndices])].sort(
+        const allIndices = [...new Set([...receivedIndices, ...missingSubqSeqnos])].sort(
           (a, b) => a - b
         );
         const subqByIndex = new Map(receivedSubqs.map((s) => [s.序號, s as SubQuestion]));

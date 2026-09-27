@@ -269,13 +269,15 @@ describe("buildOdtFromSnapshots — text-only 題組", () => {
       核心問題: "文本型核心問題",
       文本: "文本內容",
     });
-    // The missing list identifies that subquestion slots are missing
+    // The missing list identifies that subquestion slots are missing.
+    // subquestion_index is 0-based (server protocol); 序號 = index + 1.
+    // slot 0 → 缺小題 1, slot 1 → 缺小題 2.
     const snapshot = makeSnapshot(q, {
       is_draft: true,
       delivery_status: "partial",
       missing: [
+        { kind: "subquestion", question_id: "q-text-only", subquestion_index: 0 },
         { kind: "subquestion", question_id: "q-text-only", subquestion_index: 1 },
-        { kind: "subquestion", question_id: "q-text-only", subquestion_index: 2 },
       ],
     });
     const blob = await buildOdtFromSnapshots("test", [snapshot]);
@@ -300,9 +302,11 @@ describe("buildOdtFromSnapshots — subquestion number gaps", () => {
     const sq1 = makeSubQuestion(1);
     const sq3 = makeSubQuestion(3);
     const q = makeGroupQuestion("q-gap", [sq1, sq3]);
+    // subquestion_index is 0-based; slot 1 (0-based) → 序號 2 (1-based).
+    // Delivered are sq1 (序號=1) and sq3 (序號=3); the gap is at 序號=2.
     const snapshot = makeSnapshot(q, {
       missing: [
-        { kind: "subquestion", question_id: "q-gap", subquestion_index: 2 },
+        { kind: "subquestion", question_id: "q-gap", subquestion_index: 1 },
       ],
     });
     const blob = await buildOdtFromSnapshots("test", [snapshot]);

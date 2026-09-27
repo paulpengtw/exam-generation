@@ -108,6 +108,42 @@ export interface BatchSnapshot {
 }
 
 // ---------------------------------------------------------------------------
+// Shared slot-reference conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves a GenerationSlotReference to a 1-based subquestion 序號.
+ *
+ * The server stores slot positions as 0-based `subquestion_index` (validated
+ * `>= 0` in `event_protocol.py`).  Subquestion objects always carry a 1-based
+ * `序號` field (= slot_index + 1).  **Never compare a raw `subquestion_index`
+ * value directly to a `序號`** — use this helper instead.
+ *
+ * Resolution priority:
+ *  1. `subquestion_id` present AND a matching subquestion found in `subquestions`
+ *     → return that subquestion's `序號`.
+ *  2. `subquestion_index` is a non-negative integer
+ *     → return `subquestion_index + 1`.
+ *  3. Neither present / matching → return `null` (stem-level or unresolvable slot).
+ *
+ * Used by both `captureImageSources` and `odt.ts` so the 0-based→1-based
+ * conversion is never duplicated or done ad-hoc.
+ */
+export function slotRefSeqno(
+  slot: GenerationSlotReference,
+  subquestions?: ReadonlyArray<{ id?: string; 序號: number }>,
+): number | null {
+  if (slot.subquestion_id && subquestions) {
+    const match = subquestions.find((sq) => sq.id === slot.subquestion_id);
+    if (match !== undefined) return match.序號;
+  }
+  if (typeof slot.subquestion_index === "number" && slot.subquestion_index >= 0) {
+    return slot.subquestion_index + 1;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -178,16 +214,19 @@ function captureImageSources(
   // Stem: subquestion_id is absent/null and subquestion_index is absent/null
   const missingStemImage =
     terminal?.missing.some(
-      (s) => s.kind === "image" && !s.subquestion_id && !s.subquestion_index,
+      (s) => s.kind === "image" && !s.subquestion_id && s.subquestion_index == null,
     ) ?? false;
-  // Per-subquestion: matched by 1-based subquestion_index (= 序號)
-  const missingSubqIndices = new Set<number>(
+  // Per-subquestion missing images: resolve to 1-based 序號 via slotRefSeqno
+  // so 0-based server slot indices are never directly compared to 1-based 序號.
+  // subquestion_id is preferred when present; subquestion_index+1 is the fallback.
+  const subqs = question.subquestions;
+  const missingSubqSeqnos = new Set<number>(
     (terminal?.missing ?? [])
-      .filter(
-        (s): s is GenerationSlotReference & { subquestion_index: number } =>
-          s.kind === "image" && typeof s.subquestion_index === "number",
-      )
-      .map((s) => s.subquestion_index),
+      .filter((s) => s.kind === "image" && (s.subquestion_id != null || s.subquestion_index != null))
+      .flatMap((s) => {
+        const seqno = slotRefSeqno(s, subqs);
+        return seqno !== null ? [seqno] : [];
+      }),
   );
 
   // --- Stem image ---
@@ -222,7 +261,7 @@ function captureImageSources(
         chartSpec: sq.chart_spec as Record<string, unknown>,
         contentRevision,
       };
-    } else if (missingSubqIndices.has(sq.序號)) {
+    } else if (missingSubqSeqnos.has(sq.序號)) {
       sources[key] = { kind: "known_missing", contentRevision };
     }
   }

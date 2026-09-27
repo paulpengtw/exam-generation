@@ -142,20 +142,41 @@ describe("ODT acceptance — math_groups_interleaved.jsonl", () => {
     expect(xml).toContain("處理：已結束");
   });
 
-  it("(a2) q_RUN_001 (2 received 小題, 1 missing) shows both received subquestions", async () => {
+  it("(a2) q_RUN_001: received 小題 1 and 3, missing slot_index=1 → ODT shows 第1題, 【缺小題 2】, 第3題", async () => {
+    // The terminal lists missing = [{kind:"subquestion", subquestion_index:1, subquestion_id:"q_RUN_001-sq002"}].
+    // slot_index=1 (0-based) must map to 序號=2 (1-based) via slotRefSeqno.
+    // Before the fix, raw index 1 was merged with delivered 序號=1, making the
+    // missing marker disappear and the order become [1,3] instead of [1,2,3].
     const snaps = buildSnapshots();
     const snap001 = snaps.find((s) => s.exported.id === "q_RUN_001");
     expect(snap001).toBeDefined();
+    // Confirm fixture data: delivered 序號 = 1 and 3, missing subquestion_index=1
+    const missing = snap001!.exported._export.missing;
+    expect(missing.some((s) => s.kind === "subquestion" && s.subquestion_index === 1)).toBe(true);
+    const deliveredSeqnos = (snap001!.exported.subquestions ?? []).map((s) => s.序號);
+    expect(deliveredSeqnos).toContain(1);
+    expect(deliveredSeqnos).toContain(3);
 
     const blob = await buildOdtFromSnapshots("test", [snap001!]);
     const xml = await readContentXml(blob);
 
-    // Should render as 題組 (has subquestions)
+    // Must render as 題組 (has subquestions)
     expect(xml).toContain("文本 A");
     expect(xml).toContain("核心問題 A");
-    // Both delivered subquestions should appear
+    // Both delivered subquestions must appear
     expect(xml).toContain("第1題");
     expect(xml).toContain("第3題");
+    // The missing 第2小題 marker must appear at the correct ordinal position
+    // (between 第1題 and 第3題).
+    expect(xml).toContain("缺小題 2");
+    // The missing marker must NOT be confused with 第1題 (old bug: raw index 1
+    // collided with delivered 序號=1, hiding the gap entirely).
+    const pos1 = xml.indexOf("第1題");
+    const posMissing2 = xml.indexOf("缺小題 2");
+    const pos3 = xml.indexOf("第3題");
+    expect(pos1).toBeGreaterThan(-1);
+    expect(posMissing2).toBeGreaterThan(pos1);
+    expect(pos3).toBeGreaterThan(posMissing2);
   });
 
   it("(a3) q_RUN_002 (3 received 小題, 0 missing) shows all subquestions", async () => {
