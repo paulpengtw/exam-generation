@@ -33,14 +33,6 @@ const CHART_SPEC_TABLE: Record<string, unknown> = {
   },
 };
 
-/** A valid scenario card spec (classifySpec returns "scenario_card"). */
-const CHART_SPEC_SCENARIO: Record<string, unknown> = {
-  render_mode: "html",
-  description: "情境卡：早餐菜單",
-  data: {
-    items: ["豆漿 35元", "燒餅 20元"],
-  },
-};
 
 /** Build a minimal QuestionSnapshot for testing. */
 function makeSnap(opts: {
@@ -167,7 +159,6 @@ async function t3_build_odt_with_chart_spec(): Promise<{
   const zip = await JSZip.loadAsync(buf);
   const contentXml = zip.file("content.xml");
   const hasPng = Object.keys(zip.files).some((name) => name.endsWith(".png"));
-  const xml = await contentXml!.async("string");
   return {
     ok: true,
     hasContentXml: !!contentXml,
