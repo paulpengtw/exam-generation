@@ -1,12 +1,28 @@
 import type { StageEvent } from "../hooks/useGenerate";
 import type { ModificationStageEvent } from "./modificationStream";
 
-export type EvidenceProfile = "generate-v2" | "generate-legacy" | "modification";
+export type EvidenceProfile = "generate-v2" | "generate-legacy" | "generate-legacy-adapter" | "modification";
 
 export type GenerationLegacyEvidence = {
   profile: "generate-legacy";
   stageEvents: readonly StageEvent[];
   subQuestionCount: number | null;
+};
+
+/**
+ * Evidence profile for the C1×S0 legacy stream adapter (issue #750).
+ * The new client received an old-server stream and is storing items via
+ * the legacyAdapter state machine; server-confirmed manifest totals are
+ * absent and per-question progress is unavailable.
+ */
+export type GenerationLegacyAdapterEvidence = {
+  profile: "generate-legacy-adapter";
+  /** From the generate request params.count; never a server-confirmed count. */
+  requestTotal: number | null;
+  /** Number of unique final results received so far. */
+  finalCount: number;
+  /** True once a "done" event has been received. */
+  done: boolean;
 };
 
 export type ModificationEvidence = {
@@ -40,4 +56,4 @@ export type GenerationV2Evidence = {
   legacyMixed: boolean;
 };
 
-export type RunEvidence = GenerationLegacyEvidence | ModificationEvidence | GenerationV2Evidence;
+export type RunEvidence = GenerationLegacyEvidence | GenerationLegacyAdapterEvidence | ModificationEvidence | GenerationV2Evidence;

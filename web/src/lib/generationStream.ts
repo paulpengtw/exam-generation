@@ -6,15 +6,17 @@ import type {
   ReferenceExampleRecordShape,
   VerificationTrailEntry,
 } from "../hooks/useGenerate";
-import type { GenerationLegacyEvidence, GenerationV2Evidence } from "./runEvidence";
+import type { GenerationLegacyAdapterEvidence, GenerationLegacyEvidence, GenerationV2Evidence } from "./runEvidence";
 import type { RunEvidenceState } from "./generationEvidence";
 import { selectEndedCount, selectFinalReceivedCount, selectConflictCount } from "./generationEvidence";
+import type { LegacyAdapterState } from "./legacyAdapter";
 
 export function projectGenerationEvidence(
   llmCalls: readonly LlmCallEvent[],
   subQuestionCount: number | null,
   v2Evidence?: RunEvidenceState | null,
-): GenerationLegacyEvidence | GenerationV2Evidence {
+  legacyAdapter?: LegacyAdapterState | null,
+): GenerationLegacyEvidence | GenerationV2Evidence | GenerationLegacyAdapterEvidence {
   if (v2Evidence) {
     return {
       profile: "generate-v2",
@@ -26,6 +28,14 @@ export function projectGenerationEvidence(
       conflictCount: selectConflictCount(v2Evidence),
       batchConflict: v2Evidence.batchConflict,
       legacyMixed: v2Evidence.legacyMixed,
+    };
+  }
+  if (legacyAdapter !== null && legacyAdapter !== undefined) {
+    return {
+      profile: "generate-legacy-adapter",
+      requestTotal: legacyAdapter.requestTotal,
+      finalCount: legacyAdapter.finalCount,
+      done: legacyAdapter.done,
     };
   }
   return {

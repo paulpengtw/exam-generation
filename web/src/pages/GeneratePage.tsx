@@ -136,6 +136,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     restoreResults: restoreSavedResults,
     reset,
     evidence: runEvidence,
+    legacyAdapter: legacyAdapterState,
   } = useGenerate();
   // Recovery must be resolved before ParamForm mounts. Otherwise its schema,
   // model, draft, and default effects can observe an empty form and replace a
@@ -247,8 +248,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       llmCalls,
       submittedSubQuestionCount ?? subQuestionTotal,
       runEvidence,
+      legacyAdapterState,
     ),
-    [llmCalls, runEvidence, submittedSubQuestionCount, subQuestionTotal],
+    [llmCalls, runEvidence, submittedSubQuestionCount, subQuestionTotal, legacyAdapterState],
   );
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -732,6 +734,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                         <QuestionCard
                           question={item.question}
                           subject={subject}
+                          positionUnknown={item.positionUnknown}
                           livePhaseLabel={
                             status === "generating" &&
                             requestedTotal > 1 &&

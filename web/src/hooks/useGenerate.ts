@@ -11,6 +11,12 @@ import type { GenerateParams } from "../api/generated/contract";
 import { MESSAGES } from "../i18n/messages";
 import { createGenerationStreamDecoder, SEQ_BUFFER_MAX_AGE_MS } from "../lib/generationStream";
 import {
+  createLegacyAdapter,
+  applyLegacyEvent,
+  selectLegacyItems,
+  type LegacyAdapterState,
+} from "../lib/legacyAdapter";
+import {
   createRunEvidence,
   applyV2Event,
   applyDegraded,
@@ -280,6 +286,12 @@ export interface GeneratedQuestion {
   trail?: VerificationTrailEntry[];
   figurePolicyTrail?: FigurePolicyTrailEntry[];
   referenceExampleRecord?: ReferenceExampleRecordShape;
+  /**
+   * True when the original batch position could not be resolved.
+   * Set for legacy-adapter items that have no consistent index↔id evidence.
+   * UI should show "原題序未知" instead of "第 N 題" for these items.
+   */
+  positionUnknown?: boolean;
 }
 
 interface LlmIdentity {
@@ -340,6 +352,13 @@ export interface UseGenerateReturn {
   results: ExamQuestion[];
   displayResults: GeneratedQuestion[];
   evidence: RunEvidenceState | null;
+  /**
+   * C1×S0 legacy adapter state (issue #750). Non-null when the decoder is in
+   * legacy mode AND a "started" event has been received for this run.
+   * Used by GeneratePage to build GenerationLegacyAdapterEvidence for the
+   * status bar, and by tests to inspect the adapter state directly.
+   */
+  legacyAdapter: LegacyAdapterState | null;
   llmCalls: LlmCallEvent[];
   agentLanes: AgentLane[];
   errorMessage: string | null;
@@ -633,6 +652,8 @@ export function useGenerate(): UseGenerateReturn {
   const [subQuestionTotal, setSubQuestionTotal] = useState<number | null>(null);
   const [resultsCompletion, setResultsCompletion] = useState<ResultsCompletion | null>(null);
   const [terminalEvidence, setTerminalEvidence] = useState(false);
+  const [legacyAdapter, setLegacyAdapter] = useState<LegacyAdapterState | null>(null);
+  const legacyAdapterRef = useRef<LegacyAdapterState | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const gapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextFinalIndexRef = useRef(0);
@@ -699,6 +720,8 @@ export function useGenerate(): UseGenerateReturn {
     setSubQuestionTotal(null);
     setResultsCompletion(null);
     setTerminalEvidence(false);
+    setLegacyAdapter(null);
+    legacyAdapterRef.current = null;
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
@@ -771,12 +794,46 @@ export function useGenerate(): UseGenerateReturn {
     setGenerationLogId(null);
     setSubQuestionTotal(null);
     startedRef.current = false;
+    legacyAdapterRef.current = null;
     nextFinalIndexRef.current = 0;
     trailByQuestionRef.current.clear();
     figurePolicyTrailByQuestionRef.current.clear();
     referenceExampleEntriesByQuestionRef.current.clear();
     terminalQuestionKeysRef.current.clear();
     expectedQuestionTotalRef.current = typeof params.count === "number" ? params.count : null;
+
+    /**
+     * Rebuild displayResults and results from the current legacy adapter state.
+     * Called after every question_update or result event in legacy-adapter mode.
+     * Items with resolvedIndex get their 0-based index; items without get a sentinel
+     * (10000+ordinal) so they sort to the end, and positionUnknown is set to true.
+     */
+    function rebuildDisplayResultsFromAdapter(adapterState: LegacyAdapterState) {
+      const items = selectLegacyItems(adapterState);
+      const newDisplay: GeneratedQuestion[] = items.map((item, ordinalPosition) => {
+        const sentinelIndex = 10000 + ordinalPosition;
+        const effectiveIndex = item.resolvedIndex ?? sentinelIndex;
+        const laneKey = item.id; // opaque id used as trail map key
+        const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
+        return {
+          index: effectiveIndex,
+          question: item.question,
+          phase: item.phase,
+          isFinal: item.isFinal,
+          stableId: item.id,
+          contentRevision: item.contentRevision,
+          trail: trailByQuestionRef.current.get(laneKey) ?? [],
+          figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
+          referenceExampleRecord: refEntries
+            ? { disabled: false, entries: refEntries }
+            : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
+          positionUnknown: item.resolvedIndex === null ? true : undefined,
+        };
+      });
+      setDisplayResults(newDisplay);
+      const newResults = items.filter((item) => item.isFinal).map((item) => item.question);
+      setResults(newResults);
+    }
 
     // ---------------------------------------------------------------------------
     // V2 event handler — routes decoded v2 events to evidence + llmCalls
@@ -1072,6 +1129,12 @@ export function useGenerate(): UseGenerateReturn {
             const payload = parseStartedEventData(data);
             if (payload) setGenerationLogId(payload.generation_log_id);
           }
+          // Initialize legacy adapter for C1×S0 compatibility (issue #750)
+          {
+            const adapter = createLegacyAdapter(paramsRef.current?.count ?? null);
+            legacyAdapterRef.current = adapter;
+            setLegacyAdapter(adapter);
+          }
           break;
         case "progress":
           setProgressLines((prev) => [...prev, data]);
@@ -1163,6 +1226,17 @@ export function useGenerate(): UseGenerateReturn {
           // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
           break;
         case "question_update": {
+          // Legacy-adapter mode (C1×S0, issue #750): route through adapter
+          if (legacyAdapterRef.current) {
+            try {
+              const nextAdapter = applyLegacyEvent(legacyAdapterRef.current, "question_update", data);
+              legacyAdapterRef.current = nextAdapter;
+              setLegacyAdapter(nextAdapter);
+              rebuildDisplayResultsFromAdapter(nextAdapter);
+            } catch { /* ignore malformed updates */ }
+            break;
+          }
+          // Legacy fallback (no adapter yet, e.g. pre-started events in tests)
           try {
             const parsed = JSON.parse(data) as {
               index: number;
@@ -1245,6 +1319,17 @@ export function useGenerate(): UseGenerateReturn {
           } catch { /* legacy streams may not send JSON terminal envelopes */ }
           break;
         case "result":
+          // Legacy-adapter mode (C1×S0, issue #750): route through adapter
+          if (legacyAdapterRef.current) {
+            try {
+              const nextAdapter = applyLegacyEvent(legacyAdapterRef.current, "result", data);
+              legacyAdapterRef.current = nextAdapter;
+              setLegacyAdapter(nextAdapter);
+              rebuildDisplayResultsFromAdapter(nextAdapter);
+            } catch { /* ignore malformed results */ }
+            break;
+          }
+          // Legacy fallback (no adapter yet, e.g. pre-started events in tests)
           try {
             const raw = JSON.parse(data) as ExamQuestion & {
               stable_id?: string;
@@ -1290,6 +1375,12 @@ export function useGenerate(): UseGenerateReturn {
           endOperation("failed");
           break;
         case "done": {
+          // Update legacy adapter with "done" event if active
+          if (legacyAdapterRef.current) {
+            const doneAdapter = applyLegacyEvent(legacyAdapterRef.current, "done", data);
+            legacyAdapterRef.current = doneAdapter;
+            setLegacyAdapter(doneAdapter);
+          }
           const expected = expectedQuestionTotalRef.current;
           const hasTerminalEvidence = expected === null
             ? terminalQuestionKeysRef.current.size > 0
@@ -1538,6 +1629,7 @@ export function useGenerate(): UseGenerateReturn {
     results,
     displayResults,
     evidence,
+    legacyAdapter,
     llmCalls,
     agentLanes,
     errorMessage,

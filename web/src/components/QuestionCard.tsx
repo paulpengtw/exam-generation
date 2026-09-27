@@ -51,6 +51,13 @@ export interface QuestionCardProps {
   question?: ExamQuestion;
   /** Manifest position index (0-based); required when evidence is provided */
   index?: number;
+  /**
+   * When true the original batch position could not be resolved.
+   * The card shows "原題序未知" instead of "第 N 題".
+   * Set by the C1×S0 legacy adapter (issue #750) for items with no consistent
+   * index↔id evidence.
+   */
+  positionUnknown?: boolean;
   /** Per-question evidence from the v2 stream */
   evidence?: QuestionEvidence;
   recordId?: string;
@@ -684,6 +691,7 @@ function QuestionActivityPanel({ evidence }: { evidence: QuestionEvidence }) {
 export default function QuestionCard({
   question: initialQuestion,
   index,
+  positionUnknown,
   evidence,
   recordId,
   route,
@@ -950,9 +958,11 @@ export default function QuestionCard({
 
   // Placeholder: evidence provided but no content yet
   if (evidence && evidence.content.receipt === "none") {
-    const posLabel = index !== undefined
-      ? (t("card.position") as string).replace("{n}", String(index + 1))
-      : `${index ?? ""}`;
+    const posLabel = positionUnknown
+      ? (t("card.position_unknown") as string)
+      : index !== undefined
+        ? (t("card.position") as string).replace("{n}", String(index + 1))
+        : `${index ?? ""}`;
     const procLabel = processingLabel(evidence.processing, t);
     return (
       <div
@@ -1070,6 +1080,15 @@ export default function QuestionCard({
     >
       {evidence && <EvidenceStatusLine evidence={evidence} />}
       {evidence && <QuestionActivityPanel evidence={evidence} />}
+      {/* Position label for legacy-adapter items (issue #750) */}
+      {positionUnknown && (
+        <div
+          data-testid="question-card-position-unknown"
+          className="text-sm font-medium text-amber-600 dark:text-amber-400"
+        >
+          {t("card.position_unknown") as string}
+        </div>
+      )}
       {recordId && (
         <ModificationParticipation
           route={route ?? window.location.pathname}
