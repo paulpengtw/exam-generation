@@ -30,6 +30,11 @@ import { Spinner } from "../motion/Indicators";
 import { MotionDisclosure } from "../motion/MotionDisclosure";
 import { recordFigureFallback } from "../utils/figureFallbackMetric";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
+import {
+  captureFromEvidence,
+  captureFromGeneratedQuestion,
+  singleQuestionFilename,
+} from "../utils/exportSnapshot";
 import FigureRenderer, {
   classifySpec,
   isFrontendTsEnabled,
@@ -74,6 +79,8 @@ export interface QuestionCardProps {
   onInteractionSubmit?: (submission: InteractionSubmission) => void;
   recoveredModification?: ModificationWorkspaceSnapshot;
   modificationRestoreEligible?: boolean;
+  /** Run id (generation_log_id) for snapshot _export metadata */
+  runId?: string | null;
 }
 
 interface VerificationShape {
@@ -706,6 +713,7 @@ export default function QuestionCard({
   onInteractionSubmit,
   recoveredModification,
   modificationRestoreEligible,
+  runId = null,
 }: QuestionCardProps) {
   const t = useT();
   const showLivePhase = livePhaseLabel !== undefined && !isFinal && requestedTotal > 1;
@@ -890,9 +898,27 @@ export default function QuestionCard({
   const jsonFeedback = useActionFeedback({
     action: async () => {
       if (!_question) throw new Error("Question is not available");
-      const filename = `${getQuestionId(_question)}.json`;
+      const exportedAt = new Date().toISOString();
+      // Atomically capture the snapshot at click time
+      const snapshot = evidence
+        ? captureFromEvidence(_question, evidence, runId ?? null, exportedAt)
+        : captureFromGeneratedQuestion(
+            {
+              index: typeof index === "number" ? index : 0,
+              question: _question,
+              phase,
+              isFinal,
+              stableId: _question.id ?? undefined,
+              contentRevision: null,
+            },
+            runId ?? null,
+            exportedAt,
+          );
+      const exportedQuestion = snapshot?.exported ?? _question;
+      const isDraftExport = snapshot ? snapshot.isDraft : !isFinal;
+      const filename = singleQuestionFilename(getQuestionId(_question), isDraftExport);
       await runExportOperation("export_json", () => {
-        const json = JSON.stringify(_question, null, 2);
+        const json = JSON.stringify(exportedQuestion, null, 2);
         downloadBlob(new Blob([json], { type: "application/json" }), filename);
       });
       return filename;
@@ -1455,10 +1481,9 @@ export default function QuestionCard({
       <div className="flex flex-wrap gap-2 pt-1">
         <ActionButton
           feedback={jsonFeedback}
-          label={t("card.download_json")}
+          label={isFinal ? t("card.download_json") : t("card.download_json_draft")}
           pendingLabel={t("action.downloading")}
           doneLabel={t("action.downloaded")}
-          disabled={!isFinal}
           className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
         />
         {question.image_base64 && (

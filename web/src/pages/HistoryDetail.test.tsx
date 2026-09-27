@@ -78,7 +78,8 @@ function LocationSpy() {
 }
 
 describe("HistoryDetail", () => {
-  it("renders the stored question and calls the download API", async () => {
+  it("renders the stored question and downloads via snapshot when question_json is available", async () => {
+    // issue #751: history download uses snapshot path when question_json is present
     getDetailMock.mockResolvedValueOnce({
       id: "abc",
       subject: "social_studies",
@@ -86,31 +87,48 @@ describe("HistoryDetail", () => {
       created_at: "2026-07-15T00:00:00Z",
       params_json: { subject: "social_studies", grade: 8 },
       question_json: { id: "ss_1", 核心問題: "核心" },
+      generation_log_id: "log-abc",
     });
-    downloadMock.mockResolvedValueOnce(new Blob(["{}"], { type: "application/json" }));
 
-    render(
-      <MemoryRouter initialEntries={["/history/abc"]}>
-        <Routes>
-          <Route path="/history/:id" element={<HistoryDetail recordId="abc" />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:history-snap");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
 
-    await waitFor(() => expect(screen.getByTestId("qc")).toHaveTextContent("ss_1"));
+    try {
+      render(
+        <MemoryRouter initialEntries={["/history/abc"]}>
+          <Routes>
+            <Route path="/history/:id" element={<HistoryDetail recordId="abc" />} />
+          </Routes>
+        </MemoryRouter>,
+      );
 
-    fireEvent.click(screen.getByRole("button", { name: /Download JSON/i }));
-    await waitFor(() => expect(downloadMock).toHaveBeenCalledWith("abc", expect.any(AbortSignal)));
+      await waitFor(() => expect(screen.getByTestId("qc")).toHaveTextContent("ss_1"));
+
+      const downloadBtn = screen.getByRole("button", { name: /Download JSON/i });
+      fireEvent.click(downloadBtn);
+      // Snapshot path: does NOT call the API download endpoint
+      await waitFor(() =>
+        expect(downloadBtn).toHaveAttribute("data-action-state", "done"),
+      );
+      expect(downloadMock).not.toHaveBeenCalled();
+      // Blob was created with the snapshot JSON
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+    } finally {
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
   });
 
-  it("surfaces a history JSON download failure on the pressed control", async () => {
+  it("falls back to API endpoint and surfaces failure when question_json is null", async () => {
+    // issue #751: fall back to server endpoint when question_json is absent
     getDetailMock.mockResolvedValueOnce({
       id: "failed-download",
       subject: "math",
       question_id: "q-failed-download",
       created_at: "2026-07-15T00:00:00Z",
       params_json: {},
-      question_json: { id: "q-failed-download" },
+      question_json: null, // no question_json → falls back to API
+      generation_log_id: null,
     });
     downloadMock.mockRejectedValueOnce(new Error("network details"));
 
@@ -122,7 +140,9 @@ describe("HistoryDetail", () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => expect(screen.getByTestId("qc")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Download JSON/i })).not.toBeDisabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: /Download JSON/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(

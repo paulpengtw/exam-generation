@@ -20,6 +20,7 @@ import {
   getHistoryDetail,
   type HistoryDetail as HistoryDetailPayload,
 } from "../api/client";
+import { captureFromHistory } from "../utils/exportSnapshot";
 import { useAuthStore } from "../store/authStore";
 import {
   initRecoveryStore,
@@ -177,6 +178,18 @@ function HistoryDetailContent({
     action: async (signal) => {
       if (!detail || !canDownload) throw new Error("History record is not available");
       const filename = `${detail.question_id || detail.id}.json`;
+      // Use snapshot when question_json is available so the downloaded copy
+      // gets _export metadata (issue #751). Fall back to the server endpoint
+      // for records where question_json is absent (rare legacy edge case).
+      if (detail.question_json) {
+        const exportedAt = new Date().toISOString();
+        const exported = captureFromHistory(detail, exportedAt);
+        if (exported) {
+          const json = JSON.stringify(exported, null, 2);
+          saveBlob(new Blob([json], { type: "application/json" }), filename);
+          return filename;
+        }
+      }
       const blob = await downloadHistoryJson(detail.id, signal);
       saveBlob(blob, filename);
       return filename;

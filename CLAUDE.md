@@ -202,6 +202,43 @@ Key files:
 - `web/src/hooks/useGenerate.ts`: adapter initialized at `generate()` start; `question_update`/`result` always route through adapter; `legacyAdapter: LegacyAdapterState | null` exposed in `UseGenerateReturn`; `nextFinalIndexRef` removed.
 - `web/src/i18n/messages.ts`: `stream.legacy_no_per_question_progress`, `card.position_unknown`, `statusbar.legacy_request_total` in both `en-US` and `zh-TW`.
 
+### Snapshot export — JSON (issue #751)
+
+`web/src/utils/exportSnapshot.ts` (capability `question-snapshot-export`) provides atomic, click-time snapshots for single-question, batch, and history JSON downloads. All three surfaces share the same immutable snapshot contract.
+
+**`_export` schema (format_version: 1, `exam-generation.question-snapshot-export/1`):**
+- `format_version: 1` — always 1 for this revision.
+- `exported_at` — ISO 8601 UTC timestamp frozen at click time; identical for all items in a batch.
+- `is_draft: boolean` — true when `content.receipt === "draft"` (v2 evidence) or `isFinal === false` (legacy item). A final with unknown terminal stays `is_draft: false`.
+- `run_id: string | null` — from `generationLogId` / `generation_log_id`; null for legacy or old data.
+- `index: number | null` — 0-based original batch position; null for unknown-order legacy items.
+- `content_revision: number | null` — content version from evidence; null for legacy/history.
+- `processing` — `"waiting" | "running" | "ended" | "unknown"`.
+- `termination_reason` — from terminal payload; null when no terminal received.
+- `delivery_status` — from terminal payload; null when no terminal received.
+- `missing: GenerationSlotReference[]` — from terminal.missing; empty when unknown.
+- `review.status` — matched to the current content_revision; `"unknown"` with `unknown_reason: "review_revision_mismatch"` when revision doesn't match.
+
+**Capture rules:**
+- Bodyless placeholders (`receipt === "none"`) are excluded from batch exports.
+- Batch ordering: by known index ascending; `positionUnknown` items sort last, stable by original array order.
+- `stripExport(exported)` removes `_export` and restores the original captured question.
+- Live/stored questions are never mutated.
+- History records always get `is_draft: false`, `processing: "ended"`, `termination_reason: "normal"`, `delivery_status: "complete"`.
+
+**Filename conventions:**
+- Single draft: `草稿_{questionId}.json`
+- Single final: `{questionId}.json`
+- Batch with any draft: `含草稿_batch_{timestamp}.json`
+- Batch all final: `batch_{timestamp}.json`
+
+**Component wiring:**
+- `QuestionCard`: `runId` prop added; JSON export enabled for drafts (shows "Download Draft JSON"); uses `captureFromEvidence` (v2) or `captureFromGeneratedQuestion` (legacy/history) for the snapshot.
+- `GeneratePage`: batch JSON export uses `captureBatch`; `generationLogId` is passed as `runId` to each `QuestionCard`.
+- `HistoryDetail`: JSON download uses `captureFromHistory` when `detail.question_json` is present; falls back to server endpoint only when `question_json` is null.
+
+**Key files:** `web/src/utils/exportSnapshot.ts`, `web/src/utils/exportSnapshot.test.ts`.
+
 ### Save draft and update (issue #772)
 
 `web/src/lib/recovery/format.ts` defines `RecoverySnapshotV1` (schema `exam-generation.recovery/1`) with `parseRecoverySnapshot` for strict validation (account, origin, environment, form shape).

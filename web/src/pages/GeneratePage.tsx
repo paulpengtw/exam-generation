@@ -18,6 +18,7 @@ import { useAuthStore } from "../store/authStore";
 import { useT } from "../i18n/useT";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { buildExamOdt, formatTimestamp } from "../utils/odt";
+import { captureBatch, batchFilename } from "../utils/exportSnapshot";
 import {
   ActionButton,
   ActionFailure,
@@ -388,10 +389,19 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
 
   const jsonFeedback = useActionFeedback({
     action: async () => {
-      const filename = `batch_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+      // Atomically capture the batch snapshot at click time (issue #751)
+      const exportedAt = new Date().toISOString();
+      const evidenceByQuestionId = runEvidence?.questions ?? {};
+      const batch = captureBatch({
+        displayResults,
+        evidenceByQuestionId,
+        runId: generationLogId,
+        exportedAt,
+      });
+      const filename = batchFilename(batch.hasDraft);
       const operation = useWorkspaceStore.getState().beginOperation("export_json", "generate.results");
       try {
-        const json = JSON.stringify(results, null, 2);
+        const json = JSON.stringify(batch.exported, null, 2);
         downloadBlob(new Blob([json], { type: "application/json" }), filename);
         operation.end("completed");
         return filename;
@@ -721,6 +731,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                               subject={subject}
                               livePhaseLabel={livePhaseLabel}
                               requestedTotal={requestedTotal}
+                              runId={generationLogId}
                               {...cardProps}
                             />
                           </AnimatedQuestionCard>
@@ -751,6 +762,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                               : undefined
                           }
                           requestedTotal={requestedTotal}
+                          runId={generationLogId}
                           {...projectGenerationCardEvidence(item)}
                         />
                       </AnimatedQuestionCard>

@@ -41,12 +41,14 @@ const question: ExamQuestion = {
 };
 
 describe("QuestionCard draft rendering", () => {
-  it("marks draft cards, shows available solution content, and disables downloads", () => {
+  it("marks draft cards, shows available solution content, enables JSON and disables ODT/PNG", () => {
+    // issue #751: JSON download is available for drafts; ODT/PNG remain disabled
     render(<QuestionCard question={question} phase="draft" isFinal={false} />);
 
     expect(screen.getByText("Draft")).toBeInTheDocument();
     expect(screen.getByText("2 + 2 = 4.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Download JSON" })).toBeDisabled();
+    // JSON download is enabled for drafts (labeled "Download Draft JSON")
+    expect(screen.getByRole("button", { name: "Download Draft JSON" })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: "Download ODT" })).toBeDisabled();
   });
 
