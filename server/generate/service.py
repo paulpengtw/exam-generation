@@ -499,7 +499,6 @@ class _WorkerRecorderSetup:
     verification_trail: list    # list[dict[str, Any]] – mutated by capture_trail_entry
     figure_policy_trail: list   # list[dict[str, Any]] – mutated by capture_figure_policy_entry
     reference_example_entries: list  # list[dict[str, Any]] – mutated by capture_reference_example_entry  # noqa: E501
-    _revision_tracker: list     # list[int | None] – mutable singleton; [0] is last-committed rev
 
 
 def _setup_worker_recorders(
@@ -542,12 +541,9 @@ def _setup_worker_recorders(
         make_combined_observer(observe_worker_event, worker_recorder)
     )
 
-    _revision_tracker: list[int | None] = [None]  # mutable container for core revision binding
-
     def emit_question_update(question: Any, phase: str) -> int:
         q_dict = json.loads(question.model_dump_json(exclude_none=True))
         rev, _ = ctx.snapshot_ledger.commit(q_dict, ctx.config.output_dir)
-        _revision_tracker[0] = rev
         _upd_payload: dict[str, Any] = {
             "index": ctx.manifest[i].index,
             "phase": phase,
@@ -620,7 +616,6 @@ def _setup_worker_recorders(
         verification_trail=verification_trail,
         figure_policy_trail=figure_policy_trail,
         reference_example_entries=reference_example_entries,
-        _revision_tracker=_revision_tracker,
     )
 
 
@@ -808,7 +803,6 @@ def _worker_one_body(
         _final_revision, _ = ctx.snapshot_ledger.commit(
             _q_final_dict, ctx.config.output_dir
         )
-        setup._revision_tracker[0] = _final_revision
         ctx.publisher.publish(
             SSEEventName.RESULT,
             question_id=question_id,

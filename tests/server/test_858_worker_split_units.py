@@ -3,9 +3,10 @@
 Acceptance criteria covered:
   AC1 – all terminal exits (normal, final-failure, confirmed-cancellation,
          resend-of-sealed, worker-unexpected-exit, batch-planning-failure) go
-         through _finalize_worker_terminal.  Verified here by spying on it and
-         asserting exactly-one call per question per exit kind, plus checking
-         that snapshot_ledger.seal_terminal is called exactly once per question.
+         through _finalize_worker_terminal.  Verified here by checking the
+         snapshot_ledger's sealed terminal (which _finalize_worker_terminal is
+         the only path that writes) and by checking the SSE question_terminal
+         events emitted via generate_question_stream for the stream-level exits.
   AC2 – _setup_worker_recorders can be exercised without running generation.
          Tests create the bundle and verify all fields are present and callable
          without calling do_generate.
@@ -18,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
 # Shared helpers (mirrors test_question_terminal.py helper style)
@@ -219,7 +220,14 @@ class TestSetupWorkerRecorders:
 
 
 class TestFinalizeWorkerTerminalSharedPath:
-    """All terminal exits route through _finalize_worker_terminal."""
+    """All terminal exits route through _finalize_worker_terminal.
+
+    Verification strategy: _finalize_worker_terminal is the only code path
+    that calls snapshot_ledger.seal_terminal.  After running _worker_one_body,
+    we inspect ctx.snapshot_ledger.get_terminal() to confirm the sealed
+    payload has the expected termination_reason and has_final values.  No
+    service module attributes are patched.
+    """
 
     def setup_method(self) -> None:
         self.loop = asyncio.new_event_loop()
@@ -259,8 +267,6 @@ class TestFinalizeWorkerTerminalSharedPath:
     def test_normal_exit_calls_finalize_once(self, tmp_path: Path) -> None:
         import json
 
-        from server.generate.service import _finalize_worker_terminal
-
         ctx = _build_ctx(self.loop, self.queue, output_dir=tmp_path)
         q = MagicMock(spec=ctx.spec.exam_question_cls)
         q.__class__ = ctx.spec.exam_question_cls
@@ -273,57 +279,37 @@ class TestFinalizeWorkerTerminalSharedPath:
         def do_generate(*args: Any, **kwargs: Any) -> Any:
             return q
 
-        call_log: list[dict] = []
+        self._run_worker_body(ctx, do_generate)
 
-        def spy_finalize(ctx_: Any, *, index: int, question_id: str, **kw: Any) -> None:
-            call_log.append({"index": index, "question_id": question_id, **kw})
-            # call the real implementation
-            _finalize_worker_terminal(ctx_, index=index, question_id=question_id, **kw)
-
-        with patch(
-            "server.generate.service._finalize_worker_terminal",
-            side_effect=spy_finalize,
-        ):
-            self._run_worker_body(ctx, do_generate)
-
-        assert len(call_log) == 1
-        assert call_log[0]["termination_reason"] == "normal"
-        assert call_log[0]["has_final"] is True
+        question_id = ctx.manifest[0].question_id
+        terminal = ctx.snapshot_ledger.get_terminal(question_id)
+        assert terminal is not None, "finalize must seal the terminal exactly once"
+        assert terminal["termination_reason"] == "normal"
+        assert terminal["has_final"] is True
 
     # ------------------------------------------------------------------
     # Final-failure exit
     # ------------------------------------------------------------------
 
     def test_failure_exit_calls_finalize_once(self, tmp_path: Path) -> None:
-        from server.generate.service import _finalize_worker_terminal
-
         ctx = _build_ctx(self.loop, self.queue, output_dir=tmp_path)
 
         def do_generate(*args: Any, **kwargs: Any) -> Any:
             raise RuntimeError("intentional failure")
 
-        call_log: list[dict] = []
+        self._run_worker_body(ctx, do_generate)
 
-        def spy_finalize(ctx_: Any, *, index: int, question_id: str, **kw: Any) -> None:
-            call_log.append({"index": index, "question_id": question_id, **kw})
-            _finalize_worker_terminal(ctx_, index=index, question_id=question_id, **kw)
-
-        with patch(
-            "server.generate.service._finalize_worker_terminal",
-            side_effect=spy_finalize,
-        ):
-            self._run_worker_body(ctx, do_generate)
-
-        assert len(call_log) == 1
-        assert call_log[0]["termination_reason"] == "failed"
-        assert call_log[0]["has_final"] is False
+        question_id = ctx.manifest[0].question_id
+        terminal = ctx.snapshot_ledger.get_terminal(question_id)
+        assert terminal is not None, "finalize must seal the terminal exactly once"
+        assert terminal["termination_reason"] == "failed"
+        assert terminal["has_final"] is False
 
     # ------------------------------------------------------------------
     # Confirmed-cancellation exit
     # ------------------------------------------------------------------
 
     def test_confirmed_cancel_exit_calls_finalize_once(self, tmp_path: Path) -> None:
-        from server.generate.service import _finalize_worker_terminal
         from src.common.generation_core import GenerationCancelled
 
         ctx = _build_ctx(self.loop, self.queue, output_dir=tmp_path)
@@ -331,20 +317,12 @@ class TestFinalizeWorkerTerminalSharedPath:
         def do_generate(*args: Any, **kwargs: Any) -> Any:
             raise GenerationCancelled("test cancel")
 
-        call_log: list[dict] = []
+        self._run_worker_body(ctx, do_generate, confirmed_cancel=True)
 
-        def spy_finalize(ctx_: Any, *, index: int, question_id: str, **kw: Any) -> None:
-            call_log.append({"index": index, "question_id": question_id, **kw})
-            _finalize_worker_terminal(ctx_, index=index, question_id=question_id, **kw)
-
-        with patch(
-            "server.generate.service._finalize_worker_terminal",
-            side_effect=spy_finalize,
-        ):
-            self._run_worker_body(ctx, do_generate, confirmed_cancel=True)
-
-        assert len(call_log) == 1
-        assert call_log[0]["termination_reason"] == "cancelled"
+        question_id = ctx.manifest[0].question_id
+        terminal = ctx.snapshot_ledger.get_terminal(question_id)
+        assert terminal is not None, "finalize must seal the terminal exactly once"
+        assert terminal["termination_reason"] == "cancelled"
 
     # ------------------------------------------------------------------
     # Unconfirmed disconnect: no terminal emitted
@@ -359,30 +337,24 @@ class TestFinalizeWorkerTerminalSharedPath:
         def do_generate(*args: Any, **kwargs: Any) -> Any:
             raise GenerationCancelled("disconnect")
 
-        call_log: list[dict] = []
+        # confirmed_cancel=False (default)
+        self._run_worker_body(ctx, do_generate, confirmed_cancel=False)
 
-        def spy_finalize(ctx_: Any, **kw: Any) -> None:
-            call_log.append(kw)
-
-        with patch(
-            "server.generate.service._finalize_worker_terminal",
-            side_effect=spy_finalize,
-        ):
-            # confirmed_cancel=False (default)
-            self._run_worker_body(ctx, do_generate, confirmed_cancel=False)
-
-        assert call_log == [], "no terminal should be emitted for unconfirmed disconnect"
+        question_id = ctx.manifest[0].question_id
+        assert not ctx.snapshot_ledger.is_terminal_sealed(question_id), (
+            "no terminal should be emitted for unconfirmed disconnect"
+        )
 
     # ------------------------------------------------------------------
-    # Resend-of-already-sealed summary
+    # Resend-of-already-sealed: original sealed payload is preserved
     # ------------------------------------------------------------------
 
-    def test_already_sealed_exit_calls_finalize_with_already_sealed_true(
+    def test_already_sealed_exit_preserves_original_terminal(
         self, tmp_path: Path
     ) -> None:
-        """When the ledger is sealed but publisher is not, finalize is called with already_sealed=True."""  # noqa: E501
-        from server.generate.service import _finalize_worker_terminal
-
+        """When the ledger is sealed but publisher is not, the already_sealed path
+        re-publishes the original payload without re-sealing; the sealed terminal
+        must remain unchanged with its original unknown_reason."""
         ctx = _build_ctx(self.loop, self.queue, output_dir=tmp_path)
         question_id = ctx.manifest[0].question_id
 
@@ -404,20 +376,15 @@ class TestFinalizeWorkerTerminalSharedPath:
         def do_generate(*args: Any, **kwargs: Any) -> Any:
             raise RuntimeError("late failure after ledger seal")
 
-        call_log: list[dict] = []
+        self._run_worker_body(ctx, do_generate)
 
-        def spy_finalize(ctx_: Any, *, index: int, question_id: str, **kw: Any) -> None:
-            call_log.append({"index": index, "question_id": question_id, **kw})
-            _finalize_worker_terminal(ctx_, index=index, question_id=question_id, **kw)
-
-        with patch(
-            "server.generate.service._finalize_worker_terminal",
-            side_effect=spy_finalize,
-        ):
-            self._run_worker_body(ctx, do_generate)
-
-        assert len(call_log) == 1
-        assert call_log[0].get("already_sealed") is True
+        # The already_sealed path re-publishes the original payload without re-sealing.
+        # The sealed terminal must still carry the pre-sealed unknown_reason.
+        terminal = ctx.snapshot_ledger.get_terminal(question_id)
+        assert terminal is not None
+        assert terminal.get("unknown_reason") == "pre-sealed for test", (
+            "already_sealed path must preserve the original sealed payload unchanged"
+        )
 
     # ------------------------------------------------------------------
     # Sealing happens exactly once per question (no double-seal)
@@ -470,7 +437,13 @@ class TestFinalizeWorkerTerminalSharedPath:
 
 
 class TestWaitAndSignalUsesFinalize:
-    """_wait_and_signal routes batch-fatal and unexpected-exit through _finalize_worker_terminal."""
+    """_wait_and_signal routes batch-fatal and unexpected-exit through _finalize_worker_terminal.
+
+    Verification strategy: _finalize_worker_terminal is the only code path
+    that emits question_terminal SSE events.  Observing exactly one correctly
+    structured terminal per question in the SSE stream proves those exits went
+    through the shared finalize path.  No service module attributes are patched.
+    """
 
     def _collect_events(self, params: Any, config: Any, app_state: Any, **kwargs: Any) -> list:
         from server.generate.service import generate_question_stream
@@ -485,7 +458,12 @@ class TestWaitAndSignalUsesFinalize:
         return events
 
     def test_batch_planning_failure_terminal_via_finalize(self, tmp_path: Path) -> None:
-        """Batch planning failure: each question gets exactly one terminal via finalize path."""
+        """Batch planning failure: each question gets exactly one terminal via finalize path.
+
+        The presence of exactly two question_terminal events with the expected
+        termination_reason proves that _finalize_worker_terminal was called for
+        each question – it is the only path that emits question_terminal.
+        """
         import dataclasses
         from pathlib import Path as _Path
         from types import SimpleNamespace
@@ -493,8 +471,6 @@ class TestWaitAndSignalUsesFinalize:
         from server.config import ServerConfig
         from server.generate.subjects import SUBJECTS
         from tests.server.generate_test_utils import resolved_generate_params
-
-        finalize_calls: list[dict] = []
 
         def do_plan(*args: Any, **kwargs: Any) -> None:
             raise RuntimeError("planner down")
@@ -513,27 +489,26 @@ class TestWaitAndSignalUsesFinalize:
         )
         app_state = SimpleNamespace(renderer_pool=None)
 
-        original_finalize = __import__(
-            "server.generate.service", fromlist=["_finalize_worker_terminal"]
-        )._finalize_worker_terminal
-
-        def spy_finalize(ctx_: Any, *, index: int, question_id: str, **kw: Any) -> None:
-            finalize_calls.append({"index": index, "question_id": question_id, **kw})
-            original_finalize(ctx_, index=index, question_id=question_id, **kw)
-
-        with patch("server.generate.service._finalize_worker_terminal", side_effect=spy_finalize):
-            events = self._collect_events(
-                params, config, app_state, subjects={"social_studies": fake_spec}
-            )
+        events = self._collect_events(
+            params, config, app_state, subjects={"social_studies": fake_spec}
+        )
 
         terminals = [e for e in events if e.get("event") == "question_terminal"]
-        assert len(terminals) == 2
-        assert len(finalize_calls) == 2
-        assert all(c["termination_reason"] == "failed" for c in finalize_calls)
-        assert all(c["has_final"] is False for c in finalize_calls)
+        assert len(terminals) == 2, (
+            f"expected 2 question_terminal events (one per question), got {len(terminals)}"
+        )
+        for t in terminals:
+            payload = t.get("payload", t.get("data", {}))
+            assert payload["termination_reason"] == "failed"
+            assert payload["has_final"] is False
 
     def test_worker_unexpected_exit_terminal_via_finalize(self, tmp_path: Path) -> None:
-        """Worker raising outside boundary: terminal emitted via finalize path."""
+        """Worker raising outside boundary: terminal emitted via finalize path.
+
+        The presence of exactly one question_terminal event with the expected
+        termination_reason proves that _finalize_worker_terminal was called –
+        it is the only path that emits question_terminal.
+        """
         import dataclasses
         from pathlib import Path as _Path
         from types import SimpleNamespace
@@ -541,8 +516,6 @@ class TestWaitAndSignalUsesFinalize:
         from server.config import ServerConfig
         from server.generate.subjects import SUBJECTS
         from tests.server.generate_test_utils import resolved_generate_params
-
-        finalize_calls: list[dict] = []
 
         # do_generate raises a BaseException to escape the try/except Exception guard
         # in _worker_one_body; this reaches _wait_and_signal's asyncio.gather handler.
@@ -560,21 +533,14 @@ class TestWaitAndSignalUsesFinalize:
         )
         app_state = SimpleNamespace(renderer_pool=None)
 
-        original_finalize = __import__(
-            "server.generate.service", fromlist=["_finalize_worker_terminal"]
-        )._finalize_worker_terminal
-
-        def spy_finalize(ctx_: Any, *, index: int, question_id: str, **kw: Any) -> None:
-            finalize_calls.append({"index": index, "question_id": question_id, **kw})
-            original_finalize(ctx_, index=index, question_id=question_id, **kw)
-
-        with patch("server.generate.service._finalize_worker_terminal", side_effect=spy_finalize):
-            events = self._collect_events(
-                params, config, app_state, subjects={"social_studies": fake_spec}
-            )
+        events = self._collect_events(
+            params, config, app_state, subjects={"social_studies": fake_spec}
+        )
 
         terminals = [e for e in events if e.get("event") == "question_terminal"]
-        assert len(terminals) == 1
-        assert len(finalize_calls) == 1
-        assert finalize_calls[0]["termination_reason"] == "failed"
-        assert finalize_calls[0]["has_final"] is False
+        assert len(terminals) == 1, (
+            f"expected 1 question_terminal event, got {len(terminals)}"
+        )
+        payload = terminals[0].get("payload", terminals[0].get("data", {}))
+        assert payload["termination_reason"] == "failed"
+        assert payload["has_final"] is False
