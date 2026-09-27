@@ -271,4 +271,19 @@ describe("createGenerationStreamDecoder", () => {
       },
     });
   });
+
+  // Sub-item 5: duplicate manifest — second started in v2 mode is ignored (seq 1 already seen)
+  it("ignores a second started with same seq in v2 mode (duplicate_seq) and stays in v2", () => {
+    const dec = createGenerationStreamDecoder();
+    dec.decode("started", validStartedData); // first started → v2 mode, run set
+    expect(dec.mode).toBe("v2");
+    const originalRun = dec.run;
+
+    // Second started with identical payload: seq 1 is already in seqSeen → duplicate_seq
+    const events2 = dec.decode("started", validStartedData);
+    expect(dec.mode).toBe("v2"); // stays in v2
+    expect(dec.run).toBe(originalRun); // run manifest is unchanged
+    expect(events2).toHaveLength(1);
+    expect(events2[0]).toEqual({ kind: "ignore", reason: "duplicate_seq" });
+  });
 });
