@@ -815,6 +815,29 @@ describe("sameTerminalOutcome: order-independent slot comparison (S2)", () => {
     // Same multiset → no conflict, processing stays ended
     expect(state.questions["q_001"].processing).toBe("ended");
     expect(state.questions["q_001"].terminalConflict).toBeFalsy();
+    expect(state.questions["q_001"].reviewConflict).toBeFalsy();
+  });
+
+  it("reordered slots + different review → reviewConflict only (not terminalConflict)", () => {
+    // sameTerminalOutcome returns true (same slots, different order) so the
+    // review-only path fires, setting reviewConflict but not terminalConflict.
+    let state = freshRun();
+    const first = terminalWith([slotA], [slotB], [slotA, slotB]);
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 2), first));
+    expect(state.questions["q_001"].processing).toBe("ended");
+
+    // Resend: slots reordered AND review changed to "failed"
+    const reorderedDifferentReview = {
+      ...terminalWith([slotA], [slotB], [slotB, slotA]),
+      review: { status: "failed" as const, content_revision: 1 },
+    };
+    state = applyV2Event(state, makeEvent("question_terminal",
+      ctx("q_001", 3), reorderedDifferentReview));
+    // Outcome is the same (multiset match) but review differs → reviewConflict
+    expect(state.questions["q_001"].processing).toBe("ended");
+    expect(state.questions["q_001"].terminalConflict).toBeFalsy();
+    expect(state.questions["q_001"].reviewConflict).toBe(true);
   });
 
   it("different missing set triggers terminal_contradiction", () => {

@@ -330,22 +330,8 @@ export function parseQuestionTerminalPayload(
   };
 }
 
-function normalizeTerminalForComparison(t: QuestionTerminalPayload): string {
-  return JSON.stringify({
-    termination_reason: t.termination_reason,
-    has_final: t.has_final,
-    final_revision: t.final_revision,
-    delivery_status: t.delivery_status,
-    expected: JSON.parse(canonicalSlotList(t.expected)) as unknown[],
-    delivered: JSON.parse(canonicalSlotList(t.delivered)) as unknown[],
-    missing: JSON.parse(canonicalSlotList(t.missing)) as unknown[],
-    unknown_reason: t.unknown_reason,
-    review: t.review,
-  });
-}
-
 function sameTerminal(left: QuestionTerminalPayload, right: QuestionTerminalPayload): boolean {
-  return normalizeTerminalForComparison(left) === normalizeTerminalForComparison(right);
+  return sameTerminalOutcome(left, right) && JSON.stringify(left.review) === JSON.stringify(right.review);
 }
 
 /**
