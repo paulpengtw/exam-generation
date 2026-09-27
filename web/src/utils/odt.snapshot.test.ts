@@ -211,6 +211,55 @@ describe("buildOdtFromSnapshots — status labels", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Math 題組 detection via 題型種類 (fix: isSocialStudies → isGroupQuestion)
+// ---------------------------------------------------------------------------
+
+describe("buildOdtFromSnapshots — math 題組 detected by 題型種類", () => {
+  it("renders a math 題組 (題型種類=題組題, 0 subquestions, 0 missing) as a 題組 with 文本/核心問題", async () => {
+    // Before the fix, this would render as a flat question because
+    // isSocialStudies = (subquestions.length > 0) = false.
+    // After the fix, isGroupQuestion = true because 題型種類 === "題組題".
+    const q: ExamQuestion = {
+      id: "q-math-group",
+      情境: ["數學文字情境"],
+      題型種類: "題組題",
+      題型: "選擇題",
+      核心問題: "這是數學核心問題",
+      文本: "這是數學文本",
+      題目: [],
+      正確解題分析: [],
+    };
+    const snapshot = makeSnapshot(q, { delivery_status: "partial" });
+    const blob = await buildOdtFromSnapshots("test", [snapshot]);
+    const xml = await readContentXml(blob);
+    // Must render 文本 and 核心問題 (group layout), not flat 題目/正確解題分析
+    expect(xml).toContain("這是數學核心問題");
+    expect(xml).toContain("這是數學文本");
+    // Must NOT render the flat question structure
+    expect(xml).not.toContain("正確解題分析");
+  });
+
+  it("renders a math 題組 with 題型種類=題組題 but no missing slots as 題組", async () => {
+    const q: ExamQuestion = {
+      id: "q-math-group-no-missing",
+      情境: ["建築與藝術"],
+      題型種類: "題組題",
+      題型: "選擇題",
+      核心問題: "幾何核心問題",
+      文本: "幾何文本",
+      題目: [],
+      正確解題分析: [],
+    };
+    // No missing subquestion slots — only 題型種類 triggers group detection
+    const snapshot = makeSnapshot(q, { missing: [] });
+    const blob = await buildOdtFromSnapshots("test", [snapshot]);
+    const xml = await readContentXml(blob);
+    expect(xml).toContain("幾何核心問題");
+    expect(xml).toContain("幾何文本");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Text-only 題組 (no surviving subquestions)
 // ---------------------------------------------------------------------------
 

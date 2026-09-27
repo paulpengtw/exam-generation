@@ -249,17 +249,22 @@ Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot`
 
 ### Snapshot export — ODT (issue #752)
 
-`web/src/utils/odt.ts` exports `buildOdtFromSnapshots(title, snapshots)` which consumes the same frozen `QuestionSnapshot[]` produced by `exportSnapshot.ts`. A convenience wrapper `buildOdtFromBatch(title, batch)` accepts a `BatchSnapshot` directly (empty imageSources).
+> **NOT releasable until issue #753 ships.** chart_spec_preview slots emit a text placeholder ("圖片預覽待轉換，請至網頁版查看") rather than a rasterized PNG; every question that carries a chart image will be missing that figure in the downloaded ODT until #753 adds the rasterization pipeline.
+
+`web/src/utils/odt.ts` exports `buildOdtFromSnapshots(title, snapshots)` which consumes the same frozen `QuestionSnapshot[]` produced by `exportSnapshot.ts`.
+
+`buildOdtFromBatch` was removed (review). All callers must use `captureBatchSnapshots` (from `exportSnapshot.ts`) + `buildOdtFromSnapshots` directly, so image sources are never lost.
 
 **Draft / status labelling:**
 - Questions with `_export.is_draft === true` are prefixed with `【草稿】` in the heading.
-- A status line is appended below each question heading: processing, termination_reason, delivery_status (null delivery → "未知（未收到 terminal）").
+- A status line is appended below each question heading: processing, delivery_status (null delivery → "未知（未收到 terminal）"), review.
 - `buildStatusLabel(snapshot)` maps each field to a Chinese chip string.
 
-**題組 (group question) structure:**
-- Preserved even when no subquestions survived (text-only 題組): `isSocialStudies` is true when `subquestions.length > 0 OR meta.missing.some(slot.kind === "subquestion")`.
+**題組 (group question) structure — `isGroupQuestion` helper:**
+- A shared `isGroupQuestion(question, missingSlots=[])` helper detects group questions via ANY of: `題型種類 === "題組題"` (math 題組, 社會, 自然 all use it) OR `subquestions.length > 0` OR `missingSlots.some(s => s.kind === "subquestion")`.
+- Preserved even when no subquestions survived (text-only 題組 — `q_RUN_003` in the math_groups fixture).
 - Subquestion numbers are rendered using the original `序號` field (1-based, gapped sequences preserved).
-- Known-missing subquestion slots (from `terminal.missing`) are injected at their correct ordinal position as `【小題 {序號} 缺項】` markers.
+- Known-missing subquestion slots (from `terminal.missing`) are injected at their correct ordinal position.
 - Final without terminal = `is_draft: false`; NOT relabelled as draft.
 
 **Image embedding from `imageSources`:**
@@ -278,10 +283,13 @@ Each snapshot holds a `CapturedImageSources` record (lives on `QuestionSnapshot`
 **Component wiring:**
 - `QuestionCard`: ODT button enabled for drafts (label `"card.download_odt_draft"`); uses `singleQuestionOdtFilename`; calls `buildOdtFromSnapshots`.
 - `GeneratePage`: batch ODT uses `captureBatchSnapshots` (returns full `[QuestionSnapshot[], hasDraft]`); filename via `batchOdtFilename(hasDraft)`.
+- `HistoryDetail`: ODT button (shown when `question_json` present) uses `captureFromHistorySnapshot` + `buildOdtFromSnapshots`; `singleQuestionOdtFilename` for filename. `captureFromHistorySnapshot` is separate from `captureFromHistory` (JSON only) — both capture at click time.
 
-**TDD:** `web/src/utils/odt.snapshot.test.ts` — 24 tests covering draft label, final (no label), status labels, text-only 題組, subquestion number gaps, known-missing subquestion markers, known-missing/preview image markers, PNG embedding, batch page-break ordering, mixed draft/final batch, `OdtBuildError` on invalid base64.
+**TDD:** `web/src/utils/odt.snapshot.test.ts` — 26 tests covering draft label, final (no label), status labels, math 題組 detection via `題型種類`, text-only 題組, subquestion number gaps, known-missing subquestion markers, known-missing/preview image markers, PNG embedding, batch page-break ordering, mixed draft/final batch, `OdtBuildError` on invalid base64.
 
-**Key files:** `web/src/utils/odt.ts`, `web/src/utils/odt.snapshot.test.ts`, `web/src/utils/exportSnapshot.ts`.
+**Acceptance tests:** `web/src/utils/odt.acceptance.test.ts` — (a) fixture-based: math_groups_interleaved.jsonl batch, verifying text-only 題組 structure (q_RUN_003), partial/complete status labels; (b) legacy unknown-order batch stable sort; (c) snapshot immutability after source mutation; (d) flat question still renders flat.
+
+**Key files:** `web/src/utils/odt.ts`, `web/src/utils/odt.snapshot.test.ts`, `web/src/utils/odt.acceptance.test.ts`, `web/src/utils/exportSnapshot.ts`, `web/src/pages/HistoryDetail.tsx`.
 
 ### Save draft and update (issue #772)
 

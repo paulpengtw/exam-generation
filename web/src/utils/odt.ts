@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 
 import type { ExamQuestion, SubQuestion } from "../hooks/useGenerate";
-import type { QuestionSnapshot, BatchSnapshot, CapturedImageSources } from "./exportSnapshot";
+import type { QuestionSnapshot, CapturedImageSources } from "./exportSnapshot";
 
 export function formatTimestamp(): string {
   const now = new Date();
@@ -94,13 +94,34 @@ function buildImageParagraph(name: string, imageRef: string, zIndex: number): st
   );
 }
 
+/**
+ * Returns true when the question should be rendered as a 題組 (group question) in the ODT.
+ *
+ * A question is a 題組 when any of the following hold:
+ * - `題型種類 === "題組題"` (math 題組, social studies, and natural sciences all use this type)
+ * - It carries subquestion objects (received 小題)
+ * - Its snapshot export metadata lists known-missing subquestion slots
+ *
+ * This is a shared content-structure helper; it does NOT determine which metadata chips to show.
+ */
+function isGroupQuestion(
+  question: Pick<ExamQuestion, "題型種類" | "subquestions">,
+  missingSlots: Array<{ kind: string }> = [],
+): boolean {
+  return (
+    question.題型種類 === "題組題" ||
+    (question.subquestions?.length ?? 0) > 0 ||
+    missingSlots.some((s) => s.kind === "subquestion")
+  );
+}
+
 function buildMetadataItems(question: ExamQuestion): string[] {
-  const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+  const hasSubquestions = (question.subquestions?.length ?? 0) > 0;
   const isIccsEra = question.認知歷程 !== undefined && question.認知歷程 !== null;
   const eraMetadata = isIccsEra
     ? [question.內容領域, ...(question.認知歷程 ?? [])]
     : [...(question.閱讀歷程 ?? []), question.文本形式];
-  if (isSocialStudies) {
+  if (hasSubquestions) {
     const subs = question.subquestions!;
     const unique = <T>(arr: T[]): T[] => [...new Set(arr)];
     return [
@@ -155,9 +176,9 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
       paras.push(buildImageParagraph(`img${idx}`, imageRef, idx));
     }
 
-    const isSocialStudies = (question.subquestions?.length ?? 0) > 0;
+    const isGroup = isGroupQuestion(question);
 
-    if (isSocialStudies) {
+    if (isGroup) {
       // Core question
       if (question.核心問題) {
         paras.push(`<text:p text:style-name="Heading2">${xmlEscape("核心問題")}</text:p>`);
@@ -169,8 +190,8 @@ function buildContentXml(title: string, sections: Section[], isMultiple: boolean
         paras.push(`<text:p text:style-name="Standard">${xmlEscape(question.文本)}</text:p>`);
       }
       // Subquestions
-      const omittedInteractiveSubquestions = question.subquestions!.filter(isInteractiveSubQuestion);
-      question.subquestions!.forEach((sub) => {
+      const omittedInteractiveSubquestions = (question.subquestions ?? []).filter(isInteractiveSubQuestion);
+      (question.subquestions ?? []).forEach((sub) => {
         if (isInteractiveSubQuestion(sub)) return;
 
         const subMeta = [
@@ -525,10 +546,9 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
         }
       }
 
-      const isSocialStudies = (question.subquestions?.length ?? 0) > 0
-        || meta.missing.some((s) => s.kind === "subquestion");
+      const isGroup = isGroupQuestion(question as ExamQuestion, meta.missing);
 
-      if (isSocialStudies) {
+      if (isGroup) {
         // Core question
         if ((question as ExamQuestion).核心問題) {
           paras.push(`<text:p text:style-name="Heading2">${xmlEscape("核心問題")}</text:p>`);
@@ -676,7 +696,7 @@ function buildSnapshotContentXml(title: string, sections: SnapshotSection[], isM
       const missingImageSlots = meta.missing.filter((s) => s.kind === "image");
       const missingSubqSlots = meta.missing.filter((s) => s.kind === "subquestion");
       const hasMissingInfo = missingImageSlots.length > 0 || missingSubqSlots.length > 0;
-      if (hasMissingInfo && !isSocialStudies) {
+      if (hasMissingInfo && !isGroup) {
         // For flat questions, list known-missing at the end (images handled per-slot above)
         if (missingImageSlots.length > 0) {
           paras.push(
@@ -752,29 +772,7 @@ export async function buildOdtFromSnapshots(
   });
 }
 
-/**
- * Build an ODT from a BatchSnapshot.
- * Wraps `buildOdtFromSnapshots` with batch-level title/filename logic.
- */
-export async function buildOdtFromBatch(
-  title: string,
-  batch: BatchSnapshot,
-): Promise<Blob> {
-  // BatchSnapshot.exported is ExportedQuestion[]; we need QuestionSnapshot[]
-  // but BatchSnapshot does not store imageSources. This overload is for callers
-  // that want to drive from a BatchSnapshot; they should use buildOdtFromSnapshots
-  // directly when QuestionSnapshot[] is available (which is the preferred path).
-  // This overload builds minimal snapshots with empty imageSources.
-  const snapshots: QuestionSnapshot[] = batch.exported.map((eq) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { _export: _removed, ...rest } = eq;
-    return {
-      exported: eq,
-      captured: rest as ExamQuestion,
-      isDraft: eq._export.is_draft,
-      index: eq._export.index,
-      imageSources: {},
-    };
-  });
-  return buildOdtFromSnapshots(title, snapshots);
-}
+// buildOdtFromBatch was removed (issue #752 review).
+// It built empty imageSources — a trap that silently drops all images.
+// All callers must use captureBatchSnapshots (from exportSnapshot.ts) +
+// buildOdtFromSnapshots directly, so image sources are never lost.

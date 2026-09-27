@@ -20,7 +20,8 @@ import {
   getHistoryDetail,
   type HistoryDetail as HistoryDetailPayload,
 } from "../api/client";
-import { captureFromHistory } from "../utils/exportSnapshot";
+import { captureFromHistory, captureFromHistorySnapshot, singleQuestionOdtFilename } from "../utils/exportSnapshot";
+import { buildOdtFromSnapshots } from "../utils/odt";
 import { useAuthStore } from "../store/authStore";
 import {
   initRecoveryStore,
@@ -198,6 +199,23 @@ function HistoryDetailContent({
     getFilename: (filename) => filename,
   });
 
+  const odtFeedback = useActionFeedback({
+    action: async () => {
+      if (!detail || !canDownload) throw new Error("History record is not available");
+      if (!detail.question_json) throw new Error("ODT unavailable: no question_json");
+      const exportedAt = new Date().toISOString();
+      const snapshot = captureFromHistorySnapshot(detail, exportedAt);
+      if (!snapshot) throw new Error("ODT unavailable: snapshot capture failed");
+      const questionId = detail.question_id || detail.id;
+      const filename = singleQuestionOdtFilename(questionId, false);
+      const blob = await buildOdtFromSnapshots(questionId, [snapshot]);
+      saveBlob(blob, filename);
+      return filename;
+    },
+    genericError: t("history.download_odt_error"),
+    getFilename: (filename) => filename,
+  });
+
   const handleRegenerate = () => {
     if (!detail) return;
     navigate(`/generate/${detail.subject}`, {
@@ -225,14 +243,26 @@ function HistoryDetailContent({
           </div>
           <div className="flex items-center gap-2">
             {showDownload && (
-              <ActionButton
-                feedback={downloadFeedback}
-                label={t("history.btn_download_json")}
-                pendingLabel={t("action.downloading")}
-                doneLabel={t("action.downloaded")}
-                disabled={!detail}
-                className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              />
+              <>
+                <ActionButton
+                  feedback={downloadFeedback}
+                  label={t("history.btn_download_json")}
+                  pendingLabel={t("action.downloading")}
+                  doneLabel={t("action.downloaded")}
+                  disabled={!detail}
+                  className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                />
+                {detail?.question_json && (
+                  <ActionButton
+                    feedback={odtFeedback}
+                    label={t("history.btn_download_odt")}
+                    pendingLabel={t("action.downloading")}
+                    doneLabel={t("action.downloaded")}
+                    disabled={!detail}
+                    className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  />
+                )}
+              </>
             )}
             <button
               type="button"
@@ -251,6 +281,11 @@ function HistoryDetailContent({
           reason={downloadFeedback.reason}
           onRetry={downloadFeedback.retry}
           onDismiss={downloadFeedback.dismiss}
+        />
+        <InlineFailureNotice
+          reason={odtFeedback.reason}
+          onRetry={odtFeedback.retry}
+          onDismiss={odtFeedback.dismiss}
         />
         {showRecovery && (
           <section

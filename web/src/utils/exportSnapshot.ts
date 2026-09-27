@@ -482,6 +482,39 @@ export function captureFromHistory(
   return { ...captured, _export: exportMeta };
 }
 
+/**
+ * Capture a history record as a full QuestionSnapshot (includes imageSources).
+ * Use this for ODT export; use `captureFromHistory` for JSON export.
+ * Returns null when `detail.question_json` is absent.
+ */
+export function captureFromHistorySnapshot(
+  detail: HistoryDetail,
+  exportedAt: string,
+): QuestionSnapshot | null {
+  if (!detail.question_json) return null;
+
+  const question = detail.question_json as unknown as ExamQuestion;
+  const captured = captureQuestion(question);
+
+  const exportMeta = buildExportMeta({
+    exportedAt,
+    isDraft: false,
+    runId: detail.generation_log_id,
+    index: null,
+    contentRevision: null,
+    processing: "ended",
+    terminationReason: "normal",
+    deliveryStatus: "complete",
+    missing: [],
+    review: { status: "unknown", content_revision: null },
+  });
+
+  const exported: ExportedQuestion = { ...captured, _export: exportMeta };
+  // History records have no live terminal payload; no known-missing image slots.
+  const imageSources = captureImageSources(captured, null, null);
+  return { exported, captured, isDraft: false, index: null, imageSources };
+}
+
 // ---------------------------------------------------------------------------
 // Filename helpers
 // ---------------------------------------------------------------------------
