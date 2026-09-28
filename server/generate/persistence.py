@@ -237,6 +237,52 @@ async def _staged_reference_example_record(
         return None
 
 
+async def _insert_generation_record(
+    *,
+    user_id: uuid.UUID,
+    generation_log_id: uuid.UUID | None,
+    subject: str,
+    params: Any,
+    payload: dict[str, Any],
+    session_factory: Any,
+    parent_record_id: uuid.UUID | None = None,
+    annotations_json: dict[str, Any] | None = None,
+    verification_trail_json: list[dict[str, Any]] | None = None,
+    figure_policy_trail_json: list[dict[str, Any]] | None = None,
+    reference_example_record_json: Any | None = None,
+) -> uuid.UUID:
+    """Build and insert one GenerationRecord row; raises on any failure.
+
+    This is the single source of truth for record construction.  Callers that
+    want best-effort semantics should wrap calls in try/except (see
+    ``persist_generation_record``).  Callers that want retry semantics should
+    call this inside a loop (see ``save_generation_record_with_retries``).
+    """
+    record = GenerationRecord(
+        user_id=user_id,
+        generation_log_id=generation_log_id,
+        parent_record_id=parent_record_id,
+        subject=subject,
+        question_id=payload.get("id", ""),
+        params_json=(
+            params.model_dump(mode="json")
+            if hasattr(params, "model_dump")
+            else dict(params)
+        ),
+        annotations_json=annotations_json,
+        question_json=strip_image_base64(payload),
+        verification_trail_json=verification_trail_json,
+        figure_policy_trail_json=figure_policy_trail_json,
+        reference_example_record_json=reference_example_record_json,
+        image_files=extract_image_files(payload),
+        status="completed",
+    )
+    async with session_factory() as session:
+        session.add(record)
+        await session.commit()
+        return record.id
+
+
 async def persist_generation_record(
     *,
     user_id: uuid.UUID,
@@ -258,29 +304,19 @@ async def persist_generation_record(
     chain when it is available.
     """
     try:
-        record = GenerationRecord(
+        return await _insert_generation_record(
             user_id=user_id,
             generation_log_id=generation_log_id,
             parent_record_id=parent_record_id,
             subject=subject,
-            question_id=payload.get("id", ""),
-            params_json=(
-                params.model_dump(mode="json")
-                if hasattr(params, "model_dump")
-                else dict(params)
-            ),
+            params=params,
+            payload=payload,
+            session_factory=session_factory,
             annotations_json=annotations_json,
-            question_json=strip_image_base64(payload),
             verification_trail_json=verification_trail_json,
             figure_policy_trail_json=figure_policy_trail_json,
             reference_example_record_json=reference_example_record_json,
-            image_files=extract_image_files(payload),
-            status="completed",
         )
-        async with session_factory() as session:
-            session.add(record)
-            await session.commit()
-            return record.id
     except Exception as exc:  # noqa: BLE001 — best-effort persistence
         logger.warning("failed to persist generation_record: %s", exc)
         return None
@@ -323,27 +359,17 @@ async def save_generation_record_with_retries(
     last_exc: Exception | None = None
     for attempt in range(max_attempts):
         try:
-            record = GenerationRecord(
+            return await _insert_generation_record(
                 user_id=user_id,
                 generation_log_id=generation_log_id,
                 subject=subject,
-                question_id=payload.get("id", ""),
-                params_json=(
-                    params.model_dump(mode="json")
-                    if hasattr(params, "model_dump")
-                    else dict(params)
-                ),
-                question_json=strip_image_base64(payload),
+                params=params,
+                payload=payload,
+                session_factory=session_factory,
                 verification_trail_json=verification_trail_json,
                 figure_policy_trail_json=figure_policy_trail_json,
                 reference_example_record_json=reference_example_record_json,
-                image_files=extract_image_files(payload),
-                status="completed",
             )
-            async with session_factory() as session:
-                session.add(record)
-                await session.commit()
-                return record.id
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             logger.warning(

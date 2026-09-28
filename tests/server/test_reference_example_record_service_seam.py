@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -144,6 +146,56 @@ def test_reference_example_entries_emitted_as_live_trail_events(tmp_path) -> Non
     assert len(ref_trail_events) == len(entries)
     emitted_payloads = [ev["payload"] for ev in ref_trail_events]
     assert emitted_payloads == entries
+
+
+def test_reference_example_record_json_content_passed_to_save_seam(
+    tmp_path,
+) -> None:
+    """issue #904 + #903: saved record receives correct reference_example_record_json.
+
+    Monkeypatches save_generation_record_with_retries in the service module and
+    asserts that the worker passes the expected reference_example_record_json with
+    disabled=False and the full entries list.
+    """
+    entries = [_EXAMPLE_ENTRY, _SUB_ENTRY]
+    config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=tmp_path)
+    params = resolved_generate_params(
+        {"subject": "social_studies", "count": 1, "skip_verify": True}
+    )
+    fake_spec = _fake_spec(entries)
+    user_id = uuid.uuid4()
+
+    saved_calls: list[dict] = []
+
+    async def fake_save(**kwargs):  # type: ignore[return]
+        saved_calls.append(kwargs)
+        return uuid.uuid4()
+
+    async def collect() -> list[dict]:
+        evts = []
+        async for ev in generate_question_stream(
+            params,
+            config,
+            SimpleNamespace(html_renderer=None, renderer_pool=None),
+            subjects={"social_studies": fake_spec},
+            user_id=user_id,
+        ):
+            evts.append(ev)
+        return evts
+
+    with patch(
+        "server.generate.service.save_generation_record_with_retries",
+        side_effect=fake_save,
+    ):
+        asyncio.run(collect())
+
+    assert len(saved_calls) == 1, (
+        f"expected exactly 1 save call for 1 question, got {len(saved_calls)}"
+    )
+    expected_rer = {"disabled": False, "entries": entries}
+    assert saved_calls[0].get("reference_example_record_json") == expected_rer, (
+        "reference_example_record_json must carry disabled=False and the entries list"
+    )
 
 
 def test_cli_result_json_does_not_include_reference_example_record(tmp_path) -> None:

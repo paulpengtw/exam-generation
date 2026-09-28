@@ -328,3 +328,65 @@ class TestSaveRetryAndSentry:
         assert result_payload.get("saved") is not True, (
             "failed save must not set saved=True in RESULT payload"
         )
+
+
+# ---------------------------------------------------------------------------
+# AC4 – scheduling failure (loop closed) does not prevent RESULT publication
+# ---------------------------------------------------------------------------
+
+
+class TestSaveSchedulingFailure:
+    """If asyncio.run_coroutine_threadsafe raises, RESULT must still be published."""
+
+    def setup_method(self) -> None:
+        self.loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
+        self.loop_thread = threading.Thread(
+            target=self.loop.run_forever, daemon=True
+        )
+        self.loop_thread.start()
+        self.queue: asyncio.Queue = asyncio.Queue()
+
+    def teardown_method(self) -> None:
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.loop_thread.join(timeout=5)
+        self.loop.close()
+
+    def test_closed_loop_still_publishes_result(self, tmp_path: Path) -> None:
+        """Scheduling failure (closed loop) is caught; RESULT is still published.
+
+        Simulates asyncio.run_coroutine_threadsafe raising RuntimeError (which
+        CPython raises when the target loop is closed).  The publisher uses a
+        live loop via its own reference, so RESULT can still be enqueued.
+        """
+
+        class _ClosedLoop:
+            """Fake loop whose call_soon_threadsafe always raises, simulating a
+            closed event loop as seen by asyncio.run_coroutine_threadsafe."""
+
+            def call_soon_threadsafe(self, *_args: Any, **_kwargs: Any) -> None:
+                raise RuntimeError("Event loop is closed")
+
+        user_id = uuid.uuid4()
+        # Build ctx with the real loop so the publisher can enqueue RESULT.
+        ctx = _build_ctx(
+            self.loop,
+            self.queue,
+            user_id=user_id,
+            session_factory=None,
+            output_dir=tmp_path,
+        )
+        # Replace ctx.loop with a fake closed loop AFTER publisher is initialised
+        # (publisher captured the real loop at construction time and is unaffected).
+        ctx_closed = dataclasses.replace(ctx, loop=_ClosedLoop())  # type: ignore[arg-type]
+
+        question_id = ctx.manifest[0].question_id
+        _run_worker(ctx_closed, _make_do_generate(question_id))
+        _flush_loop(self.loop)
+
+        events: list[dict] = []
+        while not self.queue.empty():
+            events.append(self.queue.get_nowait())
+        result_events = [e for e in events if e.get("event") == SSEEventName.RESULT]
+        assert len(result_events) == 1, (
+            "RESULT must be published even when the save loop is closed"
+        )

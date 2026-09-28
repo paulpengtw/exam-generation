@@ -786,32 +786,38 @@ def _worker_one_body(
                 "disabled": bool(ctx.params.disable_reference_fewshot),
                 "entries": setup.reference_example_entries,
             }
-            _save_future = asyncio.run_coroutine_threadsafe(
-                save_generation_record_with_retries(
-                    user_id=ctx.user_id,
-                    generation_log_id=ctx.generation_log_id,
-                    subject=ctx.params.subject,
-                    params=ctx.params,
-                    payload=_result_payload,
-                    session_factory=ctx.session_factory,
-                    verification_trail_json=(
-                        setup.verification_trail if setup.verification_trail else None
-                    ),
-                    figure_policy_trail_json=(
-                        setup.figure_policy_trail if setup.figure_policy_trail else None
-                    ),
-                    reference_example_record_json=_reference_example_record_json,
-                    backoff_fn=ctx.save_backoff_fn,
+            _save_coro = save_generation_record_with_retries(
+                user_id=ctx.user_id,
+                generation_log_id=ctx.generation_log_id,
+                subject=ctx.params.subject,
+                params=ctx.params,
+                payload=_result_payload,
+                session_factory=ctx.session_factory,
+                verification_trail_json=(
+                    setup.verification_trail if setup.verification_trail else None
                 ),
-                ctx.loop,
+                figure_policy_trail_json=(
+                    setup.figure_policy_trail if setup.figure_policy_trail else None
+                ),
+                reference_example_record_json=_reference_example_record_json,
+                backoff_fn=ctx.save_backoff_fn,
             )
             try:
-                _save_future.result(timeout=_SAVE_TIMEOUT_S)
-            except Exception as _save_exc:  # noqa: BLE001 — timeout or other bridge error
+                _save_future = asyncio.run_coroutine_threadsafe(_save_coro, ctx.loop)
+                try:
+                    _save_future.result(timeout=_SAVE_TIMEOUT_S)
+                except Exception as _save_exc:  # noqa: BLE001 — timeout or other bridge error
+                    logger.warning(
+                        "save-before-RESULT failed for %s: %s",
+                        question_id,
+                        type(_save_exc).__name__,
+                    )
+            except Exception as _sched_exc:  # noqa: BLE001 — loop closed or other scheduling error
+                _save_coro.close()
                 logger.warning(
-                    "save-before-RESULT bridge timed out for %s: %s",
+                    "save-before-RESULT scheduling failed for %s: %s",
                     question_id,
-                    type(_save_exc).__name__,
+                    type(_sched_exc).__name__,
                 )
         # Publish RESULT after the save (sidecars no longer in the envelope).
         ctx.publisher.publish(
