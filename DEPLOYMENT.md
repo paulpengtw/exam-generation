@@ -791,3 +791,67 @@ cause the build to fail with a descriptive error naming the fix.
 
 Optionally set `RELEASE_REVISION` (integer) to increase the release revision number in
 `dist/release/policy.json`. Defaults to `1` if not set.
+
+## Staging environment name — coordinated switch-over (issue #892)
+
+The web Dockerfile now accepts a `VITE_ENVIRONMENT` build argument. When set, the
+build-identity plugin (`web/buildIdentity.ts`) uses it as the `environment` field in
+`dist/build-meta.json` and `dist/release/policy.json` instead of falling back to the
+Vite mode (`production`). When the argument is absent or empty the behaviour is
+unchanged: the environment defaults to the Vite mode, so production deployments that do
+not set `VITE_ENVIRONMENT` continue to produce `environment: "production"`.
+
+### Why three settings must flip together
+
+The backend (`RELEASE_ENVIRONMENT`) and the gateway policy record (`environment`) both
+validate that the bundle's declared environment matches. A mismatch fails closed.
+All three must agree before a staging generation can pass preflight and reach
+`/api/generate`:
+
+| Setting | Service | Staging value | Notes |
+|---|---|---|---|
+| `VITE_ENVIRONMENT` | Railway frontend build variable | `staging` | Forwarded as a Docker build arg; sets `environment` in the emitted `policy.json` and `build-meta.json`. |
+| `RELEASE_ENVIRONMENT` | Railway backend environment variable | `staging` | Backend validates it matches the gateway policy's `environment` field on every generation request. |
+| `environment` in gateway policy record | Gateway `admission.json` volume | `staging` | The gateway serves this as `GET /release/policy.json`; both the browser and the backend read it. |
+
+Production keeps all three at `production` and is unaffected by this change.
+
+### Operator switch-over procedure (staging only)
+
+These steps cannot be done in code and require direct Railway + gateway operator access:
+
+1. **Set the Railway frontend build variable**: in the Railway **staging** frontend
+   service → Variables, add (or update) `VITE_ENVIRONMENT = staging`. Redeploy the
+   frontend service so the new bundle is built and served.
+
+2. **Set the Railway backend environment variable**: in the Railway **staging** backend
+   service → Variables, set `RELEASE_ENVIRONMENT = staging`. Redeploy the backend.
+
+3. **Update the gateway policy record**: on the staging gateway, update `admission.json`
+   so that the `exam-generation.release-policy/1` record contains `"environment": "staging"`.
+   Use `scripts/release_control.py` or the gateway control endpoint; the `RELEASE_ENVIRONMENT`
+   env var on the gateway service itself should also be `staging` (set in Step 1 of the
+   gateway Railway deployment steps in the section above).
+
+The order matters: change the frontend build first so the new bundle's `released_build_id`
+can be recorded before the gateway policy is updated to `staging`.
+
+### Verification
+
+After all three settings are applied:
+
+```bash
+# 1. Confirm the bundle declares environment: staging
+curl -s https://examgen-staging.cpeng.me/build-meta.json | python3 -m json.tool | grep environment
+
+# 2. Confirm the gateway policy declares environment: staging
+curl -s https://examgen-staging.cpeng.me/release/policy.json | python3 -m json.tool | grep environment
+
+# 3. Run the staging smoke test (no committed secrets; needs BASE_URL)
+BASE_URL=https://examgen-staging.cpeng.me bash scripts/smoke_test.sh
+```
+
+Expected: both JSON responses show `"environment": "staging"`, and the smoke test
+reports a generation that reaches `/api/generate` (not a preflight rejection).
+Production must still show `"environment": "production"` and must be verified
+independently after any change to production variables.

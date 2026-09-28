@@ -119,7 +119,7 @@ export function buildIdentityPlugin(): Plugin {
 
     config(_, { mode }) {
       resolvedCommit = resolveCommitSha();
-      resolvedEnvironment = process.env.VITE_ENVIRONMENT ?? mode;
+      resolvedEnvironment = process.env.VITE_ENVIRONMENT || mode;
 
       const publicConfig: Record<string, string | undefined> = {};
       for (const key of BUNDLE_CONFIG_KEYS) {

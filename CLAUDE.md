@@ -99,6 +99,8 @@ The store never calls `location.reload`, never touches workspace operations, and
 
 Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
 
+The `environment` field in both emitted files comes from `VITE_ENVIRONMENT` (build arg forwarded by `web/Dockerfile`) or falls back to the Vite mode when that variable is absent or empty (issue #892). Staging deployments must set `VITE_ENVIRONMENT=staging` as a Railway build variable on the frontend service so the bundle declares `environment: "staging"`. Three settings must flip together for staging generation to pass preflight: (1) `VITE_ENVIRONMENT=staging` on the frontend build, (2) `RELEASE_ENVIRONMENT=staging` on the backend, (3) `environment: "staging"` in the gateway policy record. See DEPLOYMENT.md § "Staging environment name — coordinated switch-over" for the full operator runbook.
+
 ### Build admission (issue #771)
 
 Every `GET` and `POST /api/generate` request must carry an `X-Frontend-Build-ID` header whose value equals the authority fixture's `released_build_id`.
