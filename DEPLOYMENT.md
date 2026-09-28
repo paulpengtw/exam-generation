@@ -163,6 +163,7 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |
 | `SENTRY_DSN` | *(leave blank, or paste the backend project's DSN)* | Sends backend errors and traces to Sentry. Leave it unset or blank to disable backend Sentry completely. |
 | `SENTRY_ENVIRONMENT` | `production` (or `staging`) | Tags backend Sentry data with the deployment environment. |
+| `SENTRY_RELEASE` | *(leave blank on Railway; set on other platforms)* | Tags every backend Sentry event with a release identifier so errors map to a specific build. On Railway the value is auto-detected from `RAILWAY_GIT_COMMIT_SHA`, so this variable is only needed when you want to override that value or when deploying on a platform that does not set `RAILWAY_GIT_COMMIT_SHA`. Leave unset to let the backend fall back to the platform commit SHA, or leave both unset to omit the release tag entirely. |
 
 The model and effort values above are the code defaults when their variables are
 unset. Opus 4.6 calls enable adaptive thinking with a 16,384-token output ceiling
@@ -566,7 +567,10 @@ One-time setup:
    `SENTRY_ENVIRONMENT` to `staging` or `production`; also set
    `DB_POOL_CHECKOUT_ATTRIBUTION=1` on the **staging** backend so that any
    abandoned asyncpg pool connection is attributed to its owning code path and
-   forwarded to Sentry automatically by the `LoggingIntegration`.
+   forwarded to Sentry automatically by the `LoggingIntegration`. On Railway,
+   backend events are automatically tagged with the deploy commit SHA via
+   `RAILWAY_GIT_COMMIT_SHA`; set `SENTRY_RELEASE` only to override that value
+   or when deploying on a platform that does not inject `RAILWAY_GIT_COMMIT_SHA`.
 4. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
    integration and connect the `paulpengtw/exam-generation` repository.
 

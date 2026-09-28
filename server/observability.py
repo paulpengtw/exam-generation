@@ -49,6 +49,24 @@ def record_generation_outcome(subject: str, outcome: str) -> None:
     )
 
 
+def resolve_sentry_release() -> str | None:
+    """Resolve the Sentry release tag from environment variables.
+
+    Priority order:
+    1. ``SENTRY_RELEASE`` — explicit operator override.
+    2. ``RAILWAY_GIT_COMMIT_SHA`` — commit SHA injected by Railway at deploy time.
+    3. ``None`` — neither is available; Sentry initialises without a release tag
+       so the SDK can apply its own auto-detection if desired.
+
+    Empty-string values are treated as unset.
+    """
+    for var in ("SENTRY_RELEASE", "RAILWAY_GIT_COMMIT_SHA"):
+        value = os.environ.get(var)
+        if value:
+            return value
+    return None
+
+
 def init_sentry() -> bool:
     """Initialize Sentry when a backend DSN is configured."""
     global _initialized
@@ -74,7 +92,7 @@ def init_sentry() -> bool:
         "stack_frame_variables": False,
         "frame_context_lines": 5,
     }
-    sentry_sdk.init(
+    init_kwargs: dict = dict(
         dsn=dsn,
         environment=os.environ.get("SENTRY_ENVIRONMENT") or "production",
         before_send=_before_send,
@@ -97,5 +115,13 @@ def init_sentry() -> bool:
             ),
         ],
     )
+    # Issue #901: tag every event with the build's release identifier when one
+    # is available.  The key is omitted entirely when unresolved so the SDK's
+    # own auto-detection (e.g. from SENTRY_RELEASE env) is not suppressed.
+    release = resolve_sentry_release()
+    if release is not None:
+        init_kwargs["release"] = release
+
+    sentry_sdk.init(**init_kwargs)
     _initialized = True
     return True
