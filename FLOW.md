@@ -84,7 +84,18 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
                 │     cancel_event is set by generate_question_stream's finally block
                 │     when the consumer disconnects (GeneratorExit / aclose())
                 │
-                └── 9. queue.put_nowait {event:"result", data: question_json + image_base64}
+                ├── 9. [issue #904] save_generation_record_with_retries()
+                │       Saves GenerationRecord to DB before RESULT is published.
+                │       Runs inside the worker thread via asyncio.run_coroutine_threadsafe()
+                │       against the run's event loop (timeout: 30 s).
+                │       On failure: up to SAVE_MAX_ATTEMPTS=3 retries with exponential
+                │       backoff (2^attempt s, injectable for tests), then Sentry capture.
+                │       Sidecars (verification_trail, figure_policy_trail,
+                │       reference_example_record) are saved here, NOT in the queue envelope.
+                │       RESULT is published regardless of save success or failure.
+                │
+                └── 10. queue.put_nowait {event:"result", data: question_json + image_base64}
+                        (sidecars no longer included in the envelope — issue #904)
 
             [async generator drains queue, yields each event to SSE response]
             │

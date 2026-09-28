@@ -1,7 +1,8 @@
 """Service seam tests for the 參考範例紀錄 feature (#670).
 
 Verifies that:
-- The result event carries reference_example_record with {disabled, entries}
+- The result event does NOT carry reference_example_record as a sidecar (#904:
+  sidecars dropped from the queue envelope; saved directly in the worker)
 - Each entry is emitted live as a trail event via the trail emitter
 - The CLI output (question JSON) does not include the record field
 """
@@ -72,8 +73,15 @@ def _fake_spec(entries: list[dict]) -> object:
     return dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
 
 
-def test_result_event_carries_reference_example_record_field(tmp_path) -> None:
-    """result event must contain reference_example_record with disabled+entries."""
+def test_result_event_does_not_carry_reference_example_record_sidecar(
+    tmp_path,
+) -> None:
+    """issue #904: sidecars are dropped from the queue envelope.
+
+    The reference_example_record is saved directly in the worker before RESULT
+    is published (save_generation_record_with_retries); it no longer travels as
+    a top-level sidecar on the result event dict.
+    """
     entries = [_EXAMPLE_ENTRY, _SUB_ENTRY]
     config = ServerConfig(api_key="x", output_dir=tmp_path, data_dir=tmp_path)
     params = resolved_generate_params(
@@ -97,13 +105,13 @@ def test_result_event_carries_reference_example_record_field(tmp_path) -> None:
     assert len(result_events) == 1
 
     result_event = result_events[0]
-    # The result event data is only the question JSON (never includes the record).
-    assert "reference_example_record" not in result_event.get("data", {})
-    # The record lives as a side channel key on the event dict for persistence.
-    assert "reference_example_record" in result_event
-    record = result_event["reference_example_record"]
-    assert record["disabled"] is False
-    assert record["entries"] == entries
+    # The sidecar is no longer in the queue envelope (issue #904).
+    assert "reference_example_record" not in result_event, (
+        "reference_example_record sidecar must not appear in the result envelope"
+        " after issue #904 (save-before-RESULT)"
+    )
+    # The question payload also must not include the sidecar.
+    assert "reference_example_record" not in result_event.get("payload", {})
 
 
 def test_reference_example_entries_emitted_as_live_trail_events(tmp_path) -> None:

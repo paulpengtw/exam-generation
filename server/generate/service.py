@@ -42,7 +42,7 @@ from server.generate.persistence import (
     make_exchange_recorder,
     make_figure_policy_trail_recorder,
     make_reference_example_record_recorder,
-    persist_generation_record,
+    save_generation_record_with_retries,
 )
 from server.generate.publisher import GenerationPublisher
 from server.generate.question_terminal import (
@@ -74,6 +74,12 @@ logger = logging.getLogger(__name__)
 # How long to wait for a pooled renderer before emitting a WARNING.
 # Lowered in tests via monkeypatch.
 RENDERER_POOL_WAIT_WARN_THRESHOLD_S: float = 5.0
+
+# How long the worker thread waits for the per-question save coroutine to
+# complete before giving up and publishing RESULT without a saved record.
+# With SAVE_MAX_ATTEMPTS=3 and 2**0+2**1=3 s total backoff the save budget is
+# well under 30 s on any reasonable DB.
+_SAVE_TIMEOUT_S: float = 30.0
 def _resolved_worker_params(
     i: int,
     params: GenerateParams,
@@ -240,6 +246,9 @@ class _RunContext:
     publisher: GenerationPublisher
     snapshot_ledger: QuestionSnapshotLedger
     drain_telemetry: Any
+    # issue #904: save-before-RESULT fields
+    user_id: uuid.UUID | None  # None → no persistence (CLI / log-less runs)
+    save_backoff_fn: Any  # Callable[[int], Awaitable[None]] | None; None → default backoff
 
 
 def _build_run_context(
@@ -258,6 +267,8 @@ def _build_run_context(
     publisher: GenerationPublisher | None = None,
     run_id: str | None = None,
     confirmed_cancel_event: threading.Event | None = None,
+    user_id: uuid.UUID | None = None,
+    save_backoff_fn: Any | None = None,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -342,6 +353,8 @@ def _build_run_context(
         publisher=_publisher,
         snapshot_ledger=_snapshot_ledger,
         drain_telemetry=get_drain(app_state),
+        user_id=user_id,
+        save_backoff_fn=save_backoff_fn,
     )
 
 
@@ -755,28 +768,58 @@ def _worker_one_body(
                 ctx.prior_scopes.append(new_scope)
         ctx.emit_pipeline("question_end", index=i, total=ctx.count)
         record_generation_outcome(ctx.params.subject, "success")
-        sidecars: dict[str, Any] = {
-            "reference_example_record": {
-                "disabled": bool(ctx.params.disable_reference_fewshot),
-                "entries": setup.reference_example_entries,
-            },
-        }
-        if setup.verification_trail:
-            sidecars["verification_trail"] = setup.verification_trail
-        if setup.figure_policy_trail:
-            sidecars["figure_policy_trail"] = setup.figure_policy_trail
         # Commit the final question to the ledger (unchanged content keeps revision).
         _q_final_dict = json.loads(question.model_dump_json(exclude_none=True))
         _final_revision, _ = ctx.snapshot_ledger.commit(
             _q_final_dict, ctx.config.output_dir
         )
+        _result_payload = question_to_event(question, ctx.config)
+        # ---- issue #904: save-before-RESULT --------------------------------
+        # Persist the generation record in this worker thread (before RESULT is
+        # published) so a disconnected observer cannot cause the record to be lost.
+        # The save runs on the event loop via run_coroutine_threadsafe; the worker
+        # blocks on future.result(timeout) so the save completes before RESULT is
+        # published.  Sidecars are consumed here and are no longer included in the
+        # queue envelope.
+        if ctx.user_id is not None:
+            _reference_example_record_json: dict[str, Any] = {
+                "disabled": bool(ctx.params.disable_reference_fewshot),
+                "entries": setup.reference_example_entries,
+            }
+            _save_future = asyncio.run_coroutine_threadsafe(
+                save_generation_record_with_retries(
+                    user_id=ctx.user_id,
+                    generation_log_id=ctx.generation_log_id,
+                    subject=ctx.params.subject,
+                    params=ctx.params,
+                    payload=_result_payload,
+                    session_factory=ctx.session_factory,
+                    verification_trail_json=(
+                        setup.verification_trail if setup.verification_trail else None
+                    ),
+                    figure_policy_trail_json=(
+                        setup.figure_policy_trail if setup.figure_policy_trail else None
+                    ),
+                    reference_example_record_json=_reference_example_record_json,
+                    backoff_fn=ctx.save_backoff_fn,
+                ),
+                ctx.loop,
+            )
+            try:
+                _save_future.result(timeout=_SAVE_TIMEOUT_S)
+            except Exception as _save_exc:  # noqa: BLE001 — timeout or other bridge error
+                logger.warning(
+                    "save-before-RESULT bridge timed out for %s: %s",
+                    question_id,
+                    type(_save_exc).__name__,
+                )
+        # Publish RESULT after the save (sidecars no longer in the envelope).
         ctx.publisher.publish(
             SSEEventName.RESULT,
             question_id=question_id,
             index=i,
             content_revision=_final_revision,
-            payload=question_to_event(question, ctx.config),
-            sidecars=sidecars,
+            payload=_result_payload,
         )
         final_published_revision = _final_revision
         # Phase 3 – normal terminal: published AFTER the result event.
@@ -968,6 +1011,7 @@ async def generate_question_stream(
         confirmed_cancel_event=confirmed_cancel_event,
         publisher=_publisher,
         run_id=_run_id,
+        user_id=user_id,
     )
 
     _started_payload: dict[str, Any] = {
@@ -1283,22 +1327,8 @@ async def generate_question_stream(
             # Route them through unchanged; persistence and stop-sentinel checks
             # operate only on v1 events.
             event_name = event.get("event")
-            if (
-                event_name == SSEEventName.RESULT
-                and user_id is not None
-                and isinstance(event.get("payload"), dict)
-            ):
-                await persist_generation_record(
-                    user_id=user_id,
-                    generation_log_id=generation_log_id,
-                    subject=params.subject,
-                    params=params,
-                    payload=event["payload"],
-                    session_factory=_session_factory,
-                    verification_trail_json=event.get("verification_trail"),
-                    figure_policy_trail_json=event.get("figure_policy_trail"),
-                    reference_example_record_json=event.get("reference_example_record"),
-                )
+            # issue #904: persistence moved to _worker_one_body (save-before-RESULT).
+            # Sidecars are no longer in the queue envelope.
             yield event
             # A question error is terminal only for that manifest slot.  Keep
             # draining the shared queue so sibling questions can still publish

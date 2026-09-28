@@ -456,8 +456,11 @@ def test_slice4b_full_stream_all_v2_envelopes(tmp_path, monkeypatch) -> None:  #
     ):
         persist_payloads.append(payload)
 
+    # issue #904: persistence moved from the consumer loop to the worker, using
+    # save_generation_record_with_retries.  Patch that name in service.py so the
+    # intercept still works (the worker looks up the name in service.py globals).
     monkeypatch.setattr(
-        "server.generate.service.persist_generation_record", _fake_persist
+        "server.generate.service.save_generation_record_with_retries", _fake_persist
     )
 
     events: list[dict] = []

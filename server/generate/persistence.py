@@ -14,9 +14,11 @@ import asyncio
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from concurrent.futures import CancelledError, Future
 from typing import Any
 
+import sentry_sdk
 from sqlalchemy import select, update
 
 from server.generate.exchange_recorder import ExchangeRecorder
@@ -27,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 # Bound worker waiting without cancelling an exchange that may still commit.
 EXCHANGE_WRITE_TIMEOUT_SECONDS = 10.0
+
+# Maximum number of attempts when saving the per-question generation record in
+# the worker thread before publishing RESULT (issue #904).  Each failure after
+# the first is preceded by an exponential-backoff sleep unless a custom
+# backoff_fn is injected (e.g. instant sleep in tests).
+SAVE_MAX_ATTEMPTS: int = 3
 
 
 class FigurePolicyTrailRecorder:
@@ -276,6 +284,84 @@ async def persist_generation_record(
     except Exception as exc:  # noqa: BLE001 — best-effort persistence
         logger.warning("failed to persist generation_record: %s", exc)
         return None
+
+
+async def save_generation_record_with_retries(
+    *,
+    user_id: uuid.UUID,
+    generation_log_id: uuid.UUID | None,
+    subject: str,
+    params: Any,
+    payload: dict[str, Any],
+    session_factory: Any,
+    verification_trail_json: list[dict[str, Any]] | None = None,
+    figure_policy_trail_json: list[dict[str, Any]] | None = None,
+    reference_example_record_json: Any | None = None,
+    max_attempts: int = SAVE_MAX_ATTEMPTS,
+    backoff_fn: Callable[[int], Any] | None = None,
+) -> uuid.UUID | None:
+    """Insert the generation record with bounded retry + Sentry on exhaustion.
+
+    Mirrors the retry loop in ReferenceExampleRecordRecorder._persist_with_retries
+    but is used from the worker thread via asyncio.run_coroutine_threadsafe so
+    the record is committed BEFORE the RESULT event is published (issue #904).
+
+    The ``backoff_fn(attempt)`` coroutine is called between attempts; it defaults
+    to an exponential ``asyncio.sleep`` (2**attempt seconds).  Pass an instant
+    no-op in tests to keep them fast.
+
+    Returns the new record's UUID on success, or None after exhaustion (Sentry
+    has been notified).
+    """
+    if backoff_fn is None:
+
+        async def _default_backoff(attempt: int) -> None:
+            await asyncio.sleep(2**attempt)
+
+        backoff_fn = _default_backoff
+
+    last_exc: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            record = GenerationRecord(
+                user_id=user_id,
+                generation_log_id=generation_log_id,
+                subject=subject,
+                question_id=payload.get("id", ""),
+                params_json=(
+                    params.model_dump(mode="json")
+                    if hasattr(params, "model_dump")
+                    else dict(params)
+                ),
+                question_json=strip_image_base64(payload),
+                verification_trail_json=verification_trail_json,
+                figure_policy_trail_json=figure_policy_trail_json,
+                reference_example_record_json=reference_example_record_json,
+                image_files=extract_image_files(payload),
+                status="completed",
+            )
+            async with session_factory() as session:
+                session.add(record)
+                await session.commit()
+                return record.id
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.warning(
+                "persist_generation_record attempt %d/%d failed: %s",
+                attempt + 1,
+                max_attempts,
+                type(exc).__name__,
+            )
+            if attempt < max_attempts - 1:
+                await backoff_fn(attempt)
+
+    # All retries exhausted: report to Sentry so the failure is visible.
+    sentry_sdk.capture_exception(last_exc)
+    logger.error(
+        "persist_generation_record exhausted %d attempts; reported to Sentry",
+        max_attempts,
+    )
+    return None
 
 
 async def persist_failed_generation_record(
